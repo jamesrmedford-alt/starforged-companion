@@ -51,7 +51,7 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility } from "../character/actorBridge.js";
+import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -138,7 +138,9 @@ async function runUpgradeStep(step) {
     case "meters": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
       if (!pc) return { ok: false, reason: "no-pc" };
-      await applyMeterChanges(pc, step.changes);
+      // `quietNote`: the caller's card says the change itself (a burn's
+      // momentum), so the system's change note is not posted beside it.
+      await (step.quietNote ? withoutSystemNotes(() => applyMeterChanges(pc, step.changes)) : applyMeterChanges(pc, step.changes));
       return { ok: true };
     }
     case "tensionClocks": {

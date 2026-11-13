@@ -214,6 +214,7 @@ import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.j
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
+import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -4444,7 +4445,7 @@ async function handlePayThePriceCommand(message) {
   // A player with no character of their own resolves to none at a table of
   // several (issue #321 U23), and the canonical GM rightly refuses their route
   // — another player's PC never pays it (#326 D8) — but said nothing: the card
-  // read "Routes to endure_harm (-1)" and nobody was harmed (issue #337 Y43).
+  // read "Routes to Endure Harm (-1)" and nobody was harmed (issue #337 Y43).
   // Refused here, before the card: it says the price was not applied, and the
   // player is told why, as a move they narrate is. A narrative price — most
   // of the table, no route — has no payer either: it was narrated for the
@@ -4631,6 +4632,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
  *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
  *   them, whoever presses it (issue #329 X05)
  */
+/**
+ * Below this many filled boxes, the expedition card's Finish button is shown
+ * muted: a progress roll under it misses more often than not (3 boxes: 64%;
+ * 4 boxes: 49%).
+ */
+export const EXPEDITION_FINISH_READY_BOXES = 4;
+
 async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
@@ -4638,9 +4646,14 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const body  = created
     ? `<p>New expedition <strong>${label}</strong> (${rank}) begun — progress marked (${boxes}/10 boxes). If the rank looks off, adjust it in the Progress Tracks panel.</p>`
     : `<p>Progress marked on <strong>${label}</strong> (${rank}) — ${boxes}/10 boxes.</p>`;
+  // The button says what it rolls with, and is muted while a finish would
+  // probably miss (issue #354 P2-14): at 2/10 it was the card's one
+  // prominent button, and a progress roll of 2 misses four times in five.
+  const early = boxes < EXPEDITION_FINISH_READY_BOXES;
   const finishBtn = `<div class="sf-milestone-suggest-row">` +
-    `<button type="button" class="sf-followup-btn" data-action="sf-finish-expedition" ` +
-    `title="Roll to finish the expedition (progress roll)">🗺 Finish the Expedition</button></div>`;
+    `<button type="button" class="sf-followup-btn${early ? " sf-followup-btn--early" : ""}" data-action="sf-finish-expedition" ` +
+    `title="Progress roll: your ${boxes} progress against both challenge dice${early ? " — a miss is likely this early" : ""}">` +
+    `🗺 Finish the Expedition (${boxes}/10)</button></div>`;
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
@@ -7290,10 +7303,6 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
 }
 
 /**
- * The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none.
- * `notApplied` (markup, escaped by the caller) says why the routes were not applied (issue #337 Y43).
- */
-/**
  * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
  * relief — Pay the Price" carries the d100 its narration was seeded with
  * (resolver rollChoicePrice), and its pick pays that price — the card, its
@@ -7345,9 +7354,17 @@ export async function payChosenPrice(price, actor) {
   return { ok: true, price: result.result };
 }
 
+/**
+ * The Pay the Price card's footer: "Routes to Endure Harm (-1), Endure Stress
+ * (-1)." — nothing for none. Each route's suffer move by name, never its id
+ * (`withstand_damage`, issue #354 P2-13); an "any" route as the choice it is.
+ * `notApplied` (markup, escaped by the caller) says why the routes were not
+ * applied (issue #337 Y43).
+ */
 function sufferRoutesFooter(routes, { notApplied = null } = {}) {
   if (!routes?.length) return "";
-  const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");
+  const name = (move) => (move === "any" ? "a suffer move of your choice" : (STATED_SUFFER_MOVES[move] ?? String(move ?? "").replace(/_/g, " ")));
+  const list = routes.map(r => `${escapeChatHtml(name(r.move))} (-${r.amount})`).join(", ");
   return notApplied
     ? `<p><em>Routes to ${list} &mdash; not applied: ${notApplied}.</em></p>`
     : `<p><em>Routes to ${list}.</em></p>`;
@@ -8238,6 +8255,22 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 }
 
 /**
+ * What a match adds, in one line under the outcome (issue #354 P2-14): the
+ * card said "with a Match" and nothing told the player why the narration took
+ * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
+ * on a miss, a heightened negative outcome. (Matched challenge dice are both
+ * beaten or neither, so a weak hit never matches.)
+ *
+ * @param {string} outcome
+ * @returns {string} card HTML text
+ */
+export function matchLine(outcome) {
+  return outcome === "miss"
+    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
+    : "✦ Match: a twist — something unexpected, or a new opportunity.";
+}
+
+/**
  * Format a move resolution as an HTML chat card.
  */
 function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
@@ -8287,6 +8320,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         ${diceLine}
       </div>` : ""}
       ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
+      ${!noRoll && resolution.isMatch ? `<div class="sf-move-match">${matchLine(resolution.outcome)}</div>` : ""}
       ${resolution.consequences.otherEffect
         ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
         : ""}

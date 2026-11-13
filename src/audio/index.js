@@ -823,6 +823,15 @@ export async function onNarratorCardRendered(message, root) {
     await silenceCard(message);
     return;
   }
+  // A burn or an improvement superseded this narration (issue #354 P2-14):
+  // its prose is struck on the card and no longer what happened, so its audio
+  // is not offered — the Play and Stop buttons stay hidden — and audio of it
+  // already playing, or still loading, stops. The flag lands as an update,
+  // which re-renders the card on every client.
+  if (message?.flags?.[MODULE_ID]?.burnSuperseded) {
+    await silenceCard(message);
+    return;
+  }
   if (!audioEnabledForThisClient()) return;
   if (!(root instanceof HTMLElement)) return;
 

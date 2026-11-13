@@ -22,7 +22,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 
-import { applyMeterChanges, registerSystemNoteAttribution } from '../../src/character/actorBridge.js';
+import { applyMeterChanges, registerSystemNoteAttribution, withoutSystemNotes } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 const EMOTE = 3;
@@ -103,6 +103,83 @@ describe('PT14 — the system\'s change log for a module write is not the PC spe
     };
     await applyMeterChanges(isaac, { health: -1 });
     expect(card.speaker.actor).toBe('pc-isaac');
+  });
+});
+
+/**
+ * Whether a ChatMessage's create goes ahead: Foundry cancels it when a
+ * preCreateChatMessage handler returns false (the unit Hooks stub's call()
+ * drops return values, so the handlers are run here).
+ */
+function createGoesAhead(message, data) {
+  const handlers = Hooks._handlers.get('preCreateChatMessage') ?? [];
+  return !handlers.map(fn => fn(message, data, {}, game.user.id)).includes(false);
+}
+
+// Issue #354 P2-13: one −1 integrity made three cards — Pay the Price, the
+// system's "ISV Savela: Starship -1 Integrity (now 4)" and the module's own
+// "Withstand Damage (-1) ISV Savela: 5 → 4". A change the module reports on a
+// card of its own is not also posted as the system's note.
+describe('issue #354 P2-13 — a change the module shows on its own card is shown once', () => {
+  let isaac;
+  let posted;      // every system change log, with whether its create went ahead
+
+  beforeAll(() => registerSystemNoteAttribution());
+
+  beforeEach(() => {
+    game.actors._reset();
+    isaac = makeTestActor({ id: 'pc-isaac', name: 'Isaac Sutton' });
+    game.actors._set('pc-isaac', isaac);
+    posted = [];
+    const raw = isaac.update;
+    isaac.update = async (changes, options) => {
+      const field = Object.keys(changes).find(k => /^system\.(momentum|health|spirit|supply)\.value$/.test(k));
+      if (field) {
+        const data = { content: `<em>${field.split('.')[1]} (now ${changes[field]})</em>`, style: EMOTE, speaker: { actor: isaac.id } };
+        const message = pendingMessage(data);
+        posted.push({ went: createGoesAhead(message, data), data: message.data });
+      }
+      return raw(changes, options);
+    };
+  });
+  afterEach(() => game.actors._reset());
+
+  it('inside withoutSystemNotes the system\'s note is not created; the write still lands', async () => {
+    const before = isaac.system.momentum.value;
+    await withoutSystemNotes(() => applyMeterChanges(isaac, { momentum: -1 }));
+    expect(isaac.system.momentum.value).toBe(before - 1);
+    expect(posted).toEqual([expect.objectContaining({ went: false })]);
+  });
+
+  it('outside it the note is posted as before, re-spoken as a note — and the quiet ends with the write, even when it throws', async () => {
+    await expect(withoutSystemNotes(async () => { throw new Error('refused'); })).rejects.toThrow('refused');
+    await applyMeterChanges(isaac, { momentum: 1 });
+    expect(posted).toHaveLength(1);
+    expect(posted[0].went).toBe(true);
+    expect(posted[0].data.flags?.[MODULE_ID]?.systemNote).toBe(true);
+  });
+
+  it('a player\'s own sheet edit made during a quiet write keeps its note (no module write is in flight for it)', async () => {
+    const kira = makeTestActor({ id: 'pc-kira', name: 'Kira' });
+    game.actors._set('pc-kira', kira);
+    let went = null;
+    await withoutSystemNotes(async () => {
+      const data = { content: '<em>+1 health (now 4)</em>', style: EMOTE, speaker: { actor: 'pc-kira' } };
+      went = createGoesAhead(pendingMessage(data), data);
+    });
+    expect(went).toBe(true);
+  });
+
+  it('each suffer move\'s loss is quiet: Lose Momentum, Endure Harm, Endure Stress, Sacrifice Resources', async () => {
+    const { loseMomentum, endureHarm, endureStress, sacrificeResources } = await import('../../src/moves/sufferExecutor.js');
+    await loseMomentum(isaac, 1);
+    await endureHarm(isaac, 1);
+    await endureStress(isaac, 1);
+    await sacrificeResources(isaac, 1);
+    expect(posted.map(p => p.went)).toEqual([false, false, false, false]);
+    // …and each still posted its own card, saying the change.
+    const cards = ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.sufferCard).map(m => m.flags[MODULE_ID].suffer);
+    expect(cards).toEqual(['lose_momentum', 'endure_harm', 'endure_stress', 'sacrifice_resources']);
   });
 });
 

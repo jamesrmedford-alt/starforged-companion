@@ -32,9 +32,9 @@ export const STAKES_LINE_MAX = 200;
 
 /**
  * The suffer moves a stated miss may name: the routes Pay the Price's table
- * annotates (src/oracles/tables/payThePrice.js), and Lose Momentum — the
- * move for being "delayed or put at a disadvantage", which the table leaves
- * narrative. The names as the narrator and the dialog show them.
+ * annotates (src/oracles/tables/payThePrice.js) — Lose Momentum among them
+ * since issue #354 P2-12, for being "delayed or put at a disadvantage". The
+ * names as the narrator, the dialog and the Pay the Price card show them.
  */
 export const STATED_SUFFER_MOVES = Object.freeze({
   endure_harm:           "Endure Harm",

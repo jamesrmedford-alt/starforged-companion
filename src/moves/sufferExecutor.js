@@ -65,7 +65,7 @@
  * (Suffer moves), and issue #214 (Suffer-move Pipeline) §5.4.
  */
 
-import { applyMeterChanges, setDebility } from "../character/actorBridge.js";
+import { applyMeterChanges, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { supplyAllies } from "../multiplayer/sharedSupply.js";
 import { MORTAL_WOUND, DESOLATION, VEHICLE_DAMAGE } from "../oracles/tables/sufferAndCombat.js";
 
@@ -150,7 +150,10 @@ export async function loseMomentum(actor, amount, opts = {}) {
     return { before: 0, after: 0, atMin: false, remaining: 0, skipped: true };
   }
   const before = readMeter(actor, "momentum");
-  await applyMeterChanges(actor, { momentum: -amount });
+  // The loss is on this move's own card (or the card of the loss that
+  // overflowed into it): the system's note for the same write is not posted
+  // beside it (issue #354 P2-13) — here and in every executor below.
+  await withoutSystemNotes(() => applyMeterChanges(actor, { momentum: -amount }));
   const after = readMeter(actor, "momentum");
   const atMin = after <= -6;
   const remaining = Math.max(0, amount - Math.max(0, before - after));
@@ -556,7 +559,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "health");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await applyMeterChanges(actor, { health: -absorbed });
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { health: -absorbed }));
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -604,7 +607,7 @@ export async function endureStress(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "spirit");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await applyMeterChanges(actor, { spirit: -absorbed });
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { spirit: -absorbed }));
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -836,7 +839,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     }
     return { before, after: before, atZero, unpreparedMarked: false, redirected: true };
   }
-  await applyMeterChanges(actor, { supply: -amount });
+  await withoutSystemNotes(() => applyMeterChanges(actor, { supply: -amount }));
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
@@ -903,7 +906,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   // The companion the move was about (the card's targets), when the pick names none.
   companionItemId = companionItemId ?? opts.companionItemId ?? null;
   const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
-  const res = await applyCompanionHealthChange(actor, -amount, { itemId: companionItemId });
+  const res = await withoutSystemNotes(() => applyCompanionHealthChange(actor, -amount, { itemId: companionItemId }));
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
   if (!res.ok) {
     // No such companion (or several, none named) — a user-visible failure
@@ -985,14 +988,14 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   let res;
   let vehicleActorId = null;
   if (support) {
-    res = await applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId });
+    res = await withoutSystemNotes(() => applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId }));
   } else if (vehicleItemId) {
     res = { ok: false, reason: "no-vehicle" };
   } else {
     const { getCommandVehicleActorId, changeIntegrity } = await import("../entities/ship.js");
     vehicleActorId = opts.vehicleActorId
       ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) ?? null;
-    res = await changeIntegrity(vehicleActorId, -amount);
+    res = await withoutSystemNotes(() => changeIntegrity(vehicleActorId, -amount));
   }
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's integrity");
   if (!res.ok) {

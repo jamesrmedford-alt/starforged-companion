@@ -141,8 +141,18 @@ describe('issue #353 Phase 0 — a price that reveals a new enemy', () => {
   });
 
   it('any other price seeds the price alone — no character tables', () => {
+    const seeds = withPayThePriceSeed(null, 'face_danger', 'You are stressed');
+    expect(lines(seeds)).toEqual(['Pay the Price: You are stressed']);
+  });
+
+  // Issue #354 P2-12: the row changed nothing and was narrated as mood. It
+  // costs momentum now (the table's route), and the narrator is told so.
+  it('"delayed or put at a disadvantage" is seeded with what it costs', () => {
     const seeds = withPayThePriceSeed(null, 'face_danger', 'You are delayed or put at a disadvantage');
-    expect(lines(seeds)).toEqual(['Pay the Price: You are delayed or put at a disadvantage']);
+    expect(lines(seeds)).toEqual([
+      'Pay the Price: You are delayed or put at a disadvantage',
+      expect.stringMatching(/^This price is paid in momentum \(Lose Momentum -1\): show the time, ground or advantage actually lost/),
+    ]);
   });
 
   it('the advisory price of a miss that routes none (Sojourn) carries the enemy too', () => {

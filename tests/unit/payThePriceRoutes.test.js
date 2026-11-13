@@ -169,7 +169,7 @@ describe("Q03 — a Pay the Price 'Roll twice' lands each leaf's route", () => {
     expect(lastLog().outcome).toBe("miss");
     const ptp = ptpCard();
     expect(ptp.content).toContain("d100 = <strong>96</strong> · You are harmed / You are stressed");
-    expect(ptp.content).toContain("Routes to endure_harm (-1), endure_stress (-1).");
+    expect(ptp.content).toContain("Routes to Endure Harm (-1), Endure Stress (-1).");
     expect(ptp.flags[MODULE_ID].sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }, { move: "endure_stress", amount: 1 }]);
     expect(pc.system.health.value).toBe(4);
     expect(pc.system.spirit.value).toBe(4);
@@ -220,8 +220,77 @@ describe("Q03 — a Pay the Price 'Roll twice' lands each leaf's route", () => {
     control.ptp = [96, 78, 85];
     await table.client("pl-1").chat("!ptp", { speaker: { actor: pc.id } });
     await table.settle(); await table.drain();
-    expect(ptpCard().content).toContain("Routes to endure_harm (-1), endure_stress (-1).");
+    expect(ptpCard().content).toContain("Routes to Endure Harm (-1), Endure Stress (-1).");
     expect(pc.system.health.value).toBe(4);
     expect(pc.system.spirit.value).toBe(4);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #354 section C — P2-12, P2-13, P2-14
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("issue #354 P2-12 — 'delayed or put at a disadvantage' costs momentum", () => {
+  it("d100 92: Lose Momentum -1 lands on the roller, named on the card, and the narrator is told what it cost", async () => {
+    control.ptp = [92];
+    const card = await roll("gather_information");
+    expect(lastLog().outcome).toBe("miss");
+    expect(ptpCard().content).toContain("d100 = <strong>92</strong> · You are delayed or put at a disadvantage");
+    expect(ptpCard().content).toContain("Routes to Lose Momentum (-1).");
+    expect(pc.system.momentum.value).toBe(8);
+    expect(suffers()).toEqual([expect.objectContaining({ suffer: "lose_momentum", amount: 1, before: 9, after: 8 })]);
+    // The loss is on the receipt, so a burn or an improvement knows of it.
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([
+      expect.objectContaining({ move: "lose_momentum", meterKey: "momentum", amount: 1, before: 9, after: 8 }),
+    ]);
+    const narration = table.claude.calls.find(c => /Pay the Price: You are delayed or put at a disadvantage/.test(`${c.system}\n${c.userText}`));
+    expect(`${narration.system}\n${narration.userText}`).toMatch(/This price is paid in momentum \(Lose Momentum -1\)/);
+  });
+
+  it("an improvement of that miss gives the momentum back", async () => {
+    control.ptp = [92];
+    control.abilities = FUGITIVE;
+    pc.system.momentum.value = 5;   // room under the maximum for the refund to show
+    const card = await roll("gather_information");
+    expect(pc.system.momentum.value).toBe(4);
+    await click(card, IMPROVE);
+    expect(lastLog().outcome).toBe("strong_hit");
+    // The price's 1 back, and the strong hit's own +2.
+    expect(pc.system.momentum.value).toBe(7);
+  });
+});
+
+describe("issue #354 P2-13 — a Pay the Price card names the suffer move, never its id", () => {
+  it("78: 'Routes to Endure Harm (-1).'", async () => {
+    await roll("gather_information");
+    expect(ptpCard().content).toContain("Routes to Endure Harm (-1).");
+    expect(ptpCard().content).not.toMatch(/endure_harm/);
+  });
+});
+
+describe("issue #354 P2-14 — what the move card says", () => {
+  it("Face Danger's strong hit has its outcome text", async () => {
+    const card = await roll("face_danger", { dice: [0.05, 0.15, 0.9] });   // challenge 1, 2; action 6 + 2
+    expect(lastLog().outcome).toBe("strong_hit");
+    expect(card.content).toContain("You are successful. Take +1 momentum.");
+    expect(card.content).not.toContain("sf-move-match");
+  });
+
+  it("a match says what it adds: a twist on a hit, a dire turn on a miss", async () => {
+    const hit = await roll("face_danger", { dice: [0.05, 0.05, 0.9] });    // challenge 1, 1
+    expect(hit.content).toMatch(/Strong Hit with a Match/);
+    expect(hit.content).toContain("✦ Match: a twist — something unexpected, or a new opportunity.");
+    const miss = await roll("face_danger", { dice: [0.55, 0.55, 0.1] });   // challenge 6, 6; action 1 + 2
+    expect(miss.content).toMatch(/Miss with a Match/);
+    expect(miss.content).toContain("✦ Match: a dire turn — the outcome is worse, with a complication or a new peril.");
+  });
+
+  it("a burn says what it did to momentum on the move card", async () => {
+    const card = await roll("gather_information");      // miss; the price is Endure Harm, momentum untouched at 9
+    await click(card, BURN);
+    expect(lastLog().outcome).toBe("strong_hit");
+    const after = pc.system.momentum.value;
+    expect(table.world.message(card._id).content)
+      .toContain(`Momentum burned: 9 → ${after} (reset to 2, then the burned result's own change).`);
   });
 });

@@ -135,7 +135,56 @@ async function moduleWriteOn(actor, write) {
 export function registerSystemNoteAttribution() {
   if (_systemNoteAttributionRegistered || typeof Hooks === "undefined") return;
   _systemNoteAttributionRegistered = true;
-  Hooks.on("preCreateChatMessage", (message, data) => { reattributeSystemNote(message, data); });
+  Hooks.on("preCreateChatMessage", (message, data) => {
+    // A change the module shows on a card of its own: the system's note for
+    // it is not posted at all (withoutSystemNotes) — false cancels the create.
+    if (_quietNotes > 0 && systemNoteOfModuleWrite(data) !== null) return false;
+    reattributeSystemNote(message, data);
+    return undefined;
+  });
+}
+
+let _quietNotes = 0;
+
+/**
+ * Run a module write whose change the module reports on a card of its own,
+ * with the ironsworn system's change note for it not posted. One −1 integrity
+ * made three cards — Pay the Price, the system's "ISV Savela: Starship -1
+ * Integrity (now 4)", and the module's "Withstand Damage (-1) ISV Savela:
+ * 5 → 4" (issue #354 P2-13): the second says what the third says. Only notes
+ * for Actors this client's bridge is writing are dropped (a player's own
+ * sheet edit made meanwhile keeps its note). Keep the span to the write
+ * itself: a note for any module write that lands inside it is dropped too.
+ *
+ * @param {() => Promise<*>} write
+ * @returns {Promise<*>}
+ */
+export async function withoutSystemNotes(write) {
+  _quietNotes += 1;
+  try {
+    return await write();
+  } finally {
+    _quietNotes -= 1;
+  }
+}
+
+/**
+ * The text of the ironsworn system's change-log line — an emote whose whole
+ * content is one `<em>` line, spoken by an Actor — when it is for a change
+ * this client's bridge is making to that Actor; null for anything else (the
+ * module's own cards, which carry its flags; a player's own sheet edit).
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {string|null}
+ */
+function systemNoteOfModuleWrite(data) {
+  const actorId = data?.speaker?.actor;
+  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return null;
+  if (data?.flags?.[MODULE_ID]) return null;
+  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
+  if (Number(data?.style) !== emote) return null;
+  const line = /^<em>([\s\S]*)<\/em>$/.exec(String(data?.content ?? "").trim());
+  return line ? line[1].trim() : null;
 }
 
 /**
@@ -152,19 +201,13 @@ export function registerSystemNoteAttribution() {
  * @returns {boolean} whether it was re-spoken
  */
 function reattributeSystemNote(message, data) {
-  const actorId = data?.speaker?.actor;
-  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return false;
-  if (data?.flags?.[MODULE_ID]) return false;
-  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
-  if (Number(data?.style) !== emote) return false;
-  const content = String(data?.content ?? "").trim();
-  const line = /^<em>([\s\S]*)<\/em>$/.exec(content);
-  if (!line) return false;
-  const name = globalThis.game?.actors?.get?.(actorId)?.name ?? data.speaker.alias ?? "";
+  const note = systemNoteOfModuleWrite(data);
+  if (note === null) return false;
+  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
   const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   try {
     message?.updateSource?.({
-      content: `<em>${escaped ? `${escaped}: ` : ""}${line[1].trim()}</em>`,
+      content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
       style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
       speaker: { actor: null, token: null, scene: null, alias: null },
       // A module flag: no longer an emote, the note would otherwise read as a

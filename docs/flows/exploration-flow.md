@@ -142,7 +142,10 @@ Discovered card says so). With no active sector nothing is recorded.
   Session panel's What's open. Nothing else reads it: finishing a linked
   expedition marks no milestone by itself — the player's ⚑ does. The
   progress card shows boxes filled and carries a
-  **"🗺 Finish the Expedition"** button — its forced move names the track by
+  **"🗺 Finish the Expedition (n/10)"** button — labelled with the progress
+  it rolls with, and shown muted (`sf-followup-btn--early`) under
+  `EXPEDITION_FINISH_READY_BOXES` (4), where a finish misses more often than
+  not (issue #354 P2-14) — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`
   (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the
