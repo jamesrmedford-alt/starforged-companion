@@ -11,7 +11,8 @@
  *     decide — one plan an NPC, and only the canonical GM files one;
  *   - a vow sworn is asked what is really behind it in its swearing scene, or
  *     — no scene — has its roll filed for a later narration to decide; its
- *     plan is in play while it is the one open vow, and when it is fulfilled;
+ *     plan is in play while its vow is the one the scene serves (R3's
+ *     ladder), and when it is fulfilled;
  *   - Make a Discovery and Confront Chaos keep what their find means;
  *   - the GM's "has a plan" markers read subject ids and names only (their
  *     rendering is tests/unit/secretsPanel.test.js's).
@@ -66,9 +67,11 @@ describe('issue #353 Phase 4 — when a vow\'s plan is in play', () => {
   const vowPlan = normaliseSkeleton({ id: 'sk-vow', kind: 'vow', truth: 'The miners are the bait.',
     subject: { type: 'vow', id: 'msg-vow-1', name: 'Free the Kessan miners' }, sceneId: 'sc-old' });
 
-  it('while it is the one open vow', () => {
-    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', openVowNames: ['Free the Kessan miners'] })).toHaveLength(1);
-    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', openVowNames: ['Find the lost ship'] })).toEqual([]);
+  it('while its vow is the one this scene serves — by the vow\'s id, or its name', () => {
+    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', sceneVow: { id: 'msg-vow-1', name: 'Kessan' } })).toHaveLength(1);
+    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', sceneVow: { id: null, name: 'Free the Kessan Miners' } })).toHaveLength(1);
+    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', sceneVow: { id: 'msg-vow-2', name: 'Find the lost ship' } })).toEqual([]);
+    expect(selectRelevantSkeletons([vowPlan], { sceneId: 'sc-1', sceneVow: null })).toEqual([]);
   });
 
   it('when the move fulfils it (its vow id among the tracks this beat ends), with several open', () => {
@@ -195,7 +198,7 @@ describe('issue #353 Phase 4 — a vow sworn is asked what is behind it', () => 
     expect(plan.oracleSeeds).toEqual([expect.stringMatching(/^What is behind it — Action \+ Theme: /)]);
   });
 
-  it('the one open vow\'s plan is in play every beat — the next narration decides it', async () => {
+  it('the plan of the vow the scene serves (here the only vow in play) is in play every beat — the next narration decides it', async () => {
     await resetSkeletonTable(table, { vowSwearingNarration: false }, { connectionIds: [] });
     await swear();
     const [pending] = plansOf(table);

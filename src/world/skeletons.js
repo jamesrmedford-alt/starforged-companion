@@ -321,7 +321,9 @@ export const MAX_RELEVANT_SKELETONS = 4;
  * @param {string[]} [ctx.endingTrackIds] — tracks this beat finishes (an expedition's plan, its ending
  *   revealed; a fulfilled vow's, by its stable vowId)
  * @param {string[]} [ctx.planIds] — plans this beat is about whatever else (a clock vignette's, a complication's)
- * @param {string[]} [ctx.openVowNames] — the open vow when it is the only one (a vow's plan, Phase 4)
+ * @param {{ id?: string|null, name?: string }|null} [ctx.sceneVow] — the vow this scene serves
+ *   (R3's openThreads.readSceneVow: a linked track's, the quest focus, the only vow in play) — its
+ *   plan is in play (Phase 4)
  * @param {number} [ctx.max]
  * @returns {Object[]}
  */
@@ -332,7 +334,7 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   const tracks  = new Set(Array.isArray(ctx.openTrackIds) ? ctx.openTrackIds : []);
   const threats = (Array.isArray(ctx.activeThreatNames) ? ctx.activeThreatNames : []).filter(n => typeof n === "string");
   const ending  = new Set(Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : []);
-  const vowNames = (Array.isArray(ctx.openVowNames) ? ctx.openVowNames : []).filter(n => typeof n === "string");
+  const sceneVow = ctx.sceneVow && typeof ctx.sceneVow === "object" ? ctx.sceneVow : null;
   const pinned  = new Set(Array.isArray(ctx.planIds) ? ctx.planIds : []);
   const frame   = ctx.frame && typeof ctx.frame === "object" ? ctx.frame : {};
   const passage = [
@@ -347,7 +349,7 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     const s = r.subject ?? {};
     if (s.id && (matched.has(s.id) || tracks.has(s.id) || ending.has(s.id))) return true;
     if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
-    if (r.kind === "vow" && vowNames.some(n => sameSubjectName(n, s.name))) return true;
+    if (r.kind === "vow" && sceneVow && ((s.id && s.id === sceneVow.id) || sameSubjectName(sceneVow.name, s.name))) return true;
     return nameMentioned(s.name, passage);
   };
   const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");

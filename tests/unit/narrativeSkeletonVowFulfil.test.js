@@ -5,7 +5,7 @@
  *
  * Issue #353 Phase 4 — a vow's plan is in play in the narration that fulfils
  * it. A vow's plan is about the vow by its stable id (every copy's `vowId`);
- * with several vows open, nothing else may bring it in — its subject's name
+ * with several quests open and none the scene's vow, nothing else may bring it in — its subject's name
  * may not be the vow's (a narrated correction renames it), and the player's
  * line need not name it. Fulfill Your Vow hands the narration the vow's id
  * among the tracks the beat ends (movePipeline → narrationInputFrom →
@@ -64,7 +64,7 @@ afterAll(() => table?.teardown());
 beforeEach(async () => {
   control.dice = [0.05, 0.05];
   restore = await resetSkeletonTable(table);
-  // Two vows open: neither is the sole open vow.
+  // Two quests open, no link or focus: no vow is the one the scene serves.
   table.actors.get('pc-kira').items.contents.push(makeVow('vow-kira', 'Find Chen', 'vid-kira'));
   table.addActor({ id: 'pc-ren', name: 'Ren', ownership: { 'pl-2': 3 }, items: { contents: [makeVow('vow-ren', 'Repay the Syndicate', 'vid-ren')] } });
   silenceConsoleErrors();

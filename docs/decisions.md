@@ -23,11 +23,14 @@ GM sees".)
   Action + Theme): its swearing scene decides the `vow` plan, about the vow
   by its stable `vowId`. No scene (switched off, no key, a failure): the
   request is filed with its roll alone (`fileRequestedPlan`) for a later
-  narration to decide. A vow's plan is in play while it is the **one** open
-  vow, when the fiction names it, and in the narration of the **Fulfill Your
-  Vow** that scores it (its `vowId` among the tracks the beat ends —
-  `endingTrackIds`, as Finish an Expedition's track) — never every open vow
-  every beat (with three vows open they would crowd out the scene's plans).
+  narration to decide. A vow's plan is in play while its vow is **the one
+  this scene serves** (R3's ladder, `openThreads.readSceneVow`: an open
+  track's linked vow, the session's quest focus, or the only vow in play —
+  matched by the vow's id across its copies, or its name), when the fiction
+  names it, and in the narration of the **Fulfill Your Vow** that scores it
+  (its `vowId` among the tracks the beat ends — `endingTrackIds`, as Finish
+  an Expedition's track) — never every open vow every beat (with three vows
+  open they would crowd out the scene's plans).
 - **Make a Discovery and Confront Chaos keep what their find means**: their
   oracle rolls (less any price) ask the narration for a `discovery` plan,
   decided with the beat that shows the find.

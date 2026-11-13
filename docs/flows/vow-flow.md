@@ -348,9 +348,9 @@ passes the inciting card's message id); the scene's sidecar `plans` decides
 it into the GM-only Secrets journal (`secrets.applyPlanSideData`). No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
-plan reaches the narrator as [6.6] UNREVEALED while the vow is the sole open
-vow (`narrator.js` `soleOpenVowNames` → `selectRelevantSkeletons`'
-`openVowNames`), when the fiction names it, and in the narration of the
+plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the
+scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
+`sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
 Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
 `vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
 `narrationInputFrom` carries to the narration.

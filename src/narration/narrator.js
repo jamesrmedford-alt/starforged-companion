@@ -63,7 +63,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor, readVows } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
@@ -557,8 +557,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
         // The plans this beat is about whatever its text: a clock vignette's,
         // a chosen complication's.
         planIds,
-        // A vow's plan is in play when it is the one open vow (Phase 4).
-        openVowNames:      soleOpenVowNames(),
+        // A vow's plan is in play while its vow is the one this scene serves
+        // (Phase 4, by R3's ladder: a linked track's vow, the quest focus, the
+        // only vow in play) — by the vow's id across its copies, or its name.
+        sceneVow:          extras.sceneVow?.vow
+          ? { id: extras.sceneVow.vow.key ?? null, name: extras.sceneVow.vow.name ?? '' }
+          : null,
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: the hidden plans could not be read:`, err?.message ?? err);
@@ -579,24 +583,6 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
-}
-
-/**
- * The open vow's name when the player characters hold exactly one (a shared
- * vow's copies are one) — its plan is in play every beat (issue #353 Phase
- * 4). With several, a vow's plan is in play when the fiction names it.
- * Fail-open.
- */
-function soleOpenVowNames() {
-  try {
-    const names = new Set();
-    for (const actor of getPlayerActors()) {
-      for (const v of readVows(actor)) if (!v.completed && v.name) names.add(v.name.trim());
-    }
-    return names.size === 1 ? [...names] : [];
-  } catch {
-    return [];
-  }
 }
 
 /** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
