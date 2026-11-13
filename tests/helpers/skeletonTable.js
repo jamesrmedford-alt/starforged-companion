@@ -76,7 +76,8 @@ export async function resetSkeletonTable(table, settings = {}, state = {}) {
     },
   };
   table.replies = () => ({ prose: 'The escort waits.', sidecar: { newTruths: [], stateChanges: [] } });
-  scriptClaude(table, {
+  // `table.script.when(match, reply)` answers other calls (a Haiku helper's).
+  table.script = scriptClaude(table, {
     fallback: (call) => {
       if (call.model !== NARRATION_MODEL) return '{}';
       const { prose, sidecar } = table.replies(call);

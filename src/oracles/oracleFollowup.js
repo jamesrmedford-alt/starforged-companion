@@ -120,6 +120,7 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
     question:       String(spec.question ?? ""),
     rolledLine:     String(spec.rolledLine ?? ""),
     speakerActorId: speakerOk ? speaker.id : null,
+    scope:          typeof spec.scope === "string" ? spec.scope : null,
     messageId,
   });
 }
@@ -208,6 +209,9 @@ async function runOracleFollowup(args) {
       question:       args?.question ?? "",
       rolledLine:     args?.rolledLine,
       speakerActorId: typeof args?.speakerActorId === "string" ? args.speakerActorId : null,
+      // A chosen complication's scope — a waypoint's peril is the open
+      // expedition's next danger (issue #353 Phase 3).
+      scope:          typeof args?.scope === "string" ? args.scope.slice(0, 32) : null,
       // The raw card narrated: its follow-up card names it, so an X-Card on
       // the narration takes the card's result out of RECENT ORACLE RESULTS
       // (issue #345 AA01).

@@ -928,17 +928,23 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * per entry; never throws.
  *
  * @param {string[]} narrationIds
+ * @param {{ categories?: string[]|null }} [opts] — the categories to undo (default every one, and the Session Log)
  * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number }>}
  */
-export async function undoNarrationEntries(narrationIds) {
+export async function undoNarrationEntries(narrationIds, { categories = null } = {}) {
   const out = { restored: 0, retracted: 0, deleted: 0, beats: 0 };
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
   if (!removed.size) return out;
   const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+  const ALL = ["lore", "threats", "factions", "locations", "secrets"];
+  const only = Array.isArray(categories) ? ALL.filter(c => categories.includes(c)) : ALL;
 
   // Secrets too (issue #353): a plan a removed narration made is deleted, and
-  // one it decided or revealed goes back to the version before.
-  for (const category of ["lore", "threats", "factions", "locations", "secrets"]) {
+  // one it decided or revealed goes back to the version before. `categories`
+  // narrows the undo: a narration a Burn Momentum or Improve Result
+  // superseded takes back its plans alone (resultUpgrade.js
+  // retractSupersededNarrations).
+  for (const category of only) {
     const journal = findJournal(JOURNAL_NAMES[category]);
     const flagKey = FLAG_KEYS[category];
     for (const page of [...(journal?.pages?.contents ?? [])]) {
@@ -979,6 +985,7 @@ export async function undoNarrationEntries(narrationIds) {
     }
   }
 
+  if (Array.isArray(categories) && !categories.includes("sessionLog")) return out;
   const logJournal = findJournal(JOURNAL_NAMES.sessionLog);
   for (const page of logJournal?.pages?.contents ?? []) {
     const flag  = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];

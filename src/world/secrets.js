@@ -30,7 +30,8 @@ import {
 } from "./worldJournal.js";
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
-  applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, SKELETON_KIND_LABELS,
+  normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
+  SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
 const MODULE_ID = "starforged-companion";
@@ -271,7 +272,8 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
     const requests  = normalisePlanRequests(planRequests);
     const reveals   = normaliseReveals(sidecar?.reveals);
-    if (!plans.length && !questions.length && !requests.length && !reveals.length) return out;
+    const countdown = normaliseCountdown(sidecar?.countdown);
+    if (!plans.length && !questions.length && !requests.length && !reveals.length && !countdown) return out;
     const sceneId   = campaignState?.currentSceneId ?? null;
     const sessionId = campaignState?.currentSessionId ?? null;
     const byId = new Map(plans.map(p => [p.id, p]));
@@ -279,23 +281,31 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     for (const req of requests) {
       const plan = byId.get(req.ref) ?? null;
       byId.delete(req.ref);
+      // A request about a known subject (an expedition's track) keeps it, by
+      // id; any other takes the name the narration gave it.
+      const subject = req.subject ? { ...req.subject } : { type: "name", id: null, name: plan?.subject || req.label };
       const base = {
-        kind: req.kind, subject: { type: "name", id: null, name: plan?.subject || req.label },
-        oracleSeeds: req.oracleSeeds, sceneId, sessionId,
+        kind: req.kind, subject, oracleSeeds: req.oracleSeeds, sceneId, sessionId,
         createdFrom: { narrationId, moveId, trigger: req.trigger || null },
       };
-      const record = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
+      const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
+      const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
       const filed = await createSkeleton(record, { narrationId });
       if (filed) {
         out.filed += 1;
         await showRollsIfSet(filed);
+        await ensureThreatClock(filed, { narrationId });
       }
     }
 
     for (const plan of byId.values()) {
       const existing = getSkeleton(plan.id);
       if (!existing || existing.status !== "active") continue;
-      if (await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId })) out.decided += 1;
+      const decided = await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId });
+      if (decided) {
+        out.decided += 1;
+        await ensureThreatClock(decided, { narrationId });
+      }
     }
 
     for (const q of questions) {
@@ -321,7 +331,11 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       if (!after) continue;
       out.revealed += 1;
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
+      await paceAfterReveal(before, after);
     }
+
+    // A countdown the prose started becomes a real clock (Phase 3).
+    await applyCountdown(countdown, { campaignState, narrationId, moveId });
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a narration's plans were not applied:`, err?.message ?? err);
   }
@@ -347,6 +361,141 @@ async function onTruthRevealed(record, { campaignState, narrationId, rollsWereSh
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
   if (!rollsWereShown) await postRollsCard(record, { narrationId });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOCKS — a plan's escalation paced, a countdown made real (issue #353 Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How many clocks plans may hold at once — every tension clock turns on each Pay the Price. */
+export const MAX_PLAN_CLOCKS = 4;
+
+/** campaignState's clocks, as stored. */
+function storedClocks() {
+  try {
+    const clocks = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.clocks;
+    return Array.isArray(clocks) ? clocks : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The running clock a plan holds, or null. */
+export function planClock(record) {
+  if (!record?.clockId) return null;
+  return storedClocks().find(c => c?._id === record.clockId && c.active !== false) ?? null;
+}
+
+/**
+ * A decided threat plan's escalation is paced by a clock (issue #353 "Threat
+ * ↔ clock"): when it fills, the narrator plays the next step (narrator.js
+ * narrateClockAdvancement). A threat the fiction just revealed is a scene's —
+ * a 4-segment tension clock, turned by each Pay the Price; a significant
+ * threat from the World Journal is the campaign's — a 6-segment campaign
+ * clock, rolled at Begin a Session. Made once, stamped with the narration
+ * that decided the plan (an X-Card or a supersede takes it back with the
+ * plan), and only while fewer than MAX_PLAN_CLOCKS plan clocks run.
+ *
+ * @param {Object} record — the plan as written
+ * @param {{ narrationId?: string|null }} [opts]
+ * @returns {Promise<Object|null>} the clock made, or null
+ */
+async function ensureThreatClock(record, { narrationId = null } = {}) {
+  if (record?.kind !== "threat" || !record.truth || !record.escalation?.some(e => !e.done) || planClock(record)) return null;
+  if (storedClocks().filter(c => c?.planId && c.active !== false).length >= MAX_PLAN_CLOCKS) return null;
+  try {
+    const { createClock } = await import("../clocks/clocks.js");
+    const campaignLevel = record.createdFrom?.trigger === "significant_threat";
+    const clock = await createClock({
+      name: `${record.subject.name} — escalation`.slice(0, 80),
+      type: campaignLevel ? "campaign" : "tension", segments: campaignLevel ? 6 : 4,
+      narrationId, planId: record.id,
+    });
+    await updateSkeleton(record.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    return clock;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: "${record.subject.name}"'s escalation clock was not made:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * After a beat played a step of a plan with a clock, the clock paces the next
+ * one: back to empty while a step is left, retired when none is — or when the
+ * plan's story ended, or a countdown's mystery came out. Never throws.
+ */
+async function paceAfterReveal(before, after) {
+  const clock = planClock(after);
+  if (!clock) return;
+  const played = after.escalation.some((e, i) => e.done && !before.escalation[i]?.done);
+  const over = after.status !== "active"
+    || !after.escalation.some(e => !e.done) && (played || (after.kind === "mystery" && after.truthRevealed));
+  try {
+    const clocks = await import("../clocks/clocks.js");
+    if (over) await clocks.retireClock(clock._id);
+    else if (played) await clocks.adjustClockSegments(clock._id, -clock.segments);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the clock of "${after.subject.name}" was not reset:`, err?.message ?? err);
+  }
+}
+
+/**
+ * A countdown the prose started — a count, a deadline — made a real tension
+ * clock (issue #353 "When a skeleton is made": Archer's count becomes a real
+ * clock). It belongs to the plan its `about` names (by id, or by its
+ * subject's name); a countdown about nothing planned becomes a mystery —
+ * "what happens when it runs out?", its answer rolled and decided by the next
+ * narration. One clock a plan, none for a countdown already running. The GMs
+ * are offered to play it as a scene challenge (sceneChallengeOffer.js).
+ * Stamped with the narration. Never throws.
+ */
+async function applyCountdown(countdown, { campaignState, narrationId = null, moveId = null }) {
+  if (!countdown) return null;
+  try {
+    if (storedClocks().some(c => c?.active !== false && sameSubjectName(c.name, countdown.label))) return null;
+    const sceneId = campaignState?.currentSceneId ?? null;
+    const active = listSkeletons();
+    const about = countdown.about;
+    let plan = active.find(r => r.id === about)
+      ?? (about ? active.find(r => sameSubjectName(r.subject.name, about) || nameMentioned(r.subject.name, about)) : null)
+      ?? null;
+    if (plan && planClock(plan)) return null;
+    if (!plan) {
+      plan = await createSkeleton({
+        kind: "mystery", subject: { type: "scene", id: sceneId, name: about || countdown.label },
+        question: `What happens when ${countdown.label} runs out?`, oracleSeeds: await rollMysteryAnswer(),
+        sceneId, sessionId: campaignState?.currentSessionId ?? null,
+        createdFrom: { narrationId, moveId, trigger: "countdown" },
+      }, { narrationId });
+      if (!plan) return null;
+    }
+    const { createClock } = await import("../clocks/clocks.js");
+    const clock = await createClock({ name: countdown.label, type: "tension", segments: countdown.segments, narrationId, planId: plan.id });
+    await updateSkeleton(plan.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    const { offerSceneChallenge } = await import("../moves/sceneChallengeOffer.js");
+    await offerSceneChallenge({ label: countdown.label, clockId: clock._id, campaignState });
+    return clock;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the countdown "${countdown.label}" was not made a clock:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * The plan a clock paces, and what its filling plays (narrator.js
+ * narrateClockAdvancement): its next unplayed escalation step, or — a
+ * countdown's mystery with no steps left — its answer coming out. Null for a
+ * clock no active plan holds.
+ *
+ * @param {string} clockId
+ * @returns {{ plan: Object, step: Object|null, revealsTruth: boolean }|null}
+ */
+export function planForClock(clockId) {
+  if (typeof clockId !== "string" || !clockId) return null;
+  const plan = listSkeletons().find(r => r.clockId === clockId) ?? null;
+  if (!plan) return null;
+  const step = plan.escalation.find(e => !e.done) ?? null;
+  return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed };
 }
 
 /** How a significant threat's agenda is rolled (Action + Theme), for its plan's seeds. */

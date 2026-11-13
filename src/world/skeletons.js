@@ -213,6 +213,23 @@ export function normaliseReveals(reveals) {
 }
 
 /**
+ * The sidecar's `countdown` (issue #353 Phase 3): a countdown the prose
+ * started — a count, a deadline, "before it asks again". It becomes a real
+ * tension clock, paced by Pay the Price, tied to the plan it belongs to
+ * (`about` — a plan id, or who or what it concerns). Null for anything else.
+ *
+ * @param {*} countdown
+ * @returns {{ label: string, about: string, segments: 4|6 }|null}
+ */
+export function normaliseCountdown(countdown) {
+  const c = Array.isArray(countdown) ? countdown[0] : countdown;
+  if (!c || typeof c !== "object") return null;
+  const label = text(c.label, 60);
+  if (!label) return null;
+  return { label, about: text(c.about, SUBJECT_MAX), segments: Number(c.segments) === 6 ? 6 : 4 };
+}
+
+/**
  * What a beat showed, laid onto the plan: its clues shown, its truth
  * revealed, its step played, its story ended (`status: "resolved"`).
  *
@@ -300,6 +317,8 @@ export const MAX_RELEVANT_SKELETONS = 4;
  * @param {string[]} [ctx.openTrackIds] — open progress tracks (an expedition's plan)
  * @param {string[]} [ctx.openVowIds] — open vows (a vow's plan)
  * @param {string[]} [ctx.activeThreatNames] — the World Journal's immediate threats (a threat's plan)
+ * @param {string[]} [ctx.endingTrackIds] — tracks this beat finishes (an expedition's plan, its ending revealed)
+ * @param {string[]} [ctx.planIds] — plans this beat is about whatever else (a clock vignette's, a complication's)
  * @param {number} [ctx.max]
  * @returns {Object[]}
  */
@@ -310,6 +329,8 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   const tracks  = new Set(Array.isArray(ctx.openTrackIds) ? ctx.openTrackIds : []);
   const vows    = new Set(Array.isArray(ctx.openVowIds) ? ctx.openVowIds : []);
   const threats = (Array.isArray(ctx.activeThreatNames) ? ctx.activeThreatNames : []).filter(n => typeof n === "string");
+  const ending  = new Set(Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : []);
+  const pinned  = new Set(Array.isArray(ctx.planIds) ? ctx.planIds : []);
   const frame   = ctx.frame && typeof ctx.frame === "object" ? ctx.frame : {};
   const passage = [
     ctx.text,
@@ -319,15 +340,16 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   ].filter(v => typeof v === "string" && v.trim()).join(" \n ");
   const inScene = (r) => !!ctx.sceneId && r.sceneId === ctx.sceneId;
   const relevant = (r) => {
-    if (inScene(r)) return true;
+    if (pinned.has(r.id) || inScene(r)) return true;
     const s = r.subject ?? {};
-    if (s.id && (matched.has(s.id) || tracks.has(s.id) || vows.has(s.id))) return true;
+    if (s.id && (matched.has(s.id) || tracks.has(s.id) || vows.has(s.id) || ending.has(s.id))) return true;
     if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
     return nameMentioned(s.name, passage);
   };
   const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");
+  const first = (r) => (pinned.has(r.id) ? 2 : (inScene(r) ? 1 : 0));
   return list.filter(relevant)
-    .sort((a, b) => (Number(inScene(b)) - Number(inScene(a))) || time(b).localeCompare(time(a)))
+    .sort((a, b) => (first(b) - first(a)) || time(b).localeCompare(time(a)))
     .slice(0, Math.max(0, Number.isInteger(ctx.max) ? ctx.max : MAX_RELEVANT_SKELETONS));
 }
 
@@ -375,6 +397,8 @@ export function normalisePlanRequests(requests) {
       trigger:     typeof r.trigger === "string" ? r.trigger.slice(0, 32) : "",
       label:       text(r.label, SUBJECT_MAX) || "the subject",
       oracleSeeds: (Array.isArray(r.oracleSeeds) ? r.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
+      // A request about a known subject (an expedition's track) names it by id.
+      ...(normaliseSubject(r.subject) ? { subject: normaliseSubject(r.subject) } : {}),
     }));
 }
 

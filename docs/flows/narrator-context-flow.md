@@ -530,7 +530,9 @@ never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 Secrets journal whose subject is in play — made in this scene, its entity
 matched or in the frame's cast, its name in the frame or the player's line,
 `skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
-plan every beat, Phase 2 — at most four, trimmed to
+plan every beat, Phase 2; an open expedition's plan, a finished one's in the
+narration that finishes it, and the plan a clock vignette or a chosen
+complication plays, Phase 3 — at most four, trimmed to
 `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`, the plans this narration's
 seeds ask it to decide: a price that revealed a new enemy. Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
@@ -715,6 +717,12 @@ shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself, which becomes a ledger truth of the narration's own
 (`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
+a decided threat plan gets its escalation clock, a `countdown` becomes a clock
+tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
+what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
+is marked played whatever the sidecar says — Phase 3; a narration a burn or
+improvement supersedes takes back its plan writes and clocks with its ledger
+entries (`retractSupersededNarrations`);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**

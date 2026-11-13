@@ -26,10 +26,12 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 const STORE_READERS = new Map([
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
+  ['src/oracles/oracleConsult.js', 'a GM\'s yes/no about a planned subject: its truth sets the odds, sent to Claude, never to a card'],
   ['src/world/worldJournalPanel.js', 'the GM-only Secrets section'],
 ]);
 const MODEL_READERS = new Map([
   ['src/narration/narrator.js', 'relevance and plan requests'],
+  ['src/oracles/oracleConsult.js', 'which plan a question names'],
   ['src/factContinuity/sidecarParser.js', 'the sidecar keys\' normalisers'],
   ['src/world/secrets.js', 'the store'],
   ['src/world/worldJournalPanel.js', 'kind labels'],

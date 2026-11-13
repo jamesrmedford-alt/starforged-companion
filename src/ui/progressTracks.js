@@ -92,7 +92,7 @@ const PANEL_TRACK_TYPES = {
  * @param {object|null} [data.reward]  The promised reward { description, form, proposedBy, status } (#241, Phase 2)
  * @returns {object}
  */
-function createTrack({ label, type, rank, entityId = null, objective = null, linkedVowName = null, reward = null }) {
+function createTrack({ label, type, rank, entityId = null, objective = null, linkedVowName = null, reward = null, tensionClockId = null }) {
   return {
     id: foundry.utils.randomID(),
     label,
@@ -105,6 +105,9 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
     linkedVowName,    // combat → vow link (#241)
     reward,           // promised concrete reward (#241, populated in Phase 2)
     createdAt: Date.now(),
+    // A scene challenge begun on a countdown the fiction started uses that
+    // countdown's clock (issue #353 Phase 3, sceneChallengeOffer.js).
+    ...(type === 'scene_challenge' && typeof tensionClockId === 'string' && tensionClockId ? { tensionClockId } : {}),
   };
 }
 
@@ -1155,7 +1158,7 @@ export async function addProgressTrack(data) {
   // Scene Challenge auto-creates a paired 4-segment tension clock per
   // rulebook pp. 239–241. The clock id is stored on the track for
   // back-reference. Failures are logged but don't block track creation.
-  if (track.type === 'scene_challenge') {
+  if (track.type === 'scene_challenge' && !track.tensionClockId) {
     try {
       const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
       track.tensionClockId = clock._id;
@@ -1171,7 +1174,9 @@ export async function addProgressTrack(data) {
     // and each retry would add another (SCENE-CHALLENGE-ADD-ORPHAN-CLOCK):
     // remove it, then reject as before. A refused removal is logged — the
     // orphan stays, as it did — and the track's own refusal still rejects.
-    if (track.tensionClockId) {
+    // A countdown's clock the track was given is the fiction's, not this
+    // write's: it stays (issue #353).
+    if (track.tensionClockId && track.tensionClockId !== data?.tensionClockId) {
       await removeClock(track.tensionClockId).catch(clockErr =>
         console.warn(`${MODULE_ID} | addProgressTrack: the scene challenge's tension clock could not be removed after its track was refused:`, clockErr?.message ?? clockErr));
     }

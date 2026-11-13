@@ -1820,6 +1820,40 @@ export function newEnemySeedLines() {
   return lines;
 }
 
+/**
+ * The plan an expedition's first narration is asked to decide (issue #353
+ * Phase 3, "Expedition ↔ progress track"): its waypoints, the danger along
+ * the way and what waits at the end, seeded with two Space Sightings of the
+ * active sector's region (waypoint ideas) and an Action + Theme (the end).
+ * About the track, by id.
+ *
+ * @param {{ id: string, label?: string }} track — the expedition begun
+ * @param {Object|null} campaignState
+ * @param {string|null} resolutionId — the move that began it
+ * @returns {{ ref: string, kind: "expedition", trigger: string, label: string,
+ *   subject: { type: "track", id: string, name: string }, oracleSeeds: string[] }}
+ */
+export function expeditionPlanRequest(track, campaignState, resolutionId) {
+  const region = activeSectorRegion(campaignState);
+  const tableId = SPACE_SIGHTING_BY_REGION[region] ?? SPACE_SIGHTING_BY_REGION.terminus;
+  const seeds = [];
+  for (let i = 0; i < 2; i += 1) {
+    const sight = safeRoll(tableId);
+    if (sight) seeds.push(`A waypoint — Space Sighting (${regionLabel(region)}): ${sight}`);
+  }
+  const end = safeRollPaired("action", "theme");
+  if (end) seeds.push(`What waits at the end — Action + Theme: ${end}`);
+  const name = String(track?.label ?? "").trim() || "the expedition";
+  return {
+    ref:     `plan-${resolutionId ?? track?.id ?? "x"}-expedition`.slice(0, 64),
+    kind:    "expedition",
+    trigger: "expedition",
+    label:   `the expedition to ${name}`,
+    subject: { type: "track", id: track?.id ?? null, name },
+    oracleSeeds: seeds,
+  };
+}
+
 /** Each region's Space Sighting table (oracles/roller.js ORACLE_TABLES). */
 const SPACE_SIGHTING_BY_REGION = Object.freeze({
   terminus: "space_sighting_terminus",

@@ -249,7 +249,13 @@ export function isClockCommand(message) {
  * inside a try/catch so the parent operation can decide to surface or
  * swallow the failure.
  *
- * @param {{ name: string, segments?: number, type?: "campaign"|"tension", advanceOdds?: string }} input
+ * A clock a narration started (a countdown the fiction introduced, a
+ * threat's escalation — issue #353) carries that narration's id
+ * (`narrationId`): the X-Card on it, or a Burn Momentum / Improve Result that
+ * supersedes it, removes the clock with the rest of what it wrote.
+ *
+ * @param {{ name: string, segments?: number, type?: "campaign"|"tension", advanceOdds?: string,
+ *           narrationId?: string|null, planId?: string|null }} input
  * @returns {Promise<object>} the created clock record
  */
 export async function createClock(input) {
@@ -276,9 +282,35 @@ export async function createClock(input) {
     notes:       "",
     createdAt:   new Date().toISOString(),
     updatedAt:   new Date().toISOString(),
+    ...(typeof input?.narrationId === "string" && input.narrationId ? { narrationId: input.narrationId } : {}),
+    // The hidden plan whose escalation it paces (issue #353, secrets.js).
+    ...(typeof input?.planId === "string" && input.planId ? { planId: input.planId } : {}),
   };
   await addClock(clock);
   return clock;
+}
+
+/**
+ * Remove the clocks the given narrations started (`narrationId` — createClock),
+ * for a narration a Burn Momentum or Improve Result superseded
+ * (resultUpgrade.js retractSupersededNarrations). The X-Card's own removal
+ * rides its pause write (narrator.js applyXCardToNarratorMemory). Written on a
+ * copy.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<string[]>} the ids of the clocks removed
+ */
+export async function removeClocksMadeBy(narrationIds) {
+  const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
+  if (!ids.size) return [];
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const gone = (state.clocks ?? []).filter(c => ids.has(c.narrationId));
+    if (!gone.length) return [];
+    state.clocks = state.clocks.filter(c => !ids.has(c.narrationId));
+    await writeState(state);
+    return gone.map(c => c._id);
+  });
 }
 
 /**

@@ -6,6 +6,71 @@ rejected.
 
 ---
 
+## The narrative skeleton, Phase 3: plans paced by clocks, countdowns made real, expeditions planned (2026-11)
+
+**Decision:** (issue #353 Phase 3, "Tie-ins to existing mechanics".)
+- **Threat ↔ clock.** A decided threat plan with an escalation step gets a
+  clock it owns (`planId` on the clock, `clockId` on the plan): a threat the
+  fiction revealed is the scene's — a 4-segment **tension** clock, turned by
+  each Pay the Price; a significant World Journal threat is the campaign's —
+  a 6-segment **campaign** clock, rolled at Begin a Session. At most
+  `MAX_PLAN_CLOCKS` (4) plan clocks run at once (every tension clock turns
+  on each price). When the clock fills, its trigger vignette plays the plan's
+  next step — **marked played by code** (the vignette's `reveals`, added
+  whatever its sidecar says), not left to the model — and the clock goes back
+  to empty for the step after, or retires when none is left. A countdown's
+  mystery with no step left plays its answer coming out.
+- **A countdown the prose starts is a real clock** (the sidecar's
+  `countdown` — the trigger table's "a countdown introduced in the
+  fiction"): tied to the plan its `about` names (by id, or its subject's
+  name), else a new mystery — "What happens when <it> runs out?", its answer
+  rolled and decided by the next narration. One clock a plan; a countdown of
+  a running clock's name is not made again.
+- **The standoff ↔ scene challenge.** A countdown made in a scene with no
+  scene challenge open offers the GMs one (`sceneChallengeOffer.js`): a
+  whispered card whose **Begin the scene challenge** makes the track with
+  the countdown's clock as its tension clock (`addProgressTrack`'s
+  `tensionClockId` — no second clock). A GM's press, claimed once on the
+  card, run on the canonical GM (gmRelay `sceneChallenge.begin`). Scenes stay
+  manual (R2, decided): the module offers the challenge, never ends a scene.
+- **A narration's clocks and plans leave with it.** A clock a narration
+  started carries its `narrationId`: the X-Card's pause write drops it, and a
+  narration a **Burn Momentum or Improve Result supersedes** takes back its
+  plan writes and its clocks too (`retractSupersededNarrations` →
+  `undoNarrationEntries(ids, { categories: ["secrets"] })` and
+  `removeClocksMadeBy`) — the price that revealed a new enemy, or the trigger
+  a rewind undid, did not happen. (Before this, a burned narration's plan
+  stayed in play.)
+- **Expedition ↔ progress track.** An expedition an Undertake an Expedition
+  begins asks its narration to plan it (`expeditionPlanRequest`: two Space
+  Sightings of the region for waypoint ideas, an Action + Theme for the
+  end), about the track by id: its truth is what waits at the end, its clues
+  the waypoints in order, its escalation the danger along the way. It is in
+  play while the track is open, and in the narration of the Finish an
+  Expedition that completes it (`endingTrackIds`), told to reveal the end.
+- **A chosen complication** plays the in-scene plan's next escalation step —
+  a waypoint's peril the open expedition's — so it has something concrete to
+  be; marked played with the complication's beat.
+- **Ask the Oracle consults the plan** (decided, every Mischief setting): a
+  yes/no whose question names a decided plan's subject is rolled at odds one
+  Haiku call sets from the plan's truth (`oracleConsult.js`), so the answer
+  cannot contradict it. Only a GM's roll: `!oracle yes` is rolled on the
+  typing client, and the plans are the GM's (known-issues
+  ORACLE-CONSULT-PLAYER-ROLL). Fail-open: the player's odds stand.
+
+**Reason:** the playtest's count and pulse ran ten beats with no clock
+behind them, and its hour-long standoff never became the structure
+Starforged has for it. A plan that escalates only when the narrator
+remembers to does not escalate.
+
+**Rejected:** *every tension clock for every plan* — each price turns them
+all; capped, and a campaign-level threat paces on the campaign clock.
+*Leaving a played step to the model's sidecar* — a vignette written to play
+the step is the step. *Moving every player's yes/no to the GM* — a routing
+change beyond this issue; recorded as the residual.
+
+---
+
 ## The narrative skeleton, Phase 2: reveals follow move outcomes; a revealed truth is a stated fact; significant threats are planned (2026-11)
 
 **Decision:** (issue #353 Phase 2.)

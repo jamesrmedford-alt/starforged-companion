@@ -763,6 +763,7 @@ async function postChosenComplication(call, actor) {
     question:       "",
     rolledLine:     roll ? `${roll.tableName}: ${roll.result}` : "",
     speakerActorId: actor?.id ?? null,
+    scope,
   };
   const body = roll
     ? `<p>${escapeHtml(roll.tableName)}: d${roll.die} = <strong>${roll.roll}</strong> · ${escapeHtml(roll.result)}</p>`

@@ -1143,6 +1143,8 @@ export async function rollMove({
         },
       );
       if (fin?.track) {
+        // Its plan's ending comes out in this narration (issue #353 Phase 3).
+        resolution.endingTrackIds = [fin.track.id];
         if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "discoveries", fin.legacyTicks);
         await postExpeditionFinishCard(fin).catch(err =>
           console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
@@ -1709,6 +1711,10 @@ export function narrationInputFrom(resolution, relevance = null) {
     isMatch:           resolution?.isMatch === true,
     loremasterContext: resolution?.loremasterContext ?? "",
     oracleSeeds:       resolution?.oracleSeeds ?? null,
+    // The plans its narration is asked to decide (an expedition it began) and
+    // the track it finished (issue #353 Phase 3) — the round narrates them.
+    skeletonRequests:  Array.isArray(resolution?.skeletonRequests) ? resolution.skeletonRequests : [],
+    endingTrackIds:    Array.isArray(resolution?.endingTrackIds) ? resolution.endingTrackIds : [],
     relevance: relevance ? {
       resolvedClass: relevance.resolvedClass ?? "embellishment",
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],

@@ -148,7 +148,14 @@ Discovered card says so). With no active sector nothing is recorded.
   hit's "Peril at the waypoint" pick rolls Spaceborne Peril, posts it, and the
   narrator plays it at once as its own beat (`sufferDialog.js`
   `postChosenComplication` → the oracle follow-up) — its card only promised
-  that the narrator would "surface" it.
+  that the narrator would "surface" it. That peril is the open expedition's
+  plan's next danger when one is planned (issue #353 Phase 3). An expedition
+  the move begins asks its narration to plan it — `expeditionPlanRequest`
+  (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
+  `result.created`: its waypoints (clues), the danger along the way
+  (escalation) and what waits at the end (truth), about the track by id, in
+  play while the track is open; the Finish an Expedition that completes it
+  narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

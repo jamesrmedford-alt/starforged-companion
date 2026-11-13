@@ -37,12 +37,13 @@
  * where its prose contradicted one), `openQuestions` (a question the prose
  * poses that the characters are meant to answer) and `reveals` (what this
  * beat showed of a plan — a clue, the truth, an escalation step played, an
- * ending — Phase 2). Normalised and bounded by
+ * ending — Phase 2) and `countdown` (a countdown the prose started, made a
+ * tension clock — Phase 3). Normalised and bounded by
  * src/world/skeletons.js, and applied on the canonical GM by
  * src/world/secrets.js applyPlanSideData.
  */
 
-import { normalisePlans, normaliseOpenQuestions, normaliseReveals } from '../world/skeletons.js';
+import { normalisePlans, normaliseOpenQuestions, normaliseReveals, normaliseCountdown } from '../world/skeletons.js';
 
 // Matches each complete ``` … ``` fence in the response. Group 1 is the
 // `json` info string when present (spaces before it allowed); group 2 is the
@@ -133,7 +134,7 @@ export function extractSidecar(rawText) {
 }
 
 // A line that opens a bare sidecar object: `{` and, first, one of its keys.
-const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame|plans|openQuestions|reveals)"\s*:/g;
+const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame|plans|openQuestions|reveals|countdown)"\s*:/g;
 
 /**
  * The sidecar object written with no fence: the first line, from the end of
@@ -196,6 +197,7 @@ export function normaliseSidecar(parsed) {
     plans:         normalisePlans(parsed.plans),
     openQuestions: normaliseOpenQuestions(parsed.openQuestions),
     reveals:       normaliseReveals(parsed.reveals),
+    countdown:     normaliseCountdown(parsed.countdown),
   };
 }
 

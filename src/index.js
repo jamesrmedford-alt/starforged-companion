@@ -23,7 +23,7 @@
  */
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
-import { mapConsequences, buildLoremasterContext } from "./moves/resolver.js";
+import { mapConsequences, buildLoremasterContext, expeditionPlanRequest } from "./moves/resolver.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -152,6 +152,7 @@ import {
   executeJournalCommand,
 } from "./world/worldJournal.js";
 import { registerJournalSplitMerge } from "./world/journalSplitMerge.js";
+import { registerSceneChallengeOffer } from "./moves/sceneChallengeOffer.js";
 import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
@@ -2212,6 +2213,11 @@ async function applyOutcomeEffects({
         // "ghost" keyword linked the derelict, which the finish then charted
         // (known-issues EXPEDITION-STAMP-SITE-NAME).
         if (result.created) {
+          // Its narration plans it (issue #353 Phase 3): waypoints, the
+          // danger along the way, what waits at the end — from two waypoint
+          // sightings and an Action + Theme. Dropped when skeletons are off.
+          resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
+            expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
             const { selectExpeditionSite, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
@@ -4065,6 +4071,15 @@ async function handleOracleCommand(message) {
   } else if (oneWord) {
     oddsKey  = oneWord;
     question = parts.slice(2).join(" ");
+  }
+
+  // A question about a subject the narrator holds a hidden plan for is
+  // rolled at odds its truth sets, so the answer cannot contradict it (issue
+  // #353, decided). Only a GM's roll: the plans are the GM's.
+  if (game.user?.isGM) {
+    const { oddsFromPlan } = await import("./oracles/oracleConsult.js");
+    const consulted = await oddsFromPlan(question).catch(() => null);
+    if (consulted?.odds) oddsKey = consulted.odds;
   }
 
   const result = rollYesNo(oddsKey, { question });
@@ -8601,6 +8616,7 @@ Hooks.once("ready", () => {
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
   registerJournalSplitMerge();             // #347 residual: a split World Journal / Progress Tracks journal — the GMs' Merge card
+  registerSceneChallengeOffer();           // #353 Phase 3: a countdown's "Begin the scene challenge" card button
   registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

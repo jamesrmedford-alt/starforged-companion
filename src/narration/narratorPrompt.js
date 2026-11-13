@@ -183,6 +183,11 @@ export function appendSidecarInstruction(options = {}) {
       '  "openQuestions": [{ "question": "<the question, in a few words>",',
       '  "about": "<who or what it concerns>" }]. Do not answer it in the',
       '  prose. Do not emit a question already listed under UNREVEALED.',
+      '- When your prose starts a countdown — a count, a deadline, "before it',
+      '  asks again" — emit it once, as "countdown": { "label": "<what is',
+      '  counting down, in a few words>", "about": "<the id from UNREVEALED it',
+      '  belongs to, or who or what it concerns>" }. Not for one already',
+      '  running (see CLOCKS).',
     );
   }
 
@@ -1830,17 +1835,29 @@ function skeletonHeading(r) {
   return `${kind} — ${r?.subject?.name ?? ''}`;
 }
 
+/** What a plan's fields are called for the narrator — an expedition's read as its journey (issue #353 Phase 3). */
+const ENTRY_LABELS = Object.freeze({
+  default:    { truth: 'Truth', steps: 'Escalation, in order', clues: 'Clues' },
+  mystery:    { truth: 'Answer', steps: 'Escalation, in order', clues: 'Clues' },
+  expedition: { truth: 'What waits at the end', steps: 'Dangers along the way, in order',
+    clues: 'Waypoints, in order (the next not yet shown is the next one reached)' },
+});
+
 /** One decided plan, as the narrator reads it. */
 function formatSkeletonEntry(r) {
+  const label = ENTRY_LABELS[r.kind] ?? ENTRY_LABELS.default;
   const lines = [`### ${skeletonHeading(r)} (id ${r.id})`];
-  lines.push(`${r.kind === 'mystery' ? 'Answer' : 'Truth'}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
+  lines.push(`${label.truth}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
   if (r.wants) lines.push(`Wants: ${r.wants}`);
   if (r.knows) lines.push(`Knows: ${r.knows}`);
   const steps = (r.escalation ?? []).map(e => `[${e.id}] ${e.text}${e.done ? ' (played)' : ''}`);
-  if (steps.length) lines.push(`Escalation, in order: ${steps.join('; ')}`);
+  if (steps.length) lines.push(`${label.steps}: ${steps.join('; ')}`);
   const clues = (r.clues ?? []).map(c => `[${c.id}] ${c.text}${c.revealed ? ' (shown)' : ''}`);
-  if (clues.length) lines.push(`Clues: ${clues.join('; ')}`);
+  if (clues.length) lines.push(`${label.clues}: ${clues.join('; ')}`);
   if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
+  if (r.kind === 'expedition') {
+    lines.push('When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
+  }
   return lines.join('\n');
 }
 
@@ -1915,7 +1932,10 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = 
     );
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
-      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${seeds}`);
+      const journey = q.kind === 'expedition'
+        ? ' Its truth is what waits at the end, its clues are 2-4 waypoints in order, its escalation the danger along the way.'
+        : '';
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}`);
     }
     for (const r of pending) {
       const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
