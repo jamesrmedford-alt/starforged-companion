@@ -68,7 +68,9 @@ async function confirmBothConcurrently(card) {
   table.interceptWrites((w) => (w.kind === 'actor.create' && w.name === 'Vance Oduya' ? hold.promise : undefined));
 
   gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 0 });   // Vance — in flight
-  gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 1 });   // Mira — runs to the end
+  // A person's row has two confirming buttons — Confirm and "No one" (issue
+  // #354 P2-16) — so Mira's Confirm is the third on the card.
+  gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 2 });   // Mira — runs to the end
   await table.settle();
   hold.resolve();                                                         // Vance's create lands
   await table.drain();
@@ -120,13 +122,13 @@ describe('Confirm on an entity that already exists', () => {
     // row still offers Confirm.
     const refuse = table.interceptWrites((w) => (w.kind === 'message.update' && w.id === card._id
       ? new Error('the card write was lost') : undefined));
-    gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 1 });
+    gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 2 });   // Mira's Confirm (after Vance's Confirm and "No one")
     await table.drain();
     refuse();
     expect(named('Mira Kade')).toHaveLength(1);
     expect(rows(card)).toEqual([['Vance Oduya', 'pending'], ['Mira Kade', 'pending']]);
 
-    gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 1 });
+    gm.click(card._id, '[data-action="sf-draft-confirm"]', { index: 2 });   // Mira's Confirm (after Vance's Confirm and "No one")
     await table.drain();
 
     expect(named('Mira Kade')).toHaveLength(1);

@@ -184,9 +184,10 @@ describe('issue #354 P2-15 — a world from before the check reads sanely, and a
 
   it('the duplicates are found, and nothing is merged until a GM asks', async () => {
     await seedDuplicates();
-    expect(gmOf(table).run(() => wj.findDuplicateThreats())).toEqual([
-      { keep: BASE, merge: [`${BASE}: attention on Savela`, `${BASE}: imminent detection: high`] },
-    ]);
+    const groups = gmOf(table).run(() => wj.findDuplicateThreats());
+    expect(groups).toHaveLength(1);
+    expect(groups[0].keep).toBe(BASE);
+    expect([...groups[0].merge].sort()).toEqual([`${BASE}: attention on Savela`, `${BASE}: imminent detection: high`]);
     expect(pages()).toHaveLength(4);
   });
 
