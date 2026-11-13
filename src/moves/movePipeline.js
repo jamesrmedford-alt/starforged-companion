@@ -297,7 +297,9 @@ export async function readMove({
   // reading's own. Not in an open fight (outcomes there are earned with
   // dice), nor when a roll was asked for.
   if (!forcedMoveId && allowNoMove !== false) {
-    const unsure = !interpretation.noMove && interpretation.confidence === "low" && !combatPosition;
+    // A reading that failed (the interpreter's fallback) is not an unsure one:
+    // it goes to the confirm dialog, which says so.
+    const unsure = !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
     if (interpretation.noMove || unsure) {
       const { speakerActor, rollerActor } = rollerFor(speakerActorId);
       const offered = classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null;

@@ -832,11 +832,17 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
   };
 }
 
-/** Whether a parsed reply says no move is being made: `moveId` null / "none" / absent, or `noMove: true`. */
+/**
+ * Whether a parsed reply says no move is being made: an explicit
+ * `"moveId": null` / "none", or `noMove: true`. A reply with no `moveId` at
+ * all ("{}", a cut-off object) says nothing — it is a failed reading, and
+ * falls back as one.
+ */
 function declinesMove(parsed) {
   if (parsed.noMove === true) return true;
+  if (!Object.hasOwn(parsed, "moveId")) return false;
   const id = parsed.moveId;
-  if (id === null || id === undefined) return !parsed.moveName;
+  if (id === null) return !parsed.moveName;
   return typeof id === "string" && /^(none|null|no[ _-]?move)$/i.test(id.trim());
 }
 
@@ -888,6 +894,9 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     rationale:               "Fallback — API response could not be parsed.",
     stakes:                  null,
     mischiefApplied:         false,
+    // A failed reading, not an unsure one: the confirm dialog shows it — it is
+    // not narrated as a low-confidence reading is (movePipeline.js readMove).
+    fallback:                true,
     confidence:              "low",
     playerConfirmed:         false,
   };

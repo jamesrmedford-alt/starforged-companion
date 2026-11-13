@@ -55,11 +55,12 @@ describe("the classifier's character with no speaker (PACING-CHARACTER-SOLO)", (
 
   it("control: Kira's player is classified as Kira", async () => {
     await seat();
-    expect(await sayAs("pl-1")).toEqual({ name: "Kira" });
+    // With the speaker's Actor id, which reads their own connections (issue #354 P2-04).
+    expect(await sayAs("pl-1")).toEqual({ name: "Kira", actorId: "pc-kira" });
   }, 30_000);
 
   it("control: in a one-PC world the one PC, as solo play rolls it", async () => {
     await seat({ secondPc: false });
-    expect(await sayAs("pl-2")).toEqual({ name: "Kira" });
+    expect(await sayAs("pl-2")).toEqual({ name: "Kira", actorId: "pc-kira" });
   }, 30_000);
 });

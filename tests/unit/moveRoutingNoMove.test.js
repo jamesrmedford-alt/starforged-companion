@@ -103,6 +103,13 @@ describe("issue #354 P2-01 — the interpreter can answer that no move is being 
     expect((await interpretMove("my name is Isaac", OPTS)).noMove).toBe(true);
   });
 
+  it("a reply that names no move at all is a failed reading, not a no-move answer", async () => {
+    scriptCalls({ interpreter: {} });
+    const read = await interpretMove("Kira leans on the dockmaster to waive the fee.", OPTS);
+    expect(read.noMove).toBeUndefined();
+    expect(read).toMatchObject({ moveId: "face_danger", confidence: "low", fallback: true });
+  });
+
   it("when a roll was asked for the model is told so, and a no-move answer falls back to the classifier's move", async () => {
     scriptCalls({ interpreter: { moveId: null, rationale: "Nothing attempted." } });
     const read = await interpretMove("Tell us the whole story", { ...OPTS, allowNoMove: false, classifier: { moveId: "compel", category: "social" } });
@@ -361,6 +368,13 @@ describe("issue #354 P2-01 — readMove: a line that makes no move comes back to
     scriptCalls({ interpreter: { moveId: "ask_the_oracle", statUsed: null, rationale: "Low confidence; treat as a narrative exchange.", confidence: "low" } });
     const result = await read();
     expect(result.noMove).toMatchObject({ lowConfidence: true, offeredMove: "ask_the_oracle" });
+  });
+
+  it("a failed reading (the fallback) is not an unsure one: it goes on to the confirm dialog", async () => {
+    scriptCalls({ interpreter: {} });
+    const result = await read();
+    expect(result.noMove).toBeUndefined();
+    expect(result.interpretation).toMatchObject({ moveId: "face_danger", fallback: true });
   });
 
   it("…but not in an open fight, where outcomes are earned with dice", async () => {
