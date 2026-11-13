@@ -76,10 +76,13 @@ import {
   registerDeletedChatHook,
   registerPublishedReflectionHook,
   catchUpUnsummarisedSession,
+  narratePacedInput,
+  tellPacedLineNotNarrated,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
+import { logPacingDecision } from "./pacing/telemetry.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
@@ -184,6 +187,7 @@ import {
   applyPaceCommand,
   markForceNextAsMove,
   resetRecentDensity,
+  reviseLastDecision,
 } from "./pacing/router.js";
 import {
   isEncounterCommand,
@@ -881,7 +885,10 @@ export function registerChatHook() {
     // roller has no character in the round runs here as it does today, at
     // once while the round collects and after it when it resolves (the
     // driver hands it back, `batchReleased`). Commands ran above, as usual.
-    if (!hookOptions?.batchReleased && isBatchModeEnabled() && await handleBatchModeLine(message)) return;
+    // A "Not rolled" notice's "Narrate it — no move" posts the line again to
+    // be narrated as it stands (issue #354 P2-01): never a round's entry.
+    const narrateOnly = message.flags?.[MODULE_ID]?.narrateOnly === true;
+    if (!hookOptions?.batchReleased && isBatchModeEnabled() && !narrateOnly && await handleBatchModeLine(message)) return;
 
     // Single-emitter gate. The createChatMessage hook fires on every
     // connected client; without this gate, every client ran pacing →
@@ -945,6 +952,13 @@ export function registerChatHook() {
 
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
+
+    // The line is narrated as it stands, with no move read into it (issue
+    // #354 P2-01): its author cancelled the reading and asked for that.
+    if (narrateOnly) {
+      await narrateLineWithoutMove(narration, speakerActorId, { why: "narrated without a move at its author's request" });
+      return;
+    }
 
     // Per-message bypass — the "Roll <move>" button on an NWMA card re-posts
     // the player's input with `bypassPacing: true` so the classifier is
@@ -1096,7 +1110,28 @@ export function registerChatHook() {
         narration, speakerActorId, campaignState, apiKey, dial,
         forced: forcedMoveId ? { moveId: forcedMoveId, moveTarget: forcedMoveTarget, moveTargetId: forcedMoveTargetId } : null,
         swearToConnection,
+        // What the classifier made of the line, for the interpreter (issue
+        // #354 P2-02) — on a MOVE decision it named a move the router dropped.
+        classifier: pacingResult.decision === "MOVE" && (pacingResult.nominatedMove || pacingResult.category)
+          ? { moveId: pacingResult.nominatedMove ?? null, category: pacingResult.category ?? null, reasoning: pacingResult.reasoning ?? null }
+          : null,
+        // The line may be read as no move at all (issue #354 P2-01) — unless a
+        // roll was asked for (`!roll`), or pacing is switched off (every line
+        // is a move then, as it always was).
+        allowNoMove: !pacingResult.forced && !pacingResult.pacingDisabled,
       });
+      // No move is being made, or the reading is too unsure to roll: the line
+      // is narrated, with the move it might be offered on its card (issue #354
+      // P2-01). Under the move lock, which the finally releases.
+      if (read.noMove) {
+        await narrateLineWithoutMove(narration, speakerActorId, {
+          offeredMove: read.noMove.offeredMove,
+          why: read.noMove.lowConfidence ? "the move reading was unsure — narrated, the move offered" : "the interpreter read no move in it",
+          rationale: read.noMove.rationale,
+          pacing: pacingResult,
+        });
+        return;
+      }
       if (read.targetChoice) {
         await postTargetChoiceCard(read, { narration, speakerActorId });
         return;
@@ -1109,8 +1144,19 @@ export function registerChatHook() {
       // and the button read taken for good (alpha 23 playtest; issue #347
       // AB06). A typed line goes back to its author to re-word.
       const accepted = await confirmInterpretation(interpretation, { forced: !!forcedMoveId });
+      // "No move — narrate" (issue #354 P2-01): the reading was wrong, the
+      // line is not a move at all — it is narrated as it stands, with no move
+      // offered. Cancel could only send the player off to re-word a line that
+      // needed no re-wording.
+      if (accepted === "narrate") {
+        await narrateLineWithoutMove(narration, speakerActorId, {
+          why: `the reading as ${moveDisplayName(interpretation?.moveId ?? "") || "a move"} was turned down — narrated without a move`,
+          pacing: pacingResult,
+        });
+        return;
+      }
       if (!accepted) {
-        await moveNotRolled(message, "cancelled", interpretation?.moveId ?? null);
+        await moveNotRolled(message, "cancelled", interpretation?.moveId ?? null, { speakerActorId });
         return;
       }
 
@@ -1691,7 +1737,7 @@ async function postSessionGateNotice(message, { held = false } = {}) {
  * @param {boolean} [opts.handedBack] — the card that posted it is pressable again
  * @returns {Promise<void>}
  */
-async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false }) {
+async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false, speakerActorId = null }) {
   const f        = message?.flags?.[MODULE_ID] ?? {};
   const forced   = typeof f.forcedMoveId === "string" && !!f.forcedMoveId;
   const owed     = f.owedMove === true;
@@ -1705,22 +1751,34 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
       : reason === "refused"
         ? `The world did not save the start of ${forced ? label : "this line's move"}, so nothing was rolled.`
         : `Reading ${forced ? label : "this line"} failed, so nothing was rolled.`;
+  // A cancelled reading of a typed line offers the narration it may have
+  // wanted all along (issue #354 P2-01): the notice said only "re-word".
+  const offerNarrate = !forced && reason === "cancelled";
   const next = !forced
     ? (reason === "busy" ? "Send it again once that move's narration is posted."
-      : reason === "refused" ? "Send it again." : "Re-word your line and send it again.")
+      : reason === "refused" ? "Send it again."
+      : offerNarrate ? "Re-word your line and send it again — or, if it was no move at all, have it narrated as it stands."
+      : "Re-word your line and send it again.")
     : owed
       ? (handedBack ? "The roll is still owed: its card is open again." : "The roll is still owed — ask the GM to roll it.")
       : handedBack
         ? "Its button is live again — press it when you are ready."
         : (reason === "busy" ? "Press its button again once that move's narration is posted." : "Make the move again when you are ready.");
   const lineText = forced ? "" : String(message?.content ?? "").trim();
+  const narrateButton = offerNarrate && lineText
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-narrate-no-move">Narrate it — no move</button></div>`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p>${narrateButton}</div>`,
     whisper: [...new Set([authorId, ...(forced ? speakerOwnerIds(message) : []), ...gmUserIds()].filter(Boolean))],
     flags: { [MODULE_ID]: {
       moveNotRolledNotice: reason,
       ...(forced && message?.id ? { gatedMessageId: message.id } : {}),
       ...(lineText && authorId ? { restoreLineFor: authorId, restoreLine: lineText } : {}),
+      // "Narrate it — no move" (cardActions.applyNotRolledNarrate): the line's
+      // speaker, and its author, who may press it.
+      ...(narrateButton ? { narrateOffered: true, lineActorId: speakerActorId ?? null, lineAuthorId: authorId ?? null,
+        lineSpeaker: message?.speaker ?? null } : {}),
     } },
   });
 }
@@ -1735,13 +1793,54 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
  * @param {string|null} moveId
  * @returns {Promise<void>}
  */
-async function moveNotRolled(message, reason, moveId) {
+async function moveNotRolled(message, reason, moveId, { speakerActorId = null } = {}) {
   const handedBack = await releaseSourceCard(message).catch(err => {
     console.warn(`${MODULE_ID} | handing the card back failed:`, err?.message ?? err);
     return false;
   });
-  await postMoveNotRolledNotice(message, { reason, moveId, handedBack }).catch(err =>
+  await postMoveNotRolledNotice(message, { reason, moveId, handedBack, speakerActorId }).catch(err =>
     console.warn(`${MODULE_ID} | the not-rolled notice failed:`, err?.message ?? err));
+}
+
+/**
+ * Narrate a typed line as it stands, with no move rolled (issue #354 P2-01):
+ * the interpreter read no move in it, its reading was too unsure to roll, or
+ * its author turned the reading down ("No move — narrate" on the confirm
+ * dialog, "Narrate it — no move" on a "Not rolled" notice). The paced
+ * narration the classifier's NARRATIVE decision gets, on a working copy
+ * (pacing/router.js routePacedInput; issue #342 Z02) — `offeredMove`, when
+ * there is one, is offered on its card as a NARRATIVE_WITH_MOVE_AVAILABLE
+ * move is. The Pacing Telemetry journal records why. Never throws.
+ *
+ * @param {string} narration — the player's line
+ * @param {string|null} speakerActorId
+ * @param {{ offeredMove?: string|null, why: string, rationale?: string, pacing?: Object|null }} opts
+ * @returns {Promise<void>}
+ */
+async function narrateLineWithoutMove(narration, speakerActorId, { offeredMove = null, why, rationale = "", pacing = null } = {}) {
+  const stored   = game.settings.get(MODULE_ID, "campaignState");
+  const decision = offeredMove ? "NARRATIVE_WITH_MOVE_AVAILABLE" : "NARRATIVE";
+  console.debug(`${MODULE_ID} | the line is narrated without a roll: ${why}.`);
+  // The classifier's MOVE for this line is in the recent-density window: it
+  // was not a move after all.
+  if (pacing?.decision === "MOVE") reviseLastDecision(decision);
+  logPacingDecision({
+    playerText:    narration,
+    decision,
+    suggestedMove: offeredMove,
+    category:      pacing?.category ?? "social",
+    confidence:    typeof pacing?.confidence === "number" ? pacing.confidence : null,
+    reasoning:     `[${why}] ${rationale ?? ""}`.trim(),
+    sessionId:     stored?.currentSessionId ?? null,
+    sessionNumber: stored?.sessionNumber ?? null,
+  }).catch(err => console.warn(`${MODULE_ID} | pacing telemetry write failed:`, err?.message ?? err));
+  try {
+    const working = foundry.utils.deepClone(stored);
+    await narratePacedInput(narration, working, { suggestedMove: offeredMove, speakerActorId });
+  } catch (err) {
+    console.error(`${MODULE_ID} | the line's narration could not be started:`, err);
+    await tellPacedLineNotNarrated(stored, err);
+  }
 }
 
 /**
@@ -4065,7 +4164,8 @@ function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
       ? game.actors?.get(actorId)
       : (pcs.length === 1 ? pcs[0] : null);
     if (!actor) return null;
-    return { name: actor.name ?? null };
+    // The id reads the speaker's own connections (issue #354 P2-04).
+    return { name: actor.name ?? null, actorId: actor.id ?? null };
   } catch {
     return null;
   }
@@ -9405,6 +9505,27 @@ onChatMessageRender((message, root) => {
     return;
   }
   wireRollerFollowup(message, root, "sf-paced-roll", "paced.roll", "rolled");
+});
+
+/**
+ * Wire a "Not rolled" notice's "Narrate it — no move" (issue #354 P2-01): a
+ * typed line whose reading was cancelled is narrated as it stands. A click
+ * relays to the canonical GM ("notRolled.narrate" →
+ * cardActions.applyNotRolledNarrate), which claims the notice (`narrated`) and
+ * posts the line again once, flagged `narrateOnly`, as its speaker. Its
+ * author or a GM may press it — the notice is whispered to them.
+ */
+onChatMessageRender((message, root) => {
+  const f = message.flags?.[MODULE_ID];
+  if (!f?.moveNotRolledNotice || !f?.narrateOffered) return;
+  if (liveCardFlags(message)?.narrated) {
+    const btn = root?.querySelector?.('[data-action="sf-narrate-no-move"]');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = "Narrated";
+    return;
+  }
+  wireRollerFollowup(message, root, "sf-narrate-no-move", "notRolled.narrate", "narrated");
 });
 
 /**

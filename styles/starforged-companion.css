@@ -1420,6 +1420,7 @@
 
 .confirm-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
   padding-top: 0.25rem;
@@ -1436,7 +1437,8 @@
 }
 .btn-accept:hover { background: #3a6a3a; }
 
-.btn-reject {
+.btn-reject,
+.btn-narrate {
   background: var(--color-bg-btn, #f0f0f0);
   font-size: var(--font-size-13, 13px);
   padding: 0.3rem 0.8rem;

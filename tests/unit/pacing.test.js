@@ -32,6 +32,9 @@ vi.mock('../../src/api-proxy.js', () => ({
 vi.mock('../../src/narration/narrator.js', () => ({
   narratePacedInput: vi.fn(async () => 'mocked narration'),
   getRecentSceneForReading: vi.fn(() => ''),
+  // The fellow-PC rule on a MOVE decision (issue #354 P2-06) has its own test
+  // file (moveRoutingNoMove.test.js); here no line is spoken to a fellow PC.
+  lineIsToAFellowPlayerCharacter: vi.fn(() => false),
 }));
 
 vi.mock('../../src/pacing/telemetry.js', () => ({
@@ -1015,32 +1018,53 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
   });
 });
 
-// Issue #321 U44: connections were read from game.journal, but they are
-// NPC-card Actors, so the CHARACTER section only ever said "names
-// unavailable" and the addressee-is-a-Connection rule never fired.
-describe('buildClassifierContext — connection names', () => {
+// Issue #354 P2-04 (the maintainer's decision): the classifier is told the
+// SPEAKER'S OWN connections — the relationships on that character's sheet —
+// not every NPC card. Under FOLDER-002 every named individual is a
+// connection-type card, so the old list (issue #321 U44: every id in
+// `connectionIds`) made every tracked NPC "a Connection", and every line
+// spoken to one leaned toward a roll.
+describe('buildClassifierContext — the speaker\'s own connections', () => {
   afterEach(() => { global.game.actors._reset?.(); });
 
-  const connectionsLine = (campaignState) => buildClassifierContext({
+  const bond = (name, extra = {}) => ({ id: `bond-${name}`, type: 'progress', name,
+    system: { subtype: 'bond', rank: 'dangerous', current: 0, completed: false, ...(extra.system ?? {}) },
+    flags: extra.flags ?? {} });
+  const connectionsLine = (character, campaignState = {}) => buildClassifierContext({
     playerText:        'I lean on Kael Dros for the docking codes.',
     campaignState,
-    character:         { name: 'Kira' },
+    character,
     recentMoveDensity: { count: 0, window: 5 },
     pacingConfig:      BASE_PACING_CFG,
-  }).userMessage.split('\n').find(l => l.startsWith('Connections:'));
+  }).userMessage.split('\n').find(l => /connections:/.test(l));
 
-  it('names each Actor-hosted connection with its disposition', () => {
-    const kael  = addConnectionEntity(null, { name: 'Kael Dros', disposition: 'Helpful' });
-    const sable = addConnectionEntity(null, { name: 'Sable', disposition: 'Hostile' });
-    expect(connectionsLine({ connectionIds: [kael.journalId, sable.journalId] }))
-      .toBe('Connections: Kael Dros (Helpful), Sable (Hostile)');
+  it('lists the connections on the speaker\'s sheet, a forged bond marked, a severed one left out', () => {
+    global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira', items: { contents: [
+      bond('Kael Dros'),
+      bond('Sable', { system: { completed: true } }),
+      bond('Old Marrow', { flags: { 'starforged-companion': { lost: true } } }),
+    ] } }));
+    expect(connectionsLine({ name: 'Kira', actorId: 'pc-kira' }))
+      .toBe("Kira's connections: Kael Dros, Sable (bonded)");
   });
 
-  it('says the names are unavailable only when no id resolves', () => {
-    const kael = addConnectionEntity(null, { name: 'Kael Dros', disposition: 'Helpful' });
-    expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (Helpful)');
-    expect(connectionsLine({ connectionIds: ['actor-gone'] })).toBe('Connections: 1 active (names unavailable)');
-    expect(connectionsLine({ connectionIds: [] })).toBe('Connections: (none recorded)');
+  it('an NPC card that is on nobody\'s sheet is not a connection of the speaker', () => {
+    const escort = addConnectionEntity(null, { name: 'The Escort', disposition: 'Hostile' });
+    global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira' }));
+    expect(connectionsLine({ name: 'Kira', actorId: 'pc-kira' }, { connectionIds: [escort.journalId] }))
+      .toBe("Kira's connections: (none)");
+  });
+
+  it('another character\'s connection is not the speaker\'s', () => {
+    global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira', items: { contents: [bond('Kael Dros')] } }));
+    global.game.actors._set('pc-orin', global.makeTestActor({ id: 'pc-orin', name: 'Orin' }));
+    expect(connectionsLine({ name: 'Orin', actorId: 'pc-orin' })).toBe("Orin's connections: (none)");
+  });
+
+  it('with no speaker resolved it says none, and never throws', () => {
+    expect(connectionsLine(null)).toBe("The speaker's connections: (none)");
+    expect(connectionsLine({ name: 'Kira' })).toBe("Kira's connections: (none)");
+    expect(connectionsLine({ name: 'Kira', actorId: 'actor-gone' })).toBe("Kira's connections: (none)");
   });
 });
 

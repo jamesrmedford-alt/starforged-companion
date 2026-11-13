@@ -243,6 +243,8 @@ export const GM_ACTIONS = Object.freeze({
   // Known-issues PACED-ROLL-OPEN-PRESS — the same shape for a paced card's "Roll <move>"
   // and a "Which fight?" pick (checked against the card's own fights)
   "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll" },
+  // Issue #354 P2-01 — a "Not rolled" notice's "Narrate it — no move", claimed once on the notice
+  "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate" },
   "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick" },
   "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
   // Issue #330 D1 — a Fulfill Your Vow's / Forge a Bond's miss "🔁 Recommit", claimed once on the card

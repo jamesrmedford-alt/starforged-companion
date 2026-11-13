@@ -30,7 +30,7 @@
 
 import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
-import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated } from "../narration/narrator.js";
+import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated, lineIsToAFellowPlayerCharacter } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -63,6 +63,19 @@ export function recordRecentDecision({ decision, sceneTag = null, window = 5 }) 
   }
   _recent.push({ decision, timestamp: Date.now(), sceneTag: tag });
   while (_recent.length > window) _recent.shift();
+}
+
+/**
+ * Rewrite the newest decision in the density buffer — a line the classifier
+ * called a MOVE that was narrated after all (the interpreter read no move in
+ * it, or its author turned the reading down: issue #354 P2-01), so it does not
+ * count toward "recent moves". A no-op on an empty buffer.
+ *
+ * @param {string} decision — a PACING_DECISION value
+ */
+export function reviseLastDecision(decision) {
+  const last = _recent[_recent.length - 1];
+  if (last) last.decision = decision;
 }
 
 /**
@@ -155,13 +168,15 @@ function defaultDial(category) {
  * @param {Object} args
  * @param {string} args.playerText
  * @param {Object} args.campaignState
- * @param {Object|null} args.character
+ * @param {{ name?: string|null, actorId?: string|null }|null} args.character — the
+ *   speaker (their Actor id reads their own connections — issue #354 P2-04)
  * @param {string} args.apiKey
  * @param {boolean} [args.ignoreForceMove] — a round's reading: `pacing.forceNextAsMove` is not read
  * @returns {Promise<{
  *   runMove: boolean,
  *   decision: string,
  *   suggestedMove: string|null,
+ *   nominatedMove?: string|null,
  *   suggestedTargetId?: string|null,
  *   category: string,
  *   confidence: number,
@@ -176,7 +191,7 @@ export async function decidePacing({
 
   // Master switch — when disabled, behave exactly like the existing pipeline.
   if (!pacingConfig.enabled) {
-    return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "pacing disabled" };
+    return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "pacing disabled", pacingDisabled: true };
   }
 
   // Recovery override — `!roll` sets forceNextAsMove on campaignState. Not
@@ -214,6 +229,19 @@ export async function decidePacing({
     result.reasoning = `[combat-active backstop: NWMA→MOVE] ${result.reasoning ?? ""}`.trim();
   }
 
+  // A social move against a fellow player character is roleplay, not a roll
+  // (finding G, narrator.js suppressPcDirectedSocialMove) — on a MOVE decision
+  // too (issue #354 P2-06). The rule ran only where a move was offered: on
+  // MOVE the nomination was dropped, so "Karthik, please answer the hail",
+  // read as Compel against Karthik, went on to the roll dialog. The line is
+  // narrated, with no move offered.
+  if (result.decision === PACING_DECISION.MOVE
+      && lineIsToAFellowPlayerCharacter(result.suggestedMove, playerText, character?.name ?? null, { campaignState })) {
+    result.decision      = PACING_DECISION.NARRATIVE;
+    result.suggestedMove = null;
+    result.reasoning     = `[spoken to a fellow player character: roleplay, not a roll] ${result.reasoning ?? ""}`.trim();
+  }
+
   // Record the decision for both the in-memory density window and the
   // persistent telemetry journal.
   recordRecentDecision({
@@ -239,6 +267,11 @@ export async function decidePacing({
       runMove: true,
       decision: result.decision,
       suggestedMove: null,
+      // The move the classifier named, for the interpreter to read the line
+      // with (issue #354 P2-02): it was dropped here, and the interpreter
+      // picked again from scratch — a different move on five of the playtest's
+      // seven rolled lines. Not an offer: `suggestedMove` stays null on MOVE.
+      nominatedMove: result.suggestedMove ?? null,
       category: result.category,
       confidence: result.confidence,
       reasoning: result.reasoning,

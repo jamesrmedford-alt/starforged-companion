@@ -13,7 +13,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
-import { getConnection } from "../entities/connection.js";
+import { readConnections, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 
@@ -182,9 +182,27 @@ suggestedMove set_a_course (or MOVE at dial 6+). NOT plain NARRATIVE.
 If recent move density in the scene is high, lean toward NARRATIVE to allow
 pacing recovery — don't stack rolls.
 
-If the addressee is a Connection (the player's input talks to, presses, reads,
-or reaches toward a named connection), bias toward MOVE in the social category.
-Random NPCs do not carry this bias.
+TALKING IS NOT A MOVE — plain conversation is narration, whoever it is with:
+asking a question, answering one, agreeing or refusing, choosing between
+options someone offered, saying a name, telling someone what happened. Classify
+it NARRATIVE — or NARRATIVE_WITH_MOVE_AVAILABLE when the answer could cost or
+win something. A social MOVE is a line that presses someone to do or give
+something they are reluctant to (compel), or that tests or deepens a
+relationship; a line that carries a threat or a danger — implied menace
+counts — is a move too (face_danger, compel).
+
+THE SPEAKER'S CONNECTIONS — when such a pressing or testing line is spoken to
+one of THE SPEAKER'S CONNECTIONS listed under CHARACTER (the relationships on
+that character's own sheet), lean toward MOVE in the social category: the
+relationship is at stake. Any other NPC carries no lean, and a connection
+carries none for plain conversation.
+
+AN EVERYDAY ACTION WITH NOTHING AT RISK IS NOT A MOVE — answering a hail,
+opening a channel, powering a system up, walking to a station, picking
+something up: NARRATIVE, in any category. Operating a ship's systems is a move
+only when the fiction puts something at risk in doing it. (Travel is the
+exception already stated: a journey toward an uncharted destination is at least
+offered as undertake_an_expedition, hazard or not.)
 
 ## CATEGORY DEFINITIONS
 
@@ -268,7 +286,8 @@ FATE
  * @param {Object} args
  * @param {string}   args.playerText
  * @param {Object}   args.campaignState
- * @param {Object|null} args.character
+ * @param {{ name?: string|null, actorId?: string|null }|null} args.character — the
+ *   speaker: their name, and their Actor id for their own connections
  * @param {{count: number, window: number}} args.recentMoveDensity
  * @param {{dials: Object, sceneOverride?: {modifier:number,label:string}|null}} args.pacingConfig
  * @param {boolean} [args.combatActive] — a fight is open (the COMBAT IS ACTIVE rule)
@@ -298,7 +317,7 @@ export function buildClassifierContext({
   const density = recentMoveDensity ?? { count: 0, window: 5 };
   const densityLine = `Last ${density.window} inputs in current scene: ${density.count} were moves.`;
 
-  const connectionLine = formatConnections(campaignState, character);
+  const connectionLine = formatConnections(character);
   const sceneLine      = formatScene(campaignState);
   const chartedLine    = formatChartedPlaces(campaignState);
   const combatLine     = combatActive
@@ -525,22 +544,42 @@ function fallbackDecision(reason) {
 // CONTEXT EXTRACTION — minimal pure helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function formatConnections(campaignState, _character) {
-  const ids = campaignState?.connectionIds ?? [];
-  if (!ids.length) return "Connections: (none recorded)";
-  // Connections are NPC-card Actors (FOLDER-002): read each record through its
-  // host id (issue #321 U44 — they were looked up in game.journal, so the
-  // classifier only ever saw "names unavailable" and its addressee-is-a-
-  // Connection rule never fired). getConnection never throws.
-  const names = [];
-  for (const id of ids.slice(0, 8)) {
-    const data = getConnection(id);
-    if (!data?.name) continue;
-    // Its disposition — the field the record holds (issue #325 W22).
-    const status = data.disposition ?? "";
-    names.push(status ? `${data.name} (${status})` : data.name);
+// The most connections of the speaker's the classifier is told of.
+const SPEAKER_CONNECTIONS_CAP = 8;
+
+/**
+ * The speaker's own connections — the relationships on that character's sheet
+ * (actorBridge.readConnections: the bond Items a Make a Connection or a
+ * confirmed NPC put there), a severed one left out — for the THE SPEAKER'S
+ * CONNECTIONS rule (issue #354 P2-04, the maintainer's decision).
+ *
+ * This listed every NPC card (`campaignState.connectionIds`): under FOLDER-002
+ * every named individual is a connection-type card, so "the addressee is a
+ * Connection → lean toward MOVE" covered every tracked NPC, and every line
+ * spoken to one — a question, an answer, "my name is Isaac" — was read as
+ * Compel. A Starforged connection is a relationship a character has, so the
+ * list is the speaker's own. Never throws.
+ *
+ * @param {{ name?: string|null, actorId?: string|null }|null} character — the speaker
+ * @returns {string}
+ */
+function formatConnections(character) {
+  const who = character?.name ? `${character.name}'s connections` : "The speaker's connections";
+  let names = [];
+  try {
+    const actor = character?.actorId ? globalThis.game?.actors?.get?.(character.actorId) : null;
+    if (isPlayerCharacterActor(actor)) {
+      names = readConnections(actor)
+        .filter(c => c?.name && !c.lost)
+        .map(c => `${String(c.name).replace(/[\r\n]+/g, " ").trim()}${c.completed ? " (bonded)" : ""}`);
+    }
+  } catch (err) {
+    console.warn(`starforged-companion | pacing classifier: the speaker's connections could not be read:`, err?.message ?? err);
   }
-  return `Connections: ${names.length ? names.join(", ") : `${ids.length} active (names unavailable)`}`;
+  const unique = [...new Set(names.filter(Boolean))];
+  if (!unique.length) return `${who}: (none)`;
+  const shown = unique.slice(0, SPEAKER_CONNECTIONS_CAP);
+  return `${who}: ${shown.join(", ")}${unique.length > shown.length ? `, +${unique.length - shown.length} more` : ""}`;
 }
 
 // The most charted places the classifier is told of.

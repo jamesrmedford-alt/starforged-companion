@@ -598,7 +598,12 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). Each entry leads with the player's line that
+playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
+speaker line, in the narrator's words) and what the classifier made of the line
+(`readMove`'s `classifier` → a PACING READ hint), and may answer that no move
+is being made: that line — or a low-confidence reading outside a fight — is
+narrated as a paced line, the move it might be offered on its card
+(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06). Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several

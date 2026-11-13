@@ -242,12 +242,21 @@ async function travelDestinationUnread(moveId) {
  * @param {{ moveId: string, moveTarget?: string|null, moveTargetId?: string|null }|null} [args.forced]
  * @param {string|null} [args.swearToConnection] — a forced Swear an Iron Vow's connection
  * @param {boolean} [args.gatherChoices] — a round's reading: go on past a target choice
+ * @param {{ moveId?: string|null, category?: string|null, reasoning?: string|null }|null} [args.classifier] —
+ *   the pacing classifier's reading of the line, for the interpreter (issue #354 P2-02)
+ * @param {boolean} [args.allowNoMove] — whether the line may be read as no move
+ *   (issue #354 P2-01): false when a roll was asked for (`!roll`, a round's
+ *   "Roll a move instead"). A forced move is never read as none.
  * @returns {Promise<{ interpretation: Object, combatPosition: *, targetChoice: Object|null,
- *   speakerActor: Actor|null, rollerActor: Actor|null }>}
+ *   speakerActor: Actor|null, rollerActor: Actor|null, noMove?: { rationale: string, lowConfidence: boolean,
+ *   offeredMove: string|null } }>} — `noMove`: the line makes no move (or its
+ *   reading is too unsure to roll): the caller narrates it, with `offeredMove`
+ *   — the move it might be — offered on the narration's card; nothing else is read
  */
 export async function readMove({
   narration, speakerActorId, campaignState, apiKey, dial,
   forced = null, swearToConnection = null, gatherChoices = false,
+  classifier = null, allowNoMove = true,
 }) {
   const forcedMoveId       = forced?.moveId ?? null;
   const forcedMoveTarget   = forced?.moveTarget ?? null;
@@ -274,7 +283,34 @@ export async function readMove({
         roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
         recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+        // What the classifier made of it, and whether it may be no move at all
+        // (issue #354 P2-01, P2-02).
+        classifier, allowNoMove,
       });
+
+  // No move is being made — or the reading is too unsure to roll (issue #354
+  // P2-01). The interpreter could only ever answer with a move: "Tell us the
+  // whole story" came back as Ask the Oracle with "this is a narrative
+  // exchange… low confidence" in its rationale, and the roll dialog opened
+  // all the same — `confidence` was read by nothing. The caller narrates the
+  // line and offers the move it might be: the classifier's, else the unsure
+  // reading's own. Not in an open fight (outcomes there are earned with
+  // dice), nor when a roll was asked for.
+  if (!forcedMoveId && allowNoMove !== false) {
+    const unsure = !interpretation.noMove && interpretation.confidence === "low" && !combatPosition;
+    if (interpretation.noMove || unsure) {
+      const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+      const offered = classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null;
+      return {
+        interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor,
+        noMove: {
+          rationale:     interpretation.rationale ?? "",
+          lowConfidence: unsure,
+          offeredMove:   typeof offered === "string" && MOVES[offered] ? offered : null,
+        },
+      };
+    }
+  }
   if (swearToConnection && interpretation?.moveId === "swear_an_iron_vow") {
     interpretation.swearToConnection = swearToConnection;
   }
@@ -554,11 +590,16 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     ? readAs.forced
     : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
+  // The classifier's reading of a MOVE line, for the interpreter (issue #354 P2-02).
+  let classifier = null;
   if (!readAs?.move) {
     const pacing = await decidePacing({
-      playerText: text, campaignState, character: speakerName ? { name: speakerName } : null,
+      playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
       apiKey, ignoreForceMove: true,
     });
+    if (pacing.runMove) {
+      classifier = { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
+    }
     if (!pacing.runMove) {
       // The offer is the classifier's alone — no narration exists yet to
       // reconcile it with — and never a social move against a fellow PC
@@ -576,7 +617,17 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     forced: forced ? { moveId: forced.moveId, moveTarget: forced.moveTarget ?? null, moveTargetId: forced.moveTargetId ?? null } : null,
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
+    classifier,
+    // "Roll a move instead" asked for a roll: the line is read as a move.
+    allowNoMove: !readAs?.move,
   });
+  // The interpreter read no move in it (issue #354 P2-01): a narrative
+  // reading, as the classifier's own is — the window's "Roll a move instead"
+  // and "Roll ⟨move⟩" stay. Never a social move against a fellow PC.
+  if (read.noMove) {
+    const suggestedMove = suppressPcDirectedSocialMove(read.noMove.offeredMove, text, speakerName);
+    return { kind: READING_KIND.NARRATIVE, suggestedMove: suggestedMove ?? null, suggestedTargetId: null };
+  }
   return readingFromMove(read, { forced });
 }
 

@@ -4815,6 +4815,52 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
   return false;
 }
 
+// Words of an NPC's name nobody is called by ("the Escort", "Keeper of Ash").
+const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
+
+/**
+ * Whether a line read as a social move is spoken to a fellow player character
+ * — on the MOVE path, where the line would otherwise be rolled (issue #354
+ * P2-06; pacing/router.js decidePacing). Stricter than the offer's rule
+ * (suppressPcDirectedSocialMove, which only withholds a suggestion): the line
+ * must name another PC and name no tracked NPC, so "Archer, hand Karthik the
+ * codes or I take them" — a Compel of Archer — is still rolled.
+ *
+ * @param {string|null} moveId — the move the classifier named
+ * @param {string} playerText
+ * @param {string|null} speakerName
+ * @param {{ campaignState?: Object|null, pcActors?: Array<{name?: string}>, npcNames?: string[] }} [opts] —
+ *   `pcActors` / `npcNames` injectable for tests
+ * @returns {boolean}
+ */
+export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState = null, pcActors, npcNames } = {}) {
+  if (!moveId || !PC_DIRECTED_SOCIAL_MOVES.has(moveId)) return false;
+  if (!inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors)) return false;
+  const text = String(playerText ?? '').toLowerCase();
+  let names = npcNames;
+  if (!Array.isArray(names)) {
+    names = [];
+    try {
+      for (const id of campaignState?.connectionIds ?? []) {
+        const name = getConnection(id)?.name;
+        if (name) names.push(name);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: the NPC names could not be read for the fellow-PC check:`, err?.message ?? err);
+    }
+  }
+  for (const raw of names) {
+    const name = String(raw ?? '').trim().toLowerCase();
+    if (!name) continue;
+    // The full name, or any word of it a player would call them by ("Archer").
+    const tokens = new Set([name, ...name.split(/\s+/).filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t))]);
+    for (const t of tokens) {
+      if (wholeWordPattern(t, '').test(text)) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Drop a social-move nomination that targets a fellow player character
  * (finding G); pass any other move through. The nomination is read as a move

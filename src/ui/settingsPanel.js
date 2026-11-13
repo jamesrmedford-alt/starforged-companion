@@ -2494,6 +2494,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
     actions: {
       accept: MoveConfirmDialog.#onAccept,
       reject: MoveConfirmDialog.#onReject,
+      narrate: MoveConfirmDialog.#onNarrate,
     },
   };
 
@@ -2503,7 +2504,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
    * action handlers bound) before the returned promise can be observed.
    * @param {object} interpretation
    * @param {{ forced?: boolean }} [opts] — a forced move (a card button's)
-   * @returns {Promise<boolean>}
+   * @returns {Promise<boolean|"narrate">} true to roll; false when cancelled
+   *   or closed; "narrate" for a typed line that is no move at all — it is
+   *   narrated as it stands (issue #354 P2-01; never offered for a forced move)
    */
   static async prompt(interpretation, { forced = false } = {}) {
     const dialog = new MoveConfirmDialog({
@@ -2563,6 +2566,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
         ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
+          ${context.forced ? '' : `<button class="settings-btn btn-narrate" data-action="narrate" title="This line is not a move: nothing is rolled, and the narrator carries the scene on from it as it stands.">No move — narrate</button>`}
           <button class="settings-btn btn-reject" data-action="reject" title="${context.forced ? 'Nothing is rolled; the button that made this move can be pressed again.' : 'Nothing is rolled; your line goes back in your chat box to re-word and send again.'}">${context.forced ? 'Cancel' : 'Cancel — re-word'}</button>
         </div>
       </div>
@@ -2620,6 +2624,13 @@ export class MoveConfirmDialog extends ApplicationV2 {
 
   static async #onReject(_event, _target) {
     this.#settle(false);
+    this.close({ animate: false });
+  }
+
+  // "No move — narrate" (issue #354 P2-01): the line is narrated as it
+  // stands. Not offered for a forced move, and never settled as one.
+  static async #onNarrate(_event, _target) {
+    this.#settle(this.#forced ? false : 'narrate');
     this.close({ animate: false });
   }
 }
@@ -2855,11 +2866,12 @@ export function openSettingsPanel() {
 /**
  * Show the move confirm dialog and await the choice: true to roll, false when
  * it is cancelled or closed (nothing is rolled — index.js tells the table and
- * hands a card's button back).
+ * hands a card's button back), or "narrate" when a typed line is no move at
+ * all and is to be narrated as it stands (issue #354 P2-01).
  *
  * @param {object} interpretation
  * @param {{ forced?: boolean }} [opts] — a forced move: its cancel reads "Cancel"
- * @returns {Promise<boolean>}
+ * @returns {Promise<boolean|"narrate">}
  */
 export async function confirmInterpretation(interpretation, opts = {}) {
   return MoveConfirmDialog.prompt(interpretation, opts);

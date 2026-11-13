@@ -130,9 +130,10 @@ describe("buildContextSummary — the roller's support vehicles and companions",
     expect(summary).not.toContain(`"Starship"`);
   });
 
-  it("control: no roller, or one with neither, adds nothing", () => {
+  it("control: no roller, or one with neither, adds no vehicle or companion line", () => {
     expect(buildContextSummary({})).toBe("No active tracks yet.");
     const ren = makeTestActor({ id: "pc-ren", name: "Ren", type: "character", items: { contents: [] } });
-    expect(buildContextSummary({}, { roller: ren })).toBe("No active tracks yet.");
+    // The roller is named as the speaker (issue #354 P2-06), and nothing more.
+    expect(buildContextSummary({}, { roller: ren })).toBe("The character speaking and acting this turn is Ren. No active tracks yet.");
   });
 });
