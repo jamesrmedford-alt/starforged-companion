@@ -866,6 +866,13 @@ export function registerChatHook() {
     // never sees one) but executes only where its run-on policy says.
     if (await dispatchChatCommand(message, CHAT_COMMAND_ROUTES)) return;
 
+    // A line under the minimum length is not sent to the narrator — and its
+    // author is told, on their own client (issue #354 P2-05).
+    if (isLineTooShortForNarrator(message)) {
+      await tellLineTooShort(message).catch(err =>
+        console.warn(`${MODULE_ID} | the too-short notice failed:`, err?.message ?? err));
+      return;
+    }
     if (!isPlayerNarration(message)) return;
 
     // Batch Mode (issue #340): chat is table talk — a typed line is not
@@ -1738,16 +1745,52 @@ async function moveNotRolled(message, reason, moveId) {
 }
 
 /**
- * createChatMessage, every client: a "Not rolled" notice for a typed line puts
- * the line back in its author's chat box — on their own client only, and only
- * when the box is empty (a draft they started is theirs). The line is stored
- * as the chat message's content; its markup is dropped.
+ * Tell a line's author it was not sent to the narrator: it is under
+ * MIN_NARRATION_LENGTH characters (issue #354 P2-05). Posted by the author's
+ * own client, whispered to them alone, and the line goes back in their chat
+ * box to add to (restoreLineOnNotRolledNotice) — so it needs no GM, and a
+ * table's "ok" and "lol" tell nobody else. Only where the line would otherwise
+ * have been narrated: not before a session has begun (nothing typed then is
+ * narrated), and not in Batch Mode (chat is table talk there).
+ *
+ * @param {ChatMessage} message — the short line
+ * @returns {Promise<void>}
+ */
+async function tellLineTooShort(message) {
+  const authorId = messageAuthorId(message);
+  if (!authorId || authorId !== game.user?.id) return;
+  let narrated = false;
+  try {
+    narrated = isSessionActive(game.settings.get(MODULE_ID, "campaignState")) && !isBatchModeEnabled();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | too-short notice: the session could not be read — the line's author is not told:`, err?.message ?? err);
+  }
+  if (!narrated) {
+    console.debug(`${MODULE_ID} | a line under ${MIN_NARRATION_LENGTH} characters, with no session in free-flow play: nothing typed now is narrated, so its author is not told.`);
+    return;
+  }
+  const lineText = String(message?.content ?? "").trim();
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Not sent to the narrator</strong>`
+      + `<p>That line is under ${MIN_NARRATION_LENGTH} characters, so it was read as table talk and not narrated. `
+      + `It is back in your chat box: add a word or two and send it again.</p></div>`,
+    whisper: [authorId],
+    flags: { [MODULE_ID]: { lineTooShortNotice: true, restoreLineFor: authorId, restoreLine: lineText } },
+  });
+}
+
+/**
+ * createChatMessage, every client: a "Not rolled" notice for a typed line —
+ * or the notice that a line was too short to send to the narrator (issue #354
+ * P2-05) — puts the line back in its author's chat box: on their own client
+ * only, and only when the box is empty (a draft they started is theirs). The
+ * line is stored as the chat message's content; its markup is dropped.
  *
  * @param {ChatMessage} notice
  */
 function restoreLineOnNotRolledNotice(notice) {
   const f = notice?.flags?.[MODULE_ID];
-  if (!f?.moveNotRolledNotice || !f.restoreLine || f.restoreLineFor !== game.user?.id) return;
+  if (!(f?.moveNotRolledNotice || f?.lineTooShortNotice) || !f.restoreLine || f.restoreLineFor !== game.user?.id) return;
   try {
     const box = document.querySelector("#chat-message");
     if (!box || String(box.value ?? "").trim()) return;
@@ -3381,7 +3424,47 @@ function isIronswornSystemCard(text) {
   return !!cls && /(?:^|\s)ironsworn-[a-z-]+(?:\s|$)/i.test(cls[2]);
 }
 
+/**
+ * The fewest characters a typed line needs to be sent to the narrator. A
+ * shorter line is read as table talk ("ok", "lol") — and its author is told
+ * so (isLineTooShortForNarrator; issue #354 P2-05).
+ */
+export const MIN_NARRATION_LENGTH = 10;
+
 export function isPlayerNarration(message) {
+  const text = narrationCandidateText(message);
+  return text !== null && text.length >= MIN_NARRATION_LENGTH;
+}
+
+/**
+ * True for a typed line that is player narration in every way but its length:
+ * it passes each of isPlayerNarration's other checks, says something (a
+ * letter or a digit, markup aside), and is under MIN_NARRATION_LENGTH
+ * characters. Such a line was dropped in silence — in the alpha 23 playtest
+ * "I cannot", the answer an NPC had just asked for, sat in chat for six
+ * minutes with nothing happening (issue #354 P2-05). The minimum stays (the
+ * maintainer's decision: short table talk must not be narrated); the line's
+ * author is told (tellLineTooShort).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+export function isLineTooShortForNarrator(message) {
+  // A typed line only: a card button's re-post carries the line it was given.
+  if (message?.flags?.[MODULE_ID]) return false;
+  const text = narrationCandidateText(message);
+  if (text === null || text.length >= MIN_NARRATION_LENGTH) return false;
+  return /[\p{L}\p{N}]/u.test(text.replace(/<[^>]*>/g, ""));
+}
+
+/**
+ * A chat message's trimmed text when it is something a player typed for the
+ * story — every check of isPlayerNarration but the length — else null.
+ *
+ * @param {ChatMessage} message
+ * @returns {string|null}
+ */
+function narrationCandidateText(message) {
   // v13: the IC / OOC / EMOTE classification lives on `message.style`
   // (CONST.CHAT_MESSAGE_STYLES), NOT on `message.type` — in v13 `type` is the
   // document subtype ("base"), so the legacy string check further down is a
@@ -3394,14 +3477,14 @@ export function isPlayerNarration(message) {
   // foundry-ironsworn flag check below can't catch it). Reject emote / whisper
   // / roll up front using the style and the document's own arrays.
   const EMOTE = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
-  if (message.style === EMOTE) return false;
-  if (Array.isArray(message.whisper) && message.whisper.length > 0) return false;
-  if (Array.isArray(message.rolls) && message.rolls.length > 0) return false;
+  if (message.style === EMOTE) return null;
+  if (Array.isArray(message.whisper) && message.whisper.length > 0) return null;
+  if (Array.isArray(message.rolls) && message.rolls.length > 0) return null;
 
   // Legacy v12 string-type guard — harmless no-op on v13 (type is "base"),
   // retained for v12 worlds where message.type still carries the style.
   const type = message.type;
-  if (type === "ooc" || type === "roll" || type === "whisper") return false;
+  if (type === "ooc" || type === "roll" || type === "whisper") return null;
 
   // Skip ANY message bearing a module flag — these are all programmatically
   // posted cards (move cards, narrator cards, recap cards, pace/roll
@@ -3416,11 +3499,11 @@ export function isPlayerNarration(message) {
   // `bypassPacing: true` and ARE player narration (just with the classifier
   // skipped); they must reach the move pipeline.
   const flags = message.flags?.[MODULE_ID];
-  if (flags && !flags.bypassPacing) return false;
+  if (flags && !flags.bypassPacing) return null;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
-  if (message.flags?.['foundry-ironsworn']) return false;
-  if (message.speaker?.alias === 'Ironsworn') return false;
+  if (message.flags?.['foundry-ironsworn']) return null;
+  if (message.speaker?.alias === 'Ironsworn') return null;
 
   const text = message.content?.trim() ?? "";
 
@@ -3430,22 +3513,22 @@ export function isPlayerNarration(message) {
   // the root, never something a player typed. It passed every check above,
   // and the canonical GM paced, interpreted and rolled the move's rules text
   // for the player who only shared it (issue #325 W08).
-  if (isIronswornSystemCard(text)) return false;
-
-  // No meaningful text content — system-generated empty or near-empty messages
-  if (text.length < 10) return false;
+  if (isIronswornSystemCard(text)) return null;
 
   // Escape character — prefix with \ to bypass the pipeline entirely
-  if (text.startsWith("\\")) return false;
+  if (text.startsWith("\\")) return null;
 
   // @ and / commands are not player narration
-  if (text.startsWith("@")) return false;
-  if (text.startsWith("/")) return false;
+  if (text.startsWith("@")) return null;
+  if (text.startsWith("/")) return null;
 
   // Module commands (! prefix) are not player narration
-  if (text.startsWith("!")) return false;
+  if (text.startsWith("!")) return null;
 
-  return true;
+  // The length is the caller's to judge: under MIN_NARRATION_LENGTH it is not
+  // sent to the narrator (isPlayerNarration), and its author is told
+  // (isLineTooShortForNarrator).
+  return text;
 }
 
 /**
