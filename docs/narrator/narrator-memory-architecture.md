@@ -21,7 +21,9 @@ sidecar, or fact-continuity layers. Operational rules live in
 ## 1. The model: four memory surfaces
 
 Every narrator call assembles context from four surfaces. Each has different
-durability, capacity, and write discipline:
+durability, capacity, and write discipline (the table has grown to seven: the
+rolling summary, recent oracle results and — issue #353 — the narrative
+skeleton, the one surface that holds what has *not* been stated):
 
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
@@ -31,6 +33,7 @@ durability, capacity, and write discipline:
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
 | **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
+| **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired; GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`) on the canonical GM, from the oracle rolls a trigger made (a new enemy, a posed question); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided) and the Private Channel (decided plans only) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
 
 Durable campaign context (world truths, sector, current location, character
 state, World Journal injections) rides alongside these in the system prompt —
@@ -442,6 +445,8 @@ relevance (as the move pass) — whatever the round's widest class
 | `factContinuity.sceneFrame` | true | Fact Continuity | frame emission + block + scoping/relevance unions |
 | `factContinuity.maxLedgerTokens` | 400 | Fact Continuity | §6.5 soft cap (state lines shed first; location / vessel / condition last) |
 | `factContinuity.consistencyCheck` | **true** (2026-07) | Fact Continuity | post-narration Haiku audit vs the full ledger block (frame, truths, retractions, state, ship) |
+| `narrativeSkeletons` | true | Narrator (World Journal) | the narrative skeleton (surface 7): plans are made, shown as UNREVEALED, and the sidecar's `openQuestions` rule is in the instruction (issue #353) |
+| `narrativeSkeletonsShowRolls` | false | Narrator (World Journal) | a new plan's hidden oracle rolls are posted to the table at once, not when its truth is revealed |
 
 ---
 

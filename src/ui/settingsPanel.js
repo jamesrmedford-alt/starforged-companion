@@ -98,6 +98,9 @@ const SETTING = {
   WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
   WJ_LORE_SALIENCE:            'loreSalienceThreshold',
   WJ_THREAT_SALIENCE:          'threatSalienceThreshold',
+  // The narrative skeleton (issue #353) — read by src/world/secrets.js.
+  WJ_SKELETONS:                'narrativeSkeletons',
+  WJ_SKELETON_ROLLS:           'narrativeSkeletonsShowRolls',
   // ── Pacing classifier ────────────────────────────────────────────────────
   PACING_ENABLED:              'pacing.enabled',
   PACING_DENSITY_WINDOW:       'pacing.densityWindow',
@@ -470,6 +473,24 @@ export function registerSettings() {
     type:    String,
     choices: SALIENCE_CHOICES,
     default: 'significant',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_SKELETONS, {
+    name:    'Narrative Skeletons',
+    hint:    'When the story introduces something that carries a mystery, a threat or an arc — a new enemy, a question the characters are meant to answer — the narrator decides what is really true about it, keeps it in the GM-only World Journal — Secrets journal, and plays toward it without stating it. Off: nothing is planned, and existing plans are not shown to the narrator.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_SKELETON_ROLLS, {
+    name:    'Show Hidden Oracle Rolls',
+    hint:    'The oracle rolls behind a narrative skeleton\'s plan are kept hidden until its truth is revealed, then shown. On: they are shown to the table as soon as the plan is made.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: false,
   });
 
   game.settings.register(MODULE_ID, SETTING.WJ_THREAT_SALIENCE, {
@@ -1255,6 +1276,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         sessionLogAutoWrite:        readSetting(SETTING.WJ_SESSION_LOG_AUTOWRITE, true),
         loreSalience:               readSetting(SETTING.WJ_LORE_SALIENCE, 'significant'),
         threatSalience:             readSetting(SETTING.WJ_THREAT_SALIENCE, 'significant'),
+        narrativeSkeletons:         readSetting(SETTING.WJ_SKELETONS, true),
+        skeletonRollsShown:         readSetting(SETTING.WJ_SKELETON_ROLLS, false),
       },
       pacingEnabled:         getPacingEnabled(),
       pacingDensityWindow:   getPacingDensityWindow(),
@@ -1758,6 +1781,20 @@ export class SettingsPanelApp extends ApplicationV2 {
           </label>
         </div>
         <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narrativeSkeletons" ${ctx.worldJournal.narrativeSkeletons ? 'checked' : ''} ${dis}>
+            Narrative skeletons
+          </label>
+          <span class="narrator-field-hint">The narrator decides what is really true about a new enemy or a question the story poses, keeps it in the GM-only Secrets journal, and plays toward it without stating it.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narrativeSkeletonsShowRolls" ${ctx.worldJournal.skeletonRollsShown ? 'checked' : ''} ${dis}>
+            Show hidden oracle rolls at once
+          </label>
+          <span class="narrator-field-hint">Off: a plan's oracle rolls are shown to the table when its truth is revealed. On: as soon as the plan is made.</span>
+        </div>
+        <div class="narrator-field">
           <label class="narrator-field-label">Lore capture threshold</label>
           ${renderSelect('loreSalienceThreshold', ctx.worldJournal.loreSalience, ctx.salienceChoices, gmOnly)}
         </div>
@@ -2175,6 +2212,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.WJ_SESSION_LOG_AUTOWRITE, checked('sessionLogAutoWrite', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_LORE_SALIENCE,       salience('loreSalienceThreshold')),
         game.settings.set(MODULE_ID, SETTING.WJ_THREAT_SALIENCE,     salience('threatSalienceThreshold')),
+        game.settings.set(MODULE_ID, SETTING.WJ_SKELETONS,           checked('narrativeSkeletons', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_SKELETON_ROLLS,      checked('narrativeSkeletonsShowRolls', false)),
       ]);
 
       ui.notifications?.info('Starforged Companion: Narrator settings saved.');

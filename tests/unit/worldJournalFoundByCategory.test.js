@@ -139,8 +139,9 @@ describe("issue #345 AA63 — the World Journal's journals are found by their ca
   it("the canonical GM's load after a rename makes no second journal for it", async () => {
     journals[0].name = "Lore";
     await wj.initWorldJournals();
+    // Secrets: the narrative skeleton's GM-only journal (issue #353), which the fixture has none of.
     expect(created.map(j => j.name).sort(), "only the categories that have none").toEqual([
-      "World Journal — Factions", "World Journal — Locations", "World Journal — Session Log",
+      "World Journal — Factions", "World Journal — Locations", "World Journal — Secrets", "World Journal — Session Log",
     ]);
   });
 

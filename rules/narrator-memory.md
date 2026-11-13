@@ -40,7 +40,9 @@ layers. This file is the never-break list.
    commit — the consumer list lives in architecture doc §2.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
-   `extractSidecar` ↔ `applySidecar`/`applySceneFrame`) is a matched pair.
+   `extractSidecar` ↔ `applySidecar`/`applySceneFrame` — and, for the
+   narrative skeleton's `plans` / `openQuestions`, `src/world/skeletons.js`'s
+   normalisers ↔ `secrets.js` `applyPlanSideData`, issue #353) is a matched pair.
    Any key added to the instruction must be normalised in
    `sidecarParser.js` and applied in `narrator.js applyNarratorSidecar` in
    the same commit, with parser tests for garbage shapes. Parsing is

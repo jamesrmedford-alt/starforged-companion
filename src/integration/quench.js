@@ -12241,7 +12241,9 @@ function registerPromptContractTests(quench) {
       function replyTo(request) {
         if (request.system.includes(SIDECAR_SECTION)) {
           const prose   = stub.prose.shift() ?? `The contract stub narrates, turn ${stub.requests.length}.`;
-          const sidecar = stub.sidecars.shift() ?? { newTruths: [], stateChanges: [] };
+          const queued  = stub.sidecars.shift() ?? { newTruths: [], stateChanges: [] };
+          // A queued sidecar may answer what the request asked (a plan's ref — issue #353).
+          const sidecar = typeof queued === "function" ? queued(request) : queued;
           return `${prose}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
         }
         if (request.system.startsWith(NARRATOR_ROLE) || request.system.includes(PRIVATE_ROLE)) {
@@ -12764,6 +12766,64 @@ function registerPromptContractTests(quench) {
           }
           assert.notInclude(card.content, N.privateLine, "Private Lines are counted, never shown");
           assert.include(card.content, "1 private line");
+        });
+      });
+
+      describe("the narrative skeleton: UNREVEALED for the plans in play (issue #353)", function () {
+        const made = [];
+        const truth = "QUENCH-SKELETON: the escort is a Keeper drone collecting names";
+        const elsewhere = "QUENCH-SKELETON-ELSEWHERE: the Drift Syndicate owes the Keeper a debt";
+        after(async function () {
+          const { FLAG_KEYS, findWorldJournal } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          for (const page of [...(findWorldJournal("secrets")?.pages?.contents ?? [])]) {
+            if (made.includes(page.flags?.[MODULE]?.[FLAG_KEYS.secrets]?.id)) await page.delete().catch(() => {});
+          }
+        });
+
+        it("a price that reveals a new enemy asks the narration to decide it; the plan reaches the next request, a plan elsewhere does not", async function () {
+          const { withPayThePriceSeed } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const secrets = await import(`${MODULE_PATH}/world/secrets.js`);
+          // A plan out of play: another scene's, its name in nothing this turn.
+          const other = await secrets.createSkeleton({ kind: "threat", subject: { type: "name", name: "the Drift Syndicate" },
+            truth: elsewhere, sceneId: "quench-other-scene" });
+          assert.isOk(other, "the out-of-scene plan is filed");
+          made.push(other.id);
+
+          stub.prose.push("A second shape detaches from the debris: an escort, waiting.");
+          stub.sidecars.push((request) => {
+            const ref = /- id (plan-[\w-]+-enemy):/.exec(request.system)?.[1] ?? null;
+            return { newTruths: [], stateChanges: [], ...(ref ? { plans: [{ id: ref, subject: "the escort", truth }] } : {}) };
+          });
+          const before = new Set(secrets.listSkeletons().map(r => r.id));
+          const { narrateResolution } = await narrator();
+          const asked = await (async () => {
+            const since = stub.requests.length;
+            await withSilencedNotifications(() => narrateResolution({
+              _id: `quench-contract-${foundry.utils.randomID()}`, moveId: "face_danger", moveName: "Face Danger",
+              statUsed: "edge", statValue: 2, actionDie: 1, actionScore: 3, challengeDice: [6, 8],
+              outcome: "miss", outcomeLabel: "Miss", consequences: {},
+              playerNarration: "I slip along the hull toward the airlock.",
+              loremasterContext: "[MOVE: Face Danger +edge] [OUTCOME: Miss]",
+              oracleSeeds: withPayThePriceSeed(null, "face_danger", "A new enemy is revealed"),
+            }, state(), { relevance: INTERACTION, speakerActorId: fx.pcA.id }));
+            return stub.requests.slice(since).find(r => r.user.includes("## MOVE OUTCOME"));
+          })();
+          carries(asked, "UNREVEALED", "the new enemy's narration", ["DECIDE NOW", "the new enemy this price reveals", "Character Role:"]);
+          const filed = await waitFor(() => secrets.listSkeletons().find(r => !before.has(r.id) && r.truth === truth), "the plan to be filed");
+          made.push(filed.id);
+          assert.equal(filed.subject.name, "the escort");
+
+          const next = await capture(MOVE);
+          carries(next, "UNREVEALED", "the next narration", [truth]);
+          assert.notInclude(next.system, elsewhere, "a plan out of play is not in the request");
+          assert.notInclude(next.system, "DECIDE NOW", "nothing is left to decide");
+        });
+
+        it("the Secrets journal is the GM's alone", async function () {
+          const { findWorldJournal } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const journal = findWorldJournal("secrets");
+          assert.isOk(journal, "the Secrets journal exists");
+          assert.equal(journal.ownership?.default ?? 0, CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE, "no default player permission");
         });
       });
 

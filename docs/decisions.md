@@ -6,6 +6,90 @@ rejected.
 
 ---
 
+## The narrative skeleton: hidden plans in a GM-only Secrets journal, decided by the narrator, played toward (2026-11)
+
+**Decision:** (issue #353 Phase 1; every question in the issue was settled by
+the maintainer on 2026-11-13.) When the fiction introduces something that
+carries a mystery, a threat or an arc, what is true about it is decided at
+that moment, kept where players don't see it, and handed to the narrator as
+unrevealed:
+- **The store** is the World Journal — Secrets journal: one page per plan,
+  its record in the page's `secretEntry` flag (`src/world/skeletons.js` the
+  shape, `src/world/secrets.js` the store). The journal is made with **no
+  player permission** (`worldJournal.js` `GM_ONLY_CATEGORIES`). A plan links
+  to its subject **by id** where it has one (a scene, an entity, a track, a
+  vow), its name being the fiction's.
+- **Writes from narration run on the canonical GM** (`applyPlanSideData`,
+  called from the sidecar apply — a relayed sidecar's too, with the plan
+  requests it was given) and are **stamped with the narration's id**, so the
+  X-Card takes a plan back with the narration that made it, and restores the
+  version before a narration that changed it (`undoNarrationEntries` covers
+  the Secrets journal). The GM's Secrets panel writes on any GM, and the GM
+  then owns the plan.
+- **Who decides a plan: the narrator, in its own sidecar** (decided). The
+  sidecar gains `plans` (a decision, by the id it was shown) and
+  `openQuestions` (a question the prose poses that the characters are meant
+  to answer). A narration is asked to decide (UNREVEALED → DECIDE NOW) the
+  plans its seeds introduced — a price that revealed a new enemy, by ref, with
+  its Character Role / Goal / Disposition — and any plan whose rolls are in
+  but whose truth is not. If it decides none, the plan is filed with its rolls
+  alone and the next narration where it is in play is asked ("keep the raw
+  rolls as the skeleton"). **The planning call is not built**: it is built
+  only if the sidecar proves too thin (decided).
+- **A posed question is a mystery**: its hidden answer is rolled once (Action
+  + Theme and Descriptor + Focus) and decided by the next narration it is in
+  play for. The same question posed again in the scene is the same mystery.
+- **The narrator sees** [6.6] UNREVEALED: the active plans whose subject is
+  in play (made in this scene; its entity matched or in the frame's cast; its
+  name in the frame or the player's line — at most four, capped at
+  `UNREVEALED_MAX_TOKENS`), with the rule: never state one outright; reveals
+  follow move outcomes (a hit shows a clue or moves it toward an ending, a
+  weak hit a clue with a complication, a miss its next escalation step); a
+  beat that does not touch a subject leaves it alone; a refusal made twice is
+  answered on the third beat by a reveal, a trade or an escalation.
+- **How binding a plan is: guidance** (decided). A narrated fact wins: the
+  narrator records the change in `plans`, and the plan is updated to match. A
+  plan is never the source of a contradiction card.
+- **Which plans are made: automatically, when a trigger fires** (decided).
+  Phase 1's triggers are a new enemy and a posed question. There is no "Plan
+  this" button, command, or Regenerate (deferred); a plan can be edited by
+  hand in the Secrets panel.
+- **Plan visibility** (decided): the World Journal panel's Secrets section
+  lists each plan collapsed until clicked — in solo play the GM is the only
+  player — with Open, Edit, Reveal now and Retire.
+- **Hidden oracle rolls** (decided): GM-only until the plan's truth is
+  revealed, then shown ("the oracle said: …" on the GM's Reveal now card). The
+  world setting **Show hidden oracle rolls** (`narrativeSkeletonsShowRolls`,
+  default off) posts them when a plan is made. No hidden roll is on a
+  player-visible card or a card's flags otherwise
+  (`tests/unit/secretsStayHidden.test.js`).
+- **The Private Channel reads plans** (decided), under the same
+  never-state-outright rule and with no instruction to write (it emits no
+  sidecar).
+- **The world setting Narrative skeletons** (`narrativeSkeletons`, default
+  on): off, nothing is planned and no plan is shown to any narrator.
+
+**Supersedes CONN-BACKGROUND-UNWRITTEN for secrets.** That entry retired a
+connection's `secrets` field because nothing wrote or read it. What an NPC
+hides now has a writer and a reader — a plan in the Secrets journal, linked to
+the NPC by id (its agenda plans arrive with Phase 4) — not a field on the
+connection record, which stays retired.
+
+**Reason:** the alpha 23 playtest's hour of circular dialogue — a new enemy
+with no nature or goal, an escort asking an unanswerable question three
+times, a count with no clock behind it. Every beat re-improvised its mysteries
+because nothing held what was true but not yet revealed; the stores that
+existed (the ledger, the summary, lore) hold only what was stated.
+
+**Rejected:** *campaignState as the store* — it is sent whole to every
+client and written by many writers; a GM-only journal keeps plans out of
+players' journal directory and off the write chain. *A planning call first*
+— the maintainer chose the narrator's own sidecar; one call both narrates and
+plans, and the call is built only if that proves too thin. *Asking the
+narrator to plan anything it likes* — plans are made when a trigger fires.
+
+---
+
 ## Oracles behind the scenes: the "envision" outcomes roll their table once (2026-11)
 
 **Decision:** (issue #353 Phase 0, "Where to roll".) Where a move's outcome
@@ -86,7 +170,7 @@ rolls create the enemy's hidden truth (Phase 1).
 - **CLOCK-VIGNETTE-NO-DETECTION** (ledger): Clock vignettes run the detection pass as well as the tier pass (they use interaction latitude since V23). Session vignettes and vow scenes are unchanged: tier pass only (CLOCK-VIGNETTE-NO-DETECTION).
 - **CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE** (ledger): AA34's capture gate (the capture runs on the GM whose client narrated, not on whoever is canonical when the reply lands) also covers @scene answers, oracle follow-ups and session, clock and vow vignettes (CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE).
 - **CREATED-ONTO-DISMISSED-NAME** (ledger): Every record registration (registry.registerEntityId) takes the new record's name off the dismissed list, and the world load sweeps listed records the same way (CREATED-ONTO-DISMISSED-NAME).
-- **CONN-BACKGROUND-UNWRITTEN** (ledger): A connection's `background` and `secrets` fields are retired (no writer, no reader). History lives in `history` and the NPC's narrator-added details, and GM-only notes go in the sheet's Notes (CONN-BACKGROUND-UNWRITTEN, issue #287).
+- **CONN-BACKGROUND-UNWRITTEN** (ledger): A connection's `background` and `secrets` fields are retired (no writer, no reader). History lives in `history` and the NPC's narrator-added details, and GM-only notes go in the sheet's Notes (CONN-BACKGROUND-UNWRITTEN, issue #287). *Update (issue #353):* superseded for secrets by "The narrative skeleton" above — what an NPC hides lives in its plan in the GM-only Secrets journal, which has a writer and a reader; the record's `secrets` field stays retired.
 - **DRAFT-CONFIRM-TWO-GMS** (ledger): Draft card Confirm and Dismiss run on the canonical GM through the GM relay (`draft.confirm` / `draft.dismiss`), one press at a time; only GM presses are accepted (DRAFT-CONFIRM-TWO-GMS).
 - **STALE-PAGE-ACTOR-WRITES** (multigm): A stale page (its connection dropped and it has not reloaded) writes no actor either: actorBridge refuses every actor and item write there, the same way campaignState, rounds and Lines/Veils were already refused (issue #347 AB19-STALE-CACHE-WRITES).
 - **STALE-PAGE-CLAUDE-COMMANDS** (multigm): hasKeyedActiveGM counts only GMs whose page can act. A keyed GM whose page stood down is not 'keyed' for routing until it reloads.

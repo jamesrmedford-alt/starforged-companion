@@ -180,7 +180,9 @@ what the main narrator knows, rendered by the same section formatters
 (`buildPrivateChannelStory` → `buildSharedStorySections`): world truths and the
 campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
 the recorded entities the message or the scene frame names (lexical, plus
-`addSceneFrameCast`) and the scene ledger in the per-turn message. Its
+`addSceneFrameCast`), the scene ledger and the hidden plans in play (the
+narrative skeleton's UNREVEALED, decided plans only and no instruction to
+write — issue #353, decided) in the per-turn message. Its
 character is the player's own PC (`resolveUserActorId` — never another
 player's; with none of their own in a multi-PC game the window says "Set up
 your character first", issue #321 U23), and the transcript it sends is the
@@ -523,7 +525,16 @@ C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
-never dropped) · ([7], a legacy count of `connectionIds` that counted a
+never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
+`buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
+Secrets journal whose subject is in play — made in this scene, its entity
+matched or in the frame's cast, its name in the frame or the player's line,
+`skeletons.js` `selectRelevantSkeletons`, at most four, trimmed to
+`UNREVEALED_MAX_TOKENS` — and `extras.planRequests`, the plans this narration's
+seeds ask it to decide: a price that revealed a new enemy. Decided plans read
+as truths never to state outright, with the reveal rule; undecided ones and the
+requests list under DECIDE NOW with their oracle rolls, only when the sidecar
+is on; every prose mode, never a meta one; `formatUnrevealedBlock`) · ([7], a legacy count of `connectionIds` that counted a
 lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5 — and the PC's newest five pinned Chronicle
@@ -695,7 +706,14 @@ unknown keys dropped; an unclosed fence's tail is stripped and parsed — a
 complete object applies, a truncated one is a parseError and is discarded; a response with
 **no fence at all now warns** in `applyNarratorSidecar` — the sidecar is
 mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
-`applyNarratorSidecar` (canonical-GM only): truths append **with dedup**
+`applyNarratorSidecar` (canonical-GM only; the narrative skeleton's keys —
+`plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
+`secrets.js` `applyPlanSideData`, which files the narration's requested plans
+— as decided, or with their rolls alone — decides or corrects the plans it was
+shown by id, and turns a posed question into a mystery whose answer it rolls;
+each write stamped with the narration's id, which the X-Card's
+`undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
+issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute
 (`ledgers.js`), subjects resolved against `collectAllEntities` (passed

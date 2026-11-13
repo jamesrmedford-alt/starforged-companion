@@ -68,6 +68,8 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines } from '../moves/resolver.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData } from '../world/secrets.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -327,6 +329,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     relevance       = null,
     oracleSeeds     = null,
     actingActorIds  = null,
+    planRequests    = [],
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -504,6 +507,27 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   }
 
   addSceneFrameCast(extras, sceneState);
+
+  // The narrative skeleton (issue #353): the hidden plans whose subject is in
+  // play this beat — made in this scene, its entity matched or in the frame's
+  // cast, its name in the frame or the player's line — and the plans this
+  // narration must decide (a price that revealed a new enemy). Rendered as
+  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
+  extras.unrevealed   = [];
+  extras.planRequests = [];
+  if (mode !== 'campaign_recap' && skeletonsEnabled()) {
+    try {
+      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
+        sceneId:          sceneState?.currentSceneId ?? null,
+        frame:            sceneState?.sceneFrame ?? null,
+        matchedEntityIds: extras.matchedEntityIds ?? [],
+        text:             playerNarration,
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: the hidden plans could not be read:`, err?.message ?? err);
+    }
+    extras.planRequests = normalisePlanRequests(planRequests);
+  }
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -709,6 +733,21 @@ export async function buildPrivateChannelStory(campaignState, playerMessage, { a
     previousSessionSummary: previousSessionSummaryFor(campaignState),
   };
   addSceneFrameCast(extras, campaignState);
+  // The hidden plans relevant to what the player asks, under the main
+  // narrator's rule (issue #353, decided: the Private Channel reads them).
+  extras.unrevealed = [];
+  if (skeletonsEnabled()) {
+    try {
+      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
+        sceneId:          campaignState?.currentSceneId ?? null,
+        frame:            campaignState?.sceneFrame ?? null,
+        matchedEntityIds: extras.matchedEntityIds ?? [],
+        text:             playerMessage,
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | privateChannel: the hidden plans could not be read:`, err?.message ?? err);
+    }
+  }
   const sections = buildSharedStorySections(campaignState, getNarratorSettings(), extras);
   const pinned = actorId ? await readPinnedEntriesOf(actorId) : [];
   return { ...sections, pinned };
@@ -870,11 +909,15 @@ export async function narrateResolution(resolution, campaignState, options = {})
     );
   }
 
+  // A price that revealed a new enemy asks this narration to decide what it
+  // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
+  const planRequests = skeletonsEnabled() ? planRequestsFromSeeds(resolution.oracleSeeds, narrationId) : [];
   const extras = await buildNarratorExtras('move_resolution', campaignState, {
     playerNarration: resolution.playerNarration ?? '',
     character,
     relevance,
     oracleSeeds:     resolution.oracleSeeds ?? null,
+    planRequests,
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -916,6 +959,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       moveId:           resolution?.moveId,
       matchedEntityIds: extras.matchedEntityIds ?? [],
       narrationId,
+      planRequests:     extras.planRequests,
     });
 
     if (!narration?.trim()) {
@@ -958,6 +1002,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
           moveId:           resolution?.moveId,
           matchedEntityIds: extras.matchedEntityIds ?? [],
           narrationId,
+          planRequests:     extras.planRequests,
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
@@ -1114,6 +1159,10 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     character:       null,
     relevance,
     actingActorIds:  entries.map(e => e.actorId),
+    // Each entry's price that revealed a new enemy asks for its plan (issue #353).
+    planRequests:    skeletonsEnabled()
+      ? entries.flatMap((e, i) => planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${narrationId}-${i + 1}`))
+      : [],
   });
   extras.roundCharacters = characters;
 
@@ -1152,7 +1201,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
-        moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+        moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -3517,9 +3566,14 @@ export async function narrateOracleFollowup({
   // no PC of their own (oracleFollowup.js), and getActiveCharacter's first-PC
   // fallback narrated their oracle as Kira's (issue #345 AA30, Z50's rule).
   const character = speakerActorId ? getActiveCharacter(campaignState, speakerActorId) : null;
+  // A price that reveals a new enemy is told what it is and wants — rolled
+  // once, here, where it is narrated (issue #353 Phase 0; never on the raw
+  // card a player can read) — and asks this narration to decide its plan.
+  const seedLines      = priceRevealsNewEnemy(rolledLine) ? newEnemySeedLines() : [];
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
     character,
+    planRequests:    skeletonsEnabled() ? planRequestsFromSeeds(seedLines, narrationId) : [],
   });
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
@@ -3529,10 +3583,6 @@ export async function narrateOracleFollowup({
   // Length setting governs move and paced narration only (issue #326 W40); it
   // was read into this user message while the role said 2-3 (issue #331 X28).
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
-  // A price that reveals a new enemy is told what it is and wants — rolled
-  // once, here, where it is narrated (issue #353 Phase 0; never on the raw
-  // card a player can read).
-  const seedLines      = priceRevealsNewEnemy(rolledLine) ? newEnemySeedLines() : [];
   const userMessage    = buildOracleUserMessage({
     kind, oracleName, question, rolledLine, recentContext, seedLines,
   });
@@ -3545,7 +3595,7 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests });
 
     if (!text?.trim()) return null;
 
@@ -3564,7 +3614,7 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
@@ -5349,6 +5399,8 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       moveId:           ctx.moveId ?? null,
       matchedEntityIds: Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : [],
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
+      // The plans the narration was asked to decide (issue #353): the GM files them.
+      planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
     });
   }).catch(err =>
     console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
@@ -5394,7 +5446,9 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     return;
   }
   await ensureSceneStarted(campaignState, 'relayed_narration');
-  await applySidecarSideData(sidecar, campaignState, { moveId: payload.moveId ?? null, narrationId });
+  await applySidecarSideData(sidecar, campaignState, {
+    moveId: payload.moveId ?? null, narrationId, planRequests: normalisePlanRequests(payload.planRequests),
+  });
 }
 
 /**
@@ -5488,6 +5542,19 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );
+  }
+
+  // The narrative skeleton (issue #353): the plans this narration decided, the
+  // ones it was asked to decide, and the questions it posed — filed in the
+  // Secrets journal, stamped with its id for the X-Card. Fire-and-forget,
+  // never throws.
+  if (sidecar.plans?.length || sidecar.openQuestions?.length || ctx.planRequests?.length) {
+    void applyPlanSideData(sidecar, {
+      campaignState,
+      narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
+      moveId:       ctx.moveId ?? null,
+      planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+    });
   }
   return persisted;
 }
@@ -5802,6 +5869,7 @@ function getNarratorSettings() {
       factContinuityLedgerInContext:game.settings.get(MODULE_ID, 'factContinuity.ledgerInContext')  ?? true,
       factContinuityMaxLedgerTokens:game.settings.get(MODULE_ID, 'factContinuity.maxLedgerTokens')  ?? 400,
       factContinuitySceneFrame:     game.settings.get(MODULE_ID, 'factContinuity.sceneFrame')       ?? true,
+      narrativeSkeletons:           skeletonsEnabled(),
     };
   } catch (err) {
     console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
@@ -5818,6 +5886,7 @@ function getNarratorSettings() {
       factContinuityLedgerInContext: true,
       factContinuityMaxLedgerTokens: 400,
       factContinuitySceneFrame:      true,
+      narrativeSkeletons:            true,
       _error:                err,
     };
   }

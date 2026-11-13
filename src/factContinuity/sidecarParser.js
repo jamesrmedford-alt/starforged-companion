@@ -31,7 +31,16 @@
  * (SIDECAR-UNFENCED).
  *
  * This module is pure — no I/O, no globals.
+ *
+ * The narrative skeleton's keys (issue #353): `plans` (the narrator's decision
+ * of what is true about a subject it was asked to decide, or a correction
+ * where its prose contradicted one) and `openQuestions` (a question the prose
+ * poses that the characters are meant to answer). Normalised and bounded by
+ * src/world/skeletons.js, and applied on the canonical GM by
+ * src/world/secrets.js applyPlanSideData.
  */
+
+import { normalisePlans, normaliseOpenQuestions } from '../world/skeletons.js';
 
 // Matches each complete ``` … ``` fence in the response. Group 1 is the
 // `json` info string when present (spaces before it allowed); group 2 is the
@@ -122,7 +131,7 @@ export function extractSidecar(rawText) {
 }
 
 // A line that opens a bare sidecar object: `{` and, first, one of its keys.
-const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame)"\s*:/g;
+const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame|plans|openQuestions)"\s*:/g;
 
 /**
  * The sidecar object written with no fence: the first line, from the end of
@@ -179,9 +188,11 @@ function stripBlocks(rawText, blocks) {
 export function normaliseSidecar(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   return {
-    newTruths:    Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
-    stateChanges: Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
-    sceneFrame:   normaliseSceneFrame(parsed.sceneFrame),
+    newTruths:     Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
+    stateChanges:  Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
+    sceneFrame:    normaliseSceneFrame(parsed.sceneFrame),
+    plans:         normalisePlans(parsed.plans),
+    openQuestions: normaliseOpenQuestions(parsed.openQuestions),
   };
 }
 

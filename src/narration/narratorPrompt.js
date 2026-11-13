@@ -66,6 +66,7 @@ export function appendNpcMarkupInstruction() {
 export function appendSidecarInstruction(options = {}) {
   const mode              = typeof options.mode === 'string' ? options.mode : 'move_resolution';
   const sceneFrameEnabled = options.sceneFrameEnabled !== false;
+  const skeletonsEnabled  = options.skeletonsEnabled === true;
 
   const exampleLines = [
     '    ```json',
@@ -169,6 +170,19 @@ export function appendSidecarInstruction(options = {}) {
       '  present or directly engaged (include characters on comms), and the',
       '  situation in one sentence. Include it on EVERY response — it',
       '  replaces the previous snapshot. Keep names exactly as established.',
+    );
+  }
+
+  // The narrative skeleton (issue #353 Phase 1): a question the prose poses
+  // gets a hidden answer, rolled and kept (src/world/secrets.js).
+  if (skeletonsEnabled) {
+    lines.push(
+      '- When your prose poses a question or a mystery the characters are',
+      '  meant to answer — a question an NPC presses on them, an unexplained',
+      '  sign, a puzzle the scene turns on — emit it once, as',
+      '  "openQuestions": [{ "question": "<the question, in a few words>",',
+      '  "about": "<who or what it concerns>" }]. Do not answer it in the',
+      '  prose. Do not emit a question already listed under UNREVEALED.',
     );
   }
 
@@ -1401,6 +1415,9 @@ export function buildSharedStorySections(campaignState, narratorSettings = {}, e
       formatStorySoFarBlock(extras.rollingSummary ?? ''),
       formatEntityCardsBlock(extras.entityCards),
       formatLedgerSection(withSceneLedger(campaignState, extras.sceneLedger), narratorSettings, extras),
+      // The hidden plans, under the main narrator's rule: never state one
+      // outright. It writes nothing back, so no sidecar lines (issue #353).
+      formatUnrevealedBlock(extras.unrevealed, { sidecar: false }),
     ]),
   };
 }
@@ -1524,6 +1541,8 @@ export function buildNarratorSystemPrompt(
     progressTracks       = [],
     sceneLedger          = null,
     pinnedChronicle      = null,
+    unrevealed           = [],
+    planRequests         = [],
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1726,6 +1745,18 @@ export function buildNarratorSystemPrompt(
   }, { matchedEntityIds, entityNamesById });
   if (ledgerBlock) parts.push(ledgerBlock);
 
+  // [6.6] UNREVEALED — the narrative skeleton (issue #353): the hidden plans
+  //       relevant to this beat (buildNarratorExtras selects them), and the
+  //       plans this narration must decide in its sidecar. Never in a meta
+  //       mode; its writes need the sidecar, so DECIDE NOW only with it.
+  if (!isMetaMode) {
+    const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
+      planRequests,
+      sidecar: factContinuityEnabled,
+    });
+    if (unrevealedBlock) parts.push(unrevealedBlock);
+  }
+
   // [7] — retired: a legacy "N active connection(s)" count of every id in
   // `connectionIds`, a lost connection's included, while the ACTIVE SECTOR
   // roster lists it apart as lost (issue #331 X29). The roster and CHARACTER
@@ -1764,6 +1795,7 @@ export function buildNarratorSystemPrompt(
     parts.push(appendSidecarInstruction({
       mode:              resolvedMode,
       sceneFrameEnabled: factContinuitySceneFrame,
+      skeletonsEnabled:  narratorSettings?.narrativeSkeletons !== false,
     }));
   }
 
@@ -1778,6 +1810,118 @@ export function buildNarratorSystemPrompt(
   }
 
   return parts.join('\n\n---\n\n');
+}
+
+/** The UNREVEALED section's budget for its plans, in estimated tokens (DECIDE NOW is never trimmed). */
+export const UNREVEALED_MAX_TOKENS = 600;
+
+const SKELETON_KIND_NAMES = Object.freeze({
+  threat: 'Threat', mystery: 'Mystery', npcAgenda: 'NPC agenda',
+  expedition: 'Expedition', discovery: 'Discovery', vow: 'Vow',
+});
+
+/** A plan's heading: "Threat — the escort", "Mystery — "Which name…?" (about the escort)". */
+function skeletonHeading(r) {
+  const kind = SKELETON_KIND_NAMES[r?.kind] ?? 'Plan';
+  if (r?.kind === 'mystery' && r.question) {
+    const about = r.subject?.name && r.subject.name !== 'the scene' ? ` (about ${r.subject.name})` : '';
+    return `${kind} — "${r.question}"${about}`;
+  }
+  return `${kind} — ${r?.subject?.name ?? ''}`;
+}
+
+/** One decided plan, as the narrator reads it. */
+function formatSkeletonEntry(r) {
+  const lines = [`### ${skeletonHeading(r)} (id ${r.id})`];
+  lines.push(`${r.kind === 'mystery' ? 'Answer' : 'Truth'}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
+  if (r.wants) lines.push(`Wants: ${r.wants}`);
+  if (r.knows) lines.push(`Knows: ${r.knows}`);
+  const steps = (r.escalation ?? []).map((e, i) => `${i + 1}. ${e.text}${e.done ? ' (played)' : ''}`);
+  if (steps.length) lines.push(`Escalation, in order: ${steps.join(' ')}`);
+  const clues = (r.clues ?? []).map(c => `[${c.id}] ${c.text}${c.revealed ? ' (shown)' : ''}`);
+  if (clues.length) lines.push(`Clues: ${clues.join('; ')}`);
+  if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
+  return lines.join('\n');
+}
+
+/**
+ * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
+ * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
+ * the plans this narration must decide: a price that revealed a new enemy
+ * (`planRequests`, by ref), a posed question whose answer was rolled but not
+ * yet decided (a plan with no truth, by id). The plans are trimmed from the
+ * end to UNREVEALED_MAX_TOKENS; DECIDE NOW is not. Without the sidecar (the
+ * Private Channel) only decided plans, and no instruction to write. Exported
+ * for unit testing and the Private Channel's shared story.
+ *
+ * @param {Object[]} skeletons — selectRelevantSkeletons' records
+ * @param {{ planRequests?: Object[], sidecar?: boolean, maxTokens?: number }} [opts]
+ * @returns {string} '' when there is nothing to show
+ */
+export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
+  const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
+  const decided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
+  const pending = sidecar ? list.filter(r => !(typeof r.truth === 'string' && r.truth.trim())) : [];
+  const requests = sidecar ? (Array.isArray(planRequests) ? planRequests : []).filter(q => q?.ref) : [];
+  if (!decided.length && !pending.length && !requests.length) return '';
+
+  const lines = [
+    '## UNREVEALED — FOR THE NARRATOR ONLY',
+    '',
+    'The story holds these truths, but the characters do not know them yet. Never state one outright,',
+    'and never hint that a plan exists. Let them shape what characters do and say, which clues appear',
+    'and what escalates.',
+    '- Reveals follow move outcomes. When a move touches a subject below, a hit shows one of its clues',
+    '  or moves it toward a way it could end; a weak hit shows a clue with a complication; a miss plays',
+    '  its next escalation step. A beat that does not touch a subject leaves it alone.',
+    '- When a character has refused the same request twice, the next beat reveals, trades or escalates.',
+  ];
+  if (sidecar) {
+    lines.push(
+      '- Where your narration contradicts something below, your narration stands: record the change in',
+      '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
+      '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
+    );
+  }
+
+  const budget = Math.max(0, Number(maxTokens) || 0) * 4;   // ~4 characters a token
+  let used = lines.join('\n').length;
+  const entries = [];
+  for (const r of decided) {
+    const entry = formatSkeletonEntry(r);
+    if (entries.length && used + entry.length > budget) break;   // the first always shows
+    entries.push(entry);
+    used += entry.length;
+  }
+  if (entries.length) lines.push('', entries.join('\n\n'));
+
+  if (pending.length || requests.length) {
+    lines.push(
+      '',
+      '### DECIDE NOW',
+      'Each of these has entered the story but has not been decided. Decide what is true about it now —',
+      'from its oracle rolls and what the story has established, in Starforged terms — and record it in',
+      'your sidecar, whether or not this beat shows any of it (show none of it outright):',
+      '  "plans": [{ "id": "<its id>", "subject": "<the name your prose uses for it>",',
+      '    "truth": "<what it really is, 1-3 sentences>", "wants": "<what it is trying to do>",',
+      '    "knows": "<what it knows that the characters do not>",',
+      '    "escalation": ["<2-3 steps, in order: what happens if it is ignored or provoked>"],',
+      '    "clues": ["<2-4 things the fiction can show that point at the truth>"],',
+      '    "resolutions": ["<1-3 ways it could end>"] }]',
+    );
+    for (const q of requests) {
+      const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${seeds}`);
+    }
+    for (const r of pending) {
+      const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
+      const what = r.kind === 'mystery' && r.question
+        ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
+        : `${skeletonHeading(r)}.${seeds}`;
+      lines.push(`- id ${r.id}: ${what}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /**

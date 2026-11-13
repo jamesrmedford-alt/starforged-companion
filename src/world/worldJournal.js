@@ -32,6 +32,10 @@ export const JOURNAL_NAMES = {
   factions:   "World Journal — Factions",
   locations:  "World Journal — Locations",
   sessionLog: "World Journal — Session Log",
+  // The narrative skeleton's hidden plans (issue #353): GM-only — made with no
+  // player permission (GM_ONLY_CATEGORIES) — one page per plan, its record in
+  // the page's `secretEntry` flag (src/world/secrets.js).
+  secrets:    "World Journal — Secrets",
 };
 
 export const FLAG_KEYS = {
@@ -40,7 +44,28 @@ export const FLAG_KEYS = {
   factions:  "factionEntry",
   locations: "locationEntry",
   sessionLogPage: "sessionLogPage",
+  secrets:   "secretEntry",
 };
+
+/**
+ * The categories whose journal no player may see: made with default
+ * ownership NONE, so the narrator's unrevealed plans never show in a player's
+ * journal directory (issue #353). A GM may still share one by hand.
+ */
+const GM_ONLY_CATEGORIES = new Set(["secrets"]);
+
+/** The data a category's journal is made with: its name, its category flag, and — GM-only categories — no player permission. */
+function journalCreateData(name, folderId = undefined) {
+  const category = nameToCategory(name);
+  return {
+    name,
+    ...(folderId !== undefined ? { folder: folderId } : {}),
+    flags: { [MODULE_ID]: { worldJournalCategory: category } },
+    ...(GM_ONLY_CATEGORIES.has(category)
+      ? { ownership: { default: globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0 } }
+      : {}),
+  };
+}
 
 export const THREAT_SEVERITIES = ["immediate", "active", "looming", "resolved"];
 const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
@@ -78,7 +103,7 @@ const NARRATION_HISTORY = 3;
  * @param {Object|null|undefined} existing — the stored entry
  * @returns {{ narrationId: string|null, previous: Object[]|null }}
  */
-function narrationStamp(narrationId, existing) {
+export function narrationStamp(narrationId, existing) {
   if (typeof narrationId !== "string" || !narrationId) return { narrationId: null, previous: null };
   if (!existing) return { narrationId, previous: null };
   const { previous: older, ...version } = existing;
@@ -124,11 +149,7 @@ export async function initWorldJournals() {
       continue;
     }
     try {
-      await JournalEntry.create({
-        name,
-        folder: folderId,
-        flags:  { [MODULE_ID]: { worldJournalCategory: nameToCategory(name) } },
-      });
+      await JournalEntry.create(journalCreateData(name, folderId));
     } catch (err) {
       console.error(`${MODULE_ID} | worldJournal: failed to create journal ${name}:`, err);
     }
@@ -915,7 +936,9 @@ export async function undoNarrationEntries(narrationIds) {
   if (!removed.size) return out;
   const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
 
-  for (const category of ["lore", "threats", "factions", "locations"]) {
+  // Secrets too (issue #353): a plan a removed narration made is deleted, and
+  // one it decided or revealed goes back to the version before.
+  for (const category of ["lore", "threats", "factions", "locations", "secrets"]) {
     const journal = findJournal(JOURNAL_NAMES[category]);
     const flagKey = FLAG_KEYS[category];
     for (const page of [...(journal?.pages?.contents ?? [])]) {
@@ -1595,6 +1618,19 @@ async function stampJournalCategory(journal, name) {
   }
 }
 
+/**
+ * A World Journal category's journal, made when there is none — GM only, as
+ * every write to it is (a GM-only category is made with no player
+ * permission). Null on a player's client when it does not exist.
+ *
+ * @param {string} category — a JOURNAL_NAMES key
+ * @returns {Promise<JournalEntry|null>}
+ */
+export async function getOrCreateWorldJournal(category) {
+  const name = JOURNAL_NAMES[category];
+  return name ? getOrCreateJournal(name) : null;
+}
+
 async function getOrCreateJournal(name) {
   let journal = findJournal(name);
   if (journal) {
@@ -1603,10 +1639,7 @@ async function getOrCreateJournal(name) {
   }
   if (!game.user?.isGM) return null;
   try {
-    journal = await JournalEntry.create({
-      name,
-      flags: { [MODULE_ID]: { worldJournalCategory: nameToCategory(name) } },
-    });
+    journal = await JournalEntry.create(journalCreateData(name));
     return journal ?? null;
   } catch (err) {
     console.error(`${MODULE_ID} | worldJournal: getOrCreateJournal(${name}) failed:`, err);
@@ -1627,7 +1660,8 @@ function entryTitle(page) {
   const own = page?.flags?.[MODULE_ID];
   if (!own) return null;
   const title = own[FLAG_KEYS.lore]?.title ?? own[FLAG_KEYS.threats]?.name
-    ?? own[FLAG_KEYS.factions]?.factionName ?? own[FLAG_KEYS.locations]?.locationName ?? null;
+    ?? own[FLAG_KEYS.factions]?.factionName ?? own[FLAG_KEYS.locations]?.locationName
+    ?? own[FLAG_KEYS.secrets]?.id ?? null;
   return typeof title === "string" && title ? title : null;
 }
 
@@ -1752,6 +1786,21 @@ function renderPageBody(flagKey, data) {
     case FLAG_KEYS.locations:
       return meta("Type", data.type) + meta("Status", data.status) +
         (data.description ? p(data.description) : "");
+    case FLAG_KEYS.secrets: {
+      // A plan, for the GM who opens the Secrets journal (issue #353).
+      const list = (label, items) => (items?.length
+        ? `<p><strong>${escapeHtml(label)}:</strong></p><ol>${items.map(i => `<li>${escapeHtml(String(i))}</li>`).join("")}</ol>` : "");
+      const mark = (t, on, word) => `${t}${on ? ` (${word})` : ""}`;
+      return meta("Status", data.status) +
+        (data.question ? meta("Question", data.question) : "") +
+        meta("Truth", data.truth || "not yet decided") +
+        (data.truthRevealed ? "<p><em>Revealed to the table.</em></p>" : "") +
+        meta("Wants", data.wants) + meta("Knows", data.knows) +
+        list("Escalation", (data.escalation ?? []).map(e => mark(e.text, e.done, "played"))) +
+        list("Clues", (data.clues ?? []).map(c => mark(c.text, c.revealed, "shown"))) +
+        list("Could end", data.resolutions) +
+        list("Oracle rolls", data.oracleSeeds);
+    }
     default:
       return data.summary ? p(data.summary) : (data.text ? p(data.text) : "");
   }
