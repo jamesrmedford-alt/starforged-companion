@@ -24,6 +24,7 @@ import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
+import { stakesShown } from '../moves/stakes.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -80,6 +81,7 @@ const SETTING = {
   NARRATOR_SESSION_SUMMARY: 'narratorSessionSummary',
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
+  MISS_STATED_STAKES:       'missPaysStatedStakes',   // stakes.js STAKES_SETTING (read there)
   // ── Character management ─────────────────────────────────────────────────
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
@@ -347,6 +349,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.VOW_SWEARING_SCENE, {
     name:    'Vow-Swearing Scene',
     hint:    "When a vow is sworn, generate a brief atmospheric scene of the oath being made, grounded in your campaign's Iron truth (how the Ironsworn bind their vows). Honors the global narration toggle.",
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.MISS_STATED_STAKES, {
+    name:    'Miss Pays the Stated Stakes',
+    hint:    'Before a roll, the Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost — the most obvious negative outcome of what was attempted — with any harm, stress or loss it names. Off: the Pay the Price table is rolled, as before. A miss with no stated cost always rolls the table.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -1250,6 +1261,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narratorSessionSummary: getNarratorSessionSummary(),
       narratorSpotlight:     getNarratorSpotlight(),
       vowSwearingScene:      getVowSwearingScene(),
+      missPaysStatedStakes:  readSetting(SETTING.MISS_STATED_STAKES, true),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1678,6 +1690,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             Vow-swearing scene
           </label>
           <span class="narrator-field-hint">When a vow is sworn, the narrator paints a brief scene of the oath being made, grounded in your campaign's Iron truth (how the Ironsworn bind their vows).</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="missPaysStatedStakes" ${ctx.missPaysStatedStakes ? 'checked' : ''} ${dis}>
+            A miss pays the stated stakes
+          </label>
+          <span class="narrator-field-hint">The Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost. Off: the Pay the Price table is rolled.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -2194,6 +2213,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
+        game.settings.set(MODULE_ID, SETTING.MISS_STATED_STAKES,       checked('missPaysStatedStakes', true)),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
@@ -2496,6 +2516,8 @@ export class MoveConfirmDialog extends ApplicationV2 {
       moveId:          interp.moveId    ?? '—',
       statUsed:        interp.statUsed  ?? '—',
       rationale:       interp.rationale ?? '',
+      // What a hit gets and a miss costs, before the roll (issue #353 R1).
+      stakes:          interp.stakes ?? null,
       mischiefApplied: !!interp.mischiefApplied,
       mischiefAside:   interp._mischiefAside ?? '',
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
@@ -2528,6 +2550,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <span class="confirm-field-label">Interpretation</span>
           <p class="confirm-rationale-text">${escapeAttr(context.rationale)}</p>
         </div>
+        ${renderStakesBlock(context.stakes)}
         ${mischiefBlock}
         ${abilitiesBlock}
         <div class="confirm-actions">
@@ -2649,6 +2672,23 @@ export function readMoveAbilitiesForm(root) {
  * @param {string} currentStat — the move's listed stat
  * @returns {string} HTML ('' with no abilities)
  */
+/**
+ * What the roll is for, before it (issue #353 R1): what a hit gets, and what
+ * a miss costs when that is its price (stakes.js stakesShown) — the Confirm
+ * dialog's and a Batch Mode round reading's. '' for none.
+ *
+ * @param {Object|null} stakes — the interpretation's
+ * @returns {string}
+ */
+export function renderStakesBlock(stakes) {
+  const shown = stakesShown(stakes);
+  if (!shown.length) return '';
+  const rows = shown.map(s => (s.kind === 'hit'
+    ? `<p class="confirm-stake confirm-stake-hit"><strong>On a hit:</strong> ${escapeAttr(s.text)}</p>`
+    : `<p class="confirm-stake confirm-stake-miss"><strong>On a miss:</strong> ${escapeAttr(s.text)}${s.cost ? ` <span class="confirm-stake-cost">(${escapeAttr(s.cost)})</span>` : ''}</p>`)).join('');
+  return `<div class="confirm-stakes"><span class="confirm-field-label">At stake</span>${rows}</div>`;
+}
+
 export function renderMoveAbilitiesForm(abilities, currentStat) {
   return renderApplicableAbilitiesBlock(abilities, currentStat);
 }

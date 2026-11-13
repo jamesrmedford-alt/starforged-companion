@@ -1381,6 +1381,19 @@
   color: var(--color-text-dark-secondary, #444);
 }
 
+/* What the roll is for, stated before it (issue #353 R1): the Confirm dialog
+   and a Batch Mode round reading. */
+.confirm-stakes {
+  margin: 0.4rem 0;
+}
+.confirm-stakes .confirm-stake {
+  margin: 0.15rem 0;
+}
+.confirm-stakes .confirm-stake-cost {
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .confirm-mischief-aside {
   border: 1px dashed var(--color-border-dark, #c07830);
   border-radius: 3px;

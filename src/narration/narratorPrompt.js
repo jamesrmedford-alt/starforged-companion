@@ -5,6 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
+import { formatStakesBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -2451,6 +2452,11 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
+  // What the player was shown before the roll, and which of it this outcome
+  // delivers (issue #353 R1).
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null);
+  if (stakes) parts.push(stakes);
+
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
     : null;
@@ -2547,6 +2553,9 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
+      // The stakes shown before this entry's roll (issue #353 R1).
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null);
+      if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
     } else if (input.kind === 'refused') {

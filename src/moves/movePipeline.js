@@ -34,6 +34,7 @@ import {
   resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
   rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
 } from "./resolver.js";
+import { statedPrice } from "./stakes.js";
 import { buildMischiefAside } from "./mischief.js";
 import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
@@ -607,6 +608,8 @@ function readingFromMove(read, { forced = null } = {}) {
     statUsed:       interpretation.statUsed ?? null,
     rationale:      interpretation.rationale ?? "",
     mischiefAside:  interpretation._mischiefAside ?? "",
+    // What a hit gets and a miss costs, before the roll (issue #353 R1).
+    stakes:         interpretation.stakes ?? null,
     abilities,
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
@@ -1420,7 +1423,12 @@ export async function rollMove({
     // A scene-challenge move's miss filled its challenge's clock itself:
     // "fill a clock segment and Pay the Price" is one fill (issue #338 D2).
     const skipClockIds = sceneChallenge?.clockId ? [sceneChallenge.clockId] : [];
-    const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds }).catch(err => {
+    // The miss stated before the roll is the price (issue #353 R1, decided:
+    // the table is the alternative — rolled when none was stated, or with
+    // the world setting off): its suffer move runs through the same
+    // executors, and leaves the receipts a burn undoes.
+    const stated = statedPrice(resolution.stakes);
+    const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated }).catch(err => {
       console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
       return null;
     });
@@ -1715,6 +1723,9 @@ export function narrationInputFrom(resolution, relevance = null) {
     isMatch:           resolution?.isMatch === true,
     loremasterContext: resolution?.loremasterContext ?? "",
     oracleSeeds:       resolution?.oracleSeeds ?? null,
+    // What the roll was for, as shown before it (issue #353 R1): the round
+    // delivers the one its outcome calls for.
+    stakes:            resolution?.stakes ?? null,
     // The plans its narration is asked to decide (an expedition it began) and
     // the track it finished (issue #353 Phase 3) — the round narrates them.
     skeletonRequests:  Array.isArray(resolution?.skeletonRequests) ? resolution.skeletonRequests : [],

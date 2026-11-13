@@ -298,6 +298,58 @@ rolls create the enemy's hidden truth (Phase 1).
 
 ---
 
+## Issue #353 R1: the stakes are stated before the roll, and a miss pays them (2026-11)
+
+**Decision:** (issue #353 R1; decided, maintainer 2026-11-13: the outcome
+stated before the roll is a miss's default price, the Pay the Price table
+the alternative.)
+- **The interpreter states the stakes** (`moves/stakes.js`): for a move that
+  rolls a stat, one line for what a hit gets and one for what a miss costs —
+  its most obvious negative outcome (Pay the Price's first choice), drawn
+  from the RECENT SCENE and the player's line — and, beside a miss, at most
+  one suffer move it costs (`missSuffer`, 1–3): the routes Pay the Price's
+  table annotates (Endure Harm, Endure Stress, Sacrifice Resources, Withstand
+  Damage, Companion Takes a Hit — Endure Harm with no companion) and Lose
+  Momentum (the move for "delayed or put at a disadvantage", which the table
+  leaves narrative). A progress move, or a move with no roll, has none.
+  Whether a miss pays the stated miss (`priceStated`) is fixed when the
+  interpretation is read, so the dialog shows what the roll then pays.
+- **Shown before the roll**: the Confirm Move dialog and a Batch Mode round
+  reading show "On a hit" and — only when it is the price — "On a miss" with
+  its cost. Wrong stakes are fixed the existing way: Cancel and re-word.
+- **A miss pays them**: a routed miss (`routePayThePrice`) posts its Pay the
+  Price card with the stated miss and rolls nothing ("As stated before the
+  roll"); its suffer move runs through the same dispatcher and executors as a
+  rolled route, so its receipts are the ones a burn or an improvement undoes,
+  and the Pay the Price clock advance is unchanged. An unrouted miss whose
+  text says to pay the price is seeded with the stated miss instead of an
+  advisory table roll. The table is rolled only when no miss was stated, or
+  with the world setting **Miss Pays the Stated Stakes**
+  (`missPaysStatedStakes`, default on) off.
+- **The narrator delivers them**: a STAKES block after MOVE OUTCOME (a round
+  entry's too) names what was shown and which line the outcome delivers; a
+  burn's or an improvement's re-narration carries the stakes and delivers the
+  upgraded outcome's line.
+- **Never from a hidden plan.** The issue proposed a miss's stake be the
+  subject's next escalation step. The stakes are shown on the roller's screen
+  before the roll — a player's, or a solo GM's who should not see the plan —
+  so they are drawn from the scene only; the narrator still plays a planned
+  subject's next escalation step on a miss, under UNREVEALED.
+
+**Reason:** in the alpha 23 playtest a scan's miss came back "You are delayed
+or put at a disadvantage", unrelated to the scan, with nothing behind it. A
+player who knows what a roll is for has a reason to make it, and the
+consequence follows from the action.
+
+**Rejected:** *the plan's escalation step as the miss stake* — it shows the
+plan before the roll (above). *A per-roll "roll the table instead" box* — the
+issue names two alternatives, no stated miss and the world setting.
+*Editable stakes in the dialog* — Cancel and re-word already re-reads the
+line. *Withstand Damage and Companion Takes a Hit excluded* — they are table
+routes, and a burn treats them exactly as it treats the table's.
+
+---
+
 ## Issue #353 R3 and R4: the vow is the spine; what is open is shown (2026-11)
 
 **Decision:** (issue #353 "Related changes" R3 and R4. R4's home — the

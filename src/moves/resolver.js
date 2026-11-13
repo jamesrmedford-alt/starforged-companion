@@ -19,6 +19,7 @@
 import { MOVES, moveRollKind } from "../schemas.js";
 import { rollOracle, rollPaired } from "../oracles/roller.js";
 import { BONDED_DEVELOP_OUTCOMES } from "./developRelationship.js";
+import { statedPrice } from "./stakes.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1390,7 +1391,8 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
     { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice,
       rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
-      region: activeSectorRegion(campaignState) });
+      region: activeSectorRegion(campaignState),
+      statedPriceText: statedPrice(interpretation.stakes)?.price ?? null });
   const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
@@ -1404,6 +1406,10 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     // How the stat was chosen when the rule chose it — "lower of iron / wits"
     // for Heal's self-mend (statEnrichment, issue #330 D4); shown on the card.
     statRule: typeof interpretation.statRule === "string" ? interpretation.statRule : null,
+    // What a hit gets and a miss costs, as the Confirm dialog stated them
+    // (issue #353 R1): the narrator delivers the one the outcome calls for,
+    // and a miss that pays the price pays the stated miss (movePipeline).
+    stakes:   interpretation.stakes && typeof interpretation.stakes === "object" ? interpretation.stakes : null,
     adds,
     rationale,
     mischiefApplied,
@@ -1492,6 +1498,9 @@ function weakHitAsMissSource(interpretation) {
  * @param {string|null} [opts.region] — the active sector's region
  *   ("terminus" | "outlands" | "expanse"): an expedition's waypoint is that
  *   region's Space Sighting; Terminus with none (activeSectorRegion)
+ * @param {string|null} [opts.statedPriceText] — the miss stated before the
+ *   roll (stakes.js statedPrice): an unrouted miss's price is that one, not a
+ *   table roll (issue #353 R1)
  * @returns {Object|null}
  */
 // Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
@@ -1509,7 +1518,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false, region = null } = {}) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false, region = null, statedPriceText = null } = {}) {
   try {
     const results = [];
     const names   = [];
@@ -1698,7 +1707,9 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
     // narration with: rolling one here too gave the narration one price and
     // the table another (issue #321 U03).
     if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId) && !routesPayThePrice) {
-      const ptp = safeRoll("pay_the_price");
+      // The miss stated before the roll is its price (issue #353 R1); the
+      // table only when none was stated.
+      const ptp = statedPriceText || safeRoll("pay_the_price");
       if (ptp) results.push(...priceSeedLines(ptp));
     }
 

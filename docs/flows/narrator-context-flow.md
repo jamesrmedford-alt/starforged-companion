@@ -39,7 +39,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
 - **Move narration** (`narrateResolution`) runs inside the move pipeline, on
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
-  `src/multiplayer/gmGate.js`).
+  `src/multiplayer/gmGate.js`). Its user message (`buildNarratorUserMessage`)
+  is RECENT SCENE, MOVE OUTCOME, then STAKES STATED BEFORE THE ROLL — the
+  interpreter's hit and miss lines the Confirm dialog showed
+  (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
+  this outcome delivers (issue #353 R1; a burn's or an improvement's
+  re-narration carries them) — then the player's line.
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -63,8 +68,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   Z36); no SPOTLIGHT (`round_resolution` is not in
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
-  stat, outcome, outcome text and price, oracle seeds, the player's sanitised
-  line and a latitude line — and the instruction to act for no one else and
+  stat, outcome, outcome text and price, the stakes shown before its roll
+  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds, the
+  player's sanitised line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent.
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the

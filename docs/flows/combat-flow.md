@@ -17,7 +17,11 @@ Two cross-cutting facts to hold onto:
   at a table of several is told they need a character and nothing is rolled,
   issue #326 D8) drives the stat enrichment, the decisive-action
   cost and Face Defeat Pay the Price routes, and the won-fight card and reward
-  (decisions.md → "Multiplayer attribution").
+  (decisions.md → "Multiplayer attribution"). A miss that routes Pay the
+  Price pays the cost the Confirm dialog stated before the roll when there
+  is one (`moves/stakes.js` `statedPrice` → `postMovePayThePriceCard`'s
+  `stated`: no d100, its one suffer route dispatched as a rolled route is,
+  the same receipts on `ptpReversals`), else rolls the table (issue #353 R1).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,

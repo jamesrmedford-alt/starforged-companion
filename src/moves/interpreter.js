@@ -20,6 +20,7 @@ import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
 import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { moveDisplayName } from "../system/i18n.js";
+import { normaliseStakes, withPriceSource } from "./stakes.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -67,6 +68,7 @@ Given player narration, return a JSON object identifying:
 - The move (from the valid move list below)
 - The stat to roll (from edge/heart/iron/shadow/wits, or a special meter)
 - Your reasoning (internal only — not shown to the player)
+- The stakes: what a hit gets and what a miss costs, shown to the player before the roll
 
 ## MOVE REFERENCE
 
@@ -173,6 +175,11 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "combatRank": null,
   "healSituation": null,
   "rationale": "Player is threading their ship through a debris field — risky navigation requiring focus and observation.",
+  "stakes": {
+    "hit": "You thread the debris and come out ahead of the patrol.",
+    "miss": "A shard tears through the hull plating as you clear the field.",
+    "missSuffer": { "move": "withstand_damage", "amount": 1 }
+  },
   "mischiefApplied": false,
   "confidence": "high"
 }
@@ -183,7 +190,9 @@ progressTicks: ALWAYS leave as 0 — for progress moves the module fills the sco
 moveTarget: the named thing the move acts on, taken from the player's narration — or, when the narration refers to it without naming it ("her coordinates", "there", "the station", "him"), as the RECENT SCENE names it. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"); a destination the story refers to without a proper name gets a short working label saying whose or what it is and how the scene refers to it ("Archer's rendezvous — the gap"), never a bare pronoun or "there". For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
-combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
+combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.
+stakes: what this roll is for, shown to the player before they roll — only for a move that rolls a stat (statUsed is not null); null otherwise. One short line each, in the second person, drawn from the RECENT SCENE and the player's narration: "hit" — what the attempt gets the character; "miss" — its most obvious negative outcome (Pay the Price's first choice, "make the most obvious negative outcome happen"): concrete, and about what was attempted, never a vague setback. "miss" is null when no outcome follows obviously from the attempt — the Pay the Price table is rolled then. Never state what the move's own rules decide (progress marked, a combat position) — only what happens in the fiction.
+missSuffer: when that miss plainly costs the character one of these, name it and its amount (1, or 2 for a serious blow): "endure_harm" (an injury), "endure_stress" (fear, shock or despair), "lose_momentum" (a delay, a lost edge), "sacrifice_resources" (supplies spent or lost), "withstand_damage" (their vehicle is damaged), "companion_takes_a_hit" (their companion is harmed). null when the miss costs something else — a position, an opportunity, someone's trust.`;
 }
 
 
@@ -664,6 +673,11 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     // the lower of iron / wits (statEnrichment, issue #330 D4).
     healSituation:           parsed.moveId === "heal" && HEAL_SITUATIONS.has(parsed.healSituation) ? parsed.healSituation : null,
     rationale,
+    // What a hit gets and a miss costs, stated before the roll (issue #353
+    // R1) — only for a move that rolls a stat; a stated miss is its price.
+    stakes:                 finalMoveData.progressMove !== true && parsed.statUsed
+      ? withPriceSource(normaliseStakes(parsed.stakes))
+      : null,
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",
     positionConstraintApplied: positionRemapped,         // true when a wrong-position move was remapped
@@ -696,6 +710,7 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     combatRank:              null,
     healSituation:           null,
     rationale:               "Fallback — API response could not be parsed.",
+    stakes:                  null,
     mischiefApplied:         false,
     confidence:              "low",
     playerConfirmed:         false,

@@ -194,6 +194,7 @@ function readingView(reading, { moveLabel, statLabel }) {
     statUsed:      reading.statUsed ?? null,
     statName:      reading.statUsed ? statLabel(reading.statUsed) : null,
     rationale:     reading.rationale ?? "",
+    stakes:        reading.stakes ?? null,
     mischiefAside: reading.mischiefAside ?? "",
     abilities:     Array.isArray(reading.abilities) ? reading.abilities : [],
     statOptions:   Array.isArray(reading.statOptions) ? reading.statOptions : [],
