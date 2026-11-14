@@ -294,7 +294,13 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
   const SETTINGS = { narrationTone: 'wry', narrationPerspective: 'second_person', narrationLength: 3 };
   const PREV = { sessionId: 'sess-0', sessionNumber: 2, text: 'The crew paid Vex 300 credits.', updatedAt: null };
 
+  // The per-beat LAST SESSION block, as a narration without a world snapshot
+  // carries it (issue #357: with one, earlier sessions are in the snapshot —
+  // worldSnapshotRequest.test.js).
+  const withoutSnapshot = () => game.settings._store.set('starforged-companion.worldSnapshot', false);
+
   it('LAST SESSION renders before STORY SO FAR, with the texture-only caveat', async () => {
+    withoutSnapshot();
     const extras = await buildNarratorExtras('paced_narrative', makeState({ sessionNumber: 3, previousSessionSummary: PREV }));
     expect(extras.previousSessionSummary).toEqual({ text: PREV.text, sessionNumber: 2, isLast: true });
     const prompt = buildNarratorSystemPrompt(makeState(), SETTINGS, null, '',
@@ -303,6 +309,7 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
   });
 
   it('is not called the last session when sessions between them left no summary', async () => {
+    withoutSnapshot();
     const extras = await buildNarratorExtras('scene_interrogation', makeState({ sessionNumber: 5, previousSessionSummary: PREV }));
     const prompt = buildNarratorSystemPrompt(makeState(), SETTINGS, null, '', extras);
     expect(prompt).toContain('## SESSION 2 (THE LATEST SESSION SUMMARISED)');

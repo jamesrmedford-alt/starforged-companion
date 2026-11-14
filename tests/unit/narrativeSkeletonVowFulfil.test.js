@@ -101,6 +101,9 @@ describe('issue #353 Phase 4 — a vow\'s plan in the narration that fulfils it'
     expect(call.system).toContain('## UNREVEALED');
     expect(call.system).toContain(TRUTH);
     expect(call.system).toContain('When the vow is fulfilled or forsaken, its story ends');
+    // The plan is written out in the world snapshot (issue #357); the
+    // context names it as in play for this narration.
+    expect(call.body.system.at(-1).text).toMatch(/### IN PLAY FOR THIS NARRATION[\s\S]*- Vow — [^\n]*\(id sk-/);
   }, 60_000);
 
   it('control: another move by Kira does not bring it in', async () => {
@@ -111,6 +114,11 @@ describe('issue #353 Phase 4 — a vow\'s plan in the narration that fulfils it'
     foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState')), { speakerActorId: 'pc-kira' }));
     const call = narrationCallsOf(table).at(-1);
     expect(call).toBeTruthy();
-    expect(call.system).not.toContain(TRUTH);
+    // Every active plan is in the world snapshot (issue #357, decided); this
+    // narration's context does not name the vow's as in play.
+    const context = call.body.system.at(-1).text;
+    expect(context).not.toContain(TRUTH);
+    expect(context).not.toContain('## UNREVEALED');
+    expect(call.system).toContain(TRUTH);
   }, 40_000);
 });

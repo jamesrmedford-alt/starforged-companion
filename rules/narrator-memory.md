@@ -239,6 +239,42 @@ layers. This file is the never-break list.
    on RESPOND NOW, a pointer to it that names no key: a new sidecar key goes
    in the instruction (invariant 2), never in the pointer.
 
+7c. **The world snapshot is sent as stored, and never asserts removed
+   content** (issue #357). With a snapshot the request has a fourth cached
+   block between `standing` and `mode`: the whole world state, rendered once
+   (`worldSnapshot.js`), stored on a page of the GM-only Secrets journal
+   (`worldSnapshotStore.js`) and sent byte for byte until a new one is taken.
+   - **Never re-render it per call.** The records under it change during
+     play; what changed rides in the context under CHANGED SINCE THE SNAPSHOT
+     (which wins), found by comparing the world against the snapshot's
+     manifest. A unit's text must be a pure function of its record: no
+     timestamp, no count that moves, no ordering by time — and units are
+     sorted by a stable id.
+   - **What changes within a session stays out of it**: the scene frame and
+     ledger, CORRECTED, ship position, character state, clocks, progress,
+     recent oracles, this session's summary. The never-dropped tiers
+     (invariant 4) render in the context on every call.
+   - **When a new one is taken is one table** — `snapshotEvents.js`
+     `SNAPSHOT_EVENTS`. A trigger site reports its event by id
+     (`reportSnapshotEvent`) and never decides for itself; a new event is a
+     new row, with its site, in the same commit (`worldSnapshot.test.js`
+     fails on a reported id that is no row, and on a row nothing reports).
+   - **Every retraction takes a new snapshot.** A new correction path calls
+     `propagateRetraction` (6b), which reports it; a path that removes a
+     record another way is caught by the manifest (`record_removed`), but a
+     path that *rewrites* one to take content back must report an event of
+     its own — a changed record otherwise rides as a change while the
+     snapshot still states the old one.
+   - **It holds every active hidden plan**, so it is the GMs' alone: stored
+     in the Secrets journal, read only by `narrator.js`
+     (`secretsStayHidden.test.js`), never by a card builder, a panel or a
+     player's client. Narration on a player's own key sends none.
+   - **Section moves are two-sided.** A per-beat section the snapshot covers
+     is left out of the context when there is one (`buildNarratorSystemBlocks`
+     — nothing is sent twice) and still rendered when there is none. A new
+     durable section is a new unit kind in `collectWorldUnits` *and* a
+     per-beat fallback; a new volatile one goes in the context only.
+
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),
    debounced at `round(1.5 × narratorContextCards)`, and must never be retained
@@ -255,5 +291,7 @@ layers. This file is the never-break list.
 
 `narratorContextCards` (ring depth) · `sceneContextCards` ·
 `narratorSessionSummary` (rolling session summary on/off) ·
+`worldSnapshot` (the world snapshot on/off; its triggers are the table in
+`snapshotEvents.js`, its size rule `CHANGES_MAX_TOKENS` / `CHANGES_MAX_SHARE`) ·
 `factContinuity.sceneFrame` · `factContinuity.maxLedgerTokens` ·
 `factContinuity.consistencyCheck`. Symptom → knob table: architecture doc §7.

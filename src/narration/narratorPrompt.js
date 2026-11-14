@@ -1600,6 +1600,13 @@ const SECTION_RULE = '\n\n---\n\n';
 export const NARRATION_BLOCK_HEADING = '## THIS NARRATION';
 export const CONTEXT_BLOCK_HEADING   = '## CONTEXT FOR THIS NARRATION';
 
+/**
+ * The heading the world snapshot's block opens on (issue #357; worldSnapshot.js
+ * renders the block). When a narration has one it sits between the standing
+ * rules and THIS NARRATION, so every prose mode shares both.
+ */
+export const SNAPSHOT_BLOCK_HEADING  = '## WORLD SNAPSHOT';
+
 // A meta mode's prompt (the campaign recap) is one block: it is sent once a
 // session, so there is nothing to read back from a cache. Its headings differ
 // so splitNarratorSystemPrompt leaves it whole.
@@ -1614,6 +1621,16 @@ const STANDING_ROLE =
   `You are the narrator for an Ironsworn: Starforged campaign. The rules in this first ` +
   `part hold for every narration. THIS NARRATION, after them, says what this one is ` +
   `for; CONTEXT FOR THIS NARRATION, last, is the story as it stands now.`;
+
+/**
+ * The line that opens the per-beat context: what it is, and — with a world
+ * snapshot ahead of it — which of the two wins.
+ */
+const CONTEXT_INTRO          = `The story as it stands now. The rules above say how to use it.`;
+const CONTEXT_INTRO_SNAPSHOT =
+  `The story as it stands now. The rules above say how to use it. WORLD SNAPSHOT, above, holds the ` +
+  `world's records as they stood when it was taken; this context is newer — where the two disagree, ` +
+  `this context wins.`;
 const META_STANDING_ROLE =
   `You are the narrator for an Ironsworn: Starforged campaign. The rules in this first ` +
   `part hold throughout. THIS SUMMARY, after them, says what you are asked to write; ` +
@@ -1649,6 +1666,14 @@ const RESPOND_BLOCK =
  *              the sidecar response format, the NPC dialogue markup. It
  *              changes only when the table changes a setting, a Line or a
  *              truth. Cached.
+ *   snapshot — the world snapshot (issue #357), when the narration has one
+ *              (`extras.worldSnapshot`, narrator.js buildNarratorExtras →
+ *              worldSnapshotStore.js): the whole world state as it stood when
+ *              the snapshot was taken — every sector, entity card, faction,
+ *              threat, lore entry, earlier sessions' summaries and hidden
+ *              plan — stored text, sent byte for byte until a new one is
+ *              taken. The same for every prose mode. Cached. '' without one,
+ *              and the request is then as it was before the snapshot.
  *   mode     — what this narration is: the mode's role description, how a
  *              beat ends, perspective and length, the permission class, the
  *              opening scene's sidecar addendum. The same for every call of
@@ -1681,6 +1706,13 @@ const RESPOND_BLOCK =
  *             entity cards · [6.5] scene ledger · [6.6] unrevealed · [8]
  *             character · [8b] party · [8c] spotlight · [8d] this beat's prose
  *             · [9b] respond now
+ *   With a snapshot, the context leaves out what the snapshot holds — [4c]'s
+ *   last session, [4d]-[4g], [5], [5b], [6] and the plans of [6.6] — and has
+ *   in their place [5s] IN PLAY NOW (the active sector, the current location
+ *   and the entities and threats this narration involves, by name and id) and
+ *   [5c] CHANGED SINCE THE SNAPSHOT (every record made or changed since, in
+ *   full: it wins over the snapshot). [6.6] names the plans in play and keeps
+ *   its rules and DECIDE NOW.
  *
  * @param {Object} campaignState      — CampaignStateSchema
  * @param {Object} narratorSettings   — narrator game.settings values
@@ -1702,7 +1734,12 @@ const RESPOND_BLOCK =
  *   "move_resolution" for back-compat with existing call sites and tests.
  * @param {string[]} [extras.usedImages]       — the comparisons the recent narrations made ([8d])
  * @param {{ hint: string }|null} [extras.beatShape] — the shape picked for this beat ([8d])
- * @returns {{ standing: string, mode: string, beat: string, cached: boolean }}
+ * @param {{ text: string, changesText?: string }|null} [extras.worldSnapshot] — the world snapshot's
+ *   block and what changed since, rendered (issue #357)
+ * @param {Object|null} [extras.inPlay] — what IN PLAY NOW names (formatInPlayBlock), the cards of
+ *   entities in play the snapshot leaves out (`uncoveredCards`, `currentLocationCard`) and the ids
+ *   of the plans in play it holds (`coveredPlanIds`)
+ * @returns {{ standing: string, snapshot: string, mode: string, beat: string, cached: boolean }}
  */
 export function buildNarratorSystemBlocks(
   campaignState,
@@ -1753,11 +1790,20 @@ export function buildNarratorSystemBlocks(
     plannedSubjects      = [],
     usedImages           = [],
     beatShape            = null,
+    worldSnapshot        = null,
+    inPlay               = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
   const roleDescription = ROLE_DESCRIPTIONS[resolvedMode];
   const isMetaMode      = META_MODES.has(resolvedMode);
+  // The world snapshot this narration reads (issue #357), when it has one:
+  // the block goes between the standing rules and THIS NARRATION, and the
+  // per-beat sections it covers are left out of the context below.
+  const snapshot = !isMetaMode && typeof worldSnapshot?.text === 'string'
+    && worldSnapshot.text.startsWith(`${SNAPSHOT_BLOCK_HEADING}\n`)
+    ? worldSnapshot
+    : null;
   const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
 
   // A round speaks for every acting PC at once (its CHARACTER blocks, issue #342 Z40).
@@ -1903,7 +1949,7 @@ export function buildNarratorSystemBlocks(
   // The story as it stands. Different every call.
   const parts = [
     `${isMetaMode ? META_CONTEXT_HEADING : CONTEXT_BLOCK_HEADING}\n\n` +
-    `The story as it stands now. The rules above say how to use it.`,
+    (snapshot ? CONTEXT_INTRO_SNAPSHOT : CONTEXT_INTRO),
   ];
 
   // [0b] Campaign recap — on a session's first narration, in any prose mode
@@ -1963,8 +2009,10 @@ export function buildNarratorSystemBlocks(
   //      The summary of the session before this one comes first (issue #286
   //      C3) — the ring, this session's summary and recent oracles all reset
   //      when a session is minted — under the same caveat.
+  //      With a world snapshot, earlier sessions' summaries are in it (its
+  //      EARLIER SESSIONS); this session's stays here — it changes as it runs.
   if (!isMetaMode) {
-    const lastSessionBlock = formatPreviousSessionBlock(previousSessionSummary);
+    const lastSessionBlock = snapshot ? '' : formatPreviousSessionBlock(previousSessionSummary);
     if (lastSessionBlock) parts.push(lastSessionBlock);
     const storyBlock = formatStorySoFarBlock(rollingSummary);
     if (storyBlock) parts.push(storyBlock);
@@ -1976,15 +2024,20 @@ export function buildNarratorSystemBlocks(
   //      These rode the assembler context packet, which no live path ever
   //      read; they now render like every other extras block. Skipped for
   //      meta modes with the other live-scene sections.
+  //      With a world snapshot (issue #357) all four are in it, whole — every
+  //      threat, the whole landscape, all confirmed lore — and IN PLAY NOW
+  //      names the threats in motion; nothing is sent twice.
   if (!isMetaMode) {
-    const threatsBlock = formatActiveThreatsBlock(activeThreats);
-    if (threatsBlock) parts.push(threatsBlock);
-    const factionsBlock = formatFactionLandscapeBlock(factionLandscape);
-    if (factionsBlock) parts.push(factionsBlock);
-    const loreBlock = formatEstablishedLoreBlock(confirmedLore);
-    if (loreBlock) parts.push(loreBlock);
-    const recapBlock = formatWorldLoreRecapBlock(loreRecap);
-    if (recapBlock) parts.push(recapBlock);
+    if (!snapshot) {
+      const threatsBlock = formatActiveThreatsBlock(activeThreats);
+      if (threatsBlock) parts.push(threatsBlock);
+      const factionsBlock = formatFactionLandscapeBlock(factionLandscape);
+      if (factionsBlock) parts.push(factionsBlock);
+      const loreBlock = formatEstablishedLoreBlock(confirmedLore);
+      if (loreBlock) parts.push(loreBlock);
+      const recapBlock = formatWorldLoreRecapBlock(loreRecap);
+      if (recapBlock) parts.push(recapBlock);
+    }
     // [4h] Clocks and [4i] the session's focus (issue #286 C5) — neither
     //      reached any prompt.
     const clocksBlock = formatClocksBlock(clocks);
@@ -1997,22 +2050,42 @@ export function buildNarratorSystemBlocks(
     if (tracksBlock) parts.push(tracksBlock);
   }
 
-  // [5] Current location card — always injected when set
-  if (currentLocationCard?.trim()) {
-    parts.push(`## CURRENT LOCATION\n\n${currentLocationCard.trim()}`);
-  }
+  if (snapshot) {
+    // [5s] IN PLAY NOW (issue #357) — in place of [5], [5b] and [6]: the
+    //      snapshot holds every sector and every card, so the context names
+    //      the active sector, the current location and the entities and
+    //      threats this narration involves, and says where to look. A record
+    //      in play that the snapshot leaves out — an uncharted site the
+    //      player's line names — still has its card here.
+    const inPlayBlock = formatInPlayBlock(inPlay);
+    if (inPlayBlock) parts.push(inPlayBlock);
+    if (typeof inPlay?.currentLocationCard === 'string' && inPlay.currentLocationCard.trim()) {
+      parts.push(`## CURRENT LOCATION\n\n${inPlay.currentLocationCard.trim()}`);
+    }
+    const uncoveredCards = formatEntityCardsBlock(inPlay?.uncoveredCards);
+    if (uncoveredCards) parts.push(uncoveredCards);
+    // [5c] CHANGED SINCE THE SNAPSHOT — every record made or changed since it
+    //      was taken, in full. Where it and the snapshot disagree, it wins.
+    const changedBlock = formatChangedSinceBlock(snapshot.changesText);
+    if (changedBlock) parts.push(changedBlock);
+  } else {
+    // [5] Current location card — always injected when set
+    if (currentLocationCard?.trim()) {
+      parts.push(`## CURRENT LOCATION\n\n${currentLocationCard.trim()}`);
+    }
 
-  // [5b] Active sector anchor — names + directive to reuse them. Closes the
-  //      paced-narrative / scene-interrogation gap where the narrator had
-  //      no sector context and would invent new settlement names for
-  //      places that already exist in the active sector.
-  if (activeSectorBlock?.trim()) {
-    parts.push(`## ACTIVE SECTOR\n\n${activeSectorBlock.trim()}`);
-  }
+    // [5b] Active sector anchor — names + directive to reuse them. Closes the
+    //      paced-narrative / scene-interrogation gap where the narrator had
+    //      no sector context and would invent new settlement names for
+    //      places that already exist in the active sector.
+    if (activeSectorBlock?.trim()) {
+      parts.push(`## ACTIVE SECTOR\n\n${activeSectorBlock.trim()}`);
+    }
 
-  // [6] Matched entity cards — from relevance resolver
-  const cardsBlock = formatEntityCardsBlock(entityCards);
-  if (cardsBlock) parts.push(cardsBlock);
+    // [6] Matched entity cards — from relevance resolver
+    const cardsBlock = formatEntityCardsBlock(entityCards);
+    if (cardsBlock) parts.push(cardsBlock);
+  }
 
   // [6.5] Active scene ledger — binding truths + current state for in-scope
   //       subjects. Gated by both the master fact-continuity toggle and the
@@ -2031,10 +2104,13 @@ export function buildNarratorSystemBlocks(
   //       plans this narration must decide in its sidecar. Never in a meta
   //       mode; its writes need the sidecar, so DECIDE NOW only with it.
   if (!isMetaMode) {
+    //       With a world snapshot the plans themselves are in it: the
+    //       block names the ones in play and keeps its rules and DECIDE NOW.
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests,
       plannedSubjects,
       sidecar: factContinuityEnabled,
+      coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
   }
@@ -2082,6 +2158,7 @@ export function buildNarratorSystemBlocks(
 
   return {
     standing: standing.join(SECTION_RULE),
+    snapshot: snapshot ? snapshot.text.trim() : '',
     mode:     modeParts.join(SECTION_RULE),
     beat:     parts.join(SECTION_RULE),
     cached:   !isMetaMode,
@@ -2089,9 +2166,10 @@ export function buildNarratorSystemBlocks(
 }
 
 /**
- * Build the full narrator system prompt, as one string: the three blocks of
- * buildNarratorSystemBlocks — the standing rules, this narration, its context
- * — joined by the section rule. It is what every narrator call site builds and
+ * Build the full narrator system prompt, as one string: the blocks of
+ * buildNarratorSystemBlocks — the standing rules, the world snapshot when
+ * there is one, this narration, its context — joined by the section rule. It
+ * is what every narrator call site builds and
  * hands to callNarratorAPI, which sends it as those blocks
  * (splitNarratorSystemPrompt), and what `!narrator debug` shows.
  *
@@ -2110,32 +2188,95 @@ export function buildNarratorSystemPrompt(
   extras = {},
 ) {
   const blocks = buildNarratorSystemBlocks(campaignState, narratorSettings, character, campaignRecap, extras);
-  return [blocks.standing, blocks.mode, blocks.beat].filter(Boolean).join(SECTION_RULE);
+  return [blocks.standing, blocks.snapshot, blocks.mode, blocks.beat].filter(Boolean).join(SECTION_RULE);
 }
 
 /**
  * A narrator system prompt as the blocks the request carries (issue #354
- * P2-23): the standing rules, this narration, and its context — found by the
- * two headings buildNarratorSystemBlocks opens the second and third with. The
- * first two are the cached prefix; the last is never cached.
+ * P2-23): the standing rules, the world snapshot when the narration has one
+ * (issue #357; marked `snapshot`), this narration, and its context — found by
+ * the headings buildNarratorSystemBlocks opens each with. All but the last
+ * are the cached prefix; the context is never cached.
  *
- * A prompt without both headings — a meta mode's, the rolling summary's own —
- * comes back as one block, not cached: it has no prefix a later call repeats.
+ * A prompt without the mode and context headings — a meta mode's, the rolling
+ * summary's own — comes back as one block, not cached: it has no prefix a
+ * later call repeats.
  *
  * @param {string} systemPrompt — buildNarratorSystemPrompt's string, or any other system prompt
- * @returns {Array<{ text: string, cached: boolean }>} never empty for a non-empty prompt
+ * @returns {Array<{ text: string, cached: boolean, snapshot?: boolean }>} never empty for a non-empty prompt
  */
 export function splitNarratorSystemPrompt(systemPrompt) {
   const text = typeof systemPrompt === 'string' ? systemPrompt : '';
   if (!text) return [];
-  const modeAt    = text.indexOf(`${SECTION_RULE}${NARRATION_BLOCK_HEADING}\n`);
-  const contextAt = modeAt < 0 ? -1 : text.indexOf(`${SECTION_RULE}${CONTEXT_BLOCK_HEADING}\n`, modeAt + SECTION_RULE.length);
+  const at = (heading, from = 0) => text.indexOf(`${SECTION_RULE}${heading}\n`, from);
+  const modeAt    = at(NARRATION_BLOCK_HEADING);
+  const contextAt = modeAt < 0 ? -1 : at(CONTEXT_BLOCK_HEADING, modeAt + SECTION_RULE.length);
   if (modeAt <= 0 || contextAt < 0) return [{ text, cached: false }];
+  // A world snapshot sits between the standing rules and THIS NARRATION. Its
+  // own text never holds a section rule (worldSnapshot.js unitText), so the
+  // first THIS NARRATION is the mode block's whether or not there is one.
+  const snapshotAt  = at(SNAPSHOT_BLOCK_HEADING);
+  const standingEnd = snapshotAt > 0 && snapshotAt < modeAt ? snapshotAt : modeAt;
   return [
-    { text: text.slice(0, modeAt), cached: true },
+    { text: text.slice(0, standingEnd), cached: true },
+    ...(standingEnd < modeAt ? [{ text: text.slice(standingEnd + SECTION_RULE.length, modeAt), cached: true, snapshot: true }] : []),
     { text: text.slice(modeAt + SECTION_RULE.length, contextAt), cached: true },
     { text: text.slice(contextAt + SECTION_RULE.length), cached: false },
   ].filter(b => b.text);
+}
+
+/**
+ * [5s] IN PLAY NOW (issue #357) — with a world snapshot, the records this
+ * narration involves, by name and id: the active sector, the current
+ * location, the entities relevance and the scene frame's cast matched, and
+ * the threats in motion. The snapshot (or CHANGED SINCE THE SNAPSHOT) holds
+ * each one's content; this says where to look. '' when it names nothing.
+ *
+ * @param {{ activeSector?: { id: string, name: string }|null, currentLocation?: { id: string, name: string }|null,
+ *   entities?: Array<{ id: string, name: string, type: string }>,
+ *   threats?: Array<{ id: string, name: string, severity: string }> }|null} inPlay
+ * @returns {string}
+ */
+function formatInPlayBlock(inPlay) {
+  const named = (x) => typeof x?.name === 'string' && x.name.trim();
+  const id = (x) => (x?.id ? `id ${x.id}` : '');
+  const lines = [];
+  if (named(inPlay?.activeSector))    lines.push(`- Active sector: ${inPlay.activeSector.name.trim()}${id(inPlay.activeSector) ? ` (${id(inPlay.activeSector)})` : ''}`);
+  if (named(inPlay?.currentLocation)) lines.push(`- Current location: ${inPlay.currentLocation.name.trim()}${id(inPlay.currentLocation) ? ` (${id(inPlay.currentLocation)})` : ''}`);
+  const entities = (Array.isArray(inPlay?.entities) ? inPlay.entities : []).filter(named)
+    .map(e => `${e.name.trim()} (${[ENTITY_TYPE_LABELS[e.type] ?? 'Entity', id(e)].filter(Boolean).join(', ')})`);
+  if (entities.length) lines.push(`- In this scene: ${entities.join('; ')}`);
+  const threats = (Array.isArray(inPlay?.threats) ? inPlay.threats : []).filter(named)
+    .map(t => `${t.name.trim()} (${[t.severity, id(t)].filter(Boolean).join(', ')})`);
+  if (threats.length) lines.push(`- Threats in motion: ${threats.join('; ')}`);
+  if (!lines.length) return '';
+  return (
+    `## IN PLAY NOW\n\n` +
+    `The records this narration involves. WORLD SNAPSHOT holds each one — find it there by name or id. ` +
+    `One that is also under CHANGED SINCE THE SNAPSHOT below is as it stands there.\n\n` +
+    lines.join('\n')
+  );
+}
+
+/**
+ * [5c] CHANGED SINCE THE SNAPSHOT (issue #357) — the records made or changed
+ * since the world snapshot was taken, each in full, under the snapshot's own
+ * section headings (worldSnapshot.js renderUnitSections). '' when nothing
+ * changed.
+ *
+ * @param {string} changesText
+ * @returns {string}
+ */
+function formatChangedSinceBlock(changesText) {
+  const text = typeof changesText === 'string' ? changesText.trim() : '';
+  if (!text) return '';
+  return (
+    `## CHANGED SINCE THE SNAPSHOT\n\n` +
+    `Made or changed after WORLD SNAPSHOT was taken — each in full, as it stands now. Where anything ` +
+    `here disagrees with the snapshot, this wins. A hidden plan here is used only when UNREVEALED ` +
+    `names it.\n\n` +
+    text
+  );
 }
 
 /** The UNREVEALED section's budget for its plans, in estimated tokens (DECIDE NOW is never trimmed). */
@@ -2186,6 +2327,22 @@ function formatSkeletonEntry(r) {
 }
 
 /**
+ * An active plan as the world snapshot holds it (issue #357): a decided one
+ * as UNREVEALED shows it; one not yet decided by its heading and the oracle
+ * rolls it waits on (DECIDE NOW lists it, in the context, when it is in
+ * play). '' for anything that is no plan.
+ *
+ * @param {Object} r — a plan record (skeletons.js normaliseSkeleton)
+ * @returns {string}
+ */
+export function formatSnapshotPlan(r) {
+  if (!r || typeof r !== 'object' || !r.subject || !r.id) return '';
+  if (typeof r.truth === 'string' && r.truth.trim()) return formatSkeletonEntry(r);
+  const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? `\nOracle rolls: ${r.oracleSeeds.join('; ')}` : '';
+  return `### ${skeletonHeading(r)} (id ${r.id})\nNot yet decided — what is true of it is decided when it is next in play.${seeds}`;
+}
+
+/**
  * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
  * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
  * the plans this narration must decide: a price that revealed a new enemy
@@ -2196,18 +2353,24 @@ function formatSkeletonEntry(r) {
  * for unit testing and the Private Channel's shared story.
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
- * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number }} [opts] —
+ * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
+ *   coveredIds?: string[] }} [opts] —
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
- *   "new" one is one of them (`sameAs`, issue #354 P2-30)
+ *   "new" one is one of them (`sameAs`, issue #354 P2-30);
+ *   `coveredIds`: the decided plans the world snapshot holds (issue #357) — each is named by its
+ *   heading and id, not printed again; a decided plan not among them is printed as before
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [] } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
-  const decided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
+  const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
+  const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
+  const named   = everyDecided.filter(r => covered.has(r.id));
+  const decided = everyDecided.filter(r => !covered.has(r.id));
   const pending = sidecar ? list.filter(r => !(typeof r.truth === 'string' && r.truth.trim())) : [];
   const requests = sidecar ? (Array.isArray(planRequests) ? planRequests : []).filter(q => q?.ref) : [];
-  if (!decided.length && !pending.length && !requests.length) return '';
+  if (!everyDecided.length && !pending.length && !requests.length) return '';
 
   const lines = [
     '## UNREVEALED — FOR THE NARRATOR ONLY',
@@ -2242,6 +2405,15 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
     used += entry.length;
   }
   if (entries.length) lines.push('', entries.join('\n\n'));
+  if (named.length) {
+    lines.push(
+      '',
+      '### IN PLAY FOR THIS NARRATION',
+      'Each of these is written out under HIDDEN PLANS in WORLD SNAPSHOT — or, changed since, under',
+      'CHANGED SINCE THE SNAPSHOT, which wins. Use these and no other plan the snapshot holds:',
+      ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
+    );
+  }
 
   if (pending.length || requests.length) {
     lines.push(

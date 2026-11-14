@@ -70,7 +70,6 @@ export async function requestPrivateNarration(args) {
     "Content-Type":      "application/json",
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
-    "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
   let data;

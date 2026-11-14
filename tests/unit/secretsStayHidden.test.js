@@ -26,6 +26,7 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 const STORE_READERS = new Map([
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
+  ['src/narration/worldSnapshot.js', 'the narrator\'s world snapshot (issue #357): every active plan, rendered as prompt text for the cached block — stored by worldSnapshotStore.js on a page of the GM-only Secrets journal, read by narrator.js alone'],
   ['src/oracles/oracleConsult.js', 'a yes/no about a planned subject: its truth sets the odds on the GM\'s client, sent to Claude, never to a card; a player\'s client is sent the odds word only (issue #354 P2-31)'],
   ['src/session/swearVow.js', 'a vow target\'s agenda plan (planNpcAgenda — a write, no read)'],
   ['src/ui/entityPanel.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
@@ -97,13 +98,29 @@ describe('issue #353 — the hidden plans stay hidden', () => {
     expect(panel.code.match(/listSkeletons\(/g)).toHaveLength(1);
   });
 
+  it('the world snapshot — its builder and its store — is read by the narrator\'s request alone (issue #357)', () => {
+    // The snapshot's text holds every active plan. It reaches the prompt and
+    // the GM-only page; no card builder and no panel reads either module.
+    expect(importers('worldSnapshot\\.js')).toEqual(['src/narration/narrator.js', 'src/narration/worldSnapshotStore.js']);
+    expect(importers('worldSnapshotStore\\.js')).toEqual(['src/narration/narrator.js']);
+    const store = byFile.get('src/narration/worldSnapshotStore.js');
+    const builder = byFile.get('src/narration/worldSnapshot.js');
+    for (const module of [store, builder]) expect(module.code).not.toMatch(/ChatMessage/);
+    // Stored on the Secrets journal — made with no player permission — and nowhere else.
+    expect(store.code).toMatch(/getOrCreateWorldJournal\('secrets'\)/);
+    expect(store.code).not.toMatch(/game\.settings\.set|JournalEntry\.create/);
+    // The page's flag is read by the store alone.
+    const flagReaders = sources.filter(s => /SNAPSHOT_FLAG\b/.test(s.code)).map(s => s.file);
+    expect(flagReaders).toEqual(['src/narration/worldSnapshotStore.js']);
+  });
+
   it('the narrator-card builders never read a plan', () => {
     const narrator = byFile.get('src/narration/narrator.js');
     for (const builder of ['postNarrationCard', 'postPacedNarrativeCard', 'postSceneCard', 'postOracleNarrationCard',
       'postRoundNarrationCard', 'postFallbackCard']) {
       const body = resolveFunctionSource(narrator, builder);
       expect(body, builder).toBeTruthy();
-      expect(body, builder).not.toMatch(/listSkeletons|unrevealed|planRequests|secret/i);
+      expect(body, builder).not.toMatch(/listSkeletons|unrevealed|planRequests|secret|worldSnapshot|inPlay/i);
     }
   });
 });

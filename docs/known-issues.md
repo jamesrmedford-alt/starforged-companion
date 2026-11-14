@@ -11,6 +11,20 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### The world snapshot (issue #357) — built in the v1.8.2 cycle, not yet played or measured
+
+Phases 1–3 are built with regression tests (decisions.md → "The world snapshot"; `tests/unit/worldSnapshot.test.js`, `worldSnapshotRequest.test.js`; the Quench batch `starforged-companion.promptContracts` → "the world snapshot"). Nothing was run against the live API or played in Foundry.
+
+| ID | Kind | Status |
+|---|---|---|
+| SNAPSHOT-UNMEASURED | open (needs a played session with a key) | The issue's acceptance checks: on the Narrator Usage page most prompt tokens are **Cache read** from a session's second call on; median call time is below the playtest's 5.9 s on comparable beats; the narrator's voice has not drifted (compare a few beats with v1.8.1's); no hidden plan is hinted at more than before — every active plan is now in every call, under the rule to use only the ones UNREVEALED names; an NPC or a plan referred to by part of its name is still in view. The snapshot page's log (World Journal — Secrets → **Narrator — world snapshot**) says when each snapshot was taken and why: if most narrations take one, narrow `SNAPSHOT_EVENTS` |
+| SNAPSHOT-MODE-PLACEMENT | open (issue #357 phase 4) | Where the mode's instructions go — a cached system block after the snapshot (built, as P2-23 left them) or the final user message (#287) — is to be compared on real narrations before choosing. Not built: the user-message placement |
+| SNAPSHOT-PLAYTHROUGH-CONTRACTS | open (CI) | The strict `first-session` playthrough's prompt contracts were re-pointed at the new layout by hand (`ask-vance`: IN PLAY NOW and the snapshot's card; `reopen`: the snapshot's EARLIER SESSIONS) and its replay unit test passes, but the Playwright suite was not run here. Its recorded section lists predate the snapshot, so a replay logs `STALE … re-record` for each narrator call until the scenario is recorded again (`--record-playthroughs`). `batch-round` begins its session with the galley unticked, so Begin a Session's cache write is a Claude call there: its `begin` step declares it optional (`prewarmNarratorCache>warmNarratorCacheAfterBegin`, answered by the stub) |
+| SNAPSHOT-PLAYER-KEY | by design | Narration on a player's own key (no keyed GM connected) sends no snapshot: the stored text holds the hidden plans and is on a GM-only page. That client's request is the three blocks of P2-23 with the per-beat sections, and it keeps a separate cache (#287 F7) |
+| SNAPSHOT-PRIVATE-CHANNEL | by design (out of scope) | The Private Channel runs on Haiku with its own prompt and reads the per-beat selection (`buildPrivateChannelStory`), so it shares neither the snapshot nor its cache. The move reader, the pacing classifier and entity detection are on Haiku too |
+| SNAPSHOT-REWRITTEN-RECORD | residual | A record *rewritten* to take content back by a path that reports no event rides as a change while the snapshot still states the old text (the prompt says the change wins). Every correction path in the tree reports one — the X-Card, `propagateRetraction`, a GM's plan edit or Retire — and a removed record is caught by the manifest. A Burn Momentum or Improve Result that restores a plan the superseded narration had re-decided is the known case: the restored plan is sent under CHANGED SINCE THE SNAPSHOT, and the next snapshot holds it |
+| SNAPSHOT-PREWARM-CLOCK-ONLY | residual | Begin a Session writes the cache ahead only when no opening narration follows. With the galley unticked and a campaign clock advancing, the clock's vignette is the first narration and writes it; if that vignette's call fails, the session's first played narration is the slow one |
+
 ### Alpha 23 playtest part 2 (issue #354) — built in the v1.8.2 cycle, not yet played
 
 Each with a regression test (decisions.md → "Issue #354"). None of it has been played in Foundry:

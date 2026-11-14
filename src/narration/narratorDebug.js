@@ -36,6 +36,15 @@ const SECTION_HEADING = /^##\s+\S/;
 /** formatSafetyContext's heading for the Private Lines block (src/context/safety.js). */
 const PRIVATE_LINES_HEADING = /^### PRIVATE LINES\b/;
 
+/**
+ * The world snapshot's section (narratorPrompt.js SNAPSHOT_BLOCK_HEADING,
+ * issue #357) holds the whole world — tens of thousands of characters in a
+ * long campaign. The card shows its size and its opening; the whole text is
+ * on its page in the GM-only Secrets journal.
+ */
+const SNAPSHOT_HEADING     = 'WORLD SNAPSHOT';
+const SNAPSHOT_SHOWN_CHARS = 4000;
+
 const captures = [];
 let nextCaptureId = 1;
 
@@ -232,9 +241,16 @@ function renderSections(title, text) {
   const items = sections.map(s =>
     `<li><details><summary>${escapeHtml(clip(s.heading, 80))} ` +
     `<span class="sf-narrator-debug-size">~${formatNumber(estimateTokens(s.text))}</span></summary>` +
-    `<pre>${escapeHtml(s.text)}</pre></details></li>`).join('');
+    `<pre>${escapeHtml(shownText(s))}</pre></details></li>`).join('');
   return `<h4>${escapeHtml(title)} — ${sections.length} section${sections.length === 1 ? '' : 's'}, ` +
     `~${formatNumber(total)} tokens</h4><ol class="sf-narrator-debug-sections">${items}</ol>`;
+}
+
+/** A section's text as the card shows it: whole, but for the world snapshot's, which is clipped to its opening. */
+function shownText(section) {
+  if (section.heading !== SNAPSHOT_HEADING || section.text.length <= SNAPSHOT_SHOWN_CHARS) return section.text;
+  return `${section.text.slice(0, SNAPSHOT_SHOWN_CHARS)}\n\n… (${formatNumber(section.text.length - SNAPSHOT_SHOWN_CHARS)} more characters. ` +
+    `The whole snapshot is on the "Narrator — world snapshot" page of the World Journal — Secrets journal.)`;
 }
 
 function renderFactBlock(c) {

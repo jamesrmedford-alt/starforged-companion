@@ -20,6 +20,7 @@
 
 import { readSheetPronouns, readCommandVehicleIntegrity, unreconciledRecordIntegrity } from '../character/actorBridge.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { reportSnapshotEvent } from '../narration/snapshotEvents.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -301,7 +302,12 @@ export async function registerEntityId(campaignState, listKey, id, { label = lis
   if (!Array.isArray(campaignState[listKey])) campaignState[listKey] = [];
   const dismissedName = registeredNameToUndismiss(id, campaignState);
   if (dismissedName) await undismissRegisteredName(dismissedName, campaignState);
-  return !campaignState[listKey].includes(id);
+  const registered = !campaignState[listKey].includes(id);
+  // A new record in the world: the narrator's world snapshot is out of date
+  // (issue #357). Every creator registers here — a draft's Confirm, Make a
+  // Connection's auto-create, the sector generator, the campaign's start.
+  if (registered) reportSnapshotEvent('entity_recorded');
+  return registered;
 }
 
 /**

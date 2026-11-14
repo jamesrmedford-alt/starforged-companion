@@ -95,8 +95,10 @@ describe("issue #329 X11 — a refused sector write leaves the GM's cache as it 
     const realSet = game.settings.set;
     let calls = 0;
     const setSpy = vi.spyOn(game.settings, "set").mockImplementation(async (...args) => {
-      calls += 1;
-      if (calls === 1) throw new Error("Setting [campaignState] could not be saved: the server refused the write");
+      // The first campaignState write — the sector's — is the one refused (another
+      // setting's write, the world snapshot's event mark, is not it).
+      if (args[1] === "campaignState") calls += 1;
+      if (args[1] === "campaignState" && calls === 1) throw new Error("Setting [campaignState] could not be saved: the server refused the write");
       return realSet.apply(game.settings, args);
     });
     expectConsoleError(/storing the sector failed/);
@@ -115,7 +117,7 @@ describe("issue #329 X11 — a refused sector write leaves the GM's cache as it 
 
     // The retry writes the sector to the world and announces it (it found the
     // record left on the cache, returned it, and wrote nothing).
-    expect(setSpy.mock.calls.length, "campaignState writes (the refused one, then the retry's)").toBe(2);
+    expect(setSpy.mock.calls.filter(c => c[1] === "campaignState").length, "campaignState writes (the refused one, then the retry's)").toBe(2);
     expect(ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.sectorCreated)).toHaveLength(1);
     expect(stored?.id).toBe(sector.id);
     expect(game.settings.get(MODULE_ID, "campaignState").activeSectorId).toBe(sector.id);

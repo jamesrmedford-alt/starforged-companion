@@ -1481,6 +1481,26 @@ export function getRecordedLocations(_campaignState) {
     }));
 }
 
+/**
+ * A category's entries, each with the id of the page it is on — for a reader
+ * that needs a stable id an entry (the narrator's world snapshot keys its
+ * records by it, issue #357: a title or a name can be changed). Every entry
+ * as stored, in no promised order; the caller applies the category's own
+ * filter (confirmed lore, a threat not resolved). Never a GM-only category:
+ * a plan is read through its store alone (src/world/secrets.js).
+ *
+ * @param {"lore"|"threats"|"factions"|"locations"|"sessionLog"} category
+ * @returns {Array<{ pageId: string, entry: Object }>}
+ */
+export function listWorldJournalEntries(category) {
+  if (GM_ONLY_CATEGORIES.has(category)) return [];
+  const flagKey = category === "sessionLog" ? FLAG_KEYS.sessionLogPage : FLAG_KEYS[category];
+  if (!flagKey) return [];
+  return (findWorldJournal(category)?.pages?.contents ?? [])
+    .map(p => ({ pageId: p?.id ?? null, entry: p?.flags?.[MODULE_ID]?.[flagKey] ?? null }))
+    .filter(x => x.pageId && x.entry);
+}
+
 const CONTEXT_STOPWORDS = new Set([
   "that", "this", "with", "from", "into", "onto", "upon", "have", "they", "them",
   "their", "there", "what", "when", "where", "which", "while", "your", "about",

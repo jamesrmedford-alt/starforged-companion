@@ -25,7 +25,8 @@
   },
   "steps": [
     { "id": "begin", "do": "beginSession", "as": "player", "galley": false,
-      "calls": [] },
+      "calls": [],
+      "optionalCalls": ["prewarmNarratorCache>warmNarratorCacheAfterBegin"] },
     { "id": "batch-on", "do": "batchMode", "on": true,
       "calls": [],
       "then": [

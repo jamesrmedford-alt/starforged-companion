@@ -28,6 +28,7 @@
 
 import { runCampaignStateWriteNow, serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -215,6 +216,10 @@ export async function suppressScene(_payload, ctx) {
     }
     return false;
   }
+  // The world snapshot may hold what this play removes — lore, a threat, a
+  // card's detail, a plan the removed narration wrote (issue #357): it is out
+  // of date, and the first narration after the resume takes a new one.
+  reportSnapshotEvent("xcard_played");
   await finishXCardRemoval(narrator, removal);
   return true;
 }

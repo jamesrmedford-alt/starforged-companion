@@ -80,6 +80,7 @@ const SETTING = {
   NARRATION_MAX_TOKENS:     'narrationMaxTokens',
   NARRATOR_CONTEXT_CARDS:   'narratorContextCards',
   NARRATOR_SESSION_SUMMARY: 'narratorSessionSummary',
+  NARRATOR_WORLD_SNAPSHOT:  'worldSnapshot',          // read by narration/snapshotEvents.js worldSnapshotEnabled
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
   MISS_STATED_STAKES:       'missPaysStatedStakes',   // stakes.js STAKES_SETTING (read there)
@@ -333,6 +334,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, {
     name:    'Rolling Session Summary',
     hint:    'Maintain a compressed "story so far" of the current session so the narrator keeps the narrative arc of beats that have scrolled past the context-card horizon. Regenerated from the session\'s narration on a small debounce (≈1.5× the context-card depth) and written to the World Journal Session Log at End Session. Adds an occasional low-cost summarisation call.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATOR_WORLD_SNAPSHOT, {
+    name:    'World Snapshot',
+    hint:    'Send the narrator the whole world — every sector, recorded person, place and ship, the factions, threats, lore and hidden plans — as one stored snapshot, read from the prompt cache on every narration, with what changed since beside it. A new snapshot is taken at Begin a Session, at !scene start / !scene end and after major events. Off: the narrator is sent only the records each beat names, as before.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -1277,6 +1287,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationMaxTokens:    getNarrationMaxTokens(),
       narratorContextCards:  getNarratorContextCards(),
       narratorSessionSummary: getNarratorSessionSummary(),
+      worldSnapshot:         readSetting(SETTING.NARRATOR_WORLD_SNAPSHOT, true),
       narratorSpotlight:     getNarratorSpotlight(),
       vowSwearingScene:      getVowSwearingScene(),
       missPaysStatedStakes:  readSetting(SETTING.MISS_STATED_STAKES, true),
@@ -1695,6 +1706,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             Rolling session summary
           </label>
           <span class="narrator-field-hint">Keep a compressed "story so far" of the session so the narrator remembers the arc of beats older than the context-card horizon. Regenerated on a small debounce and saved to the Session Log at End Session.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="worldSnapshot" ${ctx.worldSnapshot ? 'checked' : ''} ${dis}>
+            World snapshot
+          </label>
+          <span class="narrator-field-hint">Send the narrator the whole world — sectors, people, places, factions, threats, lore and hidden plans — as one stored snapshot it reads from the prompt cache, with what changed since. A new one is taken at Begin a Session, at a scene's start or end, and after major events. Off: only the records each beat names are sent, as before.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -2237,6 +2255,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, contextCards),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),
+        game.settings.set(MODULE_ID, SETTING.NARRATOR_WORLD_SNAPSHOT,  checked('worldSnapshot', true)),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.MISS_STATED_STAKES,       checked('missPaysStatedStakes', true)),

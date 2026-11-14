@@ -175,6 +175,7 @@ import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } f
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, serialiseSessionMint } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
+import { reportSnapshotEvent, registerSnapshotEventsSetting } from "./narration/snapshotEvents.js";
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
@@ -325,6 +326,7 @@ function registerCoreSettings() {
   });
   // The chat-activity stamp, its own setting beside campaignState (issue #342 Z01).
   registerSessionActivitySetting();
+  registerSnapshotEventsSetting();         // #357: the events reported since the narrator's last world snapshot
 
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name:    "Claude API Key",
@@ -4043,12 +4045,17 @@ async function handleSceneCommand(message) {
       resultLine = !id ? "Scene start failed."
         : storedSceneId() !== id ? notSaved("start")
         : `Scene started — <code>${id}</code>.`;
+      // A scene boundary is the GM's choice of moment for a new world
+      // snapshot (issue #357, decided): the next narration takes one.
+      if (id && storedSceneId() === id) reportSnapshotEvent("scene_started");
     } else {
       const summary = await endScene(campaignState, { reason: "scene_command" });
-      resultLine = priorSceneId && storedSceneId() === priorSceneId
+      const saved = !(priorSceneId && storedSceneId() === priorSceneId);
+      resultLine = !saved
         ? notSaved("end")
         : `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
           `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+      if (saved) reportSnapshotEvent("scene_ended");
     }
   } catch (err) {
     console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);
@@ -7938,6 +7945,10 @@ async function handleSectorCommand(message) {
   // campaignState write chain (CAMPSTATE-CHAIN-REST).
   await serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState",
     { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}), activeSectorId: match.id }), "!sector");
+  // The narrator's world snapshot holds every sector and its context names
+  // the active one, so a switch takes no new snapshot (issue #357 — the
+  // table's row says so, and is where that would change).
+  reportSnapshotEvent("sector_switched");
   await ChatMessage.create({
     content: `<p>Active sector switched to <strong>${escapeChatHtml(match.name)}</strong>.</p>`,
     flags: { [MODULE_ID]: { sectorSwitch: true } },

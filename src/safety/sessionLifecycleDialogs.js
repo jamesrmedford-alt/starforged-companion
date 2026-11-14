@@ -37,6 +37,7 @@ import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { proseToHtml } from "../audio/segments.js";
+import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { RANKS } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
@@ -273,6 +274,23 @@ const SESSION_CHAIN_WAIT_MS = 5 * 60_000;
 const OPENING_VIGNETTE_WAIT_MS = 60_000;
 
 /**
+ * Write the narrator's cached prefix ahead of the session's first narration
+ * (issue #357) — Begin a Session starts it and does not wait on it. A named
+ * function, awaiting the call: the playthrough harness names a Claude call by
+ * its two nearest callers, and `batch-round` declares this one by that name.
+ * Never throws.
+ */
+async function warmNarratorCacheAfterBegin() {
+  try {
+    const { prewarmNarratorCache } = await import("../narration/narrator.js");
+    // A working copy — building the request must not touch this client's cache.
+    await prewarmNarratorCache(foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {}));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: the narrator's cache was not written ahead:`, err?.message ?? err);
+  }
+}
+
+/**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
  * order: a new session when the last one is over → session-active flip
@@ -345,6 +363,8 @@ async function beginSessionOnce(payload) {
     noteSessionReplaced();
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
+    // The session's first narrator call takes a new world snapshot (issue #357).
+    reportSnapshotEvent("session_begin");
   } catch (err) {
     console.warn(`${MODULE_ID} | beginSession state flip failed — start effects skipped:`, err?.message ?? err);
     // The table is told: the Begin card already posted ("scene set", "+1
@@ -456,6 +476,12 @@ async function beginSessionOnce(payload) {
   // on the canonical GM, because that is the client holding the Claude key.
   if (!includeGalley) {
     console.debug?.(`${MODULE_ID} | Begin a Session: galley vignette unchecked — skipped.`);
+    // With no opening narration to follow — the galley unchecked, no clock
+    // vignette — the narrator's cached prefix (its rules and the world
+    // snapshot) is written now, so the session's first narration reads it and
+    // is not the slow one (issue #357). An opening narration writes it itself.
+    // Not awaited: Begin a Session does not wait on a Claude round trip.
+    if (!clockVignettes) warmNarratorCacheAfterBegin();
     return;
   }
   setTimeout(async () => {

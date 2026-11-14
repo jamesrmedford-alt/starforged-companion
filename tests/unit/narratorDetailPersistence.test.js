@@ -427,7 +427,10 @@ describe('what scene end keeps reaches the next scene (C1, C2)', () => {
     await type('gm-1', '!scene end');
 
     const next = await narrateMove('I head back to that bar.');
-    expect(next.system).toMatch(/## CURRENT LOCATION\n\n## BLEAKHOLD — Settlement[\s\S]*NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}Session 3: the bar on the docking ring is called the Rusty Lantern/);
+    // The place's card is in the world snapshot (issue #357), and the context names the place.
+    expect(next.system).toMatch(/#### BLEAKHOLD — Settlement \(id [^)]+\)[\s\S]*NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}Session 3: the bar on the docking ring is called the Rusty Lantern/);
+    expect(next.system).toMatch(/## IN PLAY NOW[\s\S]*- Current location: Bleakhold \(id [^)]+\)/);
+    expect(next.system).not.toContain('## CURRENT LOCATION');
   });
 });
 
@@ -473,8 +476,10 @@ describe('a session carries into the next one (C3, C4)', () => {
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What is the beacon doing?');
     const question = table.claude.calls.slice(from).find(c => c.model === NARRATION_MODEL);
-    expect(question.system).toContain(`## LAST SESSION (SESSION 3)\n\n(Narrative texture only`);
-    expect(question.system).toContain(SUMMARY);
+    // Last session's summary is in the world snapshot's memory (issue #357).
+    expect(question.system).toContain(`### EARLIER SESSIONS\n\nNarrative texture only`);
+    expect(question.system).toContain(`- Session 3: ${SUMMARY}`);
+    expect(question.system).not.toContain('## LAST SESSION');
     expect(question.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
     expect(question.userText).not.toContain('I pay Vex');
 
