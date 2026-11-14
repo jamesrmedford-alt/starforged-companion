@@ -76,10 +76,13 @@ import {
   registerDeletedChatHook,
   registerPublishedReflectionHook,
   catchUpUnsummarisedSession,
+  narratePacedInput,
+  tellPacedLineNotNarrated,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
+import { logPacingDecision } from "./pacing/telemetry.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
@@ -176,6 +179,7 @@ import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
+import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
@@ -183,6 +187,7 @@ import {
   applyPaceCommand,
   markForceNextAsMove,
   resetRecentDensity,
+  reviseLastDecision,
 } from "./pacing/router.js";
 import {
   isEncounterCommand,
@@ -208,6 +213,9 @@ import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseE
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
+import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
+import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
+import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -833,6 +841,13 @@ configureBatchDriver({
  */
 async function narrateUpgradedResolution(resolution, campaignState, options = {}) {
   if (options.upgradeOf && await acceptRoundUpgrade(options.upgradeOf, resolution, options.kind ?? "burn")) return null;
+  // A free-flow result held for the choice (issue #354 P2-10): the upgraded
+  // result is the move's one narration — heldResult.js closes the wait, pays
+  // the held price if this result pays one too, and narrates it.
+  if (options.upgradeOf) {
+    const told = await narrateHeldUpgrade(options.upgradeOf, resolution, campaignState, options);
+    if (told !== undefined) return told;
+  }
   return narrateResolution(resolution, campaignState, { speakerActorId: options.speakerActorId ?? null });
 }
 
@@ -865,6 +880,13 @@ export function registerChatHook() {
     // never sees one) but executes only where its run-on policy says.
     if (await dispatchChatCommand(message, CHAT_COMMAND_ROUTES)) return;
 
+    // A line under the minimum length is not sent to the narrator — and its
+    // author is told, on their own client (issue #354 P2-05).
+    if (isLineTooShortForNarrator(message)) {
+      await tellLineTooShort(message).catch(err =>
+        console.warn(`${MODULE_ID} | the too-short notice failed:`, err?.message ?? err));
+      return;
+    }
     if (!isPlayerNarration(message)) return;
 
     // Batch Mode (issue #340): chat is table talk — a typed line is not
@@ -873,7 +895,10 @@ export function registerChatHook() {
     // roller has no character in the round runs here as it does today, at
     // once while the round collects and after it when it resolves (the
     // driver hands it back, `batchReleased`). Commands ran above, as usual.
-    if (!hookOptions?.batchReleased && isBatchModeEnabled() && await handleBatchModeLine(message)) return;
+    // A "Not rolled" notice's "Narrate it — no move" posts the line again to
+    // be narrated as it stands (issue #354 P2-01): never a round's entry.
+    const narrateOnly = message.flags?.[MODULE_ID]?.narrateOnly === true;
+    if (!hookOptions?.batchReleased && isBatchModeEnabled() && !narrateOnly && await handleBatchModeLine(message)) return;
 
     // Single-emitter gate. The createChatMessage hook fires on every
     // connected client; without this gate, every client ran pacing →
@@ -935,8 +960,25 @@ export function registerChatHook() {
       game.settings.get(MODULE_ID, "campaignState"),
     );
 
+    // The roller has gone on (issue #354 P2-10): a result of theirs still
+    // held for Burn / Improve / Keep is kept — its price paid, its narration
+    // posted — before this line is read, so the story stays in order. A
+    // follow-up pressed on the held card itself is such a line: "burn
+    // momentum before applying any other effects of the move".
+    if (speakerActorId) {
+      await keepHeldResultsOf(speakerActorId).catch(err =>
+        console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next line:`, err?.message ?? err));
+    }
+
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
+
+    // The line is narrated as it stands, with no move read into it (issue
+    // #354 P2-01): its author cancelled the reading and asked for that.
+    if (narrateOnly) {
+      await narrateLineWithoutMove(narration, speakerActorId, { why: "narrated without a move at its author's request" });
+      return;
+    }
 
     // Per-message bypass — the "Roll <move>" button on an NWMA card re-posts
     // the player's input with `bypassPacing: true` so the classifier is
@@ -1088,7 +1130,28 @@ export function registerChatHook() {
         narration, speakerActorId, campaignState, apiKey, dial,
         forced: forcedMoveId ? { moveId: forcedMoveId, moveTarget: forcedMoveTarget, moveTargetId: forcedMoveTargetId } : null,
         swearToConnection,
+        // What the classifier made of the line, for the interpreter (issue
+        // #354 P2-02) — on a MOVE decision it named a move the router dropped.
+        classifier: pacingResult.decision === "MOVE" && (pacingResult.nominatedMove || pacingResult.category)
+          ? { moveId: pacingResult.nominatedMove ?? null, category: pacingResult.category ?? null, reasoning: pacingResult.reasoning ?? null }
+          : null,
+        // The line may be read as no move at all (issue #354 P2-01) — unless a
+        // roll was asked for (`!roll`), or pacing is switched off (every line
+        // is a move then, as it always was).
+        allowNoMove: !pacingResult.forced && !pacingResult.pacingDisabled,
       });
+      // No move is being made, or the reading is too unsure to roll: the line
+      // is narrated, with the move it might be offered on its card (issue #354
+      // P2-01). Under the move lock, which the finally releases.
+      if (read.noMove) {
+        await narrateLineWithoutMove(narration, speakerActorId, {
+          offeredMove: read.noMove.offeredMove,
+          why: read.noMove.lowConfidence ? "the move reading was unsure — narrated, the move offered" : "the interpreter read no move in it",
+          rationale: read.noMove.rationale,
+          pacing: pacingResult,
+        });
+        return;
+      }
       if (read.targetChoice) {
         await postTargetChoiceCard(read, { narration, speakerActorId });
         return;
@@ -1101,18 +1164,33 @@ export function registerChatHook() {
       // and the button read taken for good (alpha 23 playtest; issue #347
       // AB06). A typed line goes back to its author to re-word.
       const accepted = await confirmInterpretation(interpretation, { forced: !!forcedMoveId });
+      // "No move — narrate" (issue #354 P2-01): the reading was wrong, the
+      // line is not a move at all — it is narrated as it stands, with no move
+      // offered. Cancel could only send the player off to re-word a line that
+      // needed no re-wording.
+      if (accepted === "narrate") {
+        await narrateLineWithoutMove(narration, speakerActorId, {
+          why: `the reading as ${moveDisplayName(interpretation?.moveId ?? "") || "a move"} was turned down — narrated without a move`,
+          pacing: pacingResult,
+        });
+        return;
+      }
       if (!accepted) {
-        await moveNotRolled(message, "cancelled", interpretation?.moveId ?? null);
+        await moveNotRolled(message, "cancelled", interpretation?.moveId ?? null, { speakerActorId });
         return;
       }
 
-      // Stage 3 — roll it, apply its outcome, post its result card.
+      // Stage 3 — roll it, apply its outcome, post its result card. A
+      // result whose card offers Burn Momentum or Improve Result is held
+      // (issue #354 P2-10): its price and its narration wait for the roller's
+      // Burn / Improve / Keep (moves/heldResult.js).
       const rolled = await rollMove({
         interpretation, campaignState, speakerActorId, narration,
         combatPosition: read.combatPosition,
         tokenDragSetCourse,
         incitingSwearMessageId: message.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null,
         onDiceRolled: () => { diceRolled = true; },
+        holdForUpgrade: game.user?.isGM === true && holdForUpgradeEnabled(),
       });
       if (rolled.refused) return;
       const { resolution, relevance } = rolled;
@@ -1126,7 +1204,8 @@ export function registerChatHook() {
       // The interpreter's target reaches the capture: a Make a Connection whose
       // narration names several known NPCs connects the one it reads
       // (KNOWN-NPC-CONNECTION-NO-TARGET).
-      await narrateResolution(resolution, campaignState, { relevance, speakerActorId, moveTarget: interpretation.moveTarget ?? null }).catch(err => {
+      // A held result is narrated once its roller has chosen — not here.
+      if (!rolled.held) await narrateResolution(resolution, campaignState, { relevance, speakerActorId, moveTarget: interpretation.moveTarget ?? null }).catch(err => {
         console.warn(`${MODULE_ID} | the move's narration could not be posted — its result is applied all the same:`, err?.message ?? err);
         ui.notifications?.warn?.("Starforged Companion: the narration could not be posted to chat; the move's result was still applied.");
       });
@@ -1683,7 +1762,7 @@ async function postSessionGateNotice(message, { held = false } = {}) {
  * @param {boolean} [opts.handedBack] — the card that posted it is pressable again
  * @returns {Promise<void>}
  */
-async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false }) {
+async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false, speakerActorId = null }) {
   const f        = message?.flags?.[MODULE_ID] ?? {};
   const forced   = typeof f.forcedMoveId === "string" && !!f.forcedMoveId;
   const owed     = f.owedMove === true;
@@ -1697,22 +1776,34 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
       : reason === "refused"
         ? `The world did not save the start of ${forced ? label : "this line's move"}, so nothing was rolled.`
         : `Reading ${forced ? label : "this line"} failed, so nothing was rolled.`;
+  // A cancelled reading of a typed line offers the narration it may have
+  // wanted all along (issue #354 P2-01): the notice said only "re-word".
+  const offerNarrate = !forced && reason === "cancelled";
   const next = !forced
     ? (reason === "busy" ? "Send it again once that move's narration is posted."
-      : reason === "refused" ? "Send it again." : "Re-word your line and send it again.")
+      : reason === "refused" ? "Send it again."
+      : offerNarrate ? "Re-word your line and send it again — or, if it was no move at all, have it narrated as it stands."
+      : "Re-word your line and send it again.")
     : owed
       ? (handedBack ? "The roll is still owed: its card is open again." : "The roll is still owed — ask the GM to roll it.")
       : handedBack
         ? "Its button is live again — press it when you are ready."
         : (reason === "busy" ? "Press its button again once that move's narration is posted." : "Make the move again when you are ready.");
   const lineText = forced ? "" : String(message?.content ?? "").trim();
+  const narrateButton = offerNarrate && lineText
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-narrate-no-move">Narrate it — no move</button></div>`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p>${narrateButton}</div>`,
     whisper: [...new Set([authorId, ...(forced ? speakerOwnerIds(message) : []), ...gmUserIds()].filter(Boolean))],
     flags: { [MODULE_ID]: {
       moveNotRolledNotice: reason,
       ...(forced && message?.id ? { gatedMessageId: message.id } : {}),
       ...(lineText && authorId ? { restoreLineFor: authorId, restoreLine: lineText } : {}),
+      // "Narrate it — no move" (cardActions.applyNotRolledNarrate): the line's
+      // speaker, and its author, who may press it.
+      ...(narrateButton ? { narrateOffered: true, lineActorId: speakerActorId ?? null, lineAuthorId: authorId ?? null,
+        lineSpeaker: message?.speaker ?? null } : {}),
     } },
   });
 }
@@ -1727,26 +1818,103 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
  * @param {string|null} moveId
  * @returns {Promise<void>}
  */
-async function moveNotRolled(message, reason, moveId) {
+async function moveNotRolled(message, reason, moveId, { speakerActorId = null } = {}) {
   const handedBack = await releaseSourceCard(message).catch(err => {
     console.warn(`${MODULE_ID} | handing the card back failed:`, err?.message ?? err);
     return false;
   });
-  await postMoveNotRolledNotice(message, { reason, moveId, handedBack }).catch(err =>
+  await postMoveNotRolledNotice(message, { reason, moveId, handedBack, speakerActorId }).catch(err =>
     console.warn(`${MODULE_ID} | the not-rolled notice failed:`, err?.message ?? err));
 }
 
 /**
- * createChatMessage, every client: a "Not rolled" notice for a typed line puts
- * the line back in its author's chat box — on their own client only, and only
- * when the box is empty (a draft they started is theirs). The line is stored
- * as the chat message's content; its markup is dropped.
+ * Narrate a typed line as it stands, with no move rolled (issue #354 P2-01):
+ * the interpreter read no move in it, its reading was too unsure to roll, or
+ * its author turned the reading down ("No move — narrate" on the confirm
+ * dialog, "Narrate it — no move" on a "Not rolled" notice). The paced
+ * narration the classifier's NARRATIVE decision gets, on a working copy
+ * (pacing/router.js routePacedInput; issue #342 Z02) — `offeredMove`, when
+ * there is one, is offered on its card as a NARRATIVE_WITH_MOVE_AVAILABLE
+ * move is. The Pacing Telemetry journal records why. Never throws.
+ *
+ * @param {string} narration — the player's line
+ * @param {string|null} speakerActorId
+ * @param {{ offeredMove?: string|null, why: string, rationale?: string, pacing?: Object|null }} opts
+ * @returns {Promise<void>}
+ */
+async function narrateLineWithoutMove(narration, speakerActorId, { offeredMove = null, why, rationale = "", pacing = null } = {}) {
+  const stored   = game.settings.get(MODULE_ID, "campaignState");
+  const decision = offeredMove ? "NARRATIVE_WITH_MOVE_AVAILABLE" : "NARRATIVE";
+  console.debug(`${MODULE_ID} | the line is narrated without a roll: ${why}.`);
+  // The classifier's MOVE for this line is in the recent-density window: it
+  // was not a move after all.
+  if (pacing?.decision === "MOVE") reviseLastDecision(decision);
+  logPacingDecision({
+    playerText:    narration,
+    decision,
+    suggestedMove: offeredMove,
+    category:      pacing?.category ?? "social",
+    confidence:    typeof pacing?.confidence === "number" ? pacing.confidence : null,
+    reasoning:     `[${why}] ${rationale ?? ""}`.trim(),
+    sessionId:     stored?.currentSessionId ?? null,
+    sessionNumber: stored?.sessionNumber ?? null,
+  }).catch(err => console.warn(`${MODULE_ID} | pacing telemetry write failed:`, err?.message ?? err));
+  try {
+    const working = foundry.utils.deepClone(stored);
+    await narratePacedInput(narration, working, { suggestedMove: offeredMove, speakerActorId });
+  } catch (err) {
+    console.error(`${MODULE_ID} | the line's narration could not be started:`, err);
+    await tellPacedLineNotNarrated(stored, err);
+  }
+}
+
+/**
+ * Tell a line's author it was not sent to the narrator: it is under
+ * MIN_NARRATION_LENGTH characters (issue #354 P2-05). Posted by the author's
+ * own client, whispered to them alone, and the line goes back in their chat
+ * box to add to (restoreLineOnNotRolledNotice) — so it needs no GM, and a
+ * table's "ok" and "lol" tell nobody else. Only where the line would otherwise
+ * have been narrated: not before a session has begun (nothing typed then is
+ * narrated), and not in Batch Mode (chat is table talk there).
+ *
+ * @param {ChatMessage} message — the short line
+ * @returns {Promise<void>}
+ */
+async function tellLineTooShort(message) {
+  const authorId = messageAuthorId(message);
+  if (!authorId || authorId !== game.user?.id) return;
+  let narrated = false;
+  try {
+    narrated = isSessionActive(game.settings.get(MODULE_ID, "campaignState")) && !isBatchModeEnabled();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | too-short notice: the session could not be read — the line's author is not told:`, err?.message ?? err);
+  }
+  if (!narrated) {
+    console.debug(`${MODULE_ID} | a line under ${MIN_NARRATION_LENGTH} characters, with no session in free-flow play: nothing typed now is narrated, so its author is not told.`);
+    return;
+  }
+  const lineText = String(message?.content ?? "").trim();
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Not sent to the narrator</strong>`
+      + `<p>That line is under ${MIN_NARRATION_LENGTH} characters, so it was read as table talk and not narrated. `
+      + `It is back in your chat box: add a word or two and send it again.</p></div>`,
+    whisper: [authorId],
+    flags: { [MODULE_ID]: { lineTooShortNotice: true, restoreLineFor: authorId, restoreLine: lineText } },
+  });
+}
+
+/**
+ * createChatMessage, every client: a "Not rolled" notice for a typed line —
+ * or the notice that a line was too short to send to the narrator (issue #354
+ * P2-05) — puts the line back in its author's chat box: on their own client
+ * only, and only when the box is empty (a draft they started is theirs). The
+ * line is stored as the chat message's content; its markup is dropped.
  *
  * @param {ChatMessage} notice
  */
 function restoreLineOnNotRolledNotice(notice) {
   const f = notice?.flags?.[MODULE_ID];
-  if (!f?.moveNotRolledNotice || !f.restoreLine || f.restoreLineFor !== game.user?.id) return;
+  if (!(f?.moveNotRolledNotice || f?.lineTooShortNotice) || !f.restoreLine || f.restoreLineFor !== game.user?.id) return;
   try {
     const box = document.querySelector("#chat-message");
     if (!box || String(box.value ?? "").trim()) return;
@@ -3380,7 +3548,47 @@ function isIronswornSystemCard(text) {
   return !!cls && /(?:^|\s)ironsworn-[a-z-]+(?:\s|$)/i.test(cls[2]);
 }
 
+/**
+ * The fewest characters a typed line needs to be sent to the narrator. A
+ * shorter line is read as table talk ("ok", "lol") — and its author is told
+ * so (isLineTooShortForNarrator; issue #354 P2-05).
+ */
+export const MIN_NARRATION_LENGTH = 10;
+
 export function isPlayerNarration(message) {
+  const text = narrationCandidateText(message);
+  return text !== null && text.length >= MIN_NARRATION_LENGTH;
+}
+
+/**
+ * True for a typed line that is player narration in every way but its length:
+ * it passes each of isPlayerNarration's other checks, says something (a
+ * letter or a digit, markup aside), and is under MIN_NARRATION_LENGTH
+ * characters. Such a line was dropped in silence — in the alpha 23 playtest
+ * "I cannot", the answer an NPC had just asked for, sat in chat for six
+ * minutes with nothing happening (issue #354 P2-05). The minimum stays (the
+ * maintainer's decision: short table talk must not be narrated); the line's
+ * author is told (tellLineTooShort).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+export function isLineTooShortForNarrator(message) {
+  // A typed line only: a card button's re-post carries the line it was given.
+  if (message?.flags?.[MODULE_ID]) return false;
+  const text = narrationCandidateText(message);
+  if (text === null || text.length >= MIN_NARRATION_LENGTH) return false;
+  return /[\p{L}\p{N}]/u.test(text.replace(/<[^>]*>/g, ""));
+}
+
+/**
+ * A chat message's trimmed text when it is something a player typed for the
+ * story — every check of isPlayerNarration but the length — else null.
+ *
+ * @param {ChatMessage} message
+ * @returns {string|null}
+ */
+function narrationCandidateText(message) {
   // v13: the IC / OOC / EMOTE classification lives on `message.style`
   // (CONST.CHAT_MESSAGE_STYLES), NOT on `message.type` — in v13 `type` is the
   // document subtype ("base"), so the legacy string check further down is a
@@ -3393,14 +3601,14 @@ export function isPlayerNarration(message) {
   // foundry-ironsworn flag check below can't catch it). Reject emote / whisper
   // / roll up front using the style and the document's own arrays.
   const EMOTE = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
-  if (message.style === EMOTE) return false;
-  if (Array.isArray(message.whisper) && message.whisper.length > 0) return false;
-  if (Array.isArray(message.rolls) && message.rolls.length > 0) return false;
+  if (message.style === EMOTE) return null;
+  if (Array.isArray(message.whisper) && message.whisper.length > 0) return null;
+  if (Array.isArray(message.rolls) && message.rolls.length > 0) return null;
 
   // Legacy v12 string-type guard — harmless no-op on v13 (type is "base"),
   // retained for v12 worlds where message.type still carries the style.
   const type = message.type;
-  if (type === "ooc" || type === "roll" || type === "whisper") return false;
+  if (type === "ooc" || type === "roll" || type === "whisper") return null;
 
   // Skip ANY message bearing a module flag — these are all programmatically
   // posted cards (move cards, narrator cards, recap cards, pace/roll
@@ -3415,11 +3623,11 @@ export function isPlayerNarration(message) {
   // `bypassPacing: true` and ARE player narration (just with the classifier
   // skipped); they must reach the move pipeline.
   const flags = message.flags?.[MODULE_ID];
-  if (flags && !flags.bypassPacing) return false;
+  if (flags && !flags.bypassPacing) return null;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
-  if (message.flags?.['foundry-ironsworn']) return false;
-  if (message.speaker?.alias === 'Ironsworn') return false;
+  if (message.flags?.['foundry-ironsworn']) return null;
+  if (message.speaker?.alias === 'Ironsworn') return null;
 
   const text = message.content?.trim() ?? "";
 
@@ -3429,22 +3637,22 @@ export function isPlayerNarration(message) {
   // the root, never something a player typed. It passed every check above,
   // and the canonical GM paced, interpreted and rolled the move's rules text
   // for the player who only shared it (issue #325 W08).
-  if (isIronswornSystemCard(text)) return false;
-
-  // No meaningful text content — system-generated empty or near-empty messages
-  if (text.length < 10) return false;
+  if (isIronswornSystemCard(text)) return null;
 
   // Escape character — prefix with \ to bypass the pipeline entirely
-  if (text.startsWith("\\")) return false;
+  if (text.startsWith("\\")) return null;
 
   // @ and / commands are not player narration
-  if (text.startsWith("@")) return false;
-  if (text.startsWith("/")) return false;
+  if (text.startsWith("@")) return null;
+  if (text.startsWith("/")) return null;
 
   // Module commands (! prefix) are not player narration
-  if (text.startsWith("!")) return false;
+  if (text.startsWith("!")) return null;
 
-  return true;
+  // The length is the caller's to judge: under MIN_NARRATION_LENGTH it is not
+  // sent to the narrator (isPlayerNarration), and its author is told
+  // (isLineTooShortForNarrator).
+  return text;
 }
 
 /**
@@ -3981,7 +4189,8 @@ function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
       ? game.actors?.get(actorId)
       : (pcs.length === 1 ? pcs[0] : null);
     if (!actor) return null;
-    return { name: actor.name ?? null };
+    // The id reads the speaker's own connections (issue #354 P2-04).
+    return { name: actor.name ?? null, actorId: actor.id ?? null };
   } catch {
     return null;
   }
@@ -4075,11 +4284,15 @@ async function handleOracleCommand(message) {
 
   // A question about a subject the narrator holds a hidden plan for is
   // rolled at odds its truth sets, so the answer cannot contradict it (issue
-  // #353, decided). Only a GM's roll: the plans are the GM's.
-  if (game.user?.isGM) {
-    const { oddsFromPlan } = await import("./oracles/oracleConsult.js");
-    const consulted = await oddsFromPlan(question).catch(() => null);
-    if (consulted?.odds) oddsKey = consulted.odds;
+  // #353, decided). The plans are the GM's: a GM's roll reads them here; a
+  // player's asks the canonical GM for the odds — the one word — and rolls
+  // at the odds they gave when no answer comes (issue #354 P2-31).
+  {
+    const { oddsFromPlan, requestPlanOdds } = await import("./oracles/oracleConsult.js");
+    const consulted = game.user?.isGM
+      ? (await oddsFromPlan(question).catch(() => null))?.odds
+      : await requestPlanOdds(question);
+    if (consulted) oddsKey = consulted;
   }
 
   const result = rollYesNo(oddsKey, { question });
@@ -4255,7 +4468,7 @@ async function handlePayThePriceCommand(message) {
   // A player with no character of their own resolves to none at a table of
   // several (issue #321 U23), and the canonical GM rightly refuses their route
   // — another player's PC never pays it (#326 D8) — but said nothing: the card
-  // read "Routes to endure_harm (-1)" and nobody was harmed (issue #337 Y43).
+  // read "Routes to Endure Harm (-1)" and nobody was harmed (issue #337 Y43).
   // Refused here, before the card: it says the price was not applied, and the
   // player is told why, as a move they narrate is. A narrative price — most
   // of the table, no route — has no payer either: it was narrated for the
@@ -4442,6 +4655,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
  *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
  *   them, whoever presses it (issue #329 X05)
  */
+/**
+ * Below this many filled boxes, the expedition card's Finish button is shown
+ * muted: a progress roll under it misses more often than not (3 boxes: 64%;
+ * 4 boxes: 49%).
+ */
+export const EXPEDITION_FINISH_READY_BOXES = 4;
+
 async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
@@ -4449,9 +4669,14 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const body  = created
     ? `<p>New expedition <strong>${label}</strong> (${rank}) begun — progress marked (${boxes}/10 boxes). If the rank looks off, adjust it in the Progress Tracks panel.</p>`
     : `<p>Progress marked on <strong>${label}</strong> (${rank}) — ${boxes}/10 boxes.</p>`;
+  // The button says what it rolls with, and is muted while a finish would
+  // probably miss (issue #354 P2-14): at 2/10 it was the card's one
+  // prominent button, and a progress roll of 2 misses four times in five.
+  const early = boxes < EXPEDITION_FINISH_READY_BOXES;
   const finishBtn = `<div class="sf-milestone-suggest-row">` +
-    `<button type="button" class="sf-followup-btn" data-action="sf-finish-expedition" ` +
-    `title="Roll to finish the expedition (progress roll)">🗺 Finish the Expedition</button></div>`;
+    `<button type="button" class="sf-followup-btn${early ? " sf-followup-btn--early" : ""}" data-action="sf-finish-expedition" ` +
+    `title="Progress roll: your ${boxes} progress against both challenge dice${early ? " — a miss is likely this early" : ""}">` +
+    `🗺 Finish the Expedition (${boxes}/10)</button></div>`;
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
@@ -6158,6 +6383,9 @@ const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u 
 
 // The PC meter each suffer move changes — a failure card line shows it as it stands.
 const SUFFER_METERS = { lose_momentum: "momentum", endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply" };
+// The suffer moves that change a vehicle's or a companion's track, not a PC
+// meter — the track a Pay the Price receipt names (ptpAssetReceipts).
+const SUFFER_ASSET_TRACKS = { withstand_damage: "integrity", companion_takes_a_hit: "health" };
 
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
@@ -6897,7 +7125,7 @@ async function postDecisiveActionCostCard(actorId = null) {
  *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
+export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
   // The miss stated before the roll is the price, when there is one (issue
   // #353 R1, stakes.js statedPrice): nothing is rolled, and its suffer move —
   // the one route — is dispatched as a rolled route is.
@@ -6946,6 +7174,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
   // route's — so the upgrade reversal undoes only that.
   const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId, upgradeOffered });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
+  const assetDeltas       = landed.flatMap(ptpAssetReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice({ skipClockIds }).catch(err => {
     console.warn(`${MODULE_ID} | ${paidFor || "move"} PtP clock advance failed:`, err?.message ?? err);
@@ -6959,7 +7188,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
 
   // reversals — what the price did, for an upgrade to undo; price — the
   // result the card shows, which the move's narration is seeded with.
-  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas }, price: result.result };
+  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas, assetDeltas }, price: result.result };
 }
 
 /**
@@ -6967,8 +7196,8 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  * reversal to refund: the move the dispatcher ran — "companion in harm's way"
  * runs Endure Harm with no companion — and each meter's before and after, so
  * a loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
- * Companion Takes a Hit change a vehicle or a companion, which a burn does not
- * reverse. The table's annotation stood in for it, so a burn raised health a
+ * Companion Takes a Hit change a vehicle or a companion, whose receipts are
+ * ptpAssetReceipts' (issue #354 P2-09). The table's annotation stood in for it, so a burn raised health a
  * clamped loss never took and skipped the fallback's real one (issue #311 P04).
  * Harm or stress past the meter is taken as momentum (`momentumLoss`, issue
  * #314 Q02): that is a receipt of its own, which an improvement refunds and a
@@ -6982,9 +7211,12 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
-  if (!meterKey || landed.skipped) return [];
+  // A vehicle's or companion's loss is its own receipt (ptpAssetReceipts);
+  // what it took past 0 came off the payer's momentum, and is a momentum
+  // receipt here as a harm's overflow is (issue #354 P2-09).
+  if ((!meterKey && !SUFFER_ASSET_TRACKS[landed?.move]) || landed.skipped) return [];
   const receipts = [];
-  const amount = Number(landed.before) - Number(landed.after);
+  const amount = meterKey ? Number(landed.before) - Number(landed.after) : 0;
   if (amount > 0) {
     // A supply loss to 0 names whom it marked unprepared — the payer, the
     // allies sharing the supply — so an upgrade that reverts the price clears
@@ -7005,6 +7237,33 @@ function ptpMeterReceipts(landed) {
     receipts.push({ move: landed.move, meterKey: "momentum", amount: m.taken, actorId: landed.actorId ?? null, before: m.before, after: m.after, overflow: true });
   }
   return receipts;
+}
+
+/**
+ * The vehicle integrity or companion health a Pay the Price route took, for
+ * the upgrade reversal to put back (issue #354 P2-09). Withstand Damage and
+ * Companion Takes a Hit left no receipt — "a burn does not reverse" them — so
+ * a miss whose price was "your vehicle suffers damage", burned to a weak hit,
+ * kept the damage beside the weak hit's own cost; and since issue #353 R1 a
+ * miss's stated cost can be either. One receipt per route that landed a loss:
+ * the track's before and after, and what it is — the command vehicle (its
+ * Actor), or a support vehicle or companion (its asset Item on the payer).
+ *
+ * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
+ * @returns {Array<{ move: string, track: "integrity"|"health", amount: number, actorId: string|null,
+ *   before: number, after: number, name: string|null, vehicleActorId?: string, itemId?: string }>}
+ */
+function ptpAssetReceipts(landed) {
+  const track = SUFFER_ASSET_TRACKS[landed?.move];
+  if (!track || landed.skipped) return [];
+  const amount = Number(landed.before) - Number(landed.after);
+  if (!(amount > 0)) return [];
+  const target = typeof landed.itemId === "string" && landed.itemId ? { itemId: landed.itemId }
+    : typeof landed.vehicleActorId === "string" && landed.vehicleActorId ? { vehicleActorId: landed.vehicleActorId }
+    : null;
+  if (!target) return [];
+  return [{ move: landed.move, track, amount, actorId: landed.actorId ?? null,
+    before: Number(landed.before), after: Number(landed.after), name: landed.name ?? null, ...target }];
 }
 
 /** markUnprepared's `momentumClamped` (PC id → momentum), its whole positive entries only; null when none. */
@@ -7067,10 +7326,6 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
 }
 
 /**
- * The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none.
- * `notApplied` (markup, escaped by the caller) says why the routes were not applied (issue #337 Y43).
- */
-/**
  * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
  * relief — Pay the Price" carries the d100 its narration was seeded with
  * (resolver rollChoicePrice), and its pick pays that price — the card, its
@@ -7122,9 +7377,17 @@ export async function payChosenPrice(price, actor) {
   return { ok: true, price: result.result };
 }
 
+/**
+ * The Pay the Price card's footer: "Routes to Endure Harm (-1), Endure Stress
+ * (-1)." — nothing for none. Each route's suffer move by name, never its id
+ * (`withstand_damage`, issue #354 P2-13); an "any" route as the choice it is.
+ * `notApplied` (markup, escaped by the caller) says why the routes were not
+ * applied (issue #337 Y43).
+ */
 function sufferRoutesFooter(routes, { notApplied = null } = {}) {
   if (!routes?.length) return "";
-  const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");
+  const name = (move) => (move === "any" ? "a suffer move of your choice" : (STATED_SUFFER_MOVES[move] ?? String(move ?? "").replace(/_/g, " ")));
+  const list = routes.map(r => `${escapeChatHtml(name(r.move))} (-${r.amount})`).join(", ");
   return notApplied
     ? `<p><em>Routes to ${list} &mdash; not applied: ${notApplied}.</em></p>`
     : `<p><em>Routes to ${list}.</em></p>`;
@@ -7988,7 +8251,8 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
   const combatMove = TDA_OFFER_MOVES.has(resolution.moveId);
   const namedFight = combatMove && fight?.id ? fight : null;
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState, namedFight),
+    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState, namedFight,
+      extraFlags?.awaitingUpgrade?.open === true),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
@@ -8015,9 +8279,79 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 }
 
 /**
+ * The move card's **Keep the result** button and what it means, for a
+ * free-flow result held for its roller's choice (issue #354 P2-10;
+ * moves/heldResult.js): beside Burn Momentum / Improve Result, it says the
+ * result stands — its Pay the Price is paid then, and it is narrated.
+ * Wired by wireKeepResultButton; the roller's next line keeps it too.
+ *
+ * @param {Object} resolution
+ * @returns {string} HTML
+ */
+function renderKeepResultHtml(resolution) {
+  const owes = resolution?.consequences?.routePayThePrice
+    ? "Nothing has been paid or narrated yet: burn or improve the result, or keep it — the price and the narration follow your choice."
+    : "Not narrated yet: burn or improve the result, or keep it — the narration follows your choice.";
+  return `<div class="sf-keep-result-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-keep-result" title="Keep this result as rolled">Keep the result</button>` +
+    `<p class="sf-card-hint sf-keep-result-hint">${owes} Your next line keeps it.</p></div>`;
+}
+
+/**
+ * Wire a held move card's **Keep the result** button. A press relays to the
+ * canonical GM ("move.keepResult" → moves/heldResult.js
+ * applyKeepResultFromRelay), which closes the wait, pays the held price and
+ * narrates the result. Once the wait is over — kept, burned, improved — the
+ * button and its hint go: the card's flags say how it was settled.
+ *
+ * Exported so tests and Quench can drive it with a message + root.
+ */
+export function wireKeepResultButton(message, root) {
+  const row = root?.querySelector?.(".sf-keep-result-row");
+  const btn = root?.querySelector?.('[data-action="sf-keep-result"]');
+  if (!btn) return;
+  const held = liveCardFlags(message)?.awaitingUpgrade;
+  if (!held?.open) {
+    // Settled: nothing left to ask.
+    if (row?.remove) row.remove();
+    else btn.disabled = true;
+    return;
+  }
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    await relayCardAction({
+      kind:       "move.keepResult",
+      payload:    { messageId: message?.id ?? null },
+      isResolved: () => liveCardFlags(message)?.awaitingUpgrade?.open !== true,
+      restore:    () => { fresh.disabled = false; },
+    });
+  });
+}
+
+/**
+ * What a match adds, in one line under the outcome (issue #354 P2-14): the
+ * card said "with a Match" and nothing told the player why the narration took
+ * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
+ * on a miss, a heightened negative outcome. (Matched challenge dice are both
+ * beaten or neither, so a weak hit never matches.)
+ *
+ * @param {string} outcome
+ * @returns {string} card HTML text
+ */
+export function matchLine(outcome) {
+  return outcome === "miss"
+    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
+    : "✦ Match: a twist — something unexpected, or a new opportunity.";
+}
+
+/**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, awaiting = false) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -8064,6 +8398,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         ${diceLine}
       </div>` : ""}
       ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
+      ${!noRoll && resolution.isMatch ? `<div class="sf-move-match">${matchLine(resolution.outcome)}</div>` : ""}
       ${resolution.consequences.otherEffect
         ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
         : ""}
@@ -8075,6 +8410,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
+      ${awaiting ? renderKeepResultHtml(resolution) : ""}
       ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
       ${renderConnectionSuggestionHtml(connectionState, upgradeOffered)}
       ${upgradeOffered && (milestoneState?.eligible || connectionState?.eligible)
@@ -8589,6 +8925,9 @@ Hooks.once("ready", () => {
   }
 
   registerGmRelaySocket();   // canonical-GM action relay (player-invoked world writes)
+  // A player's yes/no oracle question asks the canonical GM for its odds
+  // when a hidden plan covers its subject (issue #354 P2-31).
+  registerOracleConsultSocket();
   // Relays emitted while this GM's client was still loading reached no
   // listener and were dropped; tell players the relay is live so they can
   // re-send state (onGmRelayReady — e.g. their Private Lines). Canonical GM
@@ -8611,6 +8950,10 @@ Hooks.once("ready", () => {
   if (isCanonicalGM()) {
     backfillLegacySheets().catch(err =>
       console.warn(`${MODULE_ID} | legacy sheet backfill failed:`, err?.message ?? err));
+    // Issue #354 P2-07: Rotating Spotlight is off by default — a world's
+    // stored "on" is switched off once, and its GMs told.
+    applySpotlightDefaultOff().catch(err =>
+      console.warn(`${MODULE_ID} | spotlight default switch-off failed:`, err?.message ?? err));
   }
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
@@ -8887,6 +9230,8 @@ export function wireTakeDecisiveActionButton(message, root) {
   wireRollerFollowup(message, root, "sf-take-decisive-action", "tda.attempt", "decisiveActionAttempted");
 }
 onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
+// A held result's "Keep the result" (issue #354 P2-10).
+onChatMessageRender((message, root) => wireKeepResultButton(message, root));
 
 // A card's forced follow-up that the card's roller makes (issue #338 D1): one
 // press per card, relayed to the canonical GM, which claims `claim` and posts
@@ -9317,6 +9662,27 @@ onChatMessageRender((message, root) => {
     return;
   }
   wireRollerFollowup(message, root, "sf-paced-roll", "paced.roll", "rolled");
+});
+
+/**
+ * Wire a "Not rolled" notice's "Narrate it — no move" (issue #354 P2-01): a
+ * typed line whose reading was cancelled is narrated as it stands. A click
+ * relays to the canonical GM ("notRolled.narrate" →
+ * cardActions.applyNotRolledNarrate), which claims the notice (`narrated`) and
+ * posts the line again once, flagged `narrateOnly`, as its speaker. Its
+ * author or a GM may press it — the notice is whispered to them.
+ */
+onChatMessageRender((message, root) => {
+  const f = message.flags?.[MODULE_ID];
+  if (!f?.moveNotRolledNotice || !f?.narrateOffered) return;
+  if (liveCardFlags(message)?.narrated) {
+    const btn = root?.querySelector?.('[data-action="sf-narrate-no-move"]');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = "Narrated";
+    return;
+  }
+  wireRollerFollowup(message, root, "sf-narrate-no-move", "notRolled.narrate", "narrated");
 });
 
 /**

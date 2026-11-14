@@ -13,6 +13,7 @@ import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
+import { lengthPhrase, sentenceRule } from './proseVariety.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -198,35 +199,56 @@ export function appendSidecarInstruction(options = {}) {
       '  counting down, in a few words>", "about": "<the id from UNREVEALED it',
       '  belongs to, or who or what it concerns>" }. Not for one already',
       '  running (see CLOCKS).',
+      // Issue #354 P2-29: an enemy got a plan only when a rolled price was
+      // "A new enemy is revealed" — rare, now a miss pays its stated outcome.
+      '- When your prose brings in a new enemy or danger the story will have',
+      '  to deal with — a pursuer, a rival, a hostile presence, something',
+      '  hunting or closing in — emit it once, as "newThreats": [{ "name":',
+      '  "<what your prose calls it, in a few words>" }]. Not for a hazard',
+      '  this beat ends, a player character, or anything already under',
+      '  UNREVEALED or among the threats, under any name.',
     );
   }
 
-  if (mode === 'inciting_incident') {
-    lines.push(
-      '',
-      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
-      'sector: when an existing NPC (see the ACTIVE SECTOR cast) or settlement',
-      'trouble can carry the incident, build on them rather than cold-inventing',
-      'a new NPC, and never give a settlement an authority figure its Authority',
-      'rules out (a lawless settlement has no administrator or governor).',
-      'Its premise must survive into',
-      'later sessions, so your sidecar MUST capture the load-bearing facts:',
-      '- newTruths for: who the central NPC is and their history with the',
-      '  character; why they are where they are; and what is at stake. Only if',
-      '  the situation is genuinely time-gated, also what worsens if the',
-      '  character is too slow — many openings have no deadline, so do not',
-      '  invent one.',
-      '- stateChanges for: the central NPC\'s current location (vessel or',
-      '  structure included) and physical condition.',
-      '- REQUIRED: the player\'s STARTING position. Your opening scene places',
-      '  the character (and their ship) somewhere — emit',
-      '  { "subject": "ship", "attribute": "position", "value": "<starting',
-      '  place>" } recording it, preferring an established settlement or',
-      '  location name. Without it, later "where am I" answers have no anchor.',
-    );
-  }
+  const addendum = sidecarModeAddendum(mode);
+  if (addendum) lines.push('', addendum);
 
   return lines.join('\n');
+}
+
+/**
+ * What a mode adds to the sidecar instruction — the opening scene's
+ * premise-capture rules (narrator-memory architecture A2); '' for every other
+ * mode. On its own so the instruction itself is the same for every mode: it
+ * sits in the system prompt's standing block, which is cached across modes,
+ * and this goes in the per-narration block (issue #354 P2-23).
+ *
+ * @param {string} mode
+ * @returns {string}
+ */
+export function sidecarModeAddendum(mode) {
+  if (mode !== 'inciting_incident') return '';
+  return [
+    'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
+    'sector: when an existing NPC (see the ACTIVE SECTOR cast) or settlement',
+    'trouble can carry the incident, build on them rather than cold-inventing',
+    'a new NPC, and never give a settlement an authority figure its Authority',
+    'rules out (a lawless settlement has no administrator or governor).',
+    'Its premise must survive into',
+    'later sessions, so your sidecar MUST capture the load-bearing facts:',
+    '- newTruths for: who the central NPC is and their history with the',
+    '  character; why they are where they are; and what is at stake. Only if',
+    '  the situation is genuinely time-gated, also what worsens if the',
+    '  character is too slow — many openings have no deadline, so do not',
+    '  invent one.',
+    '- stateChanges for: the central NPC\'s current location (vessel or',
+    '  structure included) and physical condition.',
+    '- REQUIRED: the player\'s STARTING position. Your opening scene places',
+    '  the character (and their ship) somewhere — emit',
+    '  { "subject": "ship", "attribute": "position", "value": "<starting',
+    '  place>" } recording it, preferring an established settlement or',
+    '  location name. Without it, later "where am I" answers have no anchor.',
+  ].join('\n');
 }
 
 /**
@@ -695,7 +717,7 @@ forward unless a strong narrative reason requires divergence.
 You MAY:
 - Add new detail to the generative tier of established entities
 - Deepen relationships and develop implied history
-- Add sensory and atmospheric texture freely
+- Add concrete sensory detail where it serves the beat — a touch, not a layer
 
 You may NOT:
 - Rename, reassign motivation, or change the disposition of established
@@ -715,7 +737,7 @@ not narrate the act of bookkeeping.`,
 This turn is texture, not revelation. Narrate its mood and detail.
 
 You MUST:
-- Focus on sensory, atmospheric, and emotional detail
+- Focus on concrete sensory and emotional detail — what is seen, heard, felt
 - Stay grounded in the current scene
 
 You may NOT introduce any new named entity (no new named entity may appear
@@ -1066,7 +1088,7 @@ const NARRATOR_MODES = new Set([
 // audio-markup instruction.
 const META_MODES = new Set(['campaign_recap']);
 
-// The modes whose length is the Length (sentences) setting — move narration
+// The modes whose length is the Length setting — move narration
 // and paced narration, whose user messages repeat it. Every other mode states
 // its own (the @scene answer the Scene Response Length setting, the recap
 // 3–5 paragraphs, the vignettes, vow, clock, oracle and inciting beats their
@@ -1077,7 +1099,7 @@ const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'r
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `narrate the mechanical consequences of move outcomes as vivid, atmospheric prose ` +
+    `narrate the mechanical consequences of move outcomes as plain, concrete prose ` +
     `that serves the story.\n\n` +
     `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
     `Keep the player in the fiction.`,
@@ -1085,7 +1107,7 @@ const ROLE_DESCRIPTIONS = {
   round_resolution:
     `You are the narrator for an Ironsworn: Starforged campaign played by several players ` +
     `at once. Your role is to narrate one round of play — every character who acted, each ` +
-    `action and the outcome its move rolled — as a single scene of vivid, atmospheric ` +
+    `action and the outcome its move rolled — as a single scene of plain, concrete ` +
     `prose that serves the story.\n\n` +
     `Do not repeat a mechanical outcome verbatim. Transform each into narrative, in the ` +
     `order given, and keep every action with the character who took it. Keep the players ` +
@@ -1093,14 +1115,14 @@ const ROLE_DESCRIPTIONS = {
 
   paced_narrative:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `continue the fiction in response to the player's narration as vivid, atmospheric ` +
+    `continue the fiction in response to the player's narration as plain, concrete ` +
     `prose that serves the story.\n\n` +
     `No move was rolled for this turn. Stay in narration; do not announce mechanics. ` +
     `Keep the player in the fiction.`,
 
   scene_interrogation:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `answer the player's question about the current scene as vivid, atmospheric prose ` +
+    `answer the player's question about the current scene as plain, concrete prose ` +
     `that serves the story.\n\n` +
     `Describe only what is already established — answer the question, do not invent.`,
 
@@ -1115,7 +1137,7 @@ const ROLE_DESCRIPTIONS = {
 
   oracle_followup:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `weave a rolled oracle result into the current scene as vivid, atmospheric prose.\n\n` +
+    `weave a rolled oracle result into the current scene as plain, concrete prose.\n\n` +
     `The player has rolled an oracle table or asked the Oracle a yes/no question. The ` +
     `mechanical result is given to you verbatim. Render it as 2-3 sentences anchored to ` +
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
@@ -1139,7 +1161,9 @@ const ROLE_DESCRIPTIONS = {
     `parts; the bonded ally watering houseplants. Specific, small, almost tender.\n\n` +
     `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
     `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
-    `the calm before / the calm after, not the start or end of the action.`,
+    `the calm before / the calm after, not the start or end of the action. The user ` +
+    `message gives the vignette's length in sentences: that is a limit, not a guide — ` +
+    `count them, and stop at the last one.`,
 
   // A clock beat used the session-vignette role — "depict the calm before /
   // the calm after, not the start or end of the action" — for a threat
@@ -1253,6 +1277,77 @@ const BEAT_ENDING_RULE =
   `after this final story beat.`;
 
 /**
+ * How the prose is written (issue #354 P2-27, P2-22). Every prose role asked
+ * for "vivid, atmospheric prose" and nothing asked for economy, so the alpha 23
+ * playtest's beats ran long, leaned on a strained comparison in nearly every
+ * one ("takes Isaac's offer the way a tide takes a pebble"), repeated one
+ * simile across three narrations, and were all built the same way. Standing
+ * rules, the same for every mode; what varies by beat — the images already
+ * used, the beat's shape — is in the per-beat context (formatBeatProseBlock).
+ */
+const PROSE_RULE =
+  `Write plainly. Concrete nouns and verbs: show what someone does, says, or sees. ` +
+  `Short sentences, one idea each.\n` +
+  `At most one comparison — a simile or a metaphor — in a narration, and only where it ` +
+  `makes something clearer than the plain statement would. Most narrations need none. ` +
+  `Never chain them ("the way a…", "as though…", "like a…" one after another).\n` +
+  `Never reuse an image, or another from the same source, that the recent scene has ` +
+  `already used (IMAGES ALREADY USED lists them when there are any).\n` +
+  `Vary how narrations are built. Not every one opens by setting the scene, and not ` +
+  `every one needs each recurring detail of the scene: leave some out.`;
+
+/**
+ * Levity restated for the beat (issue #354 P2-21): Playful landed in ship and
+ * action beats and dropped out of the tense exchanges, though its description
+ * already said "even under pressure". The description is one line among the
+ * standing rules; the miss and its price are the newest thing the narrator
+ * reads. So the permission is said again with the beat's own context.
+ */
+const LEVITY_BEAT_LINES = {
+  light:   'Levity (Light): this beat may carry one warm or human detail, even on a miss or under threat.',
+  playful: 'Levity (Playful): this beat carries one light touch — a dry aside, a fond or odd detail — even on a miss or under threat. One, placed where it does not undercut the danger.',
+};
+
+/** The modes whose beats are built to a shape and checked against the images already used. */
+const BEAT_PROSE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
+
+/**
+ * [8d] THIS BEAT'S PROSE — what varies from one beat to the next (issue #354
+ * P2-21, P2-22, P2-27): the comparisons the recent narrations used
+ * (buildNarratorExtras → extras.usedImages; proseVariety.js recentImages), the
+ * shape picked for this beat (extras.beatShape; pickBeatShape — never the one
+ * before's), and the levity permission. '' when there is none of them.
+ *
+ * @param {{ usedImages?: string[], beatShape?: { hint?: string }|null, levity?: string }} [beat]
+ * @returns {string}
+ */
+export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity = 'default' } = {}) {
+  const images = (Array.isArray(usedImages) ? usedImages : [])
+    .filter(i => typeof i === 'string' && i.trim())
+    .map(i => i.replace(/\s+/g, ' ').trim());
+  const hint = typeof beatShape?.hint === 'string' ? beatShape.hint.trim() : '';
+  const levityLine = LEVITY_BEAT_LINES[levity] ?? '';
+  if (!images.length && !hint && !levityLine) return '';
+
+  const lines = ["## THIS BEAT'S PROSE"];
+  if (hint) {
+    lines.push('', `Shape: ${hint} (A way to build this beat so it does not read like the last one — it changes nothing about what happens.)`);
+  }
+  if (levityLine) lines.push('', levityLine);
+  if (images.length) {
+    lines.push(
+      '',
+      '### IMAGES ALREADY USED',
+      '',
+      'The recent narrations made these comparisons. Do not use any of them again, or another',
+      'drawn from the same source:',
+      ...images.map(i => `- ${i}`),
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
  * The redirect the first narration after an X-Card carries (issue #321 U07,
  * section [1b]). The removed beat is already out of every memory the narrator
  * reads; this tells it to move the story away without saying what it was.
@@ -1267,7 +1362,9 @@ const XCARD_REDIRECT_BLOCK =
   `X-Card or that anything was removed.`;
 
 const TONE_DESCRIPTIONS = {
-  wry: "Wry — knowing and slightly sardonic, aware of consequence without wallowing in it. The narrator has seen this before. It notices the irony. It does not editorialize, but it does not pretend not to notice.",
+  // Dry, not ornate (issue #354 P2-27): "It notices the irony" read as licence
+  // for a clever comparison in every sentence.
+  wry: "Wry — dry and understated, aware of consequence without wallowing in it. The narrator has seen this before. The irony is in what happens and in what goes unsaid, never in a clever comparison. It does not editorialize, but it does not pretend not to notice.",
   grim_and_grounded: "Grim and grounded — sparse, consequential, Ironsworn-canonical. Short sentences. Weighted words. No flourish.",
   operatic: "Operatic — heightened stakes, vivid imagery, emotion at full volume.",
   noir: "Noir — world-weary, shadowed, dry. The city has seen it all; so has the narrator.",
@@ -1284,12 +1381,15 @@ const LEVITY_DESCRIPTIONS = {
     "Levity — keep the chosen tone's voice, but let the fiction breathe. " +
     "Permit ordinary life, small victories, and moments of rest alongside the danger. " +
     "When the stakes are present, show the human texture around them — not just the dread. " +
-    "Warmth and relief are allowed to land.",
+    "Warmth and relief are allowed to land. This holds on a miss and under threat: a tense " +
+    "beat may still carry one warm or human detail.",
   playful:
     "Levity — keep the chosen tone's voice, but lighten its weight. " +
     "Allow humour, affectionate detail, and the small odd specifics of crew life. " +
     "Be fond and observed rather than grim or sneering; a beat may be almost tender. " +
-    "Even under pressure, find the wry, human moment.",
+    "This holds on a miss, under threat and in a hard conversation: every beat carries one " +
+    "light touch — a dry aside, a fond or odd detail — set where it does not undercut the " +
+    "danger. One, not several; never drop it because the scene is tense.",
 };
 
 // CHAR-PERSPECTIVE-NO-PRONOUN-RULE (character-detail audit 2026-07): both
@@ -1297,10 +1397,17 @@ const LEVITY_DESCRIPTIONS = {
 // bit hardest (every PC referred to by name AND pronoun); second person still
 // needs the rule for NPC dialogue ABOUT the player character.
 const PERSPECTIVE_DESCRIPTIONS = {
+  // "You" is one character for the whole card (issue #354 P2-08): a card said
+  // "you" of Isaac in its body and of Karthik in its close, and another mixed
+  // "Isaac's offer" with "watching you".
   second_person:
     'Address the player character directly as "you". e.g. "You feel the deck ' +
-    'shudder..." When other characters speak ABOUT the player character, use ' +
-    'the recorded pronouns from the CHARACTER section.',
+    'shudder..." "You" is the character in the CHARACTER section, for the whole ' +
+    'narration: never call them by name in narration (their name appears only ' +
+    'when another character says it in dialogue), and never call anyone else ' +
+    '"you" — every other player character is named, in the third person. When ' +
+    'other characters speak ABOUT the player character, use the recorded ' +
+    'pronouns from the CHARACTER section.',
   third_person:
     'Refer to characters by name. e.g. "Kira feels the deck shudder..." Use ' +
     'each character\'s recorded pronouns (CHARACTER, PARTY, and ENTITIES IN ' +
@@ -1482,21 +1589,98 @@ function formatPreviousSessionBlock(summary) {
   );
 }
 
+/** The rule the system prompt's sections are joined with. */
+const SECTION_RULE = '\n\n---\n\n';
+
 /**
- * Build the full narrator system prompt.
+ * The headings that open the second and third blocks of a prose narration's
+ * system prompt (buildNarratorSystemBlocks). splitNarratorSystemPrompt finds
+ * the blocks by them, so they appear nowhere else in a prompt.
+ */
+export const NARRATION_BLOCK_HEADING = '## THIS NARRATION';
+export const CONTEXT_BLOCK_HEADING   = '## CONTEXT FOR THIS NARRATION';
+
+// A meta mode's prompt (the campaign recap) is one block: it is sent once a
+// session, so there is nothing to read back from a cache. Its headings differ
+// so splitNarratorSystemPrompt leaves it whole.
+const META_NARRATION_HEADING = '## THIS SUMMARY';
+const META_CONTEXT_HEADING   = '## CONTEXT FOR THIS SUMMARY';
+
+/**
+ * What every narration is, whatever its mode — the standing block's opening.
+ * The mode's own role description follows in THIS NARRATION.
+ */
+const STANDING_ROLE =
+  `You are the narrator for an Ironsworn: Starforged campaign. The rules in this first ` +
+  `part hold for every narration. THIS NARRATION, after them, says what this one is ` +
+  `for; CONTEXT FOR THIS NARRATION, last, is the story as it stands now.`;
+const META_STANDING_ROLE =
+  `You are the narrator for an Ironsworn: Starforged campaign. The rules in this first ` +
+  `part hold throughout. THIS SUMMARY, after them, says what you are asked to write; ` +
+  `CONTEXT FOR THIS SUMMARY, last, is the campaign as it stands now.`;
+
+/**
+ * The line that closes the per-narration context when the fact-continuity
+ * sidecar is on (issue #354 P2-23). The sidecar instruction used to be the
+ * prompt's last section, "the most recent guidance the model sees"; it is now
+ * in the standing block, which is cached, so the last thing the narrator reads
+ * points back at it. It names no key of the sidecar: the instruction is the
+ * one place those are written (rules/narrator-memory.md invariant 2).
+ */
+const RESPOND_BLOCK =
+  `## RESPOND NOW\n\n` +
+  `Write the narration, then the one fenced JSON block, exactly as RESPONSE FORMAT — ` +
+  `MANDATORY SIDECAR above specifies. The block is required on every response, after ` +
+  `the prose, with everything that section marks REQUIRED.`;
+
+/**
+ * Build the narrator system prompt as its three blocks (issue #354 P2-23).
  *
- * Injection order (narrator-entity-discovery scope §8):
- *   0. Role and style                       (always first)
- *   0b. Campaign recap                      (when present)
- *   1. Safety configuration                 (always second; never dropped)
- *   2. Narrator permissions                 (per-move-class block; never dropped)
- *   3. Oracle seeds                         (when resolution provides them)
- *   4. World truths
- *   4a. Campaign truths                     (foundry-ironsworn digest, when present)
- *   4b. Campaign premise                    (inciting incident as canon; never dropped)
- *   5. Current location card                (when set)
- *   6. Matched entity cards                 (relevance resolver results)
- *   8. Character block
+ * The request used to carry the whole prompt as one cached block that opened
+ * with the mode's role description and changed every beat, so nothing was ever
+ * read back from the cache: every call paid the cache-write premium on the
+ * whole prompt (27 calls, 0% read, in the alpha 23 playtest). The prompt is
+ * now ordered by how often each part changes, and the request sends the parts
+ * as separate blocks (splitNarratorSystemPrompt, narrator.js callNarratorAPI):
+ *
+ *   standing — the same for every prose mode, call after call: the voice
+ *              rules (depict, do not offer; prose; tone; levity; dialogue),
+ *              safety, world truths, campaign truths, the campaign premise,
+ *              the sidecar response format, the NPC dialogue markup. It
+ *              changes only when the table changes a setting, a Line or a
+ *              truth. Cached.
+ *   mode     — what this narration is: the mode's role description, how a
+ *              beat ends, perspective and length, the permission class, the
+ *              opening scene's sidecar addendum. The same for every call of
+ *              one mode at one permission class. Cached.
+ *   beat     — the story as it stands: everything else, in the order it has
+ *              always had, closing on the pointer back to the response
+ *              format. Different every call. Not cached.
+ *
+ * The ordering rule: nothing that can differ between two calls goes in
+ * `standing`, and nothing that can differ between two calls of one mode goes
+ * in `mode`, unless it is constant for that block. A value read per call —
+ * the perspective (a round forces third person), the X-Card redirect, oracle
+ * seeds, the session's first-narration recap — belongs in `mode` or `beat`.
+ * tests/unit/narratorPromptBlocks.test.js holds the two invariants: `standing`
+ * is byte-identical across modes, and `standing` + `mode` across two beats of
+ * one mode.
+ *
+ * A meta mode (campaign_recap) is not cached (`cached: false`): one call a
+ * session. Its three parts are joined into one block.
+ *
+ * Sections, by block (the numbers are the ones this function has always used):
+ *   standing: [0] voice rules · [1] safety · [4] world truths · [4a] campaign
+ *             truths · [4b] campaign premise · [9] sidecar format · [10] NPC markup
+ *   mode:     [0m] role, beat ending, perspective, length · [2] permissions ·
+ *             [9m] the opening scene's sidecar addendum
+ *   beat:     [0b] campaign recap · [1b] X-Card redirect · [2.5] shipboard ·
+ *             [2.6] scene vow · [3] oracle seeds · [3b] recent oracles · [4c]
+ *             last session, story so far · [4d]-[4j] World Journal state,
+ *             clocks, focus, tracks · [5] location · [5b] active sector · [6]
+ *             entity cards · [6.5] scene ledger · [6.6] unrevealed · [8]
+ *             character · [8b] party · [8c] spotlight · [8d] this beat's prose
+ *             · [9b] respond now
  *
  * @param {Object} campaignState      — CampaignStateSchema
  * @param {Object} narratorSettings   — narrator game.settings values
@@ -1513,12 +1697,14 @@ function formatPreviousSessionBlock(summary) {
  *   alternatives. Built by `formatActiveSector` in narrator.js.
  * @param {Object} [extras.oracleSeeds]        — { results, names, context } per scope §7
  * @param {string} [extras.campaignTruthsBlock]— Pre-built `<campaign_truths>` block from system asset integration Phase 8
- * @param {string} [extras.mode]               — "move_resolution" | "paced_narrative" | "scene_interrogation"
+ * @param {string} [extras.mode]               — "move_resolution" | "paced_narrative" | "scene_interrogation" | …
  *   Selects the role description and downstream wording. Defaults to
  *   "move_resolution" for back-compat with existing call sites and tests.
- * @returns {string}
+ * @param {string[]} [extras.usedImages]       — the comparisons the recent narrations made ([8d])
+ * @param {{ hint: string }|null} [extras.beatShape] — the shape picked for this beat ([8d])
+ * @returns {{ standing: string, mode: string, beat: string, cached: boolean }}
  */
-export function buildNarratorSystemPrompt(
+export function buildNarratorSystemBlocks(
   campaignState,
   narratorSettings,
   character,
@@ -1564,11 +1750,15 @@ export function buildNarratorSystemPrompt(
     pinnedChronicle      = null,
     unrevealed           = [],
     planRequests         = [],
+    plannedSubjects      = [],
+    usedImages           = [],
+    beatShape            = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
   const roleDescription = ROLE_DESCRIPTIONS[resolvedMode];
   const isMetaMode      = META_MODES.has(resolvedMode);
+  const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
 
   // A round speaks for every acting PC at once (its CHARACTER blocks, issue #342 Z40).
   // Auto keeps the perspective the session began with (issue #348 PT03).
@@ -1583,32 +1773,29 @@ export function buildNarratorSystemPrompt(
   // meta modes (a recap is an out-of-fiction summary, not live scene prose).
   const levityDesc      = LEVITY_DESCRIPTIONS[narrationLevity] ?? '';
 
-  const parts = [];
+  // ── The standing block ─────────────────────────────────────────────────────
+  // Nothing here may differ between two calls: no mode, no perspective, no
+  // per-beat value (the ordering rule, above).
+  const standing = [];
 
-  // [0] Role and style block — role description per call-site mode, anti-
-  //     suggestion clause appended in every mode (paced-narrative carves out
-  //     its closing italic move-hint in its own user message).
-  const styleLines = [
-    `Perspective: ${perspectiveDesc}`,
-    `Tone: ${toneDesc}`,
-  ];
-  if (NARRATION_LENGTH_MODES.has(resolvedMode)) {
-    styleLines.push(`Length: ${narrationLength} sentence${narrationLength !== 1 ? 's' : ''}`);
-  }
+  // [0] The voice rules — the anti-suggestion clause in every mode
+  //     (paced-narrative carves out its closing italic move-hint in its own
+  //     user message), the prose rules, tone, levity, dialogue.
+  const styleLines = [`Tone: ${toneDesc}`];
   if (narrationInstructions?.trim()) {
     styleLines.push(`Custom instructions: ${narrationInstructions.trim()}`);
   }
-
   const levitySection = (levityDesc && !isMetaMode)
     ? `### LEVITY\n\n${levityDesc}\n\n`
     : '';
 
-  parts.push(
+  standing.push(
     `## NARRATOR ROLE AND VOICE\n\n` +
-    `${roleDescription}\n\n` +
+    `${isMetaMode ? META_STANDING_ROLE : STANDING_ROLE}\n\n` +
     `### DEPICT, DO NOT OFFER\n\n` +
     `${ANTI_SUGGESTION_CLAUSE}\n\n` +
-    (BEAT_ENDING_MODES.has(resolvedMode) ? `### HOW A BEAT ENDS\n\n${BEAT_ENDING_RULE}\n\n` : '') +
+    `### PROSE\n\n` +
+    `${PROSE_RULE}\n\n` +
     `### STYLE\n\n` +
     styleLines.join('\n') + `\n\n` +
     levitySection +
@@ -1617,8 +1804,107 @@ export function buildNarratorSystemPrompt(
     `character refers to themselves as "I"/"me", never in the third person. A ` +
     `captured or absent character pleading over the comm says "if you want me ` +
     `back," not "if you want her back." Use third person only for what the ` +
-    `narrator or OTHER characters say about someone, never for that person's own speech.`
+    `narrator or OTHER characters say about someone, never for that person's own speech.\n` +
+    // Issue #354 P2-22: an NPC's lines were set in italics in one narration —
+    // the styling of the closing move-hint, so the two read as one thing.
+    `Set speech in quotation marks, in plain type — never in italics. Italics are for ` +
+    `a ship's name or one stressed word, and for the closing move hint where the user ` +
+    `message asks for one.`
   );
+
+  // [1] Safety configuration — with Private Lines scoped to this client: every
+  //     player's on a GM's client, only the building player's own on a
+  //     player's (formatNarratorSafetyContext). From the live store when the
+  //     caller read it (buildNarratorExtras → extras.safety, issue #321 U08).
+  const safetyContent = formatNarratorSafetyContext(
+    extras?.safety ? { ...campaignState, safety: extras.safety } : campaignState,
+  );
+  if (safetyContent) standing.push(safetyContent);
+
+  // [4] World truths
+  const worldTruths = buildWorldTruthsBlock(campaignState);
+  if (worldTruths) standing.push(worldTruths);
+
+  // [4a] Campaign truths — canonical setting-truth digest from foundry-ironsworn
+  if (typeof campaignTruthsBlock === 'string' && campaignTruthsBlock.trim()) {
+    standing.push(campaignTruthsBlock.trim());
+  }
+
+  // [4b] Campaign premise — the inciting incident as durable canon. Campaign-
+  //      level and never dropped (unlike the scene-scoped §6.5 ledger), so the
+  //      opening premise can't age out of the ring or be cleared at scene end
+  //      (PLAYTEST-1712 S).
+  const incitingBlock = buildIncitingIncidentBlock(campaignState);
+  if (incitingBlock) standing.push(incitingBlock);
+
+  // [9] Fact-continuity sidecar instruction — every prose mode, gated by the
+  //     master Fact Continuity setting; the sceneFrame key only when the A4
+  //     frame is enabled. The same text for every mode: the opening scene's
+  //     premise-capture addendum (narrator-memory architecture A2) is in the
+  //     mode block ([9m]), and the context closes on a pointer back here ([9b]).
+  const sidecarEnabled = factContinuityEnabled && !isMetaMode;
+  if (sidecarEnabled) {
+    standing.push(appendSidecarInstruction({
+      sceneFrameEnabled: factContinuitySceneFrame,
+      skeletonsEnabled:  narratorSettings?.narrativeSkeletons !== false,
+    }));
+  }
+
+  // [10] Audio NPC-dialogue markup instruction — only when audio narration is
+  // enabled. Tells the narrator to wrap NPC speech with <npc>…</npc> so the
+  // audio pipeline can dispatch a distinct voice. See issue #221 (Audio
+  // Narration) §6. Skipped for meta modes (a recap carries no live NPC
+  // dialogue to voice).
+  if (audioMarkupEnabled && !isMetaMode) {
+    standing.push(appendNpcMarkupInstruction());
+  }
+
+  // ── The mode block ─────────────────────────────────────────────────────────
+  // What this narration is. The same for every call of one mode at one
+  // permission class (and, for a round, one size).
+  const modeParts = [];
+
+  // [0m] The mode's role description, how its beats end, and the two style
+  //      lines that are not the same for every call: the perspective (a
+  //      round of two or more is third person whatever the setting) and the
+  //      length (the modes the Length setting governs — a round's grows with
+  //      its entries).
+  const modeStyle = [`Perspective: ${perspectiveDesc}`];
+  if (NARRATION_LENGTH_MODES.has(resolvedMode)) {
+    const lengthOpts = { audio: audioMarkupEnabled };
+    modeStyle.push(`Length: ${lengthPhrase(narrationLength, lengthOpts)}. ${sentenceRule(narrationLength, lengthOpts)}`);
+  }
+  modeParts.push(
+    `${isMetaMode ? META_NARRATION_HEADING : NARRATION_BLOCK_HEADING}\n\n` +
+    `${roleDescription}\n\n` +
+    (BEAT_ENDING_MODES.has(resolvedMode) ? `### HOW A BEAT ENDS\n\n${BEAT_ENDING_RULE}\n\n` : '') +
+    `### PERSPECTIVE${NARRATION_LENGTH_MODES.has(resolvedMode) ? ' AND LENGTH' : ''}\n\n` +
+    modeStyle.join('\n')
+  );
+
+  // [2] Narrator permissions — the creative-latitude block. Every prose mode
+  //     has a latitude class: move_resolution's is resolved dynamically from
+  //     the move outcome (passed in via extras.narratorClass); the other modes
+  //     fall back to their per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
+  //     Meta modes (recap) carry no latitude block — their role description
+  //     governs.
+  const effectiveClass = (narratorClass ?? DEFAULT_PERMISSION_CLASS_BY_MODE[resolvedMode]) ?? null;
+  if (!isMetaMode && effectiveClass && NARRATOR_PERMISSION_KEYS.has(effectiveClass)) {
+    modeParts.push(NARRATOR_PERMISSIONS[effectiveClass]);
+  }
+
+  // [9m] What the mode adds to the sidecar instruction — the opening scene's.
+  if (sidecarEnabled) {
+    const addendum = sidecarModeAddendum(resolvedMode);
+    if (addendum) modeParts.push(`## THE OPENING SCENE\n\n${addendum}`);
+  }
+
+  // ── The beat block ─────────────────────────────────────────────────────────
+  // The story as it stands. Different every call.
+  const parts = [
+    `${isMetaMode ? META_CONTEXT_HEADING : CONTEXT_BLOCK_HEADING}\n\n` +
+    `The story as it stands now. The rules above say how to use it.`,
+  ];
 
   // [0b] Campaign recap — on a session's first narration, in any prose mode
   //      (buildNarratorExtras sets extras.campaignRecap; a recap passed as the
@@ -1628,31 +1914,11 @@ export function buildNarratorSystemPrompt(
     parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${recapText.trim()}`);
   }
 
-  // [1] Safety configuration — with Private Lines scoped to this client: every
-  //     player's on a GM's client, only the building player's own on a
-  //     player's (formatNarratorSafetyContext). From the live store when the
-  //     caller read it (buildNarratorExtras → extras.safety, issue #321 U08).
-  const safetyContent = formatNarratorSafetyContext(
-    extras?.safety ? { ...campaignState, safety: extras.safety } : campaignState,
-  );
-  if (safetyContent) parts.push(safetyContent);
-
   // [1b] X-Card redirect — the first narration after a GM resumes from an
   //      X-Card steers away from the beat the card removed (issue #321 U07;
   //      buildNarratorExtras → extras.xCardRedirect, cleared once a narration
   //      has posted). It never names the removed content.
   if (extras?.xCardRedirect && !isMetaMode) parts.push(XCARD_REDIRECT_BLOCK);
-
-  // [2] Narrator permissions — the creative-latitude block, immediately after
-  //     safety and before any other contextual section. Every prose mode has a
-  //     latitude class: move_resolution's is resolved dynamically from the move
-  //     outcome (passed in via extras.narratorClass); the other modes fall back
-  //     to their per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE). Meta modes
-  //     (recap) carry no latitude block — their role description governs.
-  const effectiveClass = (narratorClass ?? DEFAULT_PERMISSION_CLASS_BY_MODE[resolvedMode]) ?? null;
-  if (!isMetaMode && effectiveClass && NARRATOR_PERMISSION_KEYS.has(effectiveClass)) {
-    parts.push(NARRATOR_PERMISSIONS[effectiveClass]);
-  }
 
   // [2.5] Shipboard combat (Battle Stations!) — additive rules framing when a
   //       fight is active aboard the command vehicle. Supplements (does not
@@ -1684,22 +1950,6 @@ export function buildNarratorSystemPrompt(
     const recentOraclesBlock = formatRecentOraclesBlock(recentOracles);
     if (recentOraclesBlock) parts.push(recentOraclesBlock);
   }
-
-  // [4] World truths
-  const worldTruths = buildWorldTruthsBlock(campaignState);
-  if (worldTruths) parts.push(worldTruths);
-
-  // [4a] Campaign truths — canonical setting-truth digest from foundry-ironsworn
-  if (typeof campaignTruthsBlock === 'string' && campaignTruthsBlock.trim()) {
-    parts.push(campaignTruthsBlock.trim());
-  }
-
-  // [4b] Campaign premise — the inciting incident as durable canon. Campaign-
-  //      level and never dropped (unlike the scene-scoped §6.5 ledger), so the
-  //      opening premise can't age out of the ring or be cleared at scene end
-  //      (PLAYTEST-1712 S).
-  const incitingBlock = buildIncitingIncidentBlock(campaignState);
-  if (incitingBlock) parts.push(incitingBlock);
 
   // [4c] Story so far — the rolling, session-scoped narrative summary
   //      (architecture §8.6). Bridges the arc the verbatim ring drops once a
@@ -1783,6 +2033,7 @@ export function buildNarratorSystemPrompt(
   if (!isMetaMode) {
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests,
+      plannedSubjects,
       sidecar: factContinuityEnabled,
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
@@ -1817,30 +2068,74 @@ export function buildNarratorSystemPrompt(
   // beat to address).
   if (spotlightBlock && !isMetaMode) parts.push(spotlightBlock);
 
-  // [9] Fact-continuity sidecar instruction — appended last so it is the most
-  // recent guidance the model sees before generating. Applies to every mode,
-  // gated by the master Fact Continuity setting. Mode-aware: the inciting
-  // incident gets a premise-capture addendum (narrator-memory architecture
-  // A2); the sceneFrame key is included only when the A4 frame is enabled.
-  if (factContinuityEnabled && !isMetaMode) {
-    parts.push(appendSidecarInstruction({
-      mode:              resolvedMode,
-      sceneFrameEnabled: factContinuitySceneFrame,
-      skeletonsEnabled:  narratorSettings?.narrativeSkeletons !== false,
-    }));
+  // [8d] This beat's prose (issue #354 P2-21, P2-22, P2-27) — the shape picked
+  // for the beat, the levity permission said again where the outcome is, and
+  // the comparisons the recent narrations already made. The beat modes only.
+  if (BEAT_PROSE_MODES.has(resolvedMode)) {
+    const beatProse = formatBeatProseBlock({ usedImages, beatShape, levity: narrationLevity });
+    if (beatProse) parts.push(beatProse);
   }
 
-  // [10] Audio NPC-dialogue markup instruction — appended only when audio
-  // narration is enabled. Tells the narrator to wrap NPC speech with
-  // <npc>…</npc> so the audio pipeline can dispatch a distinct voice. See
-  // issue #221 (Audio Narration) §6. Skipped for meta modes (a recap
-  // carries no live NPC dialogue to voice).
-  const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
-  if (audioMarkupEnabled && !isMetaMode) {
-    parts.push(appendNpcMarkupInstruction());
-  }
+  // [9b] The pointer back to the response format — last, so it is the most
+  // recent guidance the narrator reads, as the instruction itself used to be.
+  if (sidecarEnabled) parts.push(RESPOND_BLOCK);
 
-  return parts.join('\n\n---\n\n');
+  return {
+    standing: standing.join(SECTION_RULE),
+    mode:     modeParts.join(SECTION_RULE),
+    beat:     parts.join(SECTION_RULE),
+    cached:   !isMetaMode,
+  };
+}
+
+/**
+ * Build the full narrator system prompt, as one string: the three blocks of
+ * buildNarratorSystemBlocks — the standing rules, this narration, its context
+ * — joined by the section rule. It is what every narrator call site builds and
+ * hands to callNarratorAPI, which sends it as those blocks
+ * (splitNarratorSystemPrompt), and what `!narrator debug` shows.
+ *
+ * @param {Object} campaignState      — CampaignStateSchema
+ * @param {Object} narratorSettings   — narrator game.settings values
+ * @param {Object|null} character     — CharacterSchema (active character, may be null)
+ * @param {string} [campaignRecap]    — overrides extras.campaignRecap when non-empty
+ * @param {Object} [extras]           — see buildNarratorSystemBlocks
+ * @returns {string}
+ */
+export function buildNarratorSystemPrompt(
+  campaignState,
+  narratorSettings,
+  character,
+  campaignRecap = '',
+  extras = {},
+) {
+  const blocks = buildNarratorSystemBlocks(campaignState, narratorSettings, character, campaignRecap, extras);
+  return [blocks.standing, blocks.mode, blocks.beat].filter(Boolean).join(SECTION_RULE);
+}
+
+/**
+ * A narrator system prompt as the blocks the request carries (issue #354
+ * P2-23): the standing rules, this narration, and its context — found by the
+ * two headings buildNarratorSystemBlocks opens the second and third with. The
+ * first two are the cached prefix; the last is never cached.
+ *
+ * A prompt without both headings — a meta mode's, the rolling summary's own —
+ * comes back as one block, not cached: it has no prefix a later call repeats.
+ *
+ * @param {string} systemPrompt — buildNarratorSystemPrompt's string, or any other system prompt
+ * @returns {Array<{ text: string, cached: boolean }>} never empty for a non-empty prompt
+ */
+export function splitNarratorSystemPrompt(systemPrompt) {
+  const text = typeof systemPrompt === 'string' ? systemPrompt : '';
+  if (!text) return [];
+  const modeAt    = text.indexOf(`${SECTION_RULE}${NARRATION_BLOCK_HEADING}\n`);
+  const contextAt = modeAt < 0 ? -1 : text.indexOf(`${SECTION_RULE}${CONTEXT_BLOCK_HEADING}\n`, modeAt + SECTION_RULE.length);
+  if (modeAt <= 0 || contextAt < 0) return [{ text, cached: false }];
+  return [
+    { text: text.slice(0, modeAt), cached: true },
+    { text: text.slice(modeAt + SECTION_RULE.length, contextAt), cached: true },
+    { text: text.slice(contextAt + SECTION_RULE.length), cached: false },
+  ].filter(b => b.text);
 }
 
 /** The UNREVEALED section's budget for its plans, in estimated tokens (DECIDE NOW is never trimmed). */
@@ -1858,7 +2153,8 @@ function skeletonHeading(r) {
     const about = r.subject?.name && r.subject.name !== 'the scene' ? ` (about ${r.subject.name})` : '';
     return `${kind} — "${r.question}"${about}`;
   }
-  return `${kind} — ${r?.subject?.name ?? ''}`;
+  const also = Array.isArray(r?.aliases) && r.aliases.length ? ` (also called: ${r.aliases.join(', ')})` : '';
+  return `${kind} — ${r?.subject?.name ?? ''}${also}`;
 }
 
 /** What a plan's fields are called for the narrator — an expedition's read as its journey (issue #353 Phase 3). */
@@ -1900,10 +2196,13 @@ function formatSkeletonEntry(r) {
  * for unit testing and the Private Channel's shared story.
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
- * @param {{ planRequests?: Object[], sidecar?: boolean, maxTokens?: number }} [opts]
+ * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number }} [opts] —
+ *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
+ *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
+ *   "new" one is one of them (`sameAs`, issue #354 P2-30)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const decided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
   const pending = sidecar ? list.filter(r => !(typeof r.truth === 'string' && r.truth.trim())) : [];
@@ -1974,6 +2273,24 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = 
         ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
         : `${skeletonHeading(r)}.${seeds}`;
       lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
+    }
+    // Issue #354 P2-30: one enemy named three ways got three plans. Names
+    // that share a word are matched in code; only the narrator knows "the
+    // second presence" is the escort — so it is shown who is planned already.
+    const BEINGS = new Set(['threat', 'npcAgenda']);
+    const deciding = new Set(pending.map(r => r.id));
+    const planned = (Array.isArray(plannedSubjects) ? plannedSubjects : [])
+      .filter(p => p?.id && p.name && !deciding.has(p.id));
+    if (planned.length && (requests.some(q => BEINGS.has(q.kind)) || pending.some(r => BEINGS.has(r.kind)))) {
+      lines.push(
+        '',
+        '### ALREADY PLANNED',
+        'If an enemy or a person above is in truth one of these under another name, do not decide it a',
+        'second time: answer it with only { "id": "<its id above>", "sameAs": "<the id below of the one it is>",',
+        '"subject": "<the name your prose uses for it>" }.',
+        ...planned.map(p => `- id ${p.id}: ${SKELETON_KIND_NAMES[p.kind] ?? 'Plan'} — ${p.name}` +
+          `${Array.isArray(p.aliases) && p.aliases.length ? ` (also: ${p.aliases.join(', ')})` : ''}`),
+      );
     }
   }
   return lines.join('\n');
@@ -2382,11 +2699,13 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget, s
  *
  * @param {string} playerText      — raw player narration
  * @param {string} recentContext   — recent narration cards joined as text (may be empty)
- * @param {number} sentenceTarget  — how many sentences to produce
+ * @param {number} sentenceTarget  — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} suggestedMove
+ * @param {string|null} [speakerName]
+ * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null) {
+export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null, opts = {}) {
   const parts = [];
 
   const cleanedRecent = stripHtml(recentContext).trim();
@@ -2431,8 +2750,13 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   // Issue #348 PT01: "continuing the scene, not advancing it" held the story
   // still — "not yet", "twenty minutes out", an arrival pushed back on every
   // ask. What a move decides stays undecided; the rest may move.
+  // Issue #354 P2-20: "in N sentences" was met with N long ones — the length
+  // is a word budget, in short sentences.
+  const lengthOpts = { audio: opts?.audio === true };
   parts.push(
-    `Continue the fiction from this input in ${target} sentence${target !== 1 ? 's' : ''}. ` +
+    `Continue the fiction from this input in ${lengthPhrase(target, lengthOpts)}` +
+    `${suggestedMove ? ' (the closing move hint, if you include it, is not counted)' : ''}. ` +
+    `${sentenceRule(target, lengthOpts)} ` +
     `No move was rolled — stay in narration. Do not announce mechanics. Do not decide ` +
     `what a move would decide: no risky action succeeds or fails, no fight is won, no ` +
     `danger is escaped. Within that, let the scene move: small developments, and the ` +
@@ -2450,12 +2774,13 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  *
  * @param {Object} resolution       — MoveResolutionSchema
  * @param {string} playerNarration  — raw player input
- * @param {number} sentenceTarget   — how many sentences to produce
+ * @param {number} sentenceTarget   — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} [speakerName]
  * @param {string} [recentContext]  — the last few ring entries (may be empty)
+ * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '') {
+export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '', opts = {}) {
   const parts = [];
 
   // What just happened (issue #286 B1): a move used to be narrated with no
@@ -2486,8 +2811,11 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     );
   }
 
+  // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
+  const lengthOpts = { audio: opts?.audio === true };
   parts.push(
-    `Narrate the consequence in ${sentenceTarget} sentence${sentenceTarget !== 1 ? 's' : ''}. ` +
+    `Narrate the consequence in ${lengthPhrase(sentenceTarget, lengthOpts)}. ` +
+    `${sentenceRule(sentenceTarget, lengthOpts)} ` +
     `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
     (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
@@ -2507,7 +2835,7 @@ export const ROUND_TOKEN_ENTRY_CAP = 3;
  * setting, plus ROUND_EXTRA_SENTENCES_PER_ENTRY for each further acting
  * entry, capped at ROUND_SENTENCE_CAP_FACTOR × the setting.
  *
- * @param {number} narrationLength — the Length (sentences) setting
+ * @param {number} narrationLength — the Length setting
  * @param {number} actingCount
  * @returns {number}
  */
@@ -2552,10 +2880,11 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @param {Array<{ actorName: string, text: string, input: Object }>} args.entries — in order;
  *   `input` is the entry's narration input: { kind: "move"|"narrative"|"refused", moveName,
  *   statUsed, outcomeLabel, outcome, loremasterContext, oracleSeeds, relevance, reason }
- * @param {number} args.sentenceTarget — roundSentenceTarget
+ * @param {number} args.sentenceTarget — roundSentenceTarget: a word budget (proseVariety.js lengthBudget)
+ * @param {boolean} [args.audio] — the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3 }) {
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -2596,8 +2925,10 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
   );
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
+  const lengthOpts = { audio: audio === true };
   parts.push(
-    `Narrate the round as one scene in ${target}–${target + 1} sentences. Narrate each action ` +
+    `Narrate the round as one scene in ${lengthPhrase(target, lengthOpts)}. ` +
+    `${sentenceRule(target, lengthOpts)} Narrate each action ` +
     `and its outcome in the order given, and attribute each to its own character only — let ` +
     `the actions meet where the fiction allows. Do not explain a mechanical outcome — embody it. ` +
     `An action with no roll happens as described, with no success or failure decided. Only the ` +

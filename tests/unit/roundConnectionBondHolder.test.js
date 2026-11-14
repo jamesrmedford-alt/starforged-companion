@@ -242,6 +242,6 @@ describe('D3 (ruling A) — the bond holder of an NPC a round introduces', () =>
     expect(card.content).toContain('Confirm — whose connection?');
     expect(card.content).toMatch(/data-actor-id="pc-kira">Kira</);
     expect(card.content).toMatch(/data-actor-id="pc-vex">Vex</);
-    expect(card.content).toMatch(/data-actor-id="">No one</);
+    expect(card.content).toMatch(/data-actor-id=""[^>]*>No one</);
   });
 });

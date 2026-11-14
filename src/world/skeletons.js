@@ -21,6 +21,8 @@
  *   - planRequestsFromSeeds — the plans a narration's seeds ask it to decide
  */
 
+import { sameSubject } from "../entities/nameMatch.js";
+
 /** The kinds of plan (issue #353 "The skeleton record"). */
 export const SKELETON_KINDS = Object.freeze(["threat", "mystery", "npcAgenda", "expedition", "discovery", "vow"]);
 
@@ -52,6 +54,10 @@ const ID_RE        = /^[\w-]{1,64}$/;
 export const PLANS_PER_SIDECAR     = 4;
 export const QUESTIONS_PER_SIDECAR = 1;
 export const REVEALS_PER_SIDECAR   = 4;
+/** New enemies a narration may introduce in one sidecar (issue #354 P2-29). */
+export const NEW_THREATS_PER_SIDECAR = 2;
+/** Other names a plan's subject may be known by (issue #354 P2-30). */
+export const ALIASES_MAX = 6;
 
 /** A trimmed, length-capped string ('' for anything else). */
 function text(value, max) {
@@ -93,6 +99,10 @@ export function normaliseSkeleton(raw) {
     id,
     kind,
     subject,
+    // Other names the story has used for the subject — the narrator's own
+    // say that a "new" enemy was this one (issue #354 P2-30). Read wherever
+    // the subject's name is: secrets.js subjectNames, selectRelevantSkeletons.
+    aliases:       normaliseAliases(raw.aliases, subject.name),
     question:      text(raw.question, QUESTION_MAX),
     truth:         text(raw.truth, TEXT_MAX),
     wants:         text(raw.wants, TEXT_MAX),
@@ -115,6 +125,34 @@ export function normaliseSkeleton(raw) {
     createdAt:     typeof raw.createdAt === "string" ? raw.createdAt : null,
     updatedAt:     typeof raw.updatedAt === "string" ? raw.updatedAt : null,
   };
+}
+
+/** A plan's other names: trimmed, each once (case aside), never the subject's own, at most ALIASES_MAX. */
+function normaliseAliases(aliases, subjectName) {
+  const seen = new Set([String(subjectName ?? "").toLowerCase()]);
+  const out = [];
+  for (const a of Array.isArray(aliases) ? aliases : []) {
+    const name = text(a, SUBJECT_MAX);
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+    if (out.length >= ALIASES_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * A plan with one more name for its subject (issue #354 P2-30). The same
+ * record when the name is empty, the subject's own, or already kept.
+ *
+ * @param {Object} record — normaliseSkeleton's
+ * @param {string} name
+ * @returns {Object}
+ */
+export function withAlias(record, name) {
+  const aliases = normaliseAliases([...(record?.aliases ?? []), name], record?.subject?.name);
+  return aliases.length === (record?.aliases ?? []).length ? record : { ...record, aliases };
 }
 
 /** `{ type, id, name }` — a known type, an id when it has one, and the name the fiction uses. Null without a name. */
@@ -142,7 +180,7 @@ function normaliseProvenance(p) {
  * what it decided. Bounded — it may come over the relay from a client.
  *
  * @param {*} plans
- * @returns {Array<{ id, subject, truth, wants, knows, escalation, clues, resolutions }>}
+ * @returns {Array<{ id, subject, truth, wants, knows, escalation, clues, resolutions, rerolled, sameAs }>}
  */
 export function normalisePlans(plans) {
   if (!Array.isArray(plans)) return [];
@@ -162,8 +200,11 @@ export function normalisePlans(plans) {
       resolutions: textList(p.resolutions),
       // The oracle result the plan's re-roll replaced, when it used it.
       rerolled:    text(p.rerolled, ITEM_MAX),
+      // The plan this one's subject already has, under another name (issue
+      // #354 P2-30): the id the narrator was shown under ALREADY PLANNED.
+      sameAs:      typeof p.sameAs === "string" && ID_RE.test(p.sameAs.trim()) && p.sameAs.trim() !== id ? p.sameAs.trim() : "",
     };
-    if (!plan.truth && !plan.wants && !plan.escalation.length && !plan.clues.length) continue;
+    if (!plan.truth && !plan.wants && !plan.escalation.length && !plan.clues.length && !plan.sameAs) continue;
     out.push(plan);
     if (out.length >= PLANS_PER_SIDECAR) break;
   }
@@ -188,6 +229,55 @@ export function normaliseOpenQuestions(questions) {
     if (out.length >= QUESTIONS_PER_SIDECAR) break;
   }
   return out;
+}
+
+/**
+ * The sidecar's `newThreats` (issue #354 P2-29): an enemy or a danger the
+ * prose introduced that the story will have to deal with. Each gets a hidden
+ * plan — its rolls made now, its truth decided by the next narration it is in
+ * play for (secrets.js applyPlanSideData). A plan was asked for only when a
+ * rolled price was "A new enemy is revealed"; since a miss usually pays the
+ * outcome stated before the roll, that row is rare, and an enemy that entered
+ * any other way had no plan until entity detection recorded it as a threat.
+ * At most NEW_THREATS_PER_SIDECAR, each name once. Bounded — it may come over
+ * the relay.
+ *
+ * @param {*} threats
+ * @returns {Array<{ name: string }>}
+ */
+export function normaliseNewThreats(threats) {
+  if (!Array.isArray(threats)) return [];
+  const out = [];
+  for (const t of threats) {
+    const name = text(typeof t === "string" ? t : t?.name, SUBJECT_MAX);
+    if (!name || out.some(o => sameSubjectName(o.name, name))) continue;
+    out.push({ name });
+    if (out.length >= NEW_THREATS_PER_SIDECAR) break;
+  }
+  return out;
+}
+
+/** The kinds of plan that can be about one being: an enemy the story revealed, a threat, an NPC's agenda. */
+export const BEING_KINDS = Object.freeze(["threat", "npcAgenda"]);
+
+/**
+ * The beings that already have a plan, as the narrator is shown them when it
+ * has a new one to decide (issue #354 P2-30) — so it can say the "new" one is
+ * one of these under another name. Active plans of a being kind, less the ones
+ * being decided (`exclude`), newest first, at most `max`.
+ *
+ * @param {Object[]} records — normaliseSkeleton's
+ * @param {{ exclude?: string[], max?: number }} [opts]
+ * @returns {Array<{ id: string, kind: string, name: string, aliases: string[] }>}
+ */
+export function plannedBeings(records, { exclude = [], max = 8 } = {}) {
+  const skip = new Set(Array.isArray(exclude) ? exclude : []);
+  const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");
+  return (Array.isArray(records) ? records : [])
+    .filter(r => r?.status === "active" && BEING_KINDS.includes(r.kind) && r.subject?.name && !skip.has(r.id))
+    .sort((a, b) => time(b).localeCompare(time(a)))
+    .slice(0, Math.max(0, max))
+    .map(r => ({ id: r.id, kind: r.kind, name: r.subject.name, aliases: r.aliases ?? [] }));
 }
 
 /**
@@ -363,9 +453,11 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     if (pinned.has(r.id) || inScene(r)) return true;
     const s = r.subject ?? {};
     if (s.id && (matched.has(s.id) || tracks.has(s.id) || ending.has(s.id))) return true;
-    if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
+    // Every name the subject goes by: its own and the others the story used.
+    const names = [s.name, ...(r.aliases ?? [])];
+    if (r.kind === "threat" && threats.some(n => names.some(own => sameSubject(n, own)))) return true;   // a variant of its name too (issue #354 P2-30)
     if (r.kind === "vow" && sceneVow && ((s.id && s.id === sceneVow.id) || sameSubjectName(sceneVow.name, s.name))) return true;
-    return nameMentioned(s.name, passage);
+    return names.some(own => nameMentioned(own, passage));
   };
   const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");
   const first = (r) => (pinned.has(r.id) ? 2 : (inScene(r) ? 1 : 0));

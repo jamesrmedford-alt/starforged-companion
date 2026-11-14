@@ -100,6 +100,33 @@ async function moduleUpdate(doc, changes, options) {
 }
 
 /**
+ * Run a write the module makes on an Actor's own documents — an Item it
+ * creates there — with the Actor marked as written by the module until it
+ * settles, as moduleUpdate marks an update (reattributeSystemNote). The
+ * system's "Added The Escort" for a bond Item a draft's Confirm made was
+ * posted as the PC speaking (issue #354 P2-16): the `suppressLog` the create
+ * passes is read by the system's preCreateItem hook from the wrong argument
+ * (the creation data, vendor chat-alert.ts), so the note is always posted.
+ *
+ * @param {Actor|null} actor
+ * @param {() => Promise<*>} write
+ * @returns {Promise<*>}
+ */
+async function moduleWriteOn(actor, write) {
+  const id = typeof actor?.id === "string" ? actor.id : null;
+  if (id) _moduleWritesInFlight.set(id, (_moduleWritesInFlight.get(id) ?? 0) + 1);
+  try {
+    return await write();
+  } finally {
+    if (id) {
+      const left = (_moduleWritesInFlight.get(id) ?? 1) - 1;
+      if (left > 0) _moduleWritesInFlight.set(id, left);
+      else _moduleWritesInFlight.delete(id);
+    }
+  }
+}
+
+/**
  * Register the hook that has the ironsworn system's change log, for a change
  * the module made, said by the system rather than the PC: the emote "+1
  * momentum (now 5)" spoken by the PC read as the player speaking (issue #348
@@ -108,7 +135,56 @@ async function moduleUpdate(doc, changes, options) {
 export function registerSystemNoteAttribution() {
   if (_systemNoteAttributionRegistered || typeof Hooks === "undefined") return;
   _systemNoteAttributionRegistered = true;
-  Hooks.on("preCreateChatMessage", (message, data) => { reattributeSystemNote(message, data); });
+  Hooks.on("preCreateChatMessage", (message, data) => {
+    // A change the module shows on a card of its own: the system's note for
+    // it is not posted at all (withoutSystemNotes) — false cancels the create.
+    if (_quietNotes > 0 && systemNoteOfModuleWrite(data) !== null) return false;
+    reattributeSystemNote(message, data);
+    return undefined;
+  });
+}
+
+let _quietNotes = 0;
+
+/**
+ * Run a module write whose change the module reports on a card of its own,
+ * with the ironsworn system's change note for it not posted. One −1 integrity
+ * made three cards — Pay the Price, the system's "ISV Savela: Starship -1
+ * Integrity (now 4)", and the module's "Withstand Damage (-1) ISV Savela:
+ * 5 → 4" (issue #354 P2-13): the second says what the third says. Only notes
+ * for Actors this client's bridge is writing are dropped (a player's own
+ * sheet edit made meanwhile keeps its note). Keep the span to the write
+ * itself: a note for any module write that lands inside it is dropped too.
+ *
+ * @param {() => Promise<*>} write
+ * @returns {Promise<*>}
+ */
+export async function withoutSystemNotes(write) {
+  _quietNotes += 1;
+  try {
+    return await write();
+  } finally {
+    _quietNotes -= 1;
+  }
+}
+
+/**
+ * The text of the ironsworn system's change-log line — an emote whose whole
+ * content is one `<em>` line, spoken by an Actor — when it is for a change
+ * this client's bridge is making to that Actor; null for anything else (the
+ * module's own cards, which carry its flags; a player's own sheet edit).
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {string|null}
+ */
+function systemNoteOfModuleWrite(data) {
+  const actorId = data?.speaker?.actor;
+  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return null;
+  if (data?.flags?.[MODULE_ID]) return null;
+  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
+  if (Number(data?.style) !== emote) return null;
+  const line = /^<em>([\s\S]*)<\/em>$/.exec(String(data?.content ?? "").trim());
+  return line ? line[1].trim() : null;
 }
 
 /**
@@ -125,19 +201,13 @@ export function registerSystemNoteAttribution() {
  * @returns {boolean} whether it was re-spoken
  */
 function reattributeSystemNote(message, data) {
-  const actorId = data?.speaker?.actor;
-  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return false;
-  if (data?.flags?.[MODULE_ID]) return false;
-  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
-  if (Number(data?.style) !== emote) return false;
-  const content = String(data?.content ?? "").trim();
-  const line = /^<em>([\s\S]*)<\/em>$/.exec(content);
-  if (!line) return false;
-  const name = globalThis.game?.actors?.get?.(actorId)?.name ?? data.speaker.alias ?? "";
+  const note = systemNoteOfModuleWrite(data);
+  if (note === null) return false;
+  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
   const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   try {
     message?.updateSource?.({
-      content: `<em>${escaped ? `${escaped}: ` : ""}${line[1].trim()}</em>`,
+      content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
       style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
       speaker: { actor: null, token: null, scene: null, alias: null },
       // A module flag: no longer an emote, the note would otherwise read as a
@@ -905,15 +975,16 @@ export function readVehicleAssetBattered(actor, itemId) {
  * kept within the track's min..max: Withstand Damage's "+1 integrity" /
  * "-1 integrity" when the roll was the vehicle's (statEnrichment's
  * `vehicleItemId`). A rise is refused while the vehicle is battered, as the
- * ship record's writer refuses one (entities/ship.js changeIntegrity). The
- * sibling of applyCompanionHealthChange; reports, never throws.
+ * ship record's writer refuses one (entities/ship.js changeIntegrity) — save
+ * a `restore`, which puts back what a reverted Pay the Price took (issue #354
+ * P2-09). The sibling of applyCompanionHealthChange; reports, never throws.
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null }} [opts] — the vehicle asset
+ * @param {{ itemId?: string|null, restore?: boolean }} [opts] — the vehicle asset
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
  */
-export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null } = {}) {
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false } = {}) {
   const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
   if (!asset) {
     console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -922,7 +993,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   const track  = asset.system?.track ?? {};
   const before = Number(track.value ?? 0);
   const at     = { itemId: asset.id, name: asset.name ?? null, before };
-  if (delta > 0 && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
+  if (delta > 0 && !restore && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
   const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
   if (after === before) return { ok: true, ...at, after };
   try {
@@ -1206,9 +1277,12 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * vendor/foundry-ironsworn/.../sf-connections.vue), so we use "bond" to
  * match the system's own "+ Connection" button behaviour.
  *
- * Passes `{ suppressLog: true }` so the ironsworn preCreateItem chat-alert
- * hook does not emit an "Added <name>" emote message in chat — those
- * messages were leaking between narrator turns.
+ * Passes `{ suppressLog: true }`, which the ironsworn preCreateItem
+ * chat-alert hook is meant to honour — it reads it from the creation data,
+ * not the options, so its "Added <name>" note is posted all the same. The
+ * create runs through moduleWriteOn, so that note reads as the system's
+ * ("Isaac Sutton: Added The Escort"), never as the PC speaking (issue #354
+ * P2-16).
  *
  * Idempotent: if an Item flagged with this connection's id already exists
  * on the actor, returns it without creating a duplicate.
@@ -1484,7 +1558,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
 
   try {
     refuseStaleActorWrite(`create ${subtype} item`);
-    const item = await ItemCls.create(
+    const item = await moduleWriteOn(actor, () => ItemCls.create(
       {
         name,
         type:   "progress",
@@ -1492,7 +1566,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
         flags:  Object.keys(moduleFlags).length ? { [MODULE_ID]: moduleFlags } : {},
       },
       { parent: actor, suppressLog: true },
-    );
+    ));
     invalidateActorCache(actor.id);
     return item ?? null;
   } catch (err) {

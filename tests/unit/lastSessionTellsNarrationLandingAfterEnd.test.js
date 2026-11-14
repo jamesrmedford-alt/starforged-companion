@@ -111,6 +111,10 @@ afterAll(() => table?.teardown());
 
 beforeEach(async () => {
   await table.reset({ world: { settings: {
+    // The price is paid and the result narrated at once, and an upgrade
+    // undoes them — the flow these tests are about. (Asking first is the
+    // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
+    holdResultForUpgrade: false,
     chronicleAutoEntry: false, sessionLogAutoWrite: false, autoRecapEnabled: false,
     narratorSessionSummary: true, combatTrackerEnabled: false,
     campaignState: {

@@ -32,7 +32,9 @@ A destination the story names without a proper name joins them in play
 label naming no site and no tracked place
 (`index.js` `applyOutcomeEffects`) records it with
 `siteDiscovery.recordUnchartedDestination` — a `location` Actor (status
-unexplored), a discovery record of type `uncharted` with `workingLabel: true`
+unexplored; its name the label written as a name, `nameMatch.generatedName`:
+"the corridor" → "Corridor", issue #354 P2-18), a discovery record of type
+`uncharted` with `workingLabel: true`
 on the active sector's `mapData.discoveries` (the next periphery slot,
 `sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
 persist saves — an upgrade saves `sectors` at once) and its pin
@@ -142,7 +144,10 @@ Discovered card says so). With no active sector nothing is recorded.
   Session panel's What's open. Nothing else reads it: finishing a linked
   expedition marks no milestone by itself — the player's ⚑ does. The
   progress card shows boxes filled and carries a
-  **"🗺 Finish the Expedition"** button — its forced move names the track by
+  **"🗺 Finish the Expedition (n/10)"** button — labelled with the progress
+  it rolls with, and shown muted (`sf-followup-btn--early`) under
+  `EXPEDITION_FINISH_READY_BOXES` (4), where a finish misses more often than
+  not (issue #354 P2-14) — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`
   (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the

@@ -242,12 +242,21 @@ async function travelDestinationUnread(moveId) {
  * @param {{ moveId: string, moveTarget?: string|null, moveTargetId?: string|null }|null} [args.forced]
  * @param {string|null} [args.swearToConnection] — a forced Swear an Iron Vow's connection
  * @param {boolean} [args.gatherChoices] — a round's reading: go on past a target choice
+ * @param {{ moveId?: string|null, category?: string|null, reasoning?: string|null }|null} [args.classifier] —
+ *   the pacing classifier's reading of the line, for the interpreter (issue #354 P2-02)
+ * @param {boolean} [args.allowNoMove] — whether the line may be read as no move
+ *   (issue #354 P2-01): false when a roll was asked for (`!roll`, a round's
+ *   "Roll a move instead"). A forced move is never read as none.
  * @returns {Promise<{ interpretation: Object, combatPosition: *, targetChoice: Object|null,
- *   speakerActor: Actor|null, rollerActor: Actor|null }>}
+ *   speakerActor: Actor|null, rollerActor: Actor|null, noMove?: { rationale: string, lowConfidence: boolean,
+ *   offeredMove: string|null } }>} — `noMove`: the line makes no move (or its
+ *   reading is too unsure to roll): the caller narrates it, with `offeredMove`
+ *   — the move it might be — offered on the narration's card; nothing else is read
  */
 export async function readMove({
   narration, speakerActorId, campaignState, apiKey, dial,
   forced = null, swearToConnection = null, gatherChoices = false,
+  classifier = null, allowNoMove = true,
 }) {
   const forcedMoveId       = forced?.moveId ?? null;
   const forcedMoveTarget   = forced?.moveTarget ?? null;
@@ -274,7 +283,36 @@ export async function readMove({
         roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
         recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+        // What the classifier made of it, and whether it may be no move at all
+        // (issue #354 P2-01, P2-02).
+        classifier, allowNoMove,
       });
+
+  // No move is being made — or the reading is too unsure to roll (issue #354
+  // P2-01). The interpreter could only ever answer with a move: "Tell us the
+  // whole story" came back as Ask the Oracle with "this is a narrative
+  // exchange… low confidence" in its rationale, and the roll dialog opened
+  // all the same — `confidence` was read by nothing. The caller narrates the
+  // line and offers the move it might be: the classifier's, else the unsure
+  // reading's own. Not in an open fight (outcomes there are earned with
+  // dice), nor when a roll was asked for.
+  if (!forcedMoveId && allowNoMove !== false) {
+    // A reading that failed (the interpreter's fallback) is not an unsure one:
+    // it goes to the confirm dialog, which says so.
+    const unsure = !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
+    if (interpretation.noMove || unsure) {
+      const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+      const offered = classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null;
+      return {
+        interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor,
+        noMove: {
+          rationale:     interpretation.rationale ?? "",
+          lowConfidence: unsure,
+          offeredMove:   typeof offered === "string" && MOVES[offered] ? offered : null,
+        },
+      };
+    }
+  }
   if (swearToConnection && interpretation?.moveId === "swear_an_iron_vow") {
     interpretation.swearToConnection = swearToConnection;
   }
@@ -554,11 +592,16 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     ? readAs.forced
     : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
+  // The classifier's reading of a MOVE line, for the interpreter (issue #354 P2-02).
+  let classifier = null;
   if (!readAs?.move) {
     const pacing = await decidePacing({
-      playerText: text, campaignState, character: speakerName ? { name: speakerName } : null,
+      playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
       apiKey, ignoreForceMove: true,
     });
+    if (pacing.runMove) {
+      classifier = { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
+    }
     if (!pacing.runMove) {
       // The offer is the classifier's alone — no narration exists yet to
       // reconcile it with — and never a social move against a fellow PC
@@ -576,7 +619,17 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     forced: forced ? { moveId: forced.moveId, moveTarget: forced.moveTarget ?? null, moveTargetId: forced.moveTargetId ?? null } : null,
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
+    classifier,
+    // "Roll a move instead" asked for a roll: the line is read as a move.
+    allowNoMove: !readAs?.move,
   });
+  // The interpreter read no move in it (issue #354 P2-01): a narrative
+  // reading, as the classifier's own is — the window's "Roll a move instead"
+  // and "Roll ⟨move⟩" stay. Never a social move against a fellow PC.
+  if (read.noMove) {
+    const suggestedMove = suppressPcDirectedSocialMove(read.noMove.offeredMove, text, speakerName);
+    return { kind: READING_KIND.NARRATIVE, suggestedMove: suggestedMove ?? null, suggestedTargetId: null };
+  }
   return readingFromMove(read, { forced });
 }
 
@@ -785,14 +838,18 @@ function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
  * @param {Object|null} [args.tokenDragSetCourse]
  * @param {string|null} [args.incitingSwearMessageId] — an inciting "⚔ Swear this vow" card
  * @param {Object|null} [args.cardFlags] — more flags for the result card (a round's entry: its round and player)
+ * @param {boolean} [args.holdForUpgrade] — free-flow play (issue #354 P2-10): a result whose card offers
+ *   Burn Momentum or Improve Result is held — its Pay the Price is not paid and it is not narrated until
+ *   the roller burns, improves or keeps it (heldResult.js). The card carries what the wait needs
+ *   (`awaitingUpgrade`), and `held` comes back true: the caller records the move and does not narrate it.
  * @returns {Promise<{ refused: string, refusedReason?: string }|{ refused: null, resolution: Object, interpretation: Object,
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
- *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null }>}
+ *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null, held: boolean }>}
  */
 export async function rollMove({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
-  cardFlags = null, onDiceRolled = null, resolutionId = null,
+  cardFlags = null, onDiceRolled = null, resolutionId = null, holdForUpgrade = false,
 }) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
@@ -1412,14 +1469,19 @@ export async function rollMove({
   // (clocks advanced + suffer meter applied) so the burn button can undo
   // them when the player burns momentum to upgrade the outcome.
   let ptpReversals = null;
+  // Whether the move card will offer Burn Momentum or Improve Result. Read
+  // before any price lands: the live momentum is the momentum buildBurnState
+  // below adds a paid price back to.
+  const upgradeOffered = !!game.user.isGM && !!(buildBurnState(resolution, rollerActor)?.canBurn
+    || buildImproveState(resolution, interpretation.applicableAbilities, rollerActor)?.canImprove);
+  // Free-flow play holds such a result (issue #354 P2-10, decided): the
+  // roller burns, improves or keeps it BEFORE its price is paid and before it
+  // is narrated, as a Batch Mode round asks before its narration. The price
+  // used to land first and the narration post at once, so a burn undid a
+  // price already on the table and struck a narration already read.
+  const hold = holdForUpgrade === true && upgradeOffered;
+  let heldPrice = null;
   if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-    // Whether the move card will offer Burn Momentum or Improve Result:
-    // the price is paid before that card posts, and a resist roll its
-    // harm owes — the roller's next move, which closes them — says to
-    // take them first (issue #336 Y18). Read before the price lands, the
-    // live momentum is the momentum buildBurnState below adds it back to.
-    const upgradeOffered = !!(buildBurnState(resolution, rollerActor)?.canBurn
-      || buildImproveState(resolution, interpretation.applicableAbilities, rollerActor)?.canImprove);
     // A scene-challenge move's miss filled its challenge's clock itself:
     // "fill a clock segment and Pay the Price" is one fill (issue #338 D2).
     const skipClockIds = sceneChallenge?.clockId ? [sceneChallenge.clockId] : [];
@@ -1428,14 +1490,23 @@ export async function rollMove({
     // the world setting off): its suffer move runs through the same
     // executors, and leaves the receipts a burn undoes.
     const stated = statedPrice(resolution.stakes);
-    const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated }).catch(err => {
-      console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
-      return null;
-    });
-    ptpReversals = ptp?.reversals ?? null;
-    // The move's narration depicts this card's price — the one the table
-    // pays; the resolver rolled none for it (issue #321 U03).
-    resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
+    if (hold) {
+      // Paid when the result is kept — or by an upgraded result that pays a
+      // price too (heldResult.js payHeldPrice).
+      heldPrice = { moveName: resolution.moveName ?? null, skipClockIds, stated: stated ?? null };
+    } else {
+      // The price is paid before the card posts, and a resist roll its harm
+      // owes — the roller's next move, which closes the card's upgrades —
+      // says to take them first (issue #336 Y18).
+      const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated }).catch(err => {
+        console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
+        return null;
+      });
+      ptpReversals = ptp?.reversals ?? null;
+      // The move's narration depicts this card's price — the one the table
+      // pays; the resolver rolled none for it (issue #321 U03).
+      resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
+    }
   }
 
   // Step 7: relevance resolver — picks the narrator-permission block
@@ -1536,6 +1607,23 @@ export async function rollMove({
   const connectionState = buildConnectionSuggestion(
     resolution, _activeConns, MOVES[resolution.moveId]?.category ?? null,
   );
+  // A held result's card carries what its wait needs (heldResult.js): the
+  // resolution to narrate, the price not yet paid, and the narration's
+  // context — as a round's entry keeps its narration input.
+  const awaitingUpgrade = hold ? {
+    open: true,
+    heldPrice,
+    resolution: jsonCopy(resolution),
+    relevance: relevance ? {
+      resolvedClass: relevance.resolvedClass ?? "embellishment",
+      entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
+      entityTypes:   Array.isArray(relevance.entityTypes) ? relevance.entityTypes : [],
+      matchedNames:  Array.isArray(relevance.matchedNames) ? relevance.matchedNames : [],
+      referenceType: relevance.referenceType ?? "none",
+    } : null,
+    speakerActorId: speakerActorId ?? null,
+    moveTarget:     interpretation.moveTarget ?? null,
+  } : null;
   const moveResultMessage = await postMoveResult(
     resolution,
     interpretation._mischiefAside ?? null,
@@ -1545,8 +1633,20 @@ export async function rollMove({
     connectionState,
     moveFight,
     rollerActor?.id ?? null,
-    cardFlags,
+    awaitingUpgrade ? { ...(cardFlags ?? {}), awaitingUpgrade } : cardFlags,
   );
+
+  // A held result's card is where its choice is made: with no card saved
+  // nothing can be chosen, so the price it held is paid now, as it always
+  // was, and the caller narrates the result (`held` false below).
+  if (awaitingUpgrade && !moveResultMessage && heldPrice) {
+    const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, heldPrice.moveName, resolution._id ?? null,
+      { upgradeOffered: false, skipClockIds: heldPrice.skipClockIds, stated: heldPrice.stated }).catch(err => {
+      console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
+      return null;
+    });
+    resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
+  }
 
   // The cards that summarize the roll card — the Set a Course card — follow
   // it: posted by the effects above, the summary came before the roll it
@@ -1557,6 +1657,8 @@ export async function rollMove({
     refused: null,
     resolution, interpretation, relevance, moveTargets, burnState, improveState,
     moveResultMessage: moveResultMessage ?? null, rollerActor, speakerActorId,
+    // Held for the roller's Burn / Improve / Keep — only when its card posted.
+    held: !!(awaitingUpgrade && moveResultMessage),
   };
 }
 

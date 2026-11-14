@@ -41,7 +41,8 @@ layers. This file is the never-break list.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame` — and, for the
-   narrative skeleton's `plans` / `openQuestions`, `src/world/skeletons.js`'s
+   narrative skeleton's `plans` / `openQuestions` / `reveals` / `countdown` /
+   `newThreats`, `src/world/skeletons.js`'s
    normalisers ↔ `secrets.js` `applyPlanSideData`, issue #353) is a matched pair.
    Any key added to the instruction must be normalised in
    `sidecarParser.js` and applied in `narrator.js applyNarratorSidecar` in
@@ -222,6 +223,21 @@ layers. This file is the never-break list.
    sector's (the roster leads it: `activeSectorNamesakeFirst`, Z15's rule —
    issue #345 AA06). Entity state keys are `entity:<id>`
    (`subjectKey` / `subjectFromStateKey`).
+
+7b. **The system prompt's cached blocks hold nothing per-call** (issue #354
+   P2-23). `buildNarratorSystemBlocks` orders the prompt as `standing` (the
+   same for every prose mode), `mode` (the same for one mode at one
+   permission class) and `beat` (everything else), and the request caches
+   the first two. A cache read needs those bytes identical to an earlier
+   request's: anything read per call — a perspective a round can force, the
+   X-Card redirect, oracle seeds, the session-start recap, a name, a count,
+   a timestamp — goes in `beat` (or `mode`, when it is constant for the
+   mode). Add a section to the block its volatility puts it in, never to
+   `standing` because it reads well there; `tests/unit/
+   narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached
+   block. The sidecar instruction lives in `standing`, and the context closes
+   on RESPOND NOW, a pointer to it that names no key: a new sidecar key goes
+   in the instruction (invariant 2), never in the pointer.
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),

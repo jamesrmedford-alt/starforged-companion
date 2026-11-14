@@ -874,6 +874,7 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
 // "🗺 Finish the Expedition"      — gmRelay "expedition.finish"
 // "⚔ Swear it (roll)"             — gmRelay "vow.swearRoll" (session/swearVow.js)
 // A paced card's "Roll <move>"    — gmRelay "paced.roll"
+// A "Not rolled" notice's "Narrate it — no move" — gmRelay "notRolled.narrate" (issue #354 P2-01)
 // A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1087,6 +1088,32 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
         ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
       } };
     },
+  });
+}
+
+/**
+ * gmRelay handler for "notRolled.narrate" — a "Not rolled" notice's "Narrate
+ * it — no move" (issue #354 P2-01; applyCardRollerFollowup). The reading of a
+ * typed line was cancelled, and the notice said only "re-word your line": a
+ * line that was never a move — "Tell us the whole story" — had nowhere to go.
+ * The line is posted again once, flagged `narrateOnly` (index.js narrates it
+ * as it stands, with no move read into it), spoken as the PC who said it; a
+ * line with no PC keeps the speaker it was typed under. Its speaker's player
+ * or a GM may press it. Claim `narrated`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyNotRolledNarrate(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "narrate without a move", claim: "narrated",
+    isCard: (f) => !!f.moveNotRolledNotice && f.narrateOffered === true
+      && typeof f.restoreLine === "string" && !!f.restoreLine,
+    roller: (f) => (typeof f.lineActorId === "string" && f.lineActorId ? f.lineActorId : null),
+    lineSpeaker: (f) => (f.lineSpeaker && typeof f.lineSpeaker === "object" && f.lineSpeaker.alias
+      ? { alias: String(f.lineSpeaker.alias) } : null),
+    build: (f) => ({ content: f.restoreLine, flags: { narrateOnly: true } }),
   });
 }
 

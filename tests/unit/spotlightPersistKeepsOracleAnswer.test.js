@@ -48,6 +48,8 @@ afterEach(async () => {
 beforeEach(async () => {
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false, narratorSessionSummary: false, sessionLogAutoWrite: false,
+    // Rotating Spotlight is off by default (issue #354 P2-07): this table has it on.
+    narratorSpotlightRotation: true,
     campaignState: {
       ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1,
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: 'sc-1', sceneTruths: [],

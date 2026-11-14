@@ -26,7 +26,7 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 const STORE_READERS = new Map([
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
-  ['src/oracles/oracleConsult.js', 'a GM\'s yes/no about a planned subject: its truth sets the odds, sent to Claude, never to a card'],
+  ['src/oracles/oracleConsult.js', 'a yes/no about a planned subject: its truth sets the odds on the GM\'s client, sent to Claude, never to a card; a player\'s client is sent the odds word only (issue #354 P2-31)'],
   ['src/session/swearVow.js', 'a vow target\'s agenda plan (planNpcAgenda — a write, no read)'],
   ['src/ui/entityPanel.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
   ['src/ui/progressTracks.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],

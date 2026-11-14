@@ -55,7 +55,7 @@ describe('X28 — the oracle follow-up states one sentence count', () => {
     const user   = String(body.messages[0].content);
 
     expect(system).toMatch(/Render it as 2-3 sentences/);          // the mode's own count (control)
-    expect(system).not.toMatch(/Length: 7 sentences/);              // W40: no Length line for this mode (control)
+    expect(system).not.toMatch(/^Length: /m);                       // W40: no Length line for this mode (control)
     // The user message asked for the Length setting's count beside it
     // ("Render this result as 7 sentence(s) of in-fiction prose").
     expect(user).not.toMatch(/7 sentence/);
@@ -63,7 +63,8 @@ describe('X28 — the oracle follow-up states one sentence count', () => {
   });
 
   it('control: the paced user message repeats the Length setting (its own mode)', () => {
+    // Its Length setting as a word budget (issue #354 P2-20): seven steps.
     const user = buildPacedNarrativeUserMessage('I check the hatch.', '', 7, null, 'Kira');
-    expect(user).toMatch(/in 7 sentences/);
+    expect(user).toMatch(/in about 155 words — never more than 195 — in at most 11 sentences/);
   });
 });

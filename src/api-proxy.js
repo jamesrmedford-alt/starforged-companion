@@ -36,10 +36,14 @@ const MODULE_ID = "starforged-companion";
  *   sets no `thinking` is sent with its model's thinking-off form
  *   (narration/thinking.js): every call here is a short reply or a narration
  *   sized by `max_tokens`, and Haiku 5.5 / Sonnet 5.5 think by default.
+ * @param {{ label?: string|null }} [opts] — `label`: what made the call, for
+ *   the API Log ("pacingClassifier", "narrator:narrateResolution", …). The log
+ *   named the model alone, so the ability scanner's call could not be told
+ *   from the classifier's (issue #354 P2-24).
  * @returns {Promise<Object>}
  * @throws {Error} on network failure or non-2xx response
  */
-export async function apiPost(url, headers, body) {
+export async function apiPost(url, headers, body, { label = null } = {}) {
   if (!url.includes("api.anthropic.com")) {
     // Defensive: this helper is Anthropic-only by design. Image generation
     // has its own helper (src/art/openRouterImage.js). Catching unknown hosts
@@ -104,6 +108,7 @@ export async function apiPost(url, headers, body) {
   if (data?.usage) {
     logApiTransaction({
       model:            body?.model            ?? "unknown",
+      label,
       inputTokens:      data.usage.input_tokens                  ?? 0,
       cacheWriteTokens: data.usage.cache_creation_input_tokens   ?? 0,
       cacheReadTokens:  data.usage.cache_read_input_tokens       ?? 0,

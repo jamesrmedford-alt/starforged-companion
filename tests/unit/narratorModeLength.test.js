@@ -45,23 +45,26 @@ describe("each narrator mode is told one length — its own (issue #326 W40)", (
     await interrogateScene("what does the hangar smell like?", game.settings.get(MODULE_ID, "campaignState"));
     const [[, , body]] = apiPost.mock.calls;
     expect(String(body.messages[0].content)).toContain("1–2 sentences");   // control: the scene setting is sent
-    expect(body.system[0].text).not.toContain("Length: 6 sentences");
+    // The request's system blocks, joined (issue #354 P2-23: three of them).
+    expect(body.system.map(b => b.text).join("\n")).not.toMatch(/^Length: /m);
   });
 
   it('campaign recap: the system prompt does not say "Length: 3 sentences" beside "3–5 paragraphs"', () => {
     const user = buildCampaignRecapUserMessage(["[Session 1]\nKira swore to find Chen."]);
     expect(user).toContain("3–5 paragraphs");                                 // control
-    expect(systemFor("campaign_recap")).not.toContain("Length: 3 sentences");
+    expect(systemFor("campaign_recap")).not.toMatch(/^Length: /m);
   });
 
   it("the vignette, inciting, vow, clock and oracle modes carry no Length line", () => {
     for (const mode of ["session_vignette", "inciting_incident", "vow_swearing", "clock_advance", "oracle_followup", "scene_interrogation"]) {
-      expect(systemFor(mode, 5), mode).not.toMatch(/Length: \d+ sentence/);
+      expect(systemFor(mode, 5), mode).not.toMatch(/^Length: /m);
     }
   });
 
-  it("control: move and paced narration keep the Length setting in STYLE", () => {
-    expect(systemFor("move_resolution", 5)).toContain("Length: 5 sentences");
-    expect(systemFor("paced_narrative", 1)).toContain("Length: 1 sentence\n");
+  // The setting is a word budget since issue #354 P2-20 (it counted
+  // sentences, so the sentences grew).
+  it("control: move and paced narration keep the Length setting, as a word budget", () => {
+    expect(systemFor("move_resolution", 5)).toContain("Length: about 110 words — never more than 140 — in at most 8 sentences.");
+    expect(systemFor("paced_narrative", 1)).toContain("Length: about 20 words — never more than 30 — in at most 2 sentences.");
   });
 });

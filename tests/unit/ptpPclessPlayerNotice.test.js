@@ -72,7 +72,7 @@ describe('issue #337 Y43 — a PC-less player types !ptp', () => {
     const card = await payThePrice('pl-1');
     expect(health('pc-kira')).toBe(4);
     expect(health('pc-ren')).toBe(5);
-    expect(card.content).toMatch(/Routes to endure_harm \(-1\)\./);
+    expect(card.content).toMatch(/Routes to Endure Harm \(-1\)\./);
     expect(notices()).toHaveLength(0);
   }, 30_000);
 
@@ -83,7 +83,7 @@ describe('issue #337 Y43 — a PC-less player types !ptp', () => {
     expect(health('pc-ren')).toBe(5);
     expect(sufferRelays('pl-2')).toHaveLength(0);          // refused before any relay
 
-    expect(card.content).toMatch(/endure_harm \(-1\) &mdash; not applied: .* has no character of their own/);
+    expect(card.content).toMatch(/Endure Harm \(-1\) &mdash; not applied: .* has no character of their own/);
     const [notice] = notices();
     expect(notice.content).toMatch(/No character to pay the price/);
     expect(notice.content).toMatch(/this price was not applied/);

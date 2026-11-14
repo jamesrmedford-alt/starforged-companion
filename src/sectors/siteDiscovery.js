@@ -13,6 +13,7 @@
  * the orchestration unit-tests without a live game.
  */
 
+import { generatedName } from "../entities/nameMatch.js";
 import { selectSectorSite, buildSiteLocationData } from "./precursorSites.js";
 import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
@@ -106,7 +107,13 @@ export const UNCHARTED_SITE_TYPE = "uncharted";
  * @returns {Promise<{ sector: Object, site: Object }|null>}
  */
 export async function recordUnchartedDestination(label, campaignState, deps = {}) {
-  const name = typeof label === "string" ? label.replace(/\s+/g, " ").trim() : "";
+  // The label as a name (issue #354 P2-18): "the corridor" is filed as
+  // "Corridor" — title case, no leading article — where it was filed as
+  // typed, beside a "The Escort". Every lookup of a place by its label is
+  // case- and article-blind (precursorSites.js normalizeLabel; index.js
+  // resolveCurrentLocationName's whole-word rung), and the expedition links
+  // the site by id.
+  const name = generatedName(typeof label === "string" ? label : "", { stripArticle: true });
   if (!name || !campaignState) return null;
   const sector = (Array.isArray(campaignState.sectors) ? campaignState.sectors : [])
     .find(s => s?.id && s.id === campaignState.activeSectorId && s.mapData) ?? null;

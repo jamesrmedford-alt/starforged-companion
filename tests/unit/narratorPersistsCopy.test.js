@@ -54,6 +54,8 @@ beforeEach(() => {
   // The canonical GM writes (isCanonicalGM): one active GM, this one.
   global.game.users = [{ id: 'gm-1', isGM: true, active: true }];
   game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
+  // Rotating Spotlight is off by default (issue #354 P2-07): this table has it on.
+  game.settings._store.set(`${MODULE_ID}.narratorSpotlightRotation`, true);
   game.actors._set('a-actor', makeTestActor({ id: 'a-actor', name: 'Kira' }));
   game.actors._set('b-actor', makeTestActor({ id: 'b-actor', name: 'Orin' }));
 });

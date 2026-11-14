@@ -163,6 +163,11 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState) {
     "End on a small private gesture — a shrug, a half-smile, switching a light",
     "off, looking out a window — that closes the session without underlining.",
     "Do not describe a move, do not propose a mechanical action.",
+    "",
+    // Issue #354 P2-26: asked for 3-5 sentences in its opening line only, the
+    // vignette ran to about eight. The limit is the last thing it reads.
+    "Length: three to five sentences, about 90 words — never more than five",
+    "sentences. Short ones. Count them, and stop at the gesture.",
   ].join("\n");
 }
 

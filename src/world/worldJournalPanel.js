@@ -22,13 +22,16 @@ import {
   getActiveThreats,
   promoteLoreToConfirmed,
   updateThreatSeverity,
+  findDuplicateThreats,
+  mergeDuplicateThreats,
   writeEntryPage,
   findWorldJournal,
   findEntryPage,
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 import { listSkeletons, getSkeleton, editSkeleton, revealSkeletonNow, retireSkeleton, skeletonsEnabled } from './secrets.js';
-import { SKELETON_KIND_LABELS, sameSubjectName } from './skeletons.js';
+import { SKELETON_KIND_LABELS } from './skeletons.js';
+import { sameSubject } from '../entities/nameMatch.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -75,6 +78,7 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       editSecret:         WorldJournalPanelApp.#onEditSecret,
       revealSecret:       WorldJournalPanelApp.#onRevealSecret,
       retireSecret:       WorldJournalPanelApp.#onRetireSecret,
+      mergeThreats:       WorldJournalPanelApp.#onMergeThreats,
     },
   };
 
@@ -88,6 +92,8 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       pendingLore:    getNarratorAssertedLore(campaignState),
       contradictions: readContradictions(),
       threats:        getActiveThreats(campaignState),
+      // GM-only: the threats recorded more than once, for the Merge button (issue #354 P2-15).
+      duplicateThreats: isGM ? findDuplicateThreats() : [],
       // GM-only: the panel is, and the plans are (issue #353).
       secrets:        isGM ? listSkeletons() : [],
       secretsOn:      skeletonsEnabled(),
@@ -232,6 +238,30 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
     await this.render({ force: true });
   }
 
+  /** Fold the threats recorded more than once into one entry each — asked first (issue #354 P2-15). */
+  static async #onMergeThreats(_event, _target) {
+    if (!game.user?.isGM) return;
+    const groups = findDuplicateThreats();
+    if (!groups.length) return;
+    const list = groups.map(g =>
+      `<li><strong>${escapeHtml(g.keep)}</strong> takes in ${g.merge.map(n => `“${escapeHtml(n)}”`).join(', ')}</li>`).join('');
+    const ok = await foundry.applications.api.DialogV2.confirm({
+      window:  { title: 'Merge duplicate threats' },
+      content: `<p>Each of these threats is recorded on more than one page:</p><ul>${list}</ul>` +
+        `<p>The first keeps the history of the others and the latest severity and summary. The others are closed as resolved — their pages stay in the Threats journal.</p>`,
+      rejectClose: false,
+    }).catch(() => false);
+    if (!ok) return;
+    try {
+      const done = await mergeDuplicateThreats(readCampaignState());
+      ui?.notifications?.info?.(`Starforged Companion: merged ${done.merged} duplicate threat page${done.merged === 1 ? '' : 's'} into ${done.kept}.`);
+    } catch (err) {
+      console.error(`${MODULE_ID} | worldJournalPanel: merging duplicate threats failed:`, err);
+      ui?.notifications?.warn?.('Starforged Companion: the duplicate threats were not merged — see the console.');
+    }
+    await this.render({ force: true });
+  }
+
   // ── Secrets (issue #353) ────────────────────────────────────────────────────
 
   static async #onOpenSecret(_event, target) {
@@ -316,7 +346,8 @@ function buildPanelHTML(ctx) {
     buildPendingLoreSection(ctx.pendingLore),
     buildContradictionsSection(ctx.contradictions),
     // A threat a hidden plan is about carries the GM's marker (issue #353 Phase 4).
-    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).map(r => r.subject?.name).filter(Boolean) : []),
+    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).flatMap(r => [r.subject?.name, ...(r.aliases ?? [])]).filter(Boolean) : [],
+      ctx.isGM ? (ctx.duplicateThreats ?? []) : []),
     ctx.isGM ? buildSecretsSection(ctx.secrets ?? [], ctx.secretsOn !== false) : '',
   ].join('');
 
@@ -386,6 +417,7 @@ function buildContradictionsSection(items) {
 <div class="sf-wj-entry sf-wj-contradiction-entry">
   <div class="sf-wj-entry-title">${escapeHtml(c.name ?? '(unknown)')}</div>
   ${c.detail ? `<div class="sf-wj-entry-text">${escapeHtml(c.detail)}</div>` : ''}
+  ${c.evidence ? `<div class="sf-wj-entry-text"><em>The narration said:</em> “${escapeHtml(c.evidence)}”</div>` : ''}
   <div class="sf-wj-action-row">${actions(c)}
     <button type="button" class="sf-wj-dismiss-btn"
             data-action="dismissContradiction" data-message-id="${escapeHtml(c.messageId)}"
@@ -395,11 +427,19 @@ function buildContradictionsSection(items) {
   return `${heading}<div class="sf-wj-entry-list">${rows}</div>`;
 }
 
-function buildThreatsSection(threats, plannedNames = []) {
+function buildThreatsSection(threats, plannedNames = [], duplicates = []) {
   const heading = '<h3 class="sf-wj-section-heading">Active Threats</h3>';
   if (!threats.length) {
     return `${heading}<div class="sf-wj-empty-compact">No active threats.</div>`;
   }
+  // One threat recorded on several pages (issue #354 P2-15): a GM folds them
+  // into one — nothing is merged unasked.
+  const extra = duplicates.reduce((n, g) => n + g.merge.length, 0);
+  const mergeRow = extra ? `
+<div class="sf-wj-action-row">
+  <button type="button" data-action="mergeThreats"
+          title="Fold each threat recorded more than once into one entry. The other pages are closed as resolved, not deleted.">Merge ${extra} duplicate${extra === 1 ? '' : 's'}</button>
+</div>` : '';
   const rows = threats.map(t => {
     const cls = SEVERITY_BADGE_CLASSES[t.severity] ?? '';
     const select = `
@@ -411,11 +451,11 @@ function buildThreatsSection(threats, plannedNames = []) {
     return `
 <div class="sf-wj-threat-row">
   <span class="sf-wj-badge ${cls}">${escapeHtml((t.severity ?? '').toUpperCase())}</span>
-  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}${plannedNames.some(n => sameSubjectName(n, t.name)) ? ' <span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>' : ''}</span>
+  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}${plannedNames.some(n => sameSubject(n, t.name)) ? ' <span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>' : ''}</span>
   ${select}
 </div>`.trim();
   }).join('');
-  return `${heading}<div class="sf-wj-threat-list">${rows}</div>`;
+  return `${heading}<div class="sf-wj-threat-list">${rows}</div>${mergeRow}`;
 }
 
 /** A plan's name in the panel: its question for a mystery, else its subject. */
@@ -448,6 +488,7 @@ function buildSecretsSection(secrets, enabled) {
     <span class="sf-wj-entry-session">${state}</span>
   </summary>
   ${r.kind === 'mystery' ? field('About', r.subject?.name) : ''}
+  ${field('Also called', (r.aliases ?? []).join(', '))}
   ${field(r.kind === 'mystery' ? 'Answer' : 'Truth', r.truth || 'Not yet decided — the narrator decides it from the oracle rolls.')}
   ${field('Wants', r.wants)}
   ${field('Knows', r.knows)}
@@ -552,10 +593,14 @@ function parseContradictionMessage(msg) {
   const content = msg.content ?? '';
   const nameMatch   = /<strong>([^<]*)<\/strong>/.exec(content);
   const detailMatch = /<strong>[^<]*<\/strong>\s*—\s*([^<]+)<\/p>/.exec(content);
+  // What a fact-continuity catch recorded on its card (issue #354 P2-19):
+  // the fact as the ledger holds it and the narration's conflicting words.
+  const said = msg.flags?.[MODULE_ID]?.contradiction ?? null;
   return {
     messageId: msg.id,
-    name:      nameMatch ? decodeEntities(nameMatch[1]) : '',
-    detail:    detailMatch ? decodeEntities(detailMatch[1]) : '',
+    name:      said?.subject || (nameMatch ? decodeEntities(nameMatch[1]) : ''),
+    detail:    said?.recorded ? `Recorded: ${said.recorded}` : (detailMatch ? decodeEntities(detailMatch[1]) : ''),
+    evidence:  typeof said?.evidence === 'string' ? said.evidence : '',
     // A ◈ Narrative Review card from the fact-continuity check (issue #325 W34).
     factContinuity: msg.flags?.[MODULE_ID]?.factContinuityReview === true,
     correctable:    content.includes('data-action="openCorrectionDialog"'),

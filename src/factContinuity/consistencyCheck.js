@@ -28,6 +28,7 @@ import { getPlayerActors, readCharacterSnapshot } from '../character/actorBridge
 import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
+import { generatedName } from '../entities/nameMatch.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -130,6 +131,11 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     // Each card is awaited: one played during an earlier card's post stops the rest.
     if (isNarrationXCarded(options.narrationId)) return { contradictions: [], dispatched };
     try {
+      // What the card shows (issue #354 P2-19): the fact as recorded and the
+      // narration's own words. It showed the subject and the audit's
+      // `violated` alone — "ACTIVE SCENE STATE — isaac sutton location" — so
+      // the GM could not tell what to correct.
+      const shown = describeContradiction(c, campaignState, ledger);
       await applyStateTransition({
         entryType:        'factContinuity',
         change:           'contradicted',
@@ -137,6 +143,9 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
         name:             c.subject ?? '(unknown)',
         newValue:         c.evidence ?? '',
         summary:          c.violated ?? '',
+        subjectLabel:     shown.subject,
+        recorded:         shown.recorded,
+        evidence:         shown.evidence,
         // The truth the catch names, found in the scene's ledger: the audit
         // never returned an id, so the review card's flag was always null and
         // the Retract dialog could not point at the fact (issue #326 W63).
@@ -213,6 +222,11 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '  ]',
     '}',
     '',
+    '"subject" is the name as the section above writes it. "violated" is the',
+    'established fact itself, copied from its line above ("location: the bridge",',
+    '"walks with a limp") — never a section heading or a bare field name.',
+    '"evidence" is the narration\'s own words that conflict with it, quoted.',
+    '',
     'Return an empty array if the narration honours the scene ledger.',
     'Do NOT return contradictions for facts not in the sections above — your',
     'job is consistency with prior assertions, not plausibility judgement.',
@@ -285,6 +299,63 @@ export function resolveContradictedTruthId(contradiction, campaignState) {
   return candidates.length === 1 ? candidates[0].id : null;
 }
 
+/** The section headings the audit sometimes returns in front of (or as) the fact. */
+const LEDGER_SECTION_LABEL = /^\s*(?:active scene (?:truths|state)|current state|scene frame|ship position|retracted facts|recorded identities)\b[^—:-]*[—:-]\s*/i;
+
+/**
+ * A contradiction as its review card shows it (issue #354 P2-19): the
+ * subject by its proper name, the fact as the ledger records it, and the
+ * narration's words. The audit's `violated` is often a pointer rather than
+ * the fact — "ACTIVE SCENE STATE — isaac sutton location" — so the recorded
+ * value is read from the ledger itself: a state catch's line (`<subject> —
+ * <attribute>: <value>`), a truth catch's fact. Never throws.
+ *
+ * @param {{ subject?: string, violated?: string, evidence?: string, kind?: string, truthId?: string|null }} c
+ * @param {Object} campaignState
+ * @param {{ state?: string }} [ledger] — buildLedgerBlock's blocks, as audited
+ * @returns {{ subject: string, recorded: string, evidence: string }}
+ */
+export function describeContradiction(c, campaignState, ledger = {}) {
+  const norm = (v) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const violated = String(c?.violated ?? '').replace(LEDGER_SECTION_LABEL, '').trim();
+  let subject = String(c?.subject ?? '').trim();
+  let recorded = '';
+  try {
+    // The ledger's own state lines: "  Isaac Sutton — location: the bridge".
+    const stateLines = String(ledger?.state ?? '').split('\n')
+      .map(line => /^\s+(.+?) — ([^:]+): (.+)$/.exec(line))
+      .filter(Boolean)
+      .map(m => ({ label: m[1].trim(), attribute: m[2].trim(), value: m[3].trim() }));
+    const ofSubject = stateLines.filter(l => norm(l.label) === norm(subject));
+    if (ofSubject.length) subject = ofSubject[0].label;
+    if ((c?.kind ?? 'truth') === 'state') {
+      const wanted = norm(`${c?.violated ?? ''}`);
+      const named = ofSubject.filter(l => wanted.includes(norm(l.attribute)));
+      const hits = named.length ? named : (ofSubject.length === 1 ? ofSubject : []);
+      if (hits.length) recorded = hits.map(l => `${l.attribute}: ${l.value}`).join('; ');
+    } else if ((c?.kind ?? 'truth') === 'truth') {
+      const id = c?.truthId ?? resolveContradictedTruthId(c, campaignState);
+      const truth = id ? (campaignState?.sceneTruths ?? []).find(t => t?.id === id) : null;
+      if (truth?.fact) {
+        recorded = String(truth.fact).trim();
+        const label = truthSubjectLabel(truth.subject);
+        if (label && norm(label) === norm(subject)) subject = label;
+      }
+    }
+    // A name the ledger does not print — a player character's, say — by its sheet's spelling.
+    if (subject && subject === subject.toLowerCase()) {
+      const pc = (getPlayerActors() ?? []).find(a => norm(a?.name) === norm(subject));
+      subject = pc?.name ?? generatedName(subject);
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | consistencyCheck: describing the contradiction failed:`, err?.message ?? err);
+  }
+  // The audit's own words when the ledger gave no line — unless they only
+  // repeat the subject and a field name, which says nothing.
+  if (!recorded && violated && norm(violated) !== norm(subject)) recorded = violated;
+  return { subject: subject || '(unknown)', recorded, evidence: String(c?.evidence ?? '').trim() };
+}
+
 /** A truth subject's label, as the ledger block prints it. */
 function truthSubjectLabel(subject) {
   switch (subject?.kind) {
@@ -319,7 +390,7 @@ async function callHaiku(apiKey, systemPrompt) {
     'x-api-key':         apiKey,
     'anthropic-version': '2023-06-01',
   };
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "consistencyCheck" });
   if (data?.stop_reason === 'max_tokens') {
     // Truncated audit — the parse below salvages what it can, but catches
     // beyond the cut are lost. Never silent (NARRCHK-TRUNC-SILENT).

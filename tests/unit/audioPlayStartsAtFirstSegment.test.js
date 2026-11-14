@@ -200,3 +200,51 @@ describe('XCARD-AUDIO-PLAYING — the X-Card stops the narration it removes', ()
     expect(sound._state).toBe('playing');
   });
 });
+
+// Issue #354 P2-14: a narration a burn or an improvement superseded is struck
+// on its card and is no longer what happened — but it kept its Play and Stop
+// buttons, so the superseded telling could still be played.
+describe('issue #354 P2-14 — a superseded narration\'s audio is not offered', () => {
+  /** The supersede's update lands: the card re-renders with its `burnSuperseded` flag. */
+  async function supersede(message) {
+    message.flags[MODULE_ID].burnSuperseded = true;
+    const root = parseHTML(`<div class="sf-narration-prose"><s>${PROSE}</s></div><button data-action="audioPlayToggle" hidden></button><button data-action="audioStop" hidden></button>`);
+    await onNarratorCardRendered(message, root);
+    await flush();
+    return root;
+  }
+
+  it('its Play and Stop buttons stay hidden', async () => {
+    const { message, play, stop } = await gmCard('msg-s-buttons');
+    expect(play.hasAttribute('hidden'), 'shown before it is superseded (setup)').toBe(false);
+    expect(stop.hasAttribute('hidden')).toBe(false);
+
+    const root = await supersede(message);
+    expect(root.querySelector('[data-action="audioPlayToggle"]').hasAttribute('hidden')).toBe(true);
+    expect(root.querySelector('[data-action="audioStop"]').hasAttribute('hidden')).toBe(true);
+  });
+
+  it('one already playing stops, and the rest of it is never made', async () => {
+    const { message, play } = await gmCard('msg-s-playing');
+    play.click(); await flush();
+    releaseSynth(); await flush();
+    const sound = foundry.audio.Sound._instances[0];
+    expect(sound._state, 'it is playing (setup)').toBe('playing');
+
+    await supersede(message);
+
+    expect(sound._state).toBe('stopped');
+    releaseSynth(); await flush();
+    expect(foundry.audio.Sound._instances).toHaveLength(1);
+  });
+
+  it('control: the narration that replaces it plays', async () => {
+    const { message } = await gmCard('msg-s-old');
+    await supersede(message);
+    const next = await gmCard('msg-s-new');
+    expect(next.play.hasAttribute('hidden')).toBe(false);
+    next.play.click(); await flush();
+    releaseSynth(); await flush();
+    expect(foundry.audio.Sound._instances.at(-1)._state).toBe('playing');
+  });
+});

@@ -64,6 +64,7 @@ import {
 } from "../world/worldJournal.js";
 import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
 import { planSignificantThreat, planNpcAgenda } from "../world/secrets.js";
+import { personNameMatch, nameWithin, generatedName, loreTitle } from "./nameMatch.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -160,6 +161,59 @@ export function isPlaceholderName(name) {
   // Generic noun standing in for a person, anywhere in the name.
   if (/\b(figure|stranger|newcomer|silhouette|individual|operative)\b/i.test(n)) return true;
   return false;
+}
+
+/**
+ * The people the campaign knows, by name: the player characters and the
+ * listed connections (every named NPC is a connection card — FOLDER-002).
+ *
+ * @param {Object|null} campaignState — with the store's lists (withStoredEntityIds)
+ * @returns {Array<{ name: string, pc: boolean }>}
+ */
+function knownPeople(campaignState) {
+  const people = [];
+  try {
+    for (const a of getPlayerActors()) if (a?.name) people.push({ name: a.name.trim(), pc: true });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | knownPeople: PC roster lookup failed:`, err?.message ?? err);
+  }
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConnection(id); } catch { continue; }
+    if (rec?.name) people.push({ name: rec.name.trim(), pc: false });
+  }
+  return people;
+}
+
+/**
+ * The known person a detected name means (issue #354 P2-16): the same name, a
+ * title aside (normalizeEntityName), or — what a whole-name comparison missed
+ * — part of it ("Archer" for Vuldar Archer, the name the narration keeps
+ * using) or a near spelling of it ("Valdur Archer"). `names` — more people to
+ * match against (the pending draft rows). null when it names nobody known.
+ *
+ * @param {string} name
+ * @param {Object|null} campaignState
+ * @param {string[]} [names]
+ * @returns {string|null} the known person's name
+ */
+function knownPersonNamed(name, campaignState, names = []) {
+  const target = normalizeEntityName(name);
+  if (!target) return null;
+  const candidates = [...knownPeople(campaignState).map(p => p.name), ...names];
+  return candidates.find(n => personNameMatch(target, normalizeEntityName(n))) ?? null;
+}
+
+/** Whether a name is a player character's — whole, in part, or nearly spelled. */
+function namesPlayerCharacter(name) {
+  const target = normalizeEntityName(name);
+  if (!target) return false;
+  try {
+    return getPlayerActors().some(a => a?.name && personNameMatch(target, normalizeEntityName(a.name)));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | namesPlayerCharacter: PC roster lookup failed:`, err?.message ?? err);
+    return false;
+  }
 }
 
 
@@ -314,6 +368,9 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `"Dr. Chen" and "Chen" refer to the same person; "Captain Reyes" and`,
     `"Reyes" refer to the same person. Match against this list by stripping`,
     `any leading title before comparing.`,
+    `A person is the same person under part of their name: "Archer", "Ms Archer"`,
+    `and "Vuldar" all mean an established "Vuldar Archer", and so does a near`,
+    `spelling of it ("Valdur Archer"). Never return any of these as a new entity.`,
     ``,
     `PENDING DRAFTS (already proposed in earlier narration, not yet confirmed —`,
     `do not return these again, the GM has them under review):`,
@@ -332,7 +389,11 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `CURRENT WORLD JOURNAL STATE (for state transition detection):`,
     `Confirmed lore: ${wjState.confirmedLore.join("; ") || "(none)"}`,
     `Narrator-asserted lore: ${wjState.assertedLore.join("; ") || "(none)"}`,
-    `Active threats: ${wjState.threats.join("; ") || "(none)"}`,
+    `Active threats (one per line: the name in quotes, then its severity — the`,
+    `severity is a separate field, never part of the name):`,
+    ...(wjState.threats.length
+      ? wjState.threats.map(t => `  - "${t.name}" | severity: ${t.severity}`)
+      : [`  (none)`]),
     `Faction attitudes: ${wjState.factions.join("; ") || "(none)"}`,
     ``,
     `Return a single JSON object with this exact shape (no prose):`,
@@ -353,7 +414,8 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `        "entityName": string|null }`,
     `    ],`,
     `    "threats": [`,
-    `      { "name": string, "type": string, "severity": string, "summary": string,`,
+    `      { "name": string, "type": string,`,
+    `        "severity": "immediate"|"active"|"looming", "summary": string,`,
     `        "salience": "trivial"|"scene"|"notable"|"significant"|"defining" }`,
     `    ],`,
     `    "factionUpdates": [`,
@@ -365,7 +427,7 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `    "stateTransitions": [`,
     `      { "entryType": "threat"|"lore"|"faction", "name": string,`,
     `        "change": "resolved"|"escalated"|"contradicted"|"attitudeShift",`,
-    `        "newValue": string }`,
+    `        "newValue": string, "summary": string }`,
     `    ]`,
     `  }`,
     `}`,
@@ -388,9 +450,22 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `fact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,`,
     `creature). Those facts belong on the entity record, not in the World`,
     `Journal lore. If the lore is a world-level fact (not about one specific`,
-    `known entity), leave entityName null or omit it.`,
-    `Lore rules: only extract concrete narrative facts, not atmosphere.`,
+    `known entity), leave entityName null or omit it. Use the name exactly as`,
+    `ESTABLISHED ENTITIES lists it, even when the narration calls the entity by`,
+    `part of its name or by another phrase ("the blockade corridor" for an`,
+    `established "The Corridor").`,
+    `Lore rules: only extract concrete narrative facts, not atmosphere. "title"`,
+    `is a short label in sentence case — a capital first letter, proper nouns`,
+    `capitalised, no entity name and colon in front. What a player character`,
+    `decided or did is not lore: it is the story so far, not a fact about the`,
+    `world — do not return it.`,
     `Threat rules: only named or distinctly typed dangers with narrative weight.`,
+    `A threat's "name" is its name alone — a short, stable label — never with its`,
+    `severity or what it is doing now after a colon. "severity" is exactly one of`,
+    `"immediate" (acting on the characters now), "active" (in motion, not yet on`,
+    `them) or "looming" (a danger ahead); what the threat is doing goes in`,
+    `"summary". A danger already in the Active threats list is not a new threat:`,
+    `report what changed about it as a state transition.`,
     `Faction update rules: include every named faction that appears in this narration`,
     `in "factionUpdates" — even on its first mention, and even when it is named only`,
     `in passing or in possessive/adjectival form. "classified Triumvirate intelligence",`,
@@ -413,11 +488,15 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `figure must NOT also appear in "entities".`,
     `State transitions: compare narration against the CURRENT WORLD JOURNAL STATE`,
     `above. Threat resolved/escalated, lore contradicted, faction attitude shift.`,
-    `For a threat transition, "name" MUST exactly match a threat that already`,
-    `appears in the CURRENT WORLD JOURNAL STATE above — do NOT invent a threat`,
-    `name from the narration, and do NOT emit a threat transition for a danger`,
-    `that is not already a recorded threat (a brand-new danger belongs in its own`,
-    `detection, not as a state change). If no recorded threat matches, omit it.`,
+    `For a threat transition, "name" MUST exactly match the quoted name of a`,
+    `threat in the Active threats list above — the name only, without its`,
+    `severity — do NOT invent a threat name from the narration, and do NOT emit`,
+    `a threat transition for a danger that is not already a recorded threat (a`,
+    `brand-new danger belongs in its own detection, not as a state change). If`,
+    `no recorded threat matches, omit it. For "escalated", "newValue" is the new`,
+    `severity — exactly "immediate" or "active" — and "summary" says in one`,
+    `sentence what the threat is now doing. For "resolved", "summary" says how`,
+    `it ended. ("summary" is for threat transitions; omit it otherwise.)`,
     `Return empty arrays for any section with nothing to report.`,
     ``,
     `Narration:`,
@@ -480,6 +559,12 @@ function detectionFromParsed(parsed, campaignState) {
   const pending = new Set(
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
+  // A person the table knows — or one waiting on a draft card — under part of
+  // their name or a near spelling is that person, not a new one (issue #354
+  // P2-16: "Archer" was offered as a new NPC beside Vuldar Archer).
+  const listedState   = withStoredEntityIds(campaignState);
+  const pendingPeople = collectPendingDraftNames("connection");
+  const knownPerson   = (e) => e.type === "connection" && !!knownPersonNamed(e.name, listedState, pendingPeople);
 
   // Renames: a placeholder figure (e.g. "Unknown Suited Figure") revealed to
   // have a proper name (e.g. "Vex"). Validate to { from, to } string pairs.
@@ -507,6 +592,7 @@ function detectionFromParsed(parsed, campaignState) {
     .filter(e => !established.has(normalizeEntityName(e.name)))
     .filter(e => !pending.has(normalizeEntityName(e.name)))
     .filter(e => !renameTargets.has(normalizeEntityName(e.name)))
+    .filter(e => !knownPerson(e))
     // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
     // pronoun-shaped values ("she/her", "ze/zir", up to three tokens);
     // anything else — prose, guesses, junk — drops to "". The role and goal
@@ -600,12 +686,17 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const pendingNormalized = new Set(
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
+  const pendingPeople = collectPendingDraftNames("connection");
   const slots = connectionSlots(options);
 
-  for (const entity of entities ?? []) {
+  for (const detected of entities ?? []) {
     if (removed()) return { created, queued: [] };
-    if (!entity?.name || !entity?.type) continue;
-    if (!ENTITY_GETTERS[entity.type]) continue;
+    if (!detected?.name || !detected?.type) continue;
+    if (!ENTITY_GETTERS[detected.type]) continue;
+    // A name the module files is written one way (issue #354 P2-18): "the
+    // escort" is "The Escort" on its card. Only an all-lower-case word is
+    // capitalised — a name the narration wrote with capitals stands.
+    const entity = { ...detected, name: generatedName(detected.name) };
     // Cross-type dedup. A name that already exists anywhere in
     // campaignState — settlement, location, faction, anything — should not
     // be re-proposed as a different entity type. The detector classifies
@@ -613,10 +704,12 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // Location even though the parent settlement is also called Oxidized
     // Kettle), so the type-scoped entityExistsForName(name, type, …) lets
     // duplicates through. entityExistsAnyType catches the cross-type case.
-    if (entityExistsAnyType(entity.name, campaignState)) continue;
+    if (entityExistsAnyType(entity.name, campaignState, { type: entity.type })) continue;
     // Skip names already sitting in an unresolved draft card — the GM is
-    // already reviewing them; re-flagging causes the suggestion loop.
+    // already reviewing them; re-flagging causes the suggestion loop. A
+    // person waiting there under a fuller name too (issue #354 P2-16).
     if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
+    if (entity.type === "connection" && knownPersonNamed(entity.name, null, pendingPeople)) continue;
 
     const slot = entity.type === "connection" ? slots.find(s => !s.done && s.takes(entity)) : null;
     if (slot) {
@@ -1197,9 +1290,17 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
 
 /**
  * Locate a known entity record by name across all entity types.
- * Returns { journalId, type } for the first match, or null if no entity record
- * exists with this name. Used by routeWorldJournalResults to divert entity-
+ * Returns { journalId, type } for the match, or null if no entity record
+ * answers to this name. Used by routeWorldJournalResults to divert entity-
  * specific lore to the entity's generative tier instead of the WJ lore journal.
+ *
+ * The name as recorded first (a title aside). Then, when exactly one record
+ * answers (issue #354 P2-17): a person under part of their name or a near
+ * spelling ("Archer" for Vuldar Archer), any other entity when one name is
+ * inside the other as whole words ("blockade corridor" for "The Corridor").
+ * The narration rarely uses a record's whole name, so the facts it
+ * established about a place sat in the Lore journal and never reached the
+ * place. Two records answering is nobody's: the fact stays world lore.
  *
  * @param {string} entityName
  * @param {Object} campaignState
@@ -1208,6 +1309,7 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
 function findEntityForLoreRouting(entityName, campaignState) {
   const target = normalizeEntityName(entityName);
   if (!target) return null;
+  const variants = [];
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     if (!getter) continue;
@@ -1215,10 +1317,52 @@ function findEntityForLoreRouting(entityName, campaignState) {
     for (const journalId of ids) {
       let rec = null;
       try { rec = getter(journalId); } catch { continue; }
-      if (rec?.name && normalizeEntityName(rec.name) === target) return { journalId, type };
+      if (!rec?.name) continue;
+      const recorded = normalizeEntityName(rec.name);
+      if (recorded === target) return { journalId, type };
+      const answers = type === "connection" ? !!personNameMatch(target, recorded) : nameWithin(target, recorded);
+      if (answers) variants.push({ journalId, type });
     }
   }
-  return null;
+  return variants.length === 1 ? variants[0] : null;
+}
+
+/**
+ * Whether a lore item is about a player character (issue #354 P2-17): the
+ * detector named one as its entity, or led its title with one ("Isaac Sutton:
+ * committed the Savela to fly…"). What a PC decided or did is the story, not
+ * a fact about the world — it goes to the Session Log, never the Lore journal.
+ *
+ * @param {{ title?: string, entityName?: string|null }} lore
+ * @returns {boolean}
+ */
+function loreIsAboutPlayerCharacter(lore) {
+  if (typeof lore?.entityName === "string" && lore.entityName.trim() && namesPlayerCharacter(lore.entityName)) return true;
+  const lead = /^([^:]{2,60}):\s/.exec(String(lore?.title ?? ""));
+  return !!lead && namesPlayerCharacter(lead[1]);
+}
+
+/**
+ * A detected lore title as the Lore journal files it (issue #354 P2-17): the
+ * recorded entry's own title when this is it in another case or spacing —
+ * "blockade corridor" started a page beside "Blockade corridor" — else the
+ * title written one way (nameMatch.js loreTitle).
+ *
+ * @param {string} title
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+function filedLoreTitle(title, campaignState) {
+  const clean = loreTitle(title);
+  const key = clean.toLowerCase();
+  try {
+    const known = [...(getConfirmedLore(campaignState) ?? []), ...(getNarratorAssertedLore(campaignState) ?? [])]
+      .map(e => e?.title).filter(t => typeof t === "string" && t);
+    return known.find(t => t === clean) ?? known.find(t => loreTitle(t).toLowerCase() === key) ?? clean;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | filedLoreTitle: lore read failed:`, err?.message ?? err);
+    return clean;
+  }
 }
 
 /** The less durable of two salience tiers. */
@@ -1273,6 +1417,12 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // tier instead of the WJ lore journal. Keeps per-entity detail on the
     // entity record where the narrator can use it, not as world-level canon.
     // Entity not found (no record yet) — the lore gate and WJ lore as usual.
+    // A player character's own doings are the story so far, not world lore
+    // (issue #354 P2-17): the Session Log's, whatever their salience.
+    if (loreIsAboutPlayerCharacter(lore)) {
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
+      continue;
+    }
     const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
     if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
       await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
@@ -1291,13 +1441,16 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
       continue;
     }
     if (!passesSalience(lore.salience, loreThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "", ...fromNarration });
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
       continue;
     }
     // Auto-confirm (Task C): narrator-detected lore goes straight to confirmed
     // state; promotedAt is set by recordLoreDiscovery when confirmed === true.
-    await recordLoreDiscovery(lore.title, {
+    // Filed under one spelling of its title (issue #354 P2-17).
+    const title = filedLoreTitle(lore.title, campaignState);
+    await recordLoreDiscovery(title, {
       ...lore,
+      title,
       narratorAsserted: true,
       confirmed:        true,
       ...fromNarration,
@@ -1312,7 +1465,9 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
       await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
     }
-    const recorded = await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
+    // `fromDetection`: a variant of a recorded threat's name is that threat
+    // (issue #354 P2-15) — it started a second page.
+    const recorded = await recordThreat(threat.name, { ...threat, ...fromNarration, fromDetection: true }, campaignState);
     // A threat recorded at significant salience or above gets a hidden plan
     // (issue #353 Phase 2), sharing its page's id. Rated explicitly: the
     // salience gate above lets an unrated threat through.
@@ -1452,7 +1607,7 @@ function listedConnectionNamed(name, campaignState) {
  * @param {Object} campaignState
  * @returns {boolean}
  */
-export function entityExistsAnyType(name, callerState) {
+export function entityExistsAnyType(name, callerState, { type = null } = {}) {
   const target = normalizeEntityName(name);
   if (!target) return false;
   // The store's lists too (issue #347 AB09): the caller's copy may predate a
@@ -1497,6 +1652,11 @@ export function entityExistsAnyType(name, callerState) {
   //    invisible to the dedup gate. Walk game.actors directly so the
   //    bookkeeping list isn't load-bearing for "what exists in Foundry".
   if (actorNameMatches(target)) return true;
+
+  // 5. A person under part of their name or a near spelling (issue #354
+  //    P2-16) — for a name detected as a person only: "Archer" is Vuldar
+  //    Archer, where a ship or a place named Archer is its own thing.
+  if (type === "connection" && knownPersonNamed(name, campaignState)) return true;
 
   return false;
 }
@@ -2036,8 +2196,6 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
     .filter(id => typeof id === "string" && id))];
   const actorIds = listed.length > 1 ? listed : [];
 
-  const html = renderDraftCardHtml(drafts, actorIds.length ? draftCardHolders(actorIds) : null);
-
   const whisper = collectGmIds();
 
   // `source` is purely a telemetry flag — "paced_narrative" when the drafts
@@ -2054,19 +2212,18 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // the ones still pending (withdrawNarrationDrafts — issue #338 D6(i)).
   const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
 
+  const cardFlags = {
+    draftEntityCard: true,
+    drafts,
+    source,
+    ...(actorIds.length ? { actorIds } : (actorId ? { actorId } : {})),
+    ...(narrationId ? { narrationId } : {}),
+  };
   try {
     return await ChatMessage.create({
-      content: html,
+      content: renderDraftCardHtml(drafts, cardHolders(cardFlags)),
       whisper,
-      flags: {
-        [MODULE_ID]: {
-          draftEntityCard: true,
-          drafts,
-          source,
-          ...(actorIds.length ? { actorIds } : (actorId ? { actorId } : {})),
-          ...(narrationId ? { narrationId } : {}),
-        },
-      },
+      flags: { [MODULE_ID]: cardFlags },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | entityExtractor: postDraftEntityCard failed:`, err);
@@ -2089,14 +2246,38 @@ function draftCardHolders(actorIds) {
 }
 
 /**
+ * The PCs a card's connection rows are offered to: a round's acting PCs
+ * (`flags.actorIds`, issue #342 D3), else the one PC its narration was for
+ * (`flags.actorId`) — a button for them beside "No one" (issue #354 P2-16).
+ * null for a card that names no PC still in the game: its rows keep a plain
+ * Confirm (the acting user's own PC, bondHolderActor) and "No one".
+ *
+ * @param {Object} f — the card's module flags
+ * @returns {Array<{ actorId: string, name: string }>|null}
+ */
+function cardHolders(f) {
+  if (Array.isArray(f?.actorIds) && f.actorIds.length) return draftCardHolders(f.actorIds);
+  const own = typeof f?.actorId === "string" && f.actorId ? draftCardHolders([f.actorId]) : [];
+  return own.length ? own : null;
+}
+
+/**
  * Render the HTML body of the draft entity card from a `drafts` array.
  * Pure / re-runnable so the renderChatMessage hook can rebuild after each
- * Confirm/Dismiss click. `holders` — on a round's card, its acting PCs
- * (draftCardHolders): a pending connection row asks whose connection it is,
- * a button per PC and "No one", in place of its Confirm (issue #342 D3);
- * null on any other card.
+ * Confirm/Dismiss click. `holders` — the PCs the card offers a person to
+ * (cardHolders): a pending connection row asks whose connection it is, a
+ * button per PC and "No one", in place of its Confirm — a round's acting PCs
+ * (issue #342 D3), or the one PC a free-flow narration was for. "No one"
+ * records the person with no connection on anybody's sheet: a Confirm that
+ * always bonded put a hostile stranger on a PC's sheet as a relationship
+ * (issue #354 P2-16, which amends D3's "free-flow cards keep their one
+ * Confirm"). With no holder (null) a connection row keeps its Confirm, beside
+ * "No one".
  */
 function renderDraftCardHtml(drafts, holders = null) {
+  const noOne = (e) =>
+    `<button class="sf-draft-btn sf-draft-confirm sf-draft-no-bond" data-action="sf-draft-confirm" ` +
+    `data-index="${e.index}" data-actor-id="" title="Add them with no connection on anyone's sheet">No one</button>`;
   const items = drafts.map((e) => {
     const glyph = TYPE_GLYPHS[e.type] ?? "◇";
     const label = TYPE_LABELS[e.type] ?? e.type;
@@ -2116,8 +2297,14 @@ function renderDraftCardHtml(drafts, holders = null) {
         holders.map(h =>
           `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
           `data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`).join("") +
-        `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
-        `data-index="${e.index}" data-actor-id="">No one</button>` +
+        noOne(e) +
+        `<button class="sf-draft-btn sf-draft-dismiss" ` +
+        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
+    } else if (e.type === "connection") {
+      actions =
+        `<button class="sf-draft-btn sf-draft-confirm" ` +
+        `data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>` +
+        noOne(e) +
         `<button class="sf-draft-btn sf-draft-dismiss" ` +
         `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     } else {
@@ -2140,9 +2327,12 @@ function renderDraftCardHtml(drafts, holders = null) {
   }).join("");
 
   const allResolved = drafts.every(d => d.status && d.status !== "pending");
+  const personPending = drafts.some(d => d.type === "connection" && (d.status ?? "pending") === "pending");
   const hint = allResolved
     ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.</div>`
-    : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.</div>`;
+    : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.` +
+      (personPending ? ` A person is added as a connection on the sheet of the character you pick — or pick No one to add them with no connection on any sheet.` : ``) +
+      `</div>`;
 
   return (
     `<div class="sf-draft-entity-card">` +
@@ -2314,11 +2504,13 @@ async function handleDraftConfirm(message, draftIndex, pick) {
 }
 
 /**
- * The bond a Confirm press asks for (handleDraftConfirm): `{}` — the card's
- * own PC (`flags.actorId`), as every card but a round's; on a round's card
- * (`flags.actorIds`) a connection row's pick — `{ actorId }` for one of its
- * acting PCs, `{ noBond: true }` for no one, or null when the press names
- * neither (a stale button, a PC no longer on the card).
+ * The bond a Confirm press asks for (handleDraftConfirm). A row that is no
+ * person's: `{}`. A connection row: `{ noBond: true }` for "No one" (pick
+ * ""), on any card (issue #354 P2-16); on a round's card (`flags.actorIds`)
+ * `{ actorId }` for one of its acting PCs; on any other card `{}` — the
+ * card's own PC (`flags.actorId`) — for its plain Confirm or its PC's button.
+ * null when the press names none of these (a stale button, a PC no longer on
+ * the card).
  *
  * @param {ChatMessage} message
  * @param {number} draftIndex
@@ -2329,8 +2521,9 @@ function draftConfirmPick(message, draftIndex, pick) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const offered = Array.isArray(f.actorIds) ? f.actorIds : null;
   const draft = (Array.isArray(f.drafts) ? f.drafts : []).find(d => d?.index === draftIndex);
-  if (!offered || draft?.type !== "connection") return {};
+  if (draft?.type !== "connection") return {};
   if (pick === "") return { noBond: true };
+  if (!offered) return (pick === undefined || pick === f.actorId) ? {} : null;
   return (typeof pick === "string" && offered.includes(pick) && draftCardHolders([pick]).length) ? { actorId: pick } : null;
 }
 
@@ -2471,9 +2664,13 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       }, campaignState);
       await reconcileConfirmedFaction(draft.name, campaignState);
     } else {
+      // A place the narration called a derelict or a vault is made as one
+      // (issue #354 P2-18): its sheet's Location type was blank.
+      const siteType = draft.type === "location" ? detectedSiteType(draft) : null;
       record = await creator({
         name:                      draft.name,
         description:               draft.description ?? "",
+        ...(siteType ? { type: siteType } : {}),
         // Seed the portrait source from the detected description so the entity
         // can generate art immediately instead of showing "Awaiting description".
         portraitSourceDescription: draft.description ?? "",
@@ -2511,6 +2708,22 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
   return record;
+}
+
+/**
+ * The site type a detected place's own words give it: "derelict" (a derelict,
+ * a wreck, a hulk) or "vault" (a vault, a precursor site) — the two location
+ * types the system's sheet and the module share — or null when they name
+ * neither. Never guessed from anything else: a blank type is honest.
+ *
+ * @param {{ name?: string, description?: string }} draft
+ * @returns {"derelict"|"vault"|null}
+ */
+function detectedSiteType(draft) {
+  const text = `${draft?.name ?? ""} ${draft?.description ?? ""}`.toLowerCase();
+  if (/\b(?:vault|precursor)\b/.test(text)) return "vault";
+  if (/\b(?:derelict|wreck|wreckage|hulk)\b/.test(text)) return "derelict";
+  return null;
 }
 
 /**
@@ -3032,9 +3245,8 @@ async function updateDraftCard(message, drafts) {
   // been removed from the collection.
   if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
 
-  // A round's card keeps asking whose connection a row is (issue #342 D3).
-  const offered = message.flags?.[MODULE_ID]?.actorIds;
-  const content = renderDraftCardHtml(drafts, Array.isArray(offered) && offered.length ? draftCardHolders(offered) : null);
+  // A card keeps asking whose connection a row is (issue #342 D3; #354 P2-16).
+  const content = renderDraftCardHtml(drafts, cardHolders(message.flags?.[MODULE_ID]));
   try {
     // Update content first, then flags via setFlag so we don't accidentally
     // clobber sibling flags (draftEntityCard, source) by passing a partial
@@ -3102,7 +3314,7 @@ async function callHaiku(userPrompt, systemPrompt, maxTokens) {
     "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "detectionPass" });
   if (data?.stop_reason === "max_tokens") {
     // Cut off at the cap: the JSON ends mid-object. The caller reports the
     // loss; this names the cause (issue #321 U15).
@@ -3218,7 +3430,7 @@ function collectPlaceholderConnectionNames(campaignState) {
  * Suppresses the same NPC being re-flagged on every subsequent narration
  * that mentions them.
  */
-function collectPendingDraftNames() {
+function collectPendingDraftNames(type = null) {
   try {
     const messages = globalThis.game?.messages?.contents ?? [];
     const names = new Set();
@@ -3231,6 +3443,7 @@ function collectPendingDraftNames() {
         // drafts are now established entities (caught by collectEstablished-
         // EntityNames). Dismissed drafts are now in dismissedEntities.
         if (d?.status && d.status !== "pending") continue;
+        if (type && d?.type !== type) continue;   // one type's rows (the pending people)
         if (d?.name && typeof d.name === "string") names.add(d.name.trim());
       }
     }
@@ -3247,8 +3460,12 @@ function describeWorldJournalState(campaignState) {
     .map(e => e.title).filter(Boolean);
   const assertedLore = safe(() => getNarratorAssertedLore(campaignState))
     .map(e => e.title).filter(Boolean);
+  // Name and severity apart (issue #354 P2-15): shown as "<name>: <severity>",
+  // the detector returned that whole string as the threat's name, and each
+  // such name started a new Threats page.
   const threats = safe(() => getActiveThreats(campaignState))
-    .map(t => `${t.name}: ${t.severity}`).filter(Boolean);
+    .filter(t => t?.name)
+    .map(t => ({ name: String(t.name).replace(/["\r\n]+/g, " ").trim(), severity: t.severity }));
   const factions = safe(() => getFactionLandscape(campaignState))
     .map(f => `${f.factionName}: ${f.attitude}`).filter(Boolean);
 

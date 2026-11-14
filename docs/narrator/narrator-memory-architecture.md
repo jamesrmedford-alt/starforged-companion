@@ -33,7 +33,7 @@ skeleton, the one surface that holds what has *not* been stated):
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
 | **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
-| **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired; GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`) on the canonical GM, from the oracle rolls a trigger made (a new enemy, a posed question); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided) and the Private Channel (decided plans only) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
+| **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired; GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`, `reveals`, `countdown`, `newThreats`) on the canonical GM, from the oracle rolls a trigger made (a price's new enemy, an enemy the prose introduced — `newThreats`, issue #354 P2-29 — a posed question); a plan answered `sameAs` joins the plan its subject already has, which keeps the other name as an alias (issue #354 P2-30); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided) and the Private Channel (decided plans only) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
 
 Durable campaign context (world truths, sector, current location, character
 state, World Journal injections) rides alongside these in the system prompt —
@@ -497,9 +497,33 @@ every call's usage — uncached input, cache reads, cache writes, output — and
 elapsed time to the Pacing Telemetry journal's "Narrator Usage" page, labelled
 with the narrator function that made it; the page leads with the cache-read
 share of prompt tokens and the median time per call. The whole system prompt
-is one cached block that changes every turn, so the expectation is a share
-near zero: that measurement is what the proposed tier layout (cached campaign
-canon and memory first, per-turn data last — issue #287, from #286 §F) is judged against.
+was one cached block that changed every turn, and the alpha 23 playtest
+measured what that predicted: 27 calls, 0% read, every call paying the
+cache-write premium on 9–10k tokens.
+
+**The cached layout** (issue #354 P2-23). `buildNarratorSystemBlocks` orders
+the prompt by how often each part changes, and `callNarratorAPI` sends the
+parts as separate `system` blocks: the **standing** rules (voice, safety,
+world and campaign truths, the premise, the sidecar format, the NPC markup —
+the same for every prose mode), **this narration** (the mode's role, how its
+beats end, perspective, length, permission class), each closing on a one-hour
+cache breakpoint, then the per-beat **context**, uncached. One hour, not the
+default five minutes: a table's beats are often more than five minutes apart,
+and every read restarts the hour. The sidecar instruction is in the standing
+block; the context closes on RESPOND NOW, a pointer back to it, so the last
+thing the narrator reads is still the response format. The check is the same
+page: from a session's second narration its Cache read column should carry
+the standing block (about 3k tokens with truths and a premise), and the share
+in the summary line should sit well above zero. **Not yet measured against a
+live model**: whether the sidecar is still emitted as reliably with its
+instruction early in the prompt, and whether the voice shifts with the mode's
+role no longer first. Compare the page's Fact block column (below) and a read
+of the prose before and after.
+
+**Prose and fact block** (issue #354 P2-24). Each usage row also records how
+the reply split between narration and the fenced fact block, shown as the
+output tokens of each — the playtest's output grew from 551 to 919 tokens
+over a session and nothing said which half had grown.
 
 Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
 (400) only sheds *state*; truths/frame/corrections/ship render regardless.

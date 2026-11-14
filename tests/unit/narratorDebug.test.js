@@ -94,7 +94,12 @@ describe('splitPromptSections', () => {
     expect(headings).toContain('ENTITIES IN SCENE');
     expect(headings).toContain('VEX — Connection');
     expect(headings).toContain('CHARACTER');
-    expect(headings.at(-1)).toMatch(/^RESPONSE FORMAT/);
+    // The response format is among the standing rules, and the prompt closes
+    // on the pointer back to it (issue #354 P2-23).
+    expect(headings).toContain('RESPONSE FORMAT — MANDATORY SIDECAR');
+    expect(headings).toContain('THIS NARRATION');
+    expect(headings).toContain('CONTEXT FOR THIS NARRATION');
+    expect(headings.at(-1)).toBe('RESPOND NOW');
     // ### sub-headings stay in their section, and no rule survives in a section.
     expect(headings).not.toContain('DEPICT, DO NOT OFFER');
     expect(sections.find(s => s.heading === 'SAFETY CONFIGURATION').text).toContain('No harm to children');

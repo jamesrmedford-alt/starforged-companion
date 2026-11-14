@@ -44,7 +44,7 @@ describe('issue #353 — the sidecar\'s plans and open questions are parsed tole
     }));
     expect(sidecar.plans).toEqual([{
       id: 'sk-1', subject: 'the escort', truth: 'A drone.', wants: '', knows: '',
-      escalation: ['a', 'b', 'c', 'd'], clues: ['one clue'], resolutions: [], rerolled: '',
+      escalation: ['a', 'b', 'c', 'd'], clues: ['one clue'], resolutions: [], rerolled: '', sameAs: '',
     }]);
     expect(sidecar.openQuestions).toEqual([{ question: 'Which name are we here to meet?', about: 'the escort' }]);
   });

@@ -10,8 +10,9 @@
  * PTP-PCLESS-NARRATED-AS-FIRST-PC decided "a price nobody pays is not part of
  * the story: no follow-up narration, no oracle memory" — but its `noPayer`
  * test (index.js handlePayThePriceCommand) required the roll to carry a
- * suffer route. Two thirds of the d100 are narrative rows (1–50, 57–62,
- * 89–95): Quinn's `!ptp` landing on one was narrated with no speaker — the
+ * suffer route. Over half of the d100 is narrative rows (1–50, 57–62 — and,
+ * until issue #354 P2-12 routed it to Lose Momentum, 89–95): Quinn's `!ptp`
+ * landing on one was narrated with no speaker — the
  * narrator's character falling back to the campaign's first PC — and
  * remembered in RECENT ORACLE RESULTS as "the dice established" it. The payer
  * alone now decides: no follow-up, no memory, and Quinn and the GMs are told.

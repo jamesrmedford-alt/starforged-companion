@@ -70,7 +70,11 @@ longer special-cases them).
   `applyStateTransition({entryType: "factContinuity", change:
   "contradicted", kind, …})` → `postContradictionNotification`: a
   GM-whispered **◈ Narrative Review** card naming the subject and violated
-  fact. Truth/state kinds carry the "Retract the offending fact" button;
+  fact — the fact itself, as recorded, and the narration's own words
+  (`consistencyCheck.describeContradiction`: the ledger line the audit was
+  given, the subject by its proper name; it showed a pointer to the fact —
+  issue #354 P2-19), on the card and in the World Journal panel's row.
+  Truth/state kinds carry the "Retract the offending fact" button;
   frame / ship / identity / retraction kinds carry a **targeted remedy
   hint** instead (the dialog cannot address them — NARRCHK-REMEDY-MISMATCH
   fix). A standing contradiction posts **once per scene** (in-memory dedup

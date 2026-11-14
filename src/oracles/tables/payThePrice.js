@@ -21,6 +21,10 @@
  *   - "Friend / companion in harm's way" → Companion Takes a Hit (-1)
  *     for the "companion" variant; "you" variant routes to Endure Harm
  *     instead. The runtime dispatch reads the actor's loadout to decide.
+ *   - "You are delayed or put at a disadvantage" → Lose Momentum (-1): the
+ *     row names that suffer move's own trigger ("when you are delayed or
+ *     disadvantaged"). Unrouted, it changed nothing and was narrated as mood
+ *     (issue #354 P2-12).
  *
  * Entries reading as fictional consequence ("trusted individual acts
  * against you", "tough choice", "looming threat", etc.) intentionally
@@ -51,6 +55,7 @@ export const PAY_THE_PRICE = [
     sufferRoute: { move: "endure_harm",         amount: 1 } },
   { min: 82,  max: 88,   result: "You are stressed",
     sufferRoute: { move: "endure_stress",       amount: 1 } },
-  { min: 89,  max: 95,   result: "You are delayed or put at a disadvantage" },
+  { min: 89,  max: 95,   result: "You are delayed or put at a disadvantage",
+    sufferRoute: { move: "lose_momentum",       amount: 1 } },
   { min: 96,  max: 100,  result: "Roll twice" },
 ];

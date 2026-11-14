@@ -932,7 +932,7 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, descr
     "anthropic-version": "2023-06-01",
   };
 
-  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body);
+  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body, { label: "connectionIntro" });
   const text = (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)

@@ -14,8 +14,11 @@
  *     records — a harm's overflow into momentum is one of its own, issue #314
  *     Q02), the price's entry in RECENT ORACLE RESULTS (issue #342 Z11), and
  *     the unprepared marks its supply loss made, once the supply is refunded
- *     above 0 (issue #342 D4). Vehicle and companion routes, and the other
- *     impacts an executor marked, are not reversed (decisions.md → "Burn
+ *     above 0 (issue #342 D4), and the vehicle integrity or companion health
+ *     its route took (the `assetDeltas` receipts — issue #354 P2-09: a miss
+ *     whose price was ship damage, burned, kept the damage). The price's own
+ *     cards are struck as its narration is (supersedePriceCards). The other
+ *     impacts an executor marked are not reversed (decisions.md → "Burn
  *     Momentum reverses Pay-the-Price side effects").
  *
  *   - reconcileChoices — the move's choice card. A pending card of the
@@ -48,7 +51,7 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility } from "../character/actorBridge.js";
+import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -105,6 +108,7 @@ export async function claimUpgradeCard(message, kind) {
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
  *   | { effect: "unprepared", pcIds: string[], momentumBack?: Object<string, number> }
+ *   | { effect: "assetTrack", track: "integrity"|"health", amount: number, pcId: string|null, vehicleActorId?: string, itemId?: string, name?: string|null }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
  * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
@@ -134,7 +138,9 @@ async function runUpgradeStep(step) {
     case "meters": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
       if (!pc) return { ok: false, reason: "no-pc" };
-      await applyMeterChanges(pc, step.changes);
+      // `quietNote`: the caller's card says the change itself (a burn's
+      // momentum), so the system's change note is not posted beside it.
+      await (step.quietNote ? withoutSystemNotes(() => applyMeterChanges(pc, step.changes)) : applyMeterChanges(pc, step.changes));
       return { ok: true };
     }
     case "tensionClocks": {
@@ -188,6 +194,15 @@ async function runUpgradeStep(step) {
       const owed = Object.fromEntries(Object.entries(back).filter(([id]) => failed.includes(id)));
       return { ok: false, reason: "refused", pcIds: failed, ...(Object.keys(owed).length ? { momentumBack: owed } : {}) };
     }
+    case "assetTrack": {
+      // What a reverted price took from a vehicle or a companion, put back
+      // (issue #354 P2-09) — through the track's own writer, as a `restore`:
+      // not a rise, so a battered vehicle takes it.
+      const res = await restoreAssetTrack(step);
+      if (res.ok) return { ok: true, after: res.after ?? null, name: res.name ?? null };
+      if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the restored track");
+      return { ok: false, reason: res.reason ?? "no-target" };
+    }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
       if (!pc) return { ok: false, reason: "no-pc" };
@@ -201,6 +216,31 @@ async function runUpgradeStep(step) {
     default:
       return { ok: false, reason: "invalid step" };
   }
+}
+
+/**
+ * Put back what a reverted Pay the Price took from a vehicle's integrity or a
+ * companion's health (an `assetTrack` step — issue #354 P2-09): the command
+ * vehicle through the ship record's writer (entities/ship.js changeIntegrity),
+ * a support vehicle or a companion through actorBridge, each as a `restore`.
+ * Kept within the track's bounds by its writer. Reports, never throws.
+ *
+ * @param {{ track: "integrity"|"health", amount: number, pcId?: string|null, vehicleActorId?: string, itemId?: string }} step
+ * @returns {Promise<{ ok: boolean, reason?: string, error?: string, name?: string|null, before?: number, after?: number }>}
+ */
+async function restoreAssetTrack(step) {
+  const amount = Number(step.amount);
+  if (!Number.isInteger(amount) || amount <= 0) return { ok: false, reason: "invalid step" };
+  if (step.track === "integrity" && typeof step.vehicleActorId === "string" && step.vehicleActorId) {
+    const { changeIntegrity } = await import("../entities/ship.js");
+    return changeIntegrity(step.vehicleActorId, amount, { restore: true });
+  }
+  const pc = step.pcId ? (globalThis.game?.actors?.get?.(step.pcId) ?? null) : null;
+  if (!pc || typeof step.itemId !== "string" || !step.itemId) return { ok: false, reason: "no-target" };
+  const { applyVehicleAssetIntegrityChange, applyCompanionHealthChange } = await import("../character/actorBridge.js");
+  return step.track === "integrity"
+    ? applyVehicleAssetIntegrityChange(pc, amount, { itemId: step.itemId, restore: true })
+    : applyCompanionHealthChange(pc, amount, { itemId: step.itemId });
 }
 
 /**
@@ -249,6 +289,17 @@ export async function retryUpgradeStep(s) {
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
       break;
     }
+    case "assetTrack":
+      // A track's own amount (a suffer move takes 1–3), on a vehicle Actor or
+      // an asset Item of a player character.
+      if (!["integrity", "health"].includes(s.track) || !Number.isInteger(s.amount) || s.amount < 1 || s.amount > 5) {
+        return { ok: false, reason: "invalid step" };
+      }
+      if (!(typeof s.vehicleActorId === "string" && s.vehicleActorId)
+        && !(typeof s.itemId === "string" && s.itemId && isPlayerCharacterActor(globalThis.game?.actors?.get?.(s.pcId) ?? null))) {
+        return { ok: false, reason: "invalid step" };
+      }
+      break;
     default:
       return { ok: false, reason: "invalid step" };
   }
@@ -294,6 +345,8 @@ export function upgradeStepRecord(f) {
       ...(f.momentumBack && typeof f.momentumBack === "object" && Object.keys(f.momentumBack).length ? { momentumBack: { ...f.momentumBack } } : {}) } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
+    ...(f.effect === "assetTrack"    ? { track: f.track, amount: f.amount, pcId: f.pcId ?? null, name: f.name ?? null,
+      ...(f.vehicleActorId ? { vehicleActorId: f.vehicleActorId } : {}), ...(f.itemId ? { itemId: f.itemId } : {}) } : {}),
   };
 }
 
@@ -337,6 +390,8 @@ export function describeUpgradeStep(f, why) {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
       return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
     }
+    case "assetTrack":
+      return `Restore ${escapeHtml(f.name ?? (f.track === "health" ? "the companion" : "the vehicle"))}'s ${f.track === "health" ? "health" : "integrity"} by ${Number(f.amount) || 0}, which the reverted price took — ${why}.`;
     default:
       return `An upgrade step — ${why}.`;
   }
@@ -509,6 +564,20 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     }
   }
 
+  // 2b. The vehicle integrity or companion health its route took (issue #354
+  // P2-09): a "your vehicle suffers damage" price, or a miss stated as ship
+  // or companion damage (issue #353 R1), left the track down beside the
+  // upgraded result's own cost. Each receipt is what landed on that track; a
+  // refused write is an upgrade step for the GMs' Retry, as a meter's is.
+  for (const delta of assetDeltas(ptpReversals)) {
+    const step = { effect: "assetTrack", track: delta.track, amount: delta.amount, pcId: delta.actorId ?? actor?.id ?? null,
+      name: delta.name ?? null, ...(delta.vehicleActorId ? { vehicleActorId: delta.vehicleActorId } : {}),
+      ...(delta.itemId ? { itemId: delta.itemId } : {}) };
+    if (await applyUpgradeStep(step, failures)) {
+      reverted.push(`${escapeHtml(delta.name ?? (delta.track === "health" ? "The companion" : "The vehicle"))}: ${delta.track === "health" ? "health" : "integrity"} +${delta.amount} restored`);
+    }
+  }
+
   // 3. The unprepared marks the reverted price itself made — its payer's and
   // the allies sharing the supply it took to 0 (the receipt's
   // `unpreparedMarked` / `alliesMarked`), never a mark that was there before —
@@ -549,6 +618,11 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     }
   }
 
+  // The price's own cards — "Pay the Price", the suffer card its route posted
+  // — are struck, as the narration of the superseded outcome is: they stood
+  // on the table as paid beside the upgraded result (issue #354 P2-09).
+  await supersedePriceCards(resolutionId, kind);
+
   if (!reverted.length) return reverted;
   const card  = REVERSAL_CARDS[kind] ?? REVERSAL_CARDS.burn;
   const lines = reverted.map(r => `<li>${r}</li>`).join("");
@@ -559,6 +633,70 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   return reverted;
 }
 
+
+/** The vehicle and companion receipts on a card's `ptpReversals` (issue #354 P2-09); none on an older card. */
+function assetDeltas(ptpReversals) {
+  return (Array.isArray(ptpReversals?.assetDeltas) ? ptpReversals.assetDeltas : [])
+    .filter(d => d && (d.track === "integrity" || d.track === "health") && Number.isInteger(d.amount) && d.amount > 0
+      && (d.vehicleActorId || d.itemId));
+}
+
+/** The note on a reverted price's card, by what upgraded the outcome. */
+const PRICE_SUPERSEDED_NOTES = {
+  burn:    "Reverted — momentum was burned to upgrade the result, so this price was not paid.",
+  improve: "Reverted — the result was improved, so this price was not paid.",
+};
+
+/**
+ * A reverted price's card, struck through and dimmed with a note saying why —
+ * as a superseded narration is (burnMomentum.js
+ * buildSupersededNarrationContent). Idempotent.
+ *
+ * @param {string} originalContent
+ * @param {"burn"|"improve"} [kind]
+ * @returns {string}
+ */
+export function buildSupersededPriceContent(originalContent, kind = "burn") {
+  const html = String(originalContent ?? "");
+  if (html.includes("sf-price-superseded")) return html;
+  const note = PRICE_SUPERSEDED_NOTES[kind] ?? PRICE_SUPERSEDED_NOTES.burn;
+  return `<div class="sf-price-superseded" style="opacity:0.55;text-decoration:line-through;">${html}</div>`
+    + `<div class="sf-price-superseded-note" style="opacity:0.7;font-style:italic;">${note}</div>`;
+}
+
+/**
+ * Strike the cards a reverted Pay the Price posted for a move: its "Pay the
+ * Price" card (stamped with the move's `resolutionId` in `oracleMemory`) and
+ * the result cards its suffer route posted (`priceOf` — sufferExecutor.js
+ * postSufferCard). Not its pending choice cards, which reconcileChoices
+ * retires, and never a card of another move. Best effort — a refused update
+ * leaves the card as it was, and is logged. Never throws.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<number>} the cards struck
+ */
+export async function supersedePriceCards(resolutionId, kind) {
+  if (typeof resolutionId !== "string" || !resolutionId) return 0;
+  let struck = 0;
+  for (const card of allMessages()) {
+    const f = card?.flags?.[MODULE_ID];
+    if (!f || f.priceSuperseded) continue;
+    const isPrice  = f.payThePriceCard === true && f.oracleMemory?.resolutionId === resolutionId;
+    const isSuffer = f.sufferCard === true && f.priceOf === resolutionId;
+    if (!isPrice && !isSuffer) continue;
+    try {
+      await card.update({
+        [`flags.${MODULE_ID}.priceSuperseded`]: kind,
+        content: buildSupersededPriceContent(card.content, kind),
+      });
+      struck += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${kind}: the reverted price's card ${card.id} could not be struck:`, err?.message ?? err);
+    }
+  }
+  return struck;
+}
 
 /**
  * The reverted price leaves the narrator's memory: its card's `oracleMemory`
@@ -890,7 +1028,7 @@ export function upgradeOpenFor(resolutionId) {
   const f    = card?.flags?.[MODULE_ID];
   if (!f) return null;
   if (f.burn?.consumed || f.improve?.consumed) return false;
-  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove);
+  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove && !state.kept);
   if (!open(f.burn, "canBurn") && !open(f.improve, "canImprove")) return false;
   return !consequenceChosen(resolutionId) && !laterMoveFollows(card);
 }
@@ -917,9 +1055,18 @@ export async function closeUpgradesForChoice(resolutionId) {
   // The move's other open choice cards no longer say to burn or improve
   // first: that is closed now (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
   await dropUpgradeHints(resolutionId);
-  if (!Object.keys(update).length) return;
-  await card.update(update)
-    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+  if (Object.keys(update).length) {
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+  }
+  // A free-flow result held for Burn / Improve / Keep (issue #354 P2-10):
+  // choosing its consequence keeps it — its price and narration follow now.
+  // Not awaited: the choice being applied does not wait on a narration.
+  if (f.awaitingUpgrade?.open) {
+    void import("./heldResult.js")
+      .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
+      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err));
+  }
 }
 
 /**
@@ -1021,6 +1168,15 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     // Its choice cards no longer say to burn or improve first
     // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
     await dropUpgradeHints(f.resolutionId ?? null);
+    // A result still held for Burn / Improve / Keep (issue #354 P2-10) is
+    // kept: the free-flow pipeline keeps it before the roller's next line is
+    // read (index.js), so this is the later move that did not come through
+    // it — a Batch Mode round's entry. Not awaited.
+    if (f.awaitingUpgrade?.open) {
+      void import("./heldResult.js")
+        .then(({ keepHeldResult }) => keepHeldResult(card, "later"))
+        .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after a later move:`, err?.message ?? err));
+    }
   }
 }
 

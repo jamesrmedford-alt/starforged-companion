@@ -16,8 +16,9 @@
  *   - Expedition ↔ progress track: an expedition begun asks its narration to
  *     plan it (waypoints, dangers, what waits at the end).
  *   - A chosen complication plays the in-scene plan's next escalation step.
- *   - Ask the Oracle about a planned subject (a GM's roll) takes its odds from
- *     the plan's truth.
+ *   - Ask the Oracle about a planned subject takes its odds from the plan's
+ *     truth: a GM's roll on its own client, a player's by asking the canonical
+ *     GM for the odds (issue #354 P2-31).
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
@@ -195,6 +196,7 @@ describe('issue #353 Phase 3 — a chosen complication plays the plan\'s next st
 
 describe('issue #353 Phase 3 — Ask the Oracle about a planned subject', () => {
   const consults = () => table.claude.calls.filter(c => /You set the odds for an oracle/.test(c.system ?? ''));
+  const oracleCards = () => table.cards(f => f.oracleCommandCard === true && /Ask the Oracle/.test(f.oracleNarration?.oracleName ?? ''));
 
   it('a GM\'s yes/no about it is rolled at odds its truth sets', async () => {
     await decidedThreat();
@@ -206,10 +208,109 @@ describe('issue #353 Phase 3 — Ask the Oracle about a planned subject', () => 
       .content).toContain('Ask the Oracle (almost certain)');
   }, 40_000);
 
-  it('a question naming no plan, or a player\'s roll, consults nothing', async () => {
+  it('a question naming no plan consults nothing — a GM\'s or a player\'s', async () => {
     await decidedThreat();
     await onGm(table, () => gmOf(table).chat('!oracle yes Is the hatch sealed?'));
-    await onGm(table, () => table.client('pl-1').chat('!oracle yes Is the escort a drone?'));
+    await onGm(table, () => table.client('pl-1').chat('!oracle yes likely Is the hatch sealed?'));
     expect(consults()).toEqual([]);
+    expect(oracleCards().at(-1).content).toContain('Ask the Oracle (likely)');
   }, 40_000);
+
+  // Issue #354 P2-31: a player's roll ran on the player's client, which
+  // cannot read the plans, so it was rolled at the odds the player gave and
+  // could contradict the plan. The player's client now asks the canonical GM
+  // for the odds — the one word comes back, never the truth.
+  it('a player\'s yes/no about it is rolled at the odds the GM\'s plan sets (issue #354 P2-31)', async () => {
+    await decidedThreat();
+    table.script.when((c) => /You set the odds/.test(c.system ?? ''), 'small_chance');
+    const sent = [];
+    const gmSocket = gmOf(table).run(() => game.socket);
+    const emit = gmSocket.emit.bind(gmSocket);
+    gmSocket.emit = (channel, message) => { sent.push(message); return emit(channel, message); };
+    try {
+      await onGm(table, () => table.client('pl-1').chat('!oracle yes likely Is the escort a drone?'));
+    } finally {
+      gmSocket.emit = emit;
+    }
+    // One consult, made on the GM's client with the truth; the player's card
+    // is rolled at what it answered, not at "likely".
+    expect(consults()).toHaveLength(1);
+    expect(consults()[0].userText).toContain('A Keeper drone collecting names.');
+    const card = oracleCards().at(-1);
+    expect(card.content).toContain('Ask the Oracle (small chance)');
+    expect(card.author, 'the player rolled it, on their own client').toBe('pl-1');
+    // What the GM sent back: the odds, and nothing of the plan.
+    const answer = sent.find(m => m?.kind === 'oracleConsult.answer');
+    expect(Object.keys(answer).sort()).toEqual(['id', 'kind', 'odds']);
+    expect(answer.odds).toBe('small_chance');
+    expect(JSON.stringify(sent)).not.toContain('Keeper drone');
+  }, 40_000);
+
+  it('a subject named by one of its other names is its plan\'s too (issue #354 P2-30)', async () => {
+    const plan = await decidedThreat();
+    const { updateSkeleton } = await secrets();
+    await gmOf(table).run(() => updateSkeleton(plan.id, r => ({ ...r, aliases: ['the second presence'] }), { byGm: true }));
+    table.script.when((c) => /You set the odds/.test(c.system ?? ''), 'almost_certain');
+    await onGm(table, () => gmOf(table).chat('!oracle yes Is the second presence a machine?'));
+    expect(consults()).toHaveLength(1);
+  }, 40_000);
+});
+
+describe('issue #354 P2-31 — asking the GM for the odds never holds the oracle up', () => {
+  let saved;
+  beforeEach(async () => {
+    saved = { game: globalThis.game };
+    (await import('../../src/oracles/oracleConsult.js'))._resetOracleConsultForTests();
+  });
+  afterEach(async () => {
+    globalThis.game = saved.game;
+    (await import('../../src/oracles/oracleConsult.js'))._resetOracleConsultForTests();
+  });
+
+  const player = (over = {}) => {
+    const listeners = [];
+    const emitted = [];
+    globalThis.game = {
+      user: { id: 'pl-1', isGM: false },
+      users: [{ id: 'pl-1', isGM: false, active: true }, { id: 'gm-1', isGM: true, active: true }, ...(over.users ?? [])].filter(u => !over.noGm || !u.isGM),
+      settings: { get: () => null },
+      socket: { on: (_c, fn) => listeners.push(fn), emit: (_c, m) => emitted.push(m) },
+    };
+    return { listeners, emitted };
+  };
+
+  it('no question, or no GM connected: nothing is asked and the player\'s odds stand', async () => {
+    const { requestPlanOdds } = await import('../../src/oracles/oracleConsult.js');
+    let io = player();
+    expect(await requestPlanOdds('   ')).toBeNull();
+    expect(io.emitted).toEqual([]);
+    io = player({ noGm: true });
+    expect(await requestPlanOdds('Is the escort a drone?')).toBeNull();
+    expect(io.emitted).toEqual([]);
+  });
+
+  it('a GM who does not answer in time: the player\'s odds stand', async () => {
+    const { requestPlanOdds } = await import('../../src/oracles/oracleConsult.js');
+    const io = player();
+    const started = Date.now();
+    expect(await requestPlanOdds('Is the escort a drone?', { waitMs: 30 })).toBeNull();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(io.emitted).toEqual([expect.objectContaining({ kind: 'oracleConsult.ask', question: 'Is the escort a drone?' })]);
+  });
+
+  it('only an answer to its own ask, naming real odds, is taken', async () => {
+    const { requestPlanOdds } = await import('../../src/oracles/oracleConsult.js');
+    const io = player();
+    const asking = requestPlanOdds('Is the escort a drone?', { waitMs: 500 });
+    await Promise.resolve();
+    const ask = io.emitted[0];
+    for (const fn of io.listeners) fn({ kind: 'oracleConsult.answer', id: 'someone-elses', odds: 'likely' });
+    for (const fn of io.listeners) fn({ kind: 'oracleConsult.answer', id: ask.id, odds: 'unlikely' });
+    expect(await asking).toBe('unlikely');
+
+    const again = requestPlanOdds('Is the escort a drone?', { waitMs: 500 });
+    await Promise.resolve();
+    for (const fn of io.listeners) fn({ kind: 'oracleConsult.answer', id: io.emitted[1].id, odds: 'certainly, trust me' });
+    expect(await again).toBeNull();
+  });
 });

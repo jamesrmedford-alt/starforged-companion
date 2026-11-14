@@ -413,7 +413,11 @@ XCARD-DURING-SCENE-END-MIGRATES: the scene end's copy still held the beat
 live, and its writes after the card's own undo left the removed fact as a
 detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
-(`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
+(`updateThreatSeverity`; a detected threat is the recorded one when its name
+is a variant of it — `resolveThreatName` — and its severity one of four
+words, a sentence given for one kept as the summary, so one threat is one
+page: issue #354 P2-15; a GM's **Merge duplicates** folds earlier ones,
+`mergeDuplicateThreats`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
 put back with it; the stance an attitude moved on the faction's record (the
 canonical stance, `recordStance` before → after) is put back too, where the
@@ -474,8 +478,34 @@ for it, and the GMs' Retry narrates it when its fill lands
 (`clocks.applyClockAdvances`, issue #342 Z63 — Begin's vignette was dropped as
 rewound and the Retry's fill narrated nothing).
 
-**System prompt section map** (`buildNarratorSystemPrompt`,
-`src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
+**System prompt section map** (`buildNarratorSystemBlocks` →
+`buildNarratorSystemPrompt`, `src/narration/narratorPrompt.js`). Since issue
+#354 P2-23 the sections are ordered into three blocks by how often each
+changes, and the request carries them as separate `system` blocks
+(`splitNarratorSystemPrompt` → `narrator.js` `narratorSystemBlocks`, in
+`callNarratorAPI`):
+- **standing** — [0] the voice rules (depict-do-not-offer, PROSE, tone,
+  levity, dialogue), [1], [4], [4a], [4b], [9] and [10]. The same for every
+  prose mode, call after call; cached for an hour.
+- **this narration** (`## THIS NARRATION`) — [0m] the mode's role
+  description, HOW A BEAT ENDS, perspective and length; [2]; the opening
+  scene's sidecar addendum (`sidecarModeAddendum`). The same for one mode at
+  one permission class; cached for an hour.
+- **context** (`## CONTEXT FOR THIS NARRATION`) — every other section, in the
+  order listed below, then [8d] and [9b]. Different every call; never cached.
+
+The whole prompt used to go as one cached block that opened with the mode's
+role and changed every beat, so the cache was written on every call and never
+read (27 calls, 0% read, alpha 23 playtest). The ordering rule: nothing that
+can differ between two calls sits in `standing`, and nothing that can differ
+between two calls of one mode in `this narration` — `tests/unit/
+narratorPromptBlocks.test.js` holds both. A meta mode (the campaign recap) and
+the rolling summary's own prompt go as one uncached block; a world with
+`campaignState.api.promptCachingEnabled` off sends the blocks with no
+breakpoint. The section numbers below are names, not the order in the prompt.
+
+Sections: [0] role/style per mode (the role in `this narration`, the voice
+rules in `standing`) · [0b]
 campaign recap (a session's first narration in any prose mode, from
 `campaignRecapCache` while it matches the chronicle — issue #286 C3, #301
 B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
@@ -572,9 +602,24 @@ CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5 — and the PC's newest five pinned Chronicle
 entries, each clipped, `extras.pinnedChronicle`: the Chronicle panel's pin
 was saved onto a flag nothing read, issue #345 AA07) · [8b]
-party roster · [8c] spotlight nudge · [9] sidecar
-instruction (last; includes the record-anchors-once and never-re-assert-
-CORRECTED rules) · [10] audio markup.
+party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
+P2-21, P2-22, P2-27 — the move, paced and round modes only:
+`buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
+ring's own source, and sets `extras.beatShape` — a way to build the beat,
+picked by its place in the session so two in a row never share one, nothing
+stored — and `extras.usedImages`, the comparisons the last six cards made,
+listed as images not to reuse; with them the levity permission, said again
+where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
+instruction (in `standing`; includes the record-anchors-once and
+never-re-assert-CORRECTED rules) · **[9b] RESPOND NOW** (last in the context:
+the pointer back to [9], naming none of its keys) · [10] audio markup (in
+`standing`).
+
+**Length** (issue #354 P2-20): the Length setting is a word budget with a
+sentence cap, in short sentences (`proseVariety.js` `lengthBudget` — 22 words
+a step, 28 at most, 1.5 sentences a step, no sentence over about 30 words, 18
+with audio narration on). It is stated in `this narration` and again in the
+move, paced and round user messages, which used to say "in N sentences".
 
 **Relevance** (`src/context/relevanceResolver.js`): Phase 1 is a lexical name
 index (full name + first/last word of multi-word names, lowercased,
@@ -598,7 +643,12 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). Each entry leads with the player's line that
+playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
+speaker line, in the narrator's words) and what the classifier made of the line
+(`readMove`'s `classifier` → a PACING READ hint), and may answer that no move
+is being made: that line — or a low-confidence reading outside a fight — is
+narrated as a paced line, the move it might be offered on its card
+(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06). Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several
@@ -749,7 +799,16 @@ the truth itself, which becomes a ledger truth of the narration's own
 a decided threat plan gets its escalation clock, a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
 what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
-is marked played whatever the sidecar says — Phase 3; a narration a burn or
+is marked played whatever the sidecar says — Phase 3; an enemy or danger the
+prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan
+(`planNarratedThreat`: Character Role, Goal and Disposition rolled once, no
+truth, so the next narration decides it), unless one of its names is already
+planned or it names a PC; and a plan answered `sameAs` — the narrator's say
+that a subject it was asked to decide is one already planned, shown to it
+under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
+`extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps
+the other name in `aliases` (read by `secrets.subjectNames` and
+`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`);
 each write stamped with the narration's id, which the X-Card's

@@ -57,6 +57,9 @@ import { chartedPlaceFor, rerouteUnchartedCourse, sceneDestination } from "../..
 
 const REPLY = 'The stars wheel past.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const GAP   = "Archer's rendezvous — the gap";
+// The place the label is filed as: a name — title case (issue #354 P2-18,
+// nameMatch.js generatedName). The expedition's track keeps the label as given.
+const GAP_SITE = "Archer's Rendezvous — The Gap";
 const STRONG_ACTION = [0.15, 0.25, 0.99];   // challenge 2, 3; action die 6: a strong hit
 const STRONG_PROGRESS = [0.05, 0.05];       // challenge 1, 1 against any progress: a strong hit
 
@@ -199,10 +202,10 @@ describe("an unnamed destination becomes a place in the game (PT07)", () => {
 
     const [track] = tracks();
     const [site] = sector().mapData.discoveries;
-    expect(site).toMatchObject({ name: GAP, type: "uncharted", discovered: false, workingLabel: true });
+    expect(site).toMatchObject({ name: GAP_SITE, type: "uncharted", discovered: false, workingLabel: true });
     expect(track.siteId).toBe(site.id);
     const location = table.actors.find(a => a.id === site.actorId);
-    expect(location?.name).toBe(GAP);
+    expect(location?.name).toBe(GAP_SITE);
     expect(location.flags[MODULE_ID].location).toMatchObject({ status: "unexplored", sectorId: "sec-1" });
     expect(state().locationIds).toContain(site.actorId);
     const pin = scene.notes.contents.find(n => n.flags?.[MODULE_ID]?.siteId === site.id);
@@ -215,7 +218,7 @@ describe("an unnamed destination becomes a place in the game (PT07)", () => {
 
     // "Please set a course" again, naming nothing: the scene's destination.
     await setACourse(null);
-    expect(control.confirmed.at(-1)).toMatchObject({ moveId: "undertake_an_expedition", moveTarget: GAP });
+    expect(control.confirmed.at(-1)).toMatchObject({ moveId: "undertake_an_expedition", moveTarget: GAP_SITE });
     expect(tracks()).toHaveLength(1);   // the same expedition, marked again
 
     await say({ moveId: "finish_an_expedition", moveName: "Finish An Expedition", statUsed: null, isProgressMove: true, moveTarget: GAP },
@@ -227,7 +230,7 @@ describe("an unnamed destination becomes a place in the game (PT07)", () => {
     const [discovered] = table.cards(f => f.siteDiscovered);
     expect(discovered.content).toMatch(/no chart showed before/);
     expect(state().currentLocationId).toBe(site.actorId);
-    expect(scene.notes.contents.find(n => n.flags?.[MODULE_ID]?.siteId === site.id).text).toBe(GAP);
+    expect(scene.notes.contents.find(n => n.flags?.[MODULE_ID]?.siteId === site.id).text).toBe(GAP_SITE);
   }, 30_000);
 
   it("a paced card's Roll Undertake an Expedition — the move alone — reads its destination from the line and the scene (PT05)", async () => {
@@ -245,7 +248,7 @@ describe("an unnamed destination becomes a place in the game (PT07)", () => {
     expect(call?.[1]).toHaveProperty("recentScene");
     expect(control.confirmed.at(-1)).toMatchObject({ moveId: "undertake_an_expedition", moveTarget: GAP, statUsed: "wits" });
     expect(tracks().map(t => t.label)).toEqual([GAP]);
-    expect(sector().mapData.discoveries[0]).toMatchObject({ name: GAP, workingLabel: true });
+    expect(sector().mapData.discoveries[0]).toMatchObject({ name: GAP_SITE, workingLabel: true });
   }, 30_000);
 
   it("control: an expedition to a charted settlement records no site", async () => {

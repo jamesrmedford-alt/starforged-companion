@@ -116,16 +116,30 @@ function frameNamesPc(name, pc, pcs) {
 /**
  * Render the `## SPOTLIGHT` system-prompt block for a selection.
  *
- * The block is a nudge, not a gate: it asks the narrator to address its
- * closing prompt to the named PC only when the beat invites action and the
+ * The block is a nudge, not a gate: it asks the narrator to turn the end of
+ * the beat toward the named PC only when the beat invites action and the
  * fiction does not already centre someone else, and states plainly that any
  * player may act at any time.
  *
+ * How the beat turns toward them depends on the narration's perspective
+ * (issue #354 P2-08). In third person the closing prompt names them. In
+ * second person "you" is the character acting this turn and nobody else: a
+ * closing "Karthik Shepherd, what do you do?" made "you" a different character
+ * at the end of a card whose body said "you" of Isaac. There the named PC is
+ * brought in inside the fiction, by name and in the third person.
+ *
+ * Two things the alpha 23 playtest's prompts got wrong are ruled out in both
+ * (issue #354 P2-07): naming the rotation's PC after a line of dialogue spoken
+ * to someone else, and asking the player to supply what their character finds
+ * ("what does the board say?") — that is the narrator's to tell.
+ *
  * @param {{ nextActorName: string,
  *           candidates: Array<{id: string, name: string}> }|null} selection
+ * @param {{ perspective?: "second_person"|"third_person"|null }} [opts] — the
+ *   narration's resolved perspective; third person when not given
  * @returns {string} the block, or '' when selection is null/empty
  */
-export function buildSpotlightBlock(selection) {
+export function buildSpotlightBlock(selection, { perspective = null } = {}) {
   const name = selection?.nextActorName;
   if (typeof name !== 'string' || !name.trim()) return '';
   const roster = Array.isArray(selection?.candidates)
@@ -133,22 +147,39 @@ export function buildSpotlightBlock(selection) {
     : [];
 
   const safeName = name.trim();
+  const how = perspective === 'second_person'
+    ? [
+        `turn the end of the beat toward ${safeName} inside the fiction: show`,
+        `${safeName} by name, in the third person, about to act or being looked`,
+        'to (a hand resting on the comm key, a glance that passes the question to',
+        `them). "You" is the character acting this turn and nobody else — never`,
+        `address ${safeName} as "you", and do not close on a question put to the`,
+        'player from outside the story.',
+      ]
+    : [
+        `address your closing prompt to ${safeName} by name, e.g.`,
+        `"${safeName}, what do you do?".`,
+      ];
   const lines = [
     '## SPOTLIGHT',
     '',
-    'This is a multiplayer scene. To keep every player involved, the table',
-    `rotates whom the narrator draws in. By the rotation, ${safeName} is next.`,
+    'More than one player character is in this scene. To keep each of them',
+    'involved, the table rotates whom the narrator draws in.',
+    `By the rotation, ${safeName} is next.`,
     '',
     'If this beat ends by inviting the players to act — and the fiction does',
     'not already centre a specific character (someone mid-action, in danger,',
-    `or directly spoken to) — address your closing prompt to ${safeName} by`,
-    `name, e.g. "${safeName}, what do you do?" or a question that fits their`,
-    'place in the scene.',
+    'or directly spoken to) —',
+    ...how,
+    '',
+    'The fiction comes first. When the beat\'s last line of dialogue is spoken',
+    'to a character, or asks one a question, that character is the one the beat',
+    `centres: end there, and do not name ${safeName} after it.`,
+    'Ask only what a character does — never what they see, read or find: what',
+    'a console shows or a search turns up is yours to tell.',
     '',
     'This is only a nudge to spread the spotlight, never a gate. Any player',
-    'may act or speak at any time, prompted or not. If the fiction clearly',
-    'centres a different character, follow the fiction and address them',
-    'instead.',
+    'may act or speak at any time, prompted or not.',
   ];
   if (roster.length) {
     lines.push('', `Player characters in the scene: ${roster.join(', ')}.`);

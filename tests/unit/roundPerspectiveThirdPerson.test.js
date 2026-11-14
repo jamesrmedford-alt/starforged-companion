@@ -49,7 +49,8 @@ const round = () => ({
 
 const systemPrompt = () => {
   const call = apiPost.mock.calls.find(([, , body]) => Array.isArray(body?.system));
-  return String(call?.[2]?.system?.[0]?.text ?? '');
+  // Every system block, joined (issue #354 P2-23: the prompt is sent as three).
+  return (call?.[2]?.system ?? []).map(b => b?.text ?? '').join('\n\n');
 };
 
 beforeEach(() => {

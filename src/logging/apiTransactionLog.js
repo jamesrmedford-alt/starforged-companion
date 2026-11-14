@@ -37,8 +37,11 @@ export function isEnabled() {
   }
 }
 
-export function formatTransactionEntry({ model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, durationMs }) {
+export function formatTransactionEntry({ model, label = null, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, durationMs }) {
   const ts    = new Date().toLocaleString();
+  // What made the call (api-proxy.js apiPost's `label`, issue #354 P2-24) —
+  // none for a caller that gives none.
+  const who   = typeof label === 'string' && label.trim() ? ` · ${escapeLabel(label.trim())}` : '';
   const parts = [`in: ${inputTokens}`];
   if (cacheWriteTokens > 0) parts.push(`cache-write: ${cacheWriteTokens}`);
   if (cacheReadTokens  > 0) parts.push(`cache-read: ${cacheReadTokens}`);
@@ -48,7 +51,12 @@ export function formatTransactionEntry({ model, inputTokens, cacheWriteTokens, c
   if (Number.isFinite(durationMs) && durationMs >= 0) {
     parts.push(durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`);
   }
-  return `<p>[${ts}] ${model} | ${parts.join(' | ')}</p>\n`;
+  return `<p>[${ts}] ${model}${who} | ${parts.join(' | ')}</p>\n`;
+}
+
+/** A caller's label as page text: letters, digits and the few marks labels use, at most 60 characters. */
+function escapeLabel(label) {
+  return label.replace(/[^\w .:/-]/g, '').slice(0, 60);
 }
 
 // ── Journal I/O ───────────────────────────────────────────────────────────────
@@ -106,12 +114,13 @@ function enqueue(html) {
  * Record one API call. Fire-and-forget — never throws.
  * Called from api-proxy.js after each successful Anthropic response.
  *
- * @param {{ model: string, inputTokens: number, cacheWriteTokens: number, cacheReadTokens: number, outputTokens: number, durationMs?: number }} entry
+ * @param {{ model: string, label?: string|null, inputTokens: number, cacheWriteTokens: number, cacheReadTokens: number, outputTokens: number, durationMs?: number }} entry
  */
 export function logApiTransaction(entry) {
   if (!isEnabled()) return;
   const html = formatTransactionEntry({
     model:            entry.model            ?? 'unknown',
+    label:            entry.label            ?? null,
     inputTokens:      entry.inputTokens      ?? 0,
     cacheWriteTokens: entry.cacheWriteTokens ?? 0,
     cacheReadTokens:  entry.cacheReadTokens  ?? 0,

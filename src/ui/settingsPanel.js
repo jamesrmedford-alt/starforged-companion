@@ -25,6 +25,7 @@ import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 import { stakesShown } from '../moves/stakes.js';
+import { registerSpotlightDefaultSetting } from '../narration/spotlightDefault.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,6 +83,7 @@ const SETTING = {
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
   MISS_STATED_STAKES:       'missPaysStatedStakes',   // stakes.js STAKES_SETTING (read there)
+  HOLD_FOR_UPGRADE:         'holdResultForUpgrade',   // heldResult.js HOLD_SETTING (read there)
   // ── Character management ─────────────────────────────────────────────────
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
@@ -282,8 +284,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_LENGTH, {
-    name:    'Narration Length (sentences)',
-    hint:    'Target number of sentences per narration. Range: 1–6.',
+    name:    'Narration Length',
+    hint:    'How long a move or paced narration runs. Each step is about 22 words: 3 is about 65 words, in at most 5 short sentences. Range: 1–6.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -339,12 +341,19 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT, {
     name:    'Rotating Spotlight',
-    hint:    'In multiplayer scenes, when a beat ends by inviting action the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. No effect in solo play.',
+    hint:    'When a beat ends by inviting action, the narrator turns it toward a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. It counts characters, not players: one player running two characters is rotated too. No effect with a single character. Off by default.',
     scope:   'world',
     config:  false,
     type:    Boolean,
-    default: true,
+    // Off by default (issue #354 P2-07): on, it named a character at the end
+    // of most beats — at a table of one player running two characters, the
+    // other one nearly every time.
+    default: false,
   });
+
+  // Whether the one-time switch-off of a stored Rotating Spotlight "on" has
+  // run in this world (issue #354 P2-07) — registered by its own module.
+  registerSpotlightDefaultSetting();
 
   game.settings.register(MODULE_ID, SETTING.VOW_SWEARING_SCENE, {
     name:    'Vow-Swearing Scene',
@@ -358,6 +367,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.MISS_STATED_STAKES, {
     name:    'Miss Pays the Stated Stakes',
     hint:    'Before a roll, the Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost — the most obvious negative outcome of what was attempted — with any harm, stress or loss it names. Off: the Pay the Price table is rolled, as before. A miss with no stated cost always rolls the table.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.HOLD_FOR_UPGRADE, {
+    name:    'Ask Before Paying and Narrating',
+    hint:    'In free-flow play, when a result can be upgraded — Burn Momentum or an asset\'s Improve Result is offered — its card asks the roller to burn, improve or keep it before its Pay the Price is paid and before it is narrated. Their next line keeps it. Off: the price is paid and the result narrated at once, as before; a burn or an improvement then undoes the price and strikes the narration. Batch Mode rounds always ask before their narration.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -721,7 +739,7 @@ function getNarratorSessionSummary() {
 }
 
 function getNarratorSpotlight() {
-  return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? true;
+  return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? false;
 }
 
 function getVowSwearingScene() {
@@ -1262,6 +1280,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narratorSpotlight:     getNarratorSpotlight(),
       vowSwearingScene:      getVowSwearingScene(),
       missPaysStatedStakes:  readSetting(SETTING.MISS_STATED_STAKES, true),
+      holdResultForUpgrade:  readSetting(SETTING.HOLD_FOR_UPGRADE, true),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1652,10 +1671,10 @@ export class SettingsPanelApp extends ApplicationV2 {
           <span class="narrator-field-hint">Layers on top of Tone. Light/Playful permit ordinary life, small victories, and affectionate detail while keeping the chosen Tone's voice (e.g. "noir, but lighter"). Default makes no change. No effect on recaps.</span>
         </div>
         <div class="narrator-field">
-          <label class="narrator-field-label">Length (sentences)</label>
+          <label class="narrator-field-label">Length</label>
           <input class="settings-input narrator-number-input" name="narrationLength"
                  type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
-          <span class="narrator-field-hint">Move and paced narration. <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
+          <span class="narrator-field-hint">Move and paced narration. Each step is about 22 words: 3 is about 65 words, in at most 5 short sentences (shorter still with audio narration on). <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Context cards (memory horizon)</label>
@@ -1680,9 +1699,9 @@ export class SettingsPanelApp extends ApplicationV2 {
         <div class="narrator-field">
           <label class="narrator-field-label">
             <input type="checkbox" name="narratorSpotlightRotation" ${ctx.narratorSpotlight ? 'checked' : ''} ${dis}>
-            Rotating spotlight (multiplayer)
+            Rotating spotlight (two or more characters)
           </label>
-          <span class="narrator-field-hint">When a beat invites action, the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. No effect in solo play.</span>
+          <span class="narrator-field-hint">When a beat invites action, the narrator turns it toward a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. It counts characters, not players: one player running two characters is rotated too. Off by default.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -1697,6 +1716,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             A miss pays the stated stakes
           </label>
           <span class="narrator-field-hint">The Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost. Off: the Pay the Price table is rolled.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="holdResultForUpgrade" ${ctx.holdResultForUpgrade ? 'checked' : ''} ${dis}>
+            Ask before paying and narrating
+          </label>
+          <span class="narrator-field-hint">When Burn Momentum or Improve Result is offered, the move card asks the roller to burn, improve or keep the result before its price is paid and before it is narrated; their next line keeps it. Off: paid and narrated at once, and a burn undoes them.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -2183,7 +2209,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
       const contextCards = Math.max(1, Math.min(50, Number(contextRaw) || 20));
       const sessionSummary = el.querySelector('[name="narratorSessionSummary"]')?.checked ?? true;
-      const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? true;
+      const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? false;
       const vowScene     = el.querySelector('[name="vowSwearingNarration"]')?.checked ?? true;
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
@@ -2214,6 +2240,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.MISS_STATED_STAKES,       checked('missPaysStatedStakes', true)),
+        game.settings.set(MODULE_ID, SETTING.HOLD_FOR_UPGRADE,         checked('holdResultForUpgrade', true)),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
@@ -2486,6 +2513,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
     actions: {
       accept: MoveConfirmDialog.#onAccept,
       reject: MoveConfirmDialog.#onReject,
+      narrate: MoveConfirmDialog.#onNarrate,
     },
   };
 
@@ -2495,7 +2523,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
    * action handlers bound) before the returned promise can be observed.
    * @param {object} interpretation
    * @param {{ forced?: boolean }} [opts] — a forced move (a card button's)
-   * @returns {Promise<boolean>}
+   * @returns {Promise<boolean|"narrate">} true to roll; false when cancelled
+   *   or closed; "narrate" for a typed line that is no move at all — it is
+   *   narrated as it stands (issue #354 P2-01; never offered for a forced move)
    */
   static async prompt(interpretation, { forced = false } = {}) {
     const dialog = new MoveConfirmDialog({
@@ -2555,6 +2585,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
         ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
+          ${context.forced ? '' : `<button class="settings-btn btn-narrate" data-action="narrate" title="This line is not a move: nothing is rolled, and the narrator carries the scene on from it as it stands.">No move — narrate</button>`}
           <button class="settings-btn btn-reject" data-action="reject" title="${context.forced ? 'Nothing is rolled; the button that made this move can be pressed again.' : 'Nothing is rolled; your line goes back in your chat box to re-word and send again.'}">${context.forced ? 'Cancel' : 'Cancel — re-word'}</button>
         </div>
       </div>
@@ -2612,6 +2643,13 @@ export class MoveConfirmDialog extends ApplicationV2 {
 
   static async #onReject(_event, _target) {
     this.#settle(false);
+    this.close({ animate: false });
+  }
+
+  // "No move — narrate" (issue #354 P2-01): the line is narrated as it
+  // stands. Not offered for a forced move, and never settled as one.
+  static async #onNarrate(_event, _target) {
+    this.#settle(this.#forced ? false : 'narrate');
     this.close({ animate: false });
   }
 }
@@ -2847,11 +2885,12 @@ export function openSettingsPanel() {
 /**
  * Show the move confirm dialog and await the choice: true to roll, false when
  * it is cancelled or closed (nothing is rolled — index.js tells the table and
- * hands a card's button back).
+ * hands a card's button back), or "narrate" when a typed line is no move at
+ * all and is to be narrated as it stands (issue #354 P2-01).
  *
  * @param {object} interpretation
  * @param {{ forced?: boolean }} [opts] — a forced move: its cancel reads "Cancel"
- * @returns {Promise<boolean>}
+ * @returns {Promise<boolean|"narrate">}
  */
 export async function confirmInterpretation(interpretation, opts = {}) {
   return MoveConfirmDialog.prompt(interpretation, opts);

@@ -77,7 +77,15 @@ async function press(selector) {
   Hooks.call('renderChatMessageHTML', card, [root]);
   const btn = root.querySelector(selector);
   expect(btn, selector).toBeTruthy();
+  const statuses = () => JSON.stringify(game.messages.get(draftCard().id).flags[MODULE_ID].drafts.map(d => d.status ?? 'pending'));
+  const before = statuses();
   btn.click();
+  // The press runs through awaited writes and lazily imported modules, and a
+  // first import takes real time (a cold run of this file alone took ~450 ms
+  // to mark its row): wait until a row's status changes, or — for a press
+  // that marks nothing — for a bounded while, then let the rest settle.
+  const deadline = Date.now() + 1500;
+  while (statuses() === before && Date.now() < deadline) await new Promise(r => setTimeout(r, 5));
   for (let i = 0; i < 30; i++) await new Promise(r => setTimeout(r, 0));
 }
 
@@ -210,12 +218,27 @@ describe("D3 — a round card's connection row asks whose connection the NPC is"
     expect(content).toMatch(/data-index="0" data-actor-id="pc-ren">Ren</);
   });
 
-  it("control: a free-flow card carries its narration's PC, and its Confirm bonds them", async () => {
+  // Issue #354 P2-16 amends D3's "free-flow cards keep their one Confirm": a
+  // free-flow card's person row offers its narration's PC by name, and "No
+  // one" — a Confirm that always bonded put a hostile stranger on a PC's sheet.
+  it("a free-flow card carries its narration's PC: its row offers that PC, whose button bonds them, and No one", async () => {
     await routeEntityDrafts([DOSS], stored(), { actorId: 'pc-ren', narrationId: 'nar-move' }).then(syncChat);
     expect(draftCard().flags[MODULE_ID]).toMatchObject({ actorId: 'pc-ren' });
     expect(draftCard().flags[MODULE_ID].actorIds).toBeUndefined();
-    expect(draftCard().content).not.toContain('whose connection');
+    const content = draftCard().content;
+    expect(content).toContain('Confirm — whose connection?');
+    expect(content).toMatch(/data-index="0" data-actor-id="pc-ren">Ren</);
+    expect(content).toMatch(/data-actor-id=""[^>]*>No one</);
+    expect(content).not.toMatch(/data-actor-id="pc-kira"/);
     await press('[data-action="sf-draft-confirm"][data-index="0"]');
     expect(bondsOf('pc-ren')).toEqual(['Doss']);
+  });
+
+  it('No one on a free-flow card: the person is made with no bond on any sheet', async () => {
+    await routeEntityDrafts([DOSS], stored(), { actorId: 'pc-ren', narrationId: 'nar-move' }).then(syncChat);
+    await press('.sf-draft-no-bond');
+    expect(rowStatus('Doss')).toBe('confirmed');
+    expect(bondsOf('pc-ren')).toEqual([]);
+    expect(bondsOf('pc-kira')).toEqual([]);
   });
 });

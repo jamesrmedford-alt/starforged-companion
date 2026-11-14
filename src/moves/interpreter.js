@@ -65,7 +65,7 @@ function buildSystemPrompt() {
 ## YOUR TASK
 
 Given player narration, return a JSON object identifying:
-- The move (from the valid move list below)
+- The move (from the valid move list below) — or that no move is being made
 - The stat to roll (from edge/heart/iron/shadow/wits, or a special meter)
 - Your reasoning (internal only — not shown to the player)
 - The stakes: what a hit gets and what a miss costs, shown to the player before the roll
@@ -154,11 +154,14 @@ Only while a scene challenge is open — the context lists it among the open pro
 
 ## INTERPRETATION RULES
 1. Match the player's INTENT, not their exact words. "I punch the guard" → strike or clash depending on combat position.
-2. For ambiguous situations, prefer the move that creates the most interesting mechanical outcome.
-3. Session/legacy/fate moves (begin_a_session, earn_experience, ask_the_oracle, pay_the_price) are only chosen when the narration is explicitly about those activities.
+2. When two moves fit, prefer the one whose outcome matters more to the story. When none fits, answer NO MOVE (rule 7) — never reach for a move to have something to roll.
+3. Session/legacy/fate moves (begin_a_session, earn_experience, ask_the_oracle, pay_the_price) are only chosen when the narration is explicitly about those activities. ask_the_oracle is never a way to say "nothing is rolled": that is NO MOVE.
 4. If the narration describes a reaction to danger, prefer face_danger or react_under_fire over gather_information.
 5. Suffer moves are only chosen when the player is explicitly describing taking damage/stress, not when they're trying to avoid it.
 6. COMBAT POSITION: when the user message includes a COMBAT POSITION directive, you MUST pick a combat move that is available for that position. Strike and Gain Ground are available only when IN CONTROL; Clash and React Under Fire are available only when IN A BAD SPOT. Take Decisive Action (seize the objective) and Face Defeat (give up) are available in either position. Non-combat moves remain available when the narration clearly calls for one.
+7. NO MOVE: a move is made when the character attempts something whose outcome is uncertain and matters. Plain conversation is not a move — asking a question, answering one, agreeing or refusing, choosing between options someone offered, saying a name, telling someone what happened. Neither is an everyday action with nothing at risk — answering a hail, opening a channel, powering a system up, walking to a station, picking something up. For these, return "moveId": null with the reason in "rationale" (statUsed and stakes null). A line is a move when it presses someone to do or give something they are reluctant to (compel), tests or deepens a relationship, or carries a threat or a danger — implied menace counts. Do not answer NO MOVE for an action taken in an open fight (a COMBAT POSITION directive is present), or when the user message says a roll was asked for.
+8. WHO IS SPEAKING: the user message names the character speaking and acting this turn. The move, its stat and the rationale are that character's — never another character the recent scene happens to be about.
+9. PACING READ: when the user message carries one, an earlier stage read the line as that move in that kind of scene. It is a hint about what the line is doing, not a ruling: choose the move that fits best, which may be a different one, or answer NO MOVE.
 
 ## RESPONSE FORMAT
 Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation outside the JSON.
@@ -184,7 +187,8 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "confidence": "high"
 }
 
-confidence: "high" | "medium" | "low" — your certainty in the interpretation.
+moveId: a move id from the MOVE REFERENCE, or null when no move is being made (rule 7).
+confidence: "high" | "medium" | "low" — your certainty in the interpretation. Use "low" when the line may well be no move at all: a low-confidence reading is narrated, with the move offered, rather than rolled.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
 moveTarget: the named thing the move acts on, taken from the player's narration — or, when the narration refers to it without naming it ("her coordinates", "there", "the station", "him"), as the RECENT SCENE names it. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"); a destination the story refers to without a proper name gets a short working label saying whose or what it is and how the scene refers to it ("Archer's rendezvous — the gap"), never a bare pronoun or "there". For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
@@ -211,6 +215,13 @@ missSuffer: when that miss plainly costs the character one of these, name it and
 export function buildContextSummary(campaignState, { roller = null } = {}) {
   const lines = [];
 
+  // Who is speaking (issue #354 P2-06): the classifier and the narrator were
+  // told, the interpreter was not — so it took the speaker from the recent
+  // scene, and after a beat that closed on Karthik it read Isaac's line as
+  // "Karthik presses Archer", rolled as Isaac. In the narrator's own words.
+  const speaker = speakerLine(roller);
+  if (speaker) lines.push(speaker);
+
   // Open vows + other open tracks — helps identify reach_a_milestone,
   // fulfill_your_vow, finish_an_expedition, take_decisive_action, and name
   // the moveTarget. Read from the live stores: vow Items on the player
@@ -235,8 +246,24 @@ export function buildContextSummary(campaignState, { roller = null } = {}) {
   // starship's (SUPPORT-VEHICLES-UNLISTED).
   lines.push(...rollerAssetLines(roller));
 
-  if (!vows.length && !tracks.length) lines.unshift("No active tracks yet.");
+  if (!vows.length && !tracks.length) lines.splice(speaker ? 1 : 0, 0, "No active tracks yet.");
   return lines.join(" ");
+}
+
+/**
+ * "The character speaking and acting this turn is Isaac Sutton." — as the
+ * narrator's PARTY block says it; '' with no roller who is a player character.
+ *
+ * @param {Actor|null} roller
+ * @returns {string}
+ */
+function speakerLine(roller) {
+  try {
+    const name = isPlayerCharacterActor(roller) ? String(roller.name ?? "").replace(/["\r\n]+/g, " ").trim() : "";
+    return name ? `The character speaking and acting this turn is ${name}.` : "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -448,21 +475,40 @@ export async function buildCanonicalMoveBlock(slug) {
  * @param {string} [options.recentScene] — the last few narration cards
  *   (narrator.js getRecentSceneForReading): what the line follows, so a
  *   reference ("her coordinates") is read — and named as moveTarget — from it
- * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
+ * @param {Actor|null} [options.roller] — the character speaking and acting:
+ *   named to the model (issue #354 P2-06), with their vehicles and companions
+ * @param {{ moveId?: string|null, category?: string|null, reasoning?: string|null }|null} [options.classifier] —
+ *   the pacing classifier's reading of the line (issue #354 P2-02): given to
+ *   the model as a hint, and what a Balanced Mischief reading that leaves the
+ *   line's kind is put back to (keepMischiefInKind)
+ * @param {boolean} [options.allowNoMove] — whether the model may answer that no
+ *   move is being made (issue #354 P2-01). Default true; false when a roll was
+ *   asked for (`!roll`, a round's "Roll a move instead"). Never with a move
+ *   already chosen.
+ * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet);
+ *   `{ noMove: true, rationale, … }` when no move is being made
  */
 export async function interpretMove(narration, {
   campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "", roller = null,
+  classifier = null, allowNoMove = true,
 }) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
 
   const expectedMove    = expectedMoveSlug && MOVES[expectedMoveSlug] ? expectedMoveSlug : null;
   const position        = expectedMove ? null : combatPosition;
+  const mayDecline      = !expectedMove && allowNoMove !== false;
+  const pacingRead      = expectedMove ? null : normalisePacingRead(classifier);
   const systemPrompt = buildSystemPrompt();
   const mischiefFraming = expectedMove ? null : buildMischiefFraming(mischiefLevel, narration);
   const contextSummary  = buildContextSummary(campaignState, { roller });
   const combatDirective = buildCombatPositionDirective(position);
   const expectedDirective = buildExpectedMoveDirective(expectedMove);
+  const pacingDirective = buildPacingReadDirective(pacingRead);
+  // A roll was asked for (`!roll`, "Roll a move instead"): the line is a move.
+  const rollAskedDirective = !expectedMove && allowNoMove === false
+    ? "A ROLL WAS ASKED FOR: the player chose to roll this line. Choose the move that fits it best — do not answer NO MOVE."
+    : "";
   const canonicalBlock  = expectedMove
     ? await buildCanonicalMoveBlock(expectedMove)
     : "";
@@ -481,9 +527,11 @@ export async function interpretMove(narration, {
     : "";
   const userMessage = [
     contextSummary,
+    pacingDirective,
     mischiefFraming,
     combatDirective,
     expectedDirective,
+    rollAskedDirective,
     canonicalBlock,
     sceneBlock,
     `Player narration: "${narration}"`,
@@ -500,8 +548,95 @@ export async function interpretMove(narration, {
     promptCachingEnabled: campaignState.api?.promptCachingEnabled ?? true,
   });
 
-  const parsed = parseInterpretation(response, narration, mischiefLevel, position, expectedMove);
-  return parsed;
+  const parsed = parseInterpretation(response, narration, mischiefLevel, position, expectedMove, { mayDecline, pacingRead });
+  return keepMischiefInKind(parsed, pacingRead, mischiefLevel);
+}
+
+/**
+ * The pacing classifier's reading, as the interpreter takes it: a known move
+ * id (or none), its category and its one-line reasoning. null for none.
+ *
+ * @param {Object|null} classifier
+ * @returns {{ moveId: string|null, category: string|null, reasoning: string }|null}
+ */
+function normalisePacingRead(classifier) {
+  if (!classifier || typeof classifier !== "object") return null;
+  const moveId    = toMoveId(classifier.moveId) ?? null;
+  const category  = typeof classifier.category === "string" && classifier.category.trim() ? classifier.category.trim().toLowerCase() : null;
+  const reasoning = typeof classifier.reasoning === "string" ? classifier.reasoning.replace(/[\r\n]+/g, " ").trim().slice(0, 280) : "";
+  if (!moveId && !category && !reasoning) return null;
+  return { moveId, category, reasoning };
+}
+
+/**
+ * The user-message line giving the model the pacing classifier's reading
+ * (issue #354 P2-02): the classifier named a move and the router threw it
+ * away, so the interpreter read the line from scratch — a different move on
+ * five of the playtest's seven rolled lines. '' for none.
+ *
+ * @param {{ moveId: string|null, category: string|null, reasoning: string }|null} read
+ * @returns {string}
+ */
+function buildPacingReadDirective(read) {
+  if (!read) return "";
+  const what = [
+    read.moveId ? `as ${read.moveId}` : null,
+    read.category ? `in a ${read.category} scene` : null,
+  ].filter(Boolean).join(" ");
+  return `PACING READ (a hint, not a ruling — rule 9): the stage before you read this line ${what || "as a move"}`
+    + `${read.reasoning ? ` — "${read.reasoning.replace(/"/g, "'")}"` : ""}.`;
+}
+
+// The categories a line of dialogue is never turned into by a Balanced
+// misread (issue #354 P2-02, the maintainer's decision): travel, fate and
+// suffer moves. MOVES[id].category, as schemas.js files them.
+const OUT_OF_KIND_FOR_DIALOGUE = new Set(["exploration", "fate", "suffer"]);
+
+/**
+ * A Balanced Mischief reading stays inside what the line is doing (issue #354
+ * P2-02; decisions.md → "Issue #354"). The Balanced framing lets the model
+ * prefer a "less obvious but more dramatically interesting" move, and it read
+ * a line spoken to an NPC — "we've come this far…" — as Undertake an
+ * Expedition. It may still change the stat or pick a neighbouring move; but a
+ * misread (`mischiefApplied`) of a line the classifier placed in a social
+ * scene that lands on a travel, fate or suffer move is put back to the move
+ * the classifier named, with a stat that move lists, and says so. Chaotic
+ * keeps its freedom; a reading that is not a misread is left alone (the
+ * interpreter turning Face Danger into Undertake an Expedition for a journey
+ * through uncharted space is a correction, not mischief — issue #348 PT06).
+ *
+ * @param {Object} interpretation — parseInterpretation's result
+ * @param {{ moveId: string|null, category: string|null }|null} pacingRead
+ * @param {string} mischiefLevel
+ * @returns {Object} the interpretation, or the one put back in kind
+ */
+export function keepMischiefInKind(interpretation, pacingRead, mischiefLevel) {
+  if (!interpretation || interpretation.noMove) return interpretation;
+  if (mischiefLevel !== "balanced" || interpretation.mischiefApplied !== true) return interpretation;
+  if (pacingRead?.category !== "social" || !pacingRead.moveId) return interpretation;
+  const readAs = MOVES[interpretation.moveId];
+  const named  = MOVES[pacingRead.moveId];
+  if (!readAs || !named || !OUT_OF_KIND_FOR_DIALOGUE.has(readAs.category) || OUT_OF_KIND_FOR_DIALOGUE.has(named.category)) {
+    return interpretation;
+  }
+  const listed = Array.isArray(named.stat) ? named.stat : [];
+  const statUsed = listed.includes(interpretation.statUsed) ? interpretation.statUsed : (listed[0] ?? null);
+  return {
+    ...interpretation,
+    moveId:          pacingRead.moveId,
+    moveName:        moveDisplayName(pacingRead.moveId),
+    statUsed,
+    isProgressMove:  named.progressMove === true,
+    moveTarget:      null,
+    expeditionRank:  null,
+    combatRank:      null,
+    healSituation:   null,
+    // The stakes were written for the other move.
+    stakes:          null,
+    mischiefApplied: false,
+    keptInKind:      interpretation.moveId,
+    rationale:       `${interpretation.rationale ? `${interpretation.rationale} ` : ""}(Read as ${moveDisplayName(pacingRead.moveId)}: a line of dialogue is not turned into ${moveDisplayName(interpretation.moveId)}.)`,
+  };
 }
 
 /**
@@ -554,7 +689,7 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
     ...(promptCachingEnabled ? { "anthropic-beta": "prompt-caching-2024-07-31" } : {}),
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "moveInterpreter" });
 
   const text = (data.content ?? [])
     .filter(block => block.type === "text")
@@ -582,7 +717,8 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
  * chosen: it stands whatever the model named, with a stat it lists — the
  * model's when it is one, else its first.
  */
-function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPosition = null, expectedMoveId = null) {
+function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPosition = null, expectedMoveId = null,
+  { mayDecline = false, pacingRead = null } = {}) {
   let parsed;
 
   try {
@@ -595,6 +731,17 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
   }
 
   if (expectedMoveId && parsed && typeof parsed === "object") parsed.moveId = expectedMoveId;
+
+  // No move is being made (issue #354 P2-01): the model could reason its way
+  // to "this is a narrative exchange" and had no way to say it — every reply
+  // carried a move, and the line was rolled. Only where it may decline: not
+  // with a move already chosen, nor when a roll was asked for — there the
+  // move the classifier named stands in, else the fallback.
+  if (!expectedMoveId && parsed && typeof parsed === "object" && declinesMove(parsed)) {
+    if (mayDecline) return noMoveInterpretation(originalNarration, mischiefLevel, parsed);
+    if (pacingRead?.moveId) parsed.moveId = pacingRead.moveId;
+    else return fallbackInterpretation(originalNarration, mischiefLevel, expectedMoveId);
+  }
 
   // The model may name the move by its display name ("Gather Information",
   // "gather-information") instead of its key: read it as the key it names
@@ -686,6 +833,41 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
 }
 
 /**
+ * Whether a parsed reply says no move is being made: an explicit
+ * `"moveId": null` / "none", or `noMove: true`. A reply with no `moveId` at
+ * all ("{}", a cut-off object) says nothing — it is a failed reading, and
+ * falls back as one.
+ */
+function declinesMove(parsed) {
+  if (parsed.noMove === true) return true;
+  if (!Object.hasOwn(parsed, "moveId")) return false;
+  const id = parsed.moveId;
+  if (id === null) return !parsed.moveName;
+  return typeof id === "string" && /^(none|null|no[ _-]?move)$/i.test(id.trim());
+}
+
+/**
+ * The reading of a line as no move (issue #354 P2-01): the pipeline narrates
+ * it, with the classifier's move offered, instead of opening the roll dialog.
+ *
+ * @returns {{ noMove: true, playerNarration: string, mischiefLevel: string, rationale: string, confidence: string }}
+ */
+function noMoveInterpretation(narration, mischiefLevel, parsed) {
+  return {
+    noMove:          true,
+    playerNarration: narration,
+    inputMethod:     "chat",
+    mischiefLevel,
+    moveId:          null,
+    moveName:        null,
+    rationale:       typeof parsed?.rationale === "string" ? parsed.rationale.trim() : "",
+    confidence:      parsed?.confidence ?? "medium",
+    mischiefApplied: false,
+    playerConfirmed: false,
+  };
+}
+
+/**
  * Safe fallback interpretation when the API response cannot be parsed.
  * Defaults to Face Danger +wits — the most common adventure move; a move
  * already chosen (`expectedMoveId`) keeps that move and its first listed stat,
@@ -712,6 +894,9 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     rationale:               "Fallback — API response could not be parsed.",
     stakes:                  null,
     mischiefApplied:         false,
+    // A failed reading, not an unsure one: the confirm dialog shows it — it is
+    // not narrated as a low-confidence reading is (movePipeline.js readMove).
+    fallback:                true,
     confidence:              "low",
     playerConfirmed:         false,
   };

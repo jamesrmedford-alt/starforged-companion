@@ -152,16 +152,19 @@ export function resultUpgradeRunningHere(messageId) {
  * issue #311 P03), or the roller has made another move since ("later-move" —
  * an upgrade belongs to the move being made, issue #326 D4), or a Batch Mode
  * round decided it before it was narrated ("round-closed" — the roller kept
- * the result, or the round's narration began: issue #340). The GM handlers
+ * the result, or the round's narration began: issue #340), or a free-flow
+ * result held for the choice was kept ("kept" — its price and narration have
+ * followed: issue #354 P2-10, heldResult.js). The GM handlers
  * also check the choice cards and the later moves themselves (resultUpgrade.js
  * consequenceChosen, laterMoveFollows).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|"round-closed"|"later-move"|"choice-made"|null}
+ * @returns {"original-pending"|"already-upgraded"|"round-closed"|"kept"|"later-move"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
   if (upgrade?.roundClosed) return "round-closed";
+  if (upgrade?.kept) return "kept";
   if (upgrade?.laterMove) return "later-move";
   if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
@@ -180,11 +183,15 @@ export const UPGRADE_LATER_MOVE_TITLE = "An upgrade belongs to the move being ma
 /** Tooltip on a burn / improve button a Batch Mode round closed (issue #340). */
 export const UPGRADE_ROUND_CLOSED_TITLE = "Decided before the round was narrated — the round tells this result";
 
+/** Tooltip on a burn / improve button of a result that was kept (issue #354 P2-10). */
+export const UPGRADE_KEPT_TITLE = "The result was kept — its price and its narration have followed";
+
 /** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
 export const UPGRADE_REFUSALS = {
   "original-pending": "the original outcome is not recorded yet",
   "already-upgraded": "the result was already upgraded",
   "round-closed":     "the round decided this result before it was narrated",
+  "kept":             "the result was kept",
   "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
@@ -413,6 +420,12 @@ export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — decided before the round was narrated";
       btn.title       = UPGRADE_ROUND_CLOSED_TITLE;
+      return;
+    }
+    if (blocker === "kept") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — the result was kept";
+      btn.title       = UPGRADE_KEPT_TITLE;
       return;
     }
     if (blocker === "later-move") {
@@ -648,16 +661,24 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   }
 
   const allyId = upgradeAllyId(burn, actor.id);
-  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
+  const momentumReset = readMomentumState(actor).reset;
+  const burnChanges = burnMeterChanges({
     burnState:        burn,
     currentMomentum:  momentum.value,
-    newMomentumReset: readMomentumState(actor).reset,
+    newMomentumReset: momentumReset,
     newConsequences,
     // The price that stands is the burned outcome's: its momentum loss lands
     // after the reset (issue #342 Z51).
     keptPriceMomentum: priceStands ? priceMomentumTaken(burn.ptpReversals, actor.id) : 0,
     allyId,
-  }) }, failures);
+  });
+  // The burn's momentum is said on the card ("Momentum burned: 5 → 2
+  // (reset)"): the system's own note for it, "-3 momentum (now 2)", read as a
+  // penalty (issue #354 P2-14) and is not posted beside it — when momentum is
+  // all the step changes; a note for another meter is kept.
+  const momentumOnly = !burnChanges.health && !burnChanges.spirit && !burnChanges.supply;
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnChanges, ...(momentumOnly ? { quietNote: true } : {}) }, failures);
+  const momentumNote = burnedMomentumLine(momentum.value, readMomentumState(actor).value, momentumReset);
   // Aid Your Ally: the burned hit's momentum is the ally's, less what the
   // recorded hit already paid them (AID-ALLY-UPGRADE).
   const allyMomentum = momentumShares(newConsequences, allyId).ally - momentumShares(burn.originalConsequences, allyId).ally;
@@ -684,7 +705,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
 
-  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), momentumNote) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -852,17 +873,37 @@ export function buildSupersededNarrationContent(originalContent, kind = "burn") 
 }
 
 /**
+ * The burned card's momentum line: "Momentum burned: 5 → 2 (reset)." — or,
+ * when the burned outcome's own momentum or a price that stands moved it off
+ * the reset value, what the reset was. '' when the momentum did not change
+ * (the write was refused: the GMs' card says so).
+ *
+ * @param {number} before — the PC's momentum when the burn was pressed
+ * @param {number} after — as it stands once the burn's step has run
+ * @param {number} reset — the PC's momentum reset value
+ * @returns {string}
+ */
+export function burnedMomentumLine(before, after, reset) {
+  if (![before, after].every(Number.isFinite) || before === after) return "";
+  return after === reset
+    ? `Momentum burned: ${before} → ${after} (reset).`
+    : `Momentum burned: ${before} → ${after} (reset to ${reset}, then the burned result's own change).`;
+}
+
+/**
  * Rewrite the existing move-result card's HTML to reflect the burned
  * outcome. Strikes through the original outcome label and appends the
- * burned outcome + new consequence text, and the note on its other effects
- * (`effectsNote`, HTML from effectsNoteHtml).
+ * burned outcome, the momentum the burn spent (`momentumNote`,
+ * burnedMomentumLine) + new consequence text, and the note on its other
+ * effects (`effectsNote`, HTML from effectsNoteHtml).
  */
-function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "") {
+function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "", momentumNote = "") {
   const html = String(originalContent ?? "");
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
   const burnNote = (
     `<div class="sf-move-burn-result">` +
       `<div class="sf-move-outcome sf-move-outcome--upgraded">🔥 Burned → ${newLabel}</div>` +
+      (momentumNote ? `<div class="sf-move-effect sf-move-burned-momentum">${momentumNote}</div>` : "") +
       (newConsequences.otherEffect
         ? `<div class="sf-move-effect">${newConsequences.otherEffect}</div>`
         : "") +

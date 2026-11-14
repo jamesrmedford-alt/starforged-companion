@@ -123,6 +123,10 @@ beforeEach(async () => {
   control.abilities = [];
   control.ptp = 78;   // Pay the Price 78: Endure Harm (-1)
   await table.reset({ world: { settings: {
+    // The price is paid and the result narrated at once, and an upgrade
+    // undoes them — the flow these tests are about. (Asking first is the
+    // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
+    holdResultForUpgrade: false,
     chronicleAutoEntry: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "effects-s1", sessionNumber: 1,
       currentSceneId: "effects-scene", sceneTruths: [], clocks: [] },
@@ -211,6 +215,27 @@ describe("an exploration move upgraded from a miss", () => {
     expect(pc.system.health.value).toBe(5);
     expect(pc.system.momentum.value).toBe(8);   // an improvement changes the result, not the roll
     expect(content(card._id)).toContain("Also applied: progress marked on the Kessler Drift expedition.");
+  });
+
+  // Issue #354 P2-14: at 2/10 "Finish the Expedition" was the card's one
+  // prominent button, inviting a near-certain miss.
+  it("the expedition card's Finish button says the progress it rolls with, muted while a finish would probably miss", async () => {
+    await roll("undertake_an_expedition", { moveTarget: "Kessler Drift", expeditionRank: "dangerous", dice: [0.05, 0.15, 0.9] });
+    expect(lastLog().outcome).toBe("strong_hit");
+    expect(tracks()[0]).toMatchObject({ label: "Kessler Drift", ticks: 8 });
+    const early = table.cards(f => f.expeditionProgressCard).at(-1).content;
+    expect(early).toContain("🗺 Finish the Expedition (2/10)</button>");
+    expect(early).toMatch(/class="sf-followup-btn sf-followup-btn--early" data-action="sf-finish-expedition"/);
+    expect(early).toMatch(/title="Progress roll: your 2 progress against both challenge dice — a miss is likely this early"/);
+
+    // Two more marks: 6/10 — the button is an ordinary one.
+    await roll("undertake_an_expedition", { moveTarget: "Kessler Drift", dice: [0.05, 0.15, 0.9] });
+    await roll("undertake_an_expedition", { moveTarget: "Kessler Drift", dice: [0.05, 0.15, 0.9] });
+    expect(tracks()[0].ticks).toBe(24);
+    const ready = table.cards(f => f.expeditionProgressCard).at(-1).content;
+    expect(ready).toContain("🗺 Finish the Expedition (6/10)</button>");
+    expect(ready).toMatch(/class="sf-followup-btn" data-action="sf-finish-expedition"/);
+    expect(ready).not.toMatch(/a miss is likely/);
   });
 });
 

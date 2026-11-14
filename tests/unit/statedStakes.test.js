@@ -198,6 +198,10 @@ beforeEach(async () => {
   control.ptp = [85];   // were the table rolled: 85, You are stressed
   control.ptpRolls = 0;
   await table.reset({ world: { settings: {
+    // The price is paid and the result narrated at once, and an upgrade
+    // undoes them — the flow these tests are about. (Asking first is the
+    // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
+    holdResultForUpgrade: false,
     chronicleAutoEntry: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'r1-s1', sessionNumber: 1,
       currentSceneId: 'r1-scene', sceneTruths: [], clocks: [] },

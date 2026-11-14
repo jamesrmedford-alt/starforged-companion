@@ -181,6 +181,27 @@
   cursor:  not-allowed;
 }
 
+/* A follow-up that is allowed but unlikely to go well yet — Finish the
+   Expedition at low progress (issue #354 P2-14): present, not prominent. */
+.sf-followup-btn--early {
+  background:  transparent;
+  border-style: dashed;
+  font-weight: 400;
+  opacity:     0.75;
+}
+
+/* A held result's "Keep the result" and what the wait means (issue #354 P2-10). */
+.sf-keep-result-row {
+  margin-top: 6px;
+}
+
+/* What a match adds, under the outcome line (issue #354 P2-14). */
+.sf-move-match {
+  font-size:  var(--font-size-12, 12px);
+  font-style: italic;
+  margin-top: 2px;
+}
+
 /* Subdued explanatory hint under card action buttons (e.g. the Battle option) */
 .sf-card-hint {
   margin-top: 6px;
@@ -1420,6 +1441,7 @@
 
 .confirm-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
   padding-top: 0.25rem;
@@ -1436,7 +1458,8 @@
 }
 .btn-accept:hover { background: #3a6a3a; }
 
-.btn-reject {
+.btn-reject,
+.btn-narrate {
   background: var(--color-bg-btn, #f0f0f0);
   font-size: var(--font-size-13, 13px);
   padding: 0.3rem 0.8rem;

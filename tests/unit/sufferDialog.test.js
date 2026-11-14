@@ -36,6 +36,8 @@ vi.mock("../../src/character/actorBridge.js", () => ({
   setDebility: vi.fn(async (actor, key, value) => {
     bridgeCalls.setDebility.push({ actor, key, value });
   }),
+  // A suffer move's write runs inside it (issue #354 P2-13).
+  withoutSystemNotes: async (write) => write(),
 }));
 
 // Mock the track store + position applier so the combat-position / progress

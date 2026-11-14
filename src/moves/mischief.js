@@ -17,7 +17,8 @@
  *
  * Dial values (internal / UI alias):
  *   "serious" / "lawful"  — literal interpretation, no reframing
- *   "balanced"            — occasional organic misreads that create emergent story moments
+ *   "balanced"            — occasional organic misreads that create emergent story moments,
+ *                           inside what the line is doing (issue #354 P2-02)
  *   "chaotic"             — deliberate misinterpretation for comic or dramatic effect
  *
  * "lawful" is the value stored by settingsPanel.js and returned by getMischiefDial().
@@ -81,7 +82,10 @@ export function buildMischiefFraming(mischiefLevel, narration) {
  * whether a reframe is warranted, rather than forcing one every time.
  */
 function buildBalancedFraming(_narration) {
-  return `INTERPRETATION NOTE: You are allowed to occasionally interpret this narration in a slightly unexpected but still plausible way. If there is a move that is less obvious but more dramatically interesting than the most literal reading — and it still fits the fiction — you may prefer it. This should feel like a natural misread, not a forced one. Set mischiefApplied to true if you do this.`;
+  // The misread stays inside what the line is doing (issue #354 P2-02, the
+  // maintainer's decision): a line spoken to an NPC was read as Undertake an
+  // Expedition. interpreter.js keepMischiefInKind holds the same line in code.
+  return `INTERPRETATION NOTE: You are allowed to occasionally interpret this narration in a slightly unexpected but still plausible way. If there is a move that is less obvious but more dramatically interesting than the most literal reading — and it still fits the fiction — you may prefer it. Stay inside what the line is doing: a different stat, or a neighbouring move of the same kind (another way of pressing someone for a line of dialogue, another way of meeting the danger for an action). Never turn a line of dialogue into a travel, fate or suffer move, and never invent a move for a line that makes none. This should feel like a natural misread, not a forced one. Set mischiefApplied to true if you do this.`;
 }
 
 /**

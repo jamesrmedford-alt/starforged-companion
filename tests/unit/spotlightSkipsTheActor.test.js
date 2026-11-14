@@ -40,6 +40,8 @@ beforeEach(() => {
   game.actors._reset();
   global.game.messages = { contents: [] };
   global.game.user = { id: 'gm-1', isGM: true };
+  // Rotating Spotlight is off by default (issue #354 P2-07): this table has it on.
+  game.settings._store.set(`${MODULE_ID}.narratorSpotlightRotation`, true);
   // Ids chosen so Kira sorts first by actor id.
   game.actors._set('a-actor', makeTestActor({ id: 'a-actor', name: 'Kira' }));
   game.actors._set('b-actor', makeTestActor({ id: 'b-actor', name: 'Orin' }));

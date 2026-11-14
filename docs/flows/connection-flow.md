@@ -153,7 +153,16 @@ recorded under its name promoted to it; its bond is §2's.
   maintainer's ruling A — it was the first entry's PC): a connection row's
   Confirm is a button per acting PC and **No one**, the pick checked against
   the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss is a GM's
+  picked, or on no sheet (`draftBondHolder`). Since issue #354 P2-16
+  (amending D3 for free-flow) a free-flow card's person row asks the same
+  way — the narration's PC by name, and **No one** — where one Confirm
+  always bonded the person to the acting PC. A detected person is the one
+  already known under part of their name or a near spelling
+  (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
+  PC's first name), in the detection filter and the draft gate alike, so they
+  are not offered again; the bond Item's creation is marked as the module's
+  write (`actorBridge` `moduleWriteOn`), so the system's "Added …" note is
+  re-attributed as PT14's are. Each Confirm / Dismiss is a GM's
   press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
   one at a time there — two GMs' simultaneous Confirms each ran on their own
   client and made the NPC twice (DRAFT-CONFIRM-TWO-GMS) — and writes its
@@ -445,7 +454,12 @@ severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
-"Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
+"Connections lost" (`readConnections`' `lost` — issue #330 D10). The pacing
+classifier reads the same mirror for the speaker alone
+(`classifier.formatConnections` — "Kira's connections: Kael Dros, Sable
+(bonded)") and leans toward a move only for a line that presses or tests one
+of them; it was told every NPC card, and leaned toward a roll whenever a line
+addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
 writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).

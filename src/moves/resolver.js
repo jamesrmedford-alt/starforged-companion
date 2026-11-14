@@ -413,7 +413,8 @@ const CONSEQUENCE_MAP = {
 
   face_danger: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1 };
+      // The card showed the outcome label and nothing else (issue #354 P2-14).
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, otherEffect: "You are successful. Take +1 momentum." };
       case "weak_hit":   return {
         ...emptyConsequences(),
         // B1: generic "make a suffer move (-1)" — player picks which.
@@ -1811,8 +1812,15 @@ export function priceRevealsNewEnemy(price) {
 function priceSeedLines(price) {
   const lines = [`Pay the Price: ${price}`];
   if (priceRevealsNewEnemy(price)) lines.push(...newEnemySeedLines());
+  // Issue #354 P2-12: the row costs momentum (the table routes it to Lose
+  // Momentum); told only the row, the narration made it a mood.
+  if (DELAYED_PRICE.test(price)) lines.push(DELAYED_PRICE_SEED);
   return lines;
 }
+
+/** The Pay the Price result that costs momentum (the play kit's 89–95). */
+const DELAYED_PRICE = /\bdelayed or put at a disadvantage\b/i;
+const DELAYED_PRICE_SEED = "This price is paid in momentum (Lose Momentum -1): show the time, ground or advantage actually lost — a concrete setback, not a mood.";
 
 /**
  * What a new enemy is and what it wants: Character Role, Goal and Disposition,

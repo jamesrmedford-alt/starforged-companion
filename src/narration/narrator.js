@@ -15,8 +15,11 @@ import {
   roundMaxTokens,
   formatEntityCard,
   formatSettlementPlanet,
+  splitNarratorSystemPrompt,
   sanitizePlayerText,
   SCENE_LEDGER_FIELDS,
+  resolveNarrationPerspective,
+  sessionPerspectiveOf,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
@@ -27,6 +30,7 @@ import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
+import { recentImages, pickBeatShape, IMAGE_SOURCE_CARDS } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
@@ -69,7 +73,7 @@ import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -385,6 +389,13 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState, character?.actorId ?? null),
   };
 
+  // What keeps this beat from reading like the last (issue #354 P2-22,
+  // P2-27): the comparisons the session's last narrations made — listed as
+  // images not to reuse — and a shape for this beat, by its place in the
+  // session, so two in a row are never built the same way. The beat modes
+  // only; rendered as [8d] THIS BEAT'S PROSE.
+  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null));
+
   // Rolling session summary (architecture §8.6) — the cached text. It is
   // regenerated after a narrator card posts (registerRollingSummaryRefreshHook),
   // not here: a regen is a Haiku call over the whole session's prose, and it
@@ -542,9 +553,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
   extras.unrevealed   = [];
   extras.planRequests = [];
+  extras.plannedSubjects = [];
   if (mode !== 'campaign_recap' && skeletonsEnabled()) {
     try {
-      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
+      const allPlans = listSkeletons();
+      // The beings already planned, for a narration that has an enemy or an
+      // agenda to decide: it may say the new one is one of them (issue #354
+      // P2-30; formatUnrevealedBlock ALREADY PLANNED).
+      extras.plannedSubjects = plannedBeings(allPlans);
+      extras.unrevealed = selectRelevantSkeletons(allPlans, {
         sceneId:           sceneState?.currentSceneId ?? null,
         frame:             sceneState?.sceneFrame ?? null,
         matchedEntityIds:  extras.matchedEntityIds ?? [],
@@ -586,6 +603,35 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/** The modes whose beats get a shape and the list of images already used (narratorPrompt.js BEAT_PROSE_MODES). */
+const BEAT_VARIETY_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
+
+/**
+ * The images the session's last narrations used and the shape for the beat
+ * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
+ * the session's narrator cards, the ring's own source. Nothing is stored: the
+ * shape follows from how many narrations the session holds. Fail-open: an
+ * unreadable chat log gives no list and the first shape.
+ *
+ * @param {string|null} sessionId
+ * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
+ */
+function beatVariety(sessionId) {
+  try {
+    const cards = sessionNarratorCards(sessionId);
+    const prose = cards.slice(-IMAGE_SOURCE_CARDS)
+      .map(m => m?.flags?.[MODULE_ID]?.narrationText)
+      .filter(t => typeof t === 'string' && t.trim());
+    return {
+      usedImages: recentImages(prose),
+      beatShape:  pickBeatShape({ beatIndex: cards.length, seed: sessionId }),
+    };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
+    return { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
+  }
 }
 
 /** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
@@ -989,6 +1035,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
     ),
+    { audio: extras.audioMarkupEnabled === true },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1238,6 +1285,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     ),
     entries,
     sentenceTarget,
+    audio: extras.audioMarkupEnabled === true,
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
   // Asked after the call's long wait: is this narration still the round's?
@@ -4331,6 +4379,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       const sentenceTarget = settings.narrationLength ?? 3;
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
+        { audio: extras.audioMarkupEnabled === true },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
@@ -4811,6 +4860,52 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
     }
   }
   return false;
+}
+
+// Words of an NPC's name nobody is called by ("the Escort", "Keeper of Ash").
+const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
+
+/**
+ * Whether a line read as a social move is spoken to a fellow player character
+ * — on the MOVE path, where the line would otherwise be rolled (issue #354
+ * P2-06; pacing/router.js decidePacing). Stricter than the offer's rule
+ * (suppressPcDirectedSocialMove, which only withholds a suggestion): the line
+ * must name another PC and name no tracked NPC, so "Archer, hand Karthik the
+ * codes or I take them" — a Compel of Archer — is still rolled.
+ *
+ * @param {string|null} moveId — the move the classifier named
+ * @param {string} playerText
+ * @param {string|null} speakerName
+ * @param {{ campaignState?: Object|null, pcActors?: Array<{name?: string}>, npcNames?: string[] }} [opts] —
+ *   `pcActors` / `npcNames` injectable for tests
+ * @returns {boolean}
+ */
+export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState = null, pcActors, npcNames } = {}) {
+  if (!moveId || !PC_DIRECTED_SOCIAL_MOVES.has(moveId)) return false;
+  if (!inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors)) return false;
+  const text = String(playerText ?? '').toLowerCase();
+  let names = npcNames;
+  if (!Array.isArray(names)) {
+    names = [];
+    try {
+      for (const id of campaignState?.connectionIds ?? []) {
+        const name = getConnection(id)?.name;
+        if (name) names.push(name);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: the NPC names could not be read for the fellow-PC check:`, err?.message ?? err);
+    }
+  }
+  for (const raw of names) {
+    const name = String(raw ?? '').trim().toLowerCase();
+    if (!name) continue;
+    // The full name, or any word of it a player would call them by ("Archer").
+    const tokens = new Set([name, ...name.split(/\s+/).filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t))]);
+    for (const t of tokens) {
+      if (wholeWordPattern(t, '').test(text)) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -5685,7 +5780,8 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // ones it was asked to decide, and the questions it posed — filed in the
   // Secrets journal, stamped with its id for the X-Card. Fire-and-forget,
   // never throws.
-  if (sidecar.plans?.length || sidecar.openQuestions?.length || sidecar.reveals?.length || sidecar.countdown || ctx.planRequests?.length) {
+  if (sidecar.plans?.length || sidecar.openQuestions?.length || sidecar.reveals?.length || sidecar.countdown
+    || sidecar.newThreats?.length || ctx.planRequests?.length) {
     void applyPlanSideData(sidecar, {
       campaignState,
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
@@ -5696,13 +5792,68 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   return persisted;
 }
 
+/**
+ * How long the narrator's cached blocks live. A table's beats are often more
+ * than five minutes apart — a player thinking, table talk, a rules lookup — and
+ * every read restarts the hour, so one write serves a session; at the default
+ * five minutes each such pause paid for the standing block again.
+ */
+const NARRATOR_CACHE_TTL = '1h';
+
+/**
+ * The `system` field of a narrator request (issue #354 P2-23): the prompt as
+ * the blocks narratorPrompt.js orders it in — the standing rules and this
+ * narration's block each closing on a cache breakpoint, the per-beat context
+ * after them uncached. The whole prompt went as one cached block that changed
+ * every beat, so every call wrote it to the cache and none ever read it.
+ *
+ * A prompt with no such blocks (the campaign recap's, the rolling summary's)
+ * is one block with no breakpoint: nothing later repeats it. So is every
+ * prompt when the world's prompt caching is off
+ * (`campaignState.api.promptCachingEnabled`).
+ *
+ * @param {string} systemPrompt
+ * @param {{ cachingEnabled?: boolean }} [opts]
+ * @returns {Array<{ type: 'text', text: string, cache_control?: Object }>}
+ */
+function narratorSystemBlocks(systemPrompt, { cachingEnabled = true } = {}) {
+  const blocks = splitNarratorSystemPrompt(systemPrompt);
+  if (!blocks.length) return [{ type: 'text', text: String(systemPrompt ?? '') }];
+  return blocks.map(b => (b.cached && cachingEnabled
+    ? { type: 'text', text: b.text, cache_control: { type: 'ephemeral', ttl: NARRATOR_CACHE_TTL } }
+    : { type: 'text', text: b.text }));
+}
+
+/**
+ * How a narrator reply's characters split between its prose and its fact
+ * block (the sidecar fence extractSidecar takes off) — the Narrator Usage
+ * page's Prose / Fact block columns. Zero for an empty reply.
+ *
+ * @param {string} text — the reply as returned
+ * @returns {{ proseChars: number, sidecarChars: number }}
+ */
+function outputSplit(text) {
+  const raw = typeof text === 'string' ? text : '';
+  let prose = raw;
+  try {
+    prose = String(extractSidecar(raw)?.prose ?? raw);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator usage: the reply's fact block could not be measured:`, err?.message ?? err);
+  }
+  const proseChars = Math.min(raw.length, prose.trim().length);
+  return { proseChars, sidecarChars: Math.max(0, raw.trim().length - proseChars) };
+}
+
+/** Whether this world caches prompts (schemas.js `api.promptCachingEnabled`; on unless switched off). */
+function promptCachingEnabled() {
+  return storedCampaignState()?.api?.promptCachingEnabled !== false;
+}
+
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
   const body = {
     model,
     max_tokens: maxTokens ?? 16000,
-    system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-    ],
+    system:   narratorSystemBlocks(systemPrompt, { cachingEnabled: promptCachingEnabled() }),
     messages: [{ role: 'user', content: userMessage }],
   };
   // No extended thinking eating the max_tokens cap on a thinking-by-default
@@ -5724,19 +5875,11 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
   const started = Date.now();
   let data;
   try {
-    data = await apiPost(ANTHROPIC_URL, headers, body);
+    data = await apiPost(ANTHROPIC_URL, headers, body, { label: `narrator:${label ?? 'narration'}` });
   } catch (err) {
     recordNarratorResponse(capture, { error: err, elapsedMs: Date.now() - started });
     throw err;
   }
-  // Token usage and time per call (issue #286 F6 step 1) — fire-and-forget.
-  logNarratorUsage({
-    label, model,
-    usage:     data?.usage ?? null,
-    elapsedMs: Date.now() - started,
-    sessionId: storedCampaignState()?.currentSessionId ?? null,
-  }).catch(() => {});
-
   // NARR-SIDECAR-SILENT (narrator-context audit 2026-07): a response cut off
   // by max_tokens BEFORE the sidecar fence opens parses as clean prose with
   // no sidecar — invisible without this check. The unclosed-fence heuristic
@@ -5754,6 +5897,17 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     .map(b => b.text)
     .join('');
   recordNarratorResponse(capture, { data, text, elapsedMs: Date.now() - started });
+
+  // Token usage and time per call (issue #286 F6 step 1), with how the reply
+  // split between prose and the fact block (issue #354 P2-24: output grew
+  // over a session and nothing said which half) — fire-and-forget.
+  logNarratorUsage({
+    label, model,
+    usage:     data?.usage ?? null,
+    elapsedMs: Date.now() - started,
+    sessionId: storedCampaignState()?.currentSessionId ?? null,
+    ...outputSplit(text),
+  }).catch(() => {});
 
   if (!text) throw new Error('Narrator API returned no text content.');
   return text;
@@ -5801,14 +5955,15 @@ function audioMarkupEnabledFromSettings() {
 }
 
 /**
- * Read the narrator.spotlightRotation world toggle (issue #232). Defaults to
- * enabled when the setting is unregistered (early init, unit tests).
+ * Read the Rotating Spotlight world toggle (issue #232). Off unless the
+ * setting is stored on — its default since issue #354 P2-07 — and off when
+ * the setting is unregistered (early init, unit tests).
  */
 function spotlightRotationEnabledFromSettings() {
   try {
-    return game.settings.get(MODULE_ID, 'narratorSpotlightRotation') !== false;
+    return game.settings.get(MODULE_ID, 'narratorSpotlightRotation') === true;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -5876,7 +6031,11 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
         console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
     }
 
-    return buildSpotlightBlock(selection);
+    // "You" is the acting character alone in second person (issue #354 P2-08).
+    const perspective = resolveNarrationPerspective(getNarratorSettings().narrationPerspective, {
+      sessionPerspective: sessionPerspectiveOf(campaignState),
+    });
+    return buildSpotlightBlock(selection, { perspective });
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: spotlight build failed:`, err?.message ?? err);
     return '';

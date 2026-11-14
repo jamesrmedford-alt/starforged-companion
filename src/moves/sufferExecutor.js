@@ -65,7 +65,7 @@
  * (Suffer moves), and issue #214 (Suffer-move Pipeline) §5.4.
  */
 
-import { applyMeterChanges, setDebility } from "../character/actorBridge.js";
+import { applyMeterChanges, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { supplyAllies } from "../multiplayer/sharedSupply.js";
 import { MORTAL_WOUND, DESOLATION, VEHICLE_DAMAGE } from "../oracles/tables/sufferAndCombat.js";
 
@@ -103,11 +103,18 @@ function rollD100Table(table, opts = {}) {
  * tests can pin the shape; non-Foundry test envs no-op via the
  * ChatMessage stub.
  */
-async function postSufferCard({ title, body, flags = {} }) {
+async function postSufferCard({ title, body, flags = {}, opts = null }) {
+  // A move's Pay the Price names the move on the cards its route posts
+  // (`priceOf` — index.js dispatchPayThePriceSufferRoute's `priceCard` and
+  // `resolutionId`): a Burn Momentum or Improve Result that reverts the price
+  // strikes them, as it strikes the narration (resultUpgrade.js
+  // supersedePriceCards, issue #354 P2-09).
+  const priceOf = opts?.priceCard === true && typeof opts.resolutionId === "string" && opts.resolutionId
+    ? { priceOf: opts.resolutionId } : {};
   try {
     return await globalThis.ChatMessage?.create?.({
       content: `<div class="sf-card sf-card--suffer"><div class="sf-card-header">${title}</div><div class="sf-card-body">${body}</div></div>`,
-      flags: { [MODULE_ID]: { sufferCard: true, ...flags } },
+      flags: { [MODULE_ID]: { sufferCard: true, ...flags, ...priceOf } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | sufferExecutor: chat post failed:`, err);
@@ -143,7 +150,10 @@ export async function loseMomentum(actor, amount, opts = {}) {
     return { before: 0, after: 0, atMin: false, remaining: 0, skipped: true };
   }
   const before = readMeter(actor, "momentum");
-  await applyMeterChanges(actor, { momentum: -amount });
+  // The loss is on this move's own card (or the card of the loss that
+  // overflowed into it): the system's note for the same write is not posted
+  // beside it (issue #354 P2-13) — here and in every executor below.
+  await withoutSystemNotes(() => applyMeterChanges(actor, { momentum: -amount }));
   const after = readMeter(actor, "momentum");
   const atMin = after <= -6;
   const remaining = Math.max(0, amount - Math.max(0, before - after));
@@ -151,6 +161,7 @@ export async function loseMomentum(actor, amount, opts = {}) {
 
   if (!opts.skipCard) {
     await postSufferCard({
+      opts,
       title: `Lose Momentum (-${amount})`,
       body: `Momentum: ${before} → ${after}${remaining > 0 ? minimumLine(remaining, !!redirect) : ""}`,
       flags: { suffer: "lose_momentum", amount, before, after, atMin, remaining },
@@ -512,6 +523,7 @@ export async function rollImpactTable(tableId, opts = {}) {
   const rolled = rollD100Table(t.table, opts);
   const who = typeof opts.actorName === "string" && opts.actorName.trim() ? opts.actorName.trim() : "";
   await postSufferCard({
+    opts,
     title: t.title,
     body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
     flags: {
@@ -547,7 +559,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "health");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await applyMeterChanges(actor, { health: -absorbed });
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { health: -absorbed }));
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -569,6 +581,7 @@ export async function endureHarm(actor, amount, opts = {}) {
     if (impactChoice) body += atZeroChoiceLine("harm");
     if (resistOwed)   body += resistLine("harm", upgradeFirst);
     await postSufferCard({
+      opts,
       title: `Endure Harm (-${amount})`,
       body,
       flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss },
@@ -594,7 +607,7 @@ export async function endureStress(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "spirit");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await applyMeterChanges(actor, { spirit: -absorbed });
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { spirit: -absorbed }));
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -611,6 +624,7 @@ export async function endureStress(actor, amount, opts = {}) {
     if (impactChoice) body += atZeroChoiceLine("stress");
     if (resistOwed)   body += resistLine("stress", upgradeFirst);
     await postSufferCard({
+      opts,
       title: `Endure Stress (-${amount})`,
       body,
       flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss },
@@ -817,6 +831,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
+        opts,
         title: `Sacrifice Resources (-${amount})`,
         body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? ` (choose it on its card${first})` : " — choose one and apply it on the sheet"}.`,
         flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
@@ -824,7 +839,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     }
     return { before, after: before, atZero, unpreparedMarked: false, redirected: true };
   }
-  await applyMeterChanges(actor, { supply: -amount });
+  await withoutSystemNotes(() => applyMeterChanges(actor, { supply: -amount }));
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
@@ -848,6 +863,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     const crew = crewUnpreparedNote(marks ?? {});
     if (crew) body += ` — ${crew}`;
     await postSufferCard({
+      opts,
       title: `Sacrifice Resources (-${amount})`,
       body,
       flags: { suffer: "sacrifice_resources", amount, before, after, atZero, unpreparedMarked },
@@ -890,12 +906,13 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   // The companion the move was about (the card's targets), when the pick names none.
   companionItemId = companionItemId ?? opts.companionItemId ?? null;
   const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
-  const res = await applyCompanionHealthChange(actor, -amount, { itemId: companionItemId });
+  const res = await withoutSystemNotes(() => applyCompanionHealthChange(actor, -amount, { itemId: companionItemId }));
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
   if (!res.ok) {
     // No such companion (or several, none named) — a user-visible failure
     // worth flagging rather than silently no-oping.
     await postSufferCard({
+      opts,
       title: `Companion Takes a Hit (-${amount})`,
       body: companionItemId
         ? `Companion not found (id ${escapeHtml(companionItemId)}). Apply the damage manually.`
@@ -920,6 +937,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
       body += ` — out of action until aided`;
     }
     await postSufferCard({
+      opts,
       title: `Companion Takes a Hit (-${amount})`,
       body,
       flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, destroyed, companionItemId: res.itemId ?? null },
@@ -970,18 +988,19 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   let res;
   let vehicleActorId = null;
   if (support) {
-    res = await applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId });
+    res = await withoutSystemNotes(() => applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId }));
   } else if (vehicleItemId) {
     res = { ok: false, reason: "no-vehicle" };
   } else {
     const { getCommandVehicleActorId, changeIntegrity } = await import("../entities/ship.js");
     vehicleActorId = opts.vehicleActorId
       ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) ?? null;
-    res = await changeIntegrity(vehicleActorId, -amount);
+    res = await withoutSystemNotes(() => changeIntegrity(vehicleActorId, -amount));
   }
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's integrity");
   if (!res.ok) {
     await postSufferCard({
+      opts,
       title: `Withstand Damage (-${amount})`,
       body: vehicleItemId
         ? `Vehicle not found (id ${escapeHtml(vehicleItemId)}). Apply the damage manually.`
@@ -1008,6 +1027,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
       }
     }
     await postSufferCard({
+      opts,
       title: `Withstand Damage (-${amount})`,
       body,
       flags: { suffer: "withstand_damage", amount, before, after, atZero, vehicleDamage,
