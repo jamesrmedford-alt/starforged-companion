@@ -1,0 +1,121 @@
+# ElevenLabs probe — what the live API accepts for Eleven v4 (issue #358,
+# phase 0).
+#
+# Not a check: no ruleset requires it, and an ordinary pull request never
+# runs it. It runs
+#
+#   - by hand, from the Actions tab (workflow_dispatch), and
+#   - on a pull request that changes this file or the probe script, so the
+#     pull request that adds or edits the probe shows what it found before
+#     it merges.
+#
+# Each run sends eight short speech requests on the ELEVENLABS_API_KEY
+# repository secret (Settings → Secrets and variables → Actions) — about
+# 700 characters of credit. The key is never printed. A pull request from a
+# fork is given no secrets, so the probe stops there with "No key".
+#
+# What it reports is public on a public repository: the answers' status
+# codes, what each model reports about itself, and the API's own error
+# messages. The clips are kept as the run's artifact.
+
+name: ElevenLabs probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      voice_id:
+        description: "Voice ID to speak with (empty: the module's default NPC voice)"
+        required: false
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/elevenlabs-probe.yml
+      - scripts/elevenlabs-probe.mjs
+
+# A newer push to the same pull request supersedes a run still going.
+concurrency:
+  group: elevenlabs-probe-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # As in ci.yml: the actions' own tooling on Node 24, not their bundled Node 20.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  probe:
+    name: ElevenLabs v4 probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # pull-requests:write so the report can be posted as a comment, as
+    # e2e.yml posts its log.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Node 22 for the global fetch and WebSocket. The script has no
+      # dependencies, so nothing is installed.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Ask ElevenLabs
+        env:
+          ELEVENLABS_API_KEY:  ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ inputs.voice_id }}
+        run: node scripts/elevenlabs-probe.mjs --out probe-out
+
+      # The report as a pull-request comment, so it can be read without the
+      # run's log. The marker identifies it: the previous one is deleted and
+      # a fresh one posted (an edited comment wakes no subscribed session —
+      # see e2e.yml). continue-on-error: the comment is a bridge, not a gate.
+      - name: Post the report to the pull request
+        if: always() && github.event.pull_request.number
+        continue-on-error: true
+        env:
+          GH_TOKEN:  ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MARKER='<!-- elevenlabs-probe:sticky -->'
+          {
+            printf '%s\n' "$MARKER"
+            if [ -f probe-out/report.md ]; then
+              cat probe-out/report.md
+            else
+              printf '## ElevenLabs probe\n\nThe probe wrote no report.\n'
+            fi
+            printf '\n**Run page (the clips are its artifact):** %s\n' "$RUN_URL"
+          } > /tmp/probe-comment.md
+          EXISTING_IDS="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\")) | .id] | .[]" 2>/dev/null || true)"
+          if [ -n "${EXISTING_IDS}" ]; then
+            for ID in ${EXISTING_IDS}; do
+              gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${ID}" >/dev/null \
+                && echo "Deleted the earlier report ${ID}" \
+                || echo "Could not delete the earlier report ${ID} (continuing)"
+            done
+          fi
+          if gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -F body=@/tmp/probe-comment.md >/dev/null; then
+            echo "Posted the report"
+          else
+            echo "::warning::The report could not be posted — it is in the run summary."
+          fi
+
+      # The clips, to listen to: is a tag followed, read aloud, or turned
+      # into a sound? retention-days is left to the repository's setting
+      # (see e2e.yml).
+      - name: Upload the clips
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: elevenlabs-probe
+          path: probe-out/
+          if-no-files-found: ignore
