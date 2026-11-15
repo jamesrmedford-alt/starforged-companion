@@ -17,6 +17,12 @@
  * The Flash v2.5 request is the control: it is the module's request exactly.
  * When it fails, the key or the voice is at fault and nothing else is tried.
  *
+ * Then it times a paragraph, the length of a long narrator segment, on each
+ * model: the whole clip as the module waits for it today, and — on the
+ * streaming routes (POST …/stream, the WebSocket) — how soon the first audio
+ * arrives. That says what a player waits for after Play, and what playing a
+ * clip as it streams would save.
+ *
  * Usage:
  *   ELEVENLABS_API_KEY=… node scripts/elevenlabs-probe.mjs [--out <dir>]
  *
@@ -31,7 +37,8 @@
  * it was sent, prints the report, and appends it to $GITHUB_STEP_SUMMARY
  * when that is set (.github/workflows/elevenlabs-probe.yml).
  *
- * Cost: eight short clips, about 700 characters of credit a run.
+ * Cost: eight short clips and six paragraphs, about 2,600 characters of
+ * credit a run.
  * Needs Node 22 (global fetch and WebSocket). No dependencies.
  *
  * Exit status: 0 when the control passed and the report was written —
@@ -51,6 +58,12 @@ const PAGE_ORIGIN      = "http://localhost:30000";
 
 const PLAIN_TEXT  = "They are already aboard. You did lock the airlock, did you not?";
 const TAGGED_TEXT = "[whispers] They are already aboard. [dry amusement] You did lock the airlock, did you not?";
+
+// A long narrator segment: one voice, no markup, no tags — the same words for
+// every model, so the times compare.
+const PARAGRAPH = "The corridor lights die one by one as you move aft. Somewhere below, a pump labours and then stops, "
+  + "and the silence that follows is worse. Frost has started to form on the bulkhead beside the airlock. "
+  + "Whoever sealed this section did it in a hurry, and did not expect anyone to come back for what was left behind.";
 
 const MODELS_OF_INTEREST = ["eleven_flash_v2_5", "eleven_v3", "eleven_v4", "eleven_v4_turbo"];
 
@@ -112,12 +125,14 @@ function table(headers, rows) {
 
 /**
  * One synthesis request over HTTP. Never throws: a network failure is a result.
+ * The body is read as it arrives, so `firstAudioMs` is when its first bytes
+ * came — on a streaming route, the moment a player could start to hear it.
  *
- * @returns {Promise<{ id, label, ok, status, contentType, bytes, headersMs, totalMs, allowOrigin, error, file }>}
+ * @returns {Promise<{ id, label, ok, status, contentType, bytes, headersMs, firstAudioMs, totalMs, allowOrigin, error, file }>}
  */
 async function synth({ id, label, path, body }) {
   const result = { id, label, ok: false, status: 0, contentType: "", bytes: 0,
-    headersMs: 0, totalMs: 0, allowOrigin: "", error: "", file: "" };
+    headersMs: 0, firstAudioMs: 0, totalMs: 0, allowOrigin: "", error: "", file: "" };
   const started = performance.now();
   try {
     const res = await fetch(`${BASE}${path}?output_format=${OUTPUT_FORMAT}`, {
@@ -135,7 +150,16 @@ async function synth({ id, label, path, body }) {
     result.status      = res.status;
     result.contentType = (res.headers.get("content-type") ?? "").split(";")[0];
     result.allowOrigin = res.headers.get("access-control-allow-origin") ?? "";
-    const bytes = Buffer.from(await res.arrayBuffer());
+    const parts  = [];
+    const reader = res.body?.getReader();
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.length) continue;
+      if (!parts.length) result.firstAudioMs = performance.now() - started;
+      parts.push(Buffer.from(value));
+    }
+    const bytes = Buffer.concat(parts);
     result.totalMs = performance.now() - started;
     if (res.ok && result.contentType.startsWith("audio/")) {
       result.ok    = true;
@@ -311,7 +335,13 @@ function verdicts({ speech, dialogue, socket, flights }) {
     const fast  = by(fastId);
     if (!plain?.ok) continue;
     if (fast?.ok) {
-      lines.push(`**Speed on ${name}:** a request with \`speed: 1.2\` is accepted. Its clip runs about ${seconds(fast.bytes)} against ${seconds(plain.bytes)} without it — two takes of one line differ anyway, so only a clear gap means the setting is applied.`);
+      // At 1.2× the same words take a sixth less time; two takes of one line
+      // differ by a few percent on their own.
+      const ratio   = fast.bytes / plain.bytes;
+      const reading = ratio <= 0.9 ? "so the setting looks applied"
+        : ratio >= 0.97 ? "so the setting looks ignored"
+        : "which does not settle it";
+      lines.push(`**Speed on ${name}:** a request with \`speed: 1.2\` is accepted. Its clip runs about ${seconds(fast.bytes)} against ${seconds(plain.bytes)} without it. At 1.2× it would be about a sixth shorter, ${reading}.`);
     } else {
       lines.push(`**Speed on ${name}:** a request with \`speed: 1.2\` is refused: ${fast?.error || "no response"}.`);
     }
@@ -319,7 +349,37 @@ function verdicts({ speech, dialogue, socket, flights }) {
   return lines;
 }
 
-function buildReport({ header, models, control, speech, dialogue, flights, socket }) {
+const MODEL_NAMES = { eleven_flash_v2_5: "Flash v2.5", eleven_v4_turbo: "v4 Turbo", eleven_v4: "v4" };
+
+/** When a row's clip could start playing: a streamed one at its first audio, a whole one when it is all in. */
+const playableMs = r => (r.streamed ? r.firstAudioMs : r.totalMs);
+
+function latencyVerdicts(latency) {
+  const lines = [];
+  const list  = rows => rows.map(r => `${MODEL_NAMES[r.modelId] ?? r.modelId}${r.via ? ` ${r.via}` : ""} ${ms(playableMs(r))}`).join(", ");
+  const whole = latency.filter(r => r.ok && !r.streamed);
+  const live  = latency.filter(r => r.ok && r.streamed);
+  if (whole.length) lines.push(`**A ${PARAGRAPH.length}-character paragraph, waiting for the whole clip** (what the module does today): ${list(whole)}.`);
+  if (live.length)  lines.push(`**The same paragraph streamed, time to the first audio:** ${list(live)}.`);
+  const failed = latency.filter(r => !r.ok);
+  if (failed.length) lines.push(`**Not timed:** ${failed.map(r => `${MODEL_NAMES[r.modelId] ?? r.modelId} ${r.route} (${r.error || "no audio"})`).join("; ")}.`);
+  return lines;
+}
+
+function latencyRow(r) {
+  const realTime = r.ok && r.totalMs > 0 ? `${((r.bytes / MP3_BYTES_PER_S) / (r.totalMs / 1000)).toFixed(1)}×` : "—";
+  return [
+    `\`${r.modelId}\``,
+    r.route,
+    r.ok ? ms(playableMs(r)) : "—",
+    r.ok ? ms(r.totalMs) : "—",
+    r.ok ? seconds(r.bytes) : "—",
+    realTime,
+    r.ok ? "" : r.error,
+  ];
+}
+
+function buildReport({ header, models, control, speech, dialogue, flights, socket, latency = [] }) {
   const out = ["## ElevenLabs probe — Eleven v4 (issue #358, phase 0)", "", ...header, ""];
 
   if (!control) return out.join("\n");
@@ -335,7 +395,8 @@ function buildReport({ header, models, control, speech, dialogue, flights, socke
     return out.join("\n");
   }
 
-  out.push("### Findings", "", ...verdicts({ speech, dialogue, socket, flights }).map(l => `- ${l}`), "");
+  out.push("### Findings", "",
+    ...[...verdicts({ speech, dialogue, socket, flights }), ...latencyVerdicts(latency)].map(l => `- ${l}`), "");
 
   out.push("### What the models report", "");
   if (models.ok && models.models.length) {
@@ -378,11 +439,20 @@ function buildReport({ header, models, control, speech, dialogue, flights, socke
       socket.error,
     ]]));
 
+  if (latency.length) {
+    out.push("", `### How long a paragraph takes — ${PARAGRAPH.length} characters, no tags, the same words for every model`, "",
+      table(["Model", "Route", "Can start playing after", "Whole clip after", "Clip length", "Made at (× real time)", "Error"],
+        latency.map(latencyRow)),
+      "",
+      "A clip the module waits for whole can start playing only when all of it has arrived. A streamed clip can start at its first audio, and plays without a gap as long as it is made faster than real time.");
+  }
+
   out.push("",
     "### How to read this",
     "",
-    `- Every request spoke the same line in the voice \`${VOICE}\`. The v4 requests carry two audio tags (\`[whispers]\`, \`[dry amusement]\`); the Flash request carries none.`,
-    "- Times are from the machine that ran the probe, one request each. They compare the routes with one another; they are not what a player's browser will see.",
+    `- Every request used the voice \`${VOICE}\`. The short requests speak one line: the v4 ones carry two audio tags (\`[whispers]\`, \`[dry amusement]\`), the Flash one carries none.`,
+    "- Times are from the machine that ran the probe, one request each, sent one after another. They compare the routes with one another; they are not what a player's browser will see.",
+    "- The paragraph is timed last, after the short requests have used the voice on every model.",
     "- A clip's length is worked out from its size at 128 kbps.",
     "- The clips are in the run's `elevenlabs-probe` artifact. Listen for whether a tag is followed, read aloud, or turned into a sound.",
   );
@@ -458,7 +528,25 @@ async function main() {
   const flights = [await preflight(speechPath), await preflight(dialoguePath)];
   const socket  = await dialogueSocket({ id: "websocket-v4-turbo", modelId: "eleven_v4_turbo", text: TAGGED_TEXT });
 
-  publish(buildReport({ header, models, control, speech, dialogue, flights, socket }));
+  // The paragraph, last: by now every model has spoken in this voice once.
+  // Flash is sent as the module sends it, the v4 models as issue #358 plans to.
+  const paragraphBody = modelId => (modelId === "eleven_flash_v2_5"
+    ? { text: PARAGRAPH, model_id: modelId, voice_settings: { speed: 1 } }
+    : { text: PARAGRAPH, model_id: modelId });
+  const slug    = { eleven_flash_v2_5: "flash", eleven_v4_turbo: "v4-turbo", eleven_v4: "v4" };
+  const latency = [];
+  for (const modelId of ["eleven_flash_v2_5", "eleven_v4_turbo", "eleven_v4"]) {
+    const r = await synth({ id: `paragraph-${slug[modelId]}`, label: "", path: speechPath, body: paragraphBody(modelId) });
+    latency.push({ ...r, modelId, route: "whole clip, as the module asks today", via: "", streamed: false });
+  }
+  for (const modelId of ["eleven_flash_v2_5", "eleven_v4_turbo"]) {
+    const r = await synth({ id: `paragraph-${slug[modelId]}-stream`, label: "", path: `${speechPath}/stream`, body: paragraphBody(modelId) });
+    latency.push({ ...r, modelId, route: "streamed, `POST …/stream`", via: "over HTTP", streamed: true });
+  }
+  const live = await dialogueSocket({ id: "paragraph-v4-turbo-websocket", modelId: "eleven_v4_turbo", text: PARAGRAPH });
+  latency.push({ ...live, modelId: "eleven_v4_turbo", route: "streamed, the Dialogue WebSocket", via: "over the WebSocket", streamed: true });
+
+  publish(buildReport({ header, models, control, speech, dialogue, flights, socket, latency }));
   return 0;
 }
 

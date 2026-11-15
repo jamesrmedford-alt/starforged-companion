@@ -9,10 +9,11 @@
 #     pull request that adds or edits the probe shows what it found before
 #     it merges.
 #
-# Each run sends eight short speech requests on the ELEVENLABS_API_KEY
-# repository secret (Settings → Secrets and variables → Actions) — about
-# 700 characters of credit. The key is never printed. A pull request from a
-# fork is given no secrets, so the probe stops there with "No key".
+# Each run sends eight short speech requests and six of a paragraph on the
+# ELEVENLABS_API_KEY repository secret (Settings → Secrets and variables →
+# Actions) — about 2,600 characters of credit. The key is never printed. A
+# pull request from a fork is given no secrets, so the probe stops there
+# with "No key".
 #
 # What it reports is public on a public repository: the answers' status
 # codes, what each model reports about itself, and the API's own error
