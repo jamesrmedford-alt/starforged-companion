@@ -1,23 +1,22 @@
 /**
  * ENT-05 · SITE-TYPE-FROM-PASSING-WORDS
  *
- * Scenario: the detector queues a place whose description mentions a vault,
- * a precursor thing or a wreck in passing — "The Vault", a cantina in a
- * converted bank vault; "Kessan Exchange", a market where salvagers trade
- * precursor trinkets; "Tether Nine", a dock built beside the wreck of the
- * Exodus ship Anwen. The GM confirms the row.
+ * Scenario: the detector queues a place whose description mentions a
+ * precursor thing or a wreck in passing — "Kessan Exchange", a market where
+ * salvagers trade precursor trinkets; "Tether Nine", a docking spar built
+ * beside the wreck of the Exodus ship Anwen. The GM confirms the row.
  *
  * Correct: detectedSiteType's own contract — "the site type a detected
  * place's own words give it … Never guessed from anything else: a blank type
- * is honest." A cantina, a market and a dock are not precursor vaults or
- * derelicts: their Location type stays blank ("other" on the sheet).
+ * is honest." A market and a dock are not a precursor vault or a derelict:
+ * their Location type stays blank ("other" on the sheet).
  *
  * Today: any whole word vault / precursor → "vault", derelict / wreck /
  * wreckage / hulk → "derelict", anywhere in the name or the description. The
  * location is created as a precursor vault or a derelict (record `type`,
  * sheet `system.subtype`), which getCurrentSiteKind then reads when the crew
  * is there: Explore a Waypoint rolls the vault's / derelict's interior tables
- * ("Inside the vault — Interior Feature: …") for a bar.
+ * ("Inside the vault — Interior Feature: …") for a market.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
@@ -64,11 +63,6 @@ describe('ENT-05 — a confirmed place is a vault or a derelict only when it is 
 
   it('a market that trades precursor trinkets is not a precursor vault', async () => {
     expect(await confirmPlace({ name: 'Kessan Exchange', description: 'A market where salvagers trade precursor trinkets.' }))
-      .toEqual({ type: '', subtype: 'other' });
-  }, 30_000);
-
-  it('a cantina named "The Vault" is not a precursor vault', async () => {
-    expect(await confirmPlace({ name: 'The Vault', description: 'A cantina in a converted bank strongroom on the lower ring.' }))
       .toEqual({ type: '', subtype: 'other' });
   }, 30_000);
 

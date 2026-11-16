@@ -90,7 +90,7 @@ describe("PIPE-03 — a held result's one narration decides the plan its roll as
     const call = narratorCalls(table)[0];
     expect(call.userText).toContain("We set out for the Ashen Reach.");
 
-    expect(call.system).toContain("### DECIDE NOW");
-    expect(call.system).toContain("the expedition to the Ashen Reach");
+    expect(call.system.includes("### DECIDE NOW"), "the burned result's narration is asked to decide a plan (DECIDE NOW)").toBe(true);
+    expect(call.system.includes("the expedition to the Ashen Reach"), "…the expedition's").toBe(true);
   });
 });

@@ -129,10 +129,10 @@ async function click(card, selector) {
 beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);
 afterAll(() => table?.teardown());
 afterEach(() => { globalThis.JournalEntry = savedJournalEntry; });
-beforeEach(async () => {
+async function resetTable(settings = {}) {
   control.abilities = [];
   await table.reset({ world: { settings: {
-    chronicleAutoEntry: false, narratorSessionSummary: false,
+    chronicleAutoEntry: false, narratorSessionSummary: false, ...settings,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'exp-s1', sessionNumber: 1,
       currentSceneId: 'exp-scene', sceneTruths: [], clocks: [] },
   } } });
@@ -151,7 +151,8 @@ beforeEach(async () => {
   };
   scriptClaude(table, { fallback: (call) => (call.model !== NARRATION_MODEL ? '{}'
     : 'The drift opens ahead.\n```json\n{"newTruths":[],"stateChanges":[]}\n```') });
-});
+}
+beforeEach(async () => { await resetTable(); });
 
 const expeditionAsked = (call) => /### DECIDE NOW[\s\S]*Expedition — the expedition to Kessler Drift/.test(call?.system ?? '');
 const expeditionPlan = () => plans().find(p => p.kind === 'expedition') ?? null;
@@ -193,5 +194,22 @@ describe('NARA-02 — an expedition begun by a result that is then upgraded is s
 
     expect(expeditionAsked(narrationCalls().at(-1)), 'the narration is asked to plan the expedition (DECIDE NOW)').toBe(true);
     expect(expeditionPlan(), 'the open expedition has a hidden plan').toMatchObject({ kind: 'expedition', subject: { type: 'track', id: tracks()[0].id } });
+  }, 40_000);
+
+  // The same loss with "ask before paying and narrating" off: the weak hit's
+  // own narration plans the expedition, the burn supersedes that narration and
+  // takes its plan back (resultUpgrade.js undoSupersededPlans) — and the
+  // re-narration is not asked.
+  it('hold off: the weak hit is narrated and planned at once; burned, the expedition still has a plan', async () => {
+    await resetTable({ holdResultForUpgrade: false });
+    const card = await roll(WEAK);
+    expect(card.flags[MODULE_ID].awaitingUpgrade).toBeUndefined();
+    expect(narrations()).toHaveLength(1);
+    expect(expeditionPlan(), 'control: the first narration planned it').toMatchObject({ kind: 'expedition' });
+
+    await click(card, BURN);
+    expect(table.world.message(card._id).flags[MODULE_ID].burn.consumed).toBe(true);
+    expect(tracks()).toHaveLength(1);
+    expect(expeditionPlan(), 'the open expedition has a hidden plan after the burn').toMatchObject({ kind: 'expedition', subject: { type: 'track', id: tracks()[0].id } });
   }, 40_000);
 });

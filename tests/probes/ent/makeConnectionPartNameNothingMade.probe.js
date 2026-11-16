@@ -99,18 +99,20 @@ const cards = () => table.actors.filter(a => a.flags?.[MODULE_ID]?.entityType ==
 const bondNames = (actorId) => (table.actors.get(actorId)?.items?.contents ?? [])
   .filter(i => i.type === 'progress' && i.system?.subtype === 'bond').map(i => i.name);
 
-/** An earlier narration of Kira's surfaced Vuldar Archer; the GM confirmed him as Kira's connection. */
-async function kiraMeetsArcher() {
+/** An earlier narration of Kira's surfaced Vuldar Archer on a New Entities card (`confirm`: the GM made him Kira's connection). */
+async function kiraMeetsArcher({ confirm = true } = {}) {
   const gm = table.client('gm-1');
   const { routeEntityDrafts } = await gm.import('../../src/entities/entityExtractor.js');
   await gm.run(() => routeEntityDrafts([{ ...ARCHER }], game.settings.get(MODULE_ID, 'campaignState'),
     { autoCreateConnection: false, actorId: 'pc-pat' }));
   await table.settle();
   const card = table.cards(f => f.draftEntityCard).at(-1);
+  if (!confirm) return card;
   gm.click(card._id, '[data-action="sf-draft-confirm"]');
   await table.drain();
   expect(cards().map(a => a.name), 'Vuldar Archer has a card (setup)').toEqual(['Vuldar Archer']);
   expect(bondNames('pc-pat'), "he is Kira's connection (setup)").toEqual(['Vuldar Archer']);
+  return card;
 }
 
 async function renMakesConnection(line) {
@@ -119,8 +121,11 @@ async function renMakesConnection(line) {
   expect(table.world.messages().some(m => /Connection made/.test(m.content ?? '')), 'the move card says "Connection made" (setup)').toBe(true);
 }
 
+const SHORT_NARRATION = 'Archer studies Ren a long moment, then nods: he will keep a berth open for him.';
+const SHORT_LINE = 'I ask Archer to keep a berth open for me.';
+
 describe('ENT-01 — Make a Connection with a known NPC called by part of their name', () => {
-  it('control: named in full, the known NPC becomes the roller\'s connection (issue #345 AA19)', async () => {
+  it("control: named in full, the known NPC becomes the roller's connection (issue #345 AA19)", async () => {
     await kiraMeetsArcher();
     narration = 'Vuldar Archer studies Ren a long moment, then nods: he will keep a berth open for him.';
     await renMakesConnection('I ask Vuldar Archer to keep a berth open for me.');
@@ -129,26 +134,55 @@ describe('ENT-01 — Make a Connection with a known NPC called by part of their 
     expect(bondNames('pc-quinn')).toEqual(['Vuldar Archer']);
   }, 60_000);
 
-  it('"Archer" is Vuldar Archer: the strong hit makes him Ren\'s connection (the detector left him out, as told)', async () => {
-    await kiraMeetsArcher();
-    detected = [];   // the prompt says "Archer" is the established Vuldar Archer: nothing new
-    narration = 'Archer studies Ren a long moment, then nods: he will keep a berth open for him.';
-    await renMakesConnection('I ask Archer to keep a berth open for me.');
+  it('control: a pending row named in full is confirmed as the roller\'s (issue #325 W23)', async () => {
+    await kiraMeetsArcher({ confirm: false });
+    narration = 'Vuldar Archer studies Ren a long moment, then nods: he will keep a berth open for him.';
+    await renMakesConnection('I ask Vuldar Archer to keep a berth open for me.');
 
-    expect(cards().map(a => a.name), 'no second card').toEqual(['Vuldar Archer']);
-    const told = table.cards(f => f.knownNpcsConnectionNotice).length;
-    // Either the connection is made, or somebody is told it was not.
-    expect({ ren: bondNames('pc-quinn'), told }, '"Connection made": a bond on Ren, or a notice that none was made')
-      .toEqual({ ren: ['Vuldar Archer'], told: 0 });
+    expect(cards().map(a => a.name)).toEqual(['Vuldar Archer']);
+    expect(bondNames('pc-quinn')).toEqual(['Vuldar Archer']);
   }, 60_000);
 
-  it('the same when the detector returns "Archer" all the same (dropped by the P2-16 filter)', async () => {
+  it('"Archer" is the known Vuldar Archer: the strong hit makes him Ren\'s connection (the detector left him out, as its prompt tells it to)', async () => {
     await kiraMeetsArcher();
-    detected = [{ ...ARCHER, name: 'Archer' }];
-    narration = 'Archer studies Ren a long moment, then nods: he will keep a berth open for him.';
-    await renMakesConnection('I ask Archer to keep a berth open for me.');
+    detected = [];
+    narration = SHORT_NARRATION;
+    await renMakesConnection(SHORT_LINE);
 
     expect(cards().map(a => a.name), 'no second card').toEqual(['Vuldar Archer']);
-    expect(bondNames('pc-quinn'), "Ren's connection").toEqual(['Vuldar Archer']);
+    expect(bondNames('pc-quinn'), "Ren's connections after \"Connection made\"").toEqual(['Vuldar Archer']);
+  }, 60_000);
+
+  it('the same when the detector returns "Archer" all the same (the P2-16 filter drops it as known)', async () => {
+    await kiraMeetsArcher();
+    detected = [{ ...ARCHER, name: 'Archer' }];
+    narration = SHORT_NARRATION;
+    await renMakesConnection(SHORT_LINE);
+
+    expect(cards().map(a => a.name), 'no second card').toEqual(['Vuldar Archer']);
+    expect(bondNames('pc-quinn'), "Ren's connections after \"Connection made\"").toEqual(['Vuldar Archer']);
+  }, 60_000);
+
+  it('"Archer" is the pending Vuldar Archer: his row is confirmed as Ren\'s', async () => {
+    const card = await kiraMeetsArcher({ confirm: false });
+    detected = [{ ...ARCHER, name: 'Archer' }];
+    narration = SHORT_NARRATION;
+    await renMakesConnection(SHORT_LINE);
+
+    const row = table.world.messages().find(m => m._id === card._id).flags[MODULE_ID].drafts[0];
+    expect({ row: row.status, cards: cards().map(a => a.name), ren: bondNames('pc-quinn') })
+      .toEqual({ row: 'confirmed', cards: ['Vuldar Archer'], ren: ['Vuldar Archer'] });
+  }, 60_000);
+
+  it('and when none is made, the table is told — never "Connection made" with nothing made and no notice', async () => {
+    await kiraMeetsArcher();
+    detected = [];
+    narration = SHORT_NARRATION;
+    await renMakesConnection(SHORT_LINE);
+
+    const made = bondNames('pc-quinn').length > 0;
+    const told = table.world.messages().some(m => m.flags?.[MODULE_ID]?.knownNpcsConnectionNotice
+      || /no connection (was )?made/i.test(String(m.content ?? '')));
+    expect(made || told, 'a connection, or a notice that none was made').toBe(true);
   }, 60_000);
 });

@@ -17,10 +17,18 @@
  * (`if (sidecar && campaignState && applySidecarHere)`), so with no parsed
  * sidecar the plan requests it was handed (`ctx.planRequests`) are dropped:
  * no plan is filed, the rolls are gone, and no later narration is asked.
+ *
+ * The same request is lost when the narration fails outright (Claude
+ * overloaded → the "narration unavailable" card): narrateResolution's failure
+ * paths file nothing, where a vow's swearing scene that fails files its
+ * request with its roll alone (narrator.js narrateAndPostVowSwearing →
+ * secrets.js fileRequestedPlan; decisions.md: "No scene (switched off, no key,
+ * a failure): the request is filed with its roll alone").
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { withPayThePriceSeed } from '../../../src/moves/resolver.js';
+import { claudeFault } from '../../helpers/faults.js';
 import { skeletonTable, withSidecar, move } from './_skeletonTable.js';
 
 let h;
@@ -70,5 +78,19 @@ describe('NARA-01 — a plan a narration was asked to decide is kept when its re
     h.reply = () => withSidecar('The shape waits.', { newTruths: [], stateChanges: [] });
     await h.narrateMove(move({ outcome: 'weak_hit', outcomeLabel: 'Weak Hit' }));
     expect(h.narrationCalls().at(-1).system).toContain(`- id ${plans[0].id}: Threat — the new enemy this price reveals.`);
+  }, 40_000);
+
+  it('a narration that fails outright (Claude overloaded) still files the plan with its rolls alone', async () => {
+    expectConsoleError(/narrateResolution failed/);   // the failure is logged, as it should be
+    h.reply = () => claudeFault.overloaded();
+    await h.narrateMove(newEnemyMiss());
+
+    // The price was paid and the table told the narration failed.
+    const fallback = h.table.cards(f => f.narrationFallback === true).at(-1);
+    expect(fallback, 'the "narration unavailable" card').toBeTruthy();
+
+    const plans = h.plans();
+    expect(plans, 'the new enemy this price revealed has a plan waiting to be decided').toHaveLength(1);
+    expect(plans[0]).toMatchObject({ kind: 'threat', truth: '', status: 'active' });
   }, 40_000);
 });
