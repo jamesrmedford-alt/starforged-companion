@@ -106,6 +106,18 @@ describe('splitPromptSections', () => {
     for (const s of sections) expect(s.text).not.toMatch(/^-{3,}\s*$/m);
   });
 
+  it('a world snapshot is one section, whatever its records say (issue #357)', () => {
+    const snapshot = '## WORLD SNAPSHOT\n\nThe world.\n\n### RECORDED PEOPLE, PLACES AND SHIPS\n\n#### VEX — Connection (id a1)\n\nESTABLISHED FACTS:\n  Role: Smuggler';
+    const prompt = buildNarratorSystemPrompt({}, {}, { name: 'Kira Vey' }, '', { mode: 'paced_narrative', worldSnapshot: { text: snapshot, changesText: '### THREATS\n\n- Raiders (active; id p1)' } });
+    const sections = splitPromptSections(prompt);
+    const headings = sections.map(s => s.heading);
+    expect(headings.filter(h => h === 'WORLD SNAPSHOT')).toHaveLength(1);
+    expect(sections.find(s => s.heading === 'WORLD SNAPSHOT').text).toBe(snapshot);
+    expect(headings.indexOf('WORLD SNAPSHOT')).toBeLessThan(headings.indexOf('THIS NARRATION'));
+    expect(headings).toContain('CHANGED SINCE THE SNAPSHOT');
+    expect(headings).not.toContain('VEX — Connection (id a1)');
+  });
+
   it('splits a user message at its headings', () => {
     const user = buildNarratorUserMessage(
       { moveName: 'Face Danger', outcome: 'weak_hit', loremasterContext: '[MOVE: Face Danger +wits] [OUTCOME: Weak Hit]' },
@@ -149,6 +161,23 @@ describe('!narrator debug — the last narration\'s request', () => {
     expect(html).toContain('The oath is sworn on the reactor housing');
     expect(html).toContain('Engine room');
     expect(html).toContain('1,200 in');
+  });
+
+  it('shows the world snapshot\'s size and opening, not the whole world (issue #357)', async () => {
+    // A session's narration with a snapshot: this client takes one, of a world with a long recap.
+    const tail = 'SENTINEL-TAIL of the recap';
+    const campaignState = { currentSessionId: 'sess-1', currentSceneId: 'scene-1', loreRecap: `${'The Forge is cut off. '.repeat(400)}${tail}` };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, campaignState);
+    apiPost.mockResolvedValueOnce(narratorReply('Kira presses her palm to the housing and swears.'));
+    await narrateVowSwearing({ vow: VOW, campaignState });
+
+    const [, , body] = apiPost.mock.calls[0];
+    const snapshot = body.system.find(b => b.text.startsWith('## WORLD SNAPSHOT'));
+    expect(snapshot.text).toContain(tail);                     // the request carries the whole snapshot
+    const html = (await debugCard()).content;
+    expect(html).toContain('WORLD SNAPSHOT');
+    expect(html).toContain('more characters. The whole snapshot is on the');
+    expect(html).not.toContain(tail);
   });
 
   it('details the last narration, not a background summary regen, which it lists', async () => {

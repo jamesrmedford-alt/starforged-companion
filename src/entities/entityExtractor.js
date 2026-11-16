@@ -64,6 +64,7 @@ import {
 } from "../world/worldJournal.js";
 import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
 import { planSignificantThreat, planNpcAgenda } from "../world/secrets.js";
+import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { personNameMatch, nameWithin, generatedName, loreTitle } from "./nameMatch.js";
 
 const MODULE_ID     = "starforged-companion";
@@ -1472,6 +1473,8 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // (issue #353 Phase 2), sharing its page's id. Rated explicitly: the
     // salience gate above lets an unrated threat through.
     if (recorded && (SALIENCE_ORDER[normalizeSalience(threat.salience)] ?? -1) >= SALIENCE_ORDER.significant) {
+      // A major event for the narrator's world snapshot too (issue #357).
+      reportSnapshotEvent("threat_recorded");
       await planSignificantThreat(recorded, { campaignState, narrationId: fromNarration.narrationId ?? null });
     }
   }
@@ -3311,7 +3314,6 @@ async function callHaiku(userPrompt, systemPrompt, maxTokens) {
     "Content-Type":      "application/json",
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
-    "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
   const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "detectionPass" });

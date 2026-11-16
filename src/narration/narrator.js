@@ -74,6 +74,9 @@ import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
+import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
+import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
+import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -602,7 +605,98 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       ), 'lore')
     : [];
 
+  // The world snapshot (issue #357): the whole world state as it stood when
+  // the snapshot was taken, stored and sent unchanged so the request reads
+  // it from the prompt cache — with what changed since, and what this
+  // narration involves (IN PLAY NOW). Gathered last: it names what the
+  // relevance and the plan selection above matched. Null on a player's own
+  // key, with the switch off, or when it cannot be read; the prompt is then
+  // built from the per-beat sections above, as before the snapshot.
+  extras.worldSnapshot = null;
+  extras.inPlay        = null;
+  if (mode !== 'campaign_recap') {
+    const snapshot = await resolveWorldSnapshot(campaignState, {
+      // The world as the store has it: a move narrates from a snapshot of
+      // campaignState taken before its confirm dialog.
+      world:           storedCampaignState() ?? campaignState,
+      progressTracks:  extras.progressTracks ?? [],
+      summaries:       rollingSummaryEnabled(),
+      include: {
+        threats:  wjSectionEnabled('threatsInContext'),
+        factions: wjSectionEnabled('factionLandscapeInContext'),
+        lore:     wjSectionEnabled('loreInContext'),
+      },
+      lastNarrationAt: lastNarratorCardAt(campaignState?.currentSessionId ?? null),
+      cacheTtlMs:      NARRATOR_CACHE_TTL_MS,
+    });
+    if (snapshot) {
+      extras.worldSnapshot = { text: snapshot.text, changesText: snapshot.changesText };
+      extras.inPlay        = inPlayFor(extras, campaignState, snapshot.units);
+    }
+  }
+
   return extras;
+}
+
+/** How many threats IN PLAY NOW names — the most urgent, as ACTIVE THREATS listed. */
+const IN_PLAY_THREATS = 4;
+
+/**
+ * What a narration with a world snapshot names as in play (issue #357;
+ * narratorPrompt.js formatInPlayBlock): the active sector and the current
+ * location, the entities relevance and the scene frame's cast matched, the
+ * most urgent threats — and, for what the snapshot holds no record of (an
+ * uncharted site the player's line names), the card itself, as before.
+ *
+ * @param {Object} extras — the packet so far (its matched set, cards and plans)
+ * @param {Object} campaignState
+ * @param {Object[]} units — the world's snapshot units as they stand now
+ * @returns {Object}
+ */
+function inPlayFor(extras, campaignState, units) {
+  const byKey = new Map((Array.isArray(units) ? units : []).map(u => [u.key, u]));
+  const ids   = extras.matchedEntityIds ?? [];
+  const types = extras.matchedEntityTypes ?? [];
+  const names = extras.entityNamesById instanceof Map ? extras.entityNamesById : new Map();
+  const entities = [];
+  const uncoveredIds = [];
+  const uncoveredTypes = [];
+  ids.forEach((id, i) => {
+    const held = byKey.get(entityUnitKey(id));
+    if (held) entities.push({ id, type: types[i], name: names.get(id) ?? held.label ?? '' });
+    else {
+      uncoveredIds.push(id);
+      uncoveredTypes.push(types[i]);
+    }
+  });
+  const sector     = (campaignState?.sectors ?? []).find(s => s?.id && s.id === campaignState?.activeSectorId) ?? null;
+  const locationId = campaignState?.currentLocationId ?? null;
+  const location   = currentLocationName(campaignState);
+  const urgency    = { immediate: 0, active: 1, looming: 2 };
+  const threats = (Array.isArray(units) ? units : []).filter(u => u.section === 'threats')
+    .sort((a, b) => ((urgency[a.severity] ?? 9) - (urgency[b.severity] ?? 9))
+      || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+    .slice(0, IN_PLAY_THREATS)
+    .map(u => ({ id: u.pageId, name: u.label, severity: u.severity }));
+  return {
+    activeSector:        sector ? { id: sector.id, name: sector.name } : null,
+    currentLocation:     location ? { id: locationId, name: location } : null,
+    entities,
+    threats,
+    uncoveredCards:      collectEntityCards(uncoveredIds, uncoveredTypes),
+    currentLocationCard: locationId && byKey.has(entityUnitKey(locationId)) ? '' : (extras.currentLocationCard ?? ''),
+    coveredPlanIds:      (extras.unrevealed ?? []).map(r => r?.id).filter(id => id && byKey.has(planUnitKey(id))),
+  };
+}
+
+/** When the session's newest narrator card posted (ms) — the last narrator call the chat log shows — or null. */
+function lastNarratorCardAt(sessionId) {
+  try {
+    const cards = sessionNarratorCards(sessionId);
+    return cards.length ? messageTime(cards[cards.length - 1]) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The modes whose beats get a shape and the list of images already used (narratorPrompt.js BEAT_PROSE_MODES). */
@@ -926,6 +1020,50 @@ function sceneFrameEnabledFromSettings() {
   }
 }
 
+/** Seed lines a price adds to a move's seeds (resolver.js priceSeedLines): the price, a new enemy's rolls, the momentum note. */
+const PRICE_SEED_LINE = /^(?:Pay the Price: |The new enemy — |This price is paid in momentum)/;
+
+/**
+ * Tell the world snapshot's rules what a move's narration just told (issue
+ * #357; snapshotEvents.js decides which of these takes a new snapshot):
+ * Make a Discovery or Confront Chaos, a price that revealed a new enemy —
+ * and the rolls that do not count, a routine "envision" seed and a price
+ * that reveals no one. Reported once the narration is written and posted, so
+ * the snapshot the next narrator call takes holds what this one established;
+ * reported at the roll, the move's own narration would take it, without.
+ *
+ * @param {string|null} moveId
+ * @param {{ results?: string[] }|null} seeds — the move's oracle seeds
+ */
+function reportNarratedMove(moveId, seeds) {
+  const lines = (Array.isArray(seeds?.results) ? seeds.results : []).filter(l => typeof l === 'string' && l.trim());
+  const price = lines.find(l => /^Pay the Price: /.test(l)) ?? null;
+  if (price) reportSnapshotEvent(priceRevealsNewEnemy(price) ? 'new_enemy_revealed' : 'price_paid');
+  if (moveId === 'make_a_discovery' || moveId === 'confront_chaos') reportSnapshotEvent('discovery_rolled');
+  else if (lines.some(l => !PRICE_SEED_LINE.test(l))) reportSnapshotEvent('oracle_seed_envisioned');
+}
+
+/** The world snapshot's event for an oracle result the narrator has just told, by its follow-up's kind. */
+const ORACLE_FOLLOWUP_EVENTS = Object.freeze({
+  oracle_yes_no: 'oracle_yes_no',
+  oracle_table:  'oracle_table_rolled',
+  pay_the_price: 'price_paid',
+});
+
+/**
+ * As reportNarratedMove, for an oracle follow-up: a price that revealed a new
+ * enemy, or the roll's own kind — a yes/no answer, a table, a price paid. A
+ * chosen complication reports nothing here: it plays a plan's step, which the
+ * plan store reports.
+ *
+ * @param {string} kind — the follow-up's kind
+ * @param {string} rolledLine — the result it told
+ */
+function reportNarratedOracle(kind, rolledLine) {
+  if (priceRevealsNewEnemy(rolledLine)) reportSnapshotEvent('new_enemy_revealed');
+  else if (ORACLE_FOLLOWUP_EVENTS[kind]) reportSnapshotEvent(ORACLE_FOLLOWUP_EVENTS[kind]);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -1072,6 +1210,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
+    reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
     scheduleChronicleEntry({
       narrationText: narration,
@@ -1110,6 +1249,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
+          reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
           scheduleChronicleEntry({
             narrationText: narration,
@@ -1319,6 +1459,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
+      for (const e of entries) reportNarratedMove(e.input?.moveId ?? null, e.input?.oracleSeeds ?? null);
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
       });
@@ -3721,6 +3862,7 @@ export async function narrateOracleFollowup({
     if (!text?.trim()) return null;
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
+    reportNarratedOracle(kind, rolledLine);
     // The narration of a roll the table made — discovery by nature (#286 D4).
     scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
     return text;
@@ -3738,6 +3880,7 @@ export async function narrateOracleFollowup({
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
+          reportNarratedOracle(kind, rolledLine);
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
           return text;
         }
@@ -5799,6 +5942,8 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
  * five minutes each such pause paid for the standing block again.
  */
 const NARRATOR_CACHE_TTL = '1h';
+/** The same lifetime in ms: with no narrator call for this long the world snapshot's cache entry has lapsed (issue #357). */
+const NARRATOR_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
  * The `system` field of a narrator request (issue #354 P2-23): the prompt as
@@ -5807,17 +5952,23 @@ const NARRATOR_CACHE_TTL = '1h';
  * after them uncached. The whole prompt went as one cached block that changed
  * every beat, so every call wrote it to the cache and none ever read it.
  *
+ * With a world snapshot (issue #357) there are four: the standing rules, the
+ * snapshot, this narration, the context — the first three each closing on a
+ * one-hour breakpoint (the API allows four), in that order, so a new snapshot
+ * rewrites the snapshot and the narration's block and never the rules, and
+ * every prose mode reads the first two.
+ *
  * A prompt with no such blocks (the campaign recap's, the rolling summary's)
  * is one block with no breakpoint: nothing later repeats it. So is every
  * prompt when the world's prompt caching is off
  * (`campaignState.api.promptCachingEnabled`).
  *
+ * @param {Array<{ text: string, cached: boolean }>} blocks — splitNarratorSystemPrompt's
  * @param {string} systemPrompt
  * @param {{ cachingEnabled?: boolean }} [opts]
  * @returns {Array<{ type: 'text', text: string, cache_control?: Object }>}
  */
-function narratorSystemBlocks(systemPrompt, { cachingEnabled = true } = {}) {
-  const blocks = splitNarratorSystemPrompt(systemPrompt);
+function narratorSystemBlocks(blocks, systemPrompt, { cachingEnabled = true } = {}) {
   if (!blocks.length) return [{ type: 'text', text: String(systemPrompt ?? '') }];
   return blocks.map(b => (b.cached && cachingEnabled
     ? { type: 'text', text: b.text, cache_control: { type: 'ephemeral', ttl: NARRATOR_CACHE_TTL } }
@@ -5849,23 +6000,84 @@ function promptCachingEnabled() {
   return storedCampaignState()?.api?.promptCachingEnabled !== false;
 }
 
+/** The headers of a narrator request. */
+function narratorHeaders(apiKey) {
+  return {
+    'Content-Type':      'application/json',
+    'x-api-key':         apiKey,
+    'anthropic-version': '2023-06-01',
+  };
+}
+
+/**
+ * Write the narrator's cached prefix — the standing rules and the world
+ * snapshot — before a session's first narration, so that narration reads it
+ * and is not the slow one (issue #357; #287 F4). A request with
+ * `max_tokens: 0` writes the cache at its breakpoints and returns no text.
+ *
+ * It must write the entry real narrations read: the same blocks, built the
+ * way a narration's are (buildNarratorExtras → buildNarratorSystemPrompt →
+ * splitNarratorSystemPrompt), on the narration model, with the thinking
+ * setting api-proxy.js gives every narrator call. It cannot stream.
+ *
+ * Begin a Session calls it only when no opening narration follows (the
+ * galley vignette unchecked, no clock vignette): the first of those shares
+ * both blocks and warms the cache itself. Canonical GM, with a key, narration
+ * and prompt caching on, and a snapshot to send. Never throws.
+ *
+ * @param {Object} campaignState — a working copy
+ * @returns {Promise<boolean>} whether the request was sent and answered
+ */
+export async function prewarmNarratorCache(campaignState) {
+  try {
+    const settings = getNarratorSettings();
+    if (!settings.narrationEnabled || !worldSnapshotEnabled() || !promptCachingEnabled() || !isCanonicalGM()) return false;
+    const apiKey = getApiKey();
+    if (!apiKey) return false;
+    const extras = await buildNarratorExtras('session_vignette', campaignState);
+    if (!extras.worldSnapshot) return false;
+    const blocks = splitNarratorSystemPrompt(buildNarratorSystemPrompt(campaignState, settings, null, '', extras));
+    const last = blocks.findIndex(b => b.snapshot);
+    if (last < 0) return false;
+    const system = narratorSystemBlocks(blocks.slice(0, last + 1), '', { cachingEnabled: true });
+    const started = Date.now();
+    noteWorldSnapshotSent(started);
+    const data = await apiPost(ANTHROPIC_URL, narratorHeaders(apiKey), {
+      model:      settings.narrationModel,
+      max_tokens: 0,
+      system,
+      // Read during the cache write, never answered.
+      messages:   [{ role: 'user', content: 'Session start.' }],
+    }, { label: 'narrator:prewarmNarratorCache' });
+    logNarratorUsage({
+      label: 'prewarmNarratorCache', model: settings.narrationModel, usage: data?.usage ?? null,
+      elapsedMs: Date.now() - started, sessionId: campaignState?.currentSessionId ?? null,
+    }).catch(() => {});
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the session's cache was not written ahead of its first narration:`, err?.message ?? err);
+    return false;
+  }
+}
+
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
+  const blocks = splitNarratorSystemPrompt(systemPrompt);
   const body = {
     model,
     max_tokens: maxTokens ?? 16000,
-    system:   narratorSystemBlocks(systemPrompt, { cachingEnabled: promptCachingEnabled() }),
+    system:   narratorSystemBlocks(blocks, systemPrompt, { cachingEnabled: promptCachingEnabled() }),
     messages: [{ role: 'user', content: userMessage }],
   };
   // No extended thinking eating the max_tokens cap on a thinking-by-default
   // model (Sonnet 5, Sonnet 5.5, Haiku 5.5): api-proxy.js sends the body with
   // its model's thinking-off form (narration/thinking.js) (#latency).
 
-  const headers = {
-    'Content-Type':      'application/json',
-    'x-api-key':         apiKey,
-    'anthropic-version': '2023-06-01',
-    'anthropic-beta':    'prompt-caching-2024-07-31',
-  };
+  // Prompt caching and its one-hour lifetime need no beta header (issue #357:
+  // the `prompt-caching-2024-07-31` header this sent is long retired).
+  const headers = narratorHeaders(apiKey);
+  // A request that carries the world snapshot reads its cache entry, which
+  // restarts the entry's hour: the store's expiry check counts from here.
+  if (blocks.some(b => b.snapshot)) noteWorldSnapshotSent();
 
   // What the narrator is sent and what comes back, for `!narrator debug`
   // (issue #290) — in memory, this browser only.

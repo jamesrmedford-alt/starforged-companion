@@ -174,10 +174,10 @@ describe('strict replay fails what a permissive replay only reported', () => {
     const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
     const reports = await play(harness, SCENARIO, RECORDING, (step, call, request) =>
       (step === 'reopen' && call.kind === 'callNarratorAPI>narrateSessionVignette'
-        ? { ...request, system: '## LAST SESSION (SESSION 1)\n\nA quiet session.' }
+        ? { ...request, system: '## WORLD SNAPSHOT\n\n### EARLIER SESSIONS\n\n- Session 1: A quiet session.' }
         : undefined));
     expect(reports.reopen.failures).toEqual([
-      expect.stringMatching(/CONTRACT callNarratorAPI>narrateSessionVignette .* LAST SESSION should say "Vance Oduya"$/),
+      expect.stringMatching(/CONTRACT callNarratorAPI>narrateSessionVignette .* WORLD SNAPSHOT should say "Vance Oduya"$/),
     ]);
   });
 

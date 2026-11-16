@@ -12212,6 +12212,10 @@ function registerPromptContractTests(quench) {
         // concurrently with the seeded world's own write.
         autoSeedStarship:                  false,
         autoSeedConnection:                false,
+        // The per-beat sections below are the request without a world
+        // snapshot (issue #357); with one, the snapshot holds the world's
+        // records — "the world snapshot", at the end of this batch.
+        worldSnapshot:                     false,
       };
 
       /** The sections the seeded world adds to every prose mode's request. */
@@ -12852,6 +12856,100 @@ function registerPromptContractTests(quench) {
           const journal = findWorldJournal("secrets");
           assert.isOk(journal, "the Secrets journal exists");
           assert.equal(journal.ownership?.default ?? 0, CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE, "no default player permission");
+        });
+      });
+
+      describe("the world snapshot: the whole world, stored and sent unchanged (issue #357)", function () {
+        const loreTitle = "QUENCH SNAPSHOT lore";
+        const loreText  = "QUENCH-SNAPSHOT: the lanes are mined past the Hollow Spire beacon";
+        let pageBefore = null;      // the stored snapshot before this describe, to put back
+        let eventsBefore = null;
+
+        const snapshotPage = async () => {
+          const { findWorldJournal } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          return (findWorldJournal("secrets")?.pages?.contents ?? []).find(p => p.flags?.[MODULE]?.worldSnapshot) ?? null;
+        };
+
+        before(async function () {
+          this.timeout(30000);
+          const page = await snapshotPage();
+          pageBefore = page ? JSON.parse(JSON.stringify(page.flags[MODULE].worldSnapshot)) : null;
+          eventsBefore = game.settings.get(MODULE, "worldSnapshotEvents") ?? { events: [] };
+          await game.settings.set(MODULE, "worldSnapshot", true);
+        });
+
+        after(async function () {
+          this.timeout(30000);
+          await game.settings.set(MODULE, "worldSnapshot", false).catch(() => {});
+          await game.settings.set(MODULE, "worldSnapshotEvents", eventsBefore ?? { events: [] }).catch(() => {});
+          const page = await snapshotPage();
+          if (page && pageBefore) await page.setFlag(MODULE, "worldSnapshot", pageBefore).catch(() => {});
+          else if (page) await page.delete().catch(() => {});
+          const { findWorldJournal } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const lore = (findWorldJournal("lore")?.pages?.contents ?? []).find(p => p.name === loreTitle);
+          if (lore) await lore.delete().catch(() => {});
+        });
+
+        it("two narrations in a session: the second's request carries the first's rules and snapshot", async function () {
+          this.timeout(30000);
+          const first  = await capture(PACED);
+          const second = await capture(MOVE);
+          for (const [request, label] of [[first, PACED.name], [second, MOVE.name]]) {
+            const blocks = request.body.system ?? [];
+            assert.lengthOf(blocks, 4, `${label}: the rules, the snapshot, this narration, its context`);
+            assert.isTrue(blocks[1].text.startsWith("## WORLD SNAPSHOT"), `${label}: the second block is the snapshot`);
+            assert.isTrue(blocks[2].text.startsWith("## THIS NARRATION"), `${label}: the third block is this narration's`);
+            assert.isTrue(blocks[3].text.startsWith("## CONTEXT FOR THIS NARRATION"), `${label}: the last block is the context`);
+            // The longer lifetime first, at most four breakpoints, none after the uncached context.
+            for (const i of [0, 1, 2]) assert.deepEqual(blocks[i].cache_control, { type: "ephemeral", ttl: "1h" }, `${label}: block ${i + 1} is cached for an hour`);
+            assert.isUndefined(blocks[3].cache_control, `${label}: the context is not cached`);
+          }
+          // A cache read needs the cached bytes identical to an earlier request's.
+          assert.equal(second.body.system[0].text, first.body.system[0].text, "the rules differ between the two narrations");
+          assert.equal(second.body.system[1].text, first.body.system[1].text, "the snapshot differs between the two narrations");
+
+          // The world's records are in the snapshot; the context names what is in play.
+          const snapshot = carries(first, "WORLD SNAPSHOT", PACED.name, [
+            `${N.npc.toUpperCase()} — Connection`, `Goal: ${N.npcGoal}`,
+            `${N.settlement.toUpperCase()} — Settlement`, `Authority: ${N.authority}`,
+            `#### ${N.sector} (id quench-contract-sector)`, N.lastSession,
+          ]);
+          assert.notMatch(snapshot.text, /\n---\n/, "the snapshot is one section of the prompt");
+          carries(first, "IN PLAY NOW", PACED.name, [`Active sector: ${N.sector}`, `${N.npc} (Connection`]);
+          for (const name of ["ENTITIES IN SCENE", "ACTIVE SECTOR", "LAST SESSION", "ESTABLISHED LORE"]) lacks(first, name, PACED.name);
+          // What changes within a session stays in the context.
+          carries(first, "ACTIVE SCENE", PACED.name, [N.truth]);
+          carries(first, "CLOCKS", PACED.name, [N.clock]);
+          carries(first, "OPEN PROGRESS TRACKS", PACED.name, [N.fight]);
+        });
+
+        it("a record written between two narrations rides in the next context; the stored snapshot is the GMs' alone", async function () {
+          this.timeout(30000);
+          const before = await capture(PACED);
+          const { recordLoreDiscovery, findWorldJournal } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          await recordLoreDiscovery(loreTitle, { text: loreText, confirmed: true }, state());
+          const next = await capture(PACED);
+          assert.equal(next.body.system[1].text, before.body.system[1].text, "the snapshot is sent as it was stored");
+          assert.notInclude(next.body.system[1].text, loreText, "the snapshot is frozen: the new lore is not in it");
+          carries(next, "CHANGED SINCE THE SNAPSHOT", "the next narration", [`- ${loreTitle}: ${loreText}`]);
+
+          const page = await snapshotPage();
+          assert.isOk(page, "the snapshot is stored on a page");
+          assert.equal(page.flags[MODULE].worldSnapshot.text, next.body.system[1].text, "the page holds the text that is sent");
+          assert.equal(page.parent?.id, findWorldJournal("secrets")?.id, "the page is in the Secrets journal");
+          assert.equal(page.parent?.ownership?.default ?? 0, CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE, "no default player permission");
+          assert.isAtLeast(page.flags[MODULE].worldSnapshot.log?.length ?? 0, 1, "each new snapshot is logged with what caused it");
+        });
+
+        it("a scene boundary takes a new snapshot, which holds what had changed", async function () {
+          this.timeout(30000);
+          const { reportSnapshotEvent } = await import(`${MODULE_PATH}/narration/snapshotEvents.js`);
+          assert.isTrue(reportSnapshotEvent("scene_started"), "the table's row takes a snapshot");
+          const request = await capture(PACED);
+          carries(request, "WORLD SNAPSHOT", "after the scene boundary", [`- ${loreTitle}: ${loreText}`]);
+          lacks(request, "CHANGED SINCE THE SNAPSHOT", "after the scene boundary");
+          const page = await snapshotPage();
+          assert.include(page.flags[MODULE].worldSnapshot.log.at(-1).causes, "scene_started", "the log names the event that caused it");
         });
       });
 

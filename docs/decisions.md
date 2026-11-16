@@ -6,6 +6,66 @@ rejected.
 
 ---
 
+## The world snapshot: the whole world state, frozen and cached for the session (2026-11)
+
+**Decision:** ([#357](https://github.com/jamesrmedford-alt/starforged-companion/issues/357); the maintainer's answers of 2026-11-14 — "all plans go in", "scene boundaries and major oracle rolls, new plans, etc.", "no size limit", "make that list accessible for later modifications", "also, at sector creation". Phases 1–3 are built; phase 4 is open, below.)
+
+- **The narrator is sent the whole world state as one stored, cached block.** At a narrator call the world is read into **units** — one per durable record: a sector, an entity card, a faction, a threat, a lore entry, an earlier session's summary, a hidden plan — and rendered once as the **snapshot** (`narration/worldSnapshot.js`). The text is stored and that stored text is sent, byte for byte, on every narrator call until a new snapshot is taken. This widens #287 §F's tier B to the whole world and supersedes §F2, F4 and F5; #287's scene transcript (tier C) and budgets (F3) are not part of it.
+- **It is a frozen copy, never a live mirror.** A cache read needs the cached text identical to an earlier request's, and something in the world changes on nearly every beat; a block that followed the world would be rewritten on nearly every call, at the one-hour write price. The records stay the canonical stores. The snapshot is a dated copy only the narrator's request reads, and nothing reads a fact back out of it. What `rules/reachability.md` §5 asks of a mirror — written through on every change — is met beside it: each call compares the world against the snapshot's manifest (each unit's key and a hash of its text) and sends every unit made or changed since, in full, under **CHANGED SINCE THE SNAPSHOT**, which the prompt says wins.
+- **The request is four blocks** (`narratorPrompt.js` `buildNarratorSystemBlocks`, `splitNarratorSystemPrompt`; `narrator.js` `narratorSystemBlocks`): the standing rules, the snapshot, this narration (the mode), the context. The first three each close on a one-hour cache breakpoint — the API takes four, the longer lifetime first. A change to the rules rewrites all three; a new snapshot rewrites the snapshot and the mode block; every prose mode reads the first two. Without a snapshot the request is P2-23's three blocks, unchanged.
+- **What the snapshot holds**, in this order, each section under the standing line its per-beat block carried: every sector (what it is, its passages, and who and what is in it, by name) · every recorded entity's card (`formatEntityCard`) · the whole faction landscape · every threat not resolved · all confirmed lore, the places recorded with no card, and the `!lore` recap · the newest three earlier sessions' summaries (the mint's `previousSessionSummary` and each Session Log page's story) and what stands open (the open vows and tracks, by name) · every active hidden plan — a decided one as UNREVEALED shows it, an undecided one by its heading and rolls. Units are sorted by their stable key (a host document id, a page id, a plan id); no timestamp and no count is rendered.
+- **What stays out**, because it changes within a session: the scene frame and ledger, CORRECTED, ship position, character state, the party, clocks, open tracks' progress, recent oracle results, this session's rolling summary, the campaign recap, oracle seeds, the vow the scene serves. The never-dropped tiers (`rules/narrator-memory.md` invariant 4) render on every call, as before. An uncharted site is out too (the sector's discovery record not yet `discovered`): nothing names it until it is charted. A record in play that the snapshot leaves out still has its card in the context, as before.
+- **The context names what is in play** (**IN PLAY NOW**, `formatInPlayBlock`): the active sector, the current location, the entities relevance and the scene frame's cast matched, the four most urgent threats — each by name and id. Chosen exactly as before (`resolveRelevance`, `addSceneFrameCast`, `selectRelevantSkeletons`): the snapshot holds the content, the list says where to look. The per-beat sections the snapshot covers — LAST SESSION, ACTIVE THREATS, FACTION LANDSCAPE, ESTABLISHED LORE, WORLD LORE, CURRENT LOCATION, ACTIVE SECTOR, ENTITIES IN SCENE and UNREVEALED's plan entries — are not sent, so nothing is sent twice.
+- **All active plans go in (decided).** Today a beat was shown at most four, within 600 tokens. Every active plan is now in every call, in a section of its own, under the rule that the narrator uses only the plans UNREVEALED names for the narration; the rest are background it must not draw on, hint at or advance. UNREVEALED keeps its rules and DECIDE NOW in the context and names the plans in play by heading and id. **For:** a plan can no longer drop out of view because the prose used another name for its subject (#354 P2-30). **Against, and watched:** more hidden truths in view is more chance to hint at one. If a playtest shows hinting, the plans' section can be narrowed to the plans in play without redoing the layout.
+- **When a new snapshot is taken — one table.** `narration/snapshotEvents.js` `SNAPSHOT_EVENTS` is the list: one row an event — an id, what it is, and whether it takes a new snapshot. Every trigger site reports its event by id to `reportSnapshotEvent`, which looks the id up; no trigger site decides for itself, and the checks the store makes at a call go through the same table (`snapshotCauses`). The events that do not count are rows too, set to `false`, so turning one on is a one-word change. An event marks the snapshot out of date (a world setting of its own, `worldSnapshotEvents`: an id and a time, nothing of the story); the next narrator call takes the new one, so several events between two calls cost one snapshot, which holds all of them.
+
+  | Event | Takes a snapshot | Reported by |
+  |---|---|---|
+  | `session_begin` — Begin a Session | yes | `applyBeginSession` |
+  | `no_snapshot` — a narration finds none stored for its session | yes | the store, at the call |
+  | `scene_started` / `scene_ended` — the GM's `!scene start` / `!scene end` | yes | `handleSceneCommand` |
+  | `plan_made` — a hidden plan is made | yes | `secrets.js` `createSkeleton` |
+  | `plan_decided` — a narration decides or corrects a plan | yes | `applyPlanSideData` |
+  | `plan_revealed` — a plan's truth is revealed | yes | `applyPlanSideData`, the GM's Reveal now |
+  | `plan_resolved` — a plan's story ends | yes | `applyPlanSideData` |
+  | `discovery_rolled` — Make a Discovery or Confront Chaos, once narrated | yes | `narrator.js` `reportNarratedMove` |
+  | `new_enemy_revealed` — a price reveals a new enemy | yes | `reportNarratedMove`, `reportNarratedOracle` |
+  | `sector_created` | yes | `storeSector` |
+  | `sector_details_written` — a new sector's settlement descriptions land | yes | `applyStubsToSettlementEntities` |
+  | `entity_recorded` — a new entity is confirmed or created | yes | `registry.js` `registerEntityId` (every creator registers there) |
+  | `threat_recorded` — a threat recorded at significant salience or above | yes | `routeWorldJournalResults` |
+  | `xcard_played` | yes | `suppressScene` |
+  | `fact_retracted` — a strike or a correction, and its copies | yes | `propagateRetraction` |
+  | `plan_edited` / `plan_retired` — a GM's edit or Retire | yes | `editSkeleton`, `retireSkeleton` |
+  | `record_removed` — a record the snapshot holds is gone or no longer stands | yes | the store, at the call |
+  | `changes_large` — the changes since have grown large | yes | the store, at the call |
+  | `cache_expired` — no narrator call for an hour | yes | the store, at the call |
+  | `oracle_seed_envisioned` — a routine "envision" seed | no | `reportNarratedMove` |
+  | `oracle_yes_no` — a yes/no from Ask the Oracle | no | `reportNarratedOracle` |
+  | `oracle_table_rolled` — a table rolled with `!oracle` | no | `reportNarratedOracle` |
+  | `price_paid` — a price that reveals no new enemy | no | `reportNarratedMove`, `reportNarratedOracle` |
+  | `plan_progressed` — a plan's clue shown or step played | no | `applyPlanSideData` |
+  | `sector_switched` — `!sector` | no | `handleSectorCommand` |
+
+  `docs/flows/narrator-context-flow.md` carries the same table. `tests/unit/worldSnapshot.test.js` fails when a site reports an id that is no row, or a row has no reporter. If tuning between releases is wanted, the table can go behind a world setting: every trigger already reads it. That is not built.
+- **A move's own events are reported once its narration is written**, not at the roll. An event marks the snapshot for the *next* narrator call; reported at the roll, the move's own narration would take the new snapshot before the discovery had been told, and the plan it then files would take another.
+- **The snapshot must never keep asserting removed content.** Every retraction path takes a new one: the X-Card and `propagateRetraction` report their events, a GM's edit or Retire of a plan reports its own, and — the backstop for every other path, a `!journal lore … rumour`, a deleted Actor, a superseded narration's plan — a unit the manifest holds that the world no longer has is found at the next call (`record_removed`). A new snapshot is the canonical GM's to take: a narration that finds one due on another GM's client is sent with none, never with the one held.
+- **Size and age.** A new snapshot is taken when the changes pass 2,000 estimated tokens or a quarter of the snapshot (`CHANGES_MAX_TOKENS`, `CHANGES_MAX_SHARE` — a starting point: a new snapshot pays for itself after about 2 × (snapshot size ÷ changes size) calls), and when no narrator request has carried a snapshot for an hour — the cache entry has lapsed, so that call pays for a write whatever is sent. The hour counts from the last request this client sent, the snapshot's own time and the session's newest narrator card, whichever is latest, so a reload does not read as an hour's silence. **There is no size limit** (decided): cost per read and per new snapshot grows with the world, and the Narrator Usage page shows both.
+- **Where it is stored.** One page of the GM-only World Journal — Secrets journal, its record in the page's `worldSnapshot` flag (`narration/worldSnapshotStore.js`): the text holds the hidden plans, and a world setting is sent to every client. The page's body shows the GMs the snapshot and a log of new snapshots with what caused each. Written by the canonical GM only; read by a GM's client only. It survives a reload: the next narration sends the stored text and reads the same cache entry. **Narration on a player's own key** (no keyed GM connected) cannot read the page: it sends no snapshot and selects per beat, as before.
+- **Pre-warming.** With no opening narration to follow Begin a Session (the galley vignette unticked, no clock vignette), `prewarmNarratorCache` sends the rules and the snapshot with `max_tokens: 0`, which writes the cache and returns no text. It is built the way a narration's request is, on the narration model, with the thinking setting `api-proxy.js` gives every narrator call — a different one would write an entry nothing reads — and it does not stream. An opening narration shares both blocks and warms the cache itself, so nothing is sent ahead of one.
+- **One switch.** World setting `worldSnapshot` (Companion Settings → Narrator, default on). Off: no snapshot is taken or sent and no event is marked. No other knob (`rules/narrator-memory.md`, "don't add knobs before using the existing ones").
+- **The retired caching beta header is gone.** Seven call sites sent `anthropic-beta: prompt-caching-2024-07-31`. Checked against the current prompt-caching documentation (2026-11-14): caching and the one-hour lifetime (`cache_control: { type: "ephemeral", ttl: "1h" }`) need no beta header, and the smallest cacheable prefix on Sonnet 5.5 and Haiku 5.5 is 512 tokens.
+
+**Open — phase 4: where the mode's instructions go.** Tracked in [#360](https://github.com/jamesrmedford-alt/starforged-companion/issues/360), with the acceptance checks. They are where P2-23 put them: a cached block of their own, now after the snapshot. The alternative (#287) moves them into the final user message, with one narrator voice for every prose mode in the rules. Either may shift the narrator's voice, so the issue asks for both to be compared on real narrations before choosing; that needs a played session with a key. Until then the system-prompt placement stands.
+
+**Not verified against the live API.** Nothing here was run against Claude: that reads now happen, that a narration is quicker, that the voice has not drifted and that no hidden plan is hinted at more than before are the acceptance checks for the next played session (the issue's "Acceptance"). The Narrator Usage page's Cache read column and the snapshot page's log are where to look.
+
+**Reason:** the alpha 23 playtest (v1.8.1): 27 narrator calls, 0% of prompt tokens read from the cache, every call writing 8,868–9,825 tokens at the write price. P2-23 fixed the 2,750 tokens of fixed instructions; the other 6,000–7,000 tokens of each call were world and per-beat content, chosen per beat by keyword.
+
+**Rejected:** *a snapshot that follows the world* — rewritten on nearly every beat, it costs more than no cache. *A two-hour cache* — the lifetimes are five minutes and one hour; a read restarts the hour at no charge, so one write serves a session whose narrations come less than an hour apart. *Storing the snapshot in a world setting* — sent to every client, with the hidden plans in it. *Each trigger site deciding for itself whether to take a snapshot* — the list was asked to be one table. *Reporting a move's events at its roll* — see above. *Keeping the keyword-picked sections beside the snapshot* — everything would be sent twice.
+
+---
+
 ## Issue #354 (alpha 23 playtest part 2): dialogue is not a move, the spotlight is opt-in, a reverted price is whole (2026-11)
 
 **Decision:** ([#354](https://github.com/jamesrmedford-alt/starforged-companion/issues/354); the maintainer's answers of 2026-11-13 to its six open questions.) The guiding principle is issue #348's: corrections, not reversals — "depict, do not offer", the optional closing move hint and the classifier → interpreter → resolver pipeline all stay.
@@ -3965,6 +4025,14 @@ main narrator at once (its card had no flag family).
 
 **Rejected:** a byte-stability test for the cached tiers now. It belongs with
 the layout split, since today's prompt changes on every turn by design.
+
+**Amended (2026-11, issues #354 P2-23 and #357):** the numbers came in — 27
+calls, 0% read — and the layout was split: the standing rules and the mode
+(P2-23), then the whole world state as a stored snapshot between them (#357,
+"The world snapshot", above). The byte-stability tests this entry deferred are
+`narratorPromptBlocks.test.js` and `worldSnapshotRequest.test.js`. Where the
+mode's instructions sit is still to be compared on real narrations (#357
+phase 4).
 
 ## Narrator side-data, draft confirm and detection: nothing the narration said is lost or contradicted (2026-10)
 

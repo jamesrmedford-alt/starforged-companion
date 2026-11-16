@@ -98,8 +98,10 @@ describe("a sector creation that fails partway (SECTOR-CREATE-PARTIAL)", () => {
     const realSet = game.settings.set;
     let calls = 0;
     vi.spyOn(game.settings, "set").mockImplementation(async (...args) => {
-      calls += 1;
-      if (calls === 1) throw new Error("Setting [campaignState] could not be saved: the server refused the write");
+      // The first campaignState write — the sector's — is the one refused (another
+      // setting's write, the world snapshot's event mark, is not it).
+      if (args[1] === "campaignState") calls += 1;
+      if (args[1] === "campaignState" && calls === 1) throw new Error("Setting [campaignState] could not be saved: the server refused the write");
       return realSet.apply(game.settings, args);
     });
     expectConsoleError(/storing the sector failed/);

@@ -39,6 +39,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
+import { reportSnapshotEvent } from '../narration/snapshotEvents.js';
 import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks, isReplacedOriginal, keptStrikeStandsAt } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -113,6 +114,10 @@ export async function propagateRetraction(truth, campaignState) {
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return out;
   const sessionId = truth.sessionId ?? campaignState?.currentSessionId ?? null;
+  // The copies taken back below — a card's detail, a lore entry — may be in
+  // the narrator's world snapshot, which must never go on asserting a struck
+  // fact (issue #357): the next narration takes a new one.
+  reportSnapshotEvent('fact_retracted');
 
   if (truth.subject?.kind === 'entity' && truth.subject.entityId && truth.subject.entityType) {
     try {

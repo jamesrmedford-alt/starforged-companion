@@ -68,7 +68,7 @@
       "calls": [
         { "kind": "callClassifierAPI>classifyInput" },
         { "kind": "callNarratorAPI>narratePacedInput",
-          "carries": ["ENTITIES IN SCENE"], "section": { "CHARACTER": "Name: Mira Kestrel" },
+          "section": { "CHARACTER": "Name: Mira Kestrel", "IN PLAY NOW": "Vance Oduya (Connection", "WORLD SNAPSHOT": "VANCE ODUYA — Connection" },
           "sectionLacks": { "PARTY": "Vance Oduya" } },
         { "kind": "callHaiku>defaultCallDetectionAPI" },
         { "kind": "callHaiku>defaultCallTierAPI" },
@@ -127,7 +127,7 @@
       ] },
     { "id": "reopen", "do": "beginSession", "as": "player", "galley": true, "spotlight": true,
       "calls": [
-        { "kind": "callNarratorAPI>narrateSessionVignette", "section": { "LAST SESSION": "Vance Oduya" } }
+        { "kind": "callNarratorAPI>narrateSessionVignette", "section": { "WORLD SNAPSHOT": ["### EARLIER SESSIONS", "- Session 1:", "Vance Oduya"] } }
       ],
       "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [

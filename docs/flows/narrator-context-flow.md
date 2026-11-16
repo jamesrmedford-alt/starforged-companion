@@ -480,19 +480,25 @@ rewound and the Retry's fill narrated nothing).
 
 **System prompt section map** (`buildNarratorSystemBlocks` →
 `buildNarratorSystemPrompt`, `src/narration/narratorPrompt.js`). Since issue
-#354 P2-23 the sections are ordered into three blocks by how often each
-changes, and the request carries them as separate `system` blocks
+#354 P2-23 the sections are ordered into blocks by how often each changes,
+and the request carries them as separate `system` blocks
 (`splitNarratorSystemPrompt` → `narrator.js` `narratorSystemBlocks`, in
 `callNarratorAPI`):
 - **standing** — [0] the voice rules (depict-do-not-offer, PROSE, tone,
   levity, dialogue), [1], [4], [4a], [4b], [9] and [10]. The same for every
   prose mode, call after call; cached for an hour.
+- **world snapshot** (`## WORLD SNAPSHOT`, issue #357 — "The world snapshot",
+  below) — when the narration has one: the whole world state as it stood when
+  the snapshot was taken, stored text sent byte for byte. The same for every
+  prose mode until a new one is taken; cached for an hour.
 - **this narration** (`## THIS NARRATION`) — [0m] the mode's role
   description, HOW A BEAT ENDS, perspective and length; [2]; the opening
   scene's sidecar addendum (`sidecarModeAddendum`). The same for one mode at
   one permission class; cached for an hour.
 - **context** (`## CONTEXT FOR THIS NARRATION`) — every other section, in the
   order listed below, then [8d] and [9b]. Different every call; never cached.
+  With a snapshot it leaves out the sections the snapshot holds and has
+  IN PLAY NOW and CHANGED SINCE THE SNAPSHOT in their place.
 
 The whole prompt used to go as one cached block that opened with the mode's
 role and changed every beat, so the cache was written on every call and never
@@ -503,6 +509,84 @@ narratorPromptBlocks.test.js` holds both. A meta mode (the campaign recap) and
 the rolling summary's own prompt go as one uncached block; a world with
 `campaignState.api.promptCachingEnabled` off sends the blocks with no
 breakpoint. The section numbers below are names, not the order in the prompt.
+
+**The world snapshot** (issue #357; decisions.md → "The world snapshot").
+`buildNarratorExtras` ends by asking the store for the snapshot this
+narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
+`extras.worldSnapshot` `{ text, changesText }`, and `extras.inPlay`,
+`narrator.js` `inPlayFor`). Every prose mode; never the campaign recap.
+- **Built from units** (`worldSnapshot.js` `collectWorldUnits`): one per
+  durable record, each `{ key, section, text }`, read from the stores that
+  hold them — every sector of `campaignState.sectors` with its roster by name
+  (the entity lists' records, `collectAllEntities`), every recorded entity's
+  card (`formatEntityCard`; an uncharted site — a discovery record not yet
+  `discovered` — left out), the whole faction landscape
+  (`mergeFactionLandscape`, uncapped), every World Journal threat not
+  resolved, all confirmed lore with the Locations journal's places and
+  `campaignState.loreRecap`, the newest three earlier sessions' summaries
+  (`previousSessionSummary`, and each Session Log page's story) with the open
+  vows and tracks by name, and every active plan of the Secrets journal
+  (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
+  context settings and the rolling summary's setting leave their sections
+  out, as they left out the per-beat ones. Read from the stored campaignState.
+- **Rendered once** (`renderWorldSnapshot`): sections in a fixed order, units
+  by their stable key, no timestamp and no count — the same records give the
+  same text in any order. A unit's text holds no section rule and no `## `
+  heading, so the snapshot is one section of the prompt whatever a record
+  says. The record kept is the text and a **manifest** (each unit's key and a
+  hash of its text).
+- **Stored** on one page of the GM-only World Journal — Secrets journal (flag
+  `worldSnapshot`: session, time taken, causes, text, manifest, and a log of
+  new snapshots, shown on the page). The canonical GM writes it; a GM's
+  client reads it; a reload sends it unchanged. A player's client has none —
+  narration on a player's own key is sent the per-beat sections, as before.
+- **Sent as stored**, with the world compared against the manifest at each
+  call (`diffWorldUnits`): the units made or changed since go to the context
+  in full, under **CHANGED SINCE THE SNAPSHOT** (`renderUnitSections`), which
+  the prompt says wins; a key the manifest holds that the world no longer has
+  takes a new snapshot.
+- **In the context, in place of what the snapshot holds** — [4c]'s LAST
+  SESSION, [4d]–[4g], [5], [5b], [6] and the plan entries of [6.6]:
+  **IN PLAY NOW** (`formatInPlayBlock`) names the active sector, the current
+  location, the matched entities (relevance and the frame's cast, as before)
+  and the four most urgent threats, each by name and id; an entity in play
+  the snapshot holds no unit for keeps its card (ENTITIES IN SCENE / CURRENT
+  LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
+  play by heading and id (`coveredIds`), a plan the snapshot does not hold
+  printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
+  recent oracles and STORY SO FAR are unchanged.
+- **A new snapshot is taken** at a narrator call when an event reported since
+  the last one takes a snapshot, or the store finds none for the session, a
+  record gone, the changes past 2,000 tokens or a quarter of the snapshot, or
+  no request for an hour (the session's newest narrator card stands in for
+  this client's memory after a reload). `snapshotEvents.js` `SNAPSHOT_EVENTS`
+  is the one list; every trigger site reports its event by id
+  (`reportSnapshotEvent`) and the table decides. Marks are kept in the world
+  setting `worldSnapshotEvents` (an id and a time), so any GM's client reports
+  and the narrating GM reads them; several between two calls take one
+  snapshot, and the marks it answered are cleared with it.
+
+  | Event | Snapshot | Reported by |
+  |---|---|---|
+  | `session_begin` | yes | `applyBeginSession` |
+  | `no_snapshot` | yes | the store, at the call |
+  | `scene_started`, `scene_ended` | yes | `handleSceneCommand` (`!scene`) |
+  | `plan_made` | yes | `secrets.js` `createSkeleton` |
+  | `plan_decided`, `plan_revealed`, `plan_resolved` | yes | `applyPlanSideData`; the GM's Reveal now |
+  | `discovery_rolled`, `new_enemy_revealed` | yes | `reportNarratedMove` / `reportNarratedOracle`, once the narration has posted |
+  | `sector_created`, `sector_details_written` | yes | `storeSector`, `applyStubsToSettlementEntities` |
+  | `entity_recorded` | yes | `registry.js` `registerEntityId` |
+  | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
+  | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
+  | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton` |
+  | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
+  | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
+
+- **Pre-warm** (`prewarmNarratorCache`): Begin a Session with no opening
+  narration sends the standing block and the snapshot with `max_tokens: 0`,
+  built as a narration's request is.
+- **Off** (world setting `worldSnapshot`): no snapshot is taken or sent, no
+  event is marked, and the request is the three blocks above.
 
 Sections: [0] role/style per mode (the role in `this narration`, the voice
 rules in `standing`) · [0b]

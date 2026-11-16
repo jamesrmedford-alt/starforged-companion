@@ -15,6 +15,7 @@ import { createConnection }    from "../entities/connection.js";
 import { createLocation }      from "../entities/location.js";
 import { ENTITY_ID_LISTS, unionIdList } from "../entities/registry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { generateSectorSites, buildSiteLocationData } from "./precursorSites.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { finalizeEntityArtOnly } from "../entities/finalize.js";
@@ -635,6 +636,10 @@ export async function storeSector(sector, extras, campaignState) {
   // stored" there and wrote nothing (issue #329 X11).
   await persistSectorOntoStore(stored, campaignState);
   applyStoredSector(campaignState, stored);
+  // Its settlements, planets and people all entered the world at once, and it
+  // is the active sector now: the narrator's world snapshot is out of date
+  // (issue #357, decided).
+  reportSnapshotEvent("sector_created");
 
   return stored;
 }
@@ -771,6 +776,20 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
  * @returns {Promise<void>}
  */
 export async function applyStubsToSettlementEntities(settlements, stubs) {
+  let written = 0;
+  try {
+    written = await writeSettlementDescriptions(settlements, stubs);
+  } finally {
+    // The descriptions are on the settlements' cards, which the narrator's
+    // world snapshot holds: one taken before they landed is out of date
+    // (issue #357).
+    if (written) reportSnapshotEvent("sector_details_written");
+  }
+}
+
+/** applyStubsToSettlementEntities' writes; resolves how many descriptions were written. */
+async function writeSettlementDescriptions(settlements, stubs) {
+  let written = 0;
   for (const [sourceId, actor] of Object.entries(settlements ?? {})) {
     if (!actor?.id) continue;
     const stub = stubs?.settlements?.[sourceId] ?? null;
@@ -782,10 +801,12 @@ export async function applyStubsToSettlementEntities(settlements, stubs) {
       const description = composeSettlementDescription(stub, data);
       if (!description) continue;
       await updateSettlement(actor.id, { description });
+      written += 1;
     } catch (err) {
       console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);
     }
   }
+  return written;
 }
 
 /**

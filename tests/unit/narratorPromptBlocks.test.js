@@ -271,6 +271,9 @@ describe('P2-23 — the request carries the blocks, the first two cached for an 
 
   beforeEach(() => {
     apiPost.mockResolvedValue(reply(`Ozone and old grease.${SIDECAR}`));
+    // The request without a world snapshot (issue #357 — with one there is a
+    // fourth block: worldSnapshotRequest.test.js).
+    game.settings._store.set(`${MODULE_ID}.worldSnapshot`, false);
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
     game.settings._store.set(`${MODULE_ID}.campaignState`, { ...STATE });
     game.actors._set('a-actor', makeTestActor({ id: 'a-actor', name: 'Isaac Sutton' }));

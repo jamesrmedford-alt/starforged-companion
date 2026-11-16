@@ -36,6 +36,7 @@ import {
 } from "./skeletons.js";
 
 import { sameSubject, personNameMatch } from "../entities/nameMatch.js";
+import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -175,6 +176,8 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
       }]);
       const page = Array.isArray(created) ? created[0] : created;
       if (page) await writeEntryPage(page, FLAG_KEYS.secrets, data);   // its body, for the GM who opens it
+      // A new plan: the narrator's world snapshot is out of date (issue #357).
+      reportSnapshotEvent("plan_made");
       return record;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: filing the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -511,6 +514,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         const merged = await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId });
         if (merged) {
           out.decided += 1;
+          reportSnapshotEvent("plan_decided");
           await ensureThreatClock(merged, { narrationId });
         }
         continue;
@@ -539,12 +543,16 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       // A plan waiting to be decided that the narrator says is a subject
       // already planned (issue #354 P2-30) joins that plan, and is retired.
       if (plan.sameAs) {
-        if (await planAsAnother(existing, plan, { narrationId })) out.decided += 1;
+        if (await planAsAnother(existing, plan, { narrationId })) {
+          out.decided += 1;
+          reportSnapshotEvent("plan_decided");
+        }
         continue;
       }
       const decided = await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId });
       if (decided) {
         out.decided += 1;
+        reportSnapshotEvent("plan_decided");
         await ensureThreatClock(decided, { narrationId });
       }
     }
@@ -571,6 +579,11 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         r => ({ ...applyRevealToSkeleton(r, reveal), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
       if (!after) continue;
       out.revealed += 1;
+      // What the narrator's world snapshot makes of it (issue #357): a truth
+      // revealed or a story ended is a major event; a clue shown or a step
+      // played is not, and rides with the changes since the snapshot.
+      reportSnapshotEvent(truthNow ? "plan_revealed" : (after.status === "resolved" ? "plan_resolved" : "plan_progressed"));
+      if (truthNow && after.status === "resolved") reportSnapshotEvent("plan_resolved");
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
       await paceAfterReveal(before, after);
     }
@@ -970,12 +983,20 @@ export async function revealSkeletonNow(id) {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
-  return updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true }), { byGm: true });
+  const revealed = await updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true }), { byGm: true });
+  if (revealed) reportSnapshotEvent("plan_revealed");
+  return revealed;
 }
 
-/** The GM's "Retire": the plan leaves play (kept in the journal). Any GM. */
+/**
+ * The GM's "Retire": the plan leaves play (kept in the journal). Any GM. The
+ * narrator's world snapshot holds the plan until a new one is taken, so the
+ * next narration takes one (issue #357).
+ */
 export async function retireSkeleton(id) {
-  return updateSkeleton(id, r => ({ ...r, status: "retired" }), { byGm: true });
+  const retired = await updateSkeleton(id, r => ({ ...r, status: "retired" }), { byGm: true });
+  if (retired) reportSnapshotEvent("plan_retired");
+  return retired;
 }
 
 /**
@@ -992,7 +1013,7 @@ export async function editSkeleton(id, fields = {}) {
   const relist = (lines, old, prefix, flag) => lines.map((t, i) => ({
     id: `${prefix}${i + 1}`, text: t, [flag]: old.some(o => o.text === t && o[flag] === true),
   }));
-  return updateSkeleton(id, (r) => {
+  const edited = await updateSkeleton(id, (r) => {
     const next = { ...r, subject: { ...r.subject } };
     if (typeof fields.subject === "string" && fields.subject.trim()) next.subject.name = fields.subject;
     for (const f of ["truth", "wants", "knows"]) if (typeof fields[f] === "string") next[f] = fields[f];
@@ -1001,6 +1022,10 @@ export async function editSkeleton(id, fields = {}) {
     if (Array.isArray(fields.resolutions)) next.resolutions = fields.resolutions;
     return next;
   }, { byGm: true });
+  // The narrator's world snapshot states the plan as it was: the next
+  // narration takes a new one (issue #357).
+  if (edited) reportSnapshotEvent("plan_edited");
+  return edited;
 }
 
 async function postSecretCard(title, body, flags) {

@@ -451,7 +451,6 @@ async function callClassifierAPI({ apiKey, systemPrompt, userMessage, model }) {
   const headers = {
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
-    "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
   const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "pacingClassifier" });

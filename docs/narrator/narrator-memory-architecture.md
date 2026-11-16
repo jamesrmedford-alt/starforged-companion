@@ -520,6 +520,43 @@ instruction early in the prompt, and whether the voice shifts with the mode's
 role no longer first. Compare the page's Fact block column (below) and a read
 of the prose before and after.
 
+**The world snapshot** (issue #357; decisions.md → "The world snapshot").
+P2-23 cached the instructions; the larger part of each request was world and
+per-beat content, chosen by keyword and different every call. The whole world
+state is now a fourth block, between the standing rules and this narration:
+every sector, entity card, faction, threat, confirmed lore entry, earlier
+session's summary and active hidden plan, rendered once from the records
+(`worldSnapshot.js`), stored on a GM-only page (`worldSnapshotStore.js`) and
+sent as stored — a frozen copy, because a block that followed the world would
+be rewritten on nearly every beat. The context then carries what the snapshot
+cannot: **IN PLAY NOW** (the active sector, the current location, the matched
+entities and the urgent threats, by name and id — the snapshot holds their
+content), **CHANGED SINCE THE SNAPSHOT** (every record made or changed since,
+in full; it wins), and everything that moves within a session, as before —
+the ledger and its never-dropped tiers among them. Relevance still decides
+what is in play; it no longer decides what the narrator can see.
+
+A new snapshot is taken only when the one table of events says so
+(`snapshotEvents.js` `SNAPSHOT_EVENTS`): Begin a Session, the GM's
+`!scene start` / `!scene end`, the major events (plans made, decided, revealed
+or ended; Make a Discovery, Confront Chaos, a price that reveals a new enemy;
+a sector, an entity or a significant threat recorded), every retraction (the
+X-Card, a strike, a plan edited or retired, a record gone), changes grown
+large, and an hour with no narrator call. Each costs a full cache write, so
+the snapshot page's log — when, and because of which events — is the tuning
+surface with the Narrator Usage page: if most narrations take one, narrow the
+table. Narration on a player's own key has no snapshot (the page is the
+GMs'), and the world setting `worldSnapshot` switches the whole thing off.
+
+Drift questions this adds, to watch in play (**not yet measured**): the
+narrator drawing on a plan the context did not name — every active plan is
+now in view, under the rule to use only the named ones; a record in the
+snapshot preferred over its newer version under CHANGED SINCE THE SNAPSHOT;
+and whether a long snapshot dilutes attention to the scene ledger, which sits
+after it. The first is why the plans keep a section of their own; the second
+is why a retraction always takes a new snapshot rather than riding as a
+change.
+
 **Prose and fact block** (issue #354 P2-24). Each usage row also records how
 the reply split between narration and the fenced fact block, shown as the
 output tokens of each — the playtest's output grew from 551 to 919 tokens
