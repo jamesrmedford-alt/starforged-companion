@@ -46,6 +46,8 @@ vi.mock("../../../src/moves/resolver.js", async (original) => {
 });
 
 import { bootTable, resetTable, MODULE_ID, WEAK, STRONG } from "./_heldTable.js";
+import { narrationInputFrom } from "../../../src/moves/movePipeline.js";
+import { staticSettingScope } from "../../helpers/settingScopes.js";
 
 let table, pc;
 
@@ -91,5 +93,17 @@ describe("PIPE-02 — a held move card does not hand a hidden plan's oracle roll
     expect(seen, "the player sees the held card (setup)").toBeTruthy();
     const planRolls = strings(seen).filter(s => /What waits at the end — Action \+ Theme|A waypoint — Space Sighting/.test(s));
     expect(planRolls).toEqual([]);
+  });
+
+  // The same content, the same way, in a Batch Mode round: what the roll hands the round to keep until its
+  // narration (driver.js rollEntry → markRolled({ narrationInput: narrationInputFrom(resolution, relevance) }))
+  // is stored on the `batchMode.round` WORLD setting, which every client reads.
+  it("what a rolled round entry keeps on the round (a world setting) carries none of them either", async () => {
+    expect(staticSettingScope(MODULE_ID, "batchMode.round")).toBe("world");   // control: where the round lives
+    const card = await setOut(WEAK);
+    const resolution = table.world.message(card._id).flags[MODULE_ID].awaitingUpgrade.resolution;
+    const kept = narrationInputFrom(resolution, null);
+    expect(kept.moveId).toBe("undertake_an_expedition");                      // control: the entry's own move is kept
+    expect(strings(kept).filter(s => /What waits at the end — Action \+ Theme|A waypoint — Space Sighting/.test(s))).toEqual([]);
   });
 });

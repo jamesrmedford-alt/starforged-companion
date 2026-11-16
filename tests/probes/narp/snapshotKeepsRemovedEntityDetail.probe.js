@@ -111,8 +111,8 @@ describe('NARP-01 — a detail the table removed from an NPC is not left in the 
     await narrate('I ask Vuldar Archer again.');
 
     // The whole request the narrator is sent: nothing in it states the detail the table took back.
-    const sent = lastCall().body.system.map(b => b.text).join('\n');
-    expect(sent).not.toContain(DETAIL);
+    const stating = lastCall().body.system.filter(b => b.text.includes(DETAIL)).map(b => b.text.split('\n', 1)[0]);
+    expect(stating, 'blocks of the request that still state the removed detail').toEqual([]);
   }, 60_000);
 
   it('a rewrite that takes content back takes a new snapshot (as a plan edit, a strike and the X-Card do)', async () => {

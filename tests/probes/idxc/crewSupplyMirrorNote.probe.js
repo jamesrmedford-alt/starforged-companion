@@ -90,7 +90,7 @@ function expand(changes) {
 
 /** A PC whose sheet writes are dispatched as Foundry dispatches them on the updating (GM) client. */
 function livePc(id, name) {
-  const actor = makeTestActor({ id, name, system: { supply: { value: 3 } } });
+  const actor = globalThis.makeTestActor({ id, name, system: { supply: { value: 3 } } });
   game.actors._set(id, actor);
   const raw = actor.update;
   actor.update = async (changes, options = {}) => {

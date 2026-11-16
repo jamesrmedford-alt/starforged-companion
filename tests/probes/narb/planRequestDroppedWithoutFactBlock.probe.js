@@ -75,6 +75,24 @@ describe('NARB-02 — a plan a narration was asked to decide is kept with its ro
     expect(plans[0].oracleSeeds.some(s => /^Character Role: /.test(s))).toBe(true);
   }, 40_000);
 
+  it('a vow\'s swearing scene with no fact block still files what is behind the vow, with its roll', async () => {
+    const isVowScene = (call) => call.model === NARRATION_MODEL && /A character is swearing/.test(call.userText ?? '');
+    table.script.when(isVowScene, 'Kira lays her palm on the cold iron and says the words.');
+    const { narrateAndPostVowSwearing } = await gmOf(table).import('../../src/narration/narrator.js');
+    const text = await onGm(table, () => narrateAndPostVowSwearing({
+      vow: { name: 'Find the lost ark', rank: 'dangerous', vowId: 'vow-ark-1' },
+      campaignState: foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState')), speakerActorId: 'pc-kira',
+    }));
+    expect(text).toContain('cold iron');
+    expect(table.cards(f => f.vowSceneCard === true)).toHaveLength(1);
+    // The scene was asked to decide it …
+    expect(narrationCallsOf(table).at(-1).system).toMatch(/### DECIDE NOW[\s\S]*- id plan-nar-[\w]+-vow: Vow — what is really behind the vow "Find the lost ark"/);
+    // … and decided nothing: the vow's plan is kept with its roll (as when there is no scene at all — fileRequestedPlan).
+    const plans = plansOf(table);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ kind: 'vow', truth: '', subject: { type: 'vow', id: 'vow-ark-1' } });
+  }, 40_000);
+
   it('a reply whose fact block was cut off still files the new enemy with its rolls', async () => {
     table.script.when(isFollowup, 'A second engine signature slides out of the debris.\n```json\n{"newTruths":[{"subject":"the signature","fact":"it is');
     const text = await narrateNewEnemyPrice();

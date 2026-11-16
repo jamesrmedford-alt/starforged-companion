@@ -69,6 +69,23 @@ beforeAll(async () => { table = await bootTable(); }, 30_000);
 afterAll(() => table?.teardown());
 beforeEach(async () => { pc = await resetTable(table); });
 
+/** A held Set a Course weak hit, to a destination its pin's Actor names (so it stays Set a Course). */
+async function setCourseHeld() {
+  control.interpretation = { moveId: "set_a_course", moveName: "Set a Course", statUsed: "wits",
+    adds: 0, rationale: "test", mischiefApplied: false, moveTarget: "Bleakhold", moveTargetId: "pin-bleakhold" };
+  control.dice = WEAK;
+  await table.client("pl-1").chat("We set a course for Bleakhold.", { speaker: { actor: pc.id } });
+  await table.settle(); await table.drain();
+  const card = table.cards(f => f.moveResolution).at(-1);
+  const held = table.world.message(card._id).flags[MODULE_ID].awaitingUpgrade;
+  // Setup, both cases: held, un-narrated, and the roll's MOVE OUTCOME says the ship arrived (issue #348 PT08).
+  expect(held?.open).toBe(true);
+  expect(held.resolution.moveId).toBe("set_a_course");
+  expect(held.resolution.loremasterContext).toContain("[ARRIVAL: The ship has ARRIVED at Bleakhold.");
+  expect(narratorCalls(table)).toEqual([]);
+  return card;
+}
+
 describe("PIPE-03 — a held result's one narration decides the plan its roll asked for, kept or burned", () => {
   it("control: KEPT, the move's narration is asked to decide the expedition's plan (DECIDE NOW)", async () => {
     const card = await setOutHeld();
@@ -92,5 +109,26 @@ describe("PIPE-03 — a held result's one narration decides the plan its roll as
 
     expect(call.system.includes("### DECIDE NOW"), "the burned result's narration is asked to decide a plan (DECIDE NOW)").toBe(true);
     expect(call.system.includes("the expedition to the Ashen Reach"), "…the expedition's").toBe(true);
+  });
+});
+
+describe("PIPE-03 — …and is told the ship arrived, kept or burned (issue #348 PT08: every narration of the resolution reads it)", () => {
+  it("control: a held Set a Course weak hit KEPT — its narration is told the ship has ARRIVED at Bleakhold", async () => {
+    const card = await setCourseHeld();
+    await click(table, card, KEEP);
+    expect(narratorCalls(table)).toHaveLength(1);
+    const call = narratorCalls(table)[0];
+    expect(`${call.system}\n${call.userText}`).toContain("The ship has ARRIVED at Bleakhold.");
+  });
+
+  it("the same weak hit BURNED to a strong hit — its one narration is still told the ship has ARRIVED", async () => {
+    const card = await setCourseHeld();
+    await click(table, card, BURN);
+    expect(table.world.message(card._id).flags[MODULE_ID].burn.consumed).toBe(true);
+    expect(narratorCalls(table)).toHaveLength(1);
+    const call = narratorCalls(table)[0];
+    expect(call.userText).toContain("We set a course for Bleakhold.");
+    expect(`${call.system}\n${call.userText}`.includes("The ship has ARRIVED at Bleakhold."),
+      "the burned Set a Course's one narration is told the ship arrived").toBe(true);
   });
 });
