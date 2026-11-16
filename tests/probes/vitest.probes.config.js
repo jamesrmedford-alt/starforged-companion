@@ -1,6 +1,6 @@
 // tests/probes/vitest.probes.config.js
 //
-// Runs the bug-audit probes (the fourteenth audit, 2026-11-16; see README.md
+// Runs the bug-audit probes (the fourteenth audit, 2026-11-16, issue #362; see README.md
 // here). The probes are named *.probe.js so the normal `npm test` never
 // collects them: each one asserts the correct behaviour and fails until its
 // finding is fixed.
