@@ -10,14 +10,12 @@
  * of the next session takes the world snapshot.
  *
  * Correct: the snapshot's EARLIER SESSIONS lists that summary with no session
- * number ("An earlier session: …"), as the per-beat LAST SESSION block does —
- * and, being the newest, it sorts last and is never squeezed out by numbered
- * sessions.
+ * number ("An earlier session: …"), as the per-beat LAST SESSION block does
+ * ("## LAST SESSION", no number).
  *
  * Today: worldSnapshot.js memoryUnits reads the number with `Number(null)`,
- * which is 0 — a finite number — so the snapshot prints "- Session 0: …" and
- * orders the summary as the OLDEST session (order "000000", and last in the
- * newest-three pick).
+ * which is 0 — a finite number — so the snapshot prints "- Session 0: …" (and
+ * ranks the summary as the oldest session: order "000000").
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

@@ -111,11 +111,12 @@ describe("PIPE-01 — the miss stated before the roll is a miss's price, not a w
     expect(priceCards()).toHaveLength(1);
 
     // The card must not present the stated MISS as what this hit paid…
-    expect(priceCards()[0].content).not.toContain(MISS_LINE);
+    expect.soft(priceCards()[0].content, "the weak hit's Pay the Price card").not.toContain(MISS_LINE);
     // …nor may the miss's stated suffer move (Endure Harm −2) land on a hit: the table's row 20 routes none.
-    expect(pc.system.health.value).toBe(5);
+    expect.soft(pc.system.health.value, "health after the weak hit (the table's row 20 routes no suffer move)").toBe(5);
     // …and the narrator, told to "deliver the hit as stated", is not seeded with the miss as the price.
     const call = narratorCalls().at(-1);
-    expect(`${call.system}\n${call.userText}`).not.toContain(`Pay the Price: ${MISS_LINE}`);
+    expect.soft(`${call.system}\n${call.userText}`.includes(`Pay the Price: ${MISS_LINE}`), "the narrator is seeded with the stated miss as the weak hit's price").toBe(false);
+    expect.soft(`${call.system}\n${call.userText}`.includes("This is a weak hit: deliver the hit as stated"), "…beside being told to deliver the hit (control)").toBe(true);
   });
 });
