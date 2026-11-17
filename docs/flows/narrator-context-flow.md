@@ -978,7 +978,16 @@ X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
 and the same `narrationId`) for the ring. Off the canonical GM the sidecar is still stripped from the
 prose and no audit runs; the side-data is relayed to the canonical GM
-(`narrator.sidecar`, issue #286 D2 — see "Where each call runs").
+(`narrator.sidecar`, issue #286 D2 — see "Where each call runs"), which takes
+no plan write by id from it (issue #362 D2, the maintainer's answer A — plan
+ids are public, so a hand-made relay could reveal or rewrite a plan): its
+`reveals`, and its `plans` but the answers to its own plan requests (their
+`sameAs` taken off), are dropped; `openQuestions`, `newThreats` and
+`countdown` stand; the step a clock vignette or a chosen complication was made
+to play rides apart (`forced`, with its `clockId` or complication scope) and
+stands only as the canonical GM would force it for that cause
+(`standingForcedReveals` — the clock still full, its plan's next step; the
+scene's complication step), so a co-GM's vignette still paces its clock.
 
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class

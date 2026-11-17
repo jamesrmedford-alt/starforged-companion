@@ -6,6 +6,42 @@ rejected.
 
 ---
 
+## Issue #362 D2: a fact block relayed to the canonical GM writes no hidden plan by id (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) On the `narrator.sidecar`
+relay — the fact block of a narration made off the canonical GM, sent there to
+be applied — `applyRelayedNarratorSidecar` drops the block's `reveals`, and its
+`plans` but the answers to the relay's own plan requests (by their refs), with
+`sameAs` taken off those answers. Its `openQuestions`, `newThreats` and
+`countdown` stand, as do its truths, state and frame. The step a clock's
+trigger vignette or a chosen complication was made to play — the code's own
+mark, not the model's — no longer rides inside the block: it is sent apart
+(`forced`, with the clock's id or the complication's scope) and stands only as
+the canonical GM would force it for that cause (`standingForcedReveals`: the
+plan that clock paces, its next step or its answer, while the clock is full;
+the in-scene plan's next step for that complication). Anything else in it is
+dropped.
+
+**Reason:** issue #362 D2 (coverage FC D1, NARB). Plan ids are public — a
+clock's `planId`, a rolls card's `skeletonId` — and a relayed block was applied
+as sent, so a hand-made relay could make the GM write a hidden truth into the
+scene ledger, Lore and a table card, or rewrite, resolve or merge a plan: more
+than any UI could have done (gmRelay's trust model). Since D1 a player's
+narration is shown no plan, so an honest relay carries none of these by id.
+Dropping every reveal would also drop the step a co-GM's vignette was made to
+play, and leave that plan's clock full with its vignette written (issue #362
+AC08).
+
+**Rejected:** *Accepting it within the relay's trust model* (answer B). *Keeping
+a relayed block's reveals when the requester is a GM* — the requester is
+client-asserted. *Trusting `forced` as sent* — it is checked against what this
+GM would force. Accepted with it: a co-GM narrating on its own client (its own
+key) has its model's own reveals and corrections dropped too — the canonical GM
+narrates most beats; a reveal a co-GM's prose made is told again by a later
+narration.
+
+---
+
 ## Issue #362 D1: the hidden plans are read on a GM's client only; a player's Private Channel gets its plans from the canonical GM (2026-11)
 
 **Decision:** (the maintainer's answer A, 2026-11-17.) Whether Foundry
