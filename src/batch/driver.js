@@ -64,6 +64,7 @@ import {
 } from "../moves/movePipeline.js";
 import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
+import { keepHeldResultsOf, keepEveryHeldResult } from "../moves/heldResult.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
@@ -478,10 +479,19 @@ export async function closeCollectingRound(reason) {
   return closed;
 }
 
-/** The switch changed (every client): the canonical GM opens a round, or closes a collecting one. */
+/**
+ * The switch changed (every client): the canonical GM opens a round, or
+ * closes a collecting one. Switched on, every free-flow result still held for
+ * its roller's Burn / Improve / Keep is kept first — paid and narrated — as
+ * the mode begins (issue #362 D5, decided A): a round's line is table talk,
+ * which keeps nothing, so the round told the next beat with the miss unpaid,
+ * un-narrated and still burnable (AC32).
+ */
 function onBatchModeSwitched(enabled) {
   if (!isCanonicalGM()) return;
-  const work = enabled ? openRoundIfDue("mode-on") : turnedOff();
+  const work = enabled
+    ? keepEveryHeldResult("batch-mode").then(() => openRoundIfDue("mode-on"))
+    : turnedOff();
   Promise.resolve(work).catch(err => console.warn(`${MODULE_ID} | Batch Mode switch:`, err?.message ?? err));
 }
 
@@ -1015,6 +1025,17 @@ async function rollRound(claim) {
     if (!round.acting.length) {
       await finishRound(round, "nobody-acted");
       return true;
+    }
+
+    // An acting player's free-flow result still held for Burn / Improve /
+    // Keep — a card move of theirs run as free-flow while they sat a round
+    // out — is kept before the round takes their next action, whatever its
+    // reading (issue #362 AC32, D5): kept by the later move's record, after
+    // the fact and un-awaited, it was narrated after the round; a narrative
+    // entry kept nothing.
+    for (const userId of round.acting) {
+      await keepHeldResultsOf(round.entries?.[userId]?.actorId ?? null).catch(err =>
+        console.warn(`${MODULE_ID} | Batch Mode: a held result was not kept before the round:`, err?.message ?? err));
     }
 
     for (const userId of round.acting) {

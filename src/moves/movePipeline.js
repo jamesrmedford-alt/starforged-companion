@@ -40,6 +40,7 @@ import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
 import { buildImproveState } from "./improveResult.js";
 import { closeUpgradesForLaterMove } from "./resultUpgrade.js";
+import { keepHeldResultsOf } from "./heldResult.js";
 import { scanForApplicableAbilities, getCommandVehicleActor } from "./abilityScanner.js";
 import {
   enrichInterpretationStatValue,
@@ -872,6 +873,15 @@ export async function rollMove({
     postForsakeVowCard, postDecisiveActionCostCard, postMovePayThePriceCard, postMoveResult,
   } = pipelineHost();
   const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+  // A result of the roller's still held for Burn / Improve / Keep is kept
+  // before this move: an upgrade belongs to the move being made, and this
+  // one closes it (closeUpgradesForLaterMove, issue #326 D4) — kept first, its
+  // price and its narration come before this move's, whoever typed the line
+  // (issue #362 D5; it was kept after this move was narrated, un-awaited).
+  // The roller's own line kept it already (index.js onMessage); a round keeps
+  // its entries' first (batch/driver.js rollRound). Canonical GM.
+  await keepHeldResultsOf(rollerActor?.id ?? null).catch(err =>
+    console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next move:`, err?.message ?? err));
   if (combatPosition === undefined) {
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }

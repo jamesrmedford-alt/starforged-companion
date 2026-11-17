@@ -217,7 +217,7 @@ import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWa
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
 import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
-import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
+import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled, actsAsRoller } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -973,8 +973,11 @@ export function registerChatHook() {
     // held for Burn / Improve / Keep is kept — its price paid, its narration
     // posted — before this line is read, so the story stays in order. A
     // follow-up pressed on the held card itself is such a line: "burn
-    // momentum before applying any other effects of the move".
-    if (speakerActorId) {
+    // momentum before applying any other effects of the move". Only the
+    // roller's own line (issue #362 D5, decided A): a GM's line is read as
+    // the first PC's, and kept another player's result while they were still
+    // choosing — a move it rolls for that PC keeps it first (rollMove).
+    if (speakerActorId && actsAsRoller(message, speakerActorId)) {
       await keepHeldResultsOf(speakerActorId).catch(err =>
         console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next line:`, err?.message ?? err));
     }
@@ -3483,6 +3486,17 @@ function registerNativeProgressRollHook() {
       // the canonical GM, whatever the keys.
       const toRound = sheetRollJoinsRound(message);
       const narratesHere = toRound ? isCanonicalGM() : nativeRollNarratesHere(message);
+      // The roller's sheet roll is their going on (issue #362 D5, decided A):
+      // a result of theirs still held for Burn / Improve / Keep is kept first,
+      // on the canonical GM — before its own narration of the roll, when it is
+      // the one narrating — so the story stays in order. A participant's roll
+      // in Batch Mode is the round's, which keeps it as it rolls (driver.js).
+      const keptFirst = !toRound && isCanonicalGM() && rolledByPlayerCharacter(message)
+        && ["progress", "action"].includes(ironswornRollKind(String(message?.content ?? "")))
+        && actsAsRoller(message, message.speaker.actor)
+        ? keepHeldResultsOf(message.speaker.actor).catch(err =>
+          console.warn(`${MODULE_ID} | native-roll: a result held for its roller's choice could not be kept first:`, err?.message ?? err))
+        : null;
 
       const content = String(message?.content ?? "");
       const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
@@ -3513,6 +3527,7 @@ function registerNativeProgressRollHook() {
         : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
 
       import("./narration/narrator.js").then(async ({ narrateResolution }) => {
+        if (keptFirst) await keptFirst;
         // A working copy: narrateResolution starts the scene and applies the
         // sidecar on it (issue #335 Y04, the X09 rule).
         const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
@@ -8685,9 +8700,12 @@ function renderKeepResultHtml(resolution) {
 // How a held result was kept, as its card says once settled — by the
 // `awaitingUpgrade.resolvedBy` its wait was closed with (heldResult.js).
 const KEPT_BY = Object.freeze({
-  keep:   "Kept — its price and its narration followed.",
-  later:  "Kept by the roller's next line or move.",
-  choice: "Kept — a consequence was chosen on its choice card.",
+  keep:          "Kept — its price and its narration followed.",
+  later:         "Kept by the roller's next line or move.",
+  choice:        "Kept — a consequence was chosen on its choice card.",
+  // Issue #362 D5: every held result is kept as a session ends, and as Batch Mode begins.
+  "session-end": "Kept as the session ended.",
+  "batch-mode":  "Kept as Batch Mode was switched on.",
 });
 
 /**

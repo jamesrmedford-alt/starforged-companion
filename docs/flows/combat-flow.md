@@ -44,9 +44,16 @@ Two cross-cutting facts to hold onto:
   hidden rolls behind a plan its narration decides — rolled when it is
   narrated, on the GM: issue #362 AC15) and a **Keep the result** button
   (relay `move.keepResult`), its Pay the Price is not paid and it is not
-  narrated until the roller burns, improves or keeps — or goes on: their next
-  line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence
-  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`). A kept
+  narrated until the roller burns, improves or keeps — or goes on: their own
+  next line (`keepHeldResultsOf`, `index.js` onMessage — the roller's own
+  player's or one spoken as the roller, `actsAsRoller`: a GM's line read as
+  the first PC's kept another player's result, issue #362 D5), a move rolled
+  for them (`movePipeline.rollMove` keeps it before the dice), their sheet
+  roll, `!ptp` or `!oracle` (kept before that narration), or a consequence
+  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`); End a
+  Session and Batch Mode switched on keep every held result
+  (`keepEveryHeldResult`), and a round keeps an acting player's before it
+  rolls (`batch/driver.js` rollRound — issue #362 AC32). A kept
   result's upgrades close (`kept`), and its card says what kept it where the
   Keep button was (`awaitingUpgrade.resolvedBy` — issue #362 AC82). So in free-flow a burn has no paid price
   to revert; the reversal below is a Batch Mode round entry's — a round pays

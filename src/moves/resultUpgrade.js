@@ -1215,17 +1215,12 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
     // Its choice cards no longer say to burn or improve first
-    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT). A result still held for Burn /
+    // Improve / Keep was kept before the later move was rolled (movePipeline
+    // rollMove, batch/driver.js rollRound — issue #362 D5): its keep here,
+    // after the move's record and un-awaited, narrated it after the later
+    // move (AC32). One whose keep the world refused keeps its Keep button.
     await dropUpgradeHints(f.resolutionId ?? null);
-    // A result still held for Burn / Improve / Keep (issue #354 P2-10) is
-    // kept: the free-flow pipeline keeps it before the roller's next line is
-    // read (index.js), so this is the later move that did not come through
-    // it — a Batch Mode round's entry. Not awaited.
-    if (f.awaitingUpgrade?.open) {
-      void import("./heldResult.js")
-        .then(({ keepHeldResult }) => keepHeldResult(card, "later"))
-        .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after a later move:`, err?.message ?? err));
-    }
   }
 }
 

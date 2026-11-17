@@ -6,6 +6,53 @@ rejected.
 
 ---
 
+## Issue #362 D5: a held result is kept by its roller going on — and by the session's end and Batch Mode's start (2026-11)
+
+**Decision:** (issue #362 D5, HELD-RESULT-WHO-KEEPS-IT; decided A,
+maintainer 2026-11-17; with AC32 HELD-RESULT-OUTLIVES-ROUND-ENTRY, which it
+settles.) A free-flow result held for Burn / Improve / Keep (issue #354
+P2-10) is kept — its price paid, its narration posted — by:
+- **the roller's own next line** (`heldResult.actsAsRoller`, index.js
+  onMessage): a line spoken as the roller (the message's speaker — a
+  selected token, the author's own character), or written by the roller's
+  own player — a player who owns the PC, or a GM when no player does (a
+  GM-run PC, solo play). A GM's typed line with no speaker is read as the
+  first PC's (`speaker.js`: a GM owns every PC) and no longer keeps another
+  player's result while they are still choosing;
+- **a move rolled for the roller**, whoever typed it (`movePipeline.rollMove`,
+  before its dice): a later move closes the card's upgrades anyway (issue
+  #326 D4), and keeping first puts its price and narration before the new
+  move's — it was kept after the move was recorded, un-awaited;
+- **the roller's sheet roll, `!ptp` and `!oracle`**, first (the canonical
+  GM's native-roll hook; `oracleFollowup.narrateOracleFollowupOnGm` before
+  the follow-up's narration);
+- **a consequence chosen** on its choice card (as before);
+- **End a Session** — every held result, before the scene closes and the
+  summary is finalised, so it is narrated into the session it was rolled in
+  (`keepEveryHeldResult("session-end")`);
+- **Batch Mode switched on** — every held result, before the first round
+  opens (`keepEveryHeldResult("batch-mode")`): a round's line is table talk,
+  which kept nothing. A result held while Batch Mode is on (a
+  non-participant's card move, run as free-flow) is kept before the round
+  that takes its roller's next action rolls (`batch/driver.js` rollRound).
+The card says what kept it (`awaitingUpgrade.resolvedBy`, issue #362 AC82).
+
+**Reason:** a GM's "Take your time deciding…" paid and narrated a player's
+held miss while they were still choosing; a sheet roll, `!ptp` or `!oracle`
+by the roller was narrated before the result it followed; a result held
+across End a Session was paid and narrated into the next session; and in
+Batch Mode the round told the next beat with the miss unpaid and still
+burnable.
+
+**Supersedes** issue #354 P2-10's "Known limit: a held result whose roller
+never acts again, and whose card nobody presses, stays held — End a Session
+does not settle it" (End a Session settles it now; a session that ends by
+four idle hours still leaves it held until its roller goes on).
+
+**Rejected:** *(B) leave who keeps it as it was and reword the card's "Your
+next line keeps it"* — a GM's table talk would still settle a player's
+result, and the story would still run out of order.
+
 ## Issue #362 D7: a weak-hit win burned or improved to a strong hit is paid the difference (2026-11)
 
 **Decision:** (issue #362 D7, WON-FIGHT-PAYOFF-NOT-RESCALED; decided B,
