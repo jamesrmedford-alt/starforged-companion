@@ -181,7 +181,10 @@ function optionToCalls(opt, selection) {
     // Stress" names no amount (issue #330 D7; it was a fixed -2).
     const amounts = Array.isArray(opt.amountPick) ? opt.amountPick.filter(a => Number.isInteger(a) && a >= 1 && a <= 3) : [];
     if (amounts.length) return [{ kind: "needs-amount", sufferId: opt.suffer, amounts }];
-    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    // An option for one asset — a "which companion?" card's (sufferCard.js,
+    // issue #362 AC28) — names it.
+    const itemId = typeof opt.itemId === "string" && opt.itemId ? opt.itemId : (selection.itemId ?? null);
+    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId }];
     // Endure Harm / Stress's miss: "If your health is 0, you must also mark …
     // or roll on the table" whichever option is taken — the Lose Momentum
     // pick's at-0 choice follows it (known-issues ENDURE-ZERO-ON-OTHER-OPTION).

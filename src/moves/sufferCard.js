@@ -28,7 +28,7 @@ import {
   isRetryableSufferCall,
 } from "./sufferDialog.js";
 import { isUnprepared } from "./sufferExecutor.js";
-import { getActor, readCompanionHealth, readVehicleAssetBattered } from "../character/actorBridge.js";
+import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
@@ -107,12 +107,18 @@ export function sufferMultiCap(prompt) {
  * is none, so a "+1 integrity" with no vehicle to raise is unavailable.
  * Companion health was never supplied, so "companion health > 0" always read
  * 0 (issue #309 N03); the PC's own impacts stood in for the vehicle's (N02).
+ * Also the companions a Companion Takes a Hit pick could hit
+ * (`companionCount`, and `companionTarget` — the move's, else the only one;
+ * null with none, or several and none named), which the "any" card reads
+ * (issue #362 AC28).
  *
  * @param {Actor|null} actor
  * @param {Object} [executorOpts] — the card's
- * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null }}
+ * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null,
+ *   companionCount: number, companionTarget: Item|null }}
  */
 function optionContext(actor, executorOpts = {}) {
+  const companions = companionsOf(actor, executorOpts);
   const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
   // Heal's patient: the "wounded" options read their impacts (issue #325 W04).
   const patientId = typeof executorOpts?.patientActorId === "string" && executorOpts.patientActorId
@@ -120,7 +126,7 @@ function optionContext(actor, executorOpts = {}) {
   const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
   const patientCompanion = !!executorOpts?.patientCompanionItemId;
   if (executorOpts?.vehicleItemId) {
-    return { actor, companionHealth, patient, patientCompanion,
+    return { actor, companionHealth, patient, patientCompanion, ...companions,
       vehicleBattered: readVehicleAssetBattered(actor, executorOpts.vehicleItemId) };
   }
   let vehicleBattered = null;
@@ -131,14 +137,33 @@ function optionContext(actor, executorOpts = {}) {
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, companionHealth, vehicleBattered, patient, patientCompanion };
+  return { actor, companionHealth, vehicleBattered, patient, patientCompanion, ...companions };
+}
+
+/**
+ * The companions a Companion Takes a Hit pick on this card could hit (the
+ * executor's rule — sufferExecutor.companionTakesAHit): the move's companion
+ * when the card names one (`executorOpts.companionItemId`; none when it is
+ * gone), else the PC's only companion — none with several, which the player
+ * is asked to choose among (issue #362 AC28).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} [executorOpts]
+ * @returns {{ companionCount: number, companionTarget: Item|null }}
+ */
+function companionsOf(actor, executorOpts = {}) {
+  const named = typeof executorOpts?.companionItemId === "string" && executorOpts.companionItemId ? executorOpts.companionItemId : null;
+  const target = getCompanionAsset(actor, named);
+  return { companionCount: named ? (target ? 1 : 0) : listCompanionAssets(actor).length, companionTarget: target };
 }
 
 /**
  * True when an "any" card cannot take this suffer move: one the prompt
- * excludes (a redirected loss — sufferExecutor.sacrificeResources), or
+ * excludes (a redirected loss — sufferExecutor.sacrificeResources),
  * Sacrifice Resources while the PC is unprepared, at any supply, whose loss
- * goes to a different suffer move (issue #325 W16; issue #338 D3).
+ * goes to a different suffer move (issue #325 W16; issue #338 D3), or a
+ * Companion Takes a Hit / Withstand Damage with no companion / vehicle to
+ * take it (issue #362 AC28).
  */
 /** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
 function clearTracksOf(prompt) {
@@ -147,6 +172,13 @@ function clearTracksOf(prompt) {
 
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
+  // A suffer move with nothing to suffer it pays nothing: no companion (or
+  // the move's companion gone), no vehicle the move names nor a command
+  // vehicle. Pressed, it closed the card — the cost gone, the move's Burn /
+  // Improve closed — with "Not applied: … no companion to change" (issue
+  // #362 AC28). Several companions, none named, ask which (handleSufferPick).
+  if (sufferId === "companion_takes_a_hit") return !(ctx?.companionCount > 0);
+  if (sufferId === "withstand_damage") return ctx?.vehicleBattered === null || ctx?.vehicleBattered === undefined;
   return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
 }
 
@@ -276,6 +308,29 @@ function lossPastZeroLabel(call, result) {
     ? "make another suffer move or clear progress: choose it on its card"
     : "redirect it to another suffer move or clear progress"})`;
   return text;
+}
+
+// A suffer move's call that found nothing to suffer it (issue #362 AC28).
+const NO_TARGET = new Set(["no-companion", "no-vehicle"]);
+
+/**
+ * The follow-up card for a Companion Takes a Hit picked with several
+ * companions and none named (issue #362 AC28): one pick per companion, by the
+ * name the player gave it where it has one, each the move against that asset.
+ *
+ * @param {Actor} actor
+ * @param {number} amount
+ * @returns {Object} an enumerated sufferPrompt
+ */
+function whichCompanionPrompt(actor, amount) {
+  return {
+    kind: "enumerated",
+    options: listCompanionAssets(actor).map(c => {
+      const given = companionGivenName(c);
+      const name  = given && given !== c.name ? `${given} (${c.name})` : (c.name ?? "A companion");
+      return { label: `${name} takes the hit (-${amount})`, suffer: "companion_takes_a_hit", amount, itemId: c.id };
+    }),
+  };
 }
 
 // Why a call's write did not land (a runSufferResolution result with
@@ -601,9 +656,16 @@ async function handleSufferPick(message, dataset) {
   // issue #330 D7) is followed by its minor / serious / major card.
   const needsAny    = calls.find(c => c.kind === "needs-any");
   const needsAmount = calls.find(c => c.kind === "needs-amount");
+  // Companion Takes a Hit with several companions and none named on the card
+  // asks which: the executor hits none, and the card closed with the cost
+  // unpaid — "apply it on the sheet" (issue #362 AC28).
+  const pickCtx       = optionContext(actor, executorOpts);
+  const whichCompanion = dataset.pickKind === "any" && dataset.sufferId === "companion_takes_a_hit"
+    && !pickCtx.companionTarget && pickCtx.companionCount > 1
+    ? whichCompanionPrompt(actor, prompt.amount ?? 1) : null;
   const followUpPrompt = needsAny
     ? { kind: "any", amount: needsAny.amount, count: needsAny.count }
-    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : null);
+    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : whichCompanion);
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
   // An "any" prompt of `count` > 1 takes one suffer move per pick (issue
@@ -618,6 +680,7 @@ async function handleSufferPick(message, dataset) {
   const ctx    = optionContext(actor, executorOpts);
   const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
     : needsAmount ? `${labelForSuffer(needsAmount.sufferId)} chosen — choose how much on the follow-up card.`
+    : whichCompanion ? "Companion Takes a Hit chosen — choose which companion on the follow-up card."
     : multi ? "Applied your selections."
     : `Applied: ${summarizeSufferCalls(calls)}`;
 
@@ -674,6 +737,16 @@ async function handleSufferPick(message, dataset) {
     const reopened = await reopenSufferCard(message, { note: RESIST_UNPOSTED_NOTE });
     if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
     return { applied: false, reason: "post-failed" };
+  }
+  // A single pick that found nothing to suffer it — the companion or the
+  // vehicle gone since the card was drawn — paid nothing: the card stays the
+  // cost's, open for another pick (issue #362 AC28), and its move's Burn /
+  // Improve with it.
+  if (!multi && results.length && results.every(r => r?.ok === false && NO_TARGET.has(r.reason))) {
+    const why = notAppliedLines(calls, results).join("; ");
+    const reopened = await reopenSufferCard(message, { note: `Not applied: ${why}. Choose another.` });
+    if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
+    return { applied: false, reason: "no-target" };
   }
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the

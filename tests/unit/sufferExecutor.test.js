@@ -29,8 +29,12 @@ vi.mock("../../src/character/actorBridge.js", async (importOriginal) => ({
   // asset's `system.track`.
   // …and the wrapper that keeps the system's change note from being posted
   // beside a suffer card (issue #354 P2-13) is the real one too.
-  ...(({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes }) =>
-    ({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes }))(await importOriginal()),
+  // The choice cards read the PC's companions too — which ones a Companion
+  // Takes a Hit pick could hit (sufferCard.js optionContext, issue #362 AC28).
+  ...(({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes,
+    listCompanionAssets, getCompanionAsset, companionGivenName }) =>
+    ({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes,
+      listCompanionAssets, getCompanionAsset, companionGivenName }))(await importOriginal()),
   // The at-0 choice card (sufferCard.js, issue #329 X03) reads these.
   getActor:            vi.fn(() => null),
   readCompanionHealth: vi.fn(() => null),
