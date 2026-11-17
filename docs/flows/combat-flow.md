@@ -187,8 +187,9 @@ track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges. A fight added by hand in the Progress
 Tracks panel can be linked to a vow at creation too — the add form's vow
 select (issue #353 R3): it carries `linkedVowName` and `linkedVowId`, and a
-won linked fight pays off as a threshold fight does (§4). A fight's link is
-not changed on its row afterwards.
+won linked fight pays off as a threshold fight does (§4) — the vow found by
+its id, under its name now (issue #362 AC46). A fight's link is not changed
+on its row afterwards.
 
 **Find another way** posts the way-out card (from the canonical GM, once per
 threshold card): the `WAY_OUT_PROMPT` nudge plus
@@ -415,8 +416,12 @@ the price a second time (issue #325 W03).
 
 ## 4. The win payoff (linked fights)
 
-On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track has
-`linkedVowName`, the pipeline posts the **victory card**
+On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track links
+a vow — by its id (`linkedVowId`, the panel's add: found among the PCs' vow
+copies, under the name it carries now — `fightLinkedVow`; by the name it was
+linked under, a vow renamed mid-fight left the victory card naming a vow
+nobody held, issue #362 AC46), else by `linkedVowName` (a threshold link) —
+the pipeline posts the **victory card**
 (`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
 `marks`, `connectionName`, `vowRank` and the roller's `actorId`):
 **⚑ Mark milestone (×N)** — N scales with the *fight's* rank

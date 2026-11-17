@@ -327,8 +327,8 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
   (`resolveVowChoice`; refused `no-vow`, said first on the presser's screen,
   since a relayed refusal reaches no player) and stores **`linkedVowId`** (the
   vow's id across copies — canonical) and **`linkedVowName`** (the name [4j]
-  and the fight path read). A fight's link stays its threshold card's (a
-  name) and is not changed on its row.
+  reads; a won fight's payoff reads the id first, issue #362 AC46). A fight's
+  link stays its threshold card's (a name) and is not changed on its row.
 - **The Session panel's "What's open"** (`ui/sessionPanel.js`): the open vows
   (one per vow, with rank, boxes, countdown clock and holders), the open
   tracks with the vow each serves (`trackVowName`, by id first) and a scene

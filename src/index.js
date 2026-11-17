@@ -2800,7 +2800,7 @@ async function applyOutcomeEffects({
           console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
         // Won fight that served a vow → surface the milestone (#241). Win =
         // a hit on Take Decisive Action / Battle (not Face Defeat).
-        if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && fin.track.linkedVowName) {
+        if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && (fin.track.linkedVowName || fin.track.linkedVowId)) {
           await applyWonFightPayoff(fin.track, resolution.outcome, rollerActor);
         }
       }
@@ -2812,9 +2812,9 @@ async function applyOutcomeEffects({
     // A Battle lost on the recorded miss is won on the upgraded hit: the
     // fight it ended (its card named it; finished by now) pays off. A win
     // already paid on a weak hit is not paid again on a strong one.
-    if (stamped?.linkedVowName) {
+    if (stamped?.linkedVowName || stamped?.linkedVowId) {
       await applyWonFightPayoff(stamped, resolution.outcome, rollerActor);
-      applied.push(`the fight won — a milestone toward ${stamped.linkedVowName}`);
+      applied.push(`the fight won — a milestone toward ${fightLinkedVow(stamped, rollerActor?.id ?? null).vowName ?? "its vow"}`);
     } else if (!stamped) {
       console.debug(`${MODULE_ID} | won fight: the upgraded ${resolution.moveId} names no fight — no payoff.`);
     }
@@ -2863,24 +2863,51 @@ function legacyMarkAdded(next, orig) {
  * GMs, with a Retry (issue #306 R04). Shared by the pipeline's end-of-fight
  * branch and a Battle upgraded from a lost miss.
  *
- * @param {{ rank?: string, linkedVowName: string }} track — the fight
+ * The vow is the one the fight was linked to by its id when it has one — the
+ * Progress Tracks panel's add stores `linkedVowId` (issue #353 R3) — under
+ * the name it carries now: by the name it was linked under, a vow renamed
+ * mid-fight was "no longer on any character's sheet" on the victory card,
+ * its ⚑ dead and its reward not found (issue #362 AC46). A fight linked at
+ * its threshold card carries the name alone, and is paid by it.
+ *
+ * @param {{ rank?: string, linkedVowName?: string|null, linkedVowId?: string|null }} track — the fight
  * @param {"strong_hit"|"weak_hit"} outcome
  * @param {Actor|null} rollerActor
  */
 async function applyWonFightPayoff(track, outcome, rollerActor) {
   const marks = Math.max(1, marksForSourceRank(track.rank) - (outcome === "weak_hit" ? 1 : 0));
-  await postFightVowMilestoneCard(track.linkedVowName, marks, rollerActor?.id ?? null).catch(err =>
+  const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
+  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId }).catch(err =>
     console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
-  const granted = await grantLinkedVowReward(track.linkedVowName, outcome, { actorId: rollerActor?.id ?? null }).catch(err => {
+  const granted = await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
     return null;
   });
   if (granted && !granted.ok) {
     await postPayoffFailureCard({
-      source: "fight", vowName: track.linkedVowName, vowId: granted.vowId ?? null,
+      source: "fight", vowName, vowId: granted.vowId ?? null,
       actorId: rollerActor?.id ?? null, outcome, failures: [granted],
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
+}
+
+/**
+ * The vow a fight serves, as its payoff finds it: by the track's `linkedVowId`
+ * — every PC's copy of it, the roller's copy's name — when a copy carries it,
+ * else by the name it was linked under (a threshold link, or a vow gone from
+ * every sheet). `vowId` and `copies` are null when found by name.
+ *
+ * @param {{ linkedVowName?: string|null, linkedVowId?: string|null }} track
+ * @param {string|null} actorId — the roller
+ * @returns {{ vowName: string|null, vowId: string|null, copies: Array<{actor, item}>|null }}
+ */
+function fightLinkedVow(track, actorId) {
+  const id = typeof track?.linkedVowId === "string" && track.linkedVowId ? track.linkedVowId : null;
+  const copies = id ? collectPlayerVowItems().filter(e => isVowCopy(e.item, id)) : [];
+  if (!copies.length) return { vowName: track?.linkedVowName ?? null, vowId: null, copies: null };
+  const own = copies.find(e => e.actor?.id === actorId && e.item.system?.completed !== true)
+    ?? copies.find(e => e.item.system?.completed !== true) ?? copies[0];
+  return { vowName: own.item.name ?? track.linkedVowName ?? null, vowId: id, copies };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5610,14 +5637,17 @@ function registerWayOutHook() {
 // ── Won-fight vow milestone (#241): surface the vow the fight served ─────────
 
 // Exported for unit testing.
-export async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
+export async function postFightVowMilestoneCard(vowName, marks, actorId = null, { vowId: linkedId = null } = {}) {
   // The linked vow's rank + connection link — read from the vow the card's
   // buttons will act on: the roller's own (resolveVowItemCopies; the milestone
   // button marks resolveVowHolderActor's). The first PC's same-named vow used
   // to supply them, so 🤝 Deepen could name another PC's connection (issue
-  // #301 B02). Open vows only, as before.
-  const { primary } = resolveVowItemCopies(vowName, { actorId });
-  const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
+  // #301 B02). Open vows only, as before. A fight linked by the vow's id
+  // finds it by that id, whatever it is named now (issue #362 AC46).
+  const linked = linkedId ? fightCardVow({ vowId: linkedId, actorId }) : null;
+  const { primary } = linked ? { primary: null } : resolveVowItemCopies(vowName, { actorId });
+  const item = linked ? (linked.state === "open" ? linked.item : null)
+    : (primary?.item?.system?.completed === true ? null : (primary?.item ?? null));
   const vowRank        = item?.system?.rank ?? null;
   // Named as its copies are found (vowCopyId: the flag, else the Item's own
   // id): from the flag alone, a sheet vow whose stamp never landed carried
