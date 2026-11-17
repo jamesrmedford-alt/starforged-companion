@@ -409,11 +409,31 @@ export function nameMentioned(name, passage) {
 export const MAX_RELEVANT_SKELETONS = 4;
 
 /**
+ * Whether a plan is in play for a beat whose moves end `endingIds` (tracks,
+ * vows — `endingTrackIds`): an active plan, or one resolved because its
+ * subject ended — its expedition's track completed, its vow fulfilled — when
+ * this beat is the one that ends it (issue #362 D4: the plan is resolved in
+ * code as its subject ends, and the narration of the Finish an Expedition or
+ * Fulfill Your Vow that ended it still reveals its end, and records it).
+ *
+ * @param {Object|null} record — normaliseSkeleton's
+ * @param {Iterable<string>|null} [endingIds]
+ * @returns {boolean}
+ */
+export function planInPlay(record, endingIds = null) {
+  if (record?.status === "active") return true;
+  if (record?.status !== "resolved" || !record.subject?.id || !endingIds) return false;
+  const ending = endingIds instanceof Set ? endingIds : new Set(endingIds);
+  return ending.has(record.subject.id);
+}
+
+/**
  * The plans relevant to this beat (issue #353 "What the narrator sees"):
  * active ones whose subject is in play — made in this scene, its entity among
  * the matched or the scene frame's cast, its name in the frame or the player's
- * line, or one of the open tracks or vows the beat serves. Made-in-scene
- * first, then the most recently changed. At most `max`.
+ * line, or one of the open tracks or vows the beat serves — and a plan its
+ * subject's end resolved, in the beat that ends it (planInPlay, issue #362
+ * D4). Made-in-scene first, then the most recently changed. At most `max`.
  *
  * @param {Object[]} records — normaliseSkeleton's
  * @param {Object} ctx
@@ -433,12 +453,13 @@ export const MAX_RELEVANT_SKELETONS = 4;
  * @returns {Object[]}
  */
 export function selectRelevantSkeletons(records, ctx = {}) {
-  const list = (Array.isArray(records) ? records : []).filter(r => r?.status === "active");
+  const ending  = new Set(Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : []);
+  // Active plans — and one its subject's end resolved, in the beat that ends it (planInPlay).
+  const list = (Array.isArray(records) ? records : []).filter(r => planInPlay(r, ending));
   if (!list.length) return [];
   const matched = new Set(Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : []);
   const tracks  = new Set(Array.isArray(ctx.openTrackIds) ? ctx.openTrackIds : []);
   const threats = (Array.isArray(ctx.activeThreatNames) ? ctx.activeThreatNames : []).filter(n => typeof n === "string");
-  const ending  = new Set(Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : []);
   const sceneVow = ctx.sceneVow && typeof ctx.sceneVow === "object" ? ctx.sceneVow : null;
   const pinned  = new Set(Array.isArray(ctx.planIds) ? ctx.planIds : []);
   const frame   = ctx.frame && typeof ctx.frame === "object" ? ctx.frame : {};

@@ -174,6 +174,10 @@ Discovered card says so). With no active sector nothing is recorded.
   (escalation) and what waits at the end (truth), about the track by id, in
   play while the track is open; the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
+  The plan closes with the track (issue #362 D4): resolved when it completes
+  (`completeProgressTrack`, the panel's Complete), retired when it is removed
+  (`progressTracks.js` `closeTrackPlans` → `secrets.closePlansAbout`) — the
+  finishing narration still has it in play (`skeletons.planInPlay`).
   The Progress Tracks panel marks a planned expedition's row with the GM-only
   ◆ (`secrets.plannedSubjects`, Phase 4). Make a Discovery and Confront Chaos
   ask their narration for a `discovery` plan from their rolls (less any

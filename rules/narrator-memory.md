@@ -81,7 +81,9 @@ layers. This file is the never-break list.
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only — the frame's scene
    question with it (issue #353 R2: kept for the scene, never carried into
-   the next; no narration ends a scene). Anything that must
+   the next; no narration ends a scene), and the scene's unanswered hidden
+   mysteries with their clocks, retired at every scene end (issue #362 D4).
+   Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
    also files scene-subject truths on the recorded place each was asserted

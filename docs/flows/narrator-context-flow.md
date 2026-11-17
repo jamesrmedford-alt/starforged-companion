@@ -575,13 +575,13 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   | `no_snapshot` | yes | the store, at the call |
   | `scene_started`, `scene_ended` | yes | `handleSceneCommand` (`!scene`) |
   | `plan_made` | yes | `secrets.js` `createSkeleton` |
-  | `plan_decided`, `plan_revealed`, `plan_resolved` | yes | `applyPlanSideData`; the GM's Reveal now |
+  | `plan_decided`, `plan_revealed`, `plan_resolved` | yes | `applyPlanSideData`; the GM's Reveal now; `closePlansAbout` (a track completed, a vow closed — issue #362 D4) |
   | `discovery_rolled`, `new_enemy_revealed` | yes | `reportNarratedMove` / `reportNarratedOracle`, once the narration has posted |
   | `sector_created`, `sector_details_written` | yes | `storeSector`, `applyStubsToSettlementEntities` |
   | `entity_recorded` | yes | `registry.js` `registerEntityId` |
   | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
   | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
-  | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton` |
+  | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout` (a track removed, a vow deleted), `retireSceneMysteries` (an ended scene's unanswered mysteries) — issue #362 D4 |
   | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
   | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
 
@@ -671,7 +671,11 @@ plan every beat, Phase 2; an open expedition's plan, a finished one's in the
 narration that finishes it, and the plan a clock vignette or a chosen
 complication plays, Phase 3 — a vignette of a plan's own clock has its plan
 in play whether the clock filled or only advanced (a step is played on a fill
-alone, issue #362 AC38); the plan of the vow the scene serves
+alone, issue #362 AC38) — and a plan the end of its subject resolved in the
+beat that ends it (`skeletons.planInPlay` by `endingTrackIds`: the code
+closes an expedition's plan with its track, a vow's with its vow, and an
+ended scene's unanswered mysteries with their clocks — `closePlansAbout`,
+`retireSceneMysteries`, issue #362 D4); the plan of the vow the scene serves
 (`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
 (its `vowId` on `endingTrackIds`), Phase 4 —
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,

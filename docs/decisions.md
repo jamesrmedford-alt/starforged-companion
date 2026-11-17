@@ -6,6 +6,53 @@ rejected.
 
 ---
 
+## Issue #362 D4: a hidden plan closes with its subject; a scene's unanswered mysteries end with it (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) The code closes a plan
+as its subject ends, whatever the narration that ends it says or does:
+- **An expedition's plan** (about its track, by id) is **resolved** when the
+  track completes — Finish an Expedition, the Progress Tracks panel's
+  Complete — and **retired** when the track is removed
+  (`progressTracks.js` → `secrets.closePlansAbout`).
+- **A vow's plan** (about the vow, by its `vowId`) is **resolved** when the
+  vow is completed — fulfilled or forsaken (the pipeline marks every copy
+  completed), or closed on the sheet — once no copy of a shared vow is left
+  open, and **retired** when its last copy is deleted (the canonical GM's
+  `updateItem` / `deleteItem` hooks, `secrets.registerPlanSubjectHooks`).
+- **A scene's unanswered mysteries** — a posed question, a countdown's "what
+  happens when it runs out?" — are **retired at scene end**, with their
+  clocks (`sceneLifecycle.endScene`, and an empty scene a new one replaces →
+  `secrets.retireSceneMysteries`). An answered one (its truth revealed) is
+  left as it is; a clock an open scene challenge holds stays the challenge's.
+- A closed plan's clock leaves with it (`retirePlanClock`). The write keeps
+  the plan's narration stamp (`keepStamp`), so an X-Card on the narration that
+  decided it still takes that decision back.
+- **The narration that ends the subject still has the plan in play**: the
+  Finish an Expedition or Fulfill Your Vow beat names it among its
+  `endingTrackIds`, and a plan its subject's end resolved is in play for that
+  beat (`skeletons.planInPlay`) — shown under UNREVEALED, decided and
+  revealed by its sidecar (`applyPlanSideData` / `revealedTruthsOf`
+  `endingSubjectIds`) — so the end it was told to reveal is still revealed
+  (Phase 3).
+
+**Reason:** nothing closed a plan but the narrator's own `resolved` or a GM's
+Retire. A finishing narration that omitted it, failed or was paused left a
+finished expedition's, a fulfilled or forsaken vow's and an old scene's
+mystery plan active: in every world snapshot, under every player's
+Unanswered questions, a countdown still turned by every price, and the plan a
+waypoint's peril picked (issue #362 AC11) — the coverage rows NARB "Nothing
+closes a plan", SKEL 5, SESS D4 and FC D2.
+
+**Rejected:** *Leaving it to the GM's Retire* (answer B) — the plans pile up
+for the whole campaign unseen by anyone but the GM. *Resolving after the
+finishing narration* — the narration's own plan writes run fire-and-forget,
+and a close racing them dropped its reveal; the close is at the state change,
+and the ending beat reads the resolved plan instead. *A sheet-rolled
+fulfilment that leaves the vow Item open* closes nothing until the Item is
+completed — the vow is open in every other reader until then too.
+
+---
+
 ## The world snapshot: the whole world state, frozen and cached for the session (2026-11)
 
 **Decision:** ([#357](https://github.com/jamesrmedford-alt/starforged-companion/issues/357); the maintainer's answers of 2026-11-14 — "all plans go in", "scene boundaries and major oracle rolls, new plans, etc.", "no size limit", "make that list accessible for later modifications", "also, at sector creation". Phases 1–3 are built; phase 4 is open, below.)
@@ -27,7 +74,7 @@ rejected.
   | `plan_made` — a hidden plan is made | yes | `secrets.js` `createSkeleton` |
   | `plan_decided` — a narration decides or corrects a plan | yes | `applyPlanSideData` |
   | `plan_revealed` — a plan's truth is revealed | yes | `applyPlanSideData`, the GM's Reveal now |
-  | `plan_resolved` — a plan's story ends | yes | `applyPlanSideData` |
+  | `plan_resolved` — a plan's story ends | yes | `applyPlanSideData`; `closePlansAbout` (its track completed, its vow closed — issue #362 D4) |
   | `discovery_rolled` — Make a Discovery or Confront Chaos, once narrated | yes | `narrator.js` `reportNarratedMove` |
   | `new_enemy_revealed` — a price reveals a new enemy | yes | `reportNarratedMove`, `reportNarratedOracle` |
   | `sector_created` | yes | `storeSector` |
@@ -36,7 +83,7 @@ rejected.
   | `threat_recorded` — a threat recorded at significant salience or above | yes | `routeWorldJournalResults` |
   | `xcard_played` | yes | `suppressScene` |
   | `fact_retracted` — a strike or a correction, and its copies | yes | `propagateRetraction` |
-  | `plan_edited` / `plan_retired` — a GM's edit or Retire | yes | `editSkeleton`, `retireSkeleton` |
+  | `plan_edited` / `plan_retired` — a GM's edit or Retire; a plan whose subject is gone, or an ended scene's unanswered mystery (issue #362 D4) | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout`, `retireSceneMysteries` |
   | `record_removed` — a record the snapshot holds is gone or no longer stands | yes | the store, at the call |
   | `changes_large` — the changes since have grown large | yes | the store, at the call |
   | `cache_expired` — no narrator call for an hour | yes | the store, at the call |

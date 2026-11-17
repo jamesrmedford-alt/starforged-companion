@@ -120,6 +120,10 @@ async function openScene(campaignState, reason) {
   if ((campaignState.sceneTruths?.length ?? 0) > 0 || stateHasEntries) {
     await endScene(campaignState, { reason: 'implicit_due_to_new_scene' });
     ended = true;
+  } else if (replacing) {
+    // An empty scene replaced: its unanswered mysteries end with it, as
+    // endScene's do (issue #362 D4).
+    await retireEndedSceneMysteries(campaignState.currentSceneId);
   }
 
   const id = `sc-${randomSceneSuffix()}`;
@@ -211,8 +215,28 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   if (clearPacingOverride(campaignState)) fields.push('pacing');
 
   await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed, sceneId);
+  await retireEndedSceneMysteries(sceneId);
 
   return { ...counts };
+}
+
+/**
+ * The mysteries an ended scene posed and never answered leave play with it,
+ * their clocks too (issue #362 D4, decided A; secrets.js retireSceneMysteries)
+ * — every scene end: `!scene end`, End a Session, a new session's close-out,
+ * a scene a new one replaced. Canonical GM, as the scene lifecycle is.
+ * Fail-open: the scene end stands.
+ *
+ * @param {string|null} sceneId
+ */
+async function retireEndedSceneMysteries(sceneId) {
+  if (!sceneId) return;
+  try {
+    const { retireSceneMysteries } = await import('../world/secrets.js');
+    await retireSceneMysteries(sceneId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: the ended scene's mysteries were not retired:`, err?.message ?? err);
+  }
 }
 
 /**

@@ -353,7 +353,13 @@ scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
 `sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
 Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
 `vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
-`narrationInputFrom` carries to the narration.
+`narrationInputFrom` carries to the narration. The plan closes with its vow
+(issue #362 D4): a copy completed — fulfilled, forsaken, closed on the sheet —
+resolves it once no copy of the vow is open, its last copy deleted retires it
+(the canonical GM's `updateItem` / `deleteItem` hooks,
+`secrets.registerPlanSubjectHooks` → `closePlansAbout`); the fulfil
+narration still has it in play to reveal its end (`skeletons.planInPlay` by
+its `endingTrackIds`).
 
 ## 4. Fulfilment
 

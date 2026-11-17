@@ -33,7 +33,7 @@ import {
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
-  normaliseNewThreats, withAlias, BEING_KINDS,
+  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay,
   SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
@@ -504,15 +504,19 @@ async function rollMysteryAnswer() {
  * so the X-Card retracts them with it.
  *
  * @param {Object} sidecar — normaliseSidecar's
+ * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
+ *   narration's beat ends: a plan their end resolved is still its to reveal
+ *   (skeletons.js planInPlay, issue #362 D4)
  * @returns {Array<{ subject: string, fact: string }>}
  */
-export function revealedTruthsOf(sidecar) {
+export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   if (!skeletonsEnabled()) return [];
+  const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
   const out = [];
   for (const reveal of normaliseReveals(sidecar?.reveals)) {
     if (!reveal.revealed.includes("truth")) continue;
     const record = getSkeleton(reveal.id);
-    if (!record || record.status !== "active" || record.truthRevealed || !record.truth) continue;
+    if (!record || !planInPlay(record, ending) || record.truthRevealed || !record.truth) continue;
     out.push(record.kind === "mystery" && record.question
       ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
       : { subject: record.subject.name, fact: record.truth });
@@ -541,13 +545,19 @@ export function revealedTruthsOf(sidecar) {
  * plan its subject already has (issue #354 P2-30).
  * Every write is stamped with the narration's id. Never throws.
  *
+ * A plan its subject's end resolved — its expedition's track completed, its
+ * vow fulfilled (closePlansAbout) — is still decided and revealed by the
+ * narration whose beat ended it (`endingSubjectIds`, issue #362 D4).
+ *
  * @param {Object} sidecar — normaliseSidecar's
- * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[] }} ctx
+ * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[],
+ *           endingSubjectIds?: string[] }} ctx
  * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
-export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [] } = {}) {
+export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [] } = {}) {
   const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
+  const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
   try {
     const plans     = normalisePlans(sidecar?.plans);
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
@@ -597,7 +607,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
 
     for (const plan of byId.values()) {
       const existing = getSkeleton(plan.id);
-      if (!existing || existing.status !== "active") continue;
+      if (!existing || !planInPlay(existing, ending)) continue;
       // A plan waiting to be decided that the narrator says is a subject
       // already planned (issue #354 P2-30) joins that plan, and is retired.
       if (plan.sameAs) {
@@ -631,7 +641,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
 
     for (const reveal of reveals) {
       const before = getSkeleton(reveal.id);
-      if (!before || before.status !== "active") continue;
+      if (!before || !planInPlay(before, ending)) continue;
       const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
       const after = await updateSkeleton(reveal.id,
         r => ({ ...applyRevealToSkeleton(r, reveal), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
@@ -1088,6 +1098,131 @@ export async function planSignificantThreat(threat, { campaignState = null, narr
     console.warn(`${MODULE_ID} | secrets: the threat "${name}" was not planned:`, err?.message ?? err);
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A PLAN'S SUBJECT ENDS — the plan leaves play with it (issue #362 D4)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Nothing closed a plan but the narrator's own `resolved` or a GM's Retire: a
+// finished expedition's, a fulfilled or forsaken vow's and an old scene's
+// mystery stayed active when the closing narration omitted it, failed or was
+// paused — in every world snapshot, under every player's Unanswered questions,
+// and the plan a waypoint's peril picked (AC11). Decided (D4, answer A): the
+// code closes them as their subject ends.
+
+/** The plan kinds whose subject of each type, ending, closes them. */
+const ENDING_KINDS = Object.freeze({ track: Object.freeze(["expedition"]), vow: Object.freeze(["vow"]) });
+
+/**
+ * Close the active plans about a subject that ended (issue #362 D4): resolved
+ * when its story ended — an expedition's track completed, a vow fulfilled or
+ * forsaken — retired when the subject is gone — the track removed, the vow's
+ * last copy deleted. Its clock leaves with it (retirePlanClock). The narration
+ * whose beat ended it still has it in play to reveal its end
+ * (`endingTrackIds`, skeletons.js planInPlay). The write keeps the plan's
+ * narration stamp (`keepStamp`), so an X-Card on the narration that decided it
+ * still takes that decision back. Canonical GM. Never throws.
+ *
+ * @param {{ type: "track"|"vow", id: string }} subject
+ * @param {"resolved"|"retired"} status
+ * @returns {Promise<Object[]>} the plans closed, as written
+ */
+export async function closePlansAbout(subject, status) {
+  const kinds = ENDING_KINDS[subject?.type];
+  const id = typeof subject?.id === "string" && subject.id ? subject.id : null;
+  if (!kinds || !id || !["resolved", "retired"].includes(status) || !skeletonsEnabled() || !isCanonicalGM()) return [];
+  const closed = [];
+  try {
+    const about = listSkeletons().filter(r => kinds.includes(r.kind) && r.subject.type === subject.type && r.subject.id === id);
+    for (const plan of about) {
+      const written = await updateSkeleton(plan.id, r => (r.status === "active" ? { ...r, status } : null), { keepStamp: true });
+      if (!written) continue;
+      closed.push(written);
+      await retirePlanClock(written);
+    }
+    if (closed.length) reportSnapshotEvent(status === "resolved" ? "plan_resolved" : "plan_retired");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plans of a ${subject.type} that ended were not closed:`, err?.message ?? err);
+  }
+  return closed;
+}
+
+/**
+ * A scene ended (issue #362 D4): the mysteries it posed that were never
+ * answered — a question, a countdown's "what happens when it runs out?" —
+ * leave play with it, retired with their clocks (a clock an open scene
+ * challenge holds stays the challenge's). Left active, a countdown kept
+ * turning on every later price and its answer "came out" in an unrelated
+ * scene, and the same question posed in the next scene filed a second
+ * mystery. One whose truth was revealed is left as it is. Canonical GM (the
+ * scene lifecycle's emitter). Never throws.
+ *
+ * @param {string|null} sceneId — the scene that ended
+ * @returns {Promise<Object[]>} the mysteries retired, as written
+ */
+export async function retireSceneMysteries(sceneId) {
+  if (typeof sceneId !== "string" || !sceneId || !skeletonsEnabled() || !isCanonicalGM()) return [];
+  const retired = [];
+  try {
+    const unanswered = listSkeletons().filter(r => r.kind === "mystery" && r.subject.type === "scene"
+      && r.subject.id === sceneId && !r.truthRevealed);
+    for (const plan of unanswered) {
+      const written = await updateSkeleton(plan.id,
+        r => (r.status === "active" && !r.truthRevealed ? { ...r, status: "retired" } : null), { keepStamp: true });
+      if (!written) continue;
+      retired.push(written);
+      await retirePlanClock(written);
+    }
+    if (retired.length) reportSnapshotEvent("plan_retired");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the ended scene's unanswered mysteries were not retired:`, err?.message ?? err);
+  }
+  return retired;
+}
+
+/**
+ * A vow Item completed or deleted closes its vow's plan once no copy of the
+ * vow is left open (a shared vow has a copy per PC): completed — fulfilled,
+ * forsaken (the pipeline marks every copy completed), or closed on the sheet
+ * — resolves it; its last copy deleted retires it (issue #362 D4). Never throws.
+ *
+ * @param {Object} item — the vow Item (progress, subtype vow)
+ * @param {"resolved"|"retired"} status
+ */
+async function closeVowPlanIfEnded(item, status) {
+  try {
+    const { getPlayerActors, vowCopyId, isVowCopy } = await import("../character/actorBridge.js");
+    const vowId = vowCopyId(item);
+    if (!vowId) return;
+    const copies = (getPlayerActors() ?? []).flatMap(a => [...(a.items?.contents ?? a.items ?? [])])
+      .filter(i => i?.id !== item.id && isVowCopy(i, vowId));
+    // A copy still open keeps the vow; any copy left keeps a deleted one's.
+    if (status === "resolved" ? copies.some(i => i.system?.completed !== true) : copies.length) return;
+    await closePlansAbout({ type: "vow", id: vowId }, status);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plan of a vow that ended was not closed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Wire the vow Items' ends to their plans (issue #362 D4): a vow completed or
+ * deleted — by a move, on the sheet, in the sidebar — closes its plan
+ * (closeVowPlanIfEnded). Document hooks fire on every client: the canonical
+ * GM closes it, once. Register once, at ready.
+ */
+export function registerPlanSubjectHooks() {
+  if (registerPlanSubjectHooks._installed) return;
+  registerPlanSubjectHooks._installed = true;
+  const isVow = (item) => item?.type === "progress" && item.system?.subtype === "vow";
+  Hooks.on("updateItem", (item, change) => {
+    if (!isCanonicalGM() || !isVow(item) || change?.system?.completed !== true) return;
+    void closeVowPlanIfEnded(item, "resolved");
+  });
+  Hooks.on("deleteItem", (item) => {
+    if (!isCanonicalGM() || !isVow(item)) return;
+    void closeVowPlanIfEnded(item, "retired");
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

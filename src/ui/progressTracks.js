@@ -334,6 +334,25 @@ async function removePairedClock(track) {
   await removeClock(track.tensionClockId);
 }
 
+/**
+ * A track's hidden plan — an expedition's, about the track by id — leaves
+ * play with it (issue #362 D4; secrets.js closePlansAbout): resolved when the
+ * track completes, retired when it is removed. The Finish an Expedition that
+ * completes it still narrates with it in play (`endingTrackIds`). Canonical
+ * GM (closePlansAbout's gate). Fail-open: the track's write stands.
+ *
+ * @param {string} trackId
+ * @param {"resolved"|"retired"} status
+ */
+async function closeTrackPlans(trackId, status) {
+  try {
+    const { closePlansAbout } = await import('../world/secrets.js');
+    await closePlansAbout({ type: 'track', id: trackId }, status);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | progress tracks: the plan of track ${trackId} was not closed with it:`, err?.message ?? err);
+  }
+}
+
 /** The panel's word when a paired clock write is refused: nothing changed; press again. */
 function warnPairedClock(what, err) {
   console.warn(`${MODULE_ID} | ${what}: the scene challenge's paired clock write failed — nothing changed:`, err?.message ?? err);
@@ -1322,11 +1341,13 @@ export async function getProgressTrack(trackId) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function completeProgressTrack(trackId) {
-  return updateTrack(trackId, async (track) => {
+  const completed = await updateTrack(trackId, async (track) => {
     await retirePairedClock(track);
     track.completed   = true;
     track.completedAt = Date.now();
   });
+  if (completed) await closeTrackPlans(completed.id, 'resolved');
+  return completed;
 }
 
 /**
@@ -1515,6 +1536,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         warnPairedClock('completeTrack', clockError);
         return refusedEdit('clock', payload);
       }
+      if (track) await closeTrackPlans(track.id, 'resolved');
       return editOutcome(track, payload);
     }
     case 'remove': {
@@ -1536,6 +1558,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         warnPairedClock('removeTrack', clockError);
         return refusedEdit('clock', payload);
       }
+      if (removed) await closeTrackPlans(removed.id, 'retired');
       return editOutcome(removed, payload);
     }
     default:

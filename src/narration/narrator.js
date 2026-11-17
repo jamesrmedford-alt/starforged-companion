@@ -565,7 +565,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       // agenda to decide: it may say the new one is one of them (issue #354
       // P2-30; formatUnrevealedBlock ALREADY PLANNED).
       extras.plannedSubjects = plannedBeings(allPlans);
-      extras.unrevealed = selectRelevantSkeletons(allPlans, {
+      // A beat that ends a track or a vow sees its plan, resolved in code as
+      // the subject ended, to reveal its end (issue #362 D4; planInPlay).
+      extras.unrevealed = selectRelevantSkeletons(endingTrackIds.length ? listSkeletons({ includeInactive: true }) : allPlans, {
         sceneId:           sceneState?.currentSceneId ?? null,
         frame:             sceneState?.sceneFrame ?? null,
         matchedEntityIds:  extras.matchedEntityIds ?? [],
@@ -1153,13 +1155,16 @@ export async function narrateResolution(resolution, campaignState, options = {})
   const planRequests = skeletonsEnabled()
     ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...normalisePlanRequests(resolution.skeletonRequests)]
     : [];
+  // The tracks and vows this move ends: their plans are in play to reveal
+  // their end, resolved or not (issue #362 D4).
+  const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
   const extras = await buildNarratorExtras('move_resolution', campaignState, {
     playerNarration: resolution.playerNarration ?? '',
     character,
     relevance,
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
-    endingTrackIds:  Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [],
+    endingTrackIds,
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1207,6 +1212,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       matchedEntityIds: extras.matchedEntityIds ?? [],
       narrationId,
       planRequests:     extras.planRequests,
+      endingTrackIds,
     });
 
     if (!narration?.trim()) {
@@ -1253,6 +1259,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
           matchedEntityIds: extras.matchedEntityIds ?? [],
           narrationId,
           planRequests:     extras.planRequests,
+          endingTrackIds,
         });
         if (narration?.trim()) {
           sideDataApplied = true;
@@ -1407,6 +1414,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     .filter(e => isPlayerCharacterActor(game.actors?.get?.(e.actorId) ?? null))
     .map(e => getActiveCharacter(campaignState, e.actorId))
     .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId && o?.name === c.name) === i);
+  // The tracks and vows the round's moves end (issue #362 D4; narrateResolution's rule).
+  const endingTrackIds = entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : []));
   const extras = await buildNarratorExtras('round_resolution', campaignState, {
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
     character:       null,
@@ -1419,7 +1428,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         ...normalisePlanRequests(e.input?.skeletonRequests),
       ])
       : [],
-    endingTrackIds:  entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : [])),
+    endingTrackIds,
   });
   extras.roundCharacters = characters;
 
@@ -1463,6 +1472,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
+        endingTrackIds,
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -5998,10 +6008,13 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // A plan's truth this beat revealed becomes a stated fact (issue #353
   // Phase 2): a truth of the narration's own, stamped with its id, so the
   // X-Card retracts it with the reveal.
+  // The tracks and vows the beat ends: a plan their end resolved is still
+  // this narration's to reveal (issue #362 D4).
+  const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
   const filteredSidecar = {
     ...sidecar,
     stateChanges: otherChanges,
-    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar)],
+    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar, { endingSubjectIds })],
   };
 
   try {
@@ -6080,6 +6093,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       moveId:       ctx.moveId ?? null,
       planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      endingSubjectIds,
     });
   }
   return persisted;

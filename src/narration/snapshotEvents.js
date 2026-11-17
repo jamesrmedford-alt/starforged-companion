@@ -61,7 +61,7 @@ export const SNAPSHOT_EVENTS = Object.freeze([
   { id: 'xcard_played',           snapshot: true,  description: 'the X-Card is played' },
   { id: 'fact_retracted',         snapshot: true,  description: 'a fact is struck or corrected, and its copies retracted' },
   { id: 'plan_edited',            snapshot: true,  description: 'a GM edits a hidden plan' },
-  { id: 'plan_retired',           snapshot: true,  description: 'a GM retires a hidden plan' },
+  { id: 'plan_retired',           snapshot: true,  description: 'a hidden plan is retired — a GM\'s Retire, its subject gone, an ended scene\'s unanswered mystery' },
   { id: 'record_removed',         snapshot: true,  description: 'a record the snapshot holds is gone or no longer stands' },
   // ── Size and age ──────────────────────────────────────────────────────────
   { id: 'changes_large',          snapshot: true,  description: 'the changes since the snapshot have grown large' },
