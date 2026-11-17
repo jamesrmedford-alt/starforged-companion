@@ -4048,6 +4048,48 @@ function escapeHtml(s) {
 }
 
 /**
+ * The CHARACTER blocks of a narration about the PCs `actorIds` names — each
+ * still a PC, by its own id (narrateRound's rule): one is the beat's
+ * character; two or more each get a block, and the narration is third person
+ * (issue #342 Z40's rule); none gets none. The galley's rule (issue #345
+ * AA31).
+ *
+ * @param {string[]} actorIds
+ * @param {Object} campaignState
+ * @returns {{ character: Object|null, roundCharacters: Object[]|null }}
+ */
+function partyBlocksFor(actorIds, campaignState) {
+  const present = (Array.isArray(actorIds) ? actorIds : [])
+    .filter(id => isPlayerCharacterActor(game.actors?.get?.(id) ?? null))
+    .map(id => getActiveCharacter(campaignState, id))
+    .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId) === i);
+  return { character: present.length === 1 ? present[0] : null, roundCharacters: present.length > 1 ? present : null };
+}
+
+/**
+ * The CHARACTER blocks of a narration about the party that no one PC's line
+ * or roll started — a clock vignette, the inciting incident: the PCs at the
+ * table (galleyVignette.js collectGalleyParticipants' active split; a PC no
+ * player owns counts as present with a GM online), as the galley and the
+ * closing vignette are written. Both took the campaign's first PC, so with its
+ * player away the vignette's "you" was a crewmate not there, and the PCs who
+ * were had no block (issue #362 AC75). Fail-open: the first PC, as before.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<{ character: Object|null, roundCharacters: Object[]|null }>}
+ */
+async function partyBlocksAtTable(campaignState) {
+  try {
+    const { collectGalleyParticipants } = await import('../session/galleyVignette.js');
+    const ids = collectGalleyParticipants(campaignState).active.map(p => p.actor?.id).filter(Boolean);
+    return partyBlocksFor(ids, campaignState);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the PCs at the table could not be read — the first PC narrates:`, err?.message ?? err);
+    return { character: getActiveCharacter(campaignState), roundCharacters: null };
+  }
+}
+
+/**
  * Render a Begin Session opening vignette via the narrator API and return the
  * prose text. The caller is responsible for posting the chat card; see
  * `src/session/galleyVignette.js` for the participant-enumeration + card-post
@@ -4091,15 +4133,11 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   await ensureSceneStarted(campaignState, 'session_vignette');
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
-  const present = Array.isArray(actorIds)
-    ? actorIds
-        .filter(id => isPlayerCharacterActor(game.actors?.get?.(id) ?? null))
-        .map(id => getActiveCharacter(campaignState, id))
-        .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId) === i)
-    : null;
-  const character = present ? (present.length === 1 ? present[0] : null) : getActiveCharacter(campaignState);
+  const { character, roundCharacters } = Array.isArray(actorIds)
+    ? partyBlocksFor(actorIds, campaignState)
+    : { character: getActiveCharacter(campaignState), roundCharacters: null };
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
-  if (present && present.length > 1) extras.roundCharacters = present;
+  if (roundCharacters) extras.roundCharacters = roundCharacters;
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -4181,8 +4219,9 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     await ensureSceneStarted(campaignState, 'clock_vignette');
 
     // Its own role (a threat tightening, or arriving), not the session
-    // vignette's "calm before / after" (issue #322 V23).
-    const character = getActiveCharacter(campaignState);
+    // vignette's "calm before / after" (issue #322 V23). The PCs at the table
+    // are its characters (issue #362 AC75).
+    const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
     // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
     // plan's next escalation step — or a countdown's answer coming out — and
     // marks it played with this narration (a rewind that supersedes the
@@ -4199,6 +4238,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     const extras = await buildNarratorExtras('clock_advance', campaignState, {
       character, planIds: ofPlan ? [ofPlan.plan.id] : [],
     });
+    if (roundCharacters) extras.roundCharacters = roundCharacters;
     const systemPrompt = buildNarratorSystemPrompt(
       campaignState, settings, character, '', extras,
     );
@@ -4451,8 +4491,10 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
   // Starting the scene HERE means the first move continues it instead.
   await ensureSceneStarted(campaignState, 'inciting_incident');
 
-  const character = getActiveCharacter(campaignState);
+  // The PCs at the table, not the campaign's first PC (issue #362 AC75).
+  const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
   const extras = await buildNarratorExtras('inciting_incident', campaignState, { character });
+  if (roundCharacters) extras.roundCharacters = roundCharacters;
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );

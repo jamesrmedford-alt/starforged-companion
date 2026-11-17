@@ -128,7 +128,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   when no PC is there; it took the first PC, so with that PC's player away
   its "you" was the crewmate it called absent (issue #345 AA31). The closing
   vignette, about an NPC, takes the PCs at the table the same way — it took
-  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC).
+  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC). So do a clock
+  vignette (every post site) and the inciting incident, which no one PC's
+  line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
+  rule — issue #362 AC75).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
