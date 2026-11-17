@@ -135,7 +135,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.sessionId = sessionId;
     let held = [];
     try {
-      held = loadSessionTurns(this.userId, sessionId);
+      held = await loadSessionTurns(this.userId, sessionId);
     } catch (err) {
       console.warn(`${MODULE_ID} | private channel: the session's conversation could not be read:`, err?.message ?? err);
     }

@@ -101,7 +101,7 @@ describe('issue #362 AC80 — a Private Channel line whose narrator call failed'
     await send();
     expect(app.turns).toEqual([]);
     const transcript = await pat().import('../../src/private-channel/transcript.js');
-    expect(pat().run(() => transcript.loadSessionTurns('pl-1', 'sess-1'))).toEqual([]);
+    expect(await pat().run(() => transcript.loadSessionTurns('pl-1', 'sess-1'))).toEqual([]);
     const context = await pat().run(() => app._prepareContext({}));
     expect(context.transcriptHtml).not.toContain('about the ring');
   }, 30_000);

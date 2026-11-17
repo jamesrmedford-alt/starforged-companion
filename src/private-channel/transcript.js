@@ -321,11 +321,6 @@ async function getOrCreateSessionPage(journal, sessionId) {
  * @returns {Promise<string>}
  */
 export async function loadCurrentSessionTranscript(userId, sessionId) {
-  return savedSessionHtml(userId, sessionId);
-}
-
-/** loadCurrentSessionTranscript's read, synchronous. */
-function savedSessionHtml(userId, sessionId) {
   // A session split over two journals by an earlier rename reads as one, oldest page first.
   const pages = findPrivateJournals(userId)
     .map(journal => findSessionPage(journal, sessionId))
@@ -341,22 +336,24 @@ function savedSessionHtml(userId, sessionId) {
  * the buffer, or being written — that the page does not hold yet. A window
  * reopened while its conversation was "kept in this browser" read the page
  * alone: it opened empty under that very line, and the narrator's next turn
- * was sent none of the exchange (issue #362 AC79). Read at once, page and
- * buffer together, so a write landing between the two reads is neither
- * missed nor shown twice; a batch whose write landed after it was given up
- * on (issue #347 AB05) is on the page already. Read-only.
+ * was sent none of the exchange (issue #362 AC79). The buffer is read before
+ * the page: a batch leaves it only once its page write has landed (it is
+ * `writing` meanwhile), so a batch read here is still waiting or on the page
+ * by the time the page is read — never missed — and one the page holds is
+ * read from the page alone, as is a batch whose write landed after it was
+ * given up on (issue #347 AB05). Read-only.
  *
  * @param {string} userId
  * @param {string} sessionId
- * @returns {Array<{who:"player"|"narrator", name:string, text:string}>}
+ * @returns {Promise<Array<{who:"player"|"narrator", name:string, text:string}>>}
  */
-export function loadSessionTurns(userId, sessionId) {
-  const saved   = savedSessionHtml(userId, sessionId);
+export async function loadSessionTurns(userId, sessionId) {
   const entry   = _buffers.get(userId);
   const waiting = [...(entry?.writing ?? []), ...(entry?.batches ?? [])]
     .filter(b => b?.sessionId === sessionId && b.turns?.length)
-    .filter(b => !saved.includes(renderTurnsHtml(b.turns)));
-  return [...parseTurnsHtml(saved), ...waiting.flatMap(b => b.turns.map(t => ({ ...t })))];
+    .map(b => b.turns.map(t => ({ ...t })));
+  const saved = await loadCurrentSessionTranscript(userId, sessionId);
+  return [...parseTurnsHtml(saved), ...waiting.filter(turns => !saved.includes(renderTurnsHtml(turns))).flat()];
 }
 
 /**
