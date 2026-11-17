@@ -147,7 +147,13 @@ posted from the presser's client, so a crewmate swore another player's vow,
 their momentum and oath scene, issue #338 D1; a vow no character holds any
 more is not sworn: the card closes, `vowGone`, and the presser and the GMs
 are told — it rolled the momentum and oath scene for a deleted vow,
-known-issues SWEAR-ROLL-VOW-GONE), a **connection
+known-issues SWEAR-ROLL-VOW-GONE; the swear reads the vow as it stands on the
+sheet at the press, by the card's `vowId`, and names it by that id — the
+sheet's **+ Vow** creates the Item as "Vow" and only then opens it to be
+named, so a swear built from the card's `vowName` was "Swear an iron vow:
+Vow.", issue #362 AC23 / AC14; a card posted for an Item still named "Vow" is
+worded for a vow still to be named — no name, no rank's stakes — and its
+rewards are proposed for no name), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
