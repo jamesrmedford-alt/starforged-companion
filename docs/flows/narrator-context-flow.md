@@ -890,7 +890,10 @@ and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself, which becomes a ledger truth of the narration's own
 (`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock, a `countdown` becomes a clock
-tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
+tied to its plan (or a new mystery) and offers the GMs a scene challenge —
+once a challenge holds it as its tension clock it is the challenge's, and the
+plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
+#362 AC09) — and
 what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
 is marked played whatever the sidecar says — Phase 3; an enemy or danger the
 prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan

@@ -745,13 +745,37 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
 }
 
 /**
+ * Whether an open scene challenge holds the clock as its tension clock — a
+ * countdown the GMs began a challenge on (sceneChallengeOffer.js). It is the
+ * challenge's then: its filling is the challenge's time running out ("the
+ * scene ends when either fills", progressTracks.js), and the challenge's
+ * completion or removal retires it. A plan's pacing leaves it alone (issue
+ * #362 AC09): rewound "for the step after" on the miss that filled it, the
+ * challenge never ran out of time. Fail-open: false.
+ *
+ * @param {string|null} clockId
+ * @returns {Promise<boolean>}
+ */
+async function heldBySceneChallenge(clockId) {
+  if (typeof clockId !== "string" || !clockId) return false;
+  try {
+    const { listOpenProgressTracks } = await import("../ui/progressTracks.js");
+    return (listOpenProgressTracks() ?? []).some(t => t?.type === "scene_challenge" && t.tensionClockId === clockId);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | secrets: the open scene challenges could not be read:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
  * After a beat played a step of a plan with a clock, the clock paces the next
  * one: back to empty while a step is left, retired when none is — or when the
- * plan's story ended, or a countdown's mystery came out. Never throws.
+ * plan's story ended, or a countdown's mystery came out. A clock an open scene
+ * challenge holds is left as it is (heldBySceneChallenge). Never throws.
  */
 async function paceAfterReveal(before, after) {
   const clock = planClock(after);
-  if (!clock) return;
+  if (!clock || await heldBySceneChallenge(clock._id)) return;
   const played = after.escalation.some((e, i) => e.done && !before.escalation[i]?.done);
   const over = after.status !== "active"
     || !after.escalation.some(e => !e.done) && (played || (after.kind === "mystery" && after.truthRevealed));
