@@ -932,7 +932,10 @@ that a subject it was asked to decide is one already planned, shown to it
 under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
 `extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps
 the other name in `aliases` (read by `secrets.subjectNames` and
-`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
+`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); so
+does a waiting plan decided by its id under the name of a subject another plan
+already has (`joinedByName`, issue #362 AC36 — it became a second plan, with a
+truth and a clock of its own); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`) — and a plan clock it paced: the pacing
 is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking

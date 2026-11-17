@@ -33,7 +33,7 @@ import {
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
-  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay,
+  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel,
   SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
@@ -370,11 +370,32 @@ export function planIsAbout(record, name) {
  *
  * @param {string} name
  * @param {string} kind — the plan about to be filed
+ * @param {{ except?: string|null }} [opts] — a plan never doubled by itself (the one being decided)
  * @returns {Object|null}
  */
-function activePlanAbout(name, kind) {
+function activePlanAbout(name, kind, { except = null } = {}) {
   const kinds = BEING_KINDS.includes(kind) ? BEING_KINDS : [kind];
-  return listSkeletons().find(r => kinds.includes(r.kind) && planIsAbout(r, name)) ?? null;
+  return listSkeletons().find(r => r.id !== except && kinds.includes(r.kind) && planIsAbout(r, name)) ?? null;
+}
+
+/**
+ * The plan a decision of a waiting plan joins because it names a subject
+ * another active plan of a being already has (issue #362 AC36; P2-30's "a
+ * plan that names a subject already planned is merged into that plan", on the
+ * by-id path too). A price's new enemy whose narration decided nothing waits
+ * as "the new enemy this price reveals"; the next narration, asked to decide
+ * it by its id, names it as its prose does — "the escort" — and it became a
+ * second decided plan for the escort, with its own truth and clock. Null for
+ * a decided plan (a duplicate holding a truth is a GM's to Retire), a
+ * decision that names no subject, and a plan not of a being.
+ *
+ * @param {Object} waiting — the plan the decision's id names
+ * @param {Object} plan — normalisePlans'
+ * @returns {Object|null}
+ */
+function joinedByName(waiting, plan) {
+  if (!waiting || waiting.truth || !plan?.subject || plan.sameAs || !BEING_KINDS.includes(waiting.kind)) return null;
+  return activePlanAbout(plan.subject, waiting.kind, { except: waiting.id });
 }
 
 /**
@@ -425,19 +446,24 @@ function plannedAs(id, kind) {
  * a Threats page or an NPC's card when it had none of its own — and the
  * waiting plan is retired. Only for a plan not yet decided: a decided
  * duplicate holds a truth of its own, which is a GM's to Retire. Both writes
- * carry the narration, so the X-Card on it puts both back.
+ * carry the narration, so the X-Card on it puts both back. The plan it joins
+ * is the one `sameAs` names, or `target` — the plan the decision's subject
+ * names (joinedByName, issue #362 AC36). A waiting plan filed under its
+ * request's placeholder ("the new enemy this price reveals") gives the plan
+ * it joins no alias: that is no name the story used.
  *
  * @param {Object} waiting — the undecided plan (its id is the answer's)
  * @param {Object} plan — normalisePlans', with `sameAs`
- * @param {{ narrationId?: string|null }} [opts]
+ * @param {{ narrationId?: string|null, target?: Object|null }} [opts]
  * @returns {Promise<Object|null>} the plan it joined, as written
  */
-async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
+async function planAsAnother(waiting, plan, { narrationId = null, target: named = null } = {}) {
   if (waiting.truth) return null;
-  const target = plannedAs(plan.sameAs, waiting.kind);
+  const target = named ?? plannedAs(plan.sameAs, waiting.kind);
   if (!target || target.id === waiting.id) return null;
+  const waitingName = isPlanRequestLabel(waiting.subject.name) ? "" : waiting.subject.name;
   const merged = await updateSkeleton(target.id, r => {
-    let next = withAlias(withAlias(mergePlanInto(r, plan), waiting.subject.name), plan.subject);
+    let next = withAlias(withAlias(mergePlanInto(r, plan), waitingName), plan.subject);
     for (const alias of waiting.aliases ?? []) next = withAlias(next, alias);
     // A plan known only by name takes the waiting plan's page or card.
     if (next.subject.type === "name" && waiting.subject.id && waiting.subject.type !== "name") {
@@ -536,8 +562,9 @@ async function rollMysteryAnswer() {
  * changed and revealed in one beat put the old, contradicted truth in the
  * scene's facts beside a Lore entry stating the new one, and a plan decided
  * and revealed in one beat got no scene fact at all. An entry answered
- * `sameAs` is not laid on (applyPlanSideData joins it to the other plan, or
- * leaves the plan as it is).
+ * `sameAs`, or one deciding a waiting plan under another plan's subject
+ * (joinedByName), is not laid on: applyPlanSideData joins it to that plan —
+ * the waiting plan retired, its reveal with it — or leaves the plan as it is.
  *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
@@ -555,7 +582,7 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
     const stored = getSkeleton(reveal.id);
     if (!stored || !planInPlay(stored, ending) || stored.truthRevealed) continue;
     const plan = decided.get(reveal.id);
-    const record = plan && !plan.sameAs ? applyPlanToSkeleton(stored, plan) : stored;
+    const record = plan && !plan.sameAs && !joinedByName(stored, plan) ? applyPlanToSkeleton(stored, plan) : stored;
     if (!record.truth) continue;
     out.push(record.kind === "mystery" && record.question
       ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
@@ -649,9 +676,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const existing = getSkeleton(plan.id);
       if (!existing || !planInPlay(existing, ending)) continue;
       // A plan waiting to be decided that the narrator says is a subject
-      // already planned (issue #354 P2-30) joins that plan, and is retired.
-      if (plan.sameAs) {
-        if (await planAsAnother(existing, plan, { narrationId })) {
+      // already planned (issue #354 P2-30) — by its `sameAs`, or by deciding
+      // it under that subject's name (issue #362 AC36) — joins that plan, and
+      // is retired.
+      const named = joinedByName(existing, plan);
+      if (plan.sameAs || named) {
+        if (await planAsAnother(existing, plan, { narrationId, target: named })) {
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
         }

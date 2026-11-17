@@ -497,6 +497,23 @@ export function selectRelevantSkeletons(records, ctx = {}) {
 /** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines). */
 const NEW_ENEMY_SEED = /^The new enemy — /;
 
+/** What a new enemy's plan is called until a narration names it. */
+const NEW_ENEMY_LABEL = "the new enemy this price reveals";
+
+/**
+ * Whether a name is a plan request's placeholder — what a plan is filed under
+ * when the narration asked to decide it named none ("the new enemy this price
+ * reveals", "the discovery this move makes"): never a name the story gave its
+ * subject (secrets.js planAsAnother keeps it off the plan it joins' aliases,
+ * issue #362 AC36).
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isPlanRequestLabel(name) {
+  return [NEW_ENEMY_LABEL, ...Object.values(DISCOVERY_MOVES).map(d => d.label)].some(label => sameSubjectName(label, name));
+}
+
 /**
  * The plans a narration's oracle seeds ask it to decide (issue #353 Phase 1):
  * a price that revealed a new enemy (its Character Role, Goal and Disposition
@@ -517,7 +534,7 @@ export function planRequestsFromSeeds(seeds, refBase) {
       ref:         `plan-${refBase}-enemy`.slice(0, 64),
       kind:        "threat",
       trigger:     "new_enemy",
-      label:       "the new enemy this price reveals",
+      label:       NEW_ENEMY_LABEL,
       oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
     });
   }
