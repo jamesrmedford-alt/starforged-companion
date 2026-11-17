@@ -360,12 +360,14 @@ function buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs = null)
 /**
  * The complete top-level JSON objects in a reply, in order — each `{ … }`
  * found by matching braces outside strings. A reply cut off mid-object gives
- * the objects that closed.
+ * the objects that closed. Shared with the asset-effect extraction
+ * (consequenceRiders.js extractRiders — the same model, a moment later, for
+ * the same abilities; issue #362 AC69).
  *
  * @param {string} text
  * @returns {string[]}
  */
-function topLevelObjects(text) {
+export function topLevelObjects(text) {
   const out = [];
   let depth = 0, start = -1, inString = false, escaped = false;
   for (let i = 0; i < text.length; i++) {
