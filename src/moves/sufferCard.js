@@ -35,7 +35,7 @@ import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor } from "./resultUpgrade.js";
+import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -665,6 +665,16 @@ async function handleSufferPick(message, dataset) {
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
   const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
+  // A resist roll whose post the world refused rolled nothing: the card is
+  // handed back, and its move's Burn / Improve with it, as when a posted roll
+  // is then not made (cardActions.js releaseSourceCard, issue #347 AB06). It
+  // stayed resolved — "Not applied: … post-failed" — and the owed roll could
+  // be made from no card (issue #362 AC60).
+  if (calls.length && calls.every(c => c.kind === "resist") && results.some(r => r?.kind === "resist" && r.reason === "post-failed")) {
+    const reopened = await reopenSufferCard(message, { note: RESIST_UNPOSTED_NOTE });
+    if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
+    return { applied: false, reason: "post-failed" };
+  }
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the
   // resolved card says so, not the "-1" nothing took (issue #345 AA15).
@@ -682,12 +692,17 @@ async function handleSufferPick(message, dataset) {
   return { applied: true };
 }
 
+// What a resist card handed back after the world refused its roll's post says
+// (issue #362 AC60) — on its content only: the next press re-renders it.
+const RESIST_UNPOSTED_NOTE = "The roll could not be posted — the world did not save it. Press it again.";
+
 /**
  * Re-open a suffer choice card — not resolved, not superseded, its buttons
  * rendered again with the picks it already has — when its pick posted a roll
  * that was then not made: the resist roll a harm or stress at 0 owes
  * (sufferDialog.js "resist"), whose confirm was closed or whose start or
- * reading failed (cardActions.js releaseSourceCard), or when the waypoint
+ * reading failed (cardActions.js releaseSourceCard), or whose post the world
+ * refused (handleSufferPick, issue #362 AC60), or when the waypoint
  * alternative that retired it was not rolled. The pick was claimed
  * (`resolved`, "Applied: … rolled to resist") before the roll was posted, so
  * the card said the roll was made and its button was gone for good (issue
@@ -695,9 +710,11 @@ async function handleSufferPick(message, dataset) {
  * whose character is gone, or one live already, stays as it is.
  *
  * @param {string|ChatMessage} messageOrId
+ * @param {{ note?: string|null }} [opts] — a line the re-opened card shows
+ *   (its content only, never its flags: the next press re-renders it)
  * @returns {Promise<boolean>} whether the card is open again
  */
-export async function reopenSufferCard(messageOrId) {
+export async function reopenSufferCard(messageOrId, { note = null } = {}) {
   const message = typeof messageOrId === "string"
     ? (globalThis.game?.messages?.get?.(messageOrId) ?? null)
     : (messageOrId ?? null);
@@ -710,12 +727,13 @@ export async function reopenSufferCard(messageOrId) {
   const picked  = Array.isArray(f.pickedIndices) ? f.pickedIndices : [];
   const madeAny = Array.isArray(f.pickedSuffers) ? f.pickedSuffers : [];
   const notes   = Array.isArray(f.notApplied) ? f.notApplied : [];
+  const shown   = typeof note === "string" && note ? { ...prompt, hint: [note, prompt.hint].filter(Boolean).join(" ") } : prompt;
   try {
     await message.update({
       [`flags.${MODULE_ID}.resolved`]:   false,
       [`flags.${MODULE_ID}.superseded`]: false,
       [`flags.${MODULE_ID}.retiredBy`]:  null,
-      content: renderSufferCard(prompt, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
+      content: renderSufferCard(shown, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
     });
     return true;
   } catch (err) {
