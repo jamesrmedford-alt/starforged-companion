@@ -25,7 +25,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { productionSources } from '../helpers/sourceScan.js';
 import { renderWorldSnapshot, renderUnitSections, diffWorldUnits } from '../../src/narration/worldSnapshot.js';
 import {
-  SNAPSHOT_EVENTS, reportSnapshotEvent, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses,
+  SNAPSHOT_EVENTS, reportSnapshotEvent, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses, namedSnapshotCauses,
   _resetSnapshotEventsForTests,
 } from '../../src/narration/snapshotEvents.js';
 import {
@@ -212,9 +212,12 @@ describe('issue #357 — the one table of events', () => {
     expect(reportSnapshotEvent('plan_made')).toBe(true);
     expect(reportSnapshotEvent('entity_recorded')).toBe(true);
     await Promise.resolve();
-    expect(pendingSnapshotEvents().map(e => e.id).sort()).toEqual(['entity_recorded', 'plan_made']);
-    // The marks are in the world's setting, for whichever GM narrates next.
-    expect(game.settings.get(MODULE_ID, 'worldSnapshotEvents').events.map(e => e.id).sort()).toEqual(['entity_recorded', 'plan_made']);
+    // The world's setting holds one opaque mark, for whichever GM narrates
+    // next — never which events set it (issue #362 D3) …
+    expect(game.settings.get(MODULE_ID, 'worldSnapshotEvents').events.map(e => e.id)).toEqual(['out_of_date']);
+    expect(snapshotCauses(pendingSnapshotEvents().map(e => e.id))).toEqual(['out_of_date']);
+    // … and the client that reported them still names them.
+    expect(namedSnapshotCauses(pendingSnapshotEvents())).toEqual(['plan_made', 'entity_recorded']);
   });
 
   it('an id that is no row is refused, with a warning', () => {
@@ -244,8 +247,9 @@ describe('issue #357 — the one table of events', () => {
     expect(reportSnapshotEvent('plan_made', { now: Date.now() + 5 })).toBe(true);
     await cleared;
     await Promise.resolve();
-    expect(pendingSnapshotEvents().map(e => e.id)).toEqual(['plan_made']);
-    expect(pendingSnapshotEvents()[0].at).toBeGreaterThan(read.find(e => e.id === 'plan_made').at);
+    // A new mark — opaque (issue #362 D3), and later than every one the snapshot answered.
+    expect(pendingSnapshotEvents().map(e => e.id)).toEqual(['out_of_date']);
+    expect(pendingSnapshotEvents()[0].at).toBeGreaterThan(Math.max(...read.map(e => e.at)));
   });
 });
 

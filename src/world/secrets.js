@@ -883,8 +883,10 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
     if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const campaignLevel = record.createdFrom?.trigger === "significant_threat";
+    // Named by its subject alone (issue #362 D3): "<subject> — escalation"
+    // told every player's screen a hidden plan stood behind the clock.
     const clock = await createClock({
-      name: `${record.subject.name} — escalation`.slice(0, 80),
+      name: record.subject.name.slice(0, 80),
       type: campaignLevel ? "campaign" : "tension", segments: campaignLevel ? 6 : 4,
       narrationId, planId: record.id,
     });

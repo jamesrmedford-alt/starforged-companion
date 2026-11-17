@@ -569,10 +569,16 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   no request for an hour (the session's newest narrator card stands in for
   this client's memory after a reload). `snapshotEvents.js` `SNAPSHOT_EVENTS`
   is the one list; every trigger site reports its event by id
-  (`reportSnapshotEvent`) and the table decides. Marks are kept in the world
-  setting `worldSnapshotEvents` (an id and a time), so any GM's client reports
-  and the narrating GM reads them; several between two calls take one
-  snapshot, and the marks it answered are cleared with it.
+  (`reportSnapshotEvent`) and the table decides. The world setting
+  `worldSnapshotEvents` holds one opaque mark and its time — never which
+  event set it (issue #362 D3: named marks told a player at the console a
+  hidden plan was just made or decided) — so any GM's client reports and the
+  narrating GM reads it; the ids stay on the reporting client (its pending
+  marks, and the snapshot page's log — `namedSnapshotCauses`; another GM's
+  mark logs as `out_of_date`). Several between two calls take one snapshot,
+  and the mark it answered is cleared with it; a new event writes a mark
+  newer than any stored, so a snapshot that answered the older one does not
+  answer it.
 
   | Event | Snapshot | Reported by |
   |---|---|---|

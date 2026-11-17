@@ -6,6 +6,54 @@ rejected.
 
 ---
 
+## Issue #362 D3: a hidden plan's existence stays off the table's screens — clocks named by their subject, the odds typed on the oracle card, one opaque snapshot mark (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) The narrator is told
+never to hint that a plan exists; the module's own surfaces no longer do:
+- **A plan's clock is named by its subject alone** — "the escort", not "the
+  escort — escalation" (`secrets.ensureThreatClock`). A world's existing plan
+  clocks (a `planId`, the old suffix) are renamed once, at load, by the
+  canonical GM (`clocks.renamePlanClocksBySubject`, index.js ready); a GM's
+  own clock is never renamed. A countdown's clock keeps the label the prose
+  gave it.
+- **Ask the Oracle shows the odds the player typed, and no threshold.** A
+  yes/no about a planned subject is still rolled at the odds the plan's truth
+  sets (Phase 3; issue #354 P2-31), but the card ("Ask the Oracle (likely)",
+  "d100 = 50 → NO"), its flags (`oracleNarration.oracleName`, `rolledLine`) and
+  the oracle memory every client holds (`recentOracles`) name the typed odds.
+  No yes/no card shows a threshold: shown only on unconsulted rolls, its
+  absence would say a plan stood behind the question.
+- **The snapshot's world setting holds one opaque mark.** `worldSnapshotEvents`
+  is `{ events: [{ id: "out_of_date", at }] }` — never which event set it. The
+  events table and every reporter are unchanged (`SNAPSHOT_EVENTS`,
+  `reportSnapshotEvent(id)`); the ids stay on the reporting GM's client (its
+  pending marks, and the snapshot page's log, which names the events that
+  client reported since the snapshot it replaces —
+  `snapshotEvents.namedSnapshotCauses`; a mark another GM's client set logs as
+  `out_of_date`). A new event writes a mark newer than any stored, so a
+  snapshot another GM took meanwhile, answering the older mark, does not
+  answer it; the same event reported again under the mark that covers it
+  writes nothing (the named marks' "marks once"). A named mark a world stored
+  before this still counts, and is cleared by the snapshot that answers it.
+
+**Reason:** issue #362 D3 (coverage SKEL 1 and 2, NARP D1). "<subject> —
+escalation" on every player's Session panel and `!clock list`, the consulted
+odds printed on the card (the hidden truth, one yes/no at a time), and
+`plan_made` / `plan_decided` / `new_enemy_revealed` in a world setting each
+told the table — or a player at the console — that a hidden plan had just
+been made, decided or consulted.
+
+**Rejected:** *Accepting them as table-facing* (answer B). *Keeping plan
+clocks off the players' lists* — a clock that turns on every Pay the Price is
+the table's to see; its name was the leak. *Hiding the d100 too* — the roll
+and its match are the table's; a player who knows the thresholds can still
+infer, from a roll answered against the odds typed, that something set them
+(accepted). **Amends** "The world snapshot" below ("a world setting of its
+own, `worldSnapshotEvents`: an id and a time"): the setting holds one opaque
+mark and its time; the ids are the reporting client's.
+
+---
+
 ## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
 
 **Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,
