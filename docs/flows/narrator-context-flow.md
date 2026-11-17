@@ -526,7 +526,11 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
 - **Built from units** (`worldSnapshot.js` `collectWorldUnits`): one per
   durable record, each `{ key, section, text }`, read from the stores that
   hold them — every sector of `campaignState.sectors` with its roster by name
-  (the entity lists' records, `collectAllEntities`), every recorded entity's
+  (the entity lists' records, `collectAllEntities`) and, after them, the
+  people recorded with no sector of their own — an NPC a confirmed draft or
+  Make a Connection's auto-create made has no `sectorId`, and [5b]'s roster
+  counted them in the active sector's cast; the reuse rule names both (issue
+  #362 AC29) — every recorded entity's
   card (`formatEntityCard`; an uncharted site — a discovery record not yet
   `discovered` — left out), the whole faction landscape
   (`mergeFactionLandscape`, uncapped), every World Journal threat not

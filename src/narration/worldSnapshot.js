@@ -79,10 +79,10 @@ const SECTIONS = Object.freeze([
       'official, administrator or governing figure for a settlement whose Authority is none or lawless.\n' +
       'CAST DISCIPLINE — reuse before you invent: when a scene needs a character to fill a role (an official, a ' +
       'vendor, a pilot, a fixer, a guard, a witness, a contact, a voice on the comm), first decide whether an ' +
-      'established character — one of the people listed for the active sector, a player character, or anyone ' +
-      'already in the scene — can plausibly fill it, and if so use them by name. Introduce a new named character ' +
-      'only when none can; a new one belongs to the active sector, fits its authority and troubles, and is given ' +
-      'enough substance to recur.' },
+      'established character — one of the people listed for the active sector or with no sector of their own, a ' +
+      'player character, or anyone already in the scene — can plausibly fill it, and if so use them by name. ' +
+      'Introduce a new named character only when none can; a new one belongs to the active sector, fits its ' +
+      'authority and troubles, and is given enough substance to recur.' },
   { id: 'entities', heading: 'RECORDED PEOPLE, PLACES AND SHIPS',
     intro: 'One card for each. Keep every one consistent with its card: do not reassign a role or a goal, change ' +
       'pronouns or disposition, or invent a history that contradicts it. NARRATOR-ADDED lines are details earlier ' +
@@ -242,13 +242,36 @@ function sectorUnit(sector, entities) {
     .map(e => `${e.name} (${[e.record.type, e.record.status].map(oneLine).filter(Boolean).join(', ')})`);
   if (sites.length) lines.push(`Charted sites: ${sites.join('; ')}`);
 
+  lines.push(...peopleLines(inSector.filter(e => e.type === 'connection')));
+  return unit(`sector:${sector.id}`, 'sectors', lines.join('\n'), { label: oneLine(sector.name) });
+}
+
+/** The People line and the Lost connections line of a roster — a lost connection is never cast to reuse. */
+function peopleLines(people) {
   const person = (e) => `${e.name}${e.record.role ? ` — ${oneLine(e.record.role)}` : ''}`;
-  const people = inSector.filter(e => e.type === 'connection');
   const cast = people.filter(e => e.record.active !== false).map(person);
   const lost = people.filter(e => e.record.active === false).map(person);
-  if (cast.length) lines.push(`People: ${cast.join('; ')}`);
-  if (lost.length) lines.push(`Lost connections (the bond with the crew is broken — not cast to reuse as friends): ${lost.join('; ')}`);
-  return unit(`sector:${sector.id}`, 'sectors', lines.join('\n'), { label: oneLine(sector.name) });
+  return [
+    cast.length ? `People: ${cast.join('; ')}` : '',
+    lost.length ? `Lost connections (the bond with the crew is broken — not cast to reuse as friends): ${lost.join('; ')}` : '',
+  ].filter(Boolean);
+}
+
+/**
+ * The people recorded with no sector of their own, after the sectors. An NPC
+ * the story makes in play — a confirmed draft, Make a Connection's
+ * auto-create — is filed with no `sectorId` (connection.js: "a narrator-named
+ * NPC with no charted home"); the per-beat ACTIVE SECTOR roster counts them
+ * in the active sector's cast, and the reuse rule above points at this list
+ * too, so the cast the narrator reuses from is not cut down to the sector
+ * generator's own NPCs (issue #362 AC29).
+ */
+function noSectorPeopleUnit(entities) {
+  const lines = peopleLines(entities.filter(e => e.type === 'connection' && !e.sectorId).sort(byId));
+  if (!lines.length) return null;
+  // `order` sorts it after every sector's unit (which have none — sortedUnits).
+  return unit('people:no-sector', 'sectors', ['#### People with no sector of their own', ...lines].join('\n'),
+    { order: '~' });
 }
 
 /** The threats not resolved, each with the severity it is read as (worldJournal.js getActiveThreats' rule). */
@@ -370,7 +393,7 @@ function planUnits() {
 export function collectWorldUnits(campaignState, { progressTracks = [], summaries = true, include = {} } = {}) {
   const entities = safely('recorded entities', () => recordedEntities(campaignState));
   return [
-    ...safely('sectors',  () => (campaignState?.sectors ?? []).map(s => sectorUnit(s, entities))),
+    ...safely('sectors',  () => [...(campaignState?.sectors ?? []).map(s => sectorUnit(s, entities)), noSectorPeopleUnit(entities)]),
     ...safely('entity cards', () => entities.map(entityUnit)),
     ...(include.factions === false ? [] : safely('factions', () => factionUnits(campaignState))),
     ...(include.threats  === false ? [] : safely('threats',  () => threatUnits())),
