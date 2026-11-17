@@ -724,8 +724,12 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
-picked by its place in the session so two in a row never share one, nothing
-stored — and `extras.usedImages`, the comparisons the last six cards made,
+picked by its place among the session's beats so two in a row never share
+one, nothing stored: the count is of the beat cards (a move's, a paced
+line's, a round's — `isSessionBeatCard`), struck, X-Carded and unnarrated
+ones included, never the @scene answers, oracle follow-ups or vignettes
+between them, which brought the cycle round to the same shape (issue #362
+AC72) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and

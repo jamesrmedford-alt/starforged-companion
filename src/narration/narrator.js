@@ -706,11 +706,32 @@ function lastNarratorCardAt(sessionId) {
 const BEAT_VARIETY_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
 /**
+ * Whether a chat message is a beat's own card — a move's narration, a paced
+ * line's, a round's (BEAT_VARIETY_MODES' cards: `narrationCard`,
+ * `pacedNarrative`, `roundId`) — of this session. Never an @scene answer, an
+ * oracle follow-up, a vignette, a vow scene or a published reflection.
+ *
+ * @param {Object} m — a ChatMessage
+ * @param {string|null} sessionId
+ * @returns {boolean}
+ */
+function isSessionBeatCard(m, sessionId) {
+  const f = m?.flags?.[MODULE_ID];
+  if (!f?.narratorCard || f.sessionId !== sessionId) return false;
+  return f.narrationCard === true || f.pacedNarrative === true || (typeof f.roundId === 'string' && f.roundId !== '');
+}
+
+/**
  * The images the session's last narrations used and the shape for the beat
  * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
  * the session's narrator cards, the ring's own source. Nothing is stored: the
- * shape follows from how many narrations the session holds. Fail-open: an
- * unreadable chat log gives no list and the first shape.
+ * shape follows from how many beats the session holds — every beat card it
+ * posted, a struck, X-Carded or unnarrated one included (they stay in chat).
+ * Counted over all its narrator cards, four @scene answers, oracle follow-ups
+ * or vignettes between two beats brought the five-shape cycle back round to
+ * the same shape, and a card a Burn / Improve struck took the count back one
+ * (issue #362 AC72). Fail-open: an unreadable chat log gives no list and the
+ * first shape.
  *
  * @param {string|null} sessionId
  * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
@@ -721,9 +742,10 @@ function beatVariety(sessionId) {
     const prose = cards.slice(-IMAGE_SOURCE_CARDS)
       .map(m => m?.flags?.[MODULE_ID]?.narrationText)
       .filter(t => typeof t === 'string' && t.trim());
+    const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     return {
       usedImages: recentImages(prose),
-      beatShape:  pickBeatShape({ beatIndex: cards.length, seed: sessionId }),
+      beatShape:  pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);

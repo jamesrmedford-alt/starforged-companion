@@ -179,9 +179,11 @@ function hashOf(seed) {
 }
 
 /**
- * The shape for a beat: by its place in the session (`beatIndex`, the
- * narrations before it), so two beats in a row never share one and nothing
- * need be stored; the session (`seed`) decides where the cycle starts.
+ * The shape for a beat: by its place in the session (`beatIndex`, the beats
+ * before it — narrator.js beatVariety counts the session's beat cards, never
+ * its other narrator cards, issue #362 AC72), so two beats in a row never
+ * share one and nothing need be stored; the session (`seed`) decides where
+ * the cycle starts.
  *
  * @param {{ beatIndex?: number, seed?: string|null }} [at]
  * @returns {{ id: string, hint: string }}
