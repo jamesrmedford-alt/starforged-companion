@@ -119,7 +119,9 @@ record and pin for it).
   token on it and a settlement pin's coordinates, else it is dropped and the
   move is an ordinary Set a Course — a chat flag any user can write, it made
   the GM's client move any token on any Scene to any point (issue #347
-  AB23). On a non-miss the arrival
+  AB23). A Batch Mode round reads it the same way when the drop is its
+  roller's entry (`batch/driver.js` `forcedFromFlags` — the round copied it
+  raw, issue #362 AC62). On a non-miss the arrival
   records the ship position by that id (`inferShipPositionFromEntityId`,
   source `scene_token` → "docked at") and the current location by it, and the
   token snaps to the pin — the pin's label went stale on a rename, so the

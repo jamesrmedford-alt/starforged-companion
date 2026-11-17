@@ -68,6 +68,7 @@ import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
+import { checkedTokenDragCourse } from "../sectors/sectorSceneHooks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
   ROUND_PHASE,
@@ -1905,7 +1906,11 @@ function forcedFromFlags(f) {
     moveTarget:             typeof f.forcedMoveTarget === "string" ? f.forcedMoveTarget : null,
     moveTargetId:           typeof f.forcedMoveTargetId === "string" ? f.forcedMoveTargetId : null,
     swearToConnection:      typeof f.swearToConnection === "string" ? f.swearToConnection : null,
-    tokenDragSetCourse:     f.tokenDragSetCourse ?? null,
+    // Only what a ship-token drop could have produced — a sector map, the
+    // command vehicle's token, a settlement pin — checked as free-flow checks
+    // it (issue #347 AB23): a hand-made entry's payload moved any token on any
+    // Scene on a hit (issue #362 AC62). Refused, the Set a Course is still rolled.
+    tokenDragSetCourse:     checkedTokenDragCourse(f.tokenDragSetCourse ?? null),
     incitingSwearMessageId: typeof f.incitingSwearMessageId === "string" ? f.incitingSwearMessageId : null,
     // A move the card owes (the resist roll at 0): the roller's entry, never an offer (issue #342 D2).
     ...(f.owedMove === true ? { owed: true } : {}),
