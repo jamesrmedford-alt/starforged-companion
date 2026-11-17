@@ -76,7 +76,7 @@ Two reveal paths, both funnelling through `revealSectorSite`
    / cleared), never a sibling a looser rung finds ("…II" contains "…I"); a
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
-   keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
+   keeps the pipeline's copy of `sectors` — `mergeWithLatestState`: the pipeline writes `sectors` itself, so the store's copy cannot win without dropping the reveal, and with no baseline a `!sector` or sector generation landing mid-move is overwritten — the recorded trade-off; issue #362 AC55 / PIPE D6).
 2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder and the
    sole-undiscovered guess as its last rung (with no name, the sole
    unexplored site).
