@@ -235,11 +235,15 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.initialMessage = "";
     this.errorBanner    = "";
 
-    // Show the player's turn immediately + buffer it.
+    // Show the player's turn at once; it is kept — buffered for the page —
+    // once the narrator has answered it. Filed before the call, a line whose
+    // call failed stayed in the transcript while the box was left empty, so
+    // "try again" meant retyping it, and the narrator was then sent it twice
+    // (issue #362 AC80).
     const playerTurn = { who: "player", name: characterName, text: message };
     this.turns.push(playerTurn);
-    appendToBuffer(this.userId, playerTurn);
     this.busy = true;
+    let answered = false;
     try {
       await this.render();
 
@@ -255,8 +259,10 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       if (result.ok) {
         const narratorTurn = { who: "narrator", name: "Narrator", text: result.text };
         this.turns.push(narratorTurn);
+        appendToBuffer(this.userId, playerTurn);
         appendToBuffer(this.userId, narratorTurn);
         scheduleDebouncedWrite(this.userId);
+        answered = true;
       } else {
         this.errorBanner = {
           "x-card":       "The X-Card is in play — the narrator is paused until a GM resumes the scene.",
@@ -273,8 +279,24 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       // send hits `if (this.busy) return` and silently no-ops. Same
       // guard-not-released-on-throw class as the move pipeline pendingMove lock.
       this.busy = false;
+      if (!answered) this.#handBack(playerTurn, message);
     }
     await this.render();
+  }
+
+  /**
+   * A line the narrator did not answer goes back in the box it was typed in
+   * — as the banner says ("Your message is preserved; try again"), and as an
+   * unacted line does elsewhere (PT11, MOVE-BUSY-NOTICE) — and is no turn of
+   * the conversation (issue #362 AC80). The box is disabled while the call is
+   * out; anything in it is left alone.
+   */
+  #handBack(turn, text) {
+    const at = this.turns.lastIndexOf(turn);
+    if (at >= 0) this.turns.splice(at, 1);
+    const box = this.element?.querySelector?.("[data-pc-input]");
+    if (box && !String(box.value ?? "").trim()) box.value = text;
+    if (!this.initialMessage) this.initialMessage = text;
   }
 
   static async #onPublish(_event, _target) {
