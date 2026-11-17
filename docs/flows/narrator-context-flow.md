@@ -177,7 +177,10 @@ GM-built prompt until their next load (issue #345 AA35). The global Lines /
 Veils copy is healed the same way by the canonical GM, from the world
 settings (`onSafetyListsWritten`, SAFETY-GLOBAL-LISTS-CROSS-WRITE). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
-building client: on a GM's client every player's lines (deduplicated); on a
+building client: on a GM's client every player's lines (deduplicated, listed
+by their users' ids — the stored entries are in the order of the last sync,
+every client re-syncs at `ready`, and a reload reordered the lines and
+rewrote the cached standing block, issue #362 AC67); on a
 player's client — narrating only with no keyed GM online — that player's own,
 read from their client setting, never another player's. Before 2026-10 the
 shared prompt passed no user id and carried no Private Line at all

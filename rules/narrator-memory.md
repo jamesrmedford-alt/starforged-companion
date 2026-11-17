@@ -242,7 +242,10 @@ layers. This file is the never-break list.
    request's: anything read per call — a perspective a round can force, the
    X-Card redirect, oracle seeds, the session-start recap, a name, a count,
    a timestamp — goes in `beat` (or `mode`, when it is constant for the
-   mode). Add a section to the block its volatility puts it in, never to
+   mode). A list a cached block renders is in a stable order, never the
+   order its writes landed in (the GM's Private Lines by user id — a
+   player's reload re-synced them to the end, issue #362 AC67). Add a
+   section to the block its volatility puts it in, never to
    `standing` because it reads well there; `tests/unit/
    narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached
    block. The sidecar instruction lives in `standing`, and the context closes
