@@ -194,11 +194,16 @@ export function splitThreatName(raw) {
  * page so named was returned before anything was ranked, and nothing read
  * `mergedInto`, so the closed page was written and active again).
  *
+ * Variants that are the name with a sector's name added — two sectors' one
+ * Sector Trouble — are narrowed to the active sector's first
+ * (activeSectorTroublePages, issue #362 AC43).
+ *
  * @param {JournalEntry|null} journal — the Threats journal
  * @param {string} name — splitThreatName's
+ * @param {Object|null} [campaignState] — its `sectors` and `activeSectorId`
  * @returns {JournalEntryPage|null}
  */
-function findThreatPageVariant(journal, name) {
+function findThreatPageVariant(journal, name, campaignState = null) {
   const exact = findPageByName(journal, name);
   if (exact) return mergedThreatPage(journal, exact);
   const key = nameKey(name);
@@ -210,8 +215,43 @@ function findThreatPageVariant(journal, name) {
   const rank = (p) => (p.entry.severity === "resolved" ? 1 : 0);
   const best = (hits) => hits.sort((a, b) => (rank(a) - rank(b)) || (a.key.length - b.key.length))[0]?.page ?? null;
   const hit = best(pages.filter(p => p.key === key))
-      ?? best(pages.filter(p => suffixedName(p.entry.name, name)));
+      ?? best(activeSectorTroublePages(pages.filter(p => suffixedName(p.entry.name, name)), name, campaignState));
   return hit ? mergedThreatPage(journal, hit) : null;
+}
+
+/**
+ * Of several Threats pages a detected name is a variant of, the ones that are
+ * a sector's: each sector's Sector Trouble is its own threat, named
+ * "<trouble> — <sector>" (sectorGenerator, issue #342 Z65 — resolving it for
+ * one resolved both), so a trouble two sectors rolled, named by the trouble
+ * alone, is the active sector's — the shorter sector name took it, whichever
+ * sector the crew was in (issue #362 AC43). Another sector's page is left
+ * out; with none of them the active sector's, what is left — maybe nothing,
+ * and the name is then no recorded threat's: a new page, or a transition
+ * skipped. Pages that are no sector's, and a single hit, are kept as they are.
+ *
+ * @param {Array<{ page: JournalEntryPage, key: string }>} hits — the variant pages (`key` nameKey of their name)
+ * @param {string} name — the detected name
+ * @param {Object|null} campaignState
+ * @returns {Array} the hits to choose from
+ */
+function activeSectorTroublePages(hits, name, campaignState) {
+  if (hits.length < 2) return hits;
+  const sectors = (Array.isArray(campaignState?.sectors) ? campaignState.sectors : [])
+    .map(s => ({ id: s?.id ?? null, key: nameKey(s?.name) }))
+    .filter(s => s.key);
+  if (!sectors.length) return hits;
+  const base = nameKey(name);
+  const sectorOf = (hit) => {
+    if (hit.key.length <= base.length || !hit.key.startsWith(base)) return null;
+    const added = nameKey(hit.key.slice(base.length).replace(/^\s*(?:[:;(—–]|-\s)\s*/u, "").replace(/\)\s*$/u, ""));
+    return sectors.find(s => s.key === added) ?? null;
+  };
+  const tagged = hits.map(hit => ({ hit, sector: sectorOf(hit) }));
+  if (!tagged.some(t => t.sector)) return hits;
+  const activeSectorId = campaignState?.activeSectorId ?? null;
+  const here = tagged.filter(t => t.sector && activeSectorId && t.sector.id === activeSectorId);
+  return (here.length ? here : tagged.filter(t => !t.sector)).map(t => t.hit);
 }
 
 /**
@@ -240,16 +280,19 @@ function mergedThreatPage(journal, page) {
  * The recorded threat a name the detector returned means, by its own name —
  * or the name itself, cleaned, when the journal holds no such threat. A name
  * that runs two threats together ("A: looming; B: immediate" — the list the
- * detector was shown) is the first of them the journal holds.
+ * detector was shown) is the first of them the journal holds. A Sector
+ * Trouble two sectors share is the active sector's (`campaignState`, issue
+ * #362 AC43).
  *
  * @param {string} raw
+ * @param {Object|null} [campaignState] — its `sectors` and `activeSectorId`
  * @returns {{ name: string, severity: string|null, known: boolean }}
  */
-export function resolveThreatName(raw) {
+export function resolveThreatName(raw, campaignState = null) {
   const journal = findJournal(JOURNAL_NAMES.threats);
   const whole = splitThreatName(raw);
   const named = (split) => {
-    const page = split.name ? findThreatPageVariant(journal, split.name) : null;
+    const page = split.name ? findThreatPageVariant(journal, split.name, campaignState) : null;
     const name = page ? (entryTitle(page) ?? page.name) : null;
     return name ? { name, severity: split.severity, known: true } : null;
   };
@@ -687,7 +730,7 @@ export async function recordThreat(name, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
-  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed) : { name: typed, severity: null };
+  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed, campaignState) : { name: typed, severity: null };
   const cleanName = resolved.name || typed;
   const existing  = findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
   const now       = new Date().toISOString();
@@ -913,7 +956,7 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
   if (!journal) return null;
 
   const typed = name?.trim() ?? "";
-  const page = findPageByName(journal, fromDetection ? resolveThreatName(typed).name : typed);
+  const page = findPageByName(journal, fromDetection ? resolveThreatName(typed, campaignState).name : typed);
   if (!page) {
     // Not a warning: the detector may reference a danger that was never
     // recorded as a threat. The detection prompt now discourages this, but a

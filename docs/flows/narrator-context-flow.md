@@ -422,7 +422,8 @@ live, and its writes after the card's own undo left the removed fact as a
 detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`; a detected threat is the recorded one when its name
-is a variant of it — `resolveThreatName` — and its severity one of four
+is a variant of it — `resolveThreatName`; a Sector Trouble two sectors share is
+the active sector's, issue #362 AC43 — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
 page: issue #354 P2-15; an escalation never leaves it less urgent — issue
 #362 AC42; a GM's **Merge duplicates** folds earlier ones,
