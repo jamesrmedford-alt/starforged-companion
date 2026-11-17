@@ -22,6 +22,15 @@ Two cross-cutting facts to hold onto:
   is one (`moves/stakes.js` `statedPrice` → `postMovePayThePriceCard`'s
   `stated`: no d100, its one suffer route dispatched as a rolled route is,
   the same receipts on `ptpReversals`), else rolls the table (issue #353 R1).
+  A Battle or Clash **weak hit** that routes Pay the Price rolls the table:
+  the stated miss is a miss's price only — `rollMove` passes `stated` for a
+  miss alone, and a held miss burned or improved to such a weak hit pays the
+  table's too (`heldResult.payHeldPrice`, issue #362 AC01). A card-forced
+  move — a way-out or Battle button, a paced card's Roll — states the stakes
+  its stat reading gives (`statEnrichment.enrichForcedMoveStat`; a one-stat
+  move is read for them alone), and a stated Withstand Damage / Companion
+  Takes a Hit lands on the support vehicle or companion the move was made
+  against (`stakes.statedPrice`'s route targets — issue #362 D11).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
@@ -382,8 +391,18 @@ the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
-paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
-its advisory seed. The card records the price under the move that paid it
+paid — another (issue #321 U03). A card the world refuses does not drop the
+price: its routes, the clocks and the seed are paid all the same, and the GM
+who paid it is told (`priceCardRefusedNotice` — issue #362 D12; Take
+Decisive Action's cost card too). A miss whose price is one of its choices
+(Sojourn's "No relief") is seeded with the price its option carries —
+rolled once at resolution (`rollChoicePrice`), its text and suffer routes
+kept on the option — and its pick pays that price as rolled
+(`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
+the narration depicted, never two rolled again (issue #362 AC30). With a miss
+stated before the roll, that price is the stated miss — the seed and the
+pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). The card
+records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts
 the price. It used to say "Face Defeat" for every routed price and narrate

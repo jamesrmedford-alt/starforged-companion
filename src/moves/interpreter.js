@@ -21,6 +21,7 @@ import { getCanonicalMove } from "../system/ironswornPacks.js";
 import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { normaliseStakes, withPriceSource } from "./stakes.js";
+import { missPaysPrice } from "./resolver.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -820,9 +821,10 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     healSituation:           parsed.moveId === "heal" && HEAL_SITUATIONS.has(parsed.healSituation) ? parsed.healSituation : null,
     rationale,
     // What a hit gets and a miss costs, stated before the roll (issue #353
-    // R1) — only for a move that rolls a stat; a stated miss is its price.
+    // R1) — only for a move that rolls a stat; a stated miss is its price
+    // when the move's miss pays one (issue #362 AC02).
     stakes:                 finalMoveData.progressMove !== true && parsed.statUsed
-      ? withPriceSource(normaliseStakes(parsed.stakes))
+      ? withPriceSource(normaliseStakes(parsed.stakes), missPaysPrice(parsed.moveId))
       : null,
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",

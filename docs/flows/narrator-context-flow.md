@@ -44,7 +44,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   interpreter's hit and miss lines the Confirm dialog showed
   (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
   this outcome delivers (issue #353 R1; a burn's or an improvement's
-  re-narration carries them) — then the player's line.
+  re-narration carries them) — then the player's line. The miss line is
+  shown, and narrated as "what this miss costs", only when it is the price:
+  `priceStated`, false for a move whose miss pays no price — Enter the
+  Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
+  issue #362 AC02).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after

@@ -7135,7 +7135,9 @@ async function postCombatFinishCard({ track }) {
  * A Take Decisive Action weak hit's cost: roll the table once, post its card,
  * land its suffer routes on the roller. The cost seeds the move's own
  * narration (the pipeline's withDecisiveActionCostSeed), so the narration
- * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL).
+ * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL). A card the world
+ * refuses is logged and the GM told: the cost is paid all the same (issue
+ * #362 D12).
  *
  * @param {string|null} [actorId] — the roller
  * @returns {Promise<{ cost: string }|null>} the rolled result's text; null when nothing was rolled
@@ -7153,17 +7155,32 @@ async function postDecisiveActionCostCard(actorId = null) {
   const routeFooter = result.sufferRoutes.length
     ? `<p><em>Triggers: ${result.sufferRoutes.map(r => `choose a suffer move (-${r.amount})`).join("; ")}.</em></p>`
     : "";
+  // Paid whether or not its card posts, as a Pay the Price is (issue #362 D12).
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Decisive Action — Cost</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
       flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoutes: result.sufferRoutes } },
     });
   } catch (err) {
-    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
-    return null;
+    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+    priceCardRefusedNotice("Decisive Action — Cost", "Take Decisive Action");
   }
   await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
   return result.result && result.result !== "—" ? { cost: result.result } : null;
+}
+
+/**
+ * Tell the GM whose client paid a price that the world refused its card
+ * (issue #362 D12): the price is paid all the same, and the move's narration
+ * depicts it. A notice on this screen — the canonical GM's, where the price
+ * runs — since a chat card to the GMs would be refused as this one was.
+ *
+ * @param {string} card — the card's title
+ * @param {string} paidFor — the move that paid it
+ */
+function priceCardRefusedNotice(card, paidFor) {
+  if (!game.user?.isGM) return;
+  ui.notifications?.warn?.(`Starforged Companion: the world did not save the ${card} card${paidFor ? ` for ${paidFor}` : ""}. The price was paid all the same, and the narration tells it.`);
 }
 
 /**
@@ -7172,6 +7189,8 @@ async function postDecisiveActionCostCard(actorId = null) {
  * card under the move that paid it, land its suffer routes on the roller and
  * advance the countdown clocks. Its price seeds the move's own narration
  * (the caller's withPayThePriceSeed), so it asks for no narration of its own.
+ * A card the world refuses is logged and the GM told: the price — its routes,
+ * the clocks, the seed — is paid all the same (issue #362 D12).
  *
  * @param {string|null} actorId — the roller
  * @param {string|null} moveName — the move that paid it ("Face Danger")
@@ -7211,6 +7230,10 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
   const priceLine = statedText
     ? `<p>As stated before the roll: <strong>${escapeChatHtml(result.result)}</strong></p>`
     : `<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>`;
+  // The price is paid whether or not its card posts (issue #362 D12, decided
+  // — as payChosenPrice's is): a refused card dropped the suffer routes, the
+  // clocks and the narration's seed, and with the result held its wait had
+  // already closed, so nothing could pay it later.
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
@@ -7225,8 +7248,8 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
       },
     });
   } catch (err) {
-    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed:`, err?.message ?? err);
-    return null;
+    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+    priceCardRefusedNotice("Pay the Price", paidFor);
   }
 
   // Dispatch the suffer executors first (before clock advance) so meter changes
@@ -7387,35 +7410,54 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
 
 /**
  * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
- * relief — Pay the Price" carries the d100 its narration was seeded with
+ * relief — Pay the Price" carries the price its narration was seeded with
  * (resolver rollChoicePrice), and its pick pays that price — the card, its
  * suffer routes on the roller, the countdown clocks — as a routed price is
  * paid (postMovePayThePriceCard). It only posted a reminder to roll one, which
- * differed from the narrated price. The result is read from the table by the
- * roll, never from the card's text. No follow-up narration: the move's own
- * depicted it. Runs where the pick is applied — the canonical GM (sufferCard
- * "suffer.pick"); elsewhere its world writes are relayed. A card the world
- * refuses is logged: the price is paid all the same (the pick is claimed).
+ * differed from the narrated price. The option carries the price as it was
+ * rolled — its text and the routes it lands — and that is what is paid: read
+ * back from the table by its d100, a "Roll twice" rolled its two rows again,
+ * so the pick paid two prices the narration never told (issue #362 AC30). A
+ * miss stated before the roll is the price the option carries instead
+ * (`stated` — nothing was rolled): its card says so, as a routed stated miss's
+ * does, and its one suffer move lands (issue #362 AC03). The routes are
+ * checked as a relayed `!ptp`'s are (knownPriceRoutes). An option posted
+ * before then carries the d100 alone: its row is read back by the roll. No
+ * follow-up narration: the move's own depicted it. Runs where the pick is
+ * applied — the canonical GM (sufferCard "suffer.pick"); elsewhere its world
+ * writes are relayed. A card the world refuses is logged: the price is paid
+ * all the same (the pick is claimed).
  *
- * @param {{ roll: number, moveName?: string|null }} price
+ * @param {{ roll: number|null, result?: string, sufferRoutes?: Array<Object>, stated?: true, moveName?: string|null }} price
  * @param {Actor} actor — the card's PC, the roller
  * @returns {Promise<{ ok: boolean, reason?: string, price?: string }>}
  */
 export async function payChosenPrice(price, actor) {
   if (!isPlayerCharacterActor(actor)) return { ok: false, reason: "no-pc" };
-  const { rollOracle } = await import("./oracles/roller.js");
-  let result;
-  try {
-    result = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100 ? rollOracle("pay_the_price", { roll: price.roll }) : null;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
-    result = null;
+  const rolled = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100;
+  const stated = price?.stated === true && typeof price.result === "string" && !!price.result.trim();
+  let result = null;
+  if (stated) {
+    result = { roll: null, result: price.result.trim(), sufferRoutes: (await knownPriceRoutes(price.sufferRoutes)).slice(0, 1) };
+  } else if (rolled && typeof price.result === "string" && price.result.trim() && Array.isArray(price.sufferRoutes)) {
+    result = { roll: price.roll, result: price.result.trim(), sufferRoutes: await knownPriceRoutes(price.sufferRoutes) };
+  } else if (rolled) {
+    const { rollOracle } = await import("./oracles/roller.js");
+    try {
+      result = rollOracle("pay_the_price", { roll: price.roll });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
+      result = null;
+    }
   }
   if (!result?.result) return { ok: false, reason: "invalid" };
   const paidFor = typeof price.moveName === "string" && price.moveName.trim() ? price.moveName.trim() : "";
   const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
+  const priceLine = stated
+    ? `<p>As stated before the roll: <strong>${escapeChatHtml(result.result)}</strong></p>`
+    : `<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>`;
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
     flags:   { [MODULE_ID]: {
       payThePriceCard: true,
       sufferRoutes:    result.sufferRoutes,
@@ -7454,16 +7496,30 @@ function sufferRoutesFooter(routes, { notApplied = null } = {}) {
 }
 
 /**
- * Dispatch each route a Pay the Price roll landed on, in order, once — a
- * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
- * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
- * dispatch throws is logged and the next still runs.
+ * The Pay the Price routes a payload or a card carries, as the table
+ * annotates them: a known suffer move (or "any"), 1–3, at most four (a "Roll
+ * twice" lands two; a roll twice of rolls twice, four) — a relayed `!ptp`'s
+ * (applyPayThePriceSufferFromRelay) and a chosen price's (payChosenPrice).
+ * Each comes back with those fields alone, and a stated route's vehicle or
+ * companion id (issue #362 D11) — an id the executor checks against the
+ * payer's own assets.
  *
- * @param {Array<Object>} routes — rollOracle's `sufferRoutes`
- * @param {string|null} actorId
- * @param {string} where — for the log
- * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
+ * @param {*} routes
+ * @returns {Promise<Array<{ move: string, amount: number, soloFallback?: string, vehicleItemId?: string, companionItemId?: string }>>}
  */
+async function knownPriceRoutes(routes) {
+  const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
+  const known = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
+  const assetId = (v) => typeof v === "string" && v.length > 0 && v.length <= 64;
+  return (Array.isArray(routes) ? routes : []).slice(0, 4).filter(r =>
+    r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
+    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)))
+    .map(r => ({ move: r.move, amount: r.amount,
+      ...(r.soloFallback ? { soloFallback: r.soloFallback } : {}),
+      ...(assetId(r.vehicleItemId) ? { vehicleItemId: r.vehicleItemId } : {}),
+      ...(assetId(r.companionItemId) ? { companionItemId: r.companionItemId } : {}) }));
+}
+
 /**
  * gmRelay handler for "payThePrice.suffer" — runs on the canonical GM (issue
  * #325 W10). A typed `!ptp` rolls on its author's client (RUN_ON.AUTHOR); its
@@ -7479,11 +7535,7 @@ function sufferRoutesFooter(routes, { notApplied = null } = {}) {
  * @returns {Promise<{ applied: boolean, reason?: string, landed?: Array<Object> }>}
  */
 export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
-  const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
-  const known  = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
-  const routes = (Array.isArray(payload.routes) ? payload.routes : []).slice(0, 4).filter(r =>
-    r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
-    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)));
+  const routes = await knownPriceRoutes(payload.routes);
   if (!routes.length) return { applied: false, reason: "no-routes" };
 
   const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;
@@ -7500,6 +7552,25 @@ export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
   return { applied: true, landed };
 }
 
+/**
+ * Dispatch each route a Pay the Price roll landed on, in order, once — a
+ * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
+ * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
+ * dispatch throws is logged and the next still runs.
+ *
+ * A route's write the world refused goes on the GMs' payoff failure card, one
+ * card for the price: a `suffer` step whose Retry applies it once — the
+ * route's executor whole when its first write was refused (nothing landed),
+ * or the second write alone when the meter landed (`retryCall` — its card
+ * says "not saved (the GMs have a Retry)"). As a suffer card's pick reports
+ * the same refusal (sufferCard reportRefusedCalls); it was a console line,
+ * and that Retry was never posted (issue #362 AC59).
+ *
+ * @param {Array<Object>} routes — rollOracle's `sufferRoutes`
+ * @param {string|null} actorId
+ * @param {string} where — for the log
+ * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
+ */
 async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null, upgradeOffered = false } = {}) {
   const landed = [];
   for (const route of routes ?? []) {
@@ -7508,6 +7579,18 @@ async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolut
       return null;
     });
     if (res) landed.push(res);
+  }
+  const refused = landed.filter(r => r?.ok === false && r.reason === "refused" && r.retryCall);
+  if (refused.length) {
+    const { isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+    const failures = refused.filter(r => isRetryableSufferCall(r.retryCall)).map(r => ({
+      step: "suffer", call: r.retryCall, reason: "refused", error: r.error ?? null,
+      opts: { isMiss: true, ...(resolutionId ? { resolutionId, priceCard: true } : {}) },
+    }));
+    if (failures.length) {
+      await postPayoffFailureCard({ source: "suffer", actorId: refused[0].actorId ?? actorId ?? null, failures })
+        .catch(err => console.warn(`${MODULE_ID} | ${where}: the refused route's failure card failed:`, err?.message ?? err));
+    }
   }
   return landed;
 }
@@ -7564,30 +7647,49 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
   }
 
   // companion_takes_a_hit needs an item id. If the PC has a companion
-  // asset, surface it; otherwise fall back to Endure Harm (the "you are,
-  // if alone" branch in the entry text).
+  // asset, surface it — the one the route names (a stated price's: the
+  // companion its move was made for, issue #362 D11), else the first;
+  // otherwise fall back to Endure Harm (the "you are, if alone" branch in the
+  // entry text). A stated Withstand Damage names the support vehicle its move
+  // was rolled for; with none, the executor takes the command vehicle.
   let move = route.move;
   let itemId = null;
   if (move === "companion_takes_a_hit") {
-    const companion = actor.items?.find?.(i => i?.system?.category?.toLowerCase?.() === "companion");
+    const isCompanion = (i) => i?.system?.category?.toLowerCase?.() === "companion";
+    const named = typeof route.companionItemId === "string" && route.companionItemId
+      ? actor.items?.find?.(i => i?.id === route.companionItemId && isCompanion(i)) : null;
+    const companion = named ?? actor.items?.find?.(isCompanion);
     if (companion) {
       itemId = companion.id;
     } else if (route.soloFallback) {
       move = route.soloFallback;
     }
+  } else if (move === "withstand_damage" && typeof route.vehicleItemId === "string" && route.vehicleItemId) {
+    itemId = route.vehicleItemId;
   }
 
-  const landed = await executeSuffer(move, actor, {
-    amount: route.amount ?? 1,
-    itemId,
-    isMiss: true,  // Pay the Price always implies a miss context.
-    resolutionId,
-    // A move's price: the cards its route posts — the resist roll a harm
-    // owes, a redirected loss's picker — are stamped `priceCard`, so a burn
-    // to a result that pays the price too keeps them (issue #335 Y09).
-    ...(resolutionId ? { priceCard: true } : {}),
-    ...(upgradeOffered ? { upgradeOffered: true } : {}),
-  });
+  const amount = route.amount ?? 1;
+  let landed;
+  try {
+    landed = await executeSuffer(move, actor, {
+      amount,
+      itemId,
+      isMiss: true,  // Pay the Price always implies a miss context.
+      resolutionId,
+      // A move's price: the cards its route posts — the resist roll a harm
+      // owes, a redirected loss's picker — are stamped `priceCard`, so a burn
+      // to a result that pays the price too keeps them (issue #335 Y09).
+      ...(resolutionId ? { priceCard: true } : {}),
+      ...(upgradeOffered ? { upgradeOffered: true } : {}),
+    });
+  } catch (err) {
+    // The executor's first write — the meter itself — was refused: nothing of
+    // the route landed. The call that applies it whole, for the GMs' Retry
+    // (dispatchPayThePriceSufferRoutes; issue #362 AC59).
+    console.warn(`${MODULE_ID} | ${STATED_SUFFER_MOVES[move] ?? move} (-${amount}) for ${actor.name ?? "the roller"} was not saved — the GMs have a Retry:`, err?.message ?? err);
+    return { move, actorId: actor.id, skipped: true, ok: false, reason: "refused", error: String(err?.message ?? err),
+      retryCall: { kind: "suffer", sufferId: move, amount, ...(itemId ? { itemId } : {}) } };
+  }
   return { ...landed, move, actorId: actor.id };
 }
 

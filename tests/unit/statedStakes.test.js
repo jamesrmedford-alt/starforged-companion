@@ -87,11 +87,12 @@ describe('issue #353 R1 — the stakes the interpreter states', () => {
   });
 
   it('a stated miss is the price unless the world setting is off', () => {
-    expect(withPriceSource(normaliseStakes({ hit: 'In.', miss: 'Out.' })).priceStated).toBe(true);
-    expect(withPriceSource(normaliseStakes({ hit: 'In.' })).priceStated).toBe(false);
+    // For a move whose miss pays a price (issue #362 AC02 — statedMissUnpricedMove.test.js).
+    expect(withPriceSource(normaliseStakes({ hit: 'In.', miss: 'Out.' }), true).priceStated).toBe(true);
+    expect(withPriceSource(normaliseStakes({ hit: 'In.' }), true).priceStated).toBe(false);
     game.settings._store.set(`${MODULE_ID}.${STAKES_SETTING}`, false);
     try {
-      expect(withPriceSource(normaliseStakes({ hit: 'In.', miss: 'Out.' })).priceStated).toBe(false);
+      expect(withPriceSource(normaliseStakes({ hit: 'In.', miss: 'Out.' }), true).priceStated).toBe(false);
     } finally {
       game.settings._store.delete(`${MODULE_ID}.${STAKES_SETTING}`);
     }

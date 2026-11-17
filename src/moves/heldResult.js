@@ -124,6 +124,11 @@ async function closeWait(message, by) {
  * upgrade is offered on its cards: the result is settled. Null when the card
  * held no price.
  *
+ * The stated miss is a miss's price only (issue #362 AC01): a held miss
+ * burned or improved to a weak hit that pays a price too (Battle, Clash)
+ * pays the table's, as that weak hit rolled would — nothing was paid yet, and
+ * its narration is told to deliver the hit.
+ *
  * @param {Object} held — the card's `awaitingUpgrade`
  * @param {Object} resolution — the resolution about to be narrated (mutated: its oracleSeeds)
  * @param {string|null} actorId — the roller
@@ -136,7 +141,7 @@ async function payHeldPrice(held, resolution, actorId) {
   const ptp = await postMovePayThePriceCard(actorId, price.moveName ?? resolution.moveName ?? null, resolution._id ?? null, {
     upgradeOffered: false,
     skipClockIds:   Array.isArray(price.skipClockIds) ? price.skipClockIds : [],
-    stated:         price.stated ?? null,
+    stated:         resolution.outcome === "miss" ? (price.stated ?? null) : null,
   }).catch(err => {
     console.warn(`${MODULE_ID} | held result: ${resolution.moveName ?? "the move"}'s Pay the Price failed:`, err?.message ?? err);
     return null;
@@ -238,7 +243,8 @@ export async function keepHeldResultForChoice(resolutionId) {
  * A Burn Momentum or Improve Result of a held result re-narrates: the
  * upgraded result is the move's one narration. The wait closes, the price the
  * card held is paid if the upgraded result pays one too (a Battle or Clash
- * burned to a weak hit), and the narration is told the player's own line —
+ * burned to a weak hit — the table's, never a miss stated before the roll:
+ * payHeldPrice), and the narration is told the player's own line —
  * there is no earlier narration for it to replace. Returns undefined when the
  * resolution upgraded is not a held one: the caller narrates as before.
  *

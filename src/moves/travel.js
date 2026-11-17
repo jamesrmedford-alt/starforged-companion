@@ -107,8 +107,9 @@ export function sceneDestination(campaignState) {
  * "Expedition", for no place, and the course arrived nowhere. The reading is
  * the interpreter's with the move fixed (`interpret(text, moveId)` — its
  * `moveTarget` names the destination as the scene does, or by a working
- * label); the stat is taken when the move lists it. Changes the
- * interpretation in place; never throws.
+ * label); the stat is taken when the move lists it, and the stakes it states
+ * (issue #362 D11 — a forced move stated none). Changes the interpretation in
+ * place; never throws.
  *
  * @param {Object} interpretation — a forced travel move's
  * @param {{ interpret: (text: string, moveId: string) => Promise<Object> }} deps
@@ -126,6 +127,7 @@ export async function readForcedTravelDestination(interpretation, { interpret } 
   }
   const stats = Array.isArray(MOVES[moveId]?.stat) ? MOVES[moveId].stat : [];
   if (stats.includes(reading?.statUsed)) interpretation.statUsed = reading.statUsed;
+  if (reading?.stakes && typeof reading.stakes === "object") interpretation.stakes = reading.stakes;
   if (reading?.expeditionRank && !interpretation.expeditionRank) interpretation.expeditionRank = reading.expeditionRank;
   if (reading?.rationale) interpretation.rationale = [interpretation.rationale, reading.rationale].filter(Boolean).join(" ");
   const target = typeof reading?.moveTarget === "string" ? reading.moveTarget.trim() : "";

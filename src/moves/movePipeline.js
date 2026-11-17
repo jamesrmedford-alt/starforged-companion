@@ -31,7 +31,7 @@
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import {
-  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
+  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed, missPaysPrice,
   rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
 } from "./resolver.js";
 import { statedPrice } from "./stakes.js";
@@ -318,9 +318,14 @@ export async function readMove({
   }
   // A forced move whose stat is a choice rolls the one its narration's
   // approach fits — a stat-only interpretation — not its first listed
-  // stat (issue #321 U04). No key keeps the listed stat.
+  // stat (issue #321 U04). No key keeps the listed stat. The reading states
+  // the move's stakes too, as a typed line's does (issue #362 D11): read with
+  // the scene the line follows and the roller's vehicles and companions,
+  // which a stated miss is drawn from.
   const readStat = apiKey
-    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
+      recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+      roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null })
     : null;
   // A forced travel move that names no destination — a paced card's "Roll
   // Undertake an Expedition" after the scene set one up — reads it, with its
@@ -331,10 +336,7 @@ export async function readMove({
   const readsDestination = !!(forcedMoveId && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
     && await travelDestinationUnread(interpretation.moveId));
   if (readsDestination) {
-    await readForcedTravelDestination(interpretation, {
-      interpret: (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
-        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null) }),
-    });
+    await readForcedTravelDestination(interpretation, { interpret: readStat });
   } else if (forcedMoveId) {
     await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
@@ -369,6 +371,17 @@ export async function readMove({
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }
+  }
+
+  // The miss stated before the roll is its price only for a move whose miss
+  // pays one — the move the line is read as now (a forced move's reading, a
+  // course rerouted to an expedition, a scene-challenge variant made the
+  // ordinary move), whatever move its stakes were read for (issue #362
+  // AC02). The Confirm dialog, a round's reading and the narrator's STAKES
+  // block show the miss as the price on this alone (stakes.js stakesShown).
+  // It is only ever taken away here: the setting was read with the stakes.
+  if (interpretation.stakes?.priceStated && !missPaysPrice(interpretation.moveId)) {
+    interpretation.stakes = { ...interpretation.stakes, priceStated: false };
   }
 
   if (interpretation.mischiefApplied) {
@@ -1488,8 +1501,12 @@ export async function rollMove({
     // The miss stated before the roll is the price (issue #353 R1, decided:
     // the table is the alternative — rolled when none was stated, or with
     // the world setting off): its suffer move runs through the same
-    // executors, and leaves the receipts a burn undoes.
-    const stated = statedPrice(resolution.stakes);
+    // executors, and leaves the receipts a burn undoes. A miss's price only:
+    // a Battle or Clash weak hit that pays one pays the table's — it paid the
+    // line the dialog showed "On a miss", beside a narration told to deliver
+    // the hit (issue #362 AC01). Its vehicle or companion is the one the
+    // move was made against (issue #362 D11).
+    const stated = resolution.outcome === "miss" ? statedPrice(resolution.stakes, interpretation) : null;
     if (hold) {
       // Paid when the result is kept — or by an upgraded result that pays a
       // price too (heldResult.js payHeldPrice).
