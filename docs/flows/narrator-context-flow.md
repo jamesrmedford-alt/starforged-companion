@@ -566,7 +566,15 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
   play by heading and id (`coveredIds`), a plan the snapshot does not hold
   printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
-  recent oracles and STORY SO FAR are unchanged.
+  recent oracles and STORY SO FAR are unchanged. The rules name none of the
+  sections one layout lacks — the sidecar's identity anchor is for "a
+  character or faction who has no card of their own in this prompt", the
+  third-person pronouns are "in the CHARACTER and PARTY sections and on their
+  card", DISCOVERY's reuse is of "the people and places recorded for the
+  active sector", the inciting incident's of an NPC "recorded for the
+  sector" — so the standing and mode blocks
+  read true, and are the same bytes, with a snapshot or without (issue #362
+  AC66: they named ENTITIES IN SCENE and ACTIVE SECTOR).
 - **A new snapshot is taken** at a narrator call when an event reported since
   the last one takes a snapshot, or the store finds none for the session, a
   record gone, the changes past 2,000 tokens or a quarter of the snapshot, or

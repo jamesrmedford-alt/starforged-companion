@@ -1258,7 +1258,8 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     // contradictory details without a newTruth anchor.
     const out = appendSidecarInstruction();
     expect(out).toMatch(/REQUIRED: the first time your prose introduces or names a character or/);
-    expect(out).toMatch(/faction who does NOT appear in the ENTITIES IN SCENE cards/);
+    // Worded for both prompt layouts — with a world snapshot there is no ENTITIES IN SCENE (issue #362 AC66).
+    expect(out).toMatch(/faction who has no card of their own in this prompt/);
     expect(out).toMatch(/anchoring their identity/);
     // Character example
     expect(out).toContain('"subject": "Kael Dros"');
@@ -1571,7 +1572,7 @@ describe('perspective pronoun rules (CHAR-PERSPECTIVE-NO-PRONOUN-RULE)', () => {
       makeNarratorSettings({ narrationPerspective: 'third_person' }),
       null, '', { mode: 'paced_narrative' },
     );
-    expect(prompt).toMatch(/recorded pronouns \(CHARACTER, PARTY, and ENTITIES IN\s*SCENE sections\) exactly as given/);
+    expect(prompt).toMatch(/recorded pronouns \(in the CHARACTER and PARTY sections\s+and on their card\) exactly as given/);
     expect(prompt).toMatch(/do not infer gender from their name/);
   });
 

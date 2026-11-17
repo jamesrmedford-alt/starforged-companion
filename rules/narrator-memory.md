@@ -284,7 +284,13 @@ layers. This file is the never-break list.
      is left out of the context when there is one (`buildNarratorSystemBlocks`
      — nothing is sent twice) and still rendered when there is none. A new
      durable section is a new unit kind in `collectWorldUnits` *and* a
-     per-beat fallback; a new volatile one goes in the context only.
+     per-beat fallback; a new volatile one goes in the context only. A rule
+     in the standing or mode block names no section only one layout has: it
+     is worded for both — "a character who has no card of their own in this
+     prompt", "the people recorded for the active sector" — so the cached
+     rules are the same bytes with and without a snapshot (the identity
+     anchor named ENTITIES IN SCENE, which a snapshot request does not
+     have — issue #362 AC66).
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),
