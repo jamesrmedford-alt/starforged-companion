@@ -216,6 +216,7 @@ import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.j
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
+import { registerPlansInPlaySocket, registerPlansTableViewSync, registerPlansTableViewSetting } from "./world/secrets.js";
 import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
 import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
@@ -328,6 +329,7 @@ function registerCoreSettings() {
   // The chat-activity stamp, its own setting beside campaignState (issue #342 Z01).
   registerSessionActivitySetting();
   registerSnapshotEventsSetting();         // #357: the events reported since the narrator's last world snapshot
+  registerPlansTableViewSetting();         // #362 D1: what the table has been shown of the hidden plans (the canonical GM's view)
 
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name:    "Claude API Key",
@@ -9122,6 +9124,11 @@ Hooks.once("ready", () => {
   // A player's yes/no oracle question asks the canonical GM for its odds
   // when a hidden plan covers its subject (issue #354 P2-31).
   registerOracleConsultSocket();
+  // A player's client reads no hidden plan (issue #362 D1): its Private
+  // Channel asks the canonical GM for the plans in play, and the canonical GM
+  // keeps the table's view of them (the Session panel's What's open).
+  registerPlansInPlaySocket();
+  registerPlansTableViewSync();
   // Relays emitted while this GM's client was still loading reached no
   // listener and were dropped; tell players the relay is live so they can
   // re-send state (onGmRelayReady — e.g. their Private Lines). Canonical GM

@@ -6,6 +6,65 @@ rejected.
 
 ---
 
+## Issue #362 D1: the hidden plans are read on a GM's client only; a player's Private Channel gets its plans from the canonical GM (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) Whether Foundry
+delivers an ownership-NONE journal to a player's client was never checked
+live, and the code held both answers: `listSkeletons()` ran on players'
+clients (the Private Channel's story, narration on a player's own key, the
+Session panel's "What's open") while the consult relay (P2-31),
+SNAPSHOT-PLAYER-KEY and the snapshot store assumed a player's client cannot
+read the Secrets journal. Decided: it does not.
+- **Every plan read is a GM's.** `secrets.js` `secretPages` returns nothing on
+  a non-GM client, so `listSkeletons`, `getSkeleton`, `plannedSubjects`,
+  `planForClock` and every reader over them give a player's client no plan,
+  whatever its journal collection holds.
+- **The Private Channel reads its plans by relay.** A player's turn asks the
+  canonical GM over the module socket (`requestPlansInPlay` →
+  `plansInPlay.ask` / `.answer`, the oracle consult's shape): the GM answers
+  with the decided plans the message and the scene bring into play
+  (`selectRelevantSkeletons`, the GM's own scene and frame), projected to what
+  UNREVEALED renders — never their rolls, re-roll, clock or provenance. The
+  wait is bounded (`PLANS_WAIT_MS`); no GM, no answer: the turn reads none. A
+  GM's own Private Channel reads them itself.
+- **Narration on a player's own key gets no plan**, as it gets no world
+  snapshot (SNAPSHOT-PLAYER-KEY): its UNREVEALED is empty. The plans its own
+  rolls ask it to decide (DECIDE NOW, a price's new enemy) still go with it
+  and are filed by the canonical GM from its relayed fact block.
+- **"What's open" shows the table's view the canonical GM keeps.** The
+  unanswered questions and standing demands (R4's definitions, unchanged —
+  `secrets.tableViewOf`) live in a world setting of their own,
+  `narrativeSkeletonsTableView`, written by the canonical GM alone, only when
+  it changes (a plan made or decided in secret writes nothing): after its own
+  plan writes, on every Secrets page created, changed or deleted (a GM's edit
+  in the journal, an X-Card's undo), and once at load
+  (`registerPlansTableViewSync`). Every client's panel reads it
+  (`plansShownToTable`) — a player's list and a GM's are the same — and
+  re-renders when it changes. It holds those two rows' text and nothing else.
+
+**Reason:** issue #362 D1 (coverage SESS D1, NARA, NARB, SKEL 3). On the
+simulated table a player's Private Channel request — sent from the player's
+browser on the player's key — carried a plan's `Truth:` line; if Foundry
+delivers the journal, every plan was in every browser and the relay and the
+snapshot gate protected nothing.
+
+**Rejected:** *Accepting that plans are in every browser* (answer B). *A
+relay for the Session panel* — a player's panel re-renders on hooks that fire
+for documents it may never be sent; a view the canonical GM writes is read at
+once and survives the GM being away. *Sending the store, or every plan, to
+the Private Channel* — the turn is given only the decided plans it brings
+into play. Not solved: a socket answer reaches every connected client
+(Foundry's module socket cannot address one), so the asker's few plans pass
+through the other players' browsers, unread; and a forged ask can name any
+subject, within the relay's trust model.
+
+**Amends:** "Issue #353 R3 and R4" ("a player's list is the GM's (the store
+is read alike on every client)" — the list is the canonical GM's view, read
+alike); "The narrative skeleton" Phase 1 ("The Private Channel reads plans" —
+on a player's client, by relay).
+
+---
+
 ## Issue #362 D3: a hidden plan's existence stays off the table's screens — clocks named by their subject, the odds typed on the oracle card, one opaque snapshot mark (2026-11)
 
 **Decision:** (the maintainer's answer A, 2026-11-17.) The narrator is told

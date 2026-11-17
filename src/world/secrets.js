@@ -33,9 +33,10 @@ import {
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
-  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel,
-  SKELETON_KIND_LABELS,
+  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
+  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS,
 } from "./skeletons.js";
+import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
 import { sameSubject, personNameMatch, withoutTitle, isBareTitle } from "../entities/nameMatch.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
@@ -69,7 +70,20 @@ function hiddenRollsShownAtOnce() {
 // READ
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The Secrets journal's pages — on a GM's client only (issue #362 D1, the
+ * maintainer's answer A). Every plan read goes through here (listSkeletons,
+ * getSkeleton, plannedSubjects, planForClock …), so a player's client reads
+ * no plan whether or not Foundry delivers it an ownership-NONE journal (never
+ * checked live; the simulated table shares journals): a player-key
+ * narration's UNREVEALED, the Private Channel's story and the Session panel
+ * read the plans there, and a Private Channel request carried a plan's truth
+ * from a player's browser. What a player-run prompt is decided to read comes
+ * from the canonical GM (requestPlansInPlay); what the table may see of the
+ * plans, from the view the canonical GM writes (plansShownToTable).
+ */
 function secretPages() {
+  if (globalThis.game?.user?.isGM !== true) return [];
   try {
     return findWorldJournal("secrets")?.pages?.contents ?? [];
   } catch {
@@ -115,6 +129,253 @@ export function plannedSubjects() {
 /** The plan `id` as a record, or null. */
 export function getSkeleton(id) {
   return typeof id === "string" ? normaliseSkeleton(entryOf(pageOf(id))) : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHAT A PLAYER'S CLIENT IS GIVEN (issue #362 D1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A player's client reads no plan (secretPages). Two of its readers keep what
+// they were decided to have, from the canonical GM:
+//   - the Private Channel reads the plans in play for the player's message
+//     (decided, issue #353): asked of the canonical GM over the module socket,
+//     as an oracle question's odds are (oracleConsult.js) — only the decided
+//     plans the message and the scene bring into play, never the store;
+//   - the Session panel's "What's open" shows the table what it has been
+//     shown (issue #353 R4): the canonical GM keeps that view in a world
+//     setting of its own, rewritten when it changes.
+// Narration on a player's own key gets no plan, as it gets no world snapshot
+// (known-issues SNAPSHOT-PLAYER-KEY).
+
+/** The module-socket kinds of a player's ask for the plans in play and the GM's answer (not gmRelay actions: an answer comes back). */
+export const PLANS_ASK_KIND    = "plansInPlay.ask";
+export const PLANS_ANSWER_KIND = "plansInPlay.answer";
+
+/** How long a player's Private Channel turn waits for the GM's plans; past it, the turn reads none. */
+export const PLANS_WAIT_MS = 4_000;
+
+const PLANS_TEXT_MAX = 2_000;
+const PLANS_IDS_MAX  = 24;
+
+const _plansWaiting = new Map();   // ask id → resolve
+let _plansSocketInstalled = false;
+
+/**
+ * The decided plans a beat on a player's client brings into play — what the
+ * Private Channel's story shows under UNREVEALED, chosen as the main narrator
+ * chooses (selectRelevantSkeletons: this scene's, its frame's, the entities
+ * and names the message matches) — on the GM's client, as records holding
+ * only what UNREVEALED renders: never their oracle rolls, re-roll, clock or
+ * provenance. None with the narrative skeleton off. Never throws.
+ *
+ * @param {{ text?: string, matchedEntityIds?: string[] }} ctx
+ * @returns {Object[]}
+ */
+function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
+  if (!skeletonsEnabled()) return [];
+  try {
+    const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    return selectRelevantSkeletons(listSkeletons(), {
+      sceneId:          stored?.currentSceneId ?? null,
+      frame:            stored?.sceneFrame ?? null,
+      matchedEntityIds: (Array.isArray(matchedEntityIds) ? matchedEntityIds : []).filter(id => typeof id === "string").slice(0, PLANS_IDS_MAX),
+      text:             typeof text === "string" ? text.slice(0, PLANS_TEXT_MAX) : "",
+    }).filter(r => r.truth).map(r => ({
+      id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
+      truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
+      escalation: r.escalation, clues: r.clues, resolutions: r.resolutions,
+    }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plans in play could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Install the plans-in-play listener on the module socket (idempotent; every
+ * client, at ready — index.js). The canonical GM answers an ask with the
+ * plans it brings into play (plansInPlayFor); the client that asked takes the
+ * answer carrying its ask's id. The answer is a socket message, which reaches
+ * every connected client (Foundry's module socket cannot address one); only
+ * the asker takes it.
+ */
+export function registerPlansInPlaySocket() {
+  if (_plansSocketInstalled) return;
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.on) return;
+  _plansSocketInstalled = true;
+  socket.on(GM_RELAY_SOCKET, (message) => {
+    if (message?.kind === PLANS_ANSWER_KIND) {
+      const resolve = typeof message.id === "string" ? _plansWaiting.get(message.id) : null;
+      if (resolve) resolve(Array.isArray(message.plans) ? message.plans : []);
+      return;
+    }
+    if (message?.kind !== PLANS_ASK_KIND || !isCanonicalGM()) return;
+    const id = typeof message.id === "string" && /^[\w-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return;
+    const plans = plansInPlayFor({ text: message.text, matchedEntityIds: message.matchedEntityIds });
+    globalThis.game?.socket?.emit?.(GM_RELAY_SOCKET, { kind: PLANS_ANSWER_KIND, id, plans });
+  });
+}
+
+/**
+ * The decided plans a player's Private Channel turn brings into play, asked of
+ * the canonical GM, whose client holds them (issue #362 D1): records as
+ * selectRelevantSkeletons gives them, at most MAX_RELEVANT_SKELETONS. None —
+ * the turn is narrated without plans — with no GM connected, no answer within
+ * `waitMs`, or the narrative skeleton off. Never throws.
+ *
+ * @param {{ text?: string, matchedEntityIds?: string[] }} ctx — the player's message and the entities it names
+ * @param {{ waitMs?: number }} [opts]
+ * @returns {Promise<Object[]>}
+ */
+export async function requestPlansInPlay({ text = "", matchedEntityIds = [] } = {}, { waitMs = PLANS_WAIT_MS } = {}) {
+  if (!skeletonsEnabled()) return [];
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.emit || !hasActiveGM()) return [];
+  registerPlansInPlaySocket();
+  const id = globalThis.foundry?.utils?.randomID?.() ?? Math.random().toString(36).slice(2, 14);
+  let timer = null;
+  try {
+    const plans = await new Promise((resolve) => {
+      _plansWaiting.set(id, resolve);
+      timer = setTimeout(() => resolve([]), Math.max(0, waitMs));
+      socket.emit(GM_RELAY_SOCKET, {
+        kind: PLANS_ASK_KIND, id,
+        text: typeof text === "string" ? text.slice(0, PLANS_TEXT_MAX) : "",
+        matchedEntityIds: (Array.isArray(matchedEntityIds) ? matchedEntityIds : []).filter(m => typeof m === "string").slice(0, PLANS_IDS_MAX),
+      });
+    });
+    return plans.map(normaliseSkeleton).filter(r => r && r.truth).slice(0, MAX_RELEVANT_SKELETONS);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: asking the GM for the plans in play failed — the turn reads none:`, err?.message ?? err);
+    return [];
+  } finally {
+    if (timer) clearTimeout(timer);
+    _plansWaiting.delete(id);
+  }
+}
+
+/** The world setting that holds what the table has been shown of the plans (issue #362 D1; written by the canonical GM). */
+export const TABLE_VIEW_SETTING = "narrativeSkeletonsTableView";
+
+/** Register the table's view of the plans. Call from `init` (index.js). */
+export function registerPlansTableViewSetting() {
+  globalThis.game?.settings?.register?.(MODULE_ID, TABLE_VIEW_SETTING, {
+    name:    "Narrative skeleton — what the table has been shown",
+    scope:   "world",
+    config:  false,
+    type:    Object,
+    default: { questions: [], demands: [] },
+  });
+}
+
+/**
+ * What the table has been shown of the plans (issue #353 R4, the maintainer's
+ * definitions) — the only plan fields any player-facing view reads:
+ *   - an unanswered question: an active mystery whose truth is not revealed —
+ *     its question alone (the fiction posed it to the characters);
+ *   - a standing demand: an active threat or NPC agenda whose truth is
+ *     revealed — its subject and what it wants, no longer secret.
+ * Never a plan's truth, what it knows, its clues, escalation, endings or
+ * oracle rolls, nor its id.
+ *
+ * @param {Object[]} records — normaliseSkeleton's
+ * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
+ */
+function tableViewOf(records) {
+  const out = { questions: [], demands: [] };
+  for (const plan of Array.isArray(records) ? records : []) {
+    if (plan?.status !== "active") continue;
+    if (plan.kind === "mystery" && plan.truthRevealed !== true && plan.question) {
+      out.questions.push({ question: plan.question });
+    } else if ((plan.kind === "threat" || plan.kind === "npcAgenda") && plan.truthRevealed === true && plan.wants) {
+      out.demands.push({ name: plan.subject?.name ?? "", wants: plan.wants });
+    }
+  }
+  return out;
+}
+
+/** Only strings, bounded — the setting crosses every client. */
+function cleanTableView(view) {
+  const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+  return {
+    questions: (Array.isArray(view?.questions) ? view.questions : []).map(q => ({ question: str(q?.question, 240) })).filter(q => q.question),
+    demands:   (Array.isArray(view?.demands) ? view.demands : []).map(d => ({ name: str(d?.name, 120), wants: str(d?.wants, 600) })).filter(d => d.wants),
+  };
+}
+
+/**
+ * What the table has been shown of the plans, as the canonical GM keeps it —
+ * on every client alike, a player's and a GM's (the Session panel's "What's
+ * open", decisions.md R4): nothing read from the Secrets journal. Empty with
+ * the narrative skeleton off. Fail-open.
+ *
+ * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
+ */
+export function plansShownToTable() {
+  if (!skeletonsEnabled()) return { questions: [], demands: [] };
+  try {
+    return cleanTableView(globalThis.game?.settings?.get?.(MODULE_ID, TABLE_VIEW_SETTING));
+  } catch {
+    return { questions: [], demands: [] };
+  }
+}
+
+let _tableViewSync = Promise.resolve();
+
+/**
+ * Rewrite the table's view of the plans from the store, when it changed — on
+ * the canonical GM, its single writer: after its own plan writes, on any
+ * change to a Secrets page (a GM's edit in the journal, an X-Card's undo, a
+ * page deleted), and once at load. One at a time on this client, each reading
+ * the store at its turn. Only a change the table could see writes, so a plan
+ * made or decided in secret moves nothing on a player's client. Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+function syncPlansTableView() {
+  if (!isCanonicalGM()) return _tableViewSync;
+  const run = _tableViewSync.then(async () => {
+    try {
+      const next = cleanTableView(tableViewOf(listSkeletons()));
+      const stored = cleanTableView(globalThis.game?.settings?.get?.(MODULE_ID, TABLE_VIEW_SETTING));
+      if (JSON.stringify(next) === JSON.stringify(stored)) return;
+      await globalThis.game?.settings?.set?.(MODULE_ID, TABLE_VIEW_SETTING, next);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | secrets: what the table has been shown of the plans was not updated:`, err?.message ?? err);
+    }
+  });
+  _tableViewSync = run;
+  return run;
+}
+
+/**
+ * Keep the table's view of the plans with the store (issue #362 D1): the
+ * canonical GM rewrites it on every Secrets page created, changed or deleted
+ * (document hooks fire on every client; only the canonical GM writes), and
+ * once now. Register once, at ready (index.js).
+ */
+export function registerPlansTableViewSync() {
+  if (registerPlansTableViewSync._installed) return;
+  registerPlansTableViewSync._installed = true;
+  const onPage = (page) => {
+    if (!isCanonicalGM()) return;
+    const journal = findWorldJournal("secrets");
+    if (!journal || (page?.parent?.id ?? null) !== journal.id) return;
+    void syncPlansTableView();
+  };
+  Hooks.on("createJournalEntryPage", onPage);
+  Hooks.on("updateJournalEntryPage", onPage);
+  Hooks.on("deleteJournalEntryPage", onPage);
+  if (isCanonicalGM()) void syncPlansTableView();
+}
+
+/** Test seam: forget the plans-in-play listener and any ask in flight. */
+export function _resetPlanRelayForTests() {
+  _plansSocketInstalled = false;
+  _plansWaiting.clear();
+  _tableViewSync = Promise.resolve();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +429,7 @@ async function takenBackForXCard(narrationId) {
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a plan write the X-Card overtook could not be taken back:`, err?.message ?? err);
   }
+  void syncPlansTableView();
   return true;
 }
 
@@ -224,6 +486,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
       if (await takenBackForXCard(narrationId)) return null;
       // A new plan: the narrator's world snapshot is out of date (issue #357).
       reportSnapshotEvent("plan_made");
+      void syncPlansTableView();   // a question posed is the table's to see (issue #362 D1)
       return record;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: filing the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -276,6 +539,7 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
       const name = skeletonPageName(next);
       if (page.name !== name) await page.update?.({ name });
       if (await takenBackForXCard(narrationId)) return null;
+      void syncPlansTableView();   // a truth revealed, a question answered (issue #362 D1)
       return next;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: updating the plan for "${record.subject.name}" failed:`, err?.message ?? err);

@@ -195,7 +195,13 @@ campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
 the recorded entities the message or the scene frame names (lexical, plus
 `addSceneFrameCast`), the scene ledger and the hidden plans in play (the
 narrative skeleton's UNREVEALED, decided plans only and no instruction to
-write — issue #353, decided) in the per-turn message. Its
+write — issue #353, decided) in the per-turn message. A player's client reads
+no plan (issue #362 D1, `secrets.secretPages`): its turn asks the canonical GM
+for the decided plans its message and the scene bring into play
+(`requestPlansInPlay` → the `plansInPlay.ask` / `.answer` socket kinds, as the
+oracle consult's; projected without rolls, re-roll, clock or provenance;
+bounded at `PLANS_WAIT_MS`) — none with no GM connected or no answer in time;
+a GM's client reads them itself, as before. Its
 character is the player's own PC (`resolveUserActorId` — never another
 player's; with none of their own in a multi-PC game the window says "Set up
 your character first", issue #321 U23), and the transcript it sends is the
@@ -547,7 +553,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   `worldSnapshot`: session, time taken, causes, text, manifest, and a log of
   new snapshots, shown on the page). The canonical GM writes it; a GM's
   client reads it; a reload sends it unchanged. A player's client has none —
-  narration on a player's own key is sent the per-beat sections, as before.
+  narration on a player's own key is sent the per-beat sections, as before,
+  and no hidden plan in them: a player's client reads no plan (issue #362
+  D1), so its UNREVEALED is empty and only the plans its own rolls ask it to
+  decide (DECIDE NOW) go with it.
 - **Sent as stored**, with the world compared against the manifest at each
   call (`diffWorldUnits`): the units made or changed since go to the context
   in full, under **CHANGED SINCE THE SNAPSHOT** (`renderUnitSections`), which

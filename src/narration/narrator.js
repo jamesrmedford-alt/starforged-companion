@@ -73,7 +73,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -554,7 +554,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // play this beat — made in this scene, its entity matched or in the frame's
   // cast, its name in the frame or the player's line — and the plans this
   // narration must decide (a price that revealed a new enemy). Rendered as
-  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
+  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans. A
+  // narration on a player's own key reads none — a player's client reads no
+  // plan (issue #362 D1), as it is sent no world snapshot — and still files
+  // the plans its own rolls ask it to decide (DECIDE NOW, relayed).
   extras.unrevealed   = [];
   extras.planRequests = [];
   extras.plannedSubjects = [];
@@ -931,15 +934,20 @@ export async function buildPrivateChannelStory(campaignState, playerMessage, { a
   addSceneFrameCast(extras, campaignState);
   // The hidden plans relevant to what the player asks, under the main
   // narrator's rule (issue #353, decided: the Private Channel reads them).
+  // A player's client reads no plan (issue #362 D1): it asks the canonical
+  // GM for the decided ones this message brings into play — none with no GM
+  // connected, or no answer in time.
   extras.unrevealed = [];
   if (skeletonsEnabled()) {
     try {
-      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
-        sceneId:          campaignState?.currentSceneId ?? null,
-        frame:            campaignState?.sceneFrame ?? null,
-        matchedEntityIds: extras.matchedEntityIds ?? [],
-        text:             playerMessage,
-      });
+      extras.unrevealed = globalThis.game?.user?.isGM === true
+        ? selectRelevantSkeletons(listSkeletons(), {
+          sceneId:          campaignState?.currentSceneId ?? null,
+          frame:            campaignState?.sceneFrame ?? null,
+          matchedEntityIds: extras.matchedEntityIds ?? [],
+          text:             playerMessage,
+        })
+        : await requestPlansInPlay({ text: playerMessage, matchedEntityIds: extras.matchedEntityIds ?? [] });
     } catch (err) {
       console.warn(`${MODULE_ID} | privateChannel: the hidden plans could not be read:`, err?.message ?? err);
     }
