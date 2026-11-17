@@ -20,11 +20,17 @@
  *     the new one, so several events between two calls cost one snapshot,
  *     which holds all of them. The snapshot's log names the ids that caused it.
  *
- * The marks are kept in a world setting of their own (`worldSnapshotEvents`),
- * so any GM's client can report and the narrating GM reads them; a mark holds
- * an event id and a time, nothing of the story. A leaf module (no imports):
- * the stores that report — the plans, the entity registry, the sector
- * generator, the X-Card — import it without a cycle.
+ * The mark is kept in a world setting of their own (`worldSnapshotEvents`),
+ * so any GM's client can report and the narrating GM reads it. It is one
+ * opaque "out of date" mark and its time — never which event set it (issue
+ * #362 D3, the maintainer's answer A): every client holds a world setting, and
+ * named marks (`plan_made`, `plan_decided`, `new_enemy_revealed`) told a
+ * player at the console that a hidden plan was just made or decided for the
+ * beat they watched. Which events they were stays on the reporting GM's client
+ * (its own pending marks, and `snapshotEventDetail` for the snapshot page's
+ * log). A leaf module (no imports): the stores that report — the plans, the
+ * entity registry, the sector generator, the X-Card — import it without a
+ * cycle.
  */
 
 const MODULE_ID = 'starforged-companion';
@@ -32,8 +38,15 @@ const MODULE_ID = 'starforged-companion';
 /** The world setting that switches the world snapshot on (default on; registered in ui/settingsPanel.js). */
 const WORLD_SNAPSHOT_SETTING = 'worldSnapshot';
 
-/** The world setting that holds the events reported since the last snapshot: `{ events: [{ id, at }] }`. */
+/** The world setting that marks the snapshot out of date: `{ events: [{ id: OUT_OF_DATE, at }] }` — one mark. */
 const SNAPSHOT_EVENTS_SETTING = 'worldSnapshotEvents';
+
+/**
+ * The one mark the world setting holds (issue #362 D3): some event that takes
+ * a snapshot was reported, on some GM's client — nothing of which. Not a row
+ * of SNAPSHOT_EVENTS (no trigger site reports it); snapshotCauses counts it.
+ */
+const OUT_OF_DATE = 'out_of_date';
 
 /**
  * Every event the snapshot's rules know, and whether it takes a new snapshot.
@@ -61,7 +74,8 @@ export const SNAPSHOT_EVENTS = Object.freeze([
   { id: 'xcard_played',           snapshot: true,  description: 'the X-Card is played' },
   { id: 'fact_retracted',         snapshot: true,  description: 'a fact is struck or corrected, and its copies retracted' },
   { id: 'plan_edited',            snapshot: true,  description: 'a GM edits a hidden plan' },
-  { id: 'plan_retired',           snapshot: true,  description: 'a GM retires a hidden plan' },
+  { id: 'plan_retired',           snapshot: true,  description: 'a hidden plan is retired — a GM\'s Retire, its subject gone, an ended scene\'s unanswered mystery' },
+  { id: 'entity_detail_removed',  snapshot: true,  description: 'a narrator-added detail is taken off a recorded entity\'s card (the Entities panel\'s Remove)' },
   { id: 'record_removed',         snapshot: true,  description: 'a record the snapshot holds is gone or no longer stands' },
   // ── Size and age ──────────────────────────────────────────────────────────
   { id: 'changes_large',          snapshot: true,  description: 'the changes since the snapshot have grown large' },
@@ -79,6 +93,21 @@ const EVENT_BY_ID = new Map(SNAPSHOT_EVENTS.map(row => [row.id, row]));
 
 /** Events reported on this client since its last snapshot, id → time (ms): seen at once, before the setting's write lands. */
 const _local = new Map();
+
+/**
+ * The world's mark each event this client saved was written under, id →
+ * markKey — which marks are this client's own, so the snapshot page's log can
+ * name their events (namedSnapshotCauses; issue #362 D3).
+ */
+const _reportedUnder = new Map();
+
+/**
+ * Every event that takes a snapshot reported on this client, oldest first —
+ * what the snapshot page's log names as a new snapshot's causes, now the
+ * world's mark names none (issue #362 D3). Memory only; bounded.
+ */
+const _detail = [];
+const DETAIL_KEPT = 100;
 
 /**
  * The marks a snapshot taken on this client has answered (`id@time`), kept
@@ -121,6 +150,11 @@ export function worldSnapshotEnabled() {
 export function snapshotCauses(ids) {
   const out = [];
   for (const id of Array.isArray(ids) ? ids : []) {
+    // The world's opaque mark (issue #362 D3) takes a snapshot: whatever set it did.
+    if (id === OUT_OF_DATE) {
+      if (!out.includes(id)) out.push(id);
+      continue;
+    }
     const row = EVENT_BY_ID.get(id);
     if (!row) {
       console.warn(`${MODULE_ID} | world snapshot: "${id}" is not a row of SNAPSHOT_EVENTS — ignored.`);
@@ -140,10 +174,40 @@ export function snapshotCauses(ids) {
  * @returns {string}
  */
 export function describeSnapshotEvent(id) {
+  if (id === OUT_OF_DATE) return 'the world\'s mark: an event that takes a snapshot was reported on a GM\'s client (the mark names none)';
   return EVENT_BY_ID.get(id)?.description ?? String(id ?? '');
 }
 
-/** The setting's marks, as stored: `[{ id, at }]`. Fail-open: none. */
+/** The events that take a snapshot reported on this client at or after `sinceMs`, each id once, oldest first. */
+function snapshotEventDetail(sinceMs = 0) {
+  const out = [];
+  for (const e of _detail) {
+    if (e.at >= (Number(sinceMs) || 0) && !out.includes(e.id)) out.push(e.id);
+  }
+  return out;
+}
+
+/**
+ * A new snapshot's causes as the snapshot page's log names them (issue #362
+ * D3): the world's mark names no event, so the events this client reported
+ * since the snapshot being replaced (`sinceMs`) are named in its place when
+ * the mark is this client's own; a mark another GM's client wrote stays
+ * "out_of_date" — what set it is that client's to know. Memory only: after a
+ * reload this client's own mark is "out_of_date" too.
+ *
+ * @param {Array<{ id: string, at: number }>} events — pendingSnapshotEvents' list, as the snapshot read it
+ * @param {{ sinceMs?: number, also?: string[] }} [opts] — `also`: the causes the call found itself
+ * @returns {string[]}
+ */
+export function namedSnapshotCauses(events, { sinceMs = 0, also = [] } = {}) {
+  const own = new Set(_reportedUnder.values());
+  const ids = (Array.isArray(events) ? events : [])
+    .filter(e => !(e?.id === OUT_OF_DATE && own.has(markKey(e))))
+    .map(e => e?.id);
+  return snapshotCauses([...snapshotEventDetail(sinceMs), ...ids, ...(Array.isArray(also) ? also : [])]);
+}
+
+/** The setting's marks, as stored: `[{ id, at }]` — the one opaque mark (a world from before issue #362 D3 may hold named ones). Fail-open: none. */
 function rawStoredEvents() {
   try {
     const events = globalThis.game?.settings?.get?.(MODULE_ID, SNAPSHOT_EVENTS_SETTING)?.events;
@@ -179,6 +243,14 @@ async function dropAnsweredFromStore() {
  * GM's client. A report from a player's client is logged and dropped. With
  * the snapshot switched off nothing is marked.
  *
+ * The world's setting is given one opaque mark (issue #362 D3) — the event's
+ * id stays on this client (snapshotEventDetail, for the page's log). While a
+ * mark no snapshot on this client has answered stands, any event is covered
+ * by it and writes nothing: the next snapshot, which answers it, reads the
+ * world after the event (the residual the named marks had for the same event
+ * reported again — a report on another GM's client inside the round trip of
+ * the snapshot that answers the mark — now holds for any event).
+ *
  * @param {string} id — a SNAPSHOT_EVENTS row's id
  * @param {{ now?: number }} [opts]
  * @returns {boolean} whether the snapshot is now marked out of date for it
@@ -194,43 +266,57 @@ export function reportSnapshotEvent(id, { now = Date.now() } = {}) {
     console.debug?.(`${MODULE_ID} | world snapshot: "${id}" reported on a player's client — not marked (a GM's client reports it).`);
     return false;
   }
-  if (_local.has(id) || storedEvents().some(e => e.id === id)) return true;
+  _detail.push({ id, at: now });
+  if (_detail.length > DETAIL_KEPT) _detail.splice(0, _detail.length - DETAIL_KEPT);
+  if (_local.has(id) || storedEvents().length) return true;
   _local.set(id, now);
   persistEvents().catch(err =>
     console.warn(`${MODULE_ID} | world snapshot: the "${id}" mark was not saved — it stands on this client only:`, err?.message ?? err));
   return true;
 }
 
-/** This client's marks laid onto the stored ones, each id once (the earliest time). */
-function mergedEvents() {
-  const byId = new Map(storedEvents().map(e => [e.id, e.at]));
-  for (const [id, at] of _local) if (!byId.has(id) || at < byId.get(id)) byId.set(id, at);
-  return [...byId].map(([id, at]) => ({ id, at })).sort((a, b) => a.at - b.at);
+/** This client's own marks, by event id (memory — the world's setting names none). */
+function localEvents() {
+  return [..._local].map(([id, at]) => ({ id, at }));
 }
 
 /**
- * Write this client's marks onto the setting as it stands (read and set with
- * no await between). A mark the world took leaves this client's own list: the
- * setting holds it from then on, and the GM whose snapshot answers it clears
- * it there — kept here too, this client would write it back with its next mark.
+ * Write the world's mark (read and set with no await between): one opaque
+ * mark covering this client's events and any mark the setting still holds,
+ * timed after all of them — a new mark, so a GM whose snapshot answered an
+ * older one reads it as pending (issue #362 D3). A mark the world took leaves
+ * this client's own list: the setting holds it from then on, and the GM whose
+ * snapshot answers it clears it there — kept here too, this client would
+ * write it back with its next mark.
  */
 async function persistEvents() {
   if (typeof globalThis.game?.settings?.set !== 'function') return;
-  const writing = new Map(_local);
-  await globalThis.game.settings.set(MODULE_ID, SNAPSHOT_EVENTS_SETTING, { events: mergedEvents() });
-  for (const [id, at] of writing) if (_local.get(id) === at) _local.delete(id);
-  // A snapshot taken while this write was out answered a mark it carried.
-  if ([...writing].some(([id, at]) => _answered.has(markKey({ id, at })))) await dropAnsweredFromStore();
+  const writing = localEvents();
+  if (!writing.length) return;
+  const covered = [...storedEvents(), ...writing];
+  const mark = { id: OUT_OF_DATE, at: Math.max(...writing.map(e => e.at), ...storedEvents().map(e => e.at + 1)) };
+  // Known as this client's own from the moment it is written: a snapshot read
+  // while the write is out names its events, not "out_of_date". A refused
+  // write leaves no such mark stored, so the events are reported afresh.
+  for (const e of writing) _reportedUnder.set(e.id, markKey(mark));
+  await globalThis.game.settings.set(MODULE_ID, SNAPSHOT_EVENTS_SETTING, { events: [mark] });
+  for (const e of writing) if (_local.get(e.id) === e.at) _local.delete(e.id);
+  // A snapshot taken while this write was out answered every mark it carries:
+  // it answered this one too.
+  if (covered.every(e => _answered.has(markKey(e)))) {
+    _answered.add(markKey(mark));
+    await dropAnsweredFromStore();
+  }
 }
 
 /**
- * The events reported since the last snapshot — this client's and the
- * world's — oldest first, each id once.
+ * The events reported since the last snapshot — the world's mark and this
+ * client's own events (by id: they are its own) — oldest first.
  *
  * @returns {Array<{ id: string, at: number }>}
  */
 export function pendingSnapshotEvents() {
-  return mergedEvents();
+  return [...storedEvents(), ...localEvents()].sort((a, b) => a.at - b.at);
 }
 
 /**
@@ -261,4 +347,6 @@ export async function clearSnapshotEvents(events) {
 export function _resetSnapshotEventsForTests() {
   _local.clear();
   _answered.clear();
+  _reportedUnder.clear();
+  _detail.length = 0;
 }

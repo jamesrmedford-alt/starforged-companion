@@ -31,6 +31,7 @@ import { clockStillTriggered } from "./payThePriceClocks.js";
 import { proseToHtml } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { standingPacedBy, unpacedClock } from "./planClockPacing.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -178,7 +179,7 @@ function getPanelClass() {
     static async #onResetClock(_event, target) {
       if (!gmGate("Reset clock")) return;
       const id = target.dataset.clockId;
-      await mutateClock(id, x => { x.filled = 0; });
+      await mutateClock(id, x => { x.filled = 0; delete x.pacedBy; delete x.pacedFrom; });
       this.render();
     }
 
@@ -290,6 +291,41 @@ export async function createClock(input) {
   return clock;
 }
 
+/** What a hidden plan's clock was named after its subject before issue #362 D3. */
+const PLAN_CLOCK_SUFFIX = / — escalation$/;
+
+/**
+ * A hidden plan's clock is named by its subject alone (issue #362 D3, the
+ * maintainer's answer A): "<subject> — escalation" on the clock cards,
+ * `!clock list` and every player's Session panel told the table a plan stood
+ * behind it, which the narrator is told never to hint at. The clocks a world
+ * made before are renamed once, at load, by the canonical GM (index.js ready):
+ * a clock with a `planId` whose name still carries the suffix. One write, on
+ * the clock write queue; none when there is nothing to rename. Never throws.
+ *
+ * @returns {Promise<string[]>} the ids of the clocks renamed
+ */
+export async function renamePlanClocksBySubject() {
+  try {
+    return await serialiseClockWrite(async () => {
+      const state = foundry.utils.deepClone(readState());
+      const renamed = [];
+      for (const clock of state.clocks ?? []) {
+        if (!clock?.planId || typeof clock.name !== "string" || !PLAN_CLOCK_SUFFIX.test(clock.name)) continue;
+        const name = clock.name.replace(PLAN_CLOCK_SUFFIX, "").trim();
+        if (!name) continue;
+        clock.name = name;
+        renamed.push(clock._id);
+      }
+      if (renamed.length) await writeState(state);
+      return renamed;
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | clocks: the hidden plans' clocks were not renamed:`, err?.message ?? err);
+    return [];
+  }
+}
+
 /**
  * Remove the clocks the given narrations started (`narrationId` — createClock),
  * for a narration a Burn Momentum or Improve Result superseded
@@ -334,6 +370,10 @@ export async function retireClock(clockId) {
     if (clock.active === false) return clock;
     clock.active    = false;
     clock.updatedAt = new Date().toISOString();
+    // Retired by its own act (a challenge done, a plan retired): no later
+    // undo of the narration that last paced it re-arms it (issue #362 AC33).
+    delete clock.pacedBy;
+    delete clock.pacedFrom;
     await writeState(state);
     return clock;
   });
@@ -427,6 +467,88 @@ export async function adjustClockSegments(clockId, delta) {
 }
 
 /**
+ * Pace a hidden plan's clock after a beat played its step (secrets.js
+ * paceAfterReveal): back to empty for the step after, or retired when none is
+ * left — stamped with the narration that paced it (`pacedBy`), so taking that
+ * narration back re-arms the clock (issue #362 AC33: the X-Card or a Burn
+ * Momentum / Improve Result put the step back unplayed, and the clock stayed
+ * empty or retired — a last step was then never paced again). A clock no
+ * longer active is left as it is. Written on a copy. Its undo:
+ * planClockPacing.js.
+ *
+ * @param {string} clockId
+ * @param {{ retire?: boolean, pacedBy?: string|null }} [opts]
+ * @returns {Promise<object|null>} the clock as stored, or null when there is no active clock by that id
+ */
+export async function pacePlanClock(clockId, { retire = false, pacedBy = null } = {}) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active === false) return null;
+    const before = clock.filled ?? 0;
+    if (retire) clock.active = false;
+    else clock.filled = 0;
+    if (typeof pacedBy === "string" && pacedBy) {
+      clock.pacedBy   = pacedBy;
+      clock.pacedFrom = before;   // the fill its undo puts back (unpacedClock)
+    } else {
+      delete clock.pacedBy;
+      delete clock.pacedFrom;
+    }
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
+  });
+}
+
+/**
+ * Re-arm the clocks the given narrations paced (unpacedClock): a narration a
+ * Burn Momentum or Improve Result superseded — a move narration that played a
+ * plan's step, a trigger vignette its price's rewind struck — took the step
+ * back with it (resultUpgrade.js undoSupersededPlans), and the clock went on
+ * pacing the step after. One write, on a copy.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<string[]>} the ids of the clocks re-armed
+ */
+export async function restoreClocksPacedBy(narrationIds) {
+  const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
+  if (!ids.size) return [];
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const paced = (state.clocks ?? []).filter(c => ids.has(standingPacedBy(c)));
+    if (!paced.length) return [];
+    state.clocks = state.clocks.map(c => (ids.has(standingPacedBy(c)) ? unpacedClock(c) : c));
+    await writeState(state);
+    return paced.map(c => c._id);
+  });
+}
+
+/**
+ * Put a full clock back one segment short of full: the trigger it reached is
+ * owed again, and the next advance fills it and fires it once more — a
+ * hidden plan's clock whose trigger vignette was not written (issue #362
+ * AC08; secrets.js rearmUnplayedPlanClock). Decided inside the clock write
+ * queue, on the clock as that write reads it (issue #337 Y37's rule): a clock
+ * that is no longer full — a rewind landed meanwhile — or retired, or gone, is
+ * left as it is. Written on a copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored after the re-arm, or null when nothing was written
+ */
+export async function rearmClock(clockId) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active === false || !isFull(clock)) return null;
+    clock.filled    = Math.max(0, clock.segments - 1);
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
+  });
+}
+
+/**
  * Revert tension-clock segments advanced by a Pay the Price that was
  * subsequently undone by burning momentum. Idempotent — clocks already at
  * zero or not found are silently skipped. GM-gated at the call site.
@@ -439,19 +561,53 @@ export async function adjustClockSegments(clockId, delta) {
  * and the next price fired a second one (issue #342 Z46; Y37's rule — a
  * queued write decides on what it reads).
  *
+ * A hidden plan's clock the reverted price filled (`triggered` — the
+ * price's receipt says so) goes back to one segment short of full, the
+ * state before that price, whatever its trigger did meanwhile (issue #362
+ * AC33): its vignette paced it — empty, or retired after a last step,
+ * `pacedBy` its narration — and the rewind found it empty and skipped it,
+ * leaving the step the burned price played marked and its vignette live; or
+ * it was re-armed one short of full when its vignette was not written (AC08),
+ * and a rewind took it a segment further. A paced one is reported with the
+ * narration that paced it (`pacedBy`), whose vignette the upgrade supersedes
+ * by that id — its plan step taken back with it.
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
- * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension" }>>}
+ * @param {{ triggered?: string[] }} [opts] — the clocks the reverted price filled
+ * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
  *   the clocks taken out of their triggered state (empty when none, or nothing was written)
  */
-export async function revertTensionClocksForBurn(ids) {
+export async function revertTensionClocksForBurn(ids, { triggered = [] } = {}) {
   return serialiseClockWrite(async () => {
     if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
     let dirty = false;
     const untriggered = [];
     const now = new Date().toISOString();
+    const filledByPrice = new Set(Array.isArray(triggered) ? triggered : []);
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
+      if (c?.planId && filledByPrice.has(id)) {
+        const wasFull = (c.filled ?? 0) >= c.segments;
+        const target  = Math.max(0, c.segments - 1);
+        const pacedBy = standingPacedBy(c);
+        if (pacedBy) {
+          c.active    = true;
+          c.filled    = target;
+          c.updatedAt = now;
+          delete c.pacedBy;
+          delete c.pacedFrom;
+        } else if ((c.filled ?? 0) > target) {
+          c.filled = target;
+          c.updatedAt = now;
+        } else {
+          continue;
+        }
+        dirty = true;
+        if (pacedBy) untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy });
+        else if (wasFull) untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension" });
+        continue;
+      }
       if (!c || (c.filled ?? 0) <= 0) continue;
       const wasFull = (c.filled ?? 0) >= c.segments;
       c.filled = Math.max(0, (c.filled ?? 0) - 1);
@@ -756,7 +912,7 @@ async function cmdReset(parts) {
   if (!gmGate("!clock reset")) return;
   const clock = await findClockByArg(parts);
   if (!clock) return;
-  await mutateClock(clock._id, c => { c.filled = 0; });
+  await mutateClock(clock._id, c => { c.filled = 0; delete c.pacedBy; delete c.pacedFrom; });
   await postCard(`<strong>Clock reset</strong><p>${escapeHtml(clock.name)} — 0/${clock.segments}.</p>`);
 }
 

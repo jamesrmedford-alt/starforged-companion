@@ -31,8 +31,12 @@ const setState = (patch) => game.settings._store.set(STATE_KEY, { ...state(), ..
 beforeEach(() => {
   saved = { users: global.game.users };
   global.game.actors._setAll([makeTestActor({ id: 'pc-dax', name: 'Dax', ownership: { 'player-1': 3 } })]);
-  const users = new Map([['player-1', { id: 'player-1', name: 'Sam', isGM: false, active: true, character: { id: 'pc-dax', name: 'Dax' } }]]);
-  global.game.users = { get: (id) => users.get(id) ?? null, get contents() { return [...users.values()]; } };
+  const users = new Map([
+    ['player-1', { id: 'player-1', name: 'Sam', isGM: false, active: true, character: { id: 'pc-dax', name: 'Dax' } }],
+    // This client is the canonical GM, which posts a published reflection (issue #362 D13).
+    [game.user.id, { id: game.user.id, name: 'GM', isGM: true, active: true }],
+  ]);
+  global.game.users = { get: (id) => users.get(id) ?? null, get contents() { return [...users.values()]; }, [Symbol.iterator]: () => users.values() };
   game.settings._store.set(STATE_KEY, {
     currentSessionId: 'ses-1', characterIds: ['pc-dax'], xCardActive: true, xCardPlays: 1,
   });

@@ -40,7 +40,8 @@
  * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
-import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolver.js";
+import { mapConsequences, OUTCOME_RANK, buildLoremasterContext, upgradedOracleSeeds, matchLine } from "./resolver.js";
+import { getCurrentSiteKind }          from "../entities/location.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import { refusePress }                   from "../multiplayer/gmRelay.js";
@@ -58,9 +59,11 @@ import {
   effectsNoteHtml,
   upgradeAllyId,
   momentumShares,
+  standingPriceOf,
 } from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
+  struckMatchLine,
   relayCardButtonClick,
   requesterOwnsActor,
   claimResultUpgrade,
@@ -75,6 +78,11 @@ import {
 } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 // narrate / applyEffects injected by registerImproveResultHook
 // (src/index.js), kept at module scope for the GM-side relay handler.
@@ -154,7 +162,9 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
  */
 export function renderImproveButtonHtml(improveState) {
   if (!improveState?.canImprove) return "";
-  const label = improveButtonLabel(improveState);
+  // The asset's name is the player's (an Item they may rename): text, never
+  // markup (issue #362 AC83).
+  const label = escapeHtml(improveButtonLabel(improveState));
   return (
     `<div class="sf-improve-result-row">` +
       `<button type="button" class="sf-improve-result-btn" data-action="sf-improve-result">${label}</button>` +
@@ -388,13 +398,16 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Its working copy of the campaign is the one the re-narration reads and
   // logs against — a copy, never the cached setting (rules/foundry-api.md).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState });
+  const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState,
+    standingPrice: priceStands ? standingPriceOf(improve.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: improve, actor, campaignState, kind: "improve" });
+  // Its own writes the world refused go on its payoff card, with a Retry (issue #362 AC49).
+  failures.push(...(effects.failures ?? []));
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), improve) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -458,21 +471,26 @@ async function advanceAbilityClock(actor, improve) {
 /**
  * Append a strong-hit + cost banner to the move-result card content, and the
  * note on the strong hit's other effects (`effectsNote`, HTML from
- * effectsNoteHtml).
+ * effectsNoteHtml). A match the result kept reads as the strong hit's: the
+ * miss's line is struck and the strong hit's is in the banner (issue #362
+ * AC31).
  */
-function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") {
-  const note = clockNote ? ` ${clockNote}` : "";
+function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null) {
+  // The cost names the asset — text, as the button's label is (issue #362 AC83).
+  const note = clockNote ? ` ${escapeHtml(clockNote)}` : "";
+  const match = improve?.isMatch ? `<div class="sf-move-match">${matchLine(improve.improveTo ?? "strong_hit")}</div>` : "";
   const banner =
-    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${effectsNote}</div>`;
-  return `${String(originalContent ?? "")}${banner}`;
+    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effectsNote}</div>`;
+  return `${struckMatchLine(originalContent)}${banner}`;
 }
 
 /**
  * The improved outcome as a resolution — what the effects applier, the
  * narrator and the session log take. No dice: the result changed, not the
- * roll.
+ * roll. Its own behind-the-scenes oracle rolls are rolled for it (issue #362
+ * AC05), as a burned outcome's are.
  */
-function buildImprovedResolution({ improve, newConsequences, campaignState }) {
+function buildImprovedResolution({ improve, newConsequences, campaignState, standingPrice = null }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
@@ -494,7 +512,11 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     // (issue #347 D2).
     upgradeOf:       improve.resolutionId ?? null,
     consequences:    newConsequences,
-    oracleSeeds:     null,
+    oracleSeeds:     upgradedOracleSeeds({ moveId: improve.moveId, outcome: improve.improveTo, isMatch: improve.isMatch,
+      consequences: newConsequences, campaignState, currentSite: getCurrentSiteKind(campaignState), price: standingPrice }),
+    // The plans the roll's narration was asked to decide (issue #362 AC04),
+    // as a burn's (burnMomentum.js buildBurnedResolution).
+    skeletonRequests: Array.isArray(improve.move?.planRequests) ? improve.move.planRequests : [],
     // The stakes shown before the roll: the re-narration delivers the hit
     // (issue #353 R1).
     stakes:          improve.stakes ?? null,

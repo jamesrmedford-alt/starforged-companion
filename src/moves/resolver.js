@@ -109,6 +109,24 @@ export function buildOutcomeLabel(outcome, isMatch) {
 }
 
 /**
+ * What a match adds, in one line under the outcome (issue #354 P2-14): the
+ * card said "with a Match" and nothing told the player why the narration took
+ * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
+ * on a miss, a heightened negative outcome. (Matched challenge dice are both
+ * beaten or neither, so a weak hit never matches.) The move card's, and the
+ * line a burned or improved card puts in place of the one its first outcome
+ * had (issue #362 AC31).
+ *
+ * @param {string} outcome
+ * @returns {string} card HTML text
+ */
+export function matchLine(outcome) {
+  return outcome === "miss"
+    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
+    : "✦ Match: a twist — something unexpected, or a new opportunity.";
+}
+
+/**
  * Determine the outcome of a progress move.
  * No action die — tally filled boxes as the progress score,
  * then compare against challenge dice.
@@ -1016,11 +1034,15 @@ const CONSEQUENCE_MAP = {
         // The integrity options change the vehicle the move was rolled
         // against (sufferDialog applyVehicleIntegrity, issue #309 N02); the
         // damage the vehicle cannot take at 0 is momentum (sufferDialog
-        // lossPastZero, issue #345 AA15). At 0, the vehicle-type cost is the
-        // player's to apply (otherEffect).
+        // lossPastZero, issue #345 AA15). "If your integrity is 0, also
+        // suffer a cost according to the vehicle type" follows either option:
+        // a choice card of the vehicle's costs — battered or cursed, a module
+        // broken or destroyed, the vehicle-damage table (`atZeroChoice`,
+        // sufferExecutor offerAtZeroChoiceAfterMiss; issue #362 D8 — it was
+        // the player's to apply, and the damage step rolled the table itself).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 integrity",       integrity: -1 },
-          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
+          { label: "-1 integrity",       integrity: -1, atZeroChoice: "vehicle" },
+          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2, atZeroChoice: "vehicle" },
         ]},
         otherEffect: "Worse than thought. Suffer -1 integrity or Lose Momentum (-2). If integrity 0, suffer vehicle-type cost."
       };
@@ -1043,12 +1065,16 @@ const CONSEQUENCE_MAP = {
       };
       case "miss": return {
         ...emptyConsequences(),
-        // Executor handles at-0 + match → companion destroyed (Q2: prompt,
-        // not auto-discard). The harm the companion cannot take at 0 is
-        // momentum (sufferDialog lossPastZero, issue #345 AA15).
+        // The harm the companion cannot take at 0 is momentum (sufferDialog
+        // lossPastZero, issue #345 AA15). At 0, either option is followed by
+        // the companion's fate — out of action until given aid, or dead or
+        // destroyed with this miss's match (Q2: a prompt, not an
+        // auto-discard) — on its own card (`atZeroChoice`, sufferExecutor
+        // offerAtZeroChoiceAfterMiss; issue #362 D8: the executor said
+        // destroyed on the match of whichever move's card it came from).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 companion health", companionHealth: -1 },
-          { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2 },
+          { label: "-1 companion health", companionHealth: -1, atZeroChoice: "companion" },
+          { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2, atZeroChoice: "companion" },
         ]},
         // Dead or destroyed only at 0 health — as the executor gates it; the
         // card and the narrator's MOVE OUTCOME said so on the match alone
@@ -1383,17 +1409,20 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // A miss whose Pay the Price is one of its choices (Sojourn's "No relief")
   // rolls its price once: the narration is seeded with that roll, and the
   // choice's option carries it, so picking it pays the price the narration
-  // depicted — not a reminder to roll another (SOJOURN-PTP-ADVISORY).
+  // depicted — not a reminder to roll another (SOJOURN-PTP-ADVISORY). With a
+  // miss stated before the roll that price is the stated one, and nothing is
+  // rolled (issue #362 AC03 — the issue #353 R1 rule for every miss).
   // So is a Take Decisive Action weak hit's cost (`rollDecisiveActionCost`):
   // the pipeline's cost card rolls it and seeds the narration with that one
   // (withDecisiveActionCostSeed — TDA-COST-DOUBLE-ROLL).
-  const choicePrice = rollChoicePrice(moveId, outcome, consequences);
+  const stated = statedPrice(interpretation.stakes, interpretation);
+  const choicePrice = rollChoicePrice(moveId, outcome, consequences, { stated });
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
     { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice,
       rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
       region: activeSectorRegion(campaignState),
-      statedPriceText: statedPrice(interpretation.stakes)?.price ?? null });
+      statedPriceText: stated?.price ?? null });
   const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
@@ -1729,6 +1758,71 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
 }
 
 /**
+ * The oracle seeds of an outcome a Burn Momentum or an Improve Result reached
+ * (issue #362 AC05): its own behind-the-scenes rolls — a Story Clue, the
+ * counteroffer, the waypoint the expedition reaches, a new connection's role
+ * and goal — rolled once, now, as resolveMove rolls a rolled outcome's
+ * (buildOracleSeeds). The upgraded resolution had none, and since issue #354
+ * P2-10 its narration is the move's only one; the seeds of the outcome it
+ * replaces belonged to a narration struck, or never made. A price the
+ * upgraded outcome keeps is not rolled here (`routePayThePrice`): it is the
+ * one already paid (`price`, its card's text), seeded as the pipeline seeds
+ * it (withPayThePriceSeed).
+ *
+ * @param {Object} args
+ * @param {string} args.moveId
+ * @param {string} args.outcome — the upgraded outcome
+ * @param {boolean} args.isMatch
+ * @param {Object} args.consequences — the upgraded outcome's
+ * @param {Object|null} [args.campaignState] — for the active sector's region
+ * @param {Object|null} [args.currentSite] — the vault or derelict the crew is in (location.js getCurrentSiteKind)
+ * @param {string|null} [args.price] — the Pay the Price that stands, as its card shows it
+ * @returns {Object|null}
+ */
+export function upgradedOracleSeeds({ moveId, outcome, isMatch, consequences, campaignState = null, currentSite = null, price = null }) {
+  const seeds = buildOracleSeeds(moveId, outcome, !!isMatch, currentSite, {
+    routesPayThePrice:       consequences?.routePayThePrice === true,
+    rollsDecisiveActionCost: consequences?.rollDecisiveActionCost === true,
+    region:                  activeSectorRegion(campaignState),
+  });
+  return price ? withPayThePriceSeed(seeds, moveId, price) : seeds;
+}
+
+/**
+ * Whether a result's Pay the Price is one of its choices: a miss whose
+ * play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but that routes
+ * none, with an enumerated option routing `pay_the_price` — Sojourn's "No
+ * relief" (SOJOURN-PTP-ADVISORY).
+ *
+ * @param {string} moveId
+ * @param {Object} consequences
+ * @returns {boolean}
+ */
+function choiceOffersPrice(moveId, consequences) {
+  if (!PAY_THE_PRICE_ON_MISS.has(moveId) || consequences?.routePayThePrice === true) return false;
+  const prompt = consequences?.sufferPrompt;
+  return prompt?.kind === "enumerated" && (prompt.options ?? []).some(o => o?.route === "pay_the_price");
+}
+
+/**
+ * Whether a move's miss pays a price — what a miss stated before the roll can
+ * be (issue #362 AC02): the pipeline routes one (`routePayThePrice`, on a miss
+ * without a match), or the miss offers it as a choice (choiceOffersPrice —
+ * Sojourn's). Enter the Fray's bad spot, Swear an Iron Vow's obstacle, Test
+ * Your Relationship's choice, the suffer moves' own resist rolls and Face
+ * Death / Desolation pay none: their stated miss was shown and narrated as
+ * "what this miss costs", and nothing charged it. Pure.
+ *
+ * @param {string} moveId
+ * @returns {boolean}
+ */
+export function missPaysPrice(moveId) {
+  if (typeof moveId !== "string" || !Object.hasOwn(CONSEQUENCE_MAP, moveId)) return false;
+  const consequences = mapConsequences(moveId, "miss", false);
+  return consequences?.routePayThePrice === true || choiceOffersPrice(moveId, consequences);
+}
+
+/**
  * A move's oracle seeds with the Pay the Price its pipeline rolled for the
  * card, so the narration depicts the price the table is shown and pays — one
  * roll per result (issue #321 U03). A new object; `seeds` is not changed.
@@ -1744,30 +1838,49 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
  * that routes none — the price is one of its choices, an enumerated option
  * routing `pay_the_price`. Null for any other result, or when the roll fails.
  *
+ * The price is kept as it was rolled — its text and the suffer routes it
+ * lands — so the pick pays the price the narration depicted: a "Roll twice"
+ * (96–100) is two rows its d100 does not name, which a re-read of the table
+ * by that roll rolled again (issue #362 AC30).
+ *
+ * A miss stated before the roll is the price instead (issue #353 R1: the
+ * table is rolled only when no miss was stated, or with the world setting
+ * off): nothing is rolled, and the option carries the stated line and its one
+ * suffer move (`stated: true`). The table's price was the seed and the pick's
+ * payment beside the narrator's "deliver the miss as stated — it is what this
+ * miss costs" (issue #362 AC03).
+ *
  * @param {string} moveId
  * @param {string|null} outcome
  * @param {Object} consequences
- * @returns {{ roll: number, result: string }|null}
+ * @param {{ stated?: { price: string, sufferRoutes: Array<Object> }|null }} [opts] — stakes.js statedPrice
+ * @returns {{ roll: number|null, result: string, sufferRoutes: Array<Object>, stated?: true }|null}
  */
-export function rollChoicePrice(moveId, outcome, consequences) {
-  if (outcome !== "miss" || !PAY_THE_PRICE_ON_MISS.has(moveId) || consequences?.routePayThePrice === true) return null;
-  const prompt = consequences?.sufferPrompt;
-  if (prompt?.kind !== "enumerated" || !(prompt.options ?? []).some(o => o?.route === "pay_the_price")) return null;
+export function rollChoicePrice(moveId, outcome, consequences, { stated = null } = {}) {
+  if (outcome !== "miss" || !choiceOffersPrice(moveId, consequences)) return null;
+  const statedText = typeof stated?.price === "string" ? stated.price.trim() : "";
+  if (statedText) {
+    return { roll: null, result: statedText, stated: true,
+      sufferRoutes: Array.isArray(stated.sufferRoutes) ? stated.sufferRoutes.slice(0, 1) : [] };
+  }
   try {
     const r = rollOracle("pay_the_price");
-    return Number.isInteger(r?.roll) && r.result && r.result !== "—" ? { roll: r.roll, result: r.result } : null;
+    return Number.isInteger(r?.roll) && r.result && r.result !== "—"
+      ? { roll: r.roll, result: r.result, sufferRoutes: Array.isArray(r.sufferRoutes) ? r.sufferRoutes : [] }
+      : null;
   } catch {
     return null;
   }
 }
 
 /**
- * A choice prompt whose `pay_the_price` option carries the rolled price (and
- * the move that owes it), for the pick to pay (sufferDialog's "route"). A new
- * prompt; `prompt` is not changed.
+ * A choice prompt whose `pay_the_price` option carries the rolled price — its
+ * text and routes (and the move that owes it), for the pick to pay
+ * (sufferDialog's "route" → index.js payChosenPrice). A new prompt; `prompt`
+ * is not changed.
  *
  * @param {Object} prompt — an enumerated sufferPrompt
- * @param {{ roll: number, result: string }} price
+ * @param {{ roll: number|null, result: string, sufferRoutes?: Array<Object>, stated?: true }} price
  * @param {string|null} moveName
  * @returns {Object}
  */
@@ -1775,7 +1888,9 @@ export function withChoicePrice(prompt, price, moveName = null) {
   return {
     ...prompt,
     options: (prompt.options ?? []).map(o => (o?.route === "pay_the_price"
-      ? { ...o, price: { roll: price.roll, result: price.result, ...(moveName ? { moveName } : {}) } }
+      ? { ...o, price: { roll: price.roll ?? null, result: price.result,
+        sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [],
+        ...(price.stated === true ? { stated: true } : {}), ...(moveName ? { moveName } : {}) } }
       : o)),
   };
 }
@@ -1853,6 +1968,19 @@ export function newEnemySeedLines() {
  *   subject: { type: "track", id: string, name: string }, oracleSeeds: string[] }}
  */
 export function expeditionPlanRequest(track, campaignState, resolutionId) {
+  const name = String(track?.label ?? "").trim() || "the expedition";
+  return {
+    ref:     `plan-${resolutionId ?? track?.id ?? "x"}-expedition`.slice(0, 64),
+    kind:    "expedition",
+    trigger: "expedition",
+    label:   `the expedition to ${name}`,
+    subject: { type: "track", id: track?.id ?? null, name },
+    oracleSeeds: expeditionPlanSeeds(campaignState),
+  };
+}
+
+/** An expedition plan's hidden rolls: two waypoint sightings of the active sector's region and what waits at the end. */
+function expeditionPlanSeeds(campaignState) {
   const region = activeSectorRegion(campaignState);
   const tableId = SPACE_SIGHTING_BY_REGION[region] ?? SPACE_SIGHTING_BY_REGION.terminus;
   const seeds = [];
@@ -1862,15 +1990,75 @@ export function expeditionPlanRequest(track, campaignState, resolutionId) {
   }
   const end = safeRollPaired("action", "theme");
   if (end) seeds.push(`What waits at the end — Action + Theme: ${end}`);
-  const name = String(track?.label ?? "").trim() || "the expedition";
-  return {
-    ref:     `plan-${resolutionId ?? track?.id ?? "x"}-expedition`.slice(0, 64),
-    kind:    "expedition",
-    trigger: "expedition",
-    label:   `the expedition to ${name}`,
-    subject: { type: "track", id: track?.id ?? null, name },
-    oracleSeeds: seeds,
-  };
+  return seeds;
+}
+
+/** The seed lines that tell what a new enemy a price revealed is and wants (newEnemySeedLines). */
+const NEW_ENEMY_SEED_LINE = /^The new enemy — /;
+
+/** A price's own seed line (priceSeedLines). */
+const PRICE_SEED_LINE = /^Pay the Price: /;
+
+/** Whether a plan request is an expedition's whose hidden rolls a store dropped (withoutHiddenRolls). */
+const owesExpeditionSeeds = (r) => r?.kind === "expedition" && !(Array.isArray(r.oracleSeeds) && r.oracleSeeds.length);
+
+/**
+ * A narration's input as a store every client receives keeps it — a held
+ * result's move card (`awaitingUpgrade`), a Batch Mode round
+ * (`batchMode.round`), a burn's or an improvement's card state — without the
+ * hidden oracle rolls behind a plan (issue #362 AC15; decisions.md "Hidden
+ * oracle rolls": "No hidden roll is on a player-visible card or a card's
+ * flags"). They rode into those stores with the whole narration input: an
+ * expedition's two waypoint sightings and what waits at the end, a new
+ * enemy's Character Role, Goal and Disposition. What stays says a plan is
+ * owed — the expedition's request, about its track; the price line — and the
+ * narration rolls them on the GM that narrates it (withHiddenRolls). A new
+ * object; `input` is not changed.
+ *
+ * @param {Object|null} input — a resolution, or a narration input (narrationInputFrom)
+ * @returns {Object|null}
+ */
+export function withoutHiddenRolls(input) {
+  if (!input || typeof input !== "object") return input ?? null;
+  const out = { ...input };
+  if (Array.isArray(input.skeletonRequests)) {
+    out.skeletonRequests = input.skeletonRequests.map(r => (r && typeof r === "object" ? { ...r, oracleSeeds: [] } : r));
+  }
+  if (Array.isArray(input.oracleSeeds?.results)) {
+    out.oracleSeeds = { ...input.oracleSeeds,
+      results: input.oracleSeeds.results.filter(l => !(typeof l === "string" && NEW_ENEMY_SEED_LINE.test(l))) };
+  }
+  return out;
+}
+
+/**
+ * The hidden oracle rolls a narration's input owes, rolled now — on the GM
+ * that narrates it (issue #362 AC15): a store every client receives keeps
+ * none (withoutHiddenRolls), so an expedition plan request with no seeds gets
+ * its waypoint sightings and what waits at the end (expeditionPlanRequest's),
+ * and a price that reveals a new enemy with none of its rolls gets them
+ * (newEnemySeedLines), after its price line. No one has seen a dropped roll,
+ * so this is that roll. An input that owes nothing is returned as it is; else
+ * a new object.
+ *
+ * @param {Object|null} input — a resolution, or a narration input
+ * @param {Object|null} [campaignState] — for the active sector's region
+ * @returns {Object|null}
+ */
+export function withHiddenRolls(input, campaignState = null) {
+  if (!input || typeof input !== "object") return input ?? null;
+  let out = input;
+  const requests = Array.isArray(input.skeletonRequests) ? input.skeletonRequests : [];
+  if (requests.some(owesExpeditionSeeds)) {
+    out = { ...out, skeletonRequests: requests.map(r => (owesExpeditionSeeds(r) ? { ...r, oracleSeeds: expeditionPlanSeeds(campaignState) } : r)) };
+  }
+  const lines = Array.isArray(input.oracleSeeds?.results) ? input.oracleSeeds.results : [];
+  const enemyPrice = lines.findIndex(l => typeof l === "string" && PRICE_SEED_LINE.test(l) && priceRevealsNewEnemy(l));
+  if (enemyPrice >= 0 && !lines.some(l => typeof l === "string" && NEW_ENEMY_SEED_LINE.test(l))) {
+    const results = [...lines.slice(0, enemyPrice + 1), ...newEnemySeedLines(), ...lines.slice(enemyPrice + 1)];
+    out = { ...out, oracleSeeds: { ...input.oracleSeeds, results } };
+  }
+  return out;
 }
 
 /**

@@ -12,11 +12,14 @@
  * clients short-circuit and rely on the GM client to record decisions.
  */
 
-import { FOLDER_NAME } from "../world/worldJournal.js";
+import { companionJournalFolderId } from "../world/worldJournal.js";
 
 const MODULE_ID = "starforged-companion";
 const JOURNAL_NAME = "Pacing Telemetry";
 const FLAG_KEY = "pacingTelemetry";
+// The journal's own mark, set when it is made: it is found by this, whatever
+// it is called (issue #362 AC47).
+const ROOT_FLAG = "pacingTelemetryRoot";
 
 // Cap one session's log at this many entries to keep the page light.
 const MAX_ENTRIES_PER_SESSION = 200;
@@ -232,10 +235,25 @@ async function writeNarratorUsage(entry) {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The Pacing Telemetry journal: the one stamped `pacingTelemetryRoot` when it
+ * was made — what a GM's rename in the sidebar leaves alone — else the
+ * journal of its name (one made before the stamp). The stamp was written and
+ * never read: found by its name alone, a renamed journal was passed over and
+ * the next record made a second one, splitting the usage, consistency and
+ * pacing pages across the two (issue #362 AC47; the Progress Tracks journal's
+ * rule, issue #345 AA62). Among several stamped journals (a sidebar
+ * Duplicate copies the stamp) the one still carrying the default name wins.
+ *
+ * @returns {JournalEntry|null}
+ */
 function findJournal() {
   if (!globalThis.game?.journal) return null;
-  return game.journal.getName?.(JOURNAL_NAME)
-      ?? game.journal.find?.(j => j.name === JOURNAL_NAME)
+  const stamped = (j) => j?.flags?.[MODULE_ID]?.[ROOT_FLAG] === true;
+  return game.journal.find?.(j => stamped(j) && j.name === JOURNAL_NAME)
+      ?? game.journal.find?.(stamped)
+      ?? game.journal.getName?.(JOURNAL_NAME)
+      ?? game.journal.find?.(j => j?.name === JOURNAL_NAME)
       ?? null;
 }
 
@@ -243,10 +261,11 @@ async function getOrCreateJournal() {
   let journal = findJournal();
   if (journal) return journal;
 
+  // The module's folder by its stamp, whatever the GM renamed it; none is
+  // made for the telemetry (issue #362 AC48).
   let folderId = null;
   try {
-    const folder = game.folders?.find(f => f.type === "JournalEntry" && f.name === FOLDER_NAME);
-    folderId = folder?.id ?? null;
+    folderId = await companionJournalFolderId();
   } catch {
     folderId = null;
   }
@@ -255,7 +274,7 @@ async function getOrCreateJournal() {
     journal = await JournalEntry.create({
       name:   JOURNAL_NAME,
       folder: folderId,
-      flags:  { [MODULE_ID]: { pacingTelemetryRoot: true } },
+      flags:  { [MODULE_ID]: { [ROOT_FLAG]: true } },
     });
     return journal ?? null;
   } catch (err) {

@@ -161,7 +161,8 @@ describe("PT09 — the card names the place and says whether the token moved", (
     await setACourse("Rockhome");
     const [card] = courseCards();
     expect(card.content).not.toContain("Token moved");
-    expect(card.content).toMatch(/position is now <strong>Rockhome<\/strong>; no sector-map pin marks it/);
+    // The reason only when it is the reason (issue #362 AC53: courseCardTokenReason.test.js).
+    expect(card.content).toMatch(/position is now <strong>Rockhome<\/strong>; its sector-map token did not move — no sector-map pin marks it\./);
     expect({ x: token.x, y: token.y }).toEqual(PORT_XY);
   }, 30_000);
 

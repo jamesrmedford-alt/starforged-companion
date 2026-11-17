@@ -187,8 +187,10 @@ describe('issue #338 D8 — a burn rewinds a clock out of its triggered state', 
     expect(state().clocks[0].filled).toBe(3);
     expect(vignette.flags[MODULE_ID].burnSuperseded).toBe(true);           // was: undefined
     expect(state().sceneTruths.find(x => x.id === 'tr-1')).toMatchObject({ retracted: true, retractedBy: 'superseded' });
-    // The step keeps the upgrade's kind, so its note is the improvement's.
-    expect(step).toEqual({ step: 'upgrade', effect: 'tensionClocks', clocks: [{ _id: 't1', name: 'Reactor breach' }], kind: 'improve' });
+    // The step keeps the upgrade's kind, so its note is the improvement's —
+    // and each clock whether the price filled it, which a hidden plan's clock
+    // is put back one short of full by (issue #362 AC33).
+    expect(step).toEqual({ step: 'upgrade', effect: 'tensionClocks', clocks: [{ _id: 't1', name: 'Reactor breach', triggered: true }], kind: 'improve' });
     expect(vignette.content).toMatch(/the result was improved and the clock rewound/);
   });
 

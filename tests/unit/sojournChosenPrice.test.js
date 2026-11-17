@@ -123,7 +123,9 @@ describe('SOJOURN-PTP-ADVISORY — rollChoicePrice / withChoicePrice', () => {
     } finally { rng.mockRestore(); }
     expect(r.outcome).toBe('miss');
     const option = r.consequences.sufferPrompt.options.find(o => o.route === 'pay_the_price');
-    expect(option.price).toEqual({ roll: 71, result: 'You waste resources', moveName: 'Sojourn' });
+    // The price as rolled — its text and its routes (issue #362 AC30: sojournRollTwicePrice.test.js).
+    expect(option.price).toEqual({ roll: 71, result: 'You waste resources',
+      sufferRoutes: [{ move: 'sacrifice_resources', amount: 1 }], moveName: 'Sojourn' });
     expect(r.oracleSeeds.results.filter(s => s.startsWith('Pay the Price:'))).toEqual(['Pay the Price: You waste resources']);
   });
 

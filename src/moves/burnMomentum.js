@@ -65,7 +65,10 @@ import {
   applyMomentumBurn,
   mapConsequences,
   buildLoremasterContext,
+  upgradedOracleSeeds,
+  matchLine,
 } from "./resolver.js";
+import { getCurrentSiteKind } from "../entities/location.js";
 import {
   getActor,
   readMomentumState,
@@ -87,12 +90,19 @@ import {
   retractSupersededNarrations,
   upgradeAllyId,
   momentumShares,
+  standingPriceOf,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
 // Foundry's OWNER ownership level (CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER).
 const OWNERSHIP_OWNER = 3;
+
+/** Text into a card's HTML: an outcome's consequence text is plain text (issue #362 AC83). */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 // How long a relayed button click waits for the GM to consume the card before
 // the button re-enables. The relay is fire-and-forget (no ack): if the GM
@@ -702,8 +712,11 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // The working copy it writes is the one the re-narration reads and logs
   // against; a copy, never the cached setting (rules/foundry-api.md).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
+  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState,
+    standingPrice: priceStands ? standingPriceOf(burn.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
+  // Its own writes the world refused go on its payoff card, with a Retry (issue #362 AC49).
+  failures.push(...(effects.failures ?? []));
 
   await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), momentumNote) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
@@ -758,9 +771,11 @@ function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newCon
 /**
  * The burned outcome as a resolution — what the effects applier, the narrator
  * and the session log take: the dice as rolled, the action score the burned
- * momentum set, the upgraded consequences.
+ * momentum set, the upgraded consequences, and the burned outcome's own
+ * behind-the-scenes oracle rolls — with the price it keeps (`standingPrice`,
+ * a weak hit that pays the price too — issue #362 AC05).
  */
-function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState }) {
+function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState, standingPrice = null }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
@@ -783,7 +798,16 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     // (issue #347 D2).
     upgradeOf:       burn.resolutionId ?? null,
     consequences:    newConsequences,
-    oracleSeeds:     null,
+    // What the burned outcome says to envision, rolled for it now — the
+    // outcome it replaces had its own, for a narration struck or never made
+    // (issue #362 AC05).
+    oracleSeeds:     upgradedOracleSeeds({ moveId: burn.moveId, outcome: burnResult.outcome, isMatch: burnResult.isMatch,
+      consequences: newConsequences, campaignState, currentSite: getCurrentSiteKind(campaignState), price: standingPrice }),
+    // The plans the roll's narration was asked to decide — an expedition it
+    // began: this narration replaces that one, or is the move's only one
+    // (issue #362 AC04). Their hidden rolls are rolled as it is narrated
+    // (resolver.js withHiddenRolls).
+    skeletonRequests: Array.isArray(burn.move?.planRequests) ? burn.move.planRequests : [],
     // The stakes shown before the roll: the re-narration delivers the line
     // the burned outcome calls for (issue #353 R1).
     stakes:          burn.stakes ?? null,
@@ -892,20 +916,22 @@ export function burnedMomentumLine(before, after, reset) {
 
 /**
  * Rewrite the existing move-result card's HTML to reflect the burned
- * outcome. Strikes through the original outcome label and appends the
- * burned outcome, the momentum the burn spent (`momentumNote`,
+ * outcome. Strikes through the original outcome label — and the match line
+ * that read it (struckMatchLine) — and appends the burned outcome, what its
+ * match adds, the momentum the burn spent (`momentumNote`,
  * burnedMomentumLine) + new consequence text, and the note on its other
  * effects (`effectsNote`, HTML from effectsNoteHtml).
  */
 function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "", momentumNote = "") {
-  const html = String(originalContent ?? "");
+  const html = struckMatchLine(originalContent);
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
   const burnNote = (
     `<div class="sf-move-burn-result">` +
       `<div class="sf-move-outcome sf-move-outcome--upgraded">🔥 Burned → ${newLabel}</div>` +
+      (burnResult.isMatch ? `<div class="sf-move-match">${matchLine(burnResult.outcome)}</div>` : "") +
       (momentumNote ? `<div class="sf-move-effect sf-move-burned-momentum">${momentumNote}</div>` : "") +
       (newConsequences.otherEffect
-        ? `<div class="sf-move-effect">${newConsequences.otherEffect}</div>`
+        ? `<div class="sf-move-effect">${escapeHtml(newConsequences.otherEffect)}</div>`
         : "") +
       effectsNote +
     `</div>`
@@ -924,6 +950,23 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
   );
   if (struck) return out;
   return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, `${burnNote}</div>`) : html + burnNote;
+}
+
+
+/**
+ * A move card with the match line its first outcome rendered (index.js
+ * formatMoveResult, issue #354 P2-14) struck through: an upgraded outcome's
+ * match reads otherwise — a miss's "dire turn" is a strong hit's "twist" —
+ * and the stale line stood unstruck under "Burned → Strong Hit ✦ Match"
+ * (issue #362 AC31). Improve Result strikes it the same way. A card with no
+ * match line is returned as it is.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+export function struckMatchLine(content) {
+  return String(content ?? "").replace(/<div class="sf-move-match">([\s\S]*?)<\/div>/,
+    (_full, inner) => `<div class="sf-move-match sf-move-match--struck"><s>${inner}</s></div>`);
 }
 
 

@@ -6,6 +6,435 @@ rejected.
 
 ---
 
+## Issue #362 D6: a one-word name counts only when capitalised as typed, or in address position (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D6 NAME-AS-ORDINARY-WORD; the maintainer's answer A of 2026-11-17 — "a one-word name counts only when capitalised as typed (or in address position) — fellow-PC rule and the relevance resolver".) Two rules read a player's typed line for names, and both matched a name's single word in any case — while the module's own name oracles give ordinary words (Will, Ash, Echo, Hope, Sage; callsigns Ghost, Shadow, Static).
+- **The rule (`relevanceResolver.namesOneWordName`).** A name of more than one word ("Echo Vega", "Will Harrow") still matches whole, in any case. A one-word name — a first or last name, or a name of one word — counts only as a name is written: a whole word that starts with a capital as typed, or, in any case, in address position: the first word of its line, or a vocative set off by a comma ("hand me the codes, will."). It is `resolveEntityName`'s rule for a name part (a lowercase word never matches), read in free text. A sentence's own capital is a capital: "Will you hand me the codes?" still names Will.
+- **The fellow-PC rule** (issue #354 P2-06, `narrator.lineIsToAFellowPlayerCharacter` on a MOVE decision, and finding G's offer filter `suppressPcDirectedSocialMove` — both through `inputNamesOtherPlayerCharacter`): another PC's first name, and the words of an NPC's name, count only so. "I will press the dockmaster" with a PC called Will at the table is rolled again (it was narrated, with no move offered), and so is "…or I leave this station in ash"; "Will, cover the door" — or "will, cover the door" — is still a line to Will, and a lowercase "an echo on the scanner" is no NPC named.
+- **The relevance resolver's Phase 1** (`matchNamesInNarration`): a single-word index key (a name part, or a name of one word) is a hit only so — "I check the scanner for an echo" no longer injects Echo Vega's card nor makes a hybrid move an interaction with her. The scene frame's `present` names, added to the paced match text, are names as recorded.
+
+Not changed: names the detection pass returns (the capture's `namesPlayerCharacter`, lore routing, the dedupe gate) — the model's names, not a typed line; Make a Connection's part-name naming (`figuresNamedIn`, issue #362 AC18) keeps its capital rule, without the address position.
+
+**Reason:** the fourteenth bug audit (coverage IDXA, MOVA D2, WJ D3). On a MOVE decision the fellow-PC rule cancels a roll, so a PC called Will, Ash or Hope turned every other player's Compel with that word in it into narration; relevance brought an NPC's card — and an interaction class — into a line that held only the ordinary word.
+
+**Rejected:** *(B) narrate with the move still offered* and *(C) leave it — `!roll` recovers*: the maintainer chose A. *A non-dictionary-word test* (WJ D3's other option) — the oracles' names are dictionary words. *A lowercase name kept for recall* — typed lowercase, "echo" is the word far more often than the name; a full name and an addressed name still match in any case.
+## Issue #362 D8: Withstand Damage and Companion Takes a Hit at 0 owe the resist roll; its miss decides the vehicle's cost and the companion's fate (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D8, RESIST-ROLL-AT-ZERO-FOR-SHIPS-AND-COMPANIONS; the maintainer's answer of 2026-11-17, option A — issue #330 D3's shape for both.) The vendored moves read "If your integrity is 0, Lose Momentum equal to any remaining damage. Then, if your integrity is 0 or you choose to resist the damage, roll +integrity … On a miss … If your integrity is 0, also suffer a cost according to the vehicle type" and "Then, if their health is 0 … roll +your companion's health … If their health is 0 and you rolled a miss with a match on this move, they are dead or destroyed".
+- **The damage / harm step takes the track and the overflow, and owes the roll at 0.** `withstandDamage` / `companionTakesAHit` (every Pay the Price route, a stated price, the "make a suffer move" card's buttons) write the vehicle's integrity / the companion's health, take what it cannot as momentum, and at 0 post a resist card (`resistRollPrompt` "damage" / "companion") naming the vehicle or companion in its executor opts. Its press posts the forced move as the PC (sufferDialog `resist`, `owedMove` — a Batch Mode round's entry), the support vehicle / companion by its asset id (`forcedMoveTargetId`; none for the command vehicle), which statEnrichment rolls before any name (`assetById`): +that vehicle's integrity, +that companion's health. The step rolls nothing and decides nothing.
+- **Only that roll's own miss decides, at 0, whichever option it took.** The resolver's Withstand Damage / Companion Takes a Hit miss options carry `atZeroChoice` ("vehicle" / "companion"; sufferDialog adds the call after either the meter or the Lose Momentum pick, as for Endure Harm). A vehicle at 0 gets the vehicle-type cost's choice card (`atZeroChoicePrompt("vehicle")`): a command vehicle marked battered or cursed (its native impacts, through `ship.updateShip`, offered only while unmarked — `isShipCursed` beside `isShipBattered`), a module marked broken or a broken module destroyed, or the vehicle-damage d100 (`rollImpactTable`, its row an oracle result, a destruction row surfacing Overcome Destruction — a prompt, as before); a support vehicle marked battered (`actorBridge.setVehicleAssetBattered`, its card's Battered condition) or the d100, whose destruction row says to discard the asset. A companion at 0 gets a card saying it is out of action until given aid — dead or destroyed when that miss had a match (the asset is not discarded: a prompt).
+- **The system has no broken mark for a module**, so "a module broken" / "a broken module destroyed" are recorded choices: the card says to mark it on the starship sheet, as Repair's "fix a broken module" spend is recorded.
+- **Dropped:** the executor's at-0 VEHICLE_DAMAGE roll (a Face Danger miss's "Your vehicle suffers damage" could put "Immediate catastrophic destruction" on the table with no Withstand Damage rolled) and its `isMissWithMatch` "Companion destroyed" branch (it read the match of whichever move's card the pick came from — reachable only through a picker chained from another move's miss — while the move's own miss option was a meter call that posted no prompt).
+
+**Reason:** issue #330 D3 decided exactly this for harm and stress ("it skipped a roll the move makes mandatory and could land Face Death on a Face Danger miss"); the two sibling suffer moves carry the same mandatory roll, and the vehicle's cost and the companion's death are that roll's outcomes. Rolling the d100 at the damage step made the ship's destruction one unresisted step away.
+
+**Amends:** "Issue #330 decisions: D1–D15" D3 — the resist roll now covers all four suffer moves with a track (health, spirit, integrity, companion health); SUFFER-EXECUTOR-ASSET-SCHEMA's "the at-0 vehicle-damage d100 is kept" and the play-kit coverage's "the at-0 vehicle-type cost stays card text" are superseded.
+
+**Rejected:** *recording the approximation* (option B) — the vendored data carries the roll, and D3 had already built the card and the call for it.
+## Issue #362 D2: a fact block relayed to the canonical GM writes no hidden plan by id (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) On the `narrator.sidecar`
+relay — the fact block of a narration made off the canonical GM, sent there to
+be applied — `applyRelayedNarratorSidecar` drops the block's `reveals`, and its
+`plans` but the answers to the relay's own plan requests (by their refs), with
+`sameAs` taken off those answers. Its `openQuestions`, `newThreats` and
+`countdown` stand, as do its truths, state and frame. The step a clock's
+trigger vignette or a chosen complication was made to play — the code's own
+mark, not the model's — no longer rides inside the block: it is sent apart
+(`forced`, with the clock's id or the complication's scope) and stands only as
+the canonical GM would force it for that cause (`standingForcedReveals`: the
+plan that clock paces, its next step or its answer, while the clock is full;
+the in-scene plan's next step for that complication). Anything else in it is
+dropped.
+
+**Reason:** issue #362 D2 (coverage FC D1, NARB). Plan ids are public — a
+clock's `planId`, a rolls card's `skeletonId` — and a relayed block was applied
+as sent, so a hand-made relay could make the GM write a hidden truth into the
+scene ledger, Lore and a table card, or rewrite, resolve or merge a plan: more
+than any UI could have done (gmRelay's trust model). Since D1 a player's
+narration is shown no plan, so an honest relay carries none of these by id.
+Dropping every reveal would also drop the step a co-GM's vignette was made to
+play, and leave that plan's clock full with its vignette written (issue #362
+AC08).
+
+**Rejected:** *Accepting it within the relay's trust model* (answer B). *Keeping
+a relayed block's reveals when the requester is a GM* — the requester is
+client-asserted. *Trusting `forced` as sent* — it is checked against what this
+GM would force. Accepted with it: a co-GM narrating on its own client (its own
+key) has its model's own reveals and corrections dropped too — the canonical GM
+narrates most beats; a reveal a co-GM's prose made is told again by a later
+narration.
+
+---
+
+## Issue #362 D1: the hidden plans are read on a GM's client only; a player's Private Channel gets its plans from the canonical GM (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) Whether Foundry
+delivers an ownership-NONE journal to a player's client was never checked
+live, and the code held both answers: `listSkeletons()` ran on players'
+clients (the Private Channel's story, narration on a player's own key, the
+Session panel's "What's open") while the consult relay (P2-31),
+SNAPSHOT-PLAYER-KEY and the snapshot store assumed a player's client cannot
+read the Secrets journal. Decided: it does not.
+- **Every plan read is a GM's.** `secrets.js` `secretPages` returns nothing on
+  a non-GM client, so `listSkeletons`, `getSkeleton`, `plannedSubjects`,
+  `planForClock` and every reader over them give a player's client no plan,
+  whatever its journal collection holds.
+- **The Private Channel reads its plans by relay.** A player's turn asks the
+  canonical GM over the module socket (`requestPlansInPlay` →
+  `plansInPlay.ask` / `.answer`, the oracle consult's shape): the GM answers
+  with the decided plans the message and the scene bring into play
+  (`selectRelevantSkeletons`, the GM's own scene and frame), projected to what
+  UNREVEALED renders — never their rolls, re-roll, clock or provenance. The
+  wait is bounded (`PLANS_WAIT_MS`); no GM, no answer: the turn reads none. A
+  GM's own Private Channel reads them itself.
+- **Narration on a player's own key gets no plan**, as it gets no world
+  snapshot (SNAPSHOT-PLAYER-KEY): its UNREVEALED is empty. The plans its own
+  rolls ask it to decide (DECIDE NOW, a price's new enemy) still go with it
+  and are filed by the canonical GM from its relayed fact block.
+- **"What's open" shows the table's view the canonical GM keeps.** The
+  unanswered questions and standing demands (R4's definitions, unchanged —
+  `secrets.tableViewOf`) live in a world setting of their own,
+  `narrativeSkeletonsTableView`, written by the canonical GM alone, only when
+  it changes (a plan made or decided in secret writes nothing): after its own
+  plan writes, on every Secrets page created, changed or deleted (a GM's edit
+  in the journal, an X-Card's undo), and once at load
+  (`registerPlansTableViewSync`). Every client's panel reads it
+  (`plansShownToTable`) — a player's list and a GM's are the same — and
+  re-renders when it changes. It holds those two rows' text and nothing else.
+
+**Reason:** issue #362 D1 (coverage SESS D1, NARA, NARB, SKEL 3). On the
+simulated table a player's Private Channel request — sent from the player's
+browser on the player's key — carried a plan's `Truth:` line; if Foundry
+delivers the journal, every plan was in every browser and the relay and the
+snapshot gate protected nothing.
+
+**Rejected:** *Accepting that plans are in every browser* (answer B). *A
+relay for the Session panel* — a player's panel re-renders on hooks that fire
+for documents it may never be sent; a view the canonical GM writes is read at
+once and survives the GM being away. *Sending the store, or every plan, to
+the Private Channel* — the turn is given only the decided plans it brings
+into play. Not solved: a socket answer reaches every connected client
+(Foundry's module socket cannot address one), so the asker's few plans pass
+through the other players' browsers, unread; and a forged ask can name any
+subject, within the relay's trust model.
+
+**Amends:** "Issue #353 R3 and R4" ("a player's list is the GM's (the store
+is read alike on every client)" — the list is the canonical GM's view, read
+alike); "The narrative skeleton" Phase 1 ("The Private Channel reads plans" —
+on a player's client, by relay).
+
+---
+
+## Issue #362 D3: a hidden plan's existence stays off the table's screens — clocks named by their subject, the odds typed on the oracle card, one opaque snapshot mark (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) The narrator is told
+never to hint that a plan exists; the module's own surfaces no longer do:
+- **A plan's clock is named by its subject alone** — "the escort", not "the
+  escort — escalation" (`secrets.ensureThreatClock`). A world's existing plan
+  clocks (a `planId`, the old suffix) are renamed once, at load, by the
+  canonical GM (`clocks.renamePlanClocksBySubject`, index.js ready); a GM's
+  own clock is never renamed. A countdown's clock keeps the label the prose
+  gave it.
+- **Ask the Oracle shows the odds the player typed, and no threshold.** A
+  yes/no about a planned subject is still rolled at the odds the plan's truth
+  sets (Phase 3; issue #354 P2-31), but the card ("Ask the Oracle (likely)",
+  "d100 = 50 → NO"), its flags (`oracleNarration.oracleName`, `rolledLine`) and
+  the oracle memory every client holds (`recentOracles`) name the typed odds.
+  No yes/no card shows a threshold: shown only on unconsulted rolls, its
+  absence would say a plan stood behind the question.
+- **The snapshot's world setting holds one opaque mark.** `worldSnapshotEvents`
+  is `{ events: [{ id: "out_of_date", at }] }` — never which event set it. The
+  events table and every reporter are unchanged (`SNAPSHOT_EVENTS`,
+  `reportSnapshotEvent(id)`); the ids stay on the reporting GM's client (its
+  pending marks, and the snapshot page's log, which names the events that
+  client reported since the snapshot it replaces —
+  `snapshotEvents.namedSnapshotCauses`; a mark another GM's client set logs as
+  `out_of_date`). While a mark stands that no snapshot on the reporting
+  client has answered, any event is covered by it and writes nothing (the
+  next snapshot reads the world after it); otherwise the event writes a mark
+  timed after any stored, so a snapshot that answered an older one reads it
+  as pending. The named marks' residual — the same event reported on another
+  GM's client inside the round trip of the snapshot that answers its mark —
+  now holds for any event (accepted: a window of one socket round trip). A
+  named mark a world stored before this still counts, and is cleared by the
+  snapshot that answers it.
+
+**Reason:** issue #362 D3 (coverage SKEL 1 and 2, NARP D1). "<subject> —
+escalation" on every player's Session panel and `!clock list`, the consulted
+odds printed on the card (the hidden truth, one yes/no at a time), and
+`plan_made` / `plan_decided` / `new_enemy_revealed` in a world setting each
+told the table — or a player at the console — that a hidden plan had just
+been made, decided or consulted.
+
+**Rejected:** *Accepting them as table-facing* (answer B). *Keeping plan
+clocks off the players' lists* — a clock that turns on every Pay the Price is
+the table's to see; its name was the leak. *Hiding the d100 too* — the roll
+and its match are the table's; a player who knows the thresholds can still
+infer, from a roll answered against the odds typed, that something set them
+(accepted). **Amends** "The world snapshot" below ("a world setting of its
+own, `worldSnapshotEvents`: an id and a time"): the setting holds one opaque
+mark and its time; the ids are the reporting client's.
+
+---
+## Issue #362 D5: a held result is kept by its roller going on — and by the session's end and Batch Mode's start (2026-11)
+
+**Decision:** (issue #362 D5, HELD-RESULT-WHO-KEEPS-IT; decided A,
+maintainer 2026-11-17; with AC32 HELD-RESULT-OUTLIVES-ROUND-ENTRY, which it
+settles.) A free-flow result held for Burn / Improve / Keep (issue #354
+P2-10) is kept — its price paid, its narration posted — by:
+- **the roller's own next line** (`heldResult.actsAsRoller`, index.js
+  onMessage): a line spoken as the roller (the message's speaker — a
+  selected token, the author's own character), or written by the roller's
+  own player — a player who owns the PC, or a GM when no player does (a
+  GM-run PC, solo play). A GM's typed line with no speaker is read as the
+  first PC's (`speaker.js`: a GM owns every PC) and no longer keeps another
+  player's result while they are still choosing;
+- **a move rolled for the roller**, whoever typed it (`movePipeline.rollMove`,
+  before its dice): a later move closes the card's upgrades anyway (issue
+  #326 D4), and keeping first puts its price and narration before the new
+  move's — it was kept after the move was recorded, un-awaited;
+- **the roller's sheet roll, `!ptp` and `!oracle`**, first (the canonical
+  GM's native-roll hook; `oracleFollowup.narrateOracleFollowupOnGm` before
+  the follow-up's narration);
+- **a consequence chosen** on its choice card (as before);
+- **End a Session** — every held result, before the scene closes and the
+  summary is finalised, so it is narrated into the session it was rolled in
+  (`keepEveryHeldResult("session-end")`);
+- **Batch Mode switched on** — every held result, before the first round
+  opens (`keepEveryHeldResult("batch-mode")`): a round's line is table talk,
+  which kept nothing. A result held while Batch Mode is on (a
+  non-participant's card move, run as free-flow) is kept before the round
+  that takes its roller's next action rolls (`batch/driver.js` rollRound).
+The card says what kept it (`awaitingUpgrade.resolvedBy`, issue #362 AC82).
+
+**Reason:** a GM's "Take your time deciding…" paid and narrated a player's
+held miss while they were still choosing; a sheet roll, `!ptp` or `!oracle`
+by the roller was narrated before the result it followed; a result held
+across End a Session was paid and narrated into the next session; and in
+Batch Mode the round told the next beat with the miss unpaid and still
+burnable.
+
+**Supersedes** issue #354 P2-10's "Known limit: a held result whose roller
+never acts again, and whose card nobody presses, stays held — End a Session
+does not settle it" (End a Session settles it now; a session that ends by
+four idle hours still leaves it held until its roller goes on).
+
+**Rejected:** *(B) leave who keeps it as it was and reword the card's "Your
+next line keeps it"* — a GM's table talk would still settle a player's
+result, and the story would still run out of order.
+
+## Issue #362 D7: a weak-hit win burned or improved to a strong hit is paid the difference (2026-11)
+
+**Decision:** (issue #362 D7, WON-FIGHT-PAYOFF-NOT-RESCALED; decided B,
+maintainer 2026-11-17.) A Battle won on a weak hit and then burned or
+improved to a strong hit is paid what the strong hit adds to the win's
+payoff, as an upgrade pays the legacy ticks, companion health and progress
+marks it adds (issue #313 UPGRADE-PIPELINE-EFFECTS) — never twice:
+- **The milestone marks.** The victory card the weak hit posted carries its
+  move's `resolutionId`. While its ⚑ Mark milestone is still to press, the
+  card shows the strong hit's count (`flags.marks` and the label raised —
+  one press pays them all); once pressed, the marks it lacks are marked at
+  the upgrade, once (the vow's payoff ledger, step `milestone:<card>:upgrade`).
+  A fight whose rank gives one mark on either hit (troublesome, dangerous)
+  adds none.
+- **The promised reward.** A granted reward now records the outcome it was
+  granted at (`reward.grantedAt`). A reward granted at a weak hit gets the
+  strong hit's: a supply or momentum reward its second point, any other
+  form its string lifted ("no string attached now"). Claimed before it is
+  given — `grantedAt` is raised on every copy first — and a refused give is
+  on the GMs' payoff card with a Retry. A reward granted before `grantedAt`
+  was recorded is left as it stands.
+(`index.js` `payWonFightDifference`, `upgradeLinkedVowReward`.) A lost miss
+burned or improved to a win is paid the upgraded outcome's payoff in full,
+as before.
+
+**Reason:** with results held (issue #354 P2-10) the weak hit's payoff
+lands at the roll, before the roller has chosen to burn — so the strong hit
+the table ends up with was paid as a weak one, though every other effect of
+the upgrade is paid at the upgraded scale.
+
+**Supersedes** the issue #313 trade-off "a Battle won on a weak hit and
+improved to a strong one keeps the weak hit's milestone count and reward",
+and its rejection of "pay a Battle's win again": the win is not paid again —
+only its difference, and the victory card is not posted a second time.
+
+**Rejected:** *(A) defer a held result's payoff until it is settled* — the
+fight's end, its card and its payoff would split from the record the roll
+already made, and an upgrade in a Batch Mode round or with holding off
+would still need the difference. *(C) keep the weak hit's payoff* — the
+trade-off this replaces.
+
+## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
+
+**Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,
+maintainer 2026-11-17.) A card-forced move — a paced card's "Roll ⟨move⟩"
+(the move a no-move reading offers included), the way-out and Battle
+buttons, a Batch Mode round's Roll — builds its interpretation without the
+interpreter, so it stated no stakes: the Confirm dialog showed no "At stake"
+and its miss always rolled the Pay the Price table.
+- **The reading's stakes are kept.** A move with several stats keeps the
+  stakes its stat reading states (`statEnrichment.enrichForcedMoveStat`,
+  `interpretMove`'s `expectedMoveSlug`); a forced travel move's destination
+  reading keeps them too (`travel.readForcedTravelDestination`).
+- **A move with one listed stat is read for them** — Gather Information,
+  Make a Connection, Explore a Waypoint, Set a Course, Swear an Iron Vow …:
+  one interpreter (Haiku) call more, through the same reading. A move that
+  rolls no stat (a progress move, a move with no roll) makes none, nor do
+  Endure Harm / Endure Stress (their stat is "whichever is higher", settled
+  from the sheet, and their miss pays no price — #362 AC02). No key, no
+  reading, as before. The reading is given the recent scene and the roller
+  (their vehicles and companions), as a typed line's is: the stakes are drawn
+  from them.
+- **A stated Withstand Damage or Companion Takes a Hit goes to what the move
+  was made against**: the move's targets are forwarded to the Pay the Price
+  dispatch on the stated route itself (`stakes.statedPrice(stakes, targets)`
+  — the support vehicle it was rolled for, `vehicleItemId`; the companion it
+  was rolled for, `companionItemId`, or a Heal's patient companion). It
+  landed on the command vehicle and the first companion in item order. With
+  no such target the defaults stand; the table's own routes are unchanged.
+
+**Reason:** the alpha 23 playtest's "the scan's miss came back 'delayed'"
+case, when the scan was rolled from the button; and a stated "the glowcat is
+clipped" landing on the Rockhorn.
+
+**Rejected:** *(B) record forced moves as table-priced* — a forced move is
+the same move a typed line makes, and its player sees the same dialog.
+*Restricting a stated miss's suffer move to the PC's meters when the move has
+no vehicle or companion target* — not asked for. *Reading the vehicle or
+companion off the stated miss line by name* — a line that mentions a vehicle
+in passing ("an enemy fighter rakes the hull") is the issue #345 AA14
+regression; the move's own targets are the record.
+
+---
+
+## Issue #362 D12: a Pay the Price is paid even when its card cannot be posted (2026-11)
+
+**Decision:** (issue #362 D12, REFUSED-PRICE-CARD-DROPS-THE-PRICE; decided A,
+maintainer 2026-11-17.) A move's Pay the Price (`index.js`
+`postMovePayThePriceCard` — a routed miss's, a stated miss's, a held
+result's when it is kept or upgraded to a result that pays one) and a Take
+Decisive Action weak hit's cost (`postDecisiveActionCostCard`) are paid
+whether or not the world saves their card: the suffer routes land, the
+countdown clocks turn, and the move's narration is seeded with the price —
+as `payChosenPrice` already decided for a chosen price ("the price is paid
+all the same"). The refused card is logged, and the GM whose client paid
+the price is told with a notice on their screen (`priceCardRefusedNotice`)
+— another chat card to the GMs is the write the world just refused. With no
+card the price is not in RECENT ORACLE RESULTS (which reads the cards); the
+move's narration still depicts it.
+
+**Reason:** a refused card returned before anything ran: the price was
+dropped whole — routes, clocks and seed — with one console line, and with
+the result held, keeping it had already closed the wait, so nothing could
+pay it later.
+
+**Rejected:** *(B) keep dropping it and report it on the GMs' payoff
+failure card with a Retry* — the narration would go on without the price
+while it waited for a GM's press, and the report is itself a chat card.
+## Issue #362 D10: a person read as a known one is listed, a GM can make an NPC card, and deleting one tears its connection down (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D10 DETECTED-PERSON-DROPPED-SILENTLY; the maintainer's answer A of 2026-11-16/17 — "New Entities card lists a detected person read as a known one ("read as <known>") with a "No — a new person" button; a GM create path for an NPC card; a deleteActor handler runs the X-Card's connection teardown".) Three parts:
+- **Read as someone known, listed — not dropped.** The person rule (issue #354 P2-16: "Archer" is Vuldar Archer, "Captain Sutton" the PC Isaac Sutton) still keeps such a person from being offered, but the New Entities card lists them as a row read as the known one ("Read as Vuldar Archer", `status: "known"`), with **No — a new person**: a GM's press makes it an ordinary pending row (`newPerson`) whose Confirm makes the card. One row a name — a narration that keeps using the short name lists it once. The known person's whole name stays a silent duplicate. The same rule now holds where it was whole-name only (the coverage's D8): a reply's second name for one person is read as the first, and Confirm reads a row the person rule reads as someone known — a stale "Archer" pressed after Vuldar Archer was made — as them, instead of making a second card and a second bond (a `newPerson` row is made; Make a Connection's candidates take the known person over such a row).
+- **A GM makes an NPC card by hand.** The Entities panel's **＋ New NPC** (GM only) takes a name and a description and posts a New Entities card with that one row (`newPerson`), offered to each player character and No one: its Confirm makes the NPC the way a detected one is made — seed, portrait, agenda plan, bond — so there is one creation path. A name an NPC already has is refused. A character Actor made in the sidebar is still a player character (issue #342 Z73).
+- **Deleting an NPC card tears its connection down.** A GM's delete in the Actors sidebar runs, on the canonical GM, what the X-Card's retraction of a narration's NPC runs (`retractNarrationConnections`): the `connectionIds` entry, the scene-ledger facts handed back to the name, the PCs' bond Items, the portraits — and the hidden plan, retired as a GM's Retire does. One difference: the X-Card keeps a card the table has used; a GM's delete has already removed it, so a bond Item a player marked (a tick, a forged bond) is kept on the sheet as a lost bond, as a severed one is, never erased. The X-Card's own delete carries `connectionTornDown`, so nothing runs twice.
+
+This amends "One thing has one record, whatever it is called (P2-15 – P2-17, P2-30)" above: the dedupe gate's "already known" still keeps a person from being offered, but it is said on the card, never silent.
+
+**Reason:** the fourteenth bug audit (ENT D1, D5, D8): a PC's relative introduced by title and surname, or anyone the near-spelling rule caught (AC17), never got a row and nothing said so — and there was no other way to make their card; deleting an NPC card left its id listed, its bond Items on the sheets (CHARACTER STATE and the pacing classifier kept listing the NPC), its facts keyed to a card no one answers, and its plan and portraits behind.
+
+**Rejected:** *(B) keep the silent drop* — the maintainer chose A. *A whisper per name instead of a row* (the coverage's option c) — the card already lists what the detection found, and a row carries its own way out. *Making the NPC straight from the ＋ New NPC dialog* — a second creation path beside Confirm's, to drift from it. *Deleting a marked bond Item with the card* — a player's progress is the player's; it is kept as lost.
+## Issue #362 D13: a published Private Channel reflection goes through the canonical GM, which checks it against every player's Private Lines (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D13; the maintainer's answer of 2026-11-17, option A.) Publishing a Private Channel reflection goes through the canonical GM, which holds every player's Private Lines (the `campaignState.safety.privateLines` copy the `safety.syncPrivateLines` relay keeps). The publisher's client asks it (`privateChannel.publish`, `private-channel/publish.js` `applyPrivateChannelPublish`); the GM posts the card — signed as the publisher's own PC, the narrator flag family on it, as before.
+- **When another player has Private Lines** (any entry but the publisher's), the GM checks the text against the table's lines with **one short call** — the cheap model the module's checks use, through `src/api-proxy.js` — and **refuses** a text that crosses one. The refusal is a whisper to the publisher that names no one and no line ("it touches on something the table's safety settings keep out of the story").
+- **When nobody else has Private Lines**, nothing is checked and no call is made: the publisher's own lines were the private narrator's already.
+- **When the check cannot run** — no Claude key on the canonical GM's client, the call failed, or its reply names neither answer — the reflection is refused with a neutral "can't be checked right now" notice; never published as if clear. With **no GM connected** the publisher's client refuses the same way: it cannot know the others' lines (the copy it holds lags a line added while no GM was online).
+- The X-Card is checked on the publisher's client, on the GM before the check, and again once the call returns.
+
+**Behaviour change:** a reflection could be published with no GM connected, and with a keyless GM; now it is refused in both cases whenever a check is needed — and with no GM connected at all, even when none would be. The card is now authored by the canonical GM (its speaker alias is still the publisher's PC).
+
+**Reason:** the private narrator writes under its publisher's lines alone (`formatOwnSafetyContext`, by decision), yet a published reflection is read by the whole table and becomes canon — shared narration in effect, for which "Private Lines in shared narration" says a limit someone else set must hold in a scene they are reading. Nothing checked a published text against the other players' lines, and the publisher's client cannot be sent them.
+
+**Amends:** "The Private Channel reads the shared story; a published reflection is canon" (its **Write** bullet: the reflection is posted by the canonical GM once checked) and "Private Lines in shared narration" (a published reflection is held to every player's lines, checked on the GM's client; the Private Channel's own narrator still carries its player's lines only).
+
+**Rejected:** *accepting it* (D13's option B — the publisher reads it first and the X-Card covers it): a limit is not a limit if it holds only when someone notices in time. *Sending the other players' lines to the publisher's client to check there* — "Private Lines in shared narration" rules out sending one player's lines in another's request.
+
+---
+
+## Issue #362 D14: a session over after four idle hours is not begun — the chat gate points at Begin a Session (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D14; the maintainer's answer of 2026-11-17, option A.) The chat pipeline's session gate narrates a typed line only into a session **in play** (`session/lifecycle.js` `sessionInPlay`): begun (its gate open), not being replaced by this GM's world load (issue #345 AA58), and **not over** — End a Session's mark, or `SESSION_IDLE_HOURS` (four) since the session was last seen live, the later of its mint and its latest chat-activity stamp. A line typed into an over session is not narrated and no move is rolled; the author and the GMs are whispered the "No session has begun" notice, which says the last session is over and points at Begin a Session. Begin takes the boundary (`rollSessionIfDue` mints the next session — it already did for an over session — then begins it), so the boundary falls when play resumes, never mid-scene. The gate's mirrors ask the same question: the too-short notice, the "Held — no session has begun" note on a held forced move, and the drain that hands a held move back. A session whose last sighting is unknown is not taken as over: the gate fails open on what it cannot read, as it does on an unreadable state (the world load's `sessionNeedsMint` still mints such a session).
+
+**Batch Mode asks the same question** (D14's second path, found while it was built): the round driver read only the session-active flag (`batch/driver.js` `roundSessionOver`, `openRoundIfDue`, the campaignState listener), so a round opened, collected and waited in a session the panel read as "Over". It now reads `sessionInPlay`: no round opens into an over session, a collecting round of one closes as at End a Session (its authors told, their drafts kept), a round waiting on a keyed GM or the X-Card closes unnarrated once its session is over, and the Round window shows "No session has begun". A round's submission keeps the session alive (its activity stamp), as a chat line does.
+
+**Reason:** with the GM's game left loaded through four idle hours nothing mints — the boundary is applied only at a canonical GM's world load or at Begin a Session — and the gate read only the session-active flag. Play went on in a session the Session panel read as "Over — four hours without chat" with Begin enabled, the activity stamp never wrote again ("never revives"), and any reload during that play minted, closed the gate and asked for Begin mid-scene.
+
+**Amends:** "A session ends at End Session or after four idle hours; the next is told about the last (2026-10)" — what happens to play after the boundary and before the next load or Begin. Its rejection of *re-minting on the first message after an idle gap* stands: the gate refuses the line; Begin mints.
+
+**Rejected:** *leaving it* (D14's option B) — the panel and the narration disagreed about whether a session was running, and the boundary landed at whatever reload came next.
+
+---
+
+## Issue #362 D9: wounded caps health at 4, shaken caps spirit at 3 — a house rule, not the rulebook's (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D9; the maintainer's answer of 2026-11-17, option A — not the audit lead's recommendation.) The module keeps its caps as a **house rule**: while a character is **wounded**, a meter change the module makes (`actorBridge.applyMeterChanges` — a move's outcome, a suffer move, a heal) holds health at most 4; while **shaken**, spirit at most 3. Unmarked, both run to 5 as the sheet does. What it covers, exactly:
+- Only the module's own meter writes are capped. A GM's or player's edit on the ironsworn sheet is not (the vendor sheet and its condition-meter fields carry no cap), and the impacts' own rules — Heal and Hearten clear the impact, Endure Harm and Endure Stress mark it — are the move texts' as written.
+- A change the module makes while the meter stands above the cap brings it down to the cap (a +1 heal on a wounded character at 5 health leaves 4), since the clamp is applied to the result of every change.
+- The two numbers differ, as the module wrote them; nothing in the vendored moves or the play kit sets either, so neither is the rulebook's.
+
+**Reason:** the fourteenth audit (#362, MOVB and CHAR) found the caps recorded in `docs/rules-reference/playkit-rules-and-coverage.md` as "(rulebook)", while neither the vendored move texts nor the vendor sheet carries a cap and two reviewers knew of no such Starforged rule. The maintainer keeps the behaviour the table plays with and asks that it be named for what it is, so a later session does not "fix" it to the rulebook or cite it as one.
+
+**Supersedes:** the rules reference's "(rulebook)" attribution of the caps (Part 1 §1.2, and the Part 2 coverage row for the condition meters), corrected in the same commit.
+
+**Rejected:** *removing the caps* (D9's option B) — not chosen; a playtest that wants rulebook meters can revisit it here.
+## Issue #362 D4: a hidden plan closes with its subject; a scene's unanswered mysteries end with it (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) The code closes a plan
+as its subject ends, whatever the narration that ends it says or does:
+- **An expedition's plan** (about its track, by id) is **resolved** when the
+  track completes — Finish an Expedition, the Progress Tracks panel's
+  Complete — and **retired** when the track is removed
+  (`progressTracks.js` → `secrets.closePlansAbout`).
+- **A vow's plan** (about the vow, by its `vowId`) is **resolved** when the
+  vow is completed — fulfilled or forsaken (the pipeline marks every copy
+  completed), or closed on the sheet — once no copy of a shared vow is left
+  open, and **retired** when its last copy is deleted (the canonical GM's
+  `updateItem` / `deleteItem` hooks, `secrets.registerPlanSubjectHooks`).
+- **A scene's unanswered mysteries** — a posed question, a countdown's "what
+  happens when it runs out?" — are **retired at scene end**, with their
+  clocks (`sceneLifecycle.endScene`, and an empty scene a new one replaces →
+  `secrets.retireSceneMysteries`). An answered one (its truth revealed) is
+  left as it is; a clock an open scene challenge holds stays the challenge's.
+- A closed plan's clock leaves with it (`retirePlanClock`). The write keeps
+  the plan's narration stamp (`keepStamp`), so an X-Card on the narration that
+  decided it still takes that decision back.
+- **The narration that ends the subject still has the plan in play**: the
+  Finish an Expedition or Fulfill Your Vow beat names it among its
+  `endingTrackIds`, and a plan its subject's end resolved is in play for that
+  beat (`skeletons.planInPlay`) — shown under UNREVEALED, decided and
+  revealed by its sidecar (`applyPlanSideData` / `revealedTruthsOf`
+  `endingSubjectIds`) — so the end it was told to reveal is still revealed
+  (Phase 3).
+
+**Reason:** nothing closed a plan but the narrator's own `resolved` or a GM's
+Retire. A finishing narration that omitted it, failed or was paused left a
+finished expedition's, a fulfilled or forsaken vow's and an old scene's
+mystery plan active: in every world snapshot, under every player's
+Unanswered questions, a countdown still turned by every price, and the plan a
+waypoint's peril picked (issue #362 AC11) — the coverage rows NARB "Nothing
+closes a plan", SKEL 5, SESS D4 and FC D2.
+
+**Rejected:** *Leaving it to the GM's Retire* (answer B) — the plans pile up
+for the whole campaign unseen by anyone but the GM. *Resolving after the
+finishing narration* — the narration's own plan writes run fire-and-forget,
+and a close racing them dropped its reveal; the close is at the state change,
+and the ending beat reads the resolved plan instead. *A sheet-rolled
+fulfilment that leaves the vow Item open* closes nothing until the Item is
+completed — the vow is open in every other reader until then too.
+
+---
+
 ## The world snapshot: the whole world state, frozen and cached for the session (2026-11)
 
 **Decision:** ([#357](https://github.com/jamesrmedford-alt/starforged-companion/issues/357); the maintainer's answers of 2026-11-14 — "all plans go in", "scene boundaries and major oracle rolls, new plans, etc.", "no size limit", "make that list accessible for later modifications", "also, at sector creation". Phases 1–3 are built; phase 4 is open, below.)
@@ -17,7 +446,7 @@ rejected.
 - **What stays out**, because it changes within a session: the scene frame and ledger, CORRECTED, ship position, character state, the party, clocks, open tracks' progress, recent oracle results, this session's rolling summary, the campaign recap, oracle seeds, the vow the scene serves. The never-dropped tiers (`rules/narrator-memory.md` invariant 4) render on every call, as before. An uncharted site is out too (the sector's discovery record not yet `discovered`): nothing names it until it is charted. A record in play that the snapshot leaves out still has its card in the context, as before.
 - **The context names what is in play** (**IN PLAY NOW**, `formatInPlayBlock`): the active sector, the current location, the entities relevance and the scene frame's cast matched, the four most urgent threats — each by name and id. Chosen exactly as before (`resolveRelevance`, `addSceneFrameCast`, `selectRelevantSkeletons`): the snapshot holds the content, the list says where to look. The per-beat sections the snapshot covers — LAST SESSION, ACTIVE THREATS, FACTION LANDSCAPE, ESTABLISHED LORE, WORLD LORE, CURRENT LOCATION, ACTIVE SECTOR, ENTITIES IN SCENE and UNREVEALED's plan entries — are not sent, so nothing is sent twice.
 - **All active plans go in (decided).** Today a beat was shown at most four, within 600 tokens. Every active plan is now in every call, in a section of its own, under the rule that the narrator uses only the plans UNREVEALED names for the narration; the rest are background it must not draw on, hint at or advance. UNREVEALED keeps its rules and DECIDE NOW in the context and names the plans in play by heading and id. **For:** a plan can no longer drop out of view because the prose used another name for its subject (#354 P2-30). **Against, and watched:** more hidden truths in view is more chance to hint at one. If a playtest shows hinting, the plans' section can be narrowed to the plans in play without redoing the layout.
-- **When a new snapshot is taken — one table.** `narration/snapshotEvents.js` `SNAPSHOT_EVENTS` is the list: one row an event — an id, what it is, and whether it takes a new snapshot. Every trigger site reports its event by id to `reportSnapshotEvent`, which looks the id up; no trigger site decides for itself, and the checks the store makes at a call go through the same table (`snapshotCauses`). The events that do not count are rows too, set to `false`, so turning one on is a one-word change. An event marks the snapshot out of date (a world setting of its own, `worldSnapshotEvents`: an id and a time, nothing of the story); the next narrator call takes the new one, so several events between two calls cost one snapshot, which holds all of them.
+- **When a new snapshot is taken — one table.** `narration/snapshotEvents.js` `SNAPSHOT_EVENTS` is the list: one row an event — an id, what it is, and whether it takes a new snapshot. Every trigger site reports its event by id to `reportSnapshotEvent`, which looks the id up; no trigger site decides for itself, and the checks the store makes at a call go through the same table (`snapshotCauses`). The events that do not count are rows too, set to `false`, so turning one on is a one-word change. An event marks the snapshot out of date (a world setting of its own, `worldSnapshotEvents`: an id and a time, nothing of the story — since issue #362 D3 one opaque mark and its time, the events behind it kept in the reporting GM's memory and the snapshot page's log); the next narrator call takes the new one, so several events between two calls cost one snapshot, which holds all of them.
 
   | Event | Takes a snapshot | Reported by |
   |---|---|---|
@@ -27,7 +456,7 @@ rejected.
   | `plan_made` — a hidden plan is made | yes | `secrets.js` `createSkeleton` |
   | `plan_decided` — a narration decides or corrects a plan | yes | `applyPlanSideData` |
   | `plan_revealed` — a plan's truth is revealed | yes | `applyPlanSideData`, the GM's Reveal now |
-  | `plan_resolved` — a plan's story ends | yes | `applyPlanSideData` |
+  | `plan_resolved` — a plan's story ends | yes | `applyPlanSideData`; `closePlansAbout` (its track completed, its vow closed — issue #362 D4) |
   | `discovery_rolled` — Make a Discovery or Confront Chaos, once narrated | yes | `narrator.js` `reportNarratedMove` |
   | `new_enemy_revealed` — a price reveals a new enemy | yes | `reportNarratedMove`, `reportNarratedOracle` |
   | `sector_created` | yes | `storeSector` |
@@ -36,7 +465,8 @@ rejected.
   | `threat_recorded` — a threat recorded at significant salience or above | yes | `routeWorldJournalResults` |
   | `xcard_played` | yes | `suppressScene` |
   | `fact_retracted` — a strike or a correction, and its copies | yes | `propagateRetraction` |
-  | `plan_edited` / `plan_retired` — a GM's edit or Retire | yes | `editSkeleton`, `retireSkeleton` |
+  | `plan_edited` / `plan_retired` — a GM's edit or Retire; a plan whose subject is gone, or an ended scene's unanswered mystery (issue #362 D4) | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout`, `retireSceneMysteries` |
+  | `entity_detail_removed` — a narrator-added detail is taken off a recorded entity's card (issue #362 AC65) | yes | `entityPanel.js` `applyEntityEditFromRelay` (the Entities panel's Remove) |
   | `record_removed` — a record the snapshot holds is gone or no longer stands | yes | the store, at the call |
   | `changes_large` — the changes since have grown large | yes | the store, at the call |
   | `cache_expired` — no narrator call for an hour | yes | the store, at the call |
@@ -49,7 +479,7 @@ rejected.
 
   `docs/flows/narrator-context-flow.md` carries the same table. `tests/unit/worldSnapshot.test.js` fails when a site reports an id that is no row, or a row has no reporter. If tuning between releases is wanted, the table can go behind a world setting: every trigger already reads it. That is not built.
 - **A move's own events are reported once its narration is written**, not at the roll. An event marks the snapshot for the *next* narrator call; reported at the roll, the move's own narration would take the new snapshot before the discovery had been told, and the plan it then files would take another.
-- **The snapshot must never keep asserting removed content.** Every retraction path takes a new one: the X-Card and `propagateRetraction` report their events, a GM's edit or Retire of a plan reports its own, and — the backstop for every other path, a `!journal lore … rumour`, a deleted Actor, a superseded narration's plan — a unit the manifest holds that the world no longer has is found at the next call (`record_removed`). A new snapshot is the canonical GM's to take: a narration that finds one due on another GM's client is sent with none, never with the one held.
+- **The snapshot must never keep asserting removed content.** Every retraction path takes a new one: the X-Card and `propagateRetraction` report their events, a GM's edit or Retire of a plan reports its own, so does the Entities panel's Remove of a narrator-added detail (issue #362 AC65), and — the backstop for every other path, a `!journal lore … rumour`, a deleted Actor, a superseded narration's plan — a unit the manifest holds that the world no longer has is found at the next call (`record_removed`). A new snapshot is the canonical GM's to take: a narration that finds one due on another GM's client is sent with none, never with the one held.
 - **Size and age.** A new snapshot is taken when the changes pass 2,000 estimated tokens or a quarter of the snapshot (`CHANGES_MAX_TOKENS`, `CHANGES_MAX_SHARE` — a starting point: a new snapshot pays for itself after about 2 × (snapshot size ÷ changes size) calls), and when no narrator request has carried a snapshot for an hour — the cache entry has lapsed, so that call pays for a write whatever is sent. The hour counts from the last request this client sent, the snapshot's own time and the session's newest narrator card, whichever is latest, so a reload does not read as an hour's silence. **There is no size limit** (decided): cost per read and per new snapshot grows with the world, and the Narrator Usage page shows both.
 - **Where it is stored.** One page of the GM-only World Journal — Secrets journal, its record in the page's `worldSnapshot` flag (`narration/worldSnapshotStore.js`): the text holds the hidden plans, and a world setting is sent to every client. The page's body shows the GMs the snapshot and a log of new snapshots with what caused each. Written by the canonical GM only; read by a GM's client only. It survives a reload: the next narration sends the stored text and reads the same cache entry. **Narration on a player's own key** (no keyed GM connected) cannot read the page: it sends no snapshot and selects per beat, as before.
 - **Pre-warming.** With no opening narration to follow Begin a Session (the galley vignette unticked, no clock vignette), `prewarmNarratorCache` sends the rules and the snapshot with `max_tokens: 0`, which writes the cache and returns no text. It is built the way a narration's request is, on the narration model, with the thinking setting `api-proxy.js` gives every narrator call — a different one would write an entry nothing reads — and it does not stream. An opening narration shares both blocks and warms the cache itself, so nothing is sent ahead of one.
@@ -75,7 +505,7 @@ The six answers:
 - **P2-04 — both narrowings of the Connection rule.** The classifier leans toward MOVE only for a line that presses someone for something they are reluctant to give, or tests or deepens the relationship, *and* only when that someone is one of the speaker's own connections — the bond Items on that character's sheet (`actorBridge.readConnections`), not every NPC card. Under FOLDER-002 every named individual is a connection-type card, so "the addressee is a Connection" had come to mean every tracked NPC. Plain conversation and an everyday action with nothing at risk are narration, whoever they are with.
 - **P2-05 — the minimum line length stays, and says so.** A line under ten characters is still read as table talk (short out-of-fiction chatter must not be narrated). Its author is told, on their own client, and the line goes back in their chat box. Not accepted: narrating any line with a word in it, or giving the classifier a "not part of the fiction" answer.
 - **P2-07 — Rotating Spotlight defaults off, with a one-time switch-off.** Saving the Narrator tab stores every field, so a default flip alone would reach almost no existing world: the canonical GM switches a stored "on" off once at world load, whispers the GMs why, and marks the world (`narratorSpotlightDefaultOffApplied`). A GM who ticks it again keeps it. This amends "Multiplayer spotlight is implied by narration", which recorded "(world, default on)". The rotation still counts characters, not players — it was not gated on connected users.
-- **P2-10 — free-flow asks Burn / Improve / Keep before a result's price and narration**, as a Batch Mode round asks before its narration. A result whose card offers Burn Momentum or Improve Result is *held* (`rollMove`'s `holdForUpgrade`; `moves/heldResult.js`): the card posts with **Keep the result**, the move is recorded so the buttons are live, and nothing is paid or narrated. Keep pays the price and narrates; a burn or an improvement finds nothing paid — nothing to undo, nothing struck — and its narration is the move's one narration, told the player's own line, after paying the held price if the upgraded result pays one too. The roller going on keeps it: their next line or move ("burn momentum before applying any other effects of the move"), or a consequence chosen on the outcome's choice card. What the wait needs is on the card (`flags.awaitingUpgrade`), so it survives a reload and any GM can press Keep. This goes further than a round, which pays the price at the roll and holds only the narration — the round was not changed. Results that offer no upgrade are paid and narrated at once, as before. **A world setting, "Ask before paying and narrating" (`holdResultForUpgrade`, default on), switches it off** — not asked for in the decision; added because the flow could not be played in Foundry before it shipped, and because off keeps the earlier pay-then-undo flow (which a round's rolls still use) reachable from free-flow and its tests on it. Remove the setting once the held flow has been played, if the table has no use for the old one. Known limit: a held result whose roller never acts again, and whose card nobody presses, stays held — End a Session does not settle it.
+- **P2-10 — free-flow asks Burn / Improve / Keep before a result's price and narration**, as a Batch Mode round asks before its narration. A result whose card offers Burn Momentum or Improve Result is *held* (`rollMove`'s `holdForUpgrade`; `moves/heldResult.js`): the card posts with **Keep the result**, the move is recorded so the buttons are live, and nothing is paid or narrated. Keep pays the price and narrates; a burn or an improvement finds nothing paid — nothing to undo, nothing struck — and its narration is the move's one narration, told the player's own line, after paying the held price if the upgraded result pays one too. The roller going on keeps it: their next line or move ("burn momentum before applying any other effects of the move"), or a consequence chosen on the outcome's choice card. What the wait needs is on the card (`flags.awaitingUpgrade`), so it survives a reload and any GM can press Keep. This goes further than a round, which pays the price at the roll and holds only the narration — the round was not changed. Results that offer no upgrade are paid and narrated at once, as before. **A world setting, "Ask before paying and narrating" (`holdResultForUpgrade`, default on), switches it off** — not asked for in the decision; added because the flow could not be played in Foundry before it shipped, and because off keeps the earlier pay-then-undo flow (which a round's rolls still use) reachable from free-flow and its tests on it. Remove the setting once the held flow has been played, if the table has no use for the old one. Known limit: a held result whose roller never acts again, and whose card nobody presses, stays held — End a Session does not settle it (superseded by issue #362 D5: only the roller's own line or action keeps a held result, and End a Session and switching Batch Mode on keep every one).
 - **P2-16 — a "No one" choice beside Confirm on free-flow New Entities cards.** Amends issue #342 D3, which kept one Confirm on free-flow cards: a person's row now asks whose connection they are on every card — the narration's PC by name, and **No one**, which records the person with no bond Item on anybody's sheet (the `noBond` path a round's card already had). A Confirm that always bonded put a hostile stranger on a PC's sheet as a relationship.
 
 What the fixes established:
@@ -181,7 +611,8 @@ plan's kind or a hint* — any content on a shared screen leaks it.
   `tensionClockId` — no second clock). A GM's press, claimed once on the
   card, run on the canonical GM (gmRelay `sceneChallenge.begin`). Scenes stay
   manual (R2, decided): the module offers the challenge, never ends a scene.
-- **A narration's clocks and plans leave with it.** A clock a narration
+- **A narration's clocks and plans leave with it** — and, since issue #362
+  AC33, the pacing of a plan clock it played a step of. A clock a narration
   started carries its `narrationId`: the X-Card's pause write drops it, and a
   narration a **Burn Momentum or Improve Result supersedes** takes back its
   plan writes and its clocks too (`retractSupersededNarrations` →
@@ -323,7 +754,8 @@ unrevealed:
   (`tests/unit/secretsStayHidden.test.js`).
 - **The Private Channel reads plans** (decided), under the same
   never-state-outright rule and with no instruction to write (it emits no
-  sidecar).
+  sidecar). On a player's client it reads the decided plans in play from the
+  canonical GM, by relay — a player's client reads no plan (issue #362 D1).
 - **The world setting Narrative skeletons** (`narrativeSkeletons`, default
   on): off, nothing is planned and no plan is shown to any narrator.
 
@@ -467,9 +899,12 @@ the alternative.)
   table annotates (Endure Harm, Endure Stress, Sacrifice Resources, Withstand
   Damage, Companion Takes a Hit — Endure Harm with no companion) and Lose
   Momentum (the move for "delayed or put at a disadvantage", which the table
-  leaves narrative). A progress move, or a move with no roll, has none.
+  leaves narrative). A progress move, or a move with no roll, has none;
+  a card-forced move states them from its stat reading (issue #362 D11).
   Whether a miss pays the stated miss (`priceStated`) is fixed when the
-  interpretation is read, so the dialog shows what the roll then pays.
+  interpretation is read, so the dialog shows what the roll then pays — and
+  only for a move whose miss pays a price, routed or Sojourn's choice (issue
+  #362 AC02).
 - **Shown before the roll**: the Confirm Move dialog and a Batch Mode round
   reading show "On a hit" and — only when it is the price — "On a miss" with
   its cost. Wrong stakes are fixed the existing way: Cancel and re-word.
@@ -561,7 +996,9 @@ the maintainer.)
   true: the subject's name and its `wants`). No other plan field is read —
   never `truth`, `knows`, `clues`, `escalation`, `resolutions` or
   `oracleSeeds` — and a player's list is the GM's (the store is read alike on
-  every client). It is not a chat card and makes no model call; it re-renders
+  every client — amended by issue #362 D1: every client reads the table's
+  view the canonical GM keeps, `narrativeSkeletonsTableView`, and no client's
+  panel reads the store). It is not a chat card and makes no model call; it re-renders
   when a vow, the tracks journal or a plan's page changes.
 - **End a Session offers one-click focus choices**: the open vows (one per
   vow) for the quest focus and the characters' connections (a severed one
@@ -608,7 +1045,7 @@ spread over the sheet, two panels and the World Journal.
 - **OLD-SCENE-TOKEN-DOCKED** (travel): OLD-SCENE-TOKEN-DOCKED: a `scene_token` position record that carries both a settlement id and non-empty free text is treated as a pre-U53 token placement and read as "near". Arrivals (inferShipPositionFromEntityId / inferShipPosition) never write a settlement's free text. This is a read-time rule; no migration rewrites old records.
 - **SECTOR-CREATE-PARTIAL** (travel): SECTOR-CREATE-PARTIAL: a sector creation that throws (a refused campaignState write included) deletes what that run made — its Actors (and their unmarked bond Items), Sector Record and Scene — so the world is as it was before the run. Adoption of unlisted Actors still covers a run cut short by a closed page.
 - **PT12** (audio-art): Narrator audio is still made only when Play is pressed: there is no pre-synthesis. Play prepares the first segment, then the rest one at a time while it plays. The audio GM plays a clip's bytes while its cache upload continues behind it.
-- **PT14** (audio-art): When the module itself changes a character, the ironsworn system's chat change note for that change is shown as a note, not as the character speaking: it has no actor speaker and the character's name leads the line. A player's own sheet edits keep their speaker. A player's line that the module posts again keeps the speaker it was typed under.
+- **PT14** (audio-art): When the module itself changes a character, the ironsworn system's chat change note for that change is shown as a note, not as the character speaking: it has no actor speaker and the character's name leads the line. A player's own sheet edits keep their speaker. A player's line that the module posts again keeps the speaker it was typed under — a GM's press of a card whose line a PC-less player typed included, which spoke it as the first PC and made it that PC's move; it is the typist's move now, not rolled for another player's character at a table of several (issue #326 D8's rule; issue #362 AC74).
 - **AUDIO-KEYED-NONCANONICAL-DUP** (audio-art): Narrator audio follows "calls run where a key lives, exactly once" for the ElevenLabs key. While a GM with a key is connected, the audio GM makes every client's missing clip once and caches it. A keyed player's own key is used only when no keyed GM is connected, or when the GM gives no clip. This narrows W79/D10 (keyed players paying for their own clips) to tables with no keyed GM.
 - **AUDIO-FORGE-ORIGIN-SHARED** (audio-art): Correction to "A clip URL's layout is not guessed": the Assets Library branch, and so this residual, now applies only in a world running on The Forge (AUDIO-FORGE-ANY-WORLD).
 - **AUDIO-FORGE-ANY-WORLD** (audio-art): The Forge is detected by ForgeVTT.usingTheForge, or by a page served from a forge-vtt.com host. isCachePathFor's Assets Library branch applies only there.
@@ -648,7 +1085,7 @@ spread over the sheet, two panels and the World Journal.
 - **DELAYED-CHOICE-IDENTITY** (moves-a): Delayed choice cards carry what their move was about. Enter the Fray's card names its threshold card by resolution id, and the threshold card records the fight it began (`frayTrackId`). Explore a Waypoint's card names its expedition (`expeditionTrackId`).
 - **VOW-CLOCK-REWIND-PER-COPY** (moves-a): A burn's vow-clock rewind uses the same per-vow lockstep as the advance. A refused copy's Retry sets the value it is owed instead of rewinding again.
 - **SUPPLY-TWO-PC-TIE** (moves-b): The crew's shared supply is recorded on campaignState (`crewSupply`) by each canonical-GM sync pass. It only breaks a tie between disagreeing sheets, and only while some sheet still holds it; a majority of sheets still decides. Chosen over "accept" (SUPPLY-TWO-PC-TIE).
-- **COMPANION-TRIGGER-SWAP-UNCUED** (moves-b): A companion's general trigger ("make a move by sending/commanding <it>") applies to an action move whose line names that companion. When two of the character's assets offer the same asset-meter swap, the confirm form shows a radio per asset rather than rolling the healthiest.
+- **COMPANION-TRIGGER-SWAP-UNCUED** (moves-b): A companion's general trigger ("make a move by sending/commanding <it>") applies to an action move whose line names that companion. When two of the character's assets offer the same asset-meter swap, the confirm form shows a radio per asset rather than rolling the healthiest — in the confirm dialog and in a Batch Mode Round window, whose Confirm carries the pick to the round's roll (issue #362 AC61).
 - **STARSHIP-ASSET-CONDITIONS-UNSYNCED** (moves-b): Update to "Starship battered: the native sheet field is canonical": the STARSHIP asset's Battered/Cursed conditions are a second write-through mirror of the native impacts. The asset card's box is a second UI for the same fact, so the canonical GM writes it to the native impact (and from there to every mirror).
 - **SOJOURN-PTP-ADVISORY** (moves-b): A miss whose Pay the Price is one of its choices (Sojourn) rolls its price once, at resolution. The narration is seeded with that roll, and picking the option pays that same price.
 - **MOMENTUM-BASE-DRIFTED** (moves-b): Momentum bases lowered by the old write-back are repaired only by an explicit command (`!reset-momentum`), never automatically, because a lowered base cannot be told apart from one a GM set on purpose. The owner of a character or any GM may run it.
@@ -885,8 +1322,9 @@ entries below this one.)
   lower value.** Up to v1.8.0 the module's losses went to the record alone,
   so a world played then holds, say, record 2 beside an untouched sheet 5,
   and mirroring the sheet erased the damage from both stores. A record
-  without `integritySheetReconciled` (every record written since carries it;
-  `ShipSchema` sets it on a new one) reads the lower of the two
+  without `integritySheetReconciled` (since issue #362 AC25 only a write that
+  saw the STARSHIP asset's track stamps it, and a record is born stamped only
+  beside one) reads the lower of the two
   (`actorBridge.unreconciledRecordIntegrity`, in `withSheetNotes` and the
   +integrity roll), and its first `updateShip` writes that lower value to
   both stores, stamps the record and whispers the GMs both values where they
@@ -3156,7 +3594,9 @@ maintainer asked for the issue to be addressed on 2026-10-30.)
   keeps the price already rolled instead of reverting it and rolling again;
   the card says so.
 - **An upgrade saves its own legacy mark and arrival location**
-  (`writeLegacyTicks`, `persistCampaignStateFields`): no persistResolution
+  (`writeLegacyTicks`, `writeOwnedFields` — since issue #362 AC49 a refused
+  arrival or uncharted-destination write is a Retry step on the upgrade's
+  payoff card): no persistResolution
   follows with its working copy, as one does in the pipeline. Both upgrades
   re-narrate and log through one `renarrateUpgrade`, against a deep copy of
   the stored campaign, never the cached setting (rules/foundry-api.md).
@@ -3186,7 +3626,8 @@ tests fail with the fix taken out (`docs/testing/fix-sensitivity.md`).
   extracted per roll and prompt the GM; outside this fix.
 
 **Trade-offs accepted:** a Battle won on a weak hit and improved to a strong
-one keeps the weak hit's milestone count and reward. The upgraded outcome's
+one keeps the weak hit's milestone count and reward (superseded by issue #362
+D7: the difference is paid). The upgraded outcome's
 asset consequence riders (`applyMoveConsequenceRiders`) still run only for
 the rolled outcome. A threshold card posted before cards carried their
 `resolutionId` cannot take an upgraded position (the card reports it not
@@ -4535,7 +4976,9 @@ never writes the whole snapshot back.
   `clocks`, `pacing`, `campaignRecapCache`, `dismissedEntities`, `pendingMove`,
   `activeSectorId`, `incitingIncident`, the `worldTruths*` fields; since issue
   #321 `xCardRedirect` and `xCardedNarrationIds` (U07) and `loreRecap` (U06g —
-  a move resolved during `!lore` reverted the new recap)); entity id
+  a move resolved during `!lore` reverted the new recap); since issue #362
+  AC55 `crewSupply`, `deletedChatMessages`, `unsummarisedSession` and
+  `sessionPerspective`); entity id
   lists are an ordered union; `artAssetIds` (a map) keeps both sides' entries,
   the store's winning a clash; (`sessionLogs` came from the store plus this
   resolution's entry — the log is retired, issue #326 W58); `sessionSummary` by newer `updatedAt`; `legacyTracks`

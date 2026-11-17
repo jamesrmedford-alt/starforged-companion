@@ -708,6 +708,30 @@ export async function writeSheetLegacy(actor, track, progress, options = {}) {
 }
 
 /**
+ * Write a PC's supply — the crew-shared supply's mirror
+ * (multiplayer/sharedSupply.js), as writeSheetLegacy writes the shared
+ * legacies'. The mirror wrote each other PC with a bare `actor.update`, so
+ * the system's change note "−1 supply (now 2)" was posted as that PC speaking
+ * (issue #362 AC77): marked as the module's write, the note is said by the
+ * system (PT14), and dropped inside withoutSystemNotes (P2-13). A value
+ * already there is not written again.
+ *
+ * @param {Actor} actor
+ * @param {number} value — the crew's supply
+ * @param {Object} [options] — passed to Actor#update (the mirror marks its writes)
+ * @returns {Promise<boolean>} whether a write was made
+ */
+export async function writeSheetSupply(actor, value, options = {}) {
+  const next = Number(value);
+  if (!actor || !Number.isFinite(next)) return false;
+  if (Number(actor.system?.supply?.value) === next) return false;
+  refuseStaleActorWrite('writeSheetSupply');
+  await moduleUpdate(actor, { "system.supply.value": next }, options);
+  invalidateActorCache(actor.id);
+  return true;
+}
+
+/**
  * The XP a PC sheet shows: earned from its legacy tracks (2 a box, 1 a box
  * past the first 40 ticks — vendor legacy-track.vue), less the XP spent.
  *
@@ -862,11 +886,13 @@ export function readCommandVehicleIntegrity(shipActor) {
 }
 
 /**
- * What a ship record from before the STARSHIP asset's track became canonical
- * reconciles to (issue #347 AB08): the lower of the record's integrity and
- * the track's, within the track — or null for a record already reconciled
- * (`integritySheetReconciled`, set by every ship write since) or one with no
- * integrity of its own. Up to v1.8.0 the module applied its losses to the
+ * What a ship record not reconciled with its STARSHIP asset's track — one
+ * from before that track became canonical (issue #347 AB08), or one kept
+ * while the ship had no STARSHIP asset, the asset added since (issue #362
+ * AC25) — reconciles to: the lower of the record's integrity and the track's,
+ * within the track — or null for a record already reconciled
+ * (`integritySheetReconciled`, set by every ship write that saw the track) or
+ * one with no integrity of its own. Up to v1.8.0 the module applied its losses to the
  * record alone, so record 2 beside sheet 5 is damage the sheet never saw, and
  * reading — then mirroring — the sheet's 5 erased it from both stores. Every
  * reader of the command vehicle's integrity (registry withSheetNotes,
@@ -968,6 +994,39 @@ export function readVehicleAssetBattered(actor, itemId) {
   if (!asset) return null;
   return (asset.system?.conditions ?? [])
     .some(c => String(c?.name ?? '').trim().toLowerCase() === 'battered' && c?.ticked === true);
+}
+
+/**
+ * Mark (or clear) a support vehicle's Battered condition — its card's own
+ * `system.conditions[]` tick, which readVehicleAssetBattered reads:
+ * Withstand Damage's at-0 cost for a support vehicle, "Mark the vehicle as
+ * battered" (issue #362 D8). The one writer of that condition the module
+ * makes. Reports, never throws.
+ *
+ * @param {Actor} actor
+ * @param {string} itemId — the support vehicle asset
+ * @param {boolean} [battered]
+ * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, changed?: boolean,
+ *   reason?: "no-vehicle"|"no-condition"|"refused", error?: string }>}
+ */
+export async function setVehicleAssetBattered(actor, itemId, battered = true) {
+  const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
+  if (!asset) return { ok: false, reason: 'no-vehicle' };
+  const at = { itemId: asset.id, name: asset.name ?? null };
+  const conditions = Array.isArray(asset.system?.conditions) ? asset.system.conditions : [];
+  const isBattered = (c) => String(c?.name ?? '').trim().toLowerCase() === 'battered';
+  if (!conditions.some(isBattered)) return { ok: false, reason: 'no-condition', ...at };
+  if (conditions.every(c => !isBattered(c) || (c?.ticked === true) === !!battered)) return { ok: true, ...at, changed: false };
+  const next = conditions.map(c => (isBattered(c) ? { ...c, ticked: !!battered } : c));
+  try {
+    refuseStaleActorWrite('vehicle battered');
+    await moduleUpdate(asset, { 'system.conditions': next });
+  } catch (err) {
+    console.warn(`actorBridge | vehicle battered: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
+    return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
+  }
+  invalidateActorCache(actor.id);
+  return { ok: true, ...at, changed: true };
 }
 
 /**
@@ -1429,7 +1488,12 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
   let deleted = 0;
   for (const { actor, item } of items) {
     refuseStaleActorWrite('deleteUnmarkedBondItems');
-    await item.delete();
+    // The system's change log posted "Deleted <name>" as the PC speaking —
+    // the NPC the X-Card took back named again, in the PC's voice (issue #362
+    // AC76). Its preDeleteItem reads `suppressLog` from the delete's options,
+    // so the note is not posted; marked as the module's write too, a note
+    // posted all the same is said by the system (reattributeSystemNote).
+    await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
     invalidateActorCache(actor.id);
     deleted++;
   }
@@ -1459,6 +1523,45 @@ export async function setBondItemName(keys = {}, name) {
     updated++;
   }
   return updated;
+}
+
+/**
+ * The bond Items of an NPC card a GM deleted (issue #362 D10 —
+ * connection.onConnectionActorDeleted): each one keyed to the connection that
+ * the table never marked — no tick, not forged — is deleted, as the X-Card's
+ * teardown deletes them (deleteUnmarkedBondItems); a marked one is the
+ * table's history, kept and marked lost (setBondItemLost's flag — the
+ * Connections tab keeps it, CHARACTER STATE lists it under "Connections
+ * lost"), as a severed bond is. One already lost stays. Only Items keyed by
+ * `connectionId` (bondItemsFor without a name). Each write is the module's
+ * (moduleWriteOn / moduleUpdate; the delete with `suppressLog`, so the
+ * system's "Deleted …" note is not the PC's line — known-issues AC76). Never
+ * throws; a refused write is logged.
+ *
+ * @param {{ connectionId?: string|null }} keys — the deleted record's `_id`
+ * @returns {Promise<{ deleted: number, lost: number }>}
+ */
+export async function retireDeletedConnectionBondItems({ connectionId = null } = {}) {
+  const out = { deleted: 0, lost: 0 };
+  if (!connectionId) return out;
+  for (const { actor, item } of bondItemsFor({ connectionId })) {
+    if (item.flags?.[MODULE_ID]?.lost === true) continue;
+    const marked = Number(item.system?.current ?? 0) > 0 || item.system?.completed === true;
+    try {
+      if (marked) {
+        await staleChecked('retireDeletedConnectionBondItems', () => moduleUpdate(item, { [`flags.${MODULE_ID}.lost`]: true }));
+        out.lost++;
+      } else {
+        refuseStaleActorWrite('retireDeletedConnectionBondItems');
+        await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
+        out.deleted++;
+      }
+    } catch (err) {
+      console.warn(`actorBridge | retireDeletedConnectionBondItems: ${item?.name ?? 'a bond'} on ${actor?.name ?? actor?.id} was not ${marked ? 'marked lost' : 'deleted'}:`, err?.message ?? err);
+    }
+    invalidateActorCache(actor.id);
+  }
+  return out;
 }
 
 /**

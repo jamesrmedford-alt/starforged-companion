@@ -358,6 +358,34 @@ export function selectSectorSite(sectors, label, {
   return null;
 }
 
+/**
+ * The site a label names exactly — by its name as the table knows it (its
+ * location Actor's, `siteName`) or by the name its record keeps — whatever
+ * its state: unexplored, charted or cleared; the active sector's first; null
+ * when none. A question of existence, not of eligibility: selectSectorSite's
+ * exact rung returns "that site or nothing" for the site a reveal or a link
+ * may still take, so a charted destination named by the working label its
+ * record keeps — the GM having renamed its location, as its Site Discovered
+ * card invites — read as "no such site", and a course by that label minted a
+ * second location, record and pin for it (issue #362 AC50).
+ *
+ * @param {Array<{id, mapData?: {discoveries?: Array}}>} sectors — campaignState.sectors
+ * @param {string|null} label
+ * @param {{ activeSectorId?: string|null, siteName?: (site: Object) => string }} [opts]
+ * @returns {{ sector: Object, site: Object }|null}
+ */
+export function siteNamedExactly(sectors, label, { activeSectorId = null, siteName = (site) => site?.name } = {}) {
+  const want = normalizeLabel(label);
+  if (!want) return null;
+  const named = [];
+  for (const sector of sectors ?? []) {
+    for (const site of sector?.mapData?.discoveries ?? []) {
+      if (site && (normalizeLabel(siteName(site)) === want || normalizeLabel(site.name) === want)) named.push({ sector, site });
+    }
+  }
+  return (activeSectorId && named.find(c => c.sector?.id === activeSectorId)) || named[0] || null;
+}
+
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

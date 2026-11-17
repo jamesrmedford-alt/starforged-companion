@@ -61,7 +61,8 @@ describe('issue #353 Phase 3 — a threat\'s escalation is paced by its clock', 
   it('a decided threat gets a 4-segment tension clock, stamped with the narration that decided it', async () => {
     const plan = await decidedThreat();
     const clock = clocks().find(c => c._id === plan.clockId);
-    expect(clock).toMatchObject({ name: 'the escort — escalation', type: 'tension', segments: 4, filled: 0, planId: plan.id });
+    // Named by its subject alone (issue #362 D3).
+    expect(clock).toMatchObject({ name: 'the escort', type: 'tension', segments: 4, filled: 0, planId: plan.id });
     expect(clock.narrationId).toBe(plan.narrationId);
   }, 40_000);
 
@@ -69,7 +70,7 @@ describe('issue #353 Phase 3 — a threat\'s escalation is paced by its clock', 
     const plan = await decidedThreat();
     const { narrateClockAdvancement } = await gmOf(table).import('../../src/narration/narrator.js');
     const fill = (filled) => onGm(table, () => narrateClockAdvancement({
-      clock: { _id: plan.clockId, name: 'the escort — escalation', type: 'tension', filled, segments: 4, triggered: true },
+      clock: { _id: plan.clockId, name: 'the escort', type: 'tension', filled, segments: 4, triggered: true },
       campaignState: foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState')),
     }));
     table.replies = reply({});   // the sidecar says nothing of it: the step is marked all the same
@@ -204,8 +205,11 @@ describe('issue #353 Phase 3 — Ask the Oracle about a planned subject', () => 
     await onGm(table, () => gmOf(table).chat('!oracle yes 50/50 Is the escort a drone?'));
     expect(consults()).toHaveLength(1);
     expect(consults()[0].userText).toContain('A Keeper drone collecting names.');
-    expect(table.cards(f => f.oracleCommandCard === true && /Ask the Oracle/.test(f.oracleNarration?.oracleName ?? '')).at(-1)
-      .content).toContain('Ask the Oracle (almost certain)');
+    // The card shows the odds typed, never the consulted odds or a threshold
+    // (issue #362 D3) — the roll was made at the consulted odds all the same.
+    const card = table.cards(f => f.oracleCommandCard === true && /Ask the Oracle/.test(f.oracleNarration?.oracleName ?? '')).at(-1);
+    expect(card.content).toContain('Ask the Oracle (50/50)');
+    expect(card.content).not.toMatch(/almost certain|≤/);
   }, 40_000);
 
   it('a question naming no plan consults nothing — a GM\'s or a player\'s', async () => {
@@ -237,7 +241,9 @@ describe('issue #353 Phase 3 — Ask the Oracle about a planned subject', () => 
     expect(consults()).toHaveLength(1);
     expect(consults()[0].userText).toContain('A Keeper drone collecting names.');
     const card = oracleCards().at(-1);
-    expect(card.content).toContain('Ask the Oracle (small chance)');
+    // The odds the player typed, not the consulted ones (issue #362 D3).
+    expect(card.content).toContain('Ask the Oracle (likely)');
+    expect(card.content).not.toContain('small chance');
     expect(card.author, 'the player rolled it, on their own client').toBe('pl-1');
     // What the GM sent back: the odds, and nothing of the plan.
     const answer = sent.find(m => m?.kind === 'oracleConsult.answer');

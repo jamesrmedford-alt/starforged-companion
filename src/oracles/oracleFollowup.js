@@ -29,6 +29,7 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor } from "../moves/burnMomentum.js";
+import { keepHeldResultsOf, actsAsRoller } from "../moves/heldResult.js";
 import { triggerVignettesSettled } from "../clocks/payThePriceClocks.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { dropOracleResultsFor } from "./oracleMemory.js";
@@ -114,6 +115,15 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
   const author  = authorId ? (globalThis.game?.users?.get?.(authorId) ?? null) : null;
   const speakerOk = !!speaker && isPlayerCharacterActor(speaker)
     && (author?.isGM === true || requesterOwnsActor(speaker, { requesterId: authorId, requester: author, requesterIsGM: author?.isGM === true }));
+  // The roller's `!ptp` or `!oracle` is their going on (issue #362 D5,
+  // decided A): a result of theirs still held for Burn / Improve / Keep is
+  // kept first — paid and narrated — so its narration comes before this
+  // one's. Only the roller's own (actsAsRoller): a GM's command names the
+  // first PC.
+  if (speakerOk && actsAsRoller(card, speaker.id)) {
+    await keepHeldResultsOf(speaker.id).catch(err =>
+      console.warn(`${MODULE_ID} | oracle follow-up: a result held for its roller's choice could not be kept first:`, err?.message ?? err));
+  }
   return runOracleFollowup({
     kind:           typeof spec.kind === "string" ? spec.kind : "oracle_table",
     oracleName:     String(spec.oracleName ?? ""),
@@ -121,6 +131,8 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
     rolledLine:     String(spec.rolledLine ?? ""),
     speakerActorId: speakerOk ? speaker.id : null,
     scope:          typeof spec.scope === "string" ? spec.scope : null,
+    // A waypoint peril's expedition (issue #362 AC11).
+    trackId:        typeof spec.trackId === "string" ? spec.trackId.slice(0, 64) : null,
     messageId,
   });
 }
@@ -210,8 +222,10 @@ async function runOracleFollowup(args) {
       rolledLine:     args?.rolledLine,
       speakerActorId: typeof args?.speakerActorId === "string" ? args.speakerActorId : null,
       // A chosen complication's scope — a waypoint's peril is the open
-      // expedition's next danger (issue #353 Phase 3).
+      // expedition's next danger (issue #353 Phase 3) — and the expedition
+      // the move was on (issue #362 AC11).
       scope:          typeof args?.scope === "string" ? args.scope.slice(0, 32) : null,
+      trackId:        typeof args?.trackId === "string" && args.trackId ? args.trackId.slice(0, 64) : null,
       // The raw card narrated: its follow-up card names it, so an X-Card on
       // the narration takes the card's result out of RECENT ORACLE RESULTS
       // (issue #345 AA01).

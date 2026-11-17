@@ -43,7 +43,7 @@ import {
 import { isSessionActive, sessionMinutesActive, sessionNeedsMint, sessionLastSeenAt, SESSION_IDLE_HOURS } from "../session/lifecycle.js";
 import { tableVows, openThreadRows } from "../session/openThreads.js";
 import { listOpenProgressTracks } from "./progressTracks.js";
-import { listSkeletons, skeletonsEnabled } from "../world/secrets.js";
+import { plansShownToTable, TABLE_VIEW_SETTING } from "../world/secrets.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -118,11 +118,13 @@ export class SessionPanelApp extends ApplicationV2 {
   }
 
   /**
-   * World-setting document hook → re-render when campaignState changed.
+   * World-setting document hook → re-render when campaignState changed, or
+   * what the table has been shown of the hidden plans (the canonical GM's
+   * view, issue #362 D1).
    * @param {{ key?: string }} setting — the Setting document
    */
   static onSettingChanged(setting) {
-    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    if (setting?.key !== `${MODULE_ID}.campaignState` && setting?.key !== `${MODULE_ID}.${TABLE_VIEW_SETTING}`) return;
     SessionPanelApp.rerenderIfOpen();
   }
 
@@ -327,31 +329,19 @@ export function openSessionPanel() {
 
 /**
  * What the "What's open" list shows of the narrative skeleton (issue #353
- * R4) — only what the table has been shown, never a plan's secrets:
- *   - an unanswered question: an active mystery whose truth is not revealed —
- *     its question alone (the fiction posed it to the characters);
- *   - a standing demand: an active threat or NPC agenda whose truth is
- *     revealed — its subject and what it wants, no longer secret.
- * No other field of a plan is read here — its truth, what it knows, its
- * clues, escalation, endings and oracle rolls stay in the GM-only Secrets
- * journal — and every client reads alike: a player's list and a GM's are the
- * same. Nothing while the narrative skeleton is off; fail-open
- * (listSkeletons gives none on any failure).
+ * R4) — only what the table has been shown, never a plan's secrets: the
+ * unanswered questions (their question alone) and the standing demands (a
+ * revealed threat's or NPC agenda's subject and wants). The panel reads no
+ * plan: a player's client reads none (issue #362 D1), so the canonical GM
+ * keeps this view in a world setting of its own (secrets.js
+ * plansShownToTable), and every client reads it alike — a player's list and
+ * a GM's are the same. Nothing while the narrative skeleton is off;
+ * fail-open.
  *
  * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
  */
 function revealedPlanRows() {
-  const out = { questions: [], demands: [] };
-  if (!skeletonsEnabled()) return out;
-  for (const plan of listSkeletons()) {
-    if (plan?.status !== "active") continue;
-    if (plan.kind === "mystery" && plan.truthRevealed !== true && plan.question) {
-      out.questions.push({ question: plan.question });
-    } else if ((plan.kind === "threat" || plan.kind === "npcAgenda") && plan.truthRevealed === true && plan.wants) {
-      out.demands.push({ name: plan.subject?.name ?? "", wants: plan.wants });
-    }
-  }
-  return out;
+  return plansShownToTable();
 }
 
 /** "formidable · 3/10" — a vow's or a track's rank and filled boxes. */

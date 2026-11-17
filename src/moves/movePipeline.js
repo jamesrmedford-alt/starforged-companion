@@ -31,8 +31,8 @@
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import {
-  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
-  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
+  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed, missPaysPrice,
+  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie, withoutHiddenRolls,
 } from "./resolver.js";
 import { statedPrice } from "./stakes.js";
 import { buildMischiefAside } from "./mischief.js";
@@ -40,6 +40,7 @@ import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
 import { buildImproveState } from "./improveResult.js";
 import { closeUpgradesForLaterMove } from "./resultUpgrade.js";
+import { keepHeldResultsOf } from "./heldResult.js";
 import { scanForApplicableAbilities, getCommandVehicleActor } from "./abilityScanner.js";
 import {
   enrichInterpretationStatValue,
@@ -77,7 +78,7 @@ import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
 import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
-import { decidePacing } from "../pacing/router.js";
+import { decidePacing, classifierReadingOf } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
@@ -203,6 +204,26 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
 }
 
 /**
+ * The stable id of the vow a forced Swear an Iron Vow names — its card's
+ * `vowId` (buildSwearMovePostForName's forcedMoveTargetId) — when a player
+ * character holds that vow: its copies' id (vowCopyId: the module `vowId`
+ * flag, else the Item's own id). Null for a swear with no vow Item behind it,
+ * or an id no vow answers to (issue #362 AC14).
+ *
+ * @param {string|null} moveTargetId
+ * @returns {string|null}
+ */
+function swornVowId(moveTargetId) {
+  if (typeof moveTargetId !== "string" || !moveTargetId) return null;
+  for (const actor of getPlayerActors()) {
+    const item = (actor?.items?.contents ?? []).find(i => i?.type === "progress" && i.system?.subtype === "vow"
+      && (i.id === moveTargetId || i.flags?.[MODULE_ID]?.vowId === moveTargetId));
+    if (item) return vowCopyId(item);
+  }
+  return null;
+}
+
+/**
  * Whether a forced travel move with no destination reads one from its line
  * (readMove, issue #348 PT05): a Set a Course always; an Undertake an
  * Expedition only with no expedition open — with one open it continues that
@@ -318,9 +339,14 @@ export async function readMove({
   }
   // A forced move whose stat is a choice rolls the one its narration's
   // approach fits — a stat-only interpretation — not its first listed
-  // stat (issue #321 U04). No key keeps the listed stat.
+  // stat (issue #321 U04). No key keeps the listed stat. The reading states
+  // the move's stakes too, as a typed line's does (issue #362 D11): read with
+  // the scene the line follows and the roller's vehicles and companions,
+  // which a stated miss is drawn from.
   const readStat = apiKey
-    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
+      recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+      roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null })
     : null;
   // A forced travel move that names no destination — a paced card's "Roll
   // Undertake an Expedition" after the scene set one up — reads it, with its
@@ -331,10 +357,7 @@ export async function readMove({
   const readsDestination = !!(forcedMoveId && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
     && await travelDestinationUnread(interpretation.moveId));
   if (readsDestination) {
-    await readForcedTravelDestination(interpretation, {
-      interpret: (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
-        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null) }),
-    });
+    await readForcedTravelDestination(interpretation, { interpret: readStat });
   } else if (forcedMoveId) {
     await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
@@ -369,6 +392,17 @@ export async function readMove({
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }
+  }
+
+  // The miss stated before the roll is its price only for a move whose miss
+  // pays one — the move the line is read as now (a forced move's reading, a
+  // course rerouted to an expedition, a scene-challenge variant made the
+  // ordinary move), whatever move its stakes were read for (issue #362
+  // AC02). The Confirm dialog, a round's reading and the narrator's STAKES
+  // block show the miss as the price on this alone (stakes.js stakesShown).
+  // It is only ever taken away here: the setting was read with the stakes.
+  if (interpretation.stakes?.priceStated && !missPaysPrice(interpretation.moveId)) {
+    interpretation.stakes = { ...interpretation.stakes, priceStated: false };
   }
 
   if (interpretation.mischiefApplied) {
@@ -594,14 +628,15 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
   // The classifier's reading of a MOVE line, for the interpreter (issue #354 P2-02).
   let classifier = null;
+  let pacing = null;
   if (!readAs?.move) {
-    const pacing = await decidePacing({
+    pacing = await decidePacing({
       playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
       apiKey, ignoreForceMove: true,
     });
-    if (pacing.runMove) {
-      classifier = { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
-    }
+    // None when no classifier read the line: pacing off, a failed call or an
+    // unreadable reply (issue #362 AC64).
+    if (pacing.runMove) classifier = classifierReadingOf(pacing);
     if (!pacing.runMove) {
       // The offer is the classifier's alone — no narration exists yet to
       // reconcile it with — and never a social move against a fellow PC
@@ -620,8 +655,11 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
     classifier,
-    // "Roll a move instead" asked for a roll: the line is read as a move.
-    allowNoMove: !readAs?.move,
+    // "Roll a move instead" asked for a roll: the line is read as a move. So
+    // is every line with pacing switched off, as free-flow reads it (index.js;
+    // decisions.md "Issue #354" P2-01) — a round's reading could still come
+    // back "No roll needed" there (issue #362 AC68).
+    allowNoMove: !readAs?.move && !pacing?.pacingDisabled,
   });
   // The interpreter read no move in it (issue #354 P2-01): a narrative
   // reading, as the classifier's own is — the window's "Roll a move instead"
@@ -736,7 +774,7 @@ export function defaultChoices(reading) {
  * reading's interpretation (src/ui/settingsPanel.js MoveConfirmDialog).
  *
  * @param {Object} reading
- * @param {{ abilityIds?: string[], statReplacement?: string|null, targetId?: string|null }} choices — validated (round.js validateChoices)
+ * @param {{ abilityIds?: string[], statReplacement?: string|null, statAssetId?: string, targetId?: string|null }} choices — validated (round.js validateChoices)
  * @returns {Object} the interpretation rollMove takes
  */
 export function interpretationForRoll(reading, choices) {
@@ -750,6 +788,11 @@ export function interpretationForRoll(reading, choices) {
   interpretation.appliedAbilityKeys = chosen.map(a => a.key);
   const stat = typeof choices?.statReplacement === "string" ? choices.statReplacement : "";
   interpretation.appliedStatReplacement = stat && chosen.some(a => a.statReplacement === stat) ? stat : null;
+  // The asset the window's radio picked when two offer that substitution, as
+  // the confirm dialog stores it (appliedStatAssetId — substitutingAssetId
+  // reads it): the round rolled the healthiest companion (issue #362 AC61).
+  const assetId = interpretation.appliedStatReplacement && typeof choices?.statAssetId === "string" ? choices.statAssetId : null;
+  if (assetId && chosen.some(a => a.statReplacement === stat && a.assetId === assetId)) interpretation.appliedStatAssetId = assetId;
   const option = (reading?.targetChoices?.options ?? []).find(o => o.id === choices?.targetId) ?? null;
   if (option) {
     interpretation.moveTarget = option.label;
@@ -859,6 +902,15 @@ export async function rollMove({
     postForsakeVowCard, postDecisiveActionCostCard, postMovePayThePriceCard, postMoveResult,
   } = pipelineHost();
   const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+  // A result of the roller's still held for Burn / Improve / Keep is kept
+  // before this move: an upgrade belongs to the move being made, and this
+  // one closes it (closeUpgradesForLaterMove, issue #326 D4) — kept first, its
+  // price and its narration come before this move's, whoever typed the line
+  // (issue #362 D5; it was kept after this move was narrated, un-awaited).
+  // The roller's own line kept it already (index.js onMessage); a round keeps
+  // its entries' first (batch/driver.js rollRound). Canonical GM.
+  await keepHeldResultsOf(rollerActor?.id ?? null).catch(err =>
+    console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next move:`, err?.message ?? err));
   if (combatPosition === undefined) {
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }
@@ -1097,7 +1149,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard, arrivalPlace } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -1147,8 +1199,13 @@ export async function rollMove({
       await swearSharedVowForAll(incitingMsg, { speakerActorId: rollerActor?.id ?? null }).catch(err =>
         console.warn(`${MODULE_ID} | inciting swear creation failed:`, err?.message ?? err));
     } else {
+      // A vow sworn from its "New vow recorded" card names it by id (its
+      // forced post's forcedMoveTargetId): the vow's hidden plan is filed
+      // about the vow by that id, so a reworded vow, or a fulfilment whose
+      // line does not name it, keeps its plan (issue #362 AC14). A typed
+      // swear with no vow Item behind it stays name-only.
       await narrateAndPostVowSwearing({
-        vow: { name: interpretation.moveTarget ?? null, rank: null },
+        vow: { name: interpretation.moveTarget ?? null, rank: null, vowId: swornVowId(interpretation.moveTargetId) },
         campaignState,
         speakerActorId: rollerActor?.id ?? null,
       }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
@@ -1488,8 +1545,12 @@ export async function rollMove({
     // The miss stated before the roll is the price (issue #353 R1, decided:
     // the table is the alternative — rolled when none was stated, or with
     // the world setting off): its suffer move runs through the same
-    // executors, and leaves the receipts a burn undoes.
-    const stated = statedPrice(resolution.stakes);
+    // executors, and leaves the receipts a burn undoes. A miss's price only:
+    // a Battle or Clash weak hit that pays one pays the table's — it paid the
+    // line the dialog showed "On a miss", beside a narration told to deliver
+    // the hit (issue #362 AC01). Its vehicle or companion is the one the
+    // move was made against (issue #362 D11).
+    const stated = resolution.outcome === "miss" ? statedPrice(resolution.stakes, interpretation) : null;
     if (hold) {
       // Paid when the result is kept — or by an upgraded result that pays a
       // price too (heldResult.js payHeldPrice).
@@ -1574,8 +1635,11 @@ export async function rollMove({
     ...(thresholdResolutionId ? { thresholdResolutionId } : {}),
     // Explore a Waypoint: the expedition it explored, resolved now — its
     // "Mark expedition progress" marks that one, not the sole open one at
-    // click time (DELAYED-CHOICE-IDENTITY).
-    ...(resolution.moveId === "explore_a_waypoint" ? await waypointExpedition(interpretation) : {}),
+    // click time (DELAYED-CHOICE-IDENTITY). Undertake an Expedition: the
+    // expedition it marked — a weak hit's "Peril at the waypoint" plays that
+    // expedition's plan (issue #362 AC11).
+    ...(resolution.moveId === "explore_a_waypoint" || resolution.moveId === "undertake_an_expedition"
+      ? await waypointExpedition(interpretation) : {}),
   };
   // What an upgrade of this result needs to apply the upgraded outcome's
   // other effects as this pipeline applied the original's — the move's
@@ -1586,6 +1650,16 @@ export async function rollMove({
     moveTargetId:   interpretation.moveTargetId ?? null,
     combatRank:     interpretation.combatRank ?? null,
     expeditionRank: interpretation.expeditionRank ?? null,
+    // The plans this roll's narration is asked to decide — an expedition it
+    // began: the upgraded result is narrated in its place, so it is asked too
+    // (issue #362 AC04 — the request rode only the narration the upgrade
+    // struck or never made). Without their hidden rolls: the card is the
+    // table's (issue #362 AC15).
+    ...(resolution.skeletonRequests?.length
+      ? { planRequests: withoutHiddenRolls({ skeletonRequests: resolution.skeletonRequests }).skeletonRequests } : {}),
+    // Where the ship arrived (Set a Course): an upgrade of this hit is told
+    // it arrived there, as this narration is (issue #362 AC06).
+    ...(arrivalPlace ? { arrivalPlace } : {}),
   };
   const burnActor   = rollerActor;
   const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets, moveContext);
@@ -1609,11 +1683,14 @@ export async function rollMove({
   );
   // A held result's card carries what its wait needs (heldResult.js): the
   // resolution to narrate, the price not yet paid, and the narration's
-  // context — as a round's entry keeps its narration input.
+  // context — as a round's entry keeps its narration input. Not the hidden
+  // rolls behind a plan its narration is asked to decide: the card is the
+  // table's, and every client holds its flags — the narration rolls them on
+  // the GM (resolver.js withHiddenRolls; issue #362 AC15).
   const awaitingUpgrade = hold ? {
     open: true,
     heldPrice,
-    resolution: jsonCopy(resolution),
+    resolution: jsonCopy(withoutHiddenRolls(resolution)),
     relevance: relevance ? {
       resolvedClass: relevance.resolvedClass ?? "embellishment",
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
@@ -1781,12 +1858,13 @@ export async function applyDevelopRelationship({ resolution, interpretation, cam
 }
 
 /**
- * The expedition an Explore a Waypoint explored, as its move targets carry
- * it: `{ expeditionTrackId }` — the open expedition its target names, else
- * the sole open one — or nothing when none resolves (none open, or several
- * and none named), so its choice card resolves as before. The card's "Mark
- * expedition progress" then marks this one, gone or over or not
- * (DELAYED-CHOICE-IDENTITY).
+ * The expedition an Explore a Waypoint explored — or an Undertake an
+ * Expedition marked — as its move targets carry it: `{ expeditionTrackId }` —
+ * the open expedition its target names, else the sole open one — or nothing
+ * when none resolves (none open, or several and none named), so its choice
+ * card resolves as before. The card's "Mark expedition progress" then marks
+ * this one, gone or over or not (DELAYED-CHOICE-IDENTITY), and a "Peril at
+ * the waypoint" plays this one's plan (issue #362 AC11).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null }} interpretation
  * @returns {Promise<{ expeditionTrackId?: string }>}
@@ -1807,14 +1885,18 @@ async function waypointExpedition(interpretation) {
  * round resumed after a reload narrates without rolling again (issue #340):
  * the move, its outcome and match, the outcome text the narrator is given
  * (with the price it paid — the oracle seeds carry a Pay the Price's), and the
- * relevance the roll resolved (its class and matched entities).
+ * relevance the roll resolved (its class and matched entities). The round is a
+ * world setting every client holds, so the hidden rolls behind a plan are not
+ * kept — an expedition's waypoints and its end, a new enemy's role, goal and
+ * disposition: the round's narration rolls them on the GM that narrates it
+ * (resolver.js withoutHiddenRolls / withHiddenRolls; issue #362 AC15).
  *
  * @param {Object} resolution
  * @param {Object|null} [relevance]
  * @returns {Object}
  */
 export function narrationInputFrom(resolution, relevance = null) {
-  return jsonCopy({
+  return jsonCopy(withoutHiddenRolls({
     kind:              "move",
     resolutionId:      resolution?._id ?? null,
     moveId:            resolution?.moveId ?? null,
@@ -1837,7 +1919,7 @@ export function narrationInputFrom(resolution, relevance = null) {
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
       entityTypes:   Array.isArray(relevance.entityTypes) ? relevance.entityTypes : [],
     } : null,
-  });
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -34,7 +34,7 @@ import {
   collectWorldUnits, renderWorldSnapshot, renderUnitSections, diffWorldUnits, estimateSnapshotTokens,
 } from './worldSnapshot.js';
 import {
-  worldSnapshotEnabled, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses, describeSnapshotEvent,
+  worldSnapshotEnabled, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses, describeSnapshotEvent, namedSnapshotCauses,
 } from './snapshotEvents.js';
 import { SNAPSHOT_BLOCK_HEADING } from './narratorPrompt.js';
 
@@ -225,8 +225,8 @@ export async function resolveWorldSnapshot(campaignState, {
       if (changesTokens > CHANGES_MAX_TOKENS || changesTokens > (Number(held.tokens) || 0) * CHANGES_MAX_SHARE) found.push('changes_large');
       if (cacheExpired(held, { now, lastNarrationAt, cacheTtlMs })) found.push('cache_expired');
     }
-    const causes = snapshotCauses([...reported.map(e => e.id), ...found]);
-    if (!causes.length) {
+    const due = snapshotCauses([...reported.map(e => e.id), ...found]);
+    if (!due.length) {
       _last = held;
       return { text: held.text, changesText, units, takenAt: held.takenAt, causes: [], fresh: false };
     }
@@ -234,6 +234,10 @@ export async function resolveWorldSnapshot(campaignState, {
     // narration is sent with none: the snapshot held may assert what a
     // retraction removed.
     if (!isCanonicalGM()) return null;
+    // What caused it, as the page's log names it: the world's mark names no
+    // event (issue #362 D3), so the events this client reported since the
+    // snapshot it replaces are named in its place.
+    const causes = namedSnapshotCauses(reported, { sinceMs: held ? (Date.parse(held.takenAt) || 0) : 0, also: found });
 
     const activeSectorId = campaignState?.activeSectorId ?? world?.activeSectorId ?? null;
     const activeSector = (world?.sectors ?? []).find(s => s?.id === activeSectorId)?.name ?? null;

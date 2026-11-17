@@ -28,7 +28,10 @@ layers. This file is the never-break list.
    `burnSuperseded`: the move narration, and the trigger vignette of a clock
    its reversal rewinds, which names its clock (`clockId`, issue #338 D8; a
    trigger rewound while its vignette is still being written is never
-   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST) —
+   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST; a hidden plan's
+   clock, which its vignette paced, by the vignette's own id — `pacedBy` —
+   and a removed or superseded narration's pacing of a plan clock is taken
+   back with its step, issue #362 AC33) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
@@ -50,7 +53,9 @@ layers. This file is the never-break list.
    tolerant; never let a malformed sidecar block a narration post, and never
    let raw sidecar JSON reach the prose — a ```` ```json ````, ```` ``` json ````
    or bare ```` ``` ```` fence holding an object is the sidecar, stripped
-   every time (issue #321 U41).
+   every time (issue #321 U41). A reply with no prose is no narration: its
+   caller posts a fallback card (no `narrationId`) or nothing, so nothing of
+   its block is applied or relayed (issue #362 AC39).
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
@@ -76,7 +81,9 @@ layers. This file is the never-break list.
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only — the frame's scene
    question with it (issue #353 R2: kept for the scene, never carried into
-   the next; no narration ends a scene). Anything that must
+   the next; no narration ends a scene), and the scene's unanswered hidden
+   mysteries with their clocks, retired at every scene end (issue #362 D4).
+   Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
    also files scene-subject truths on the recorded place each was asserted
@@ -183,8 +190,11 @@ layers. This file is the never-break list.
    MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
    caller, and checks the stored `xCardedNarrationIds` right before it
    writes — `isNarrationXCarded`, after any Claude call — so a capture still
-   running when the card is played writes nothing more: XCARD-LATE-CAPTURE),
-   and the state transitions
+   running when the card is played writes nothing more: XCARD-LATE-CAPTURE;
+   the hidden plans' writers too — a plan, its clock, its rolls card, its
+   revealed truth's lore — and a plan or clock write the card overtook on
+   its way is taken back, as the X-Card's undo takes the rest, issue #362
+   AC35), and the state transitions
    it applies to existing entries, a faction's record stance included
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST
@@ -232,7 +242,10 @@ layers. This file is the never-break list.
    request's: anything read per call — a perspective a round can force, the
    X-Card redirect, oracle seeds, the session-start recap, a name, a count,
    a timestamp — goes in `beat` (or `mode`, when it is constant for the
-   mode). Add a section to the block its volatility puts it in, never to
+   mode). A list a cached block renders is in a stable order, never the
+   order its writes landed in (the GM's Private Lines by user id — a
+   player's reload re-synced them to the end, issue #362 AC67). Add a
+   section to the block its volatility puts it in, never to
    `standing` because it reads well there; `tests/unit/
    narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached
    block. The sidecar instruction lives in `standing`, and the context closes
@@ -264,16 +277,33 @@ layers. This file is the never-break list.
      record another way is caught by the manifest (`record_removed`), but a
      path that *rewrites* one to take content back must report an event of
      its own — a changed record otherwise rides as a change while the
-     snapshot still states the old one.
+     snapshot still states the old one (the Entities panel's Remove of a
+     narrator-added detail reports `entity_detail_removed`, issue #362 AC65).
    - **It holds every active hidden plan**, so it is the GMs' alone: stored
      in the Secrets journal, read only by `narrator.js`
      (`secretsStayHidden.test.js`), never by a card builder, a panel or a
-     player's client. Narration on a player's own key sends none.
+     player's client. Narration on a player's own key sends none. Nor does a
+     player's client read the plans themselves (issue #362 D1): every plan
+     read is a GM's (`secrets.js` `secretPages`); a Private Channel turn
+     there asks the canonical GM for the decided plans in play
+     (`requestPlansInPlay`), and the Session panel reads the table's view
+     the canonical GM keeps (`plansShownToTable`). A fact block relayed to
+     the canonical GM (`narrator.sidecar`) writes no plan by id: its
+     `reveals` and its `plans` but the answers to its own requests are
+     dropped, and the step a vignette or complication was made to play rides
+     apart (`forced`), standing only as the canonical GM would force it
+     (issue #362 D2).
    - **Section moves are two-sided.** A per-beat section the snapshot covers
      is left out of the context when there is one (`buildNarratorSystemBlocks`
      — nothing is sent twice) and still rendered when there is none. A new
      durable section is a new unit kind in `collectWorldUnits` *and* a
-     per-beat fallback; a new volatile one goes in the context only.
+     per-beat fallback; a new volatile one goes in the context only. A rule
+     in the standing or mode block names no section only one layout has: it
+     is worded for both — "a character who has no card of their own in this
+     prompt", "the people recorded for the active sector" — so the cached
+     rules are the same bytes with and without a snapshot (the identity
+     anchor named ENTITIES IN SCENE, which a snapshot request does not
+     have — issue #362 AC66).
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),

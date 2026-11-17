@@ -35,13 +35,24 @@ label naming no site and no tracked place
 unexplored; its name the label written as a name, `nameMatch.generatedName`:
 "the corridor" → "Corridor", issue #354 P2-18), a discovery record of type
 `uncharted` with `workingLabel: true`
-on the active sector's `mapData.discoveries` (the next periphery slot,
-`sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
-persist saves — an upgrade saves `sectors` at once) and its pin
+on the active sector's `mapData.discoveries` (the first periphery cell no
+site of the sector holds, `sectorGenerator.layoutDiscovery` — the next slot by
+count wrapped the seventh site onto the first one's pin, issue #362 AC51; on
+the pipeline's working copy, which its
+persist saves — an upgrade saves the record onto its stored sector at once (`saveUnchartedSite`), and a refused save is a step on the upgrade's payoff card, whose Retry saves it (issue #362 AC49); when the world refuses
+the persist, the record is a step on the GMs' payoff failure card, whose
+Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
+expedition's link named no stored site, issue #362 AC49) and its pin
 (`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
 there it is a site like any other: §3's finish arrives there and §4's reveal
 charts it, under the location's name (the GM may rename it; the Site
-Discovered card says so). With no active sector nothing is recorded.
+Discovered card says so). With no active sector nothing is recorded, nor for
+a label that names a site already on the map — charted or not, by its
+location's name or the working label its record keeps
+(`siteDiscovery.siteNamedBy`): the expedition is linked to that site, so its
+finish arrives there (issue #362 AC50 — after the GM renamed a charted
+destination, a course by its old working label minted a second location,
+record and pin for it).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -59,8 +70,9 @@ Discovered card says so). With no active sector nothing is recorded.
   ("Archer's rendezvous — the gap").
 - **Pipeline** (`movePipeline.readMove`, `src/moves/travel.js`): a forced
   travel move with no destination (a paced card's Roll — the move alone)
-  reads it and its stat from the line and the recent scene
-  (`readForcedTravelDestination`; an Undertake an Expedition only with none
+  reads it, its stat and its stakes from the line and the recent scene
+  (`readForcedTravelDestination` — the stakes since issue #362 D11, as every
+  forced move's stat reading; an Undertake an Expedition only with none
   open — with one open it continues it). A Set a Course naming none takes the
   scene's destination — the uncharted destination recorded last
   (`sceneDestination`). A Set a Course whose destination is not a charted,
@@ -69,7 +81,10 @@ Discovered card says so). With no active sector nothing is recorded.
   setting** (`rerouteUnchartedCourse`; maintainer decision): the confirm
   dialog's rationale and the move card (`resolution.courseRerouted`) say why,
   and the dialog's Cancel lets the player re-word. A course named by its pin's
-  Actor (the token drag) is to a charted place and stays.
+  Actor (the token drag) is to a charted place and stays; so is one named by
+  the working label a charted destination's record keeps, its location
+  renamed since — its `moveTargetId` the site's location Actor, which the
+  arrival docks at by id (issue #362 AC50).
 
 ## 1. Setting out
 
@@ -84,10 +99,17 @@ Discovered card says so). With no active sector nothing is recorded.
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
   "Arrived" with no place and narrated a launch) — for every narration of the
   resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
-  Expedition's arrival too. The **Set a Course resolved** card names the
+  Expedition's arrival too. A hit burned or improved to a strong hit arrived
+  at the roll: its narration — the move's only one while the result was held
+  — is told the ship ARRIVED at the place the roll did, in the strong hit's
+  words, with no second docking (the card's `move.arrivalPlace`; issue #362
+  AC06 — it was told "Arrived" with no place, PT08's prompt). The **Set a Course resolved** card names the
   place (the arrival's, else the destination's words) and says "Token moved"
-  only when the token moved; a place no pin marks says so, and no position
-  written (none named, no command vehicle) points to `!at` (PT09). It is
+  only when the token moved; a token that did not move says why — no pin
+  marks the place, no ship token on the map, the ship token setting off, no
+  map scene (the token sync's `tokenStayed`; it blamed a missing pin for all of
+  them, issue #362 AC53) — and no position written (none named, no command
+  vehicle) points to `!at` (PT09). It is
   posted after the roll card it summarizes — `applyOutcomeEffects` returns it
   in `afterMoveCard`, which `rollMove` posts after `postMoveResult`; an
   upgrade's posts at once (PT10).
@@ -101,7 +123,9 @@ Discovered card says so). With no active sector nothing is recorded.
   token on it and a settlement pin's coordinates, else it is dropped and the
   move is an ordinary Set a Course — a chat flag any user can write, it made
   the GM's client move any token on any Scene to any point (issue #347
-  AB23). On a non-miss the arrival
+  AB23). A Batch Mode round reads it the same way when the drop is its
+  roller's entry (`batch/driver.js` `forcedFromFlags` — the round copied it
+  raw, issue #362 AC62). On a non-miss the arrival
   records the ship position by that id (`inferShipPositionFromEntityId`,
   source `scene_token` → "docked at") and the current location by it, and the
   token snaps to the pin — the pin's label went stale on a rename, so the
@@ -161,13 +185,27 @@ Discovered card says so). With no active sector nothing is recorded.
   narrator plays it at once as its own beat (`sufferDialog.js`
   `postChosenComplication` → the oracle follow-up) — its card only promised
   that the narrator would "surface" it. That peril is the open expedition's
-  plan's next danger when one is planned (issue #353 Phase 3). An expedition
+  plan's next danger when one is planned (issue #353 Phase 3) — the
+  expedition the move marked, which its choice card names
+  (`executorOpts.expeditionTrackId`, `movePipeline` `waypointExpedition`) and
+  the peril's card carries (`oracleNarration.trackId` → `narrateOracleFollowup`
+  `trackId` → `complicationStep`), else the most recently changed open one;
+  never a finished or removed expedition's leftover plan, which the journal's
+  page order handed it (issue #362 AC11). An expedition
   the move begins asks its narration to plan it — `expeditionPlanRequest`
   (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
   `result.created`: its waypoints (clues), the danger along the way
   (escalation) and what waits at the end (truth), about the track by id, in
-  play while the track is open; the Finish an Expedition that completes it
+  play while the track is open. The request's rolls — two waypoint sightings
+  and an Action + Theme — are hidden: a held result's card and a Batch Mode
+  round keep the request without them (`withoutHiddenRolls`), and the
+  narration rolls them on the GM that narrates it (`withHiddenRolls`, issue
+  #362 AC15); the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
+  The plan closes with the track (issue #362 D4): resolved when it completes
+  (`completeProgressTrack`, the panel's Complete), retired when it is removed
+  (`progressTracks.js` `closeTrackPlans` → `secrets.closePlansAbout`) — the
+  finishing narration still has it in play (`skeletons.planInPlay`).
   The Progress Tracks panel marks a planned expedition's row with the GM-only
   ◆ (`secrets.plannedSubjects`, Phase 4). Make a Discovery and Confront Chaos
   ask their narration for a `discovery` plan from their rolls (less any
@@ -180,7 +218,17 @@ Discovered card says so). With no active sector nothing is recorded.
   `src/index.js`) that Burn Momentum and Improve Result run for what the
   upgraded outcome adds over the recorded original (issue #313,
   UPGRADE-PIPELINE-EFFECTS). An upgrade saves its own location and legacy
-  mark; no persistResolution follows.
+  mark; no persistResolution follows — a refused location write (or
+  uncharted record) is a step on the upgrade's payoff card ("Upgraded result
+  not fully applied"), whose Retry saves it: it was a console line (issue
+  #362 AC49). The upgraded result is narrated in
+  the roll's place, so it is asked for the plan the roll's narration was —
+  an expedition the weak hit began (the card's `move.planRequests`, without
+  their hidden rolls; issue #362 AC04): held, the burned result's narration
+  is the move's only one; with holding off the plan the struck narration
+  filed is taken back with it and asked for again; a round's upgraded entry
+  carries it to the round's narration. A plan already filed about the track
+  (the struck narration's fallback filed it unstamped) is not asked twice.
 - **`!reveal-site <name>`** (GM): manual site discovery — same reveal flow as
   §4.
 
@@ -304,8 +352,12 @@ are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
 ("docked at …"). It arrives at the site the expedition was for — its track's
 `siteId` link, else the unexplored site its label names
-(`siteDiscovery.selectExpeditionSite`, never the sole-site guess) — by the
-site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
+(`siteDiscovery.selectExpeditionSite`, never the sole-site guess; the link is
+read off `listProgressTracks`, whose projection dropped it, so the arrival
+followed the label while the reveal charted the linked site — the ship stayed
+where it set out when the GM had charted the site first or a second unexplored
+site had been recorded since, or docked at another sector's namesake: issue
+#362 AC24) — by the site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
 `currentLocationForEntityId`), so the ship record, its token (onto the site's
 pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored

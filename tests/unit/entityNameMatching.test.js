@@ -20,8 +20,11 @@
  * one severity (P2-15) in threatOnePageOneSeverity.test.js.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { routeEntityDrafts, buildCombinedDetectionPrompt } from '../../src/entities/entityExtractor.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  routeEntityDrafts, buildCombinedDetectionPrompt, parseDetectionResponse, routeWorldJournalResults,
+} from '../../src/entities/entityExtractor.js';
+import * as wj from '../../src/world/worldJournal.js';
 import { describeContradiction } from '../../src/factContinuity/consistencyCheck.js';
 import { planIsAbout } from '../../src/world/secrets.js';
 import { recordUnchartedDestination } from '../../src/sectors/siteDiscovery.js';
@@ -55,7 +58,14 @@ describe('issue #354 P2-16 — an established person under part of their name is
       [person('Archer'), person('Ms Archer'), person('Vuldar'), person('Valdur Archer')],
       CS(), { autoCreateConnection: false });
     expect(queued.map(e => e.name)).toEqual([]);
-    expect(draftCards()).toHaveLength(0);
+    // Issue #362 D10: not offered, but listed — read as Vuldar Archer, each
+    // with "No — a new person" — where they were dropped with no row. One row
+    // a name, a title aside ("Ms Archer" is the "Archer" row).
+    const [card] = draftCards();
+    expect(card, 'a New Entities card').toBeTruthy();
+    expect(card.flags[MODULE].drafts.map(d => [d.name, d.status, d.readAs]))
+      .toEqual([['Archer', 'known', 'Vuldar Archer'], ['Vuldar', 'known', 'Vuldar Archer'],
+        ['Valdur Archer', 'known', 'Vuldar Archer']]);
   });
 
   it('a player character under their first name is not offered as an NPC', async () => {
@@ -78,6 +88,53 @@ describe('issue #354 P2-16 — an established person under part of their name is
     const text = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
     expect(text).toMatch(/A person is the same person under part of their name/);
     expect(text).toMatch(/Never return any of these as a new entity/);
+  });
+});
+
+// Issue #362 AC17: the near-spelling rule took any two names that differed
+// only in their vowels for one, so a known NPC's sister was never offered and
+// a fact filed under her name went on his card.
+describe('issue #362 AC17 — two people whose names differ in a vowel are two people', () => {
+  const tierOf = (id) => (global.game.actors.get(id).getFlag(MODULE, 'connection')?.generativeTier ?? []).map(e => e.detail);
+  const withSoren = () => ({ ...CS(), connectionIds: ['npc-archer', 'npc-soren'], currentSessionId: 's1', sessionNumber: 1 });
+  beforeEach(() => {
+    global.game.actors._set('npc-soren', npc('npc-soren', 'Soren Okoro'));
+    vi.spyOn(wj, 'recordLoreDiscovery').mockResolvedValue(undefined);
+    vi.spyOn(wj, 'appendSessionLogBeat').mockResolvedValue(undefined);
+    vi.spyOn(wj, 'getConfirmedLore').mockReturnValue([]);
+    vi.spyOn(wj, 'getNarratorAssertedLore').mockReturnValue([]);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('control: a near spelling of a known name is that person — "Valdur Archer" is not offered', async () => {
+    const { queued } = await routeEntityDrafts([person('Valdur Archer')], withSoren(), { autoCreateConnection: false });
+    expect(queued.map(e => e.name)).toEqual([]);
+  });
+
+  it('Seren Okoro, introduced beside the established Soren Okoro, is offered on the New Entities card', async () => {
+    const { queued } = await routeEntityDrafts([person('Seren Okoro', "Soren's sister, a courier pilot.")], withSoren(), { autoCreateConnection: false });
+    expect(queued.map(e => e.name)).toEqual(['Seren Okoro']);
+  });
+
+  it('the detection parse keeps her too', () => {
+    const raw = JSON.stringify({ entities: [person('Seren Okoro', "Soren's sister, a courier pilot.")], renames: [], worldJournal: {} });
+    expect(parseDetectionResponse(raw, withSoren()).entities.map(e => e.name)).toEqual(['Seren Okoro']);
+  });
+
+  it("a fact the detector files under her name is not written onto Soren's card", async () => {
+    await routeWorldJournalResults({
+      lore: [{ title: 'Seren Okoro flies for the Compact', text: 'Seren Okoro flies courier runs for the Compact.',
+        entityName: 'Seren Okoro', salience: 'significant' }],
+    }, withSoren());
+    expect(tierOf('npc-soren'), "Soren's narrator-added details").toEqual([]);
+  });
+
+  it('control: a fact filed under his own name still goes on his card', async () => {
+    await routeWorldJournalResults({
+      lore: [{ title: 'Soren Okoro flies for the Compact', text: 'Soren Okoro flies courier runs for the Compact.',
+        entityName: 'Soren Okoro', salience: 'significant' }],
+    }, withSoren());
+    expect(tierOf('npc-soren')).toEqual(['Soren Okoro flies courier runs for the Compact.']);
   });
 });
 

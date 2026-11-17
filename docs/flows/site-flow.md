@@ -44,11 +44,15 @@ destination** (type `uncharted`, `workingLabel: true`) — a place the story
 names without a proper name, recorded by the Undertake an Expedition toward
 it (`siteDiscovery.recordUnchartedDestination`, issue #348 PT07; see
 `exploration-flow.md` §0). Same stores — a location Actor through
-`buildSiteLocationData`, a discovery record in the next periphery slot, a pin
-placed on the existing Scene (`sceneBuilder.addSiteToScene`) — and the same
-reveal; its Site Discovered card says it was charted under its working label
+`buildSiteLocationData`, a discovery record in the first periphery cell no
+site of the sector holds (issue #362 AC51; saved
+with the move's record; a refused one is a Retry step on the GMs' payoff
+failure card — issue #362 AC49), a pin placed on the existing Scene
+(`sceneBuilder.addSiteToScene`) — and the same reveal; its Site Discovered card says it was charted under its working label
 and invites the GM to rename it (a discovered site's pin follows the rename,
-issue #331 X46).
+issue #331 X46). Its old working label still names it — a course by it is a
+Set a Course there, an expedition by it is linked to it — and records no
+second site (issue #362 AC50).
 
 ## 2. Discovery
 
@@ -76,7 +80,7 @@ Two reveal paths, both funnelling through `revealSectorSite`
    / cleared), never a sibling a looser rung finds ("…II" contains "…I"); a
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
-   keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
+   keeps the pipeline's copy of `sectors` — `mergeWithLatestState`: the pipeline writes `sectors` itself, so the store's copy cannot win without dropping the reveal, and with no baseline a `!sector` or sector generation landing mid-move is overwritten — the recorded trade-off; issue #362 AC55 / PIPE D6).
 2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder and the
    sole-undiscovered guess as its last rung (with no name, the sole
    unexplored site).
@@ -100,7 +104,7 @@ them, reverting an X-Card, Take a Break or `!bond` relayed meanwhile (issue
 | SITE-ANCHOR-ABSENT | LOSE-PLOT | `formatActiveSector` listed settlements only → discovered sites now render a "Charted sites (established — do not reinvent them)" block with type + status, so "the derelict" has a standing anchor from discovery onward |
 | SITE-TYPE-TABLE-MISMATCH | canon fidelity | `derelict_type` always rolled deep-space weights → `derelictTypeTableFor(location)` routes the roll to the planetside / orbital / deep-space type table matching the rolled location |
 | SITE-DISCOVERY-CARD-GENERIC | LOSE-PAYOFF | The Site Discovered card omitted the rolled exterior → it now reads the location record's first look and renders it beneath the announcement (fail-open) |
-| SITE-NO-COMPLETION | minor | `status: "cleared"` was never set → new `clearSectorSite` + `!clear-site <name>` (GM-only) close the unexplored → visited → cleared lifecycle, stamping the discovery record and the location Actor |
+| SITE-NO-COMPLETION | minor | `status: "cleared"` was never set → new `clearSectorSite` + `!clear-site <name>` (GM-only) close the unexplored → visited → cleared lifecycle, stamping the discovery record and the location Actor; its card names the site's kind — the vault, the derelict, or "the place" for an uncharted destination, which it called a derelict (issue #362 AC52) |
 
 ## 4. Design-level observations — dispositions (2026-07)
 

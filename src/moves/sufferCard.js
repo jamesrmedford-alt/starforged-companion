@@ -28,14 +28,14 @@ import {
   isRetryableSufferCall,
 } from "./sufferDialog.js";
 import { isUnprepared } from "./sufferExecutor.js";
-import { getActor, readCompanionHealth, readVehicleAssetBattered } from "../character/actorBridge.js";
-import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
+import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName } from "../character/actorBridge.js";
+import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor } from "./resultUpgrade.js";
+import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -107,12 +107,18 @@ export function sufferMultiCap(prompt) {
  * is none, so a "+1 integrity" with no vehicle to raise is unavailable.
  * Companion health was never supplied, so "companion health > 0" always read
  * 0 (issue #309 N03); the PC's own impacts stood in for the vehicle's (N02).
+ * Also the companions a Companion Takes a Hit pick could hit
+ * (`companionCount`, and `companionTarget` — the move's, else the only one;
+ * null with none, or several and none named), which the "any" card reads
+ * (issue #362 AC28).
  *
  * @param {Actor|null} actor
  * @param {Object} [executorOpts] — the card's
- * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null }}
+ * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null,
+ *   companionCount: number, companionTarget: Item|null }}
  */
 function optionContext(actor, executorOpts = {}) {
+  const companions = companionsOf(actor, executorOpts);
   const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
   // Heal's patient: the "wounded" options read their impacts (issue #325 W04).
   const patientId = typeof executorOpts?.patientActorId === "string" && executorOpts.patientActorId
@@ -120,25 +126,50 @@ function optionContext(actor, executorOpts = {}) {
   const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
   const patientCompanion = !!executorOpts?.patientCompanionItemId;
   if (executorOpts?.vehicleItemId) {
-    return { actor, companionHealth, patient, patientCompanion,
+    // A support vehicle is never cursed (the command vehicle's impact).
+    return { actor, companionHealth, patient, patientCompanion, ...companions, vehicleCursed: null,
       vehicleBattered: readVehicleAssetBattered(actor, executorOpts.vehicleItemId) };
   }
   let vehicleBattered = null;
+  // Withstand Damage's at-0 cost "Mark the vehicle as … cursed" (issue #362 D8).
+  let vehicleCursed = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
       ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
-    if (vehicleId && getShip(vehicleId)) vehicleBattered = isShipBattered(vehicleId);
+    if (vehicleId && getShip(vehicleId)) {
+      vehicleBattered = isShipBattered(vehicleId);
+      vehicleCursed   = isShipCursed(vehicleId);
+    }
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, companionHealth, vehicleBattered, patient, patientCompanion };
+  return { actor, companionHealth, vehicleBattered, vehicleCursed, patient, patientCompanion, ...companions };
+}
+
+/**
+ * The companions a Companion Takes a Hit pick on this card could hit (the
+ * executor's rule — sufferExecutor.companionTakesAHit): the move's companion
+ * when the card names one (`executorOpts.companionItemId`; none when it is
+ * gone), else the PC's only companion — none with several, which the player
+ * is asked to choose among (issue #362 AC28).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} [executorOpts]
+ * @returns {{ companionCount: number, companionTarget: Item|null }}
+ */
+function companionsOf(actor, executorOpts = {}) {
+  const named = typeof executorOpts?.companionItemId === "string" && executorOpts.companionItemId ? executorOpts.companionItemId : null;
+  const target = getCompanionAsset(actor, named);
+  return { companionCount: named ? (target ? 1 : 0) : listCompanionAssets(actor).length, companionTarget: target };
 }
 
 /**
  * True when an "any" card cannot take this suffer move: one the prompt
- * excludes (a redirected loss — sufferExecutor.sacrificeResources), or
+ * excludes (a redirected loss — sufferExecutor.sacrificeResources),
  * Sacrifice Resources while the PC is unprepared, at any supply, whose loss
- * goes to a different suffer move (issue #325 W16; issue #338 D3).
+ * goes to a different suffer move (issue #325 W16; issue #338 D3), or a
+ * Companion Takes a Hit / Withstand Damage with no companion / vehicle to
+ * take it (issue #362 AC28).
  */
 /** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
 function clearTracksOf(prompt) {
@@ -147,6 +178,13 @@ function clearTracksOf(prompt) {
 
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
+  // A suffer move with nothing to suffer it pays nothing: no companion (or
+  // the move's companion gone), no vehicle the move names nor a command
+  // vehicle. Pressed, it closed the card — the cost gone, the move's Burn /
+  // Improve closed — with "Not applied: … no companion to change" (issue
+  // #362 AC28). Several companions, none named, ask which (handleSufferPick).
+  if (sufferId === "companion_takes_a_hit") return !(ctx?.companionCount > 0);
+  if (sufferId === "withstand_damage") return ctx?.vehicleBattered === null || ctx?.vehicleBattered === undefined;
   return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
 }
 
@@ -251,8 +289,12 @@ export function summarizeSufferCalls(calls, results = []) {
         ? "combat position not applied"
         : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
-      case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
+      case "roll-table":          parts.push(`rolled the ${IMPACT_TABLE_NAMES[c.table] ?? "mortal-wound"} table`); break;
       case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
+      case "mark-vehicle":        parts.push(`marked the vehicle ${c.impact}`); break;
+      case "vehicle-cost":        parts.push(c.cost === "module_destroyed"
+        ? "a broken module destroyed (on the starship sheet)"
+        : "a module marked broken (on the starship sheet)"); break;
       case "route":               parts.push(c.route === "pay_the_price" && c.price
         ? "the price paid (see its card)"
         : `see "Trigger: ${c.route}"`); break;
@@ -262,6 +304,10 @@ export function summarizeSufferCalls(calls, results = []) {
   }
   return parts.length ? parts.join(", ") : "no change";
 }
+
+// What summarizeSufferCalls calls an at-0 table (issue #329 X03; Withstand
+// Damage's, issue #362 D8).
+const IMPACT_TABLE_NAMES = { mortal_wound: "mortal-wound", desolation: "desolation", vehicle_damage: "vehicle-damage" };
 
 /**
  * A vehicle's or companion's loss its track could not take, taken as
@@ -276,6 +322,29 @@ function lossPastZeroLabel(call, result) {
     ? "make another suffer move or clear progress: choose it on its card"
     : "redirect it to another suffer move or clear progress"})`;
   return text;
+}
+
+// A suffer move's call that found nothing to suffer it (issue #362 AC28).
+const NO_TARGET = new Set(["no-companion", "no-vehicle"]);
+
+/**
+ * The follow-up card for a Companion Takes a Hit picked with several
+ * companions and none named (issue #362 AC28): one pick per companion, by the
+ * name the player gave it where it has one, each the move against that asset.
+ *
+ * @param {Actor} actor
+ * @param {number} amount
+ * @returns {Object} an enumerated sufferPrompt
+ */
+function whichCompanionPrompt(actor, amount) {
+  return {
+    kind: "enumerated",
+    options: listCompanionAssets(actor).map(c => {
+      const given = companionGivenName(c);
+      const name  = given && given !== c.name ? `${given} (${c.name})` : (c.name ?? "A companion");
+      return { label: `${name} takes the hit (-${amount})`, suffer: "companion_takes_a_hit", amount, itemId: c.id };
+    }),
+  };
 }
 
 // Why a call's write did not land (a runSufferResolution result with
@@ -601,9 +670,16 @@ async function handleSufferPick(message, dataset) {
   // issue #330 D7) is followed by its minor / serious / major card.
   const needsAny    = calls.find(c => c.kind === "needs-any");
   const needsAmount = calls.find(c => c.kind === "needs-amount");
+  // Companion Takes a Hit with several companions and none named on the card
+  // asks which: the executor hits none, and the card closed with the cost
+  // unpaid — "apply it on the sheet" (issue #362 AC28).
+  const pickCtx       = optionContext(actor, executorOpts);
+  const whichCompanion = dataset.pickKind === "any" && dataset.sufferId === "companion_takes_a_hit"
+    && !pickCtx.companionTarget && pickCtx.companionCount > 1
+    ? whichCompanionPrompt(actor, prompt.amount ?? 1) : null;
   const followUpPrompt = needsAny
     ? { kind: "any", amount: needsAny.amount, count: needsAny.count }
-    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : null);
+    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : whichCompanion);
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
   // An "any" prompt of `count` > 1 takes one suffer move per pick (issue
@@ -618,6 +694,7 @@ async function handleSufferPick(message, dataset) {
   const ctx    = optionContext(actor, executorOpts);
   const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
     : needsAmount ? `${labelForSuffer(needsAmount.sufferId)} chosen — choose how much on the follow-up card.`
+    : whichCompanion ? "Companion Takes a Hit chosen — choose which companion on the follow-up card."
     : multi ? "Applied your selections."
     : `Applied: ${summarizeSufferCalls(calls)}`;
 
@@ -665,6 +742,28 @@ async function handleSufferPick(message, dataset) {
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
   const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
+  // A resist roll whose post the world refused rolled nothing: the card is
+  // handed back, and its move's Burn / Improve with it, as when a posted roll
+  // is then not made (cardActions.js releaseSourceCard, issue #347 AB06). It
+  // stayed resolved — "Not applied: … post-failed" — and the owed roll could
+  // be made from no card (issue #362 AC60).
+  if (calls.length && calls.every(c => c.kind === "resist") && results.some(r => r?.kind === "resist" && r.reason === "post-failed")) {
+    const reopened = await reopenSufferCard(message, { note: RESIST_UNPOSTED_NOTE });
+    if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
+    return { applied: false, reason: "post-failed" };
+  }
+  // A single pick that found nothing to suffer it — the companion or the
+  // vehicle gone since the card was drawn — paid nothing: the card stays the
+  // cost's, open for another pick (issue #362 AC28), and its move's Burn /
+  // Improve with it.
+  // A resist card whose vehicle or companion is gone owes no roll: it
+  // resolves, saying so (below).
+  if (!multi && !prompt.resist && results.length && results.every(r => r?.ok === false && NO_TARGET.has(r.reason))) {
+    const why = notAppliedLines(calls, results).join("; ");
+    const reopened = await reopenSufferCard(message, { note: `Not applied: ${why}. Choose another.` });
+    if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
+    return { applied: false, reason: "no-target" };
+  }
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the
   // resolved card says so, not the "-1" nothing took (issue #345 AA15).
@@ -682,12 +781,17 @@ async function handleSufferPick(message, dataset) {
   return { applied: true };
 }
 
+// What a resist card handed back after the world refused its roll's post says
+// (issue #362 AC60) — on its content only: the next press re-renders it.
+const RESIST_UNPOSTED_NOTE = "The roll could not be posted — the world did not save it. Press it again.";
+
 /**
  * Re-open a suffer choice card — not resolved, not superseded, its buttons
  * rendered again with the picks it already has — when its pick posted a roll
  * that was then not made: the resist roll a harm or stress at 0 owes
  * (sufferDialog.js "resist"), whose confirm was closed or whose start or
- * reading failed (cardActions.js releaseSourceCard), or when the waypoint
+ * reading failed (cardActions.js releaseSourceCard), or whose post the world
+ * refused (handleSufferPick, issue #362 AC60), or when the waypoint
  * alternative that retired it was not rolled. The pick was claimed
  * (`resolved`, "Applied: … rolled to resist") before the roll was posted, so
  * the card said the roll was made and its button was gone for good (issue
@@ -695,9 +799,11 @@ async function handleSufferPick(message, dataset) {
  * whose character is gone, or one live already, stays as it is.
  *
  * @param {string|ChatMessage} messageOrId
+ * @param {{ note?: string|null }} [opts] — a line the re-opened card shows
+ *   (its content only, never its flags: the next press re-renders it)
  * @returns {Promise<boolean>} whether the card is open again
  */
-export async function reopenSufferCard(messageOrId) {
+export async function reopenSufferCard(messageOrId, { note = null } = {}) {
   const message = typeof messageOrId === "string"
     ? (globalThis.game?.messages?.get?.(messageOrId) ?? null)
     : (messageOrId ?? null);
@@ -710,12 +816,13 @@ export async function reopenSufferCard(messageOrId) {
   const picked  = Array.isArray(f.pickedIndices) ? f.pickedIndices : [];
   const madeAny = Array.isArray(f.pickedSuffers) ? f.pickedSuffers : [];
   const notes   = Array.isArray(f.notApplied) ? f.notApplied : [];
+  const shown   = typeof note === "string" && note ? { ...prompt, hint: [note, prompt.hint].filter(Boolean).join(" ") } : prompt;
   try {
     await message.update({
       [`flags.${MODULE_ID}.resolved`]:   false,
       [`flags.${MODULE_ID}.superseded`]: false,
       [`flags.${MODULE_ID}.retiredBy`]:  null,
-      content: renderSufferCard(prompt, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
+      content: renderSufferCard(shown, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
     });
     return true;
   } catch (err) {

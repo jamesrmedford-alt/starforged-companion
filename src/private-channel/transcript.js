@@ -34,9 +34,9 @@
 
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "../multiplayer/settleWithin.js";
+import { companionJournalFolderId } from "../world/worldJournal.js";
 
 const MODULE_ID   = "starforged-companion";
-const FOLDER_NAME = "Starforged Companion";
 const FLAG_KEY    = "privateChannelPage";
 const DEFAULT_DEBOUNCE_MS = 5000;
 /** Automatic retries after a failed write (5 s, 10 s, 15 s); the next flush trigger retries after that. */
@@ -257,14 +257,11 @@ export async function applyPrivateJournalCreate(_payload = {}, ctx = {}) {
 
 /** Create a user's transcript journal here: they are OWNER, the GM OBSERVER, everyone else NONE. */
 async function createPrivateJournal(userId) {
-  // Folder lookup mirrors worldJournal.js; create lazily, tolerate failure.
+  // The World Journal's folder, by its stamp whatever the GM renamed it,
+  // made (stamped) only when there is none (issue #362 AC48); tolerate failure.
   let folderId = null;
   try {
-    const folder = game.folders?.find(f => f.type === "JournalEntry" && f.name === FOLDER_NAME)
-      ?? (globalThis.Folder?.create
-            ? await globalThis.Folder.create({ name: FOLDER_NAME, type: "JournalEntry" })
-            : null);
-    folderId = folder?.id ?? null;
+    folderId = await companionJournalFolderId({ create: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: folder resolve failed:`, err?.message ?? err);
   }
@@ -334,6 +331,32 @@ export async function loadCurrentSessionTranscript(userId, sessionId) {
 }
 
 /**
+ * A session's private conversation as this browser holds it: the turns its
+ * page holds, then the turns still waiting here for their page write — in
+ * the buffer, or being written — that the page does not hold yet. A window
+ * reopened while its conversation was "kept in this browser" read the page
+ * alone: it opened empty under that very line, and the narrator's next turn
+ * was sent none of the exchange (issue #362 AC79). The buffer is read before
+ * the page: a batch leaves it only once its page write has landed (it is
+ * `writing` meanwhile), so a batch read here is still waiting or on the page
+ * by the time the page is read — never missed — and one the page holds is
+ * read from the page alone, as is a batch whose write landed after it was
+ * given up on (issue #347 AB05). Read-only.
+ *
+ * @param {string} userId
+ * @param {string} sessionId
+ * @returns {Promise<Array<{who:"player"|"narrator", name:string, text:string}>>}
+ */
+export async function loadSessionTurns(userId, sessionId) {
+  const entry   = _buffers.get(userId);
+  const waiting = [...(entry?.writing ?? []), ...(entry?.batches ?? [])]
+    .filter(b => b?.sessionId === sessionId && b.turns?.length)
+    .map(b => b.turns.map(t => ({ ...t })));
+  const saved = await loadCurrentSessionTranscript(userId, sessionId);
+  return [...parseTurnsHtml(saved), ...waiting.filter(turns => !saved.includes(renderTurnsHtml(turns))).flat()];
+}
+
+/**
  * Buffer a turn for a later debounced write. A batch captures the session id
  * on its first turn, so its write lands on that session's page even if the
  * session changes before the flush fires. A turn joins the waiting batch only
@@ -349,7 +372,7 @@ export function appendToBuffer(userId, turn) {
   registerFlushOnHide();
   let entry = _buffers.get(userId);
   if (!entry) {
-    entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0, unsaved: false };
+    entry = { batches: [], writing: [], timerId: null, chain: Promise.resolve(), failures: 0, unsaved: false };
     _buffers.set(userId, entry);
   }
   const sessionId = currentSessionId();
@@ -400,15 +423,21 @@ async function writePending(userId, entry) {
   // Taken for this write: turns appended meanwhile start a fresh batch.
   const batches = entry.batches.splice(0);
   let page = null;
-  for (let i = 0; i < batches.length; i++) {
-    const written = await writeBatch(userId, batches[i]);
-    if (!written) {
-      entry.batches.unshift(...batches.slice(i));
-      entry.failures += 1;
-      if (entry.failures <= MAX_AUTO_RETRIES) scheduleDebouncedWrite(userId, DEFAULT_DEBOUNCE_MS * entry.failures);
-      return null;
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      // Still this browser's until it lands: a window opened meanwhile reads it (loadSessionTurns).
+      entry.writing = batches.slice(i);
+      const written = await writeBatch(userId, batches[i]);
+      if (!written) {
+        entry.batches.unshift(...batches.slice(i));
+        entry.failures += 1;
+        if (entry.failures <= MAX_AUTO_RETRIES) scheduleDebouncedWrite(userId, DEFAULT_DEBOUNCE_MS * entry.failures);
+        return null;
+      }
+      page = written;
     }
-    page = written;
+  } finally {
+    entry.writing = [];
   }
   if (page) {
     entry.failures = 0;

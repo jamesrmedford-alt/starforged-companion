@@ -81,9 +81,6 @@ export const SettlementSchema = {
   portraitId:                  null,
   portraitSourceDescription:   "",
 
-  // Context injection
-  loremasterNotes: "",
-
   // Linked entities
   connectionIds: [],
 

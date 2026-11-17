@@ -75,11 +75,15 @@ export const ShipSchema = {
   integrity:    5,     // 0–5. Command vehicle and support vehicles.
   integrityMax: 5,
   // The record's integrity has been reconciled with the STARSHIP asset's
-  // Integrity track since that track became canonical (issue #345 AA20). A
-  // record written by v1.8.0 or earlier carries no such field: its integrity
-  // holds the losses the module applied, which never reached the sheet, and
-  // the first write takes the lower of the two (updateShip; issue #347 AB08).
-  integritySheetReconciled: true,
+  // Integrity track the ship carries now (the track canonical since issue #345
+  // AA20) — set by a write that saw the track, cleared by one that saw none.
+  // A record that is not — written by v1.8.0 or earlier, or kept while the
+  // ship had no STARSHIP asset — holds losses that never reached a track, and
+  // the first write beside one takes the lower of the two (updateShip; issue
+  // #347 AB08). A record is born reconciled only beside a track
+  // (birthIntegrity): born so with none, a sidebar starship's damage was
+  // erased by the asset added later (issue #362 AC25).
+  integritySheetReconciled: false,
 
   // Vehicle impacts
   battered: false,     // Cleared by Repair. Can't raise integrity until cleared.
@@ -283,7 +287,16 @@ export function actorHasCommandVehicleAsset(actor) {
  * actually carries the Command Vehicle asset. Called from the
  * createItem / deleteItem hooks (when a Command Vehicle asset is added or
  * removed) and from a one-time ready-scan over tracked ships. GM-gated by
- * the caller. Writes only when the status changes (idempotent).
+ * the caller. Writes only when the status changes (idempotent). The flag's
+ * write is the asset's arrival's reconcile (updateShip): a record that held
+ * the integrity alone keeps the lower of its own and the new track's, and
+ * the GM is told. A record still stamped reconciled with no track to be
+ * reconciled with — born so before issue #362 AC25, or its asset gone with no
+ * flag change — has the stamp cleared, so the asset that comes later is
+ * reconciled with it, not read over it (the added asset's fresh 5/5 erased
+ * the damage the record held). It never reconciles by itself: the canonical
+ * GM's world load does (migrator.reconcileCommandVehicleIntegrity), and this
+ * scan runs beside it.
  *
  * @param {Actor} actor
  * @param {Object} campaignState
@@ -302,6 +315,7 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
     const id  = actor.flags?.[MODULE_ID]?.entityId || generateId();
     const ship = {
       ...ShipSchema,
+      ...birthIntegrity(actor),
       _id:              id,
       name:             actor.name,
       isCommandVehicle: true,
@@ -323,8 +337,26 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
     return ship;
   }
 
-  if (!!existing.isCommandVehicle === isCV) return null;   // no change
-  return updateShip(actor.id, { isCommandVehicle: isCV });
+  const flagChanged = !!existing.isCommandVehicle !== isCV;
+  const stampStale  = existing.integritySheetReconciled === true && readCommandVehicleIntegrity(actor) === null;
+  if (!flagChanged && !stampStale) return null;   // no change
+  return updateShip(actor.id, flagChanged ? { isCommandVehicle: isCV } : {});
+}
+
+/**
+ * The integrity fields a ship record is born with: beside a STARSHIP asset's
+ * Integrity track, the track's — reconciled with it; with none, the schema's,
+ * not reconciled, so the track a STARSHIP asset added later brings is
+ * reconciled with the record, the lower kept (issue #362 AC25).
+ *
+ * @param {Actor} actor — the starship the record is made for
+ * @returns {{ integrity?: number, integrityMax?: number, integritySheetReconciled: boolean }}
+ */
+function birthIntegrity(actor) {
+  const sheet = readCommandVehicleIntegrity(actor);
+  return sheet
+    ? { integrity: sheet.value, integrityMax: sheet.max, integritySheetReconciled: true }
+    : { integritySheetReconciled: false };
 }
 
 export async function updateShip(actorId, updates) {
@@ -340,8 +372,11 @@ export async function updateShip(actorId, updates) {
     updatedAt: new Date().toISOString(),
   };
 
-  // Enforce: cursed can only be set, never cleared
-  if (current.cursed && updates.cursed === false) {
+  // Enforce: cursed can only be set, never cleared — by the record's say or
+  // the canonical native impact's (the starship sheet's toggle writes that
+  // alone, so the record may not know it yet; issue #362 AC54).
+  const nativeCursed = document.system?.debility?.cursed === true;
+  if ((current.cursed || nativeCursed) && updates.cursed === false) {
     console.warn(`${MODULE_ID} | Attempted to clear 'cursed' impact — this is permanent.`);
     updated.cursed = true;
   }
@@ -353,13 +388,17 @@ export async function updateShip(actorId, updates) {
   // brought to the sheet's value on every write. A starship with no such
   // asset keeps its integrity on the record alone.
   //
-  // A record from before that (no `integritySheetReconciled`) is reconciled
-  // on its first write: up to v1.8.0 the module applied its losses to the
-  // record alone, so a record that says 2 beside a sheet that says 5 holds
-  // damage the sheet never saw — mirroring the sheet's 5 over it erased the
-  // damage from both stores (issue #347 AB08). The lower of the two is taken
-  // and written to the sheet too; the GM's world load does it first and says
-  // so (migrator.reconcileCommandVehicleIntegrity).
+  // A record not reconciled with the track (`integritySheetReconciled` not
+  // set) is reconciled on its first write beside it: up to v1.8.0 the module
+  // applied its losses to the record alone, so a record that says 2 beside a
+  // sheet that says 5 holds damage the sheet never saw — mirroring the sheet's
+  // 5 over it erased the damage from both stores (issue #347 AB08). So does a
+  // record kept while the ship had no STARSHIP asset, the asset added since
+  // (issue #362 AC25). The lower of the two is taken and written to the sheet
+  // too; the GM's world load does it first and says so
+  // (migrator.reconcileCommandVehicleIntegrity), and so does the asset's
+  // arrival (syncCommandVehicleFlag's flag write). A write that sees no track
+  // leaves the record unreconciled: it is the store again until one comes.
   const sheet = readCommandVehicleIntegrity(document);
   let writeSheet = false;
   let reconciledFrom = null;   // { record, sheet } when this write reconciles two values that differed
@@ -375,8 +414,8 @@ export async function updateShip(actorId, updates) {
         reconciledFrom = { record: Number(current.integrity), sheet: sheet.value };
       }
     }
-    updated.integritySheetReconciled = true;
   }
+  updated.integritySheetReconciled = sheet !== null;
 
   // Enforce: integrity never exceeds max
   if (typeof updated.integrity === "number") {
@@ -390,17 +429,22 @@ export async function updateShip(actorId, updates) {
   // canonical for battered (isShipBattered) and what the ironsworn starship
   // sheet renders — alongside the flag mirror. The flag payload remains the
   // source of truth for everything else.
+  // Cursed is written whenever the update names it, against the native impact
+  // — not only when the record's value changes: a refused clear changed
+  // nothing, so the asset card's un-ticked Cursed box was never put back and
+  // the card and the impact disagreed (issue #362 AC54). Both writes are
+  // skipped when the store already holds the value.
   const systemPatch = {};
   if (updates.notes !== undefined)    systemPatch["system.notes"] = updated.notes ?? "";
   if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
-  if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
+  if (updates.cursed !== undefined && nativeCursed !== !!updated.cursed) systemPatch["system.debility.cursed"] = !!updated.cursed;
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
   // The STARSHIP asset's own Battered / Cursed conditions mirror the native
   // impacts written above (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
-  if (updates.battered !== undefined || current.cursed !== updated.cursed) {
+  if (updates.battered !== undefined || updates.cursed !== undefined) {
     await setCommandVehicleConditions(document, {
       ...(updates.battered !== undefined ? { battered: !!updated.battered } : {}),
-      ...(current.cursed !== updated.cursed ? { cursed: !!updated.cursed } : {}),
+      ...(updates.cursed !== undefined ? { cursed: !!updated.cursed } : {}),
     });
   }
 
@@ -419,11 +463,13 @@ export async function updateShip(actorId, updates) {
 }
 
 /**
- * GM whisper, once per ship: its first write since the STARSHIP asset's
- * track became canonical found the record and the sheet disagreeing, and
- * took the lower into both (issue #347 AB08). Which was right cannot be known
- * — the module's own losses never reached the sheet, but a player may have
- * marked the sheet alone — so the GM is told both. Never throws.
+ * GM whisper: a ship's first write beside a STARSHIP asset's track its record
+ * was not reconciled with found the two disagreeing, and took the lower into
+ * both — a record from before that track was canonical (issue #347 AB08), or
+ * one kept while the ship had no STARSHIP asset (issue #362 AC25). Which was
+ * right cannot be known — the module's own losses never reached the track, but
+ * a player may have marked the sheet alone — so the GM is told both. Never
+ * throws.
  */
 function postIntegrityReconciledNotice(name, { record, sheet }, ship) {
   const max = ship.integrityMax ?? 5;
@@ -431,8 +477,8 @@ function postIntegrityReconciledNotice(name, { record, sheet }, ship) {
   Promise.resolve(globalThis.ChatMessage?.create?.({
     content: `<div class="sf-migrate-card"><div class="sf-migrate-label">◈ Ship integrity — the sheet now holds it</div>`
       + `<p><strong>${escapeHtml(name ?? "The ship")}</strong>: the module had recorded integrity ${record}/${max}, `
-      + `but the Starship asset on its sheet showed ${sheet}/${max} — until this version the damage the module applied `
-      + `never reached the sheet. Its integrity is that asset's Integrity track now, set to the lower: `
+      + `but the Starship asset on its sheet showed ${sheet}/${max} — damage recorded before that asset's track held `
+      + `the ship's integrity (in an earlier version, or before the asset was added) never reached it. Its integrity is that asset's Integrity track now, set to the lower: `
       + `<strong>${ship.integrity}/${max}</strong>. If the sheet was right, set the track on the ship's Starship asset.</p></div>`,
     whisper: gmIds,
     flags:   { [MODULE_ID]: { shipIntegrityReconciledNotice: true } },
@@ -601,6 +647,27 @@ export function isShipBattered(actorOrId) {
   return !!readEntityFlag("ship", document)?.battered;
 }
 
+/**
+ * Is this ship cursed? As isShipBattered: the native starship field
+ * `system.debility.cursed` is canonical, the module flag's `cursed` its
+ * write-through mirror, read only for a legacy host with no native field.
+ * Read by Withstand Damage's at-0 cost card, whose "Mark the vehicle as
+ * cursed" is not offered once it is (sufferCard.js optionContext, issue #362
+ * D8).
+ *
+ * @param {Actor|string|null} actorOrId  the ship Actor, or its id
+ * @returns {boolean}
+ */
+export function isShipCursed(actorOrId) {
+  const document = typeof actorOrId === "string"
+    ? getEntityDocument("ship", actorOrId)
+    : (actorOrId ?? null);
+  if (!document) return false;
+  const native = document.system?.debility?.cursed;
+  if (typeof native === "boolean") return native;
+  return !!readEntityFlag("ship", document)?.cursed;
+}
+
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
@@ -660,6 +727,7 @@ export async function registerStarshipActorLight(actor, campaignState) {
   const id  = actor.flags?.[MODULE_ID]?.entityId || generateId();
   const ship = {
     ...ShipSchema,
+    ...birthIntegrity(actor),   // reconciled only beside a STARSHIP asset (issue #362 AC25)
     _id:              id,
     name:             actor.name,
     isCommandVehicle: actorHasCommandVehicleAsset(actor),
@@ -789,7 +857,12 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     // it turns true (the asset sync may have set it meanwhile).
     const current = actor.flags?.[MODULE_ID]?.ship ?? {};
     const fields = { ...seededFields, name: actor.name };
-    for (const [key, value] of Object.entries({ ...ShipSchema, _id: id, description: "", createdAt: now })) {
+    // A record with no integrity of its own yet is born beside the STARSHIP
+    // asset's track when the ship carries one (issue #362 AC25); one that
+    // holds integrity is never stamped here — only a write beside the track
+    // reconciles it (issue #347 AB08).
+    const born = current.integrity === undefined ? birthIntegrity(actor) : {};
+    for (const [key, value] of Object.entries({ ...ShipSchema, ...born, _id: id, description: "", createdAt: now })) {
       if (current[key] === undefined && !(key in fields)) fields[key] = value;
     }
     if (!current.isCommandVehicle && actorHasCommandVehicleAsset(actor)) fields.isCommandVehicle = true;

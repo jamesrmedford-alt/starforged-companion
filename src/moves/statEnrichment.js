@@ -152,7 +152,9 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   // the one whose ability swapped the move's stat for "+integrity" — the
   // Snub Fighter's Enter the Fray (issue #345 AA10).
   if (statUsed === "integrity") {
-    const bike = substitutingAsset(listSupportVehicleAssets(actor), interpretation)
+    const vehicles = listSupportVehicleAssets(actor);
+    const bike = substitutingAsset(vehicles, interpretation)
+      ?? assetById(vehicles, interpretation)
       ?? selectNamedVehicleAsset(actor, interpretation);
     if (bike) {
       interpretation.statValue      = readAssetIntegrity(actor, bike.id) ?? 0;
@@ -170,7 +172,9 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   // #345 AA45 — the notice told the player to re-narrate, and nothing read it).
   if (statUsed === "companion_health") {
     const companions = listCompanionAssets(actor);
-    const companion  = substitutingAsset(companions, interpretation) ?? namedCompanion(companions, interpretation);
+    const companion  = substitutingAsset(companions, interpretation)
+      ?? assetById(companions, interpretation)
+      ?? namedCompanion(companions, interpretation);
     if (companion) {
       interpretation.statValue       = Number(companion.system?.track?.value ?? 0);
       interpretation.companionItemId = companion.id;
@@ -390,8 +394,15 @@ const companionNames = (c) => [c?.name, companionGivenName(c)];
  * interpreter (no Claude key) or a failed reading keeps the listed default;
  * the confirm dialog shows the stat either way.
  *
+ * The reading's stakes come with it (issue #362 D11, decided): a forced move
+ * stated none, so the Confirm dialog showed no "At stake" and its miss always
+ * rolled the Pay the Price table. A move with one listed stat — Gather
+ * Information, Make a Connection, Explore a Waypoint … — is read for them
+ * alone: one interpreter call more. A move that rolls no stat (a progress
+ * move, a move with no roll) has none to read.
+ *
  * @param {Object} interpretation — a forced interpretation; `statUsed` (and
- *   `rationale`, with the reading's) updated in place
+ *   `rationale`, with the reading's) and `stakes` updated in place
  * @param {{ interpret?: ((narration: string, moveId: string) => Promise<Object>)|null }} deps
  *   — the stat-only interpretation: interpretMove with the move as its
  *   expectedMoveSlug; null when no Claude key is available
@@ -400,15 +411,16 @@ const companionNames = (c) => [c?.name, companionGivenName(c)];
 export async function enrichForcedMoveStat(interpretation, { interpret = null } = {}) {
   const moveId = interpretation?.moveId;
   const stats  = Array.isArray(MOVES[moveId]?.stat) ? MOVES[moveId].stat : [];
-  if (typeof interpret !== "function" || stats.length < 2 || PICK_HIGHER_OF[moveId]) return null;
+  if (typeof interpret !== "function" || !stats.length || MOVES[moveId]?.progressMove === true || PICK_HIGHER_OF[moveId]) return null;
   let reading = null;
   try {
     reading = await interpret(interpretation.playerNarration ?? "", moveId);
   } catch (err) {
-    console.warn(`${MODULE_ID} | forced move: reading the stat failed — rolling the listed +${interpretation.statUsed}:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | forced move: reading the line failed — rolling the listed +${interpretation.statUsed}, no stakes stated:`, err?.message ?? err);
     return null;
   }
-  if (!stats.includes(reading?.statUsed)) return null;
+  if (reading?.stakes && typeof reading.stakes === "object") interpretation.stakes = reading.stakes;
+  if (stats.length < 2 || !stats.includes(reading?.statUsed)) return null;
   interpretation.statUsed = reading.statUsed;
   // A forced Heal's situation is read with its stat (issue #330 D4).
   if (moveId === "heal" && reading?.healSituation) interpretation.healSituation = reading.healSituation;
@@ -526,6 +538,23 @@ function selectCompanionAsset(actor) {
 function substitutingAsset(assets, interpretation) {
   const id = interpretation?.statSubstitutedFrom ? interpretation.statSubstitutedAssetId : null;
   return typeof id === "string" && id ? (assets.find(a => a?.id === id) ?? null) : null;
+}
+
+/**
+ * Of `assets` (the roller's support vehicles, or companions), the one the
+ * forced move names by its id (`moveTargetId`): the resist roll a vehicle's
+ * damage or a companion's hit owes at 0 is that asset's — "+integrity", "+its
+ * health" — posted by the resist card with the asset's id (sufferDialog
+ * "resist", issue #362 D8). A name could match another asset, or none. Null
+ * when the move names none of them.
+ *
+ * @param {Item[]} assets
+ * @param {Object} interpretation — its `moveTargetId`
+ * @returns {Item|null}
+ */
+function assetById(assets, interpretation) {
+  const id = typeof interpretation?.moveTargetId === "string" && interpretation.moveTargetId ? interpretation.moveTargetId : null;
+  return id ? (assets.find(a => a?.id === id) ?? null) : null;
 }
 
 /**

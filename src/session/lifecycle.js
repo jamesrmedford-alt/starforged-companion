@@ -338,6 +338,32 @@ export function sessionBeingReplaced(campaignState) {
 }
 
 /**
+ * Whether a typed line is narrated into the session in campaignState — the
+ * chat gate's question, and its mirrors' (index.js): the session is begun
+ * (its gate open), this GM's world load is not replacing it, and it is not
+ * over. Over is End a Session's mark, or SESSION_IDLE_HOURS since it was last
+ * seen live (its mint or its latest chat activity). With the GM's game left
+ * loaded through four idle hours nothing mints, so play went on in a session
+ * the Session panel read as "Over", and the first reload closed it mid-scene;
+ * now the gate tells the table no session has begun, and Begin a Session
+ * takes the boundary when play resumes (issue #362 D14). A session whose
+ * last sighting is unknown is not taken as over — the gate fails open on what
+ * it cannot read, as it does on an unreadable state; the world load's
+ * sessionNeedsMint mints such a session.
+ *
+ * @param {Object|null|undefined} campaignState
+ * @param {number} [now] — epoch ms
+ * @returns {boolean}
+ */
+export function sessionInPlay(campaignState, now = Date.now()) {
+  if (!isSessionActive(campaignState) || sessionBeingReplaced(campaignState)) return false;
+  const id = campaignState.currentSessionId;
+  if (id && campaignState.sessionEndedId === id) return false;
+  const last = lastSeenMs(campaignState);
+  return !Number.isFinite(last) || now - last < SESSION_IDLE_HOURS * 3_600_000;
+}
+
+/**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
  * none; a closing session nobody began adds its summary to the older one,

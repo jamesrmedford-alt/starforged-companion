@@ -44,7 +44,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   interpreter's hit and miss lines the Confirm dialog showed
   (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
   this outcome delivers (issue #353 R1; a burn's or an improvement's
-  re-narration carries them) — then the player's line.
+  re-narration carries them) — then the player's line. The miss line is
+  shown, and narrated as "what this miss costs", only when it is the price:
+  `priceStated`, false for a move whose miss pays no price — Enter the
+  Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
+  issue #362 AC02).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -69,8 +73,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
   stat, outcome, outcome text and price, the stakes shown before its roll
-  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds, the
-  player's sanitised line and a latitude line — and the instruction to act for no one else and
+  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds (the
+  round — a world setting every client holds — keeps no hidden plan roll: a
+  new enemy's role, goal and disposition and an expedition plan's rolls are
+  rolled as the round is narrated, on the GM — `withHiddenRolls`, issue #362
+  AC15), the player's sanitised line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent.
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
@@ -78,8 +85,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   second person). Otherwise "auto" is the perspective the session recorded
   when it began (`campaignState.sessionPerspective`, written by
   `beginSession`, cleared by `mintSession`; read by `sessionPerspectiveOf`
-  for every mode — issue #348 PT03), not a per-call count of connected
-  users; a session not begun counts them per call. Its
+  for every mode — issue #348 PT03 — and by the Sector Creator's stubs,
+  `sectorGenerator.generateNarratorStubs`, issue #362 AC70), not a per-call
+  count of connected users; a session not begun counts them per call. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a
@@ -128,7 +136,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   when no PC is there; it took the first PC, so with that PC's player away
   its "you" was the crewmate it called absent (issue #345 AA31). The closing
   vignette, about an NPC, takes the PCs at the table the same way — it took
-  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC).
+  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC). So do a clock
+  vignette (every post site) and the inciting incident, which no one PC's
+  line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
+  rule — issue #362 AC75).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -170,7 +181,10 @@ GM-built prompt until their next load (issue #345 AA35). The global Lines /
 Veils copy is healed the same way by the canonical GM, from the world
 settings (`onSafetyListsWritten`, SAFETY-GLOBAL-LISTS-CROSS-WRITE). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
-building client: on a GM's client every player's lines (deduplicated); on a
+building client: on a GM's client every player's lines (deduplicated, listed
+by their users' ids — the stored entries are in the order of the last sync,
+every client re-syncs at `ready`, and a reload reordered the lines and
+rewrote the cached standing block, issue #362 AC67); on a
 player's client — narrating only with no keyed GM online — that player's own,
 read from their client setting, never another player's. Before 2026-10 the
 shared prompt passed no user id and carried no Private Line at all
@@ -188,7 +202,13 @@ campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
 the recorded entities the message or the scene frame names (lexical, plus
 `addSceneFrameCast`), the scene ledger and the hidden plans in play (the
 narrative skeleton's UNREVEALED, decided plans only and no instruction to
-write — issue #353, decided) in the per-turn message. Its
+write — issue #353, decided) in the per-turn message. A player's client reads
+no plan (issue #362 D1, `secrets.secretPages`): its turn asks the canonical GM
+for the decided plans its message and the scene bring into play
+(`requestPlansInPlay` → the `plansInPlay.ask` / `.answer` socket kinds, as the
+oracle consult's; projected without rolls, re-roll, clock or provenance;
+bounded at `PLANS_WAIT_MS`) — none with no GM connected or no answer in time;
+a GM's client reads them itself, as before. Its
 character is the player's own PC (`resolveUserActorId` — never another
 player's; with none of their own in a multi-PC game the window says "Set up
 your character first", issue #321 U23), and the transcript it sends is the
@@ -208,7 +228,8 @@ clock vignettes, vow swearing, inciting incident, and since issue #321 U09
 the Private Channel's narrator (`requestPrivateNarration`: on entry and when
 its reply returns, a reply written meanwhile discarded unshown) and its
 Publish (`publishToMainChat` refuses and tells the player — a published
-reflection is canon) — against the caller's
+reflection is canon; the canonical GM, which posts it, checks the live flag
+again, before and after its Private Lines check — issue #362 D13) — against the caller's
 campaignState **and** the live stored setting (`isXCardActive`,
 `narrator.js`, exported with `watchXCard` for the Private Channel; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played
@@ -414,10 +435,13 @@ live, and its writes after the card's own undo left the removed fact as a
 detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`; a detected threat is the recorded one when its name
-is a variant of it — `resolveThreatName` — and its severity one of four
+is a variant of it — `resolveThreatName`; a Sector Trouble two sectors share is
+the active sector's, issue #362 AC43 — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
-page: issue #354 P2-15; a GM's **Merge duplicates** folds earlier ones,
-`mergeDuplicateThreats`), lore confirmed (`promoteLoreToConfirmed`), a
+page: issue #354 P2-15; an escalation never leaves it less urgent — issue
+#362 AC42; a GM's **Merge duplicates** folds earlier ones,
+`mergeDuplicateThreats`, and a later detection naming a folded page lands on
+the page it was merged into — issue #362 AC21), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
 put back with it; the stance an attitude moved on the faction's record (the
 canonical stance, `recordStance` before → after) is put back too, where the
@@ -518,13 +542,20 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
 - **Built from units** (`worldSnapshot.js` `collectWorldUnits`): one per
   durable record, each `{ key, section, text }`, read from the stores that
   hold them — every sector of `campaignState.sectors` with its roster by name
-  (the entity lists' records, `collectAllEntities`), every recorded entity's
+  (the entity lists' records, `collectAllEntities`) and, after them, the
+  people recorded with no sector of their own — an NPC a confirmed draft or
+  Make a Connection's auto-create made has no `sectorId`, and [5b]'s roster
+  counted them in the active sector's cast; the reuse rule names both (issue
+  #362 AC29) — every recorded entity's
   card (`formatEntityCard`; an uncharted site — a discovery record not yet
   `discovered` — left out), the whole faction landscape
   (`mergeFactionLandscape`, uncapped), every World Journal threat not
   resolved, all confirmed lore with the Locations journal's places and
   `campaignState.loreRecap`, the newest three earlier sessions' summaries
-  (`previousSessionSummary`, and each Session Log page's story) with the open
+  (`previousSessionSummary`, and each Session Log page's story — one with no
+  number, an unbegun session's, reads "An earlier session", not "Session 0",
+  and the session that closed last is the newest numbered or not, issue #362
+  AC71) with the open
   vows and tracks by name, and every active plan of the Secrets journal
   (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
   context settings and the rolling summary's setting leave their sections
@@ -539,7 +570,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   `worldSnapshot`: session, time taken, causes, text, manifest, and a log of
   new snapshots, shown on the page). The canonical GM writes it; a GM's
   client reads it; a reload sends it unchanged. A player's client has none —
-  narration on a player's own key is sent the per-beat sections, as before.
+  narration on a player's own key is sent the per-beat sections, as before,
+  and no hidden plan in them: a player's client reads no plan (issue #362
+  D1), so its UNREVEALED is empty and only the plans its own rolls ask it to
+  decide (DECIDE NOW) go with it.
 - **Sent as stored**, with the world compared against the manifest at each
   call (`diffWorldUnits`): the units made or changed since go to the context
   in full, under **CHANGED SINCE THE SNAPSHOT** (`renderUnitSections`), which
@@ -554,17 +588,31 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
   play by heading and id (`coveredIds`), a plan the snapshot does not hold
   printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
-  recent oracles and STORY SO FAR are unchanged.
+  recent oracles and STORY SO FAR are unchanged. The rules name none of the
+  sections one layout lacks — the sidecar's identity anchor is for "a
+  character or faction who has no card of their own in this prompt", the
+  third-person pronouns are "in the CHARACTER and PARTY sections and on their
+  card", DISCOVERY's reuse is of "the people and places recorded for the
+  active sector", the inciting incident's of an NPC "recorded for the
+  sector" — so the standing and mode blocks
+  read true, and are the same bytes, with a snapshot or without (issue #362
+  AC66: they named ENTITIES IN SCENE and ACTIVE SECTOR).
 - **A new snapshot is taken** at a narrator call when an event reported since
   the last one takes a snapshot, or the store finds none for the session, a
   record gone, the changes past 2,000 tokens or a quarter of the snapshot, or
   no request for an hour (the session's newest narrator card stands in for
   this client's memory after a reload). `snapshotEvents.js` `SNAPSHOT_EVENTS`
   is the one list; every trigger site reports its event by id
-  (`reportSnapshotEvent`) and the table decides. Marks are kept in the world
-  setting `worldSnapshotEvents` (an id and a time), so any GM's client reports
-  and the narrating GM reads them; several between two calls take one
-  snapshot, and the marks it answered are cleared with it.
+  (`reportSnapshotEvent`) and the table decides. The world setting
+  `worldSnapshotEvents` holds one opaque mark and its time — never which
+  event set it (issue #362 D3: named marks told a player at the console a
+  hidden plan was just made or decided) — so any GM's client reports and the
+  narrating GM reads it; the ids stay on the reporting client (its pending
+  marks, and the snapshot page's log — `namedSnapshotCauses`; another GM's
+  mark logs as `out_of_date`). Several between two calls take one snapshot,
+  and the mark it answered is cleared with it; an event reported while a mark
+  stands writes nothing (the next snapshot covers it), and one reported once
+  the mark is answered writes a newer one.
 
   | Event | Snapshot | Reported by |
   |---|---|---|
@@ -572,13 +620,14 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   | `no_snapshot` | yes | the store, at the call |
   | `scene_started`, `scene_ended` | yes | `handleSceneCommand` (`!scene`) |
   | `plan_made` | yes | `secrets.js` `createSkeleton` |
-  | `plan_decided`, `plan_revealed`, `plan_resolved` | yes | `applyPlanSideData`; the GM's Reveal now |
+  | `plan_decided`, `plan_revealed`, `plan_resolved` | yes | `applyPlanSideData`; the GM's Reveal now; `closePlansAbout` (a track completed, a vow closed — issue #362 D4) |
   | `discovery_rolled`, `new_enemy_revealed` | yes | `reportNarratedMove` / `reportNarratedOracle`, once the narration has posted |
   | `sector_created`, `sector_details_written` | yes | `storeSector`, `applyStubsToSettlementEntities` |
   | `entity_recorded` | yes | `registry.js` `registerEntityId` |
   | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
   | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
-  | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton` |
+  | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout` (a track removed, a vow deleted), `retireSceneMysteries` (an ended scene's unanswered mysteries) — issue #362 D4 |
+  | `entity_detail_removed` | yes | `entityPanel.js` `applyEntityEditFromRelay` — the Entities panel's Remove of a narrator-added detail, a rewrite that takes content back (issue #362 AC65) |
   | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
   | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
 
@@ -611,7 +660,9 @@ Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
 Information's Story Clue / Story Complication, a Compel weak hit's Action +
 Theme counteroffer, an Undertake an Expedition hit's region Space Sighting,
 and a price that reveals a new enemy its Character Role + Goal + Disposition,
-`priceSeedLines` — issue #353 Phase 0) · **[3b] recent
+`priceSeedLines` — issue #353 Phase 0; an outcome a Burn Momentum or Improve
+Result reached rolls its own, with the price it keeps — `upgradedOracleSeeds`,
+issue #362 AC05) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
 choice card's mortal-wound / desolation roll — the table's one roll, no move
@@ -666,7 +717,13 @@ matched or in the frame's cast, its name in the frame or the player's line,
 `skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
 plan every beat, Phase 2; an open expedition's plan, a finished one's in the
 narration that finishes it, and the plan a clock vignette or a chosen
-complication plays, Phase 3; the plan of the vow the scene serves
+complication plays, Phase 3 — a vignette of a plan's own clock has its plan
+in play whether the clock filled or only advanced (a step is played on a fill
+alone, issue #362 AC38) — and a plan the end of its subject resolved in the
+beat that ends it (`skeletons.planInPlay` by `endingTrackIds`: the code
+closes an expedition's plan with its track, a vow's with its vow, and an
+ended scene's unanswered mysteries with their clocks — `closePlansAbout`,
+`retireSceneMysteries`, issue #362 D4); the plan of the vow the scene serves
 (`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
 (its `vowId` on `endingTrackIds`), Phase 4 —
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
@@ -690,8 +747,12 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
-picked by its place in the session so two in a row never share one, nothing
-stored — and `extras.usedImages`, the comparisons the last six cards made,
+picked by its place among the session's beats so two in a row never share
+one, nothing stored: the count is of the beat cards (a move's, a paced
+line's, a round's — `isSessionBeatCard`), struck, X-Carded and unnarrated
+ones included, never the @scene answers, oracle follow-ups or vignettes
+between them, which brought the cycle round to the same shape (issue #362
+AC72) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and
@@ -710,7 +771,10 @@ index (full name + first/last word of multi-word names, lowercased,
 dismissed-list filtered — a name a record takes by a rename comes off that
 list, issue #345 AA55; since issue #286 a name part is never an article,
 title or other noise word, never a word two entities share, and never
-shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
+shadows another entity's full name; a one-word key — a name part, or a name
+of one word — is a hit only written as a name, capitalised as typed or in
+address position, `namesOneWordName`, issue #362 D6: "an echo on the scanner"
+brought in Echo Vega); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the
 move path's relevance call deliberately does not (architecture §8.2,
 reaffirmed 2026-07). Since issue #286 (B3) every path then adds the frame's
@@ -729,10 +793,17 @@ it as well — the last 3 entries, the newest 2,400 characters
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
 playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
 speaker line, in the narrator's words) and what the classifier made of the line
-(`readMove`'s `classifier` → a PACING READ hint), and may answer that no move
+(`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
+classifier made, `router.classifierReadingOf`: never for pacing switched off,
+a `!roll`, the classifier's fallback for a failed call or an unreadable reply,
+or a router that failed, which carry a placeholder scene kind and a status
+string — issue #362 AC64), and may answer that no move
 is being made: that line — or a low-confidence reading outside a fight — is
 narrated as a paced line, the move it might be offered on its card
-(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06). Each entry leads with the player's line that
+(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06) —
+never when a roll was asked for or pacing is switched off, in free-flow or
+a Batch Mode round's reading (`movePipeline.readAction`, issue #362 AC68).
+Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several
@@ -871,32 +942,69 @@ fence used to post the raw JSON on the card and lose the turn's facts, issue
 unknown keys dropped; an unclosed fence's tail is stripped and parsed — a
 complete object applies, a truncated one is a parseError and is discarded; a response with
 **no fence at all now warns** in `applyNarratorSidecar` — the sidecar is
-mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
+mandatory, so a missing fence is a lost frame update, not a quiet no-op; and a
+reply that is its fence alone, with no prose, is no narration: its caller
+posts a fallback card (no `narrationId`) or nothing, so nothing of the block
+is applied or relayed — written, it was stamped with an id no card carries,
+out of every X-Card's reach, issue #362 AC39) →
 `applyNarratorSidecar` (canonical-GM only; the narrative skeleton's keys —
 `plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
 `secrets.js` `applyPlanSideData`, which files the narration's requested plans
-— as decided, or with their rolls alone — decides or corrects the plans it was
+— as decided, or with their rolls alone: also when its fact block is cut off,
+unreadable or missing (the requests alone make the apply run), and, unstamped,
+when the narration is never written — an empty reply, a failed call — from the
+exits of `narrateResolution`, `narrateRound` and the oracle follow-up
+(`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
+the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
-the truth itself, which becomes a ledger truth of the narration's own
-(`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
-a decided threat plan gets its escalation clock, a `countdown` becomes a clock
-tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
+the truth itself (only once decided — a "truth" reveal of a plan still waiting
+for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
+(`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
+correction or decision of the same id is laid on first, so a truth changed or
+decided and revealed in one beat is the one the ledger and Lore both state,
+issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
+a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
+running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
+by a GM's Retire or retired as another, takes its clock with it —
+`retirePlanClock`, issue #362 AC10), a `countdown` becomes a clock
+tied to its plan (or a new mystery) and offers the GMs a scene challenge —
+once a challenge holds it as its tension clock it is the challenge's, and the
+plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
+#362 AC09) — and
 what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
-is marked played whatever the sidecar says — Phase 3; an enemy or danger the
+is marked played whatever the sidecar says (put first, so the four-reveal cap
+never cuts it, issue #362 AC08) — and a plan clock whose trigger
+vignette is not written (the X-Card, no key, a failed call, an empty reply)
+goes back one short of full, its step still owed for the next price
+(`narrateClockAdvancement`'s `finally` → `secrets.rearmUnplayedPlanClock`,
+issue #362 AC08) — Phase 3; an enemy or danger the
 prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan
 (`planNarratedThreat`: Character Role, Goal and Disposition rolled once, no
 truth, so the next narration decides it), unless one of its names is already
-planned or it names a PC; and a plan answered `sameAs` — the narrator's say
+planned or it names a PC (a person's titles aside, and a title alone only ever
+the same title: "the Captain" is neither Captain Reyes's agenda nor the PC
+Captain Ryn — `secrets.planIsAbout`, issue #362 AC12); and a plan answered `sameAs` — the narrator's say
 that a subject it was asked to decide is one already planned, shown to it
 under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
 `extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps
 the other name in `aliases` (read by `secrets.subjectNames` and
-`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
+`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); so
+does a waiting plan decided by its id under the name of a subject another plan
+already has (`joinedByName`, issue #362 AC36 — it became a second plan, with a
+truth and a clock of its own); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
-entries (`retractSupersededNarrations`);
+entries (`retractSupersededNarrations`) — and a plan clock it paced: the pacing
+is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
+the narration back — a supersede, or the X-Card's pause write — runs the clock
+again at its fill from before, at most one short of full, the step it played
+owed again (`planClockPacing.js`; a burned price's plan clock is put back one
+short of full and its vignette struck by that id, issue #362 AC33);
 each write stamped with the narration's id, which the X-Card's
-`undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
+`undoNarrationEntries` takes back — a plan keeps one version a narration,
+however often that narration writes it (decision, clock link, each reveal, its
+capture's link), so the version before it is never pushed off the three-deep
+history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute
@@ -912,7 +1020,16 @@ X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
 and the same `narrationId`) for the ring. Off the canonical GM the sidecar is still stripped from the
 prose and no audit runs; the side-data is relayed to the canonical GM
-(`narrator.sidecar`, issue #286 D2 — see "Where each call runs").
+(`narrator.sidecar`, issue #286 D2 — see "Where each call runs"), which takes
+no plan write by id from it (issue #362 D2, the maintainer's answer A — plan
+ids are public, so a hand-made relay could reveal or rewrite a plan): its
+`reveals`, and its `plans` but the answers to its own plan requests (their
+`sameAs` taken off), are dropped; `openQuestions`, `newThreats` and
+`countdown` stand; the step a clock vignette or a chosen complication was made
+to play rides apart (`forced`, with its `clockId` or complication scope) and
+stands only as the canonical GM would force it for that cause
+(`standingForcedReveals` — the clock still full, its plan's next step; the
+scene's complication step), so a co-GM's vignette still paces its clock.
 
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class
@@ -1051,7 +1168,10 @@ no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
 frame's location by the same ladder, else the current location when the
 frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
-the scene id).
+the scene id) — save a hidden plan's revealed truth, marked `revealOf` (its
+plan's id) by the sidecar apply: the reveal filed it as Lore already
+("Threat: the escort"), and archived again it was two entries (issue #362
+AC37).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,
@@ -1247,7 +1367,13 @@ Addressed:
   reversals ("gave up", "turned against", "fell out") and a dis- / un- /
   mis- / non- form of one of the detail's own words around them ("Trusted
   the crew, then distrusted them"); an exact restatement still dedupes
-  (issue #347 residual TIER-DETAIL-NEGATION-LIST).
+  (issue #347 residual TIER-DETAIL-NEGATION-LIST). A new detail that holds a
+  card line's words and says more after them is kept: it repeats the line
+  only when all it adds is neutral (the entity's name or role, a pronoun,
+  "still", "yet") — "Owes the Syndicate a debt she means to settle by
+  selling out the crew" was taken for a repeat of "Owes the Syndicate a
+  debt", written nowhere and, at scene end, marked migrated (issue #362
+  AC20). A shorter detail the card line already holds is still a repeat.
 
 Reaffirmed as deliberate (decisions.md → "Narrator-context reaffirmations"):
 - **Frame applies as an unvalidated full replacement** — the broadened

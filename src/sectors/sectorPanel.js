@@ -312,6 +312,15 @@ async function createSector(sector) {
   try {
     return await buildAndStoreSector(sector, campaignState);
   } catch (err) {
+    // Once the world has stored the sector the run is done: what failed after
+    // it takes nothing back. The rollback deleted every Actor, the Scene and
+    // the Sector Record of a stored, active sector, and the retry found it
+    // "already stored" and made none of them again (issue #362 AC26).
+    const stored = findStoredSector(sector?.id ?? null);
+    if (stored) {
+      console.warn(`${MODULE_ID} | sector creation: "${stored.name}" is stored; a step after the store failed (nothing taken back):`, err?.message ?? err);
+      return stored;
+    }
     await rollBackSectorCreation(sector, campaignState, listedBefore).catch(rollbackErr =>
       console.warn(`${MODULE_ID} | sector creation: taking back the failed run's documents failed:`, rollbackErr?.message ?? rollbackErr));
     throw err;
@@ -332,8 +341,9 @@ function snapshotEntityLists(campaignState) {
  * the working copy's id lists (and the PCs' unmarked bond Items its
  * connection made), and the Sector Record journals and Scenes flagged with
  * its id — the sector is not stored (runSectorCreationPipeline runs only for
- * a sector the campaign does not hold), so every one of them is a failed
- * run's. Best effort: each delete is tried, a refused one is logged.
+ * a sector the campaign does not hold, and createSector calls this only while
+ * the run has not stored it — issue #362 AC26), so every one of them is a
+ * failed run's. Best effort: each delete is tried, a refused one is logged.
  *
  * @param {Object} sector
  * @param {Object} campaignState — the failed run's working copy
@@ -434,10 +444,16 @@ async function buildAndStoreSector(sector, campaignState) {
     stubs,
   }, campaignState);
 
-  await ChatMessage.create({
-    content: formatSectorCard(stored),
-    flags: { [MODULE_ID]: { sectorCreated: true, sectorId: stored.id } },
-  });
+  // The sector is stored: its card is a report of it, not a step of it — a
+  // refused card leaves the sector as created (issue #362 AC26).
+  try {
+    await ChatMessage.create({
+      content: formatSectorCard(stored),
+      flags: { [MODULE_ID]: { sectorCreated: true, sectorId: stored.id } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorPanel: the "Sector Created" card for "${stored.name}" could not be posted (the sector is stored):`, err?.message ?? err);
+  }
 
   ui.notifications.info(`Sector "${stored.name}" created.`);
   return stored;

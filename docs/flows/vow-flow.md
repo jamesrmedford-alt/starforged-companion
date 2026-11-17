@@ -147,7 +147,13 @@ posted from the presser's client, so a crewmate swore another player's vow,
 their momentum and oath scene, issue #338 D1; a vow no character holds any
 more is not sworn: the card closes, `vowGone`, and the presser and the GMs
 are told — it rolled the momentum and oath scene for a deleted vow,
-known-issues SWEAR-ROLL-VOW-GONE), a **connection
+known-issues SWEAR-ROLL-VOW-GONE; the swear reads the vow as it stands on the
+sheet at the press, by the card's `vowId`, and names it by that id — the
+sheet's **+ Vow** creates the Item as "Vow" and only then opens it to be
+named, so a swear built from the card's `vowName` was "Swear an iron vow:
+Vow.", issue #362 AC23 / AC14; a card posted for an Item still named "Vow" is
+worded for a vow still to be named — no name, no rank's stakes — and its
+rewards are proposed for no name), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
@@ -323,12 +329,16 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
   open expedition's or scene challenge's row links or unlinks it (🔗 — an
   expedition the move pipeline began, which has no creation card to link it
-  on). The canonical GM checks the vow is open as the sheets stand
+  on). The row's choice survives another client's re-render of the panel
+  until its 🔗 is pressed (`_replaceHTML` carries it by track — issue #362
+  AC63: it went back to the stored link, and the press linked nothing), and a
+  🔗 pressed with "— no vow —" on a track that serves none is said on the
+  presser's screen and sends nothing. The canonical GM checks the vow is open as the sheets stand
   (`resolveVowChoice`; refused `no-vow`, said first on the presser's screen,
   since a relayed refusal reaches no player) and stores **`linkedVowId`** (the
   vow's id across copies — canonical) and **`linkedVowName`** (the name [4j]
-  and the fight path read). A fight's link stays its threshold card's (a
-  name) and is not changed on its row.
+  reads; a won fight's payoff reads the id first, issue #362 AC46). A fight's
+  link stays its threshold card's (a name) and is not changed on its row.
 - **The Session panel's "What's open"** (`ui/sessionPanel.js`): the open vows
   (one per vow, with rank, boxes, countdown clock and holders), the open
   tracks with the vow each serves (`trackVowName`, by id first) and a scene
@@ -344,8 +354,15 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 **The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
 asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an
 Action + Theme, a `vow` plan about the vow by its stable `vowId` — the swear
-passes the inciting card's message id); the scene's sidecar `plans` decides
-it into the GM-only Secrets journal (`secrets.applyPlanSideData`). No scene
+passes the inciting card's message id, and a sheet-made vow's ⚔ Swear it
+(roll) its card's `vowId`: the forced post's `forcedMoveTargetId`
+(`swearVow.buildSwearMovePostForName`), which the pipeline's swear branch
+checks names a vow a PC holds and hands on (`movePipeline.swornVowId` — it
+went by name alone, so a reworded vow lost its plan, issue #362 AC14); a
+typed swear with no vow Item behind it stays name-only); the scene's sidecar `plans` decides
+it into the GM-only Secrets journal (`secrets.applyPlanSideData` — a request
+about a subject that already has a plan, the same vow sworn again, files no
+second one, issue #362 AC14). No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
 plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the
@@ -353,7 +370,13 @@ scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
 `sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
 Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
 `vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
-`narrationInputFrom` carries to the narration.
+`narrationInputFrom` carries to the narration. The plan closes with its vow
+(issue #362 D4): a copy completed — fulfilled, forsaken, closed on the sheet —
+resolves it once no copy of the vow is open, its last copy deleted retires it
+(the canonical GM's `updateItem` / `deleteItem` hooks,
+`secrets.registerPlanSubjectHooks` → `closePlansAbout`); the fulfil
+narration still has it in play to reveal its end (`skeletons.planInPlay` by
+its `endingTrackIds`).
 
 ## 4. Fulfilment
 
@@ -395,7 +418,10 @@ vow's linked connection by name alone, `strict` — a link severed or renamed
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
 bonded or active connection, DEEPEN-LINK-FALLBACK) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
-weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
+weak = reduced/with-a-string, miss = lost; one-time via `reward.status`; the
+outcome it was granted at kept as `reward.grantedAt`, so a weak-hit win burned
+or improved to a strong hit is paid the difference once —
+`upgradeLinkedVowReward`, issue #362 D7).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**

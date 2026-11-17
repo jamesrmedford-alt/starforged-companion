@@ -79,10 +79,10 @@ const SECTIONS = Object.freeze([
       'official, administrator or governing figure for a settlement whose Authority is none or lawless.\n' +
       'CAST DISCIPLINE — reuse before you invent: when a scene needs a character to fill a role (an official, a ' +
       'vendor, a pilot, a fixer, a guard, a witness, a contact, a voice on the comm), first decide whether an ' +
-      'established character — one of the people listed for the active sector, a player character, or anyone ' +
-      'already in the scene — can plausibly fill it, and if so use them by name. Introduce a new named character ' +
-      'only when none can; a new one belongs to the active sector, fits its authority and troubles, and is given ' +
-      'enough substance to recur.' },
+      'established character — one of the people listed for the active sector or with no sector of their own, a ' +
+      'player character, or anyone already in the scene — can plausibly fill it, and if so use them by name. ' +
+      'Introduce a new named character only when none can; a new one belongs to the active sector, fits its ' +
+      'authority and troubles, and is given enough substance to recur.' },
   { id: 'entities', heading: 'RECORDED PEOPLE, PLACES AND SHIPS',
     intro: 'One card for each. Keep every one consistent with its card: do not reassign a role or a goal, change ' +
       'pronouns or disposition, or invent a history that contradicts it. NARRATOR-ADDED lines are details earlier ' +
@@ -242,13 +242,36 @@ function sectorUnit(sector, entities) {
     .map(e => `${e.name} (${[e.record.type, e.record.status].map(oneLine).filter(Boolean).join(', ')})`);
   if (sites.length) lines.push(`Charted sites: ${sites.join('; ')}`);
 
+  lines.push(...peopleLines(inSector.filter(e => e.type === 'connection')));
+  return unit(`sector:${sector.id}`, 'sectors', lines.join('\n'), { label: oneLine(sector.name) });
+}
+
+/** The People line and the Lost connections line of a roster — a lost connection is never cast to reuse. */
+function peopleLines(people) {
   const person = (e) => `${e.name}${e.record.role ? ` — ${oneLine(e.record.role)}` : ''}`;
-  const people = inSector.filter(e => e.type === 'connection');
   const cast = people.filter(e => e.record.active !== false).map(person);
   const lost = people.filter(e => e.record.active === false).map(person);
-  if (cast.length) lines.push(`People: ${cast.join('; ')}`);
-  if (lost.length) lines.push(`Lost connections (the bond with the crew is broken — not cast to reuse as friends): ${lost.join('; ')}`);
-  return unit(`sector:${sector.id}`, 'sectors', lines.join('\n'), { label: oneLine(sector.name) });
+  return [
+    cast.length ? `People: ${cast.join('; ')}` : '',
+    lost.length ? `Lost connections (the bond with the crew is broken — not cast to reuse as friends): ${lost.join('; ')}` : '',
+  ].filter(Boolean);
+}
+
+/**
+ * The people recorded with no sector of their own, after the sectors. An NPC
+ * the story makes in play — a confirmed draft, Make a Connection's
+ * auto-create — is filed with no `sectorId` (connection.js: "a narrator-named
+ * NPC with no charted home"); the per-beat ACTIVE SECTOR roster counts them
+ * in the active sector's cast, and the reuse rule above points at this list
+ * too, so the cast the narrator reuses from is not cut down to the sector
+ * generator's own NPCs (issue #362 AC29).
+ */
+function noSectorPeopleUnit(entities) {
+  const lines = peopleLines(entities.filter(e => e.type === 'connection' && !e.sectorId).sort(byId));
+  if (!lines.length) return null;
+  // `order` sorts it after every sector's unit (which have none — sortedUnits).
+  return unit('people:no-sector', 'sectors', ['#### People with no sector of their own', ...lines].join('\n'),
+    { order: '~' });
 }
 
 /** The threats not resolved, each with the severity it is read as (worldJournal.js getActiveThreats' rule). */
@@ -297,6 +320,21 @@ function loreUnits(campaignState) {
 }
 
 /**
+ * A stored session number, or NaN for none. The mint keeps an unbegun
+ * session's summary with `sessionNumber: null` (its number passes to the next
+ * session — LAST SESSION, not "Session 4"), and a Session Log page may hold
+ * null too; `Number(null)` is 0, a finite number, so such a summary read
+ * "Session 0" (issue #362 AC71).
+ *
+ * @param {*} value
+ * @returns {number}
+ */
+function sessionNumberOf(value) {
+  if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return NaN;
+  return Number(value);
+}
+
+/**
  * Earlier sessions' summaries — the newest SNAPSHOT_SESSION_SUMMARIES before
  * this one, oldest first: the summary the last mint kept (LAST SESSION,
  * `previousSessionSummary`) and the "Story so far" each session's Session Log
@@ -310,13 +348,17 @@ function memoryUnits(campaignState, { progressTracks = [], summaries = true } = 
     for (const { entry } of listWorldJournalEntries('sessionLog')) {
       const text = oneLine(entry.summary?.narrative);
       if (!entry.sessionId || entry.sessionId === current || !text) continue;
-      bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: Number(entry.sessionNumber), text });
+      bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: sessionNumberOf(entry.sessionNumber), text });
     }
     const prev = campaignState?.previousSessionSummary;
     if (prev?.sessionId && prev.sessionId !== current && oneLine(prev.text)) {
-      bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: Number(prev.sessionNumber), text: oneLine(prev.text) });
+      // The session that closed last — the newest earlier one, numbered or not.
+      bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: sessionNumberOf(prev.sessionNumber), text: oneLine(prev.text), last: true });
     }
-    const numbered = (s) => (Number.isFinite(s.number) ? s.number : -1);
+    // An unnumbered summary of the session that closed last is still the
+    // newest: ranked as the oldest, it was the one the newest three left out.
+    const LAST_UNNUMBERED = 999998;   // after every numbered session, before 'memory:open'
+    const numbered = (s) => (Number.isFinite(s.number) ? s.number : (s.last ? LAST_UNNUMBERED : -1));
     const newest = [...bySession.values()]
       .sort((a, b) => (numbered(b) - numbered(a)) || String(b.sessionId).localeCompare(String(a.sessionId)))
       .slice(0, SNAPSHOT_SESSION_SUMMARIES);
@@ -370,7 +412,7 @@ function planUnits() {
 export function collectWorldUnits(campaignState, { progressTracks = [], summaries = true, include = {} } = {}) {
   const entities = safely('recorded entities', () => recordedEntities(campaignState));
   return [
-    ...safely('sectors',  () => (campaignState?.sectors ?? []).map(s => sectorUnit(s, entities))),
+    ...safely('sectors',  () => [...(campaignState?.sectors ?? []).map(s => sectorUnit(s, entities)), noSectorPeopleUnit(entities)]),
     ...safely('entity cards', () => entities.map(entityUnit)),
     ...(include.factions === false ? [] : safely('factions', () => factionUnits(campaignState))),
     ...(include.threats  === false ? [] : safely('threats',  () => threatUnits())),

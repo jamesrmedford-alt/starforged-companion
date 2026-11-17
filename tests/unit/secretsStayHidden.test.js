@@ -24,14 +24,17 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 
 /** The modules that may import the store or its record model, and why. */
 const STORE_READERS = new Map([
+  ['src/entities/connection.js', 'a deleted NPC card\'s agenda plan, retired with the card (issue #362 D10 — the plans\' subject ids are read, the plan retired; no plan field reaches a card)'],
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
-  ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
+  ['src/factContinuity/sceneLifecycle.js', 'an ended scene\'s unanswered mysteries retired (retireSceneMysteries — a write, no read; issue #362 D4)'],
+  ['src/index.js', 'the vow Items\' end hooks registered (registerPlanSubjectHooks — wiring, no read; issue #362 D4); the plans-in-play socket, the table view\'s setting and its sync registered (wiring, no read; issue #362 D1)'],
+  ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story (on a player\'s client asked of the canonical GM — requestPlansInPlay, issue #362 D1)'],
   ['src/narration/worldSnapshot.js', 'the narrator\'s world snapshot (issue #357): every active plan, rendered as prompt text for the cached block — stored by worldSnapshotStore.js on a page of the GM-only Secrets journal, read by narrator.js alone'],
   ['src/oracles/oracleConsult.js', 'a yes/no about a planned subject: its truth sets the odds on the GM\'s client, sent to Claude, never to a card; a player\'s client is sent the odds word only (issue #354 P2-31)'],
   ['src/session/swearVow.js', 'a vow target\'s agenda plan (planNpcAgenda — a write, no read)'],
   ['src/ui/entityPanel.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
-  ['src/ui/progressTracks.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
-  ['src/ui/sessionPanel.js', 'the "What\'s open" list (issue #353 R4): a mystery\'s question while its truth is unrevealed, a revealed threat\'s or NPC agenda\'s subject and wants — no other plan field (sessionPanelOpenThreads.test.js)'],
+  ['src/ui/progressTracks.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects); a completed or removed track\'s plan closed (closePlansAbout — a write, no read; issue #362 D4)'],
+  ['src/ui/sessionPanel.js', 'the "What\'s open" list (issue #353 R4): the table\'s view the canonical GM keeps (plansShownToTable, issue #362 D1) — a mystery\'s question while its truth is unrevealed, a revealed threat\'s or NPC agenda\'s subject and wants; the panel reads no plan (sessionPanelOpenThreads.test.js)'],
   ['src/world/worldJournalPanel.js', 'the GM-only Secrets section'],
 ]);
 const MODEL_READERS = new Map([
@@ -86,16 +89,31 @@ describe('issue #353 — the hidden plans stay hidden', () => {
     }
   });
 
-  it('the Session panel reads a plan\'s question, subject and wants only — and each only when shown (issue #353 R4)', () => {
+  it('the Session panel reads no plan — the table\'s view the canonical GM keeps, a plan\'s question, subject and wants only, each only when shown (issue #353 R4, #362 D1)', () => {
     const panel = byFile.get('src/ui/sessionPanel.js');
-    // No hidden field is named anywhere in the panel.
+    // No hidden field is named anywhere in the panel, and it reads no plan.
     expect(panel.code).not.toMatch(/\.(?:truth|knows|clues|escalation|resolutions|oracleSeeds)\b/);
-    const rows = resolveFunctionSource(panel, 'revealedPlanRows') ?? '';
-    expect(rows).toMatch(/if \(!skeletonsEnabled\(\)\) return out;/);
-    expect(rows).toMatch(/plan\.kind === "mystery" && plan\.truthRevealed !== true && plan\.question/);
-    expect(rows).toMatch(/\(plan\.kind === "threat" \|\| plan\.kind === "npcAgenda"\) && plan\.truthRevealed === true && plan\.wants/);
-    // The plans reach the panel through this one reader.
-    expect(panel.code.match(/listSkeletons\(/g)).toHaveLength(1);
+    expect(panel.code).not.toMatch(/listSkeletons|getSkeleton|requestPlansInPlay/);
+    expect(resolveFunctionSource(panel, 'revealedPlanRows') ?? '').toMatch(/return plansShownToTable\(\);/);
+    // The view is the store's one rule over the plans: R4's two rows, nothing else.
+    const store = byFile.get('src/world/secrets.js');
+    const view = resolveFunctionSource(store, 'tableViewOf') ?? '';
+    expect(view).toMatch(/plan\.kind === "mystery" && plan\.truthRevealed !== true && plan\.question/);
+    expect(view).toMatch(/\(plan\.kind === "threat" \|\| plan\.kind === "npcAgenda"\) && plan\.truthRevealed === true && plan\.wants/);
+    expect(view).not.toMatch(/\.(?:truth|knows|clues|escalation|resolutions|oracleSeeds|id)\b/);
+    expect(resolveFunctionSource(store, 'plansShownToTable') ?? '').toMatch(/if \(!skeletonsEnabled\(\)\) return/);
+    // Written by the canonical GM alone.
+    expect(resolveFunctionSource(store, 'syncPlansTableView') ?? '').toMatch(/if \(!isCanonicalGM\(\)\) return/);
+  });
+
+  it('a player\'s client reads no plan, and asks the canonical GM only for the decided ones in play (issue #362 D1)', () => {
+    const store = byFile.get('src/world/secrets.js');
+    expect(resolveFunctionSource(store, 'secretPages') ?? '').toMatch(/if \(globalThis\.game\?\.user\?\.isGM !== true\) return \[\];/);
+    // The canonical GM answers an ask with the plans in play, projected: no rolls, re-roll, clock or provenance.
+    const answer = resolveFunctionSource(store, 'plansInPlayFor') ?? '';
+    expect(answer).toMatch(/\.filter\(r => r\.truth\)/);
+    expect(answer).not.toMatch(/oracleSeeds|reroll|clockId|createdFrom/);
+    expect(resolveFunctionSource(store, 'registerPlansInPlaySocket') ?? '').toMatch(/!isCanonicalGM\(\)\) return;/);
   });
 
   it('the world snapshot — its builder and its store — is read by the narrator\'s request alone (issue #357)', () => {

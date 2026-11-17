@@ -145,7 +145,10 @@ async function runUpgradeStep(step) {
     }
     case "tensionClocks": {
       const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id));
+      // The clocks the reverted price filled: a hidden plan's goes back to one
+      // short of full, its trigger undone (issue #362 AC33).
+      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id),
+        { triggered: step.clocks.filter(c => c.triggered === true).map(c => c._id) });
       return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
     case "vowClocks": {
@@ -334,7 +337,7 @@ export function upgradeStepRecord(f) {
     // rewound clock's trigger vignette by (retryUpgradeStep), and the
     // resolution upgraded, which the struck vignette is stamped with (issue
     // #347 D2).
-    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind),
+    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null, ...(c.triggered === true ? { triggered: true } : {}) })), kind: upgradeKind(f.kind),
       ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
@@ -499,7 +502,10 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
   // 1. Rewind clock advances
-  const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
+  // Each with whether this price filled it: a hidden plan's clock it filled
+  // is put back one short of full, its trigger undone (issue #362 AC33).
+  const tension = advanced.filter(c => c.type === "tension" && c._id)
+    .map(c => ({ _id: c._id, name: c.name ?? null, ...(c.triggered === true ? { triggered: true } : {}) }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
     .map(c => ({ actorId: c.actorId, itemId: c.itemId, vowId: c.vowId ?? null, name: c.name ?? null }));
   // The clocks whose landed rewind takes them out of their triggered state:
@@ -514,7 +520,9 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // and the resolution upgraded — what the struck vignette is stamped with
   // (issue #347 D2).
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
-    for (const c of tension) reverted.push(`${c.name} clock rewound`);
+    // A clock's name is text: the narrator's countdown label, a scene
+    // challenge's, a GM's `!clock` — never markup (issue #362 AC83).
+    for (const c of tension) reverted.push(`${escapeHtml(c.name)} clock rewound`);
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
@@ -534,7 +542,7 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     for (const v of entries) {
       if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
       said.add(vowOf(v));
-      reverted.push(`${v.name} clock rewound`);
+      reverted.push(`${escapeHtml(v.name)} clock rewound`);
     }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
@@ -699,6 +707,26 @@ export async function supersedePriceCards(resolutionId, kind) {
 }
 
 /**
+ * The Pay the Price a move paid at its roll, as its card shows it — what an
+ * upgraded outcome that pays the price too keeps (a Battle or Clash burned to
+ * a weak hit): its narration is seeded with it, as the pipeline seeds the
+ * rolled outcome's (issue #362 AC05; the upgraded resolution was told no
+ * price). Null when no price card of the move stands.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @returns {string|null}
+ */
+export function standingPriceOf(resolutionId) {
+  if (typeof resolutionId !== "string" || !resolutionId) return null;
+  const card = allMessages().find(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.payThePriceCard === true && !f.priceSuperseded && f.oracleMemory?.resolutionId === resolutionId;
+  });
+  const answer = card?.flags?.[MODULE_ID]?.oracleMemory?.answer;
+  return typeof answer === "string" && answer.trim() ? answer : null;
+}
+
+/**
  * The reverted price leaves the narrator's memory: its card's `oracleMemory`
  * (stamped with the move's `resolutionId`, index.js postMovePayThePriceCard)
  * stood in RECENT ORACLE RESULTS — "the dice established these outcomes …
@@ -800,8 +828,11 @@ async function undoSupersededPlans(ids, label) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
   try {
-    const { removeClocksMadeBy } = await import("../clocks/clocks.js");
+    const { removeClocksMadeBy, restoreClocksPacedBy } = await import("../clocks/clocks.js");
     await removeClocksMadeBy(ids);
+    // A plan clock it paced goes back one short of full, the step it played
+    // put back unplayed above (issue #362 AC33).
+    await restoreClocksPacedBy(ids);
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's countdown clocks could not be removed:`, err?.message ?? err);
   }
@@ -885,12 +916,30 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
     const { vignetteClockId, triggerVignetteInFlight, noteRewindDuringVignette } = await import("../clocks/payThePriceClocks.js");
+    // A hidden plan's clock whose trigger vignette paced it is undone by that
+    // vignette, by its narration (`pacedBy`, clocks.js revertTensionClocksForBurn):
+    // the clock may have triggered before in the session, and the newest of
+    // its vignettes need not be this price's (issue #362 AC33).
+    const paced = new Map();
+    for (const c of clocks) {
+      const id = vignetteClockId(c);
+      if (id && typeof c?.pacedBy === "string" && c.pacedBy) paced.set(id, c.pacedBy);
+    }
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
     const cards = [];
     for (const clockId of clockIds) {
+      if (paced.has(clockId)) {
+        const card = newestFirst.find(m => {
+          const f = m?.flags?.[MODULE_ID];
+          return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
+            && f.narrationId === paced.get(clockId) && f.xCarded !== true && f.burnSuperseded !== true;
+        });
+        if (card) cards.push(card);
+        continue;
+      }
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
       // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).
@@ -1166,17 +1215,12 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
     // Its choice cards no longer say to burn or improve first
-    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT). A result still held for Burn /
+    // Improve / Keep was kept before the later move was rolled (movePipeline
+    // rollMove, batch/driver.js rollRound — issue #362 D5): its keep here,
+    // after the move's record and un-awaited, narrated it after the later
+    // move (AC32). One whose keep the world refused keeps its Keep button.
     await dropUpgradeHints(f.resolutionId ?? null);
-    // A result still held for Burn / Improve / Keep (issue #354 P2-10) is
-    // kept: the free-flow pipeline keeps it before the roller's next line is
-    // read (index.js), so this is the later move that did not come through
-    // it — a Batch Mode round's entry. Not awaited.
-    if (f.awaitingUpgrade?.open) {
-      void import("./heldResult.js")
-        .then(({ keepHeldResult }) => keepHeldResult(card, "later"))
-        .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after a later move:`, err?.message ?? err));
-    }
   }
 }
 
@@ -1393,12 +1437,13 @@ export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt
  * @param {Actor} args.actor — the upgrading PC
  * @param {Object} args.campaignState — the upgrade's working copy
  * @param {"burn"|"improve"} args.kind
- * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ applied: string[], notApplied: string[], failures: Object[] }>} — `failures`:
+ *   the applier's refused writes, as payoff steps the caller puts on its card
  */
 export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, state, actor, campaignState, kind }) {
   if (typeof applyEffects !== "function") {
     console.debug(`${MODULE_ID} | ${kind}: no effects applier registered — the upgraded outcome's other effects are not applied.`);
-    return { applied: [], notApplied: [] };
+    return { applied: [], notApplied: [], failures: [] };
   }
   try {
     const res = await applyEffects({
@@ -1414,10 +1459,12 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
-    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
+    // The upgrade's own writes the world refused (its arrival, an uncharted
+    // destination's record): steps for its payoff card (issue #362 AC49).
+    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [], failures: Array.isArray(res?.failures) ? res.failures : [] };
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
-    return { applied: [], notApplied: ["the upgraded result's other effects"] };
+    return { applied: [], notApplied: ["the upgraded result's other effects"], failures: [] };
   }
 }
 

@@ -26,6 +26,7 @@
 import { applyMeterChanges, readCharacterSnapshot, invalidateActorCache } from "../character/actorBridge.js";
 import { markUnprepared, crewUnpreparedNote, isUnprepared } from "./sufferExecutor.js";
 import { assetMatchMove } from "./sceneChallenge.js";
+import { topLevelObjects } from "./abilityScanner.js";
 
 const MODULE_ID    = "starforged-companion";
 const HAIKU_MODEL  = "claude-haiku-5-5";
@@ -463,20 +464,39 @@ export async function extractRiders({ abilities, moveName, apiKey, inFight = fal
     return [];
   }
 
-  let parsed;
-  try {
-    const json = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
-    parsed = JSON.parse(json);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | consequenceRiders: extraction parse failed:`, err?.message ?? err);
+  // Every complete top-level object of the reply, as the ability scan reads
+  // its own (issue #354 P2-25): Haiku sometimes answers one object per
+  // ability, or adds a remark after the object that holds a brace, and the
+  // old "first { to last }" slice threw on both — every asset effect of the
+  // move was dropped behind a warning (issue #362 AC69). Each object's
+  // `abilities`, or the object itself when it is one; an ability's first
+  // entry wins, so a repeated one is not applied twice.
+  const entries = [];
+  let parsedAny = false;
+  for (const chunk of topLevelObjects(String(raw ?? ""))) {
+    let parsed;
+    try {
+      parsed = JSON.parse(chunk);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | consequenceRiders: one object of the extraction reply is not JSON (${err?.message ?? err}) — skipped.`);
+      continue;
+    }
+    parsedAny = true;
+    if (Array.isArray(parsed?.abilities)) entries.push(...parsed.abilities);
+    else if (parsed && typeof parsed.key === "string") entries.push(parsed);
+  }
+  if (!parsedAny) {
+    console.warn(`${MODULE_ID} | consequenceRiders: extraction parse failed — no JSON object in the reply.`);
     return [];
   }
 
   const byKey = new Map(list.map(a => [a.key, a]));
   const out = [];
-  for (const ab of parsed?.abilities ?? []) {
+  const seen = new Set();
+  for (const ab of entries) {
     const meta = byKey.get(ab?.key);
-    if (!meta) continue;
+    if (!meta || seen.has(meta.key)) continue;
+    seen.add(meta.key);
     const riders = (Array.isArray(ab.riders) ? ab.riders : [])
       .map(r => normaliseRider(r, meta.assetName))
       .filter(Boolean);

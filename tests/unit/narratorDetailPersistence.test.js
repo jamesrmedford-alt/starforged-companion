@@ -504,7 +504,13 @@ describe('a session carries into the next one (C3, C4)', () => {
     const idle = new Date(Date.now() - 5 * 3_600_000).toISOString();
     table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: idle });
     table.world.setSetting('sessionActivity', { sessionId: 'sess-1', at: idle });
-    await narrateMove('I wake up.');
+    // Over: the chat gate treats it as not begun — the line is not narrated,
+    // and its author is told to Begin a Session (issue #362 D14).
+    const from = table.claude.calls.length;
+    await table.client('pl-1').chat('I wake up.', { speaker: { actor: 'pc-pat' } });
+    await table.settle();
+    expect(table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL)).toEqual([]);
+    expect(table.cards(f => f.sessionGateNotice).at(-1)?.content).toMatch(/Begin a Session/);
     expect(world().lastSessionTimestamp).toBe(idle);
     expect(table.world.getSetting('sessionActivity')).toEqual({ sessionId: 'sess-1', at: idle });
   });

@@ -207,5 +207,76 @@ describe('a portrait\'s one regeneration is claimed before its image is bought',
     expect(landed).toMatchObject({ regenerationUsed: true, locked: true });
     expect(record().portraitId).toBe(landed._id);
     expect(storedAsset(first._id)?.superseded).toBe(true);
+    expect(storedAsset(first._id)?.regenerationClaim ?? null, 'its claim is cleared').toBeNull();
+  }, 30_000);
+});
+
+// Issue #362 AC56 REGEN-CLAIM-STRANDED-BY-RELOAD — the claim was a bare
+// `regenerationUsed`, given back only by the call that set it: a page
+// reloaded (its tab closed, its connection dropped) while the image was out
+// left the one regeneration spent with no image, and the next press locked
+// the first portrait for good. It now carries its owner, time and token, and
+// one a reload left does not stand — a first portrait's claim's rule.
+describe('issue #362 AC56 — a regeneration whose page was reloaded before its image came back is not spent', () => {
+  /** gm-1's Regenerate, whose image never comes back to its page. */
+  async function regenerationLeftByReload() {
+    const first = await generate();
+    expect(first?._id, 'a first portrait (setup)').toBeTruthy();
+    art.next = [{ hold: new Promise(() => {}) }];
+    const gm = table.client('gm-1');
+    const generator = await gm.import('../../src/art/generator.js');
+    gm.run(() => generator.regeneratePortrait('npc-vance', 'connection', record(), game.settings.get(MODULE_ID, 'campaignState'))).catch(() => {});
+    await vi.waitFor(() => expect(art.calls).toBe(2));
+    expect(storedAsset(first._id).regenerationUsed, 'the claim is on the stored portrait (setup)').toBe(true);
+    return first;
+  }
+
+  /** The first portrait, its regeneration claimed as a page left it. */
+  async function firstPortraitClaimed(claim) {
+    const first = await generate();
+    Object.assign(storedAsset(first._id), { regenerationUsed: true, ...(claim ? { regenerationClaim: claim } : {}) });
+    return first;
+  }
+
+  it('a claim this GM\'s own reloaded page left does not stand, at once: Regenerate makes the one regenerated portrait', async () => {
+    const first = await firstPortraitClaimed({ by: 'gm-1', at: Date.now(), token: 'tok-old' });
+    const landed = await regenerate('gm-1');
+    expect(landed, 'the regenerated portrait').toMatchObject({ regenerationUsed: true, locked: true });
+    expect(art.calls).toBe(2);
+    expect(record().portraitId).toBe(landed._id);
+    expect(storedAsset(first._id)?.superseded).toBe(true);
+  }, 30_000);
+
+  it('a claim made before claims carried an owner does not stand either', async () => {
+    await firstPortraitClaimed(null);
+    const landed = await regenerate('gm-1');
+    expect(landed, 'the regenerated portrait').toMatchObject({ regenerationUsed: true, locked: true });
+    expect(art.calls).toBe(2);
+  }, 30_000);
+
+  it('another GM\'s claim made a moment ago stands: no second image, and the portrait is not locked meanwhile', async () => {
+    const first = await firstPortraitClaimed({ by: 'gm-1', at: Date.now(), token: 'tok-gm1' });
+    expect(await regenerate('gm-2')).toBeNull();
+    expect(art.calls).toBe(1);
+    expect(storedAsset(first._id)).toMatchObject({ regenerationUsed: true, locked: false });
+    expect(record().portraitId).toBe(first._id);
+  }, 30_000);
+
+  // Last in the file: the reloaded page's call never settles, so it stays in
+  // flight in this process for the tests after it.
+  it('the page reloaded while the image was out: the next Regenerate still makes the one regenerated portrait', async () => {
+    const first = await regenerationLeftByReload();
+    // After the reload — ten minutes on, past any claim's lifetime.
+    const later = Date.now() + 10 * 60 * 1000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => later);
+    try {
+      const landed = await regenerate();
+      expect(landed, 'the regenerated portrait').toMatchObject({ regenerationUsed: true, locked: true });
+      expect(art.calls, 'its image was made').toBe(3);
+      expect(record().portraitId).toBe(landed._id);
+      expect(storedAsset(first._id)?.superseded).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   }, 30_000);
 });

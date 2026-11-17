@@ -120,6 +120,10 @@ async function openScene(campaignState, reason) {
   if ((campaignState.sceneTruths?.length ?? 0) > 0 || stateHasEntries) {
     await endScene(campaignState, { reason: 'implicit_due_to_new_scene' });
     ended = true;
+  } else if (replacing) {
+    // An empty scene replaced: its unanswered mysteries end with it, as
+    // endScene's do (issue #362 D4).
+    await retireEndedSceneMysteries(campaignState.currentSceneId);
   }
 
   const id = `sc-${randomSceneSuffix()}`;
@@ -211,8 +215,28 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   if (clearPacingOverride(campaignState)) fields.push('pacing');
 
   await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed, sceneId);
+  await retireEndedSceneMysteries(sceneId);
 
   return { ...counts };
+}
+
+/**
+ * The mysteries an ended scene posed and never answered leave play with it,
+ * their clocks too (issue #362 D4, decided A; secrets.js retireSceneMysteries)
+ * — every scene end: `!scene end`, End a Session, a new session's close-out,
+ * a scene a new one replaced. Canonical GM, as the scene lifecycle is.
+ * Fail-open: the scene end stands.
+ *
+ * @param {string|null} sceneId
+ */
+async function retireEndedSceneMysteries(sceneId) {
+  if (!sceneId) return;
+  try {
+    const { retireSceneMysteries } = await import('../world/secrets.js');
+    await retireSceneMysteries(sceneId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: the ended scene's mysteries were not retired:`, err?.message ?? err);
+  }
 }
 
 /**
@@ -295,8 +319,9 @@ function endedSceneRetractions(campaignState, latest, closed, sceneId = null) {
 /**
  * One scene truth leaving its scene (endScene): an entity's goes to its
  * generative tier; a scene-kind one to the place the scene happened at; the
- * rest — and a place-less scene truth — to World Journal Lore. Marks the
- * truth's `migratedTo`.
+ * rest — and a place-less scene truth — to World Journal Lore, save a hidden
+ * plan's revealed truth, which its reveal already filed there (`revealOf`,
+ * issue #362 AC37). Marks the truth's `migratedTo`.
  *
  * The truth's entry in the store is read right before each write and again
  * after it, while the store still holds the scene: endScene works on a copy,
@@ -351,6 +376,16 @@ async function migrateSceneTruth(truth, campaignState, placeOf, sceneId = null) 
       }
       if (settled()) return 'skipped';   // before the archive's write
     }
+  }
+  // A hidden plan's truth the narration revealed (secrets.js revealedTruthsOf
+  // marks it `revealOf`, the plan's id) is confirmed Lore already: the reveal
+  // filed it ("Threat: the escort"). Archived again here under "<subject>:
+  // <fact>", nothing tied the two — the same truth was two Lore entries,
+  // two of ESTABLISHED LORE's slots, and a GM's correction of one left the
+  // other (issue #362 AC37).
+  if (typeof truth.revealOf === 'string' && truth.revealOf) {
+    truth.migratedTo = { kind: 'worldJournalLore', revealOf: truth.revealOf };
+    return 'skipped';
   }
   const result = await safeArchiveSceneTruth(truth, campaignState);
   if (!result?.pageId) return 'skipped';

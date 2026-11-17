@@ -28,8 +28,10 @@ beforeEach(() => {
     ['player-1', { id: 'player-1', name: 'Sam', isGM: false, active: true, character: null }],
     ['player-2', { id: 'player-2', name: 'Ali', isGM: false, active: true, character: { id: 'pc-kira', name: 'Kira' } }],
     ['player-3', { id: 'player-3', name: 'Lee', isGM: false, active: true, character: null }],
+    // This client is the canonical GM, which posts a published reflection (issue #362 D13).
+    [game.user.id, { id: game.user.id, name: 'GM', isGM: true, active: true }],
   ]);
-  global.game.users = { get: (id) => users.get(id) ?? null, get contents() { return [...users.values()]; } };
+  global.game.users = { get: (id) => users.get(id) ?? null, get contents() { return [...users.values()]; }, [Symbol.iterator]: () => users.values() };
   game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: 'ses-1', characterIds: ['pc-kira', 'pc-dax'] });
   global.ChatMessage._reset();
 });

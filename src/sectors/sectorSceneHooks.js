@@ -582,16 +582,23 @@ export function handleCommandVehicleTokenReposition(tokenDoc, changes, options, 
  * an arbitrary point would be a different lie. See the ship-positioning
  * notes in docs/narrator/narrator-memory-architecture.md §8.5.
  *
- * Never throws; all failure paths log at debug and return null.
+ * Never throws; all failure paths log at debug and return null. `opts.report`,
+ * when given, gets `tokenStayed` when nothing moved: why — "no-anchor" (the
+ * record names no settlement or site: free text, a planet), "off" (the ship
+ * token or positioning setting), "no-scene", "no-token", "no-pin", "refused"
+ * (the Token's update) or "not-gm". The Set a Course card said "no sector-map
+ * pin marks it" for all of them (issue #362 AC53).
  *
  * @param {Object} position — the just-written position record (§20.2)
  * @param {Object} campaignState
+ * @param {{ report?: Object|null }} [opts]
  * @returns {Promise<TokenDocument|null>} the moved token, or null
  */
-export async function syncCommandVehicleTokenToPosition(position, campaignState) {
+export async function syncCommandVehicleTokenToPosition(position, campaignState, { report = null } = {}) {
+  const stayed = (why) => { if (report && typeof report === "object") report.tokenStayed = why; return null; };
   try {
     const plan = planTokenSync(position, campaignState);
-    if (!plan) return null;
+    if (plan.blocked) return stayed(plan.blocked);
     const { token, destX, destY } = plan;
     if (Number(token.x) === destX && Number(token.y) === destY) return token;
 
@@ -602,27 +609,28 @@ export async function syncCommandVehicleTokenToPosition(position, campaignState)
     return token;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | command-vehicle token sync failed:`, err?.message ?? err);
-    return null;
+    return stayed("refused");
   }
 }
 
 /**
  * Where the fiction→token sync would put the command-vehicle Token for a
  * position record: the sector Scene, the Token on it, and the coordinates of
- * the pin that anchors the record — or null when it would move nothing (no
- * pin anchors the record, the feature is off, no scene / token / pin). The
- * Scene is the position's sector's when known, else the active sector's
- * (scenes are flagged { sectorScene, sectorId } by sceneBuilder). A read.
+ * the pin that anchors the record — or `{ blocked }` naming why it would move
+ * nothing (syncCommandVehicleTokenToPosition's `tokenStayed` reasons: no pin
+ * anchors the record, the feature is off, no scene / token / pin). The Scene
+ * is the position's sector's when known, else the active sector's (scenes are
+ * flagged { sectorScene, sectorId } by sceneBuilder). A read.
  */
 function planTokenSync(position, campaignState) {
   const anchorId = position?.nearestSettlementId || position?.nearestLocationId || null;
-  if (!anchorId) return null;
-  if (!game.user?.isGM) return null;
+  if (!anchorId) return { blocked: "no-anchor" };
+  if (!game.user?.isGM) return { blocked: "not-gm" };
 
   try {
     const positioning = game.settings.get(MODULE_ID, "factContinuity.shipPositioning") !== false;
     const tokenAfford = game.settings.get(MODULE_ID, "factContinuity.shipTokenEnabled")  !== false;
-    if (!positioning || !tokenAfford) return null;
+    if (!positioning || !tokenAfford) return { blocked: "off" };
   } catch (err) {
     console.debug?.(`${MODULE_ID} | token sync: settings read failed:`, err?.message ?? err);
   }
@@ -633,16 +641,16 @@ function planTokenSync(position, campaignState) {
     s?.flags?.[MODULE_ID]?.sectorScene
     && (!sectorId || s.flags[MODULE_ID].sectorId === sectorId),
   );
-  if (!scene) return null;
+  if (!scene) return { blocked: "no-scene" };
 
   const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
   const token = Array.isArray(tokens)
     ? tokens.find(t => t?.flags?.[MODULE_ID]?.commandVehicle)
     : null;
-  if (!token) return null;
+  if (!token) return { blocked: "no-token" };
 
   const note = findSettlementNoteById(scene, anchorId);
-  if (!note) return null;
+  if (!note) return { blocked: "no-pin" };
   return { scene, token, destX: Number(note.x ?? 0), destY: Number(note.y ?? 0) };
 }
 
@@ -662,7 +670,7 @@ function planTokenSync(position, campaignState) {
 export function commandVehicleTokenSpotBeforeSync(position, campaignState) {
   try {
     const plan = planTokenSync(position, campaignState);
-    if (!plan) return null;
+    if (plan.blocked) return null;
     const x = Number(plan.token.x);
     const y = Number(plan.token.y);
     if (x === plan.destX && y === plan.destY) return null;   // the sync moves nothing

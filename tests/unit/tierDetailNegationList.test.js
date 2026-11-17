@@ -94,9 +94,11 @@ describe('a reversal phrased past the first list is never the same detail (issue
     expect(vexDetails()).toEqual([older]);
   });
 
+  // The card's line holds the prefixed word: a new detail that ADDS words
+  // after the card's is kept whatever they are (issue #362 AC20).
   it('control: a prefixed word around the detail that is no form of its own words reverses nothing', async () => {
-    seed(['Runs the lower docks']);
-    expect(await appendDetailToTier(vexRef(), 'Runs the lower docks, unarmed', 'sess-7', 7)).toBe(false);
-    expect(vexDetails()).toEqual(['Runs the lower docks']);
+    seed(['Runs the lower docks, unarmed']);
+    expect(await appendDetailToTier(vexRef(), 'Runs the lower docks', 'sess-7', 7)).toBe(false);
+    expect(vexDetails()).toEqual(['Runs the lower docks, unarmed']);
   });
 });

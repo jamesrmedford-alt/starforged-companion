@@ -60,7 +60,7 @@ summarised here. References to the Reference Guide use `RG p.NNN`.
   - *Burdens*: doomed, tormented, indebted
   - *Current vehicle*: battered, cursed
 - **Background vow** field on the sheet.
-- **Wounded** caps health at 4; **shaken** caps spirit at 3 (rulebook).
+- **Wounded** caps health at 4; **shaken** caps spirit at 3 — a house rule of this module, not the rulebook's (neither the play kit nor the vendored move texts set a cap; decisions.md → "Issue #362 D9").
 
 ### 1.3 Move catalogue (51 moves)
 
@@ -142,9 +142,9 @@ control; weak/miss = in a bad spot).
 | Lose Momentum | — | suffer −1/−2/−3 momentum (minor/serious/major). If at min (−6), apply to another suffer move or clear progress per rank |
 | Endure Harm | +health **or** +iron (whichever higher) | −1/−2/−3 health; at 0 also Lose Momentum by the remainder. Resist roll: strong → +1 health or +1 momentum • weak → trade or press on • miss → extra −1 health or Lose Momentum (−2); at 0 mark wounded/permanently harmed or roll the **mortal-wound d100** |
 | Endure Stress | +spirit **or** +heart (whichever higher) | Symmetric to Endure Harm against spirit; miss at 0 marks shaken/traumatized or rolls the **desolation d100** |
-| Companion Takes a Hit | +companion health | −1/−2/−3 companion health; resist analogously; **miss + match at 0 health → companion dies/destroyed; discard the asset** |
+| Companion Takes a Hit | +companion health | −1/−2/−3 companion health; at 0 also Lose Momentum by the remainder. Then, at 0 (or to test their resilience) roll +companion health: strong → +1 health • weak → if not at 0, Lose Momentum (−1) for +1 health, or press on • miss → extra −1 health or Lose Momentum (−2); at 0 out of action until given aid; **at 0 on a miss with a match on this roll → dead or destroyed; discard the asset** |
 | Sacrifice Resources | — | suffer −1/−2/−3 supply. At 0 mark unprepared (with every ally sharing the supply); a loss of resources while unprepared goes to a different suffer move |
-| Withstand Damage | +integrity | −1/−2/−3 integrity on the vehicle; at 0 apply the **vehicle-damage d100** by vehicle type (command / support / incidental); command vehicle destruction triggers Overcome Destruction |
+| Withstand Damage | +integrity | −1/−2/−3 integrity on the vehicle; at 0 also Lose Momentum by the remainder. Then, at 0 (or to resist the damage) roll +integrity: strong → +1 integrity (not battered) or +1 momentum • weak → if not battered, Lose Momentum (−1) for +1 integrity, or press on • miss → extra −1 integrity or Lose Momentum (−2); at 0 also a cost by vehicle type — command: battered or cursed, a module broken, a broken module destroyed, or the **vehicle-damage d100**; support: battered or the d100; incidental: the d100. Command vehicle destruction triggers Overcome Destruction |
 
 #### Threshold moves (3)
 
@@ -225,7 +225,7 @@ missing.
 | Rule | Status | Pathway |
 |---|---|---|
 | 5 stats read from actor | ✅ | `src/character/actorBridge.js:70-75` |
-| 3 condition meters read/written | ✅ | `src/character/actorBridge.js:78-202`; wounded caps health to 4, shaken caps spirit to 3 (lines 180–181) |
+| 3 condition meters read/written | ✅ | `src/character/actorBridge.js:78-202`; wounded caps health to 4, shaken caps spirit to 3 (`applyMeterChanges`) — a house rule, not the rulebook's (decisions.md → "Issue #362 D9") |
 | Momentum read/clamped to reset/max | ✅ | `src/character/actorBridge.js:206-209` |
 | Action roll, strong/weak/miss | ✅ | `src/moves/resolver.js:61-76` |
 | Match detection (both challenge dice equal) | ✅ | `src/moves/resolver.js:65` |
@@ -265,10 +265,10 @@ to find each move's resolver branch.
 | Vows persisted as `progress` items on the actor | ✅ | `src/character/actorBridge.js:347-355` (`createCharacterVowItem`) |
 | Connections mirrored as bond items | ✅ | `src/character/actorBridge.js:328-336` (`createCharacterBondItem`) |
 | Connection role/rank/bond, second-role on Bond | ✅ | `src/entities/connection.js:371-379` |
-| Vehicle integrity read for Withstand Damage | ✅ | `src/moves/statEnrichment.js` (`integrity` stat): the command vehicle's ship record, or — when the move's target names one of the roller's support vehicles (an asset with its own Integrity track: Hoverbike, Rover, Skiff …) — that asset's track (a null target is the starship's, whatever the line mentions — issue #345 AA14); its choices change the vehicle rolled for and its Battered gates the +1 (`vehicleItemId` → `actorBridge.applyVehicleAssetIntegrityChange`, issue #342 Z53: every roll was the starship's). The at-0 vehicle-type cost stays card text; the damage the vehicle cannot take at 0 (a miss's "-1 integrity") is the roller's momentum, as harm past 0 health is (`sufferDialog` `lossPastZero`, issue #345 AA15) |
+| Vehicle integrity read for Withstand Damage | ✅ | `src/moves/statEnrichment.js` (`integrity` stat): the command vehicle's ship record, or — when the move's target names one of the roller's support vehicles (an asset with its own Integrity track: Hoverbike, Rover, Skiff …) — that asset's track (a null target is the starship's, whatever the line mentions — issue #345 AA14); its choices change the vehicle rolled for and its Battered gates the +1 (`vehicleItemId` → `actorBridge.applyVehicleAssetIntegrityChange`, issue #342 Z53: every roll was the starship's). The damage the vehicle cannot take at 0 (a miss's "-1 integrity") is the roller's momentum, as harm past 0 health is (`sufferDialog` `lossPastZero`, issue #345 AA15). At 0 the damage step owes the resist roll, a card that rolls Withstand Damage for that vehicle (by its asset's id — `moveTargetId`); that roll's own miss at 0 posts the vehicle-type cost's choice card (issue #362 D8 — it was card text, and the step rolled the d100 itself) |
 | Companion-health stat | 🔄 | `src/moves/statEnrichment.js` — the companion the move's target, else the line, names (issue #345 AA45); with none named, the highest-health enabled Companion asset, and with several a notice that naming the companion picks it — no player picker. A move an asset lets you roll "+its health" (Survey Bot, Combat Bot, Banshee …) rolls that companion's own health (issue #345 AA10). The harm a companion at 0 cannot take (a miss's "-1 companion health") is the roller's momentum (issue #345 AA15) |
 | Auto-mark wounded/shaken/unprepared on meter = 0 | ✅ | `src/moves/persistResolution.js:129-159` |
-| Mortal-wound / desolation / vehicle-damage tables | ✅ | A harm or stress step that reaches 0 owes the resist roll — a card that rolls Endure Harm / Stress as the PC (issue #330 D3); that roll's miss at 0 posts a choice card — mark the impact, mark the lasting one (permanently harmed / traumatized), or roll the table (`rollImpactTable`) — the player's one choice (`src/moves/sufferExecutor.js`, issue #329 X03), whichever miss option was taken ("-1 health" or "Lose Momentum (-2)" — ENDURE-ZERO-ON-OTHER-OPTION); Withstand Damage at 0 rolls the vehicle-damage d100 |
+| Mortal-wound / desolation / vehicle-damage tables | ✅ | A harm or stress step that reaches 0 owes the resist roll — a card that rolls Endure Harm / Stress as the PC (issue #330 D3); that roll's miss at 0 posts a choice card — mark the impact, mark the lasting one (permanently harmed / traumatized), or roll the table (`rollImpactTable`) — the player's one choice (`src/moves/sufferExecutor.js`, issue #329 X03), whichever miss option was taken ("-1 health" or "Lose Momentum (-2)" — ENDURE-ZERO-ON-OTHER-OPTION). Withstand Damage and Companion Takes a Hit the same (issue #362 D8): a damage / harm step at 0 owes the resist roll (a card that rolls the move for that vehicle / companion); that roll's own miss at 0 posts the vehicle-type cost — battered, cursed, a module broken or destroyed (recorded), or the vehicle-damage d100 (`rollImpactTable`, its destruction row surfacing Overcome Destruction or a support vehicle's discard) — or the companion's fate: out of action, or dead or destroyed on that roll's own match (a discard prompt) |
 | All 10 impacts auto-marked from move outcomes | 🔄 | Only wounded/shaken/unprepared automated; other 7 surface as text choices for manual marking |
 | Chronicle records narrative beats | ✅ | `src/character/chronicle.js`, `src/character/chronicleWriter.js`, `src/character/chroniclePanel.js`; entry types `revelation / relationship / vow / scar / legacy / annotation` |
 
@@ -444,7 +444,7 @@ pinned roll for roll against the vendored Dataforged data
 | Take Decisive Action weak-hit d100 (6 entries) — FIXED | `decisive_action_cost`, `src/oracles/tables/sufferAndCombat.js` | the weak hit's card |
 | Endure Harm mortal-wound d100 (5 entries) — FIXED | `mortal_wound`, `src/oracles/tables/sufferAndCombat.js` | the at-0 choice card's table option (`rollImpactTable`, issue #329 X03) |
 | Endure Stress desolation d100 (4 entries) — FIXED | `desolation`, `src/oracles/tables/sufferAndCombat.js` | the at-0 choice card's table option |
-| Withstand Damage vehicle-damage d100 (10 entries) — FIXED | `vehicle_damage`, `src/oracles/tables/sufferAndCombat.js` | the Withstand Damage executor at 0 integrity (known-issues SUFFER-EXECUTOR-ASSET-SCHEMA) |
+| Withstand Damage vehicle-damage d100 (10 entries) — FIXED | `vehicle_damage`, `src/oracles/tables/sufferAndCombat.js` | the at-0 cost card of Withstand Damage's own miss (`rollImpactTable`, issue #362 D8 — the executor rolled it at 0 integrity, with no resist roll) |
 
 ### 3.3 Missing mechanics
 

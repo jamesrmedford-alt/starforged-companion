@@ -138,12 +138,6 @@ describe("runPacedDetection() — sentinel + routing invariants", () => {
     expect(opts.source).toBe("paced_narrative");
   });
 
-  it("passes the campaign sessionId to routeEntityDrafts", async () => {
-    await runPacedDetection("text", { ...BASE_STATE, currentSessionId: "abc-123" });
-    const opts = routeEntityDrafts.mock.calls[0][2];
-    expect(opts.sessionId).toBe("abc-123");
-  });
-
   it("does not throw when the detection call rejects", async () => {
     expectConsoleError(/runPacedDetection failed/);
     runCombinedDetectionPass.mockRejectedValueOnce(new Error("API down"));

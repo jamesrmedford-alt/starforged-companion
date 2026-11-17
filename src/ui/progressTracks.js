@@ -334,6 +334,25 @@ async function removePairedClock(track) {
   await removeClock(track.tensionClockId);
 }
 
+/**
+ * A track's hidden plan — an expedition's, about the track by id — leaves
+ * play with it (issue #362 D4; secrets.js closePlansAbout): resolved when the
+ * track completes, retired when it is removed. The Finish an Expedition that
+ * completes it still narrates with it in play (`endingTrackIds`). Canonical
+ * GM (closePlansAbout's gate). Fail-open: the track's write stands.
+ *
+ * @param {string} trackId
+ * @param {"resolved"|"retired"} status
+ */
+async function closeTrackPlans(trackId, status) {
+  try {
+    const { closePlansAbout } = await import('../world/secrets.js');
+    await closePlansAbout({ type: 'track', id: trackId }, status);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | progress tracks: the plan of track ${trackId} was not closed with it:`, err?.message ?? err);
+  }
+}
+
 /** The panel's word when a paired clock write is refused: nothing changed; press again. */
 function warnPairedClock(what, err) {
   console.warn(`${MODULE_ID} | ${what}: the scene challenge's paired clock write failed — nothing changed:`, err?.message ?? err);
@@ -694,7 +713,7 @@ export class ProgressTrackApp extends ApplicationV2 {
         </div>
         ${t.vowLinkable && vowOptions.length ? `
           <div class="track-vow-link">
-            ${vowSelect(`name="trackVow" data-track-id="${t.id}"`, t.linkedVowId ?? null)}
+            ${vowSelect(`name="trackVow" data-track-id="${t.id}" data-linked="${escapeHtml(t.linkedVowId ?? '')}"`, t.linkedVowId ?? null)}
             <button class="track-btn btn-link-vow" data-action="linkTrackVow"
                     data-track-id="${t.id}" title="Link this track to the vow it serves">
               🔗
@@ -750,10 +769,19 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   /** @override */
   _replaceHTML(result, content, _options) {
+    // The vows chosen on the tracks' rows and not yet linked, by track — the
+    // row selects share one name, so the add form's carry (by name) cannot
+    // hold them, and anyone's re-render put a choice back to the stored link
+    // before its 🔗 was pressed (issue #362 AC63).
+    const chosen = rowVowChoices(content);
     // Replace inner content without destroying the window chrome — keeping
     // the add form's typed name, type and rank across a hook's re-render
     // (issue #337 Y45).
     replaceKeepingInput(content, result, { fields: '.add-track-fields [name]' });
+    for (const [trackId, vowId] of chosen) {
+      const select = [...(result.querySelectorAll?.('select[name="trackVow"]') ?? [])].find(el => el.dataset?.trackId === trackId);
+      if (select && [...select.querySelectorAll('option')].some(o => o.value === vowId)) select.value = vowId;
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -993,7 +1021,9 @@ export class ProgressTrackApp extends ApplicationV2 {
    * Link an open expedition or scene challenge to the vow it serves — the
    * vow chosen on its row, or none (issue #353 R3). An expedition the move
    * pipeline began has no other place to be linked. The canonical GM checks
-   * the vow is open as it stands (`progressTrack.edit` op `linkVow`).
+   * the vow is open as it stands (`progressTrack.edit` op `linkVow`). None
+   * chosen on a track that serves none is said, and nothing is sent (issue
+   * #362 AC63); the row keeps its choice across a re-render (`_replaceHTML`).
    * @param {PointerEvent} event
    * @param {HTMLElement}  target
    */
@@ -1007,7 +1037,16 @@ export class ProgressTrackApp extends ApplicationV2 {
       this.render();
       return undefined;
     }
-    const work = ProgressTrackApp.#requestEdit(this, { op: 'linkVow', trackId, vowId });
+    const work = (async () => {
+      // "— no vow —" on a track that serves none links nothing: said, not
+      // sent as an unlink of an unlinked track, "applied" in silence (issue
+      // #362 AC63). On a linked track it is the unlink.
+      if (!vowId && !(await getProgressTrack(trackId).catch(() => null))?.linkedVowId) {
+        ui.notifications?.info?.('Starforged Companion: choose the vow this track serves in its row first — nothing was linked.');
+        return false;
+      }
+      return ProgressTrackApp.#requestEdit(this, { op: 'linkVow', trackId, vowId });
+    })();
     this._lastAction = work;
     return work;
   }
@@ -1285,8 +1324,12 @@ export async function addProgressTrack(data) {
  * keeps its position (`combatState`): Take Decisive Action's tick enrichment
  * reads the scored fight's own position for the bad-spot downgrade, and this
  * projection dropped it — with two fights open, no downgrade ever applied
- * (issue #306 R05).
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null),positions?:Object}>>}
+ * (issue #306 R05). An expedition keeps its site link (`siteId`): Finish an
+ * Expedition's arrival reads its track from this listing, and without the
+ * link it followed the label — the ship stayed where it set out, or docked at
+ * another sector's namesake, while the same move charted the linked site
+ * (issue #362 AC24).
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null),positions?:Object,siteId?:string}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
@@ -1295,6 +1338,8 @@ export async function listProgressTracks() {
     combatState: t.combatState ?? null,
     // Each character's own position in a fight (issue #322 V03).
     ...(t.positions ? { positions: { ...t.positions } } : {}),
+    // An expedition's site (issue #362 AC24).
+    ...(t.siteId ? { siteId: t.siteId } : {}),
   }));
 }
 
@@ -1322,11 +1367,13 @@ export async function getProgressTrack(trackId) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function completeProgressTrack(trackId) {
-  return updateTrack(trackId, async (track) => {
+  const completed = await updateTrack(trackId, async (track) => {
     await retirePairedClock(track);
     track.completed   = true;
     track.completedAt = Date.now();
   });
+  if (completed) await closeTrackPlans(completed.id, 'resolved');
+  return completed;
 }
 
 /**
@@ -1391,6 +1438,27 @@ const EDIT_REFUSAL_TEXT = {
  * changed mid-fight: a won linked fight pays the vow's milestone and reward.
  */
 const VOW_LINK_TYPES = new Set(['expedition', 'scene_challenge']);
+
+/**
+ * The vows chosen on the panel's track rows and not linked yet — each row
+ * select whose value is not the link it was drawn with (`data-linked`, or "—
+ * no vow —" when that vow is no longer offered) — by track id (issue #362
+ * AC63: a re-render reset them).
+ *
+ * @param {HTMLElement} content — the panel's content element, before a re-render
+ * @returns {Map<string, string>} track id → the vow id chosen ("" for "— no vow —")
+ */
+function rowVowChoices(content) {
+  const chosen = new Map();
+  for (const select of content?.querySelectorAll?.('select[name="trackVow"]') ?? []) {
+    const trackId = select.dataset?.trackId;
+    if (!trackId) continue;
+    const linked = select.dataset?.linked ?? '';
+    const shown  = [...select.querySelectorAll('option')].some(o => o.value === linked) ? linked : '';
+    if (select.value !== shown) chosen.set(trackId, select.value);
+  }
+  return chosen;
+}
 
 /** Position toggle cycle: neutral → in control → in a bad spot → neutral. */
 const NEXT_POSITION = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
@@ -1515,6 +1583,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         warnPairedClock('completeTrack', clockError);
         return refusedEdit('clock', payload);
       }
+      if (track) await closeTrackPlans(track.id, 'resolved');
       return editOutcome(track, payload);
     }
     case 'remove': {
@@ -1536,6 +1605,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         warnPairedClock('removeTrack', clockError);
         return refusedEdit('clock', payload);
       }
+      if (removed) await closeTrackPlans(removed.id, 'retired');
       return editOutcome(removed, payload);
     }
     default:

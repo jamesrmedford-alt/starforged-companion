@@ -49,7 +49,7 @@
 import { isCanonicalGM, hasKeyedActiveGM, onGmStoodDown, gmPageCanAct } from "../multiplayer/gmGate.js";
 import { pageIsStale, connectionDrops } from "../multiplayer/connectionWatch.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
-import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
+import { sessionInPlay, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
 import { isXCardActive, narrateRound, narrateResolution } from "../narration/narrator.js";
@@ -64,10 +64,12 @@ import {
 } from "../moves/movePipeline.js";
 import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
+import { keepHeldResultsOf, keepEveryHeldResult } from "../moves/heldResult.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
+import { checkedTokenDragCourse } from "../sectors/sectorSceneHooks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
   ROUND_PHASE,
@@ -391,9 +393,15 @@ function narrationWaitsForKey() {
   return Array.isArray(keyed) && keyed.some(id => id && id !== game.user?.id && game.users?.get?.(id)?.isGM === true);
 }
 
-/** Whether a round's session is over: ended, another one current, or being replaced. */
+/**
+ * Whether a round's session is over: another one current, or the stored one
+ * not in play — ended, being replaced, or over by End a Session's mark or
+ * four idle hours (lifecycle.js sessionInPlay, the chat gate's question). A
+ * round read only the session-active flag, so one still opened, collected and
+ * waited in a session the Session panel read as "Over" (issue #362 D14).
+ */
 function roundSessionOver(round, cs = campaignStateNow()) {
-  return !isSessionActive(cs) || round?.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
+  return !sessionInPlay(cs) || round?.sessionId !== (cs.currentSessionId ?? null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,7 +421,9 @@ function roundSessionOver(round, cs = campaignStateNow()) {
 export async function openRoundIfDue(reason = "due") {
   if (!isCanonicalGM() || !isBatchModeEnabled()) return null;
   const cs = campaignStateNow();
-  if (!isSessionActive(cs) || sessionBeingReplaced(cs)) return null;
+  // Only into a session in play: not one over by four idle hours, which the
+  // chat gate treats as not begun (issue #362 D14).
+  if (!sessionInPlay(cs)) return null;
   const sessionId = cs.currentSessionId ?? null;
   let opened = null;
   try {
@@ -478,10 +488,19 @@ export async function closeCollectingRound(reason) {
   return closed;
 }
 
-/** The switch changed (every client): the canonical GM opens a round, or closes a collecting one. */
+/**
+ * The switch changed (every client): the canonical GM opens a round, or
+ * closes a collecting one. Switched on, every free-flow result still held for
+ * its roller's Burn / Improve / Keep is kept first — paid and narrated — as
+ * the mode begins (issue #362 D5, decided A): a round's line is table talk,
+ * which keeps nothing, so the round told the next beat with the miss unpaid,
+ * un-narrated and still burnable (AC32).
+ */
 function onBatchModeSwitched(enabled) {
   if (!isCanonicalGM()) return;
-  const work = enabled ? openRoundIfDue("mode-on") : turnedOff();
+  const work = enabled
+    ? keepEveryHeldResult("batch-mode").then(() => openRoundIfDue("mode-on"))
+    : turnedOff();
   Promise.resolve(work).catch(err => console.warn(`${MODULE_ID} | Batch Mode switch:`, err?.message ?? err));
 }
 
@@ -711,8 +730,13 @@ async function advanceOnce() {
       // The X-Card stops a round resolving: decided, it waits for a GM to
       // resume (the lift runs this pass again), as a collecting round does —
       // it went on to its narration, and closed behind the paused notice,
-      // its moves never narrated (issue #345 AA43).
-      if (isXCardActive(null)) return false;
+      // its moves never narrated (issue #345 AA43). While its session lasts:
+      // once that is over it waits for no resume, and goes on to the
+      // narrating phase, whose close under the X-Card posts the paused
+      // notice and tells the GMs (narrateTheRound's closingUnnarrated). Held
+      // here, End a Session left it "being resolved", unannounced, until the
+      // next load closed it unseen (issue #362 AC57).
+      if (isXCardActive(null) && !roundSessionOver(getStoredRound())) return false;
       await queueRoundWrite(r => beginNarration(r));
       return true;
     case ROUND_PHASE.NARRATING:
@@ -1015,6 +1039,17 @@ async function rollRound(claim) {
     if (!round.acting.length) {
       await finishRound(round, "nobody-acted");
       return true;
+    }
+
+    // An acting player's free-flow result still held for Burn / Improve /
+    // Keep — a card move of theirs run as free-flow while they sat a round
+    // out — is kept before the round takes their next action, whatever its
+    // reading (issue #362 AC32, D5): kept by the later move's record, after
+    // the fact and un-awaited, it was narrated after the round; a narrative
+    // entry kept nothing.
+    for (const userId of round.acting) {
+      await keepHeldResultsOf(round.entries?.[userId]?.actorId ?? null).catch(err =>
+        console.warn(`${MODULE_ID} | Batch Mode: a held result was not kept before the round:`, err?.message ?? err));
     }
 
     for (const userId of round.acting) {
@@ -1897,7 +1932,11 @@ function forcedFromFlags(f) {
     moveTarget:             typeof f.forcedMoveTarget === "string" ? f.forcedMoveTarget : null,
     moveTargetId:           typeof f.forcedMoveTargetId === "string" ? f.forcedMoveTargetId : null,
     swearToConnection:      typeof f.swearToConnection === "string" ? f.swearToConnection : null,
-    tokenDragSetCourse:     f.tokenDragSetCourse ?? null,
+    // Only what a ship-token drop could have produced — a sector map, the
+    // command vehicle's token, a settlement pin — checked as free-flow checks
+    // it (issue #347 AB23): a hand-made entry's payload moved any token on any
+    // Scene on a hit (issue #362 AC62). Refused, the Set a Course is still rolled.
+    tokenDragSetCourse:     checkedTokenDragCourse(f.tokenDragSetCourse ?? null),
     incitingSwearMessageId: typeof f.incitingSwearMessageId === "string" ? f.incitingSwearMessageId : null,
     // A move the card owes (the resist roll at 0): the roller's entry, never an offer (issue #342 D2).
     ...(f.owedMove === true ? { owed: true } : {}),
@@ -2247,8 +2286,8 @@ let _xCardWas = false;
 /**
  * campaignState changed (the canonical GM acts; every client keeps its X-Card
  * memory, so a GM who becomes canonical later starts from the truth): a
- * collecting round that belongs to no active session — End a Session, a
- * session re-minted after four idle hours — is closed, and a round opens when
+ * collecting round that belongs to no session in play — End a Session, four
+ * idle hours (issue #362 D14), a session re-minted — is closed, and a round opens when
  * none is (Begin a Session; get-or-create, so a repeat opens nothing). Read
  * from the state as it is, never from a remembered "last session", which a
  * client that was not canonical then could hold stale. The X-Card lifting and
@@ -2262,7 +2301,9 @@ function onCampaignStateChanged(setting) {
   _xCardWas = xCard;
   if (!isCanonicalGM()) return;
   if (isBatchModeEnabled()) {
-    const active = isSessionActive(cs);
+    // In play, as the chat gate reads it: an over session — four idle hours —
+    // closes its collecting round and opens none (issue #362 D14).
+    const active = sessionInPlay(cs);
     const sessionId = cs.currentSessionId ?? null;
     const round = getStoredRound();
     const work = (async () => {
@@ -2270,10 +2311,13 @@ function onCampaignStateChanged(setting) {
         await closeCollectingRound("session-ended");
       }
       // A round whose narration waits for a keyed GM, or for a GM to resume
-      // from the X-Card: the session ending closes it, unnarrated
-      // (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
-      // ROUND-CLOSED-UNNARRATED-WORDING).
-      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard) && roundSessionOver(round, cs)) {
+      // from the X-Card — narrating, or decided at its upgrade step, where
+      // the X-Card holds it too (issue #345 AA43): the session ending closes
+      // it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
+      // ROUND-CLOSED-UNNARRATED-WORDING; the upgrade step, issue #362 AC57).
+      const heldNarrating = round?.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard);
+      const heldUpgrading = round?.phase === ROUND_PHASE.UPGRADING && xCard;
+      if (roundIsOpen(round) && (heldNarrating || heldUpgrading) && roundSessionOver(round, cs)) {
         await advanceRound("session-ended");
       }
       if (active && (!roundIsOpen(getStoredRound()) || getStoredRound()?.sessionId !== sessionId)) {

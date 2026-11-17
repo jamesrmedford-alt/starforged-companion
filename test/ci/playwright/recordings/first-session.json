@@ -229,6 +229,20 @@
     },
     {
       "step": "drag-home",
+      "kind": "callClaudeAPI>interpretMove",
+      "user": "I set a course for Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"moveId\": \"set_a_course\", \"moveName\": \"Set a Course\", \"statUsed\": \"supply\", \"statValue\": 0, \"adds\": 0, \"isProgressMove\": false, \"progressTicks\": 0, \"moveTarget\": \"Hollow Spire\", \"expeditionRank\": null, \"combatRank\": null, \"rationale\": \"The crew heads back to the Hollow Spire along lanes they know.\", \"mischiefApplied\": false, \"confidence\": \"high\", \"stakes\": {\"hit\": \"You reach the Hollow Spire with the lanes quiet behind you.\", \"miss\": \"The run home is long and the stores run thin before the Spire.\", \"missSuffer\": {\"move\": \"sacrifice_resources\", \"amount\": 1}}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "drag-home",
       "kind": "callNarratorAPI>narrateResolution",
       "user": "MOVE OUTCOME Set a Course Strong Hit I set a course for Hollow Spire.",
       "response": {

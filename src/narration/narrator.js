@@ -21,13 +21,14 @@ import {
   resolveNarrationPerspective,
   sessionPerspectiveOf,
 } from './narratorPrompt.js';
-import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
+import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern, namesOneWordName } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
 import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
+import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, IMAGE_SOURCE_CARDS } from './proseVariety.js';
@@ -71,8 +72,8 @@ import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
-import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
+import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls } from '../moves/resolver.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -553,7 +554,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // play this beat — made in this scene, its entity matched or in the frame's
   // cast, its name in the frame or the player's line — and the plans this
   // narration must decide (a price that revealed a new enemy). Rendered as
-  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
+  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans. A
+  // narration on a player's own key reads none — a player's client reads no
+  // plan (issue #362 D1), as it is sent no world snapshot — and still files
+  // the plans its own rolls ask it to decide (DECIDE NOW, relayed).
   extras.unrevealed   = [];
   extras.planRequests = [];
   extras.plannedSubjects = [];
@@ -564,7 +568,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       // agenda to decide: it may say the new one is one of them (issue #354
       // P2-30; formatUnrevealedBlock ALREADY PLANNED).
       extras.plannedSubjects = plannedBeings(allPlans);
-      extras.unrevealed = selectRelevantSkeletons(allPlans, {
+      // A beat that ends a track or a vow sees its plan, resolved in code as
+      // the subject ended, to reveal its end (issue #362 D4; planInPlay).
+      extras.unrevealed = selectRelevantSkeletons(endingTrackIds.length ? listSkeletons({ includeInactive: true }) : allPlans, {
         sceneId:           sceneState?.currentSceneId ?? null,
         frame:             sceneState?.sceneFrame ?? null,
         matchedEntityIds:  extras.matchedEntityIds ?? [],
@@ -703,11 +709,32 @@ function lastNarratorCardAt(sessionId) {
 const BEAT_VARIETY_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
 /**
+ * Whether a chat message is a beat's own card — a move's narration, a paced
+ * line's, a round's (BEAT_VARIETY_MODES' cards: `narrationCard`,
+ * `pacedNarrative`, `roundId`) — of this session. Never an @scene answer, an
+ * oracle follow-up, a vignette, a vow scene or a published reflection.
+ *
+ * @param {Object} m — a ChatMessage
+ * @param {string|null} sessionId
+ * @returns {boolean}
+ */
+function isSessionBeatCard(m, sessionId) {
+  const f = m?.flags?.[MODULE_ID];
+  if (!f?.narratorCard || f.sessionId !== sessionId) return false;
+  return f.narrationCard === true || f.pacedNarrative === true || (typeof f.roundId === 'string' && f.roundId !== '');
+}
+
+/**
  * The images the session's last narrations used and the shape for the beat
  * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
  * the session's narrator cards, the ring's own source. Nothing is stored: the
- * shape follows from how many narrations the session holds. Fail-open: an
- * unreadable chat log gives no list and the first shape.
+ * shape follows from how many beats the session holds — every beat card it
+ * posted, a struck, X-Carded or unnarrated one included (they stay in chat).
+ * Counted over all its narrator cards, four @scene answers, oracle follow-ups
+ * or vignettes between two beats brought the five-shape cycle back round to
+ * the same shape, and a card a Burn / Improve struck took the count back one
+ * (issue #362 AC72). Fail-open: an unreadable chat log gives no list and the
+ * first shape.
  *
  * @param {string|null} sessionId
  * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
@@ -718,9 +745,10 @@ function beatVariety(sessionId) {
     const prose = cards.slice(-IMAGE_SOURCE_CARDS)
       .map(m => m?.flags?.[MODULE_ID]?.narrationText)
       .filter(t => typeof t === 'string' && t.trim());
+    const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     return {
       usedImages: recentImages(prose),
-      beatShape:  pickBeatShape({ beatIndex: cards.length, seed: sessionId }),
+      beatShape:  pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
@@ -928,15 +956,20 @@ export async function buildPrivateChannelStory(campaignState, playerMessage, { a
   addSceneFrameCast(extras, campaignState);
   // The hidden plans relevant to what the player asks, under the main
   // narrator's rule (issue #353, decided: the Private Channel reads them).
+  // A player's client reads no plan (issue #362 D1): it asks the canonical
+  // GM for the decided ones this message brings into play — none with no GM
+  // connected, or no answer in time.
   extras.unrevealed = [];
   if (skeletonsEnabled()) {
     try {
-      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
-        sceneId:          campaignState?.currentSceneId ?? null,
-        frame:            campaignState?.sceneFrame ?? null,
-        matchedEntityIds: extras.matchedEntityIds ?? [],
-        text:             playerMessage,
-      });
+      extras.unrevealed = globalThis.game?.user?.isGM === true
+        ? selectRelevantSkeletons(listSkeletons(), {
+          sceneId:          campaignState?.currentSceneId ?? null,
+          frame:            campaignState?.sceneFrame ?? null,
+          matchedEntityIds: extras.matchedEntityIds ?? [],
+          text:             playerMessage,
+        })
+        : await requestPlansInPlay({ text: playerMessage, matchedEntityIds: extras.matchedEntityIds ?? [] });
     } catch (err) {
       console.warn(`${MODULE_ID} | privateChannel: the hidden plans could not be read:`, err?.message ?? err);
     }
@@ -1146,19 +1179,28 @@ export async function narrateResolution(resolution, campaignState, options = {})
     );
   }
 
+  // The hidden rolls behind a plan this narration decides, which a store
+  // every client holds kept none of — a held result's card, an upgrade's card
+  // state — are rolled here, on the GM that narrates it (issue #362 AC15). A
+  // player's own key rolls none: plans are a GM's.
+  if (globalThis.game?.user?.isGM === true) resolution = withHiddenRolls(resolution, campaignState);
+
   // A price that revealed a new enemy asks this narration to decide what it
   // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
   // So does an expedition the move began (its track — Phase 3).
   const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...normalisePlanRequests(resolution.skeletonRequests)]
+    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...unplannedRequests(normalisePlanRequests(resolution.skeletonRequests))]
     : [];
+  // The tracks and vows this move ends: their plans are in play to reveal
+  // their end, resolved or not (issue #362 D4).
+  const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
   const extras = await buildNarratorExtras('move_resolution', campaignState, {
     playerNarration: resolution.playerNarration ?? '',
     character,
     relevance,
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
-    endingTrackIds:  Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [],
+    endingTrackIds,
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1183,6 +1225,10 @@ export async function narrateResolution(resolution, campaignState, options = {})
     playerName:       character?.name ?? null,
     narrationId,
   };
+  // Whether this narration's side-data was applied, the plans it was asked
+  // to decide with it: an exit that wrote none files them with their rolls
+  // alone (issue #362 AC07).
+  let sideDataApplied = false;
 
   try {
     const raw = await callNarratorAPI({
@@ -1202,12 +1248,15 @@ export async function narrateResolution(resolution, campaignState, options = {})
       matchedEntityIds: extras.matchedEntityIds ?? [],
       narrationId,
       planRequests:     extras.planRequests,
+      endingTrackIds,
     });
 
     if (!narration?.trim()) {
+      fileUnansweredPlanRequests(extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
       await postFallbackCard(resolution, campaignState, EMPTY_REPLY_REASON);
       return null;
     }
+    sideDataApplied = true;
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
     reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
@@ -1246,8 +1295,10 @@ export async function narrateResolution(resolution, campaignState, options = {})
           matchedEntityIds: extras.matchedEntityIds ?? [],
           narrationId,
           planRequests:     extras.planRequests,
+          endingTrackIds,
         });
         if (narration?.trim()) {
+          sideDataApplied = true;
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
           reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
@@ -1270,11 +1321,35 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
+    if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
     await postFallbackCard(resolution, campaignState, failure);
     return null;
   }
 }
 
+
+/**
+ * A narration's plan requests about a known subject (an expedition's track),
+ * less those whose subject already has a plan of their kind. A burned or
+ * improved result is asked for the plan its roll's narration was (issue #362
+ * AC04): a plan that narration filed is taken back with it, but one its
+ * fallback filed unstamped (a failed call — issue #362 AC07) stays, and was
+ * planned a second time. Fail-open: an unreadable journal asks for them all.
+ *
+ * @param {Object[]} requests — normalisePlanRequests'
+ * @returns {Object[]}
+ */
+function unplannedRequests(requests) {
+  const about = (r) => (typeof r?.subject?.id === 'string' && r.subject.id ? r.subject.id : null);
+  if (!requests.some(about)) return requests;
+  let plans;
+  try {
+    plans = listSkeletons();
+  } catch {
+    return requests;
+  }
+  return requests.filter(r => !about(r) || !plans.some(p => p?.kind === r.kind && p?.subject?.id === about(r)));
+}
 
 // ---------------------------------------------------------------------------
 // A Batch Mode round — every acting player's action, narrated once (issue #340)
@@ -1356,7 +1431,11 @@ export function roundNarrationEntries(round) {
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
 export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
-  const entries = roundNarrationEntries(round);
+  // The hidden rolls behind the plans its entries ask for, which the round —
+  // a world setting every client holds — keeps none of, are rolled here, on
+  // the GM that narrates it (issue #362 AC15).
+  const entries = roundNarrationEntries(round).map(e => (globalThis.game?.user?.isGM === true
+    ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return { posted: null };
@@ -1398,6 +1477,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     .filter(e => isPlayerCharacterActor(game.actors?.get?.(e.actorId) ?? null))
     .map(e => getActiveCharacter(campaignState, e.actorId))
     .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId && o?.name === c.name) === i);
+  // The tracks and vows the round's moves end (issue #362 D4; narrateResolution's rule).
+  const endingTrackIds = entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : []));
   const extras = await buildNarratorExtras('round_resolution', campaignState, {
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
     character:       null,
@@ -1410,7 +1491,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         ...normalisePlanRequests(e.input?.skeletonRequests),
       ])
       : [],
-    endingTrackIds:  entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : [])),
+    endingTrackIds,
   });
   extras.roundCharacters = characters;
 
@@ -1439,6 +1520,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // a helper, so its caller is narrateRound (the playthrough harness files a
   // call under the two module functions above the proxy).
   let failure = claudeFailureReason(null);   // the fallback card's cause (ERROR-TEXT-BLAMES-KEY)
+  // Whether the side-data was applied, the entries' plan requests with it
+  // (issue #362 AC07; narrateResolution's rule).
+  let sideDataApplied = false;
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await delay(RETRY_DELAY_MS);
@@ -1451,11 +1535,13 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
+        endingTrackIds,
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
         break;
       }
+      sideDataApplied = true;
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
@@ -1477,6 +1563,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     }
   }
   if (superseded()) return { posted: null, superseded: true };
+  // A round no narration was written for: its entries' plan requests are
+  // filed with their rolls alone (issue #362 AC07).
+  if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState);
   return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, failure) };
 }
 
@@ -1961,13 +2050,15 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
+      // People the detection read as someone known: listed on the card as
+      // read as them (issue #362 D10).
+      readAs:               detection.readAs ?? [],
       // A Batch Mode round's Make a Connection hits, each its own roller and
       // seed (runRoundNarrationPasses — issue #342 Z09).
       connectionRollers:    options.connectionRollers ?? null,
       // A round's acting PCs: its draft card asks which of them a new
       // connection belongs to (issue #342 D3).
       actorIds:             options.actorIds ?? null,
-      sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
       // (issue #325 W23); the player's line says which when the narration
@@ -2550,6 +2641,14 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // same write: a clock is campaignState's, and this is the pause's write.
   if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(c?.narrationId))) {
     cs.clocks = cs.clocks.filter(c => !ids.includes(c?.narrationId));
+  }
+  // A plan's clock one of them paced — emptied, or retired after a last step,
+  // when its beat played the step — is re-armed one short of full: the undo
+  // puts the step back unplayed (undoNarrationEntries), and the next price
+  // plays it (issue #362 AC33; the clock stayed empty or retired, and a last
+  // step was never paced again).
+  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(standingPacedBy(c)))) {
+    cs.clocks = cs.clocks.map(c => (ids.includes(standingPacedBy(c)) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;
@@ -3784,11 +3883,16 @@ function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = n
  *                                          X-Card on it drops the card's result
  *                                          from RECENT ORACLE RESULTS (issue
  *                                          #345 AA01)
+ * @param {string|null} [args.trackId]     — a waypoint peril's expedition, the
+ *                                          one the move was on: its plan's
+ *                                          next danger is the peril (issue
+ *                                          #362 AC11)
  * @param {Object}  args.campaignState
  * @returns {Promise<string|null>} the rendered narration text or null on skip / failure
  */
 export async function narrateOracleFollowup({
   kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null, oracleCardId = null, scope = null,
+  trackId = null,
 }) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
@@ -3828,7 +3932,7 @@ export async function narrateOracleFollowup({
   // A chosen complication is the next escalation step of the plan in play —
   // a waypoint's peril the open expedition's (issue #353 Phase 3) — so it
   // has something concrete to be. Marked played with this narration.
-  const step = kind === 'complication' ? complicationStep(campaignState, scope) : null;
+  const step = kind === 'complication' ? await complicationStep(campaignState, scope, trackId) : null;
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
     character,
@@ -3848,6 +3952,12 @@ export async function narrateOracleFollowup({
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
+  // What forced the step, for a relay off the canonical GM to be checked by
+  // (issue #362 D2: a relayed fact block's own reveals are dropped).
+  const forcedFor = step ? { complication: { scope, trackId } } : null;
+  // Whether the side-data was applied, the price's plan request with it
+  // (issue #362 AC07; narrateResolution's rule).
+  let sideDataApplied = false;
 
   try {
     const raw = await callNarratorAPI({
@@ -3857,9 +3967,13 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
 
-    if (!text?.trim()) return null;
+    if (!text?.trim()) {
+      fileUnansweredPlanRequests(extras.planRequests, campaignState);
+      return null;
+    }
+    sideDataApplied = true;
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
     reportNarratedOracle(kind, rolledLine);
@@ -3877,8 +3991,9 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
         if (text?.trim()) {
+          sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
           reportNarratedOracle(kind, rolledLine);
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
@@ -3889,6 +4004,7 @@ export async function narrateOracleFollowup({
       }
     }
     console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
+    if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState);
     return null;
   }
 }
@@ -3916,23 +4032,34 @@ async function forgetInterruptedOracleResult(oracleCardId) {
 
 /**
  * The plan step a chosen complication plays (issue #353 Phase 3): a
- * waypoint's peril is the next danger of the open expedition's plan; any
- * other complication is the next escalation step of the most recently changed
- * plan made in this scene. Null when no plan in play has a step left.
+ * waypoint's peril is the next danger of the plan of the expedition under way
+ * — the one the move was on (`trackId`, its choice card's), else the open
+ * expedition's, the most recently changed when several are open; never a
+ * finished or removed expedition's plan, which took it in the Secrets
+ * journal's page order (issue #362 AC11). Any other complication — or a peril
+ * with no open expedition planned — is the next escalation step of the most
+ * recently changed plan made in this scene. Null when no plan in play has a
+ * step left.
  *
  * @param {Object} campaignState
  * @param {string|null} scope — the complication's ("waypoint", "destination", "scene")
- * @returns {{ plan: Object, step: Object }|null}
+ * @param {string|null} [trackId] — the expedition the move was on
+ * @returns {Promise<{ plan: Object, step: Object }|null>}
  */
-function complicationStep(campaignState, scope) {
+async function complicationStep(campaignState, scope, trackId = null) {
   if (!skeletonsEnabled()) return null;
   try {
     const withStep = listSkeletons().filter(r => r.escalation.some(e => !e.done));
     const time = (r) => String(r.updatedAt ?? r.createdAt ?? '');
+    const newest = (list) => [...list].sort((a, b) => time(b).localeCompare(time(a)))[0] ?? null;
     const sceneId = campaignState?.currentSceneId ?? null;
-    const plan = (scope === 'waypoint' ? withStep.find(r => r.kind === 'expedition') : null)
-      ?? withStep.filter(r => sceneId && r.sceneId === sceneId).sort((a, b) => time(b).localeCompare(time(a)))[0]
-      ?? null;
+    let peril = null;
+    if (scope === 'waypoint') {
+      const open = new Set((await readOpenProgressTracks()).filter(t => t?.type === 'expedition').map(t => t.id));
+      const underWay = withStep.filter(r => r.kind === 'expedition' && r.subject?.id && open.has(r.subject.id));
+      peril = (trackId ? underWay.find(r => r.subject.id === trackId) : null) ?? newest(underWay);
+    }
+    const plan = peril ?? newest(withStep.filter(r => sceneId && r.sceneId === sceneId));
     return plan ? { plan, step: plan.escalation.find(e => !e.done) } : null;
   } catch {
     return null;
@@ -4015,6 +4142,48 @@ function escapeHtml(s) {
 }
 
 /**
+ * The CHARACTER blocks of a narration about the PCs `actorIds` names — each
+ * still a PC, by its own id (narrateRound's rule): one is the beat's
+ * character; two or more each get a block, and the narration is third person
+ * (issue #342 Z40's rule); none gets none. The galley's rule (issue #345
+ * AA31).
+ *
+ * @param {string[]} actorIds
+ * @param {Object} campaignState
+ * @returns {{ character: Object|null, roundCharacters: Object[]|null }}
+ */
+function partyBlocksFor(actorIds, campaignState) {
+  const present = (Array.isArray(actorIds) ? actorIds : [])
+    .filter(id => isPlayerCharacterActor(game.actors?.get?.(id) ?? null))
+    .map(id => getActiveCharacter(campaignState, id))
+    .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId) === i);
+  return { character: present.length === 1 ? present[0] : null, roundCharacters: present.length > 1 ? present : null };
+}
+
+/**
+ * The CHARACTER blocks of a narration about the party that no one PC's line
+ * or roll started — a clock vignette, the inciting incident: the PCs at the
+ * table (galleyVignette.js collectGalleyParticipants' active split; a PC no
+ * player owns counts as present with a GM online), as the galley and the
+ * closing vignette are written. Both took the campaign's first PC, so with its
+ * player away the vignette's "you" was a crewmate not there, and the PCs who
+ * were had no block (issue #362 AC75). Fail-open: the first PC, as before.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<{ character: Object|null, roundCharacters: Object[]|null }>}
+ */
+async function partyBlocksAtTable(campaignState) {
+  try {
+    const { collectGalleyParticipants } = await import('../session/galleyVignette.js');
+    const ids = collectGalleyParticipants(campaignState).active.map(p => p.actor?.id).filter(Boolean);
+    return partyBlocksFor(ids, campaignState);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the PCs at the table could not be read — the first PC narrates:`, err?.message ?? err);
+    return { character: getActiveCharacter(campaignState), roundCharacters: null };
+  }
+}
+
+/**
  * Render a Begin Session opening vignette via the narrator API and return the
  * prose text. The caller is responsible for posting the chat card; see
  * `src/session/galleyVignette.js` for the participant-enumeration + card-post
@@ -4058,15 +4227,11 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   await ensureSceneStarted(campaignState, 'session_vignette');
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
-  const present = Array.isArray(actorIds)
-    ? actorIds
-        .filter(id => isPlayerCharacterActor(game.actors?.get?.(id) ?? null))
-        .map(id => getActiveCharacter(campaignState, id))
-        .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId) === i)
-    : null;
-  const character = present ? (present.length === 1 ? present[0] : null) : getActiveCharacter(campaignState);
+  const { character, roundCharacters } = Array.isArray(actorIds)
+    ? partyBlocksFor(actorIds, campaignState)
+    : { character: getActiveCharacter(campaignState), roundCharacters: null };
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
-  if (present && present.length > 1) extras.roundCharacters = present;
+  if (roundCharacters) extras.roundCharacters = roundCharacters;
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -4108,6 +4273,22 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
 }
 
 /**
+ * What a filled plan clock's trigger vignette is made to play, as reveals:
+ * its plan's next escalation step, or — a countdown's mystery with no step
+ * left — its answer coming out (issue #353 Phase 3). The vignette marks it
+ * (narrateClockAdvancement), and a relayed vignette's is checked against it
+ * (standingForcedReveals, issue #362 D2). [] for no plan.
+ *
+ * @param {{ plan: Object, step: Object|null, revealsTruth: boolean }|null} paced — secrets.js planForClock's
+ * @returns {Array<{ id: string, advanced?: string, revealed?: string[] }>}
+ */
+function stepRevealsOf(paced) {
+  if (!paced?.plan) return [];
+  if (paced.step) return [{ id: paced.plan.id, advanced: paced.step.id }];
+  return paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : [];
+}
+
+/**
  * Generate a brief (2-3 sentence) narrative vignette for a clock segment
  * filling — a story beat describing what it feels like as that faction plot
  * tightens, a reactor gauge drops another notch, or a deadline finally
@@ -4130,101 +4311,118 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * @returns {Promise<string|null>}
  */
 export async function narrateClockAdvancement({ clock, campaignState, narrationId = newNarrationId(), stillTriggered = null }) {
-  const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
-  if (isXCardActive(campaignState))  return null;
-  const xCard = watchXCard(campaignState);
-
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-
-  // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'clock_vignette');
-
-  // Its own role (a threat tightening, or arriving), not the session
-  // vignette's "calm before / after" (issue #322 V23).
-  const character = getActiveCharacter(campaignState);
-  // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
-  // plan's next escalation step — or a countdown's answer coming out — and
-  // marks it played with this narration (a rewind that supersedes the
-  // vignette takes it back with it).
-  const paced = clock.triggered && skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
-  const pacedReveals = paced
-    ? (paced.step ? [{ id: paced.plan.id, advanced: paced.step.id }]
-      : (paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : []))
-    : [];
-  const extras = await buildNarratorExtras('clock_advance', campaignState, {
-    character, planIds: paced ? [paced.plan.id] : [],
-  });
-  const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '', extras,
-  );
-
-  const typeFlair = clock.type === "campaign"
-    ? "a long-running campaign threat or faction project"
-    : "an immediate scene danger or countdown";
-  const pacedLine = paced?.step
-    ? ` It paces ${paced.plan.subject.name} under UNREVEALED: what happens now is its next escalation step — "${paced.step.text}".`
-    : (paced?.revealsTruth ? ` It was counting down to the answer under UNREVEALED for ${paced.plan.subject.name}: that answer comes out now.` : '');
-  const userMessage = clock.triggered
-    ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments.${pacedLine} Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
-    : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
-
-  // A rewound trigger did not happen: nothing of it is applied (see above).
-  const triggerStands = async () => {
-    if (!clock.triggered || typeof stillTriggered !== 'function') return true;
-    try {
-      if (await stillTriggered()) return true;
-    } catch (err) {
-      console.debug?.(`${MODULE_ID} | narrateClockAdvancement: the clock could not be read — narrating:`, err?.message ?? err);
-      return true;
-    }
-    console.debug?.(`${MODULE_ID} | narrateClockAdvancement: "${clock.name}" was rewound before its trigger vignette — not narrated.`);
-    return false;
-  };
-
+  // A plan's clock whose trigger vignette is not written — on any exit below
+  // but the one that narrates it — is re-armed one short of full, its step
+  // still owed (issue #362 AC08; secrets.js rearmUnplayedPlanClock). A
+  // trigger rewound meanwhile is no longer full, and is left as it is.
+  let narrated = false;
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateClockAdvancement',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
+    const settings = getNarratorSettings();
+    if (!settings.narrationEnabled) return null;
+    if (isXCardActive(campaignState))  return null;
+    const xCard = watchXCard(campaignState);
+
+    const apiKey = getApiKey();
+    if (!apiKey) return null;
+
+    // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
+    await ensureSceneStarted(campaignState, 'clock_vignette');
+
+    // Its own role (a threat tightening, or arriving), not the session
+    // vignette's "calm before / after" (issue #322 V23). The PCs at the table
+    // are its characters (issue #362 AC75).
+    const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
+    // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
+    // plan's next escalation step — or a countdown's answer coming out — and
+    // marks it played with this narration (a rewind that supersedes the
+    // vignette takes it back with it). Every vignette of the clock is about
+    // the plan, filling or not: an advance is written with it in play, so the
+    // beat grows the threat the plan holds (issue #362 AC38 — it was asked how
+    // "the Choir — escalation" grows with the Choir's plan not in play).
+    const ofPlan = skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
+    const paced = clock.triggered ? ofPlan : null;
+    const pacedReveals = stepRevealsOf(paced);
+    // What forced the step, for a relay off the canonical GM to be checked by
+    // (issue #362 D2: a relayed fact block's own reveals are dropped).
+    const forcedFor = pacedReveals.length ? { clockId: clock._id ?? null } : null;
+    const extras = await buildNarratorExtras('clock_advance', campaignState, {
+      character, planIds: ofPlan ? [ofPlan.plan.id] : [],
     });
-    if (xCard.interrupted('narrateClockAdvancement')) return null;
-    if (!(await triggerStands())) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
-    if (!text?.trim()) return null;
-    // The developments of the recorded NPCs it names → their cards, as a
-    // session vignette's (#286 D4) — every post site goes through here
-    // (issue #345 AA33) — and the detection pass: a clock vignette is written
-    // at interaction latitude (issue #322 V23), so the figures, lore and
-    // threats it introduces are captured as a move's are
-    // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
-    // only for their embellishment latitude).
-    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
-    return text;
-  } catch (err) {
-    if (isRateLimit(err)) {
+    if (roundCharacters) extras.roundCharacters = roundCharacters;
+    const systemPrompt = buildNarratorSystemPrompt(
+      campaignState, settings, character, '', extras,
+    );
+
+    const typeFlair = clock.type === "campaign"
+      ? "a long-running campaign threat or faction project"
+      : "an immediate scene danger or countdown";
+    const pacedLine = paced?.step
+      ? ` It paces ${paced.plan.subject.name} under UNREVEALED: what happens now is its next escalation step — "${paced.step.text}".`
+      : (paced?.revealsTruth ? ` It was counting down to the answer under UNREVEALED for ${paced.plan.subject.name}: that answer comes out now.` : '');
+    const userMessage = clock.triggered
+      ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments.${pacedLine} Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
+      : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
+
+    // A rewound trigger did not happen: nothing of it is applied (see above).
+    const triggerStands = async () => {
+      if (!clock.triggered || typeof stillTriggered !== 'function') return true;
       try {
-        await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narrateClockAdvancement',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(16000),
-        });
-        if (xCard.interrupted('narrateClockAdvancement')) return null;
-        if (!(await triggerStands())) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
-        if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
-        return text;
-      } catch (retryErr) {
-        console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
+        if (await stillTriggered()) return true;
+      } catch (err) {
+        console.debug?.(`${MODULE_ID} | narrateClockAdvancement: the clock could not be read — narrating:`, err?.message ?? err);
+        return true;
       }
+      console.debug?.(`${MODULE_ID} | narrateClockAdvancement: "${clock.name}" was rewound before its trigger vignette — not narrated.`);
+      return false;
+    };
+
+    try {
+      const raw = await callNarratorAPI({
+        label: 'narrateClockAdvancement',
+        apiKey, systemPrompt, userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(16000),
+      });
+      if (xCard.interrupted('narrateClockAdvancement')) return null;
+      if (!(await triggerStands())) return null;
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
+      if (!text?.trim()) return null;
+      // The developments of the recorded NPCs it names → their cards, as a
+      // session vignette's (#286 D4) — every post site goes through here
+      // (issue #345 AA33) — and the detection pass: a clock vignette is written
+      // at interaction latitude (issue #322 V23), so the figures, lore and
+      // threats it introduces are captured as a move's are
+      // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
+      // only for their embellishment latitude).
+      scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
+      narrated = true;
+      return text;
+    } catch (err) {
+      if (isRateLimit(err)) {
+        try {
+          await delay(RETRY_DELAY_MS);
+          const raw = await callNarratorAPI({
+        label: 'narrateClockAdvancement',
+            apiKey, systemPrompt, userMessage,
+            model:     settings.narrationModel,
+            maxTokens: maxTokensWithSidecar(16000),
+          });
+          if (xCard.interrupted('narrateClockAdvancement')) return null;
+          if (!(await triggerStands())) return null;
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
+          if (!text?.trim()) return null;
+          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
+          narrated = true;
+          return text;
+        } catch (retryErr) {
+          console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
+        }
+      }
+      console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
+      return null;
     }
-    console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
-    return null;
+  } finally {
+    if (!narrated && clock?.triggered) await rearmUnplayedPlanClock(clock?._id ?? null);
   }
 }
 
@@ -4346,8 +4544,10 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
     if (request) await fileRequestedPlan(request, { campaignState }).catch(() => null);
     return null;
   }
-  const clean = stripMarkup(text)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // The prose rendered as every narrator-prose card renders it (proseToHtml,
+  // issue #348 PT13): stripMarkup and a hand escape left the narrator's
+  // Markdown emphasis as literal asterisks — "*Forgeborn*" (issue #362 AC73).
+  const clean = proseToHtml(text);
   try {
     // Flag family (NARR-RING-VOWSCENE, narrator-context audit 2026-07): the
     // oath scene is fiction the narrator must remember — without these flags
@@ -4403,8 +4603,10 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
   // Starting the scene HERE means the first move continues it instead.
   await ensureSceneStarted(campaignState, 'inciting_incident');
 
-  const character = getActiveCharacter(campaignState);
+  // The PCs at the table, not the campaign's first PC (issue #362 AC75).
+  const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
   const extras = await buildNarratorExtras('inciting_incident', campaignState, { character });
+  if (roundCharacters) extras.roundCharacters = roundCharacters;
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -4706,7 +4908,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     await applyEntityRenames(detection.renames, campaignState, { narrationId });
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
-      sessionId:            campaignState?.currentSessionId ?? '',
+      readAs:               detection.readAs ?? [],   // issue #362 D10
       source:               options.source ?? 'paced_narrative',
       actorId:              options.actorId ?? null,
       narrationId,
@@ -4975,9 +5177,30 @@ const PC_DIRECTED_SOCIAL_MOVES = new Set([
 ]);
 
 /**
+ * Whether a typed line names `name`: a name of more than one word whole, in
+ * any case; a one-word name — a name of one word, or the word of a name a
+ * player calls someone by — only as a name is written, with its capital as
+ * typed or in address position (relevanceResolver.namesOneWordName, issue
+ * #362 D6). Unicode-aware: "Zoë" and "Élise" are whole words too (issue #322
+ * V19).
+ *
+ * @param {string} text
+ * @param {string} name
+ * @returns {boolean}
+ */
+function lineNamesName(text, name) {
+  const n = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!n) return false;
+  return n.includes(' ') ? wholeWordPattern(n).test(text) : namesOneWordName(text, n);
+}
+
+/**
  * True when `playerText` names a player character other than the speaker. Used
  * to suppress social-move suggestions aimed at a fellow PC (finding G). Matches
- * each other PC's full name and its first-name token as whole words.
+ * each other PC's full name and their first name as whole words — a one-word
+ * name only as a name is written (lineNamesName, issue #362 D6: a PC called
+ * Will, Ash or Hope turned every other player's line with that word in it —
+ * "I will press the dockmaster" — into narration with no move offered).
  *
  * @param {string} playerText
  * @param {string|null} speakerName
@@ -4985,21 +5208,18 @@ const PC_DIRECTED_SOCIAL_MOVES = new Set([
  * @returns {boolean}
  */
 export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) {
-  const text = String(playerText ?? '').toLowerCase();
-  if (!text) return false;
+  const text = String(playerText ?? '');
+  if (!text.trim()) return false;
   let actors = pcActors;
   if (!Array.isArray(actors)) {
     try { actors = getPlayerActors(); } catch { actors = []; }
   }
   const speaker = String(speakerName ?? '').trim().toLowerCase();
   for (const a of actors) {
-    const name = String(a?.name ?? '').trim();
+    const name = String(a?.name ?? '').trim().replace(/\s+/g, ' ');
     if (!name || name.toLowerCase() === speaker) continue;
-    const tokens = new Set([name.toLowerCase(), name.split(/\s+/)[0].toLowerCase()]);
-    for (const t of tokens) {
-      if (t.length < 2) continue;
-      // Unicode-aware: a PC named "Zoë" or "Élise" is a whole word too (issue #322 V19).
-      if (wholeWordPattern(t, '').test(text)) return true;
+    for (const t of new Set([name, name.split(' ')[0]])) {
+      if (t.length >= 2 && lineNamesName(text, t)) return true;
     }
   }
   return false;
@@ -5014,7 +5234,9 @@ const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
  * P2-06; pacing/router.js decidePacing). Stricter than the offer's rule
  * (suppressPcDirectedSocialMove, which only withholds a suggestion): the line
  * must name another PC and name no tracked NPC, so "Archer, hand Karthik the
- * codes or I take them" — a Compel of Archer — is still rolled.
+ * codes or I take them" — a Compel of Archer — is still rolled. A one-word
+ * name — a PC's or an NPC's — counts only as a name is written, capitalised
+ * as typed or in address position (lineNamesName, issue #362 D6).
  *
  * @param {string|null} moveId — the move the classifier named
  * @param {string} playerText
@@ -5026,7 +5248,7 @@ const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
 export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState = null, pcActors, npcNames } = {}) {
   if (!moveId || !PC_DIRECTED_SOCIAL_MOVES.has(moveId)) return false;
   if (!inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors)) return false;
-  const text = String(playerText ?? '').toLowerCase();
+  const text = String(playerText ?? '');
   let names = npcNames;
   if (!Array.isArray(names)) {
     names = [];
@@ -5040,12 +5262,12 @@ export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, 
     }
   }
   for (const raw of names) {
-    const name = String(raw ?? '').trim().toLowerCase();
+    const name = String(raw ?? '').trim().replace(/\s+/g, ' ');
     if (!name) continue;
     // The full name, or any word of it a player would call them by ("Archer").
-    const tokens = new Set([name, ...name.split(/\s+/).filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t))]);
+    const tokens = new Set([name, ...name.split(' ').filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t.toLowerCase()))]);
     for (const t of tokens) {
-      if (wholeWordPattern(t, '').test(text)) return false;
+      if (lineNamesName(text, t)) return false;
     }
   }
   return true;
@@ -5691,8 +5913,19 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // says: added to the sidecar's own reveals, so it is applied (or relayed)
   // with the narration's id like the rest.
   const forced = normaliseReveals(ctx.reveals);
-  const sidecar = forced.length
-    ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})), reveals: [...(parsedBlock.sidecar?.reveals ?? []), ...forced] }
+  // The plans this narration was asked to decide (DECIDE NOW) are filed
+  // whatever its fact block holds — cut off, unreadable or missing, with
+  // their rolls alone (issue #362 AC07; decisions.md "keep the raw rolls as
+  // the skeleton"): the request is the move's, and its rolls exist nowhere
+  // else.
+  const asked = Array.isArray(ctx.planRequests) && ctx.planRequests.length > 0;
+  // The forced reveals go first: the reveals are capped at
+  // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
+  // step the beat was made to play — its clock then stayed full though the
+  // vignette was written (issue #362 AC08; coverage FC D5).
+  const sidecar = (forced.length || asked)
+    ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})),
+      ...(forced.length ? { reveals: [...forced, ...(parsedBlock.sidecar?.reveals ?? [])] } : {}) }
     : parsedBlock.sidecar;
 
   if (parseError) {
@@ -5721,11 +5954,22 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // src/index.js chat routing). There the side-data is relayed to the
   // canonical GM (issue #286 D2: it was dropped, so a keyless-GM table's
   // narrated facts never reached the ledger).
+  //
+  // A reply with no prose is no narration (issue #362 AC39): every caller
+  // posts its fallback card, or nothing, for it — and a fallback card carries
+  // no narrationId (invariant 1) — so nothing of its fact block is recorded.
+  // Its truths, state, frame and plan writes were stamped with an id no card
+  // carries: told to every later narration as established, and out of every
+  // X-Card's reach.
+  const narrated = typeof prose === 'string' && prose.trim().length > 0;
+  if (sidecar && !narrated) {
+    console.debug?.(`${MODULE_ID} | factContinuity: the narrator's reply had no prose — its fact block is not recorded.`);
+  }
   const applySidecarHere = isCanonicalGM();
-  if (sidecar && campaignState && !applySidecarHere) {
+  if (sidecar && campaignState && narrated && !applySidecarHere) {
     relayNarratorSidecar(sidecar, campaignState, ctx);
   }
-  if (sidecar && campaignState && applySidecarHere) {
+  if (sidecar && campaignState && narrated && applySidecarHere) {
     applySidecarSideData(sidecar, campaignState, ctx);
   }
 
@@ -5756,22 +6000,61 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
  * ended. Fire-and-forget; with no GM connected nothing can be recorded.
  */
 function relayNarratorSidecar(sidecar, campaignState, ctx) {
+  // The step a clock vignette or a chosen complication was made to play rides
+  // apart from the fact block, with what forced it, for the GM to check: a
+  // relayed block's own reveals are dropped there (issue #362 D2).
+  const forced = normaliseReveals(ctx.reveals);
+  const cause = ctx.forcedFor && typeof ctx.forcedFor === 'object' ? ctx.forcedFor : {};
   import('../multiplayer/gmRelay.js').then(({ requestGmAction, hasActiveGM }) => {
     if (!hasActiveGM()) {
       console.debug?.(`${MODULE_ID} | factContinuity: no GM connected — narrator side-data (truths, state changes, scene frame) not recorded.`);
       return null;
     }
     return requestGmAction('narrator.sidecar', {
-      sidecar,
+      sidecar:          { ...sidecar, reveals: [] },
       sceneId:          campaignState.currentSceneId ?? null,
       moveId:           ctx.moveId ?? null,
       matchedEntityIds: Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : [],
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // The plans the narration was asked to decide (issue #353): the GM files them.
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      ...(forced.length ? { forced: {
+        reveals: forced,
+        ...(typeof cause.clockId === 'string' && cause.clockId ? { clockId: cause.clockId } : {}),
+        ...(cause.complication && typeof cause.complication === 'object' ? { complication: {
+          scope:   typeof cause.complication.scope === 'string' ? cause.complication.scope : null,
+          trackId: typeof cause.complication.trackId === 'string' ? cause.complication.trackId : null,
+        } } : {}),
+      } } : {}),
     });
   }).catch(err =>
     console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
+}
+
+/**
+ * The plans a narration was asked to decide (UNREVEALED → DECIDE NOW — a
+ * price's new enemy, an expedition begun, a discovery), filed with their
+ * rolls alone when it wrote no narration: its reply had no prose, or its call
+ * failed (issue #362 AC07; decisions.md "keep the raw rolls as the
+ * skeleton"). The next narration they are in play for decides them. A reply
+ * with prose files them through its own side-data, its fact block readable or
+ * not (applyNarratorSidecar). Unstamped: no card carries the narration's id.
+ * On the canonical GM, else relayed to it, as a sidecar's are. Fire-and-forget;
+ * never throws.
+ *
+ * @param {Object[]} planRequests — the narration's extras.planRequests
+ * @param {Object|null} campaignState
+ * @param {{ moveId?: string|null }} [opts]
+ */
+function fileUnansweredPlanRequests(planRequests, campaignState, { moveId = null } = {}) {
+  if (!Array.isArray(planRequests) || !planRequests.length || !campaignState) return;
+  try {
+    const sidecar = normaliseSidecar({});
+    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests });
+    else relayNarratorSidecar(sidecar, campaignState, { moveId, planRequests });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the plans this narration was asked to decide were not filed:`, err?.message ?? err);
+  }
 }
 
 /** Truths and state changes taken from one relayed sidecar, at most (a response emits a handful). */
@@ -5787,7 +6070,20 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * dropped when the X-Card has removed the narration it came with (issue #321
  * U07): it may arrive after the X-Card retracted that narration's facts.
  *
- * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null }} payload
+ * What it may do to the hidden plans is narrower (issue #362 D2, the
+ * maintainer's answer A): plan ids are public (a clock's `planId`, a rolls
+ * card's `skeletonId`), so a hand-made relay could reveal a hidden truth into
+ * the ledger, Lore and a table card, or rewrite or end a plan. Its `reveals`
+ * are dropped, and its `plans` but the answers to its own plan requests (by
+ * their refs, `sameAs` taken off: a plan by id is no relay's to name); its
+ * `openQuestions`, `newThreats` and `countdown` stand. The step a clock
+ * vignette or a chosen complication was made to play rides apart (`forced`)
+ * and stands only as this GM would force it for the same cause
+ * (standingForcedReveals) — dropping it would leave the plan's clock full
+ * with its vignette written (issue #362 AC08).
+ *
+ * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null,
+ *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
@@ -5797,6 +6093,10 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   if (!sidecar) return;
   sidecar.newTruths    = sidecar.newTruths.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
   sidecar.stateChanges = sidecar.stateChanges.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
+  const planRequests = normalisePlanRequests(payload.planRequests);
+  const refs = new Set(planRequests.map(r => r.ref));
+  sidecar.plans   = sidecar.plans.filter(p => refs.has(p.id)).map(p => ({ ...p, sameAs: '' }));
+  sidecar.reveals = [];
   const narrationId = (typeof payload.narrationId === 'string' && /^[\w-]{1,64}$/.test(payload.narrationId))
     ? payload.narrationId : null;
   // A working copy: the scene start and the sidecar apply change the object
@@ -5814,9 +6114,46 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     return;
   }
   await ensureSceneStarted(campaignState, 'relayed_narration');
+  sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
-    moveId: payload.moveId ?? null, narrationId, planRequests: normalisePlanRequests(payload.planRequests),
+    moveId: payload.moveId ?? null, narrationId, planRequests,
   });
+}
+
+/**
+ * The step marks a relayed narration was made to play (`forced` — a clock
+ * vignette's, a chosen complication's) that stand on this GM (issue #362 D2):
+ * those this GM forces itself for the same cause — the plan the clock paces,
+ * its next step or its answer, while that clock is full (stepRevealsOf); the
+ * in-scene plan's next step a complication of that scope plays
+ * (complicationStep) — and nothing else. Never throws.
+ *
+ * @param {{ reveals?: Object[], clockId?: string, complication?: { scope?: string|null, trackId?: string|null } }|null} forced
+ * @param {Object} campaignState — the store's, as this GM reads it
+ * @returns {Promise<Object[]>} normaliseReveals' entries
+ */
+async function standingForcedReveals(forced, campaignState) {
+  const given = normaliseReveals(forced?.reveals);
+  if (!given.length || !skeletonsEnabled()) return [];
+  try {
+    let expected = [];
+    if (typeof forced.clockId === 'string' && forced.clockId) {
+      const paced = planForClock(forced.clockId);
+      const clock = paced ? planClock(paced.plan) : null;
+      expected = clock && (clock.filled ?? 0) >= clock.segments ? stepRevealsOf(paced) : [];
+    } else if (forced.complication && typeof forced.complication === 'object') {
+      const scope   = typeof forced.complication.scope === 'string' ? forced.complication.scope : null;
+      const trackId = typeof forced.complication.trackId === 'string' ? forced.complication.trackId : null;
+      const step = await complicationStep(campaignState, scope, trackId);
+      expected = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
+    }
+    const key = (r) => JSON.stringify([r.id, r.advanced ?? null, [...(r.revealed ?? [])].sort(), r.resolved === true]);
+    const standing = new Set(normaliseReveals(expected).map(key));
+    return given.filter(r => standing.has(key(r)));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | factContinuity: a relayed narration's forced step could not be checked — dropped:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /**
@@ -5848,10 +6185,24 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // A plan's truth this beat revealed becomes a stated fact (issue #353
   // Phase 2): a truth of the narration's own, stamped with its id, so the
   // X-Card retracts it with the reveal.
+  // The tracks and vows the beat ends: a plan their end resolved is still
+  // this narration's to reveal (issue #362 D4).
+  const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
+  // A revealed truth is marked with its plan's id (`revealOf`): its reveal
+  // files it as Lore, and the scene's end archives it no second time (issue
+  // #362 AC37). The marker is the code's: one the model's own truths carry
+  // is dropped. The revealed ones go first, so a model truth stating the same
+  // fact is the duplicate the ledger skips, not the marked one.
+  const ownTruths = (sidecar.newTruths ?? []).map(t => {
+    if (!t || typeof t !== 'object' || !('revealOf' in t)) return t;
+    const rest = { ...t };
+    delete rest.revealOf;
+    return rest;
+  });
   const filteredSidecar = {
     ...sidecar,
     stateChanges: otherChanges,
-    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar)],
+    newTruths:    [...revealedTruthsOf(sidecar, { endingSubjectIds }), ...ownTruths],
   };
 
   try {
@@ -5930,6 +6281,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       moveId:       ctx.moveId ?? null,
       planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      endingSubjectIds,
     });
   }
   return persisted;

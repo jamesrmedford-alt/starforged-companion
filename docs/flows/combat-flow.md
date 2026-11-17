@@ -22,6 +22,15 @@ Two cross-cutting facts to hold onto:
   is one (`moves/stakes.js` `statedPrice` → `postMovePayThePriceCard`'s
   `stated`: no d100, its one suffer route dispatched as a rolled route is,
   the same receipts on `ptpReversals`), else rolls the table (issue #353 R1).
+  A Battle or Clash **weak hit** that routes Pay the Price rolls the table:
+  the stated miss is a miss's price only — `rollMove` passes `stated` for a
+  miss alone, and a held miss burned or improved to such a weak hit pays the
+  table's too (`heldResult.payHeldPrice`, issue #362 AC01). A card-forced
+  move — a way-out or Battle button, a paced card's Roll — states the stakes
+  its stat reading gives (`statEnrichment.enrichForcedMoveStat`; a one-stat
+  move is read for them alone), and a stated Withstand Damage / Companion
+  Takes a Hit lands on the support vehicle or companion the move was made
+  against (`stakes.statedPrice`'s route targets — issue #362 D11).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
@@ -31,12 +40,22 @@ Two cross-cutting facts to hold onto:
   known-issues RELAY-REFUSED-PRESS-UNTOLD).
   In free-flow play a result whose card offers either is **held** (issue
   #354 P2-10; `movePipeline.rollMove` `holdForUpgrade`, `moves/heldResult.js`):
-  the card carries `flags.awaitingUpgrade` and a **Keep the result** button
+  the card carries `flags.awaitingUpgrade` (the resolution, without the
+  hidden rolls behind a plan its narration decides — rolled when it is
+  narrated, on the GM: issue #362 AC15) and a **Keep the result** button
   (relay `move.keepResult`), its Pay the Price is not paid and it is not
-  narrated until the roller burns, improves or keeps — or goes on: their next
-  line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence
-  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`). A kept
-  result's upgrades close (`kept`). So in free-flow a burn has no paid price
+  narrated until the roller burns, improves or keeps — or goes on: their own
+  next line (`keepHeldResultsOf`, `index.js` onMessage — the roller's own
+  player's or one spoken as the roller, `actsAsRoller`: a GM's line read as
+  the first PC's kept another player's result, issue #362 D5), a move rolled
+  for them (`movePipeline.rollMove` keeps it before the dice), their sheet
+  roll, `!ptp` or `!oracle` (kept before that narration), or a consequence
+  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`); End a
+  Session and Batch Mode switched on keep every held result
+  (`keepEveryHeldResult`), and a round keeps an acting player's before it
+  rolls (`batch/driver.js` rollRound — issue #362 AC32). A kept
+  result's upgrades close (`kept`), and its card says what kept it where the
+  Keep button was (`awaitingUpgrade.resolvedBy` — issue #362 AC82). So in free-flow a burn has no paid price
   to revert; the reversal below is a Batch Mode round entry's — a round pays
   the price at the roll and holds only its narration — and free-flow's with
   the world setting `holdResultForUpgrade` off.
@@ -81,7 +100,11 @@ Two cross-cutting facts to hold onto:
   `laterMoveFollows`, issue #326 D4). A follow-up taken from the same card
   (⚑, 🏁, 🤝, 🔗) is that next move, so a card offering an upgrade says to
   take it first, beside those buttons and in their titles (issue #330 D2).
-  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3):
+  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3) —
+  and a vehicle's damage or a companion's hit at 0, whose card rolls
+  Withstand Damage / Companion Takes a Hit for that vehicle or companion,
+  only that roll's own miss posting the vehicle-type cost or the companion's
+  fate (issue #362 D8; the step rolled the vehicle-damage d100 itself):
   its 🛡 card and the executor's line say the same while the move still
   offers an upgrade — the move card's (`resultUpgrade.upgradeOpenFor`), or,
   the price paid before that card posts, the pipeline's `upgradeOffered`
@@ -95,7 +118,12 @@ Two cross-cutting facts to hold onto:
   the Fray burned while its threshold card waits puts the new opening
   position on that card (found by the card's `resolutionId`); a Battle burned
   from a lost miss pays the won fight's milestone and reward
-  (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
+  (`applyWonFightPayoff`, shared with the end-of-fight branch), and a Battle
+  won on a weak hit and burned or improved to a strong one is paid the
+  difference — the victory card's ⚑ raised to the strong hit's marks (or the
+  marks it lacks marked once, when ⚑ was pressed) and the promised reward
+  granted at the weak hit's scale raised to the strong hit's
+  (`payWonFightDifference`, issue #362 D7); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
@@ -104,6 +132,9 @@ Two cross-cutting facts to hold onto:
   upgraded outcome's, not retired with the superseded outcome's (issue #335
   Y09), and so is a card a kept card's pick posts after the burn — the resist
   roll the redirected loss's Endure Harm owes at 0 (issue #342 Z47). The
+  upgraded outcome's narration is seeded as a rolled one's: its own
+  behind-the-scenes rolls, and the price it keeps (`upgradedOracleSeeds`,
+  `standingPriceOf` — issue #362 AC05). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **A fight played in Batch Mode rounds** (issue #340) uses the same stages.
@@ -173,8 +204,9 @@ track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges. A fight added by hand in the Progress
 Tracks panel can be linked to a vow at creation too — the add form's vow
 select (issue #353 R3): it carries `linkedVowName` and `linkedVowId`, and a
-won linked fight pays off as a threshold fight does (§4). A fight's link is
-not changed on its row afterwards.
+won linked fight pays off as a threshold fight does (§4) — the vow found by
+its id, under its name now (issue #362 AC46). A fight's link is not changed
+on its row afterwards.
 
 **Find another way** posts the way-out card (from the canonical GM, once per
 threshold card): the `WAY_OUT_PROMPT` nudge plus
@@ -382,8 +414,18 @@ the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
-paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
-its advisory seed. The card records the price under the move that paid it
+paid — another (issue #321 U03). A card the world refuses does not drop the
+price: its routes, the clocks and the seed are paid all the same, and the GM
+who paid it is told (`priceCardRefusedNotice` — issue #362 D12; Take
+Decisive Action's cost card too). A miss whose price is one of its choices
+(Sojourn's "No relief") is seeded with the price its option carries —
+rolled once at resolution (`rollChoicePrice`), its text and suffer routes
+kept on the option — and its pick pays that price as rolled
+(`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
+the narration depicted, never two rolled again (issue #362 AC30). With a miss
+stated before the roll, that price is the stated miss — the seed and the
+pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). The card
+records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts
 the price. It used to say "Face Defeat" for every routed price and narrate
@@ -391,8 +433,12 @@ the price a second time (issue #325 W03).
 
 ## 4. The win payoff (linked fights)
 
-On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track has
-`linkedVowName`, the pipeline posts the **victory card**
+On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track links
+a vow — by its id (`linkedVowId`, the panel's add: found among the PCs' vow
+copies, under the name it carries now — `fightLinkedVow`; by the name it was
+linked under, a vow renamed mid-fight left the victory card naming a vow
+nobody held, issue #362 AC46), else by `linkedVowName` (a threshold link) —
+the pipeline posts the **victory card**
 (`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
 `marks`, `connectionName`, `vowRank` and the roller's `actorId`):
 **⚑ Mark milestone (×N)** — N scales with the *fight's* rank
@@ -434,7 +480,11 @@ GM marks or rolls nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
-grant's claim); it lands on the roller's copy when they hold one, else on the
+grant's claim — and a granted reward records the outcome it was granted at,
+`reward.grantedAt`, so a weak-hit win upgraded to a strong hit gets the
+strong hit's once: its second point, or its string lifted — the victory card
+carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
+lands on the roller's copy when they hold one, else on the
 PC holding the promised reward. A grant that does not land is not swallowed:
 the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
 with a one-press Retry, and "🎁 Reward earned" is posted only once the grant

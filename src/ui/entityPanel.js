@@ -17,7 +17,7 @@
 //
 // Output path (Foundry): modules/starforged-companion/src/ui/entityPanel.js
 
-import { generatePortrait, regeneratePortrait } from '../art/generator.js';
+import { generatePortrait, regeneratePortrait, regenerationSpent } from '../art/generator.js';
 import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
 import { requestGmAction }                      from '../multiplayer/gmRelay.js';
@@ -32,10 +32,12 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { reportSnapshotEvent } from '../narration/snapshotEvents.js';
 import { getCommandVehicleAsset } from '../character/actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 import { plannedSubjects } from '../world/secrets.js';
+import { offerNewPerson } from '../entities/entityExtractor.js';
 
 /** The GM's "has a plan" marker (issue #353 Phase 4): a sign, no content. */
 const PLAN_MARKER = '<span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>';
@@ -202,6 +204,34 @@ async function findEntity(id) {
 
 const { ApplicationV2, DialogV2 } = foundry.applications.api;
 
+/**
+ * The GM's new NPC: a name and what the table sees of them. Resolves the
+ * fields (the name trimmed), or null when cancelled or closed (DialogV2.prompt
+ * settles on close — rules/foundry-api.md).
+ *
+ * @returns {Promise<{ name: string, description: string }|null>}
+ */
+async function promptNewNpc() {
+  const content = `<form class="sf-new-npc">
+    <label><span>Name</span><input type="text" name="name" maxlength="120" autofocus></label>
+    <label><span>Description (optional)</span><textarea name="description" rows="3"></textarea></label>
+  </form>`;
+  const result = await foundry.applications.api.DialogV2.prompt({
+    window:  { title: 'New NPC' },
+    content,
+    ok: {
+      label: 'Add',
+      callback: (_event, button) => {
+        const form = button?.form;
+        const val = (n) => String(form?.querySelector(`[name="${n}"]`)?.value ?? '').trim();
+        return { name: val('name').replace(/\s+/g, ' '), description: val('description') };
+      },
+    },
+    rejectClose: false,
+  }).catch(() => null);
+  return result && typeof result === 'object' && result.name ? result : null;
+}
+
 export class EntityPanelApp extends ApplicationV2 {
 
   static #instance = null;
@@ -235,6 +265,7 @@ export class EntityPanelApp extends ApplicationV2 {
       shipHistory:        EntityPanelApp.#onShipHistory,
       switchTopTab:       EntityPanelApp.#onSwitchTopTab,
       undismiss:          EntityPanelApp.#onUndismiss,
+      newNpc:             EntityPanelApp.#onNewNpc,
     },
   };
 
@@ -312,12 +343,19 @@ export class EntityPanelApp extends ApplicationV2 {
   // -----------------------------------------------------------------------
 
   #renderList(sections, totalCount, topTab = 'entities') {
+    // A GM makes an NPC by hand (issue #362 D10): it waits on a New Entities
+    // card, whose Confirm makes it as a detected one is made.
+    const newNpc = game.user?.isGM
+      ? `<button class="entity-btn sf-entity-new-npc" data-action="newNpc"
+                title="Make an NPC card by hand — it waits on a New Entities card in chat">＋ New NPC</button>`
+      : '';
     const tabs = `
       <div class="sf-entity-toptabs">
         <button class="sf-entity-toptab${topTab === 'entities' ? ' sf-entity-toptab-active' : ''}"
                 data-action="switchTopTab" data-tab="entities">Entities</button>
         <button class="sf-entity-toptab${topTab === 'dismissed' ? ' sf-entity-toptab-active' : ''}"
                 data-action="switchTopTab" data-tab="dismissed">Dismissed</button>
+        ${newNpc}
       </div>`;
 
     if (totalCount === 0) {
@@ -508,7 +546,9 @@ export class EntityPanelApp extends ApplicationV2 {
       const lockBadge = entity.art.locked
         ? '<div class="portrait-lock-badge">🔒 Portrait locked</div>'
         : '';
-      const regenBtn = (paintsPortraits && !entity.art.locked && !entity.art.regenerationUsed && !isGenerating)
+      // A regeneration claim a reload left does not spend it (issue #362 AC56).
+      const regenBtn = (paintsPortraits && !entity.art.locked
+          && !regenerationSpent(entity.art, entity.typeKey, entity.journalId) && !isGenerating)
         ? `<button class="entity-btn btn-regen" data-action="regeneratePortrait"
                    data-journal-id="${entity.journalId}">
              Regenerate portrait
@@ -1110,6 +1150,24 @@ export class EntityPanelApp extends ApplicationV2 {
     this.render();
   }
 
+  /**
+   * "＋ New NPC" (issue #362 D10): the GM names the person, and they wait on a
+   * New Entities card in chat — its Confirm asks whose connection they are
+   * and makes the card (entityExtractor.offerNewPerson). GM-only.
+   */
+  static async #onNewNpc(_event, _target) {
+    if (!game.user?.isGM) {
+      ui?.notifications?.warn('Making an NPC by hand is GM-only.');
+      return;
+    }
+    const fields = await promptNewNpc();
+    if (!fields?.name) return;
+    const card = await offerNewPerson(fields);
+    if (card) {
+      ui?.notifications?.info?.(`${fields.name} waits on a New Entities card in chat — pick whose connection they are, or No one.`);
+    }
+  }
+
   static async #onUndismiss(event, target) {
     const name = target.dataset.name;
     if (!name) return;
@@ -1441,6 +1499,12 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
     next = { ...data, generativeTier: tier.filter(e => !shown(e)) };
   }
   await writeEntityFlag(typeKey, document, { ...next, updatedAt: now });
+  // A Remove rewrites the record to take content back: the record still
+  // stands, so the manifest's `record_removed` never fires, and the changed
+  // card rode under CHANGED SINCE THE SNAPSHOT while the cached snapshot went
+  // on stating the detail as an established fact (rules/narrator-memory.md 7c;
+  // issue #362 AC65). The table decides what the event takes.
+  if (op === 'remove') reportSnapshotEvent('entity_detail_removed');
   return { applied: true };
 }
 

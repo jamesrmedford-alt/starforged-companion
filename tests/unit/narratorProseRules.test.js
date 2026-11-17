@@ -230,7 +230,9 @@ describe('P2-22 / P2-27 — the images already used, and a shape for the beat', 
       expect(BEAT_SHAPES.map(s => s.id)).toContain(extras.beatShape.id);
       expect(buildNarratorSystemPrompt({}, {}, null, '', extras)).toContain(`Shape: ${extras.beatShape.hint}`);
       shapes.push(extras.beatShape.id);
-      game.messages.contents.push(card(`Beat ${i}.`));   // the narration posts; the next beat follows it
+      // The narration posts its beat's card (a move's or a paced line's —
+      // beats are counted by their own cards, issue #362 AC72); the next beat follows it.
+      game.messages.contents.push(card(`Beat ${i}.`, i % 2 ? { narrationCard: true } : { narrationCard: true, pacedNarrative: true }));
     }
     for (let i = 1; i < shapes.length; i += 1) expect(shapes[i], `beats ${i - 1} and ${i}`).not.toBe(shapes[i - 1]);
     expect(new Set(shapes).size).toBeGreaterThanOrEqual(BEAT_SHAPES.length);

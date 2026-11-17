@@ -726,6 +726,20 @@ async function endSessionOnce(payload, ctx = {}) {
   const questFocus      = cleanFocus(payload.questFocus);
   const connectionFocus = cleanFocus(payload.connectionFocus);
 
+  // A result still held for its roller's Burn / Improve / Keep is kept — paid
+  // and narrated — before the session ends (issue #362 D5, decided A): it
+  // stayed held across End a Session, and its roller's first line of the next
+  // session paid last session's price and narrated last session's roll into
+  // the new session's story. Before the scene closes and the summary is
+  // finalised, so its narration is in the session it was rolled in. Canonical
+  // GM (End a Session runs there); a no-op with nothing held.
+  try {
+    const { keepEveryHeldResult } = await import("../moves/heldResult.js");
+    await keepEveryHeldResult("session-end");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | End a Session: the held results could not be kept first:`, err?.message ?? err);
+  }
+
   // Persist the foci to campaignState so the next Begin a Session can surface
   // them (openBeginSessionDialog / postBeginSessionCard read them;
   // applyBeginSession clears them). Also flip the session-active gate OFF and

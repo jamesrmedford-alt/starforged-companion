@@ -63,11 +63,24 @@ function editDistance(a, b, max) {
   return prev[b.length];
 }
 
+/** A word's letters in alphabetical order: two words with the same are each other's letters rearranged. */
+const sortedLetters = (word) => [...word].sort().join("");
+
+/** A word with each doubled letter written once. */
+const singleLetters = (word) => word.replace(/(.)\1+/g, "$1");
+
 /**
  * Two words one of which is a small misspelling of the other: "valdur" for
- * "vuldar", "suton" for "sutton". Both five letters or more, the same first
- * letter, the same consonants in the same order, at most two letters apart.
- * Deliberately narrow — "maren" and "marek" are two people.
+ * "vuldar" (the same letters, the vowels in another order), "suton" for
+ * "sutton" (a doubled letter written once). Both five letters or more, the
+ * same first letter, the same consonants in the same order, at most two
+ * letters apart — and the same letters, or the same word once its doubled
+ * letters are single. Deliberately narrow — "maren" and "marek" are two
+ * people, and so are "soren" and "seren", "maria" and "mario", "simon" and
+ * "simone": a vowel changed, added or dropped is another name, not a typo
+ * (issue #362 AC17 — any two names that differed only in their vowels were
+ * one person's, so his sister was never offered and her facts went on his
+ * card).
  *
  * @param {string} a — lower case
  * @param {string} b — lower case
@@ -76,7 +89,8 @@ function editDistance(a, b, max) {
 export function misspelledWord(a, b) {
   if (a === b || a.length < 5 || b.length < 5) return false;
   if (a[0] !== b[0] || Math.abs(a.length - b.length) > 1) return false;
-  return skeleton(a) === skeleton(b) && editDistance(a, b, 2) <= 2;
+  if (skeleton(a) !== skeleton(b) || editDistance(a, b, 2) > 2) return false;
+  return sortedLetters(a) === sortedLetters(b) || singleLetters(a) === singleLetters(b);
 }
 
 /**
@@ -108,6 +122,54 @@ export function personNameMatch(a, b) {
   const word = one[0];
   const ends = [full[0], full[full.length - 1]];
   return ends.some(e => e === word || misspelledWord(e, word)) ? "part" : null;
+}
+
+/**
+ * The titles a person's name may lead with: the honorifics the name index
+ * strips (relevanceResolver.js HONORIFIC_PREFIXES) and the titles the module
+ * writes into NPC names as their role (connection.js NAME_TITLE_ROLES) — the
+ * set entityExtractor.js normalizeEntityName strips before the entity gates
+ * compare people. Kept here because this module imports nothing;
+ * nameMatch.test.js fails when either source gains a title this set lacks.
+ */
+const PERSON_TITLES = new Set([
+  "dr", "mr", "mrs", "ms", "mx", "miss",
+  "cmdr", "commander", "captain", "capt", "cap", "cpt",
+  "lt", "lieutenant", "sgt", "sergeant",
+  "gen", "general", "col", "colonel", "maj", "major",
+  "prof", "professor", "rev", "reverend",
+  "sir", "dame", "lord", "lady",
+  "administrator", "admiral", "ambassador", "chancellor", "chief", "councilor", "councillor",
+  "director", "doctor", "elder", "foreman", "governor", "magistrate", "overseer", "warden",
+]);
+
+/**
+ * A person's name without its leading title — and a leading article before
+ * it: "Captain Reyes" → "Reyes", "Dr. Chen" → "Chen", "the Captain Reyes" →
+ * "Reyes". A name that is a title alone keeps it ("the Captain"): nothing is
+ * left to call them by. The rest is returned as written.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function withoutTitle(name) {
+  if (typeof name !== "string") return "";
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const at = words.length > 1 && ARTICLES.has(words[0].toLowerCase()) ? 1 : 0;
+  const first = (words[at] ?? "").toLowerCase().replace(/\.$/, "");
+  return words.length - at > 1 && PERSON_TITLES.has(first) ? words.slice(at + 1).join(" ") : name.trim();
+}
+
+/**
+ * Whether a name is a title and nothing more, an article aside: "the
+ * Captain", "Doctor", "Dr." — who it is depends on the scene, not the name.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isBareTitle(name) {
+  const words = nameWords(name);
+  return words.length === 1 && PERSON_TITLES.has(words[0]);
 }
 
 /**
