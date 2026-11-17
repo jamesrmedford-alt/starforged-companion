@@ -1912,8 +1912,14 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
  * LEADING_NEUTRAL_WORDS): a reversal is mostly worded ahead of the fact —
  * "Used to run the lower docks", "Feigned loyalty to the Compact" — and a
  * word list cannot hold every one, so one past it read as a repeat and the
- * new fact was written nowhere (TIER-DETAIL-NEGATION-WORDS). A duplicate kept
- * is the safer miss.
+ * new fact was written nowhere (TIER-DETAIL-NEGATION-WORDS). And a new
+ * detail that holds a card line and says more is no repeat either: "Vex owes
+ * the Syndicate a debt she means to settle by selling out the crew" beside
+ * "Owes the Syndicate a debt" adds every word after the shared ones — it is
+ * a repeat only when all it adds is neutral (issue #362 AC20: only a
+ * reversing word after them counted, so the fuller fact was dropped as a
+ * repeat, and at scene end marked migrated). A duplicate kept is the safer
+ * miss.
  */
 function tierHasDetail(tier, detail, subjectWords = new Set()) {
   const words = detailWords(detail);
@@ -1922,7 +1928,7 @@ function tierHasDetail(tier, detail, subjectWords = new Set()) {
   return tier.some(e => {
     const existing = detailWords(e?.detail);
     if (!existing.length) return false;
-    return restatesDetail(existing, words, neutral) || restatesDetail(words, existing, neutral);
+    return restatesDetail(existing, words, neutral) || restatesDetail(words, existing, neutral, { addsNothing: true });
   });
 }
 
@@ -1931,10 +1937,12 @@ function tierHasDetail(tier, detail, subjectWords = new Set()) {
  * article, a pronoun, "is", "also", "still", "now" — and the possessive's
  * "s" ("Vex's ship" → "vex s ship"). With the entity's own name and role
  * words (detailSubjectWords) — "Vex runs the lower docks" restates "Runs the
- * lower docks" — they are all a restatement may lead with.
+ * lower docks" — they are all a restatement may lead with, and all a new
+ * detail may add after a card line's words and still be that line ("Has not
+ * paid the debt yet" — issue #362 AC20).
  */
 const LEADING_NEUTRAL_WORDS = new Set([
-  "a", "an", "the", "s", "and", "also", "still", "now", "currently", "indeed",
+  "a", "an", "the", "s", "and", "also", "still", "now", "currently", "indeed", "yet",
   "he", "she", "they", "it", "his", "her", "their", "its", "who", "is", "are",
 ]);
 
@@ -2006,15 +2014,19 @@ function detailWords(text) {
 /**
  * True when `inner`'s words appear in `outer` in order, as whole words, led
  * only by `neutral` words (tierHasDetail) and with no reversing word around
- * them.
+ * them. `addsNothing` — `outer` is the new detail, `inner` the card's: the
+ * words after the shared ones must be neutral too, or the new detail says
+ * more than the card does (issue #362 AC20).
  */
-function restatesDetail(outer, inner, neutral = LEADING_NEUTRAL_WORDS) {
+function restatesDetail(outer, inner, neutral = LEADING_NEUTRAL_WORDS, { addsNothing = false } = {}) {
   if (inner.length > outer.length) return false;
   for (let i = 0; i + inner.length <= outer.length; i++) {
     if (!inner.every((w, j) => outer[i + j] === w)) continue;
     const before = outer.slice(0, i);
     if (before.some(w => !neutral.has(w))) continue;
-    const around = [...before, ...outer.slice(i + inner.length)];
+    const after = outer.slice(i + inner.length);
+    if (addsNothing && after.some(w => !neutral.has(w))) continue;
+    const around = [...before, ...after];
     if (!reversesAround(around, inner)) return true;
   }
   return false;

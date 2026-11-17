@@ -1247,7 +1247,13 @@ Addressed:
   reversals ("gave up", "turned against", "fell out") and a dis- / un- /
   mis- / non- form of one of the detail's own words around them ("Trusted
   the crew, then distrusted them"); an exact restatement still dedupes
-  (issue #347 residual TIER-DETAIL-NEGATION-LIST).
+  (issue #347 residual TIER-DETAIL-NEGATION-LIST). A new detail that holds a
+  card line's words and says more after them is kept: it repeats the line
+  only when all it adds is neutral (the entity's name or role, a pronoun,
+  "still", "yet") — "Owes the Syndicate a debt she means to settle by
+  selling out the crew" was taken for a repeat of "Owes the Syndicate a
+  debt", written nowhere and, at scene end, marked migrated (issue #362
+  AC20). A shorter detail the card line already holds is still a repeat.
 
 Reaffirmed as deliberate (decisions.md → "Narrator-context reaffirmations"):
 - **Frame applies as an unvalidated full replacement** — the broadened

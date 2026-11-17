@@ -84,7 +84,9 @@ describe('TIER-DETAIL-NEGATION-WORDS — a reversal worded past any list is not 
     ['Runs the lower docks', 'The dockmaster runs the lower docks'],
     ['Runs the lower docks', 'She still runs the lower docks'],
     ["Ship is fast", "Vex's ship is fast"],
-    ['Agreed to smuggle the cargo', 'Vex agreed to smuggle the cargo for the crew'],
+    // "… for the crew" says more than the card does: kept (issue #362 AC20,
+    // tierDetailExtensionKept.test.js).
+    ['Agreed to smuggle the cargo', 'Vex agreed to smuggle the cargo'],
   ])('control: beside "%s", "%s" is the same detail — not filed twice', async (older, fact) => {
     seed([older]);
     expect(await appendMigratedTruthToTier('npc-vex', 'connection', migrated(fact)), 'the truth is on the card').toBe(true);
