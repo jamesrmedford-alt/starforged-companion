@@ -997,6 +997,39 @@ export function readVehicleAssetBattered(actor, itemId) {
 }
 
 /**
+ * Mark (or clear) a support vehicle's Battered condition — its card's own
+ * `system.conditions[]` tick, which readVehicleAssetBattered reads:
+ * Withstand Damage's at-0 cost for a support vehicle, "Mark the vehicle as
+ * battered" (issue #362 D8). The one writer of that condition the module
+ * makes. Reports, never throws.
+ *
+ * @param {Actor} actor
+ * @param {string} itemId — the support vehicle asset
+ * @param {boolean} [battered]
+ * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, changed?: boolean,
+ *   reason?: "no-vehicle"|"no-condition"|"refused", error?: string }>}
+ */
+export async function setVehicleAssetBattered(actor, itemId, battered = true) {
+  const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
+  if (!asset) return { ok: false, reason: 'no-vehicle' };
+  const at = { itemId: asset.id, name: asset.name ?? null };
+  const conditions = Array.isArray(asset.system?.conditions) ? asset.system.conditions : [];
+  const isBattered = (c) => String(c?.name ?? '').trim().toLowerCase() === 'battered';
+  if (!conditions.some(isBattered)) return { ok: false, reason: 'no-condition', ...at };
+  if (conditions.every(c => !isBattered(c) || (c?.ticked === true) === !!battered)) return { ok: true, ...at, changed: false };
+  const next = conditions.map(c => (isBattered(c) ? { ...c, ticked: !!battered } : c));
+  try {
+    refuseStaleActorWrite('vehicle battered');
+    await moduleUpdate(asset, { 'system.conditions': next });
+  } catch (err) {
+    console.warn(`actorBridge | vehicle battered: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
+    return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
+  }
+  invalidateActorCache(actor.id);
+  return { ok: true, ...at, changed: true };
+}
+
+/**
  * Change a support vehicle's integrity — its Integrity track — by `delta`,
  * kept within the track's min..max: Withstand Damage's "+1 integrity" /
  * "-1 integrity" when the roll was the vehicle's (statEnrichment's

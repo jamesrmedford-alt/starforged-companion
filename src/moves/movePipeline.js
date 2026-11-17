@@ -753,7 +753,7 @@ export function defaultChoices(reading) {
  * reading's interpretation (src/ui/settingsPanel.js MoveConfirmDialog).
  *
  * @param {Object} reading
- * @param {{ abilityIds?: string[], statReplacement?: string|null, targetId?: string|null }} choices — validated (round.js validateChoices)
+ * @param {{ abilityIds?: string[], statReplacement?: string|null, statAssetId?: string, targetId?: string|null }} choices — validated (round.js validateChoices)
  * @returns {Object} the interpretation rollMove takes
  */
 export function interpretationForRoll(reading, choices) {
@@ -767,6 +767,11 @@ export function interpretationForRoll(reading, choices) {
   interpretation.appliedAbilityKeys = chosen.map(a => a.key);
   const stat = typeof choices?.statReplacement === "string" ? choices.statReplacement : "";
   interpretation.appliedStatReplacement = stat && chosen.some(a => a.statReplacement === stat) ? stat : null;
+  // The asset the window's radio picked when two offer that substitution, as
+  // the confirm dialog stores it (appliedStatAssetId — substitutingAssetId
+  // reads it): the round rolled the healthiest companion (issue #362 AC61).
+  const assetId = interpretation.appliedStatReplacement && typeof choices?.statAssetId === "string" ? choices.statAssetId : null;
+  if (assetId && chosen.some(a => a.statReplacement === stat && a.assetId === assetId)) interpretation.appliedStatAssetId = assetId;
   const option = (reading?.targetChoices?.options ?? []).find(o => o.id === choices?.targetId) ?? null;
   if (option) {
     interpretation.moveTarget = option.label;

@@ -9,6 +9,9 @@
  * character no matter who spoke.
  *
  * Resolution order:
+ *   0. a card's post of a player's own line again (`lineAuthorId`, posted
+ *      by a GM — cardActions applyCardRollerFollowup) — that typist's PC,
+ *      or none (resolveUserActorId), never the posting GM's (issue #362 AC74)
  *   1. message.speaker.actor        — Foundry's native "speaking as"
  *                                     mechanism: selecting a token (or the
  *                                     user's assigned character fallback in
@@ -39,6 +42,7 @@
 
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
 
+const MODULE_ID = "starforged-companion";
 const OWNERSHIP_OWNER = 3;
 
 /**
@@ -86,6 +90,19 @@ export function isAuthoringClient(message) {
  * @returns {string|null} Actor id or null
  */
 export function resolveSpeakerActorId(message, campaignState) {
+  // 0. A player's own line a card's button posted again — a paced card's
+  //    Roll, a "Not rolled" notice's Narrate, pressed by a GM with no PC
+  //    named on the card (cardActions applyCardRollerFollowup): the line is
+  //    its typist's, so its move is their PC's — or nobody's at a table of
+  //    several, as their typed line's would be (issue #326 D8). The GM who
+  //    posted it resolved the first PC, another player's (issue #362 AC74).
+  //    Trusted only on a GM's post: a player's own message could name anyone.
+  const typistId = message?.flags?.[MODULE_ID]?.lineAuthorId;
+  if (typeof typistId === "string" && typistId && messageAuthor(message)?.isGM === true) {
+    const typist = globalThis.game?.users?.get?.(typistId) ?? null;
+    if (typist) return resolveUserActorId(typist, campaignState);
+  }
+
   // 1. Token-selection signal — message.speaker.actor (v13 shape:
   //    { scene, token, actor, alias }). The strongest statement of intent
   //    a player can make ("I am speaking as this character"), but only

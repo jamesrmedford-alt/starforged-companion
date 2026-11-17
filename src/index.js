@@ -5362,7 +5362,9 @@ async function postLegacyMarkCard(track, ticks) {
  * Tell a player with no character of their own that their move was not rolled
  * (issue #326 D8) — or, for a `!ptp` (`price`), that its price was not applied
  * (issue #337 Y43): whispered to the author (and the GMs), flagged so it never
- * reads as narration.
+ * reads as narration. A GM's press that posted the player's own line again
+ * names who typed it (`lineAuthorId` — cardActions applyCardRollerFollowup):
+ * that player is told too (issue #362 AC74).
  *
  * @param {ChatMessage} message — the player's narration, or their `!ptp`
  * @param {{ price?: boolean }} [opts]
@@ -5370,7 +5372,9 @@ async function postLegacyMarkCard(track, ticks) {
  */
 async function postNoCharacterNotice(message, { price = false } = {}) {
   const authorId = messageAuthorId(message);
-  const whisper  = [...new Set([authorId, ...gmUserIds()].filter(Boolean))];
+  const typist   = message?.author?.isGM === true && typeof message?.flags?.[MODULE_ID]?.lineAuthorId === "string"
+    ? message.flags[MODULE_ID].lineAuthorId : null;
+  const whisper  = [...new Set([authorId, typist, ...gmUserIds()].filter(Boolean))];
   const body = price
     ? `<strong>No character to pay the price</strong><p>You don&rsquo;t have a character of your own yet, so this price was not applied &mdash; another player&rsquo;s character can&rsquo;t pay it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p>`
     : `<strong>No character to roll for</strong><p>You don&rsquo;t have a character of your own yet, so this move was not rolled &mdash; another player&rsquo;s character can&rsquo;t make it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p>`;

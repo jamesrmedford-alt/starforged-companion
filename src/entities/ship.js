@@ -647,6 +647,27 @@ export function isShipBattered(actorOrId) {
   return !!readEntityFlag("ship", document)?.battered;
 }
 
+/**
+ * Is this ship cursed? As isShipBattered: the native starship field
+ * `system.debility.cursed` is canonical, the module flag's `cursed` its
+ * write-through mirror, read only for a legacy host with no native field.
+ * Read by Withstand Damage's at-0 cost card, whose "Mark the vehicle as
+ * cursed" is not offered once it is (sufferCard.js optionContext, issue #362
+ * D8).
+ *
+ * @param {Actor|string|null} actorOrId  the ship Actor, or its id
+ * @returns {boolean}
+ */
+export function isShipCursed(actorOrId) {
+  const document = typeof actorOrId === "string"
+    ? getEntityDocument("ship", actorOrId)
+    : (actorOrId ?? null);
+  if (!document) return false;
+  const native = document.system?.debility?.cursed;
+  if (typeof native === "boolean") return native;
+  return !!readEntityFlag("ship", document)?.cursed;
+}
+
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

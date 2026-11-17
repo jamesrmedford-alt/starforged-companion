@@ -323,7 +323,11 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
   open expedition's or scene challenge's row links or unlinks it (🔗 — an
   expedition the move pipeline began, which has no creation card to link it
-  on). The canonical GM checks the vow is open as the sheets stand
+  on). The row's choice survives another client's re-render of the panel
+  until its 🔗 is pressed (`_replaceHTML` carries it by track — issue #362
+  AC63: it went back to the stored link, and the press linked nothing), and a
+  🔗 pressed with "— no vow —" on a track that serves none is said on the
+  presser's screen and sends nothing. The canonical GM checks the vow is open as the sheets stand
   (`resolveVowChoice`; refused `no-vow`, said first on the presser's screen,
   since a relayed refusal reaches no player) and stores **`linkedVowId`** (the
   vow's id across copies — canonical) and **`linkedVowName`** (the name [4j]

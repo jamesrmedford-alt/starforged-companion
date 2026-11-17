@@ -90,7 +90,11 @@ Two cross-cutting facts to hold onto:
   `laterMoveFollows`, issue #326 D4). A follow-up taken from the same card
   (⚑, 🏁, 🤝, 🔗) is that next move, so a card offering an upgrade says to
   take it first, beside those buttons and in their titles (issue #330 D2).
-  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3):
+  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3) —
+  and a vehicle's damage or a companion's hit at 0, whose card rolls
+  Withstand Damage / Companion Takes a Hit for that vehicle or companion,
+  only that roll's own miss posting the vehicle-type cost or the companion's
+  fate (issue #362 D8; the step rolled the vehicle-damage d100 itself):
   its 🛡 card and the executor's line say the same while the move still
   offers an upgrade — the move card's (`resultUpgrade.upgradeOpenFor`), or,
   the price paid before that card posts, the pipeline's `upgradeOffered`

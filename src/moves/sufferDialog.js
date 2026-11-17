@@ -49,9 +49,16 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "route",        route, rank?, mark?, price? } — `price` ({ roll, moveName }):
  *                                         a Pay the Price the move rolled (SOJOURN-PTP-ADVISORY)
  *     { kind: "mark",         debility }
- *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
+ *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03);
+ *                                         Withstand Damage's vehicle-damage table (issue #362 D8)
  *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
- *                                         Lose Momentum (ENDURE-ZERO-ON-OTHER-OPTION)
+ *                                         Lose Momentum (ENDURE-ZERO-ON-OTHER-OPTION) —
+ *                                         after either option of Withstand Damage's
+ *                                         ("vehicle") and Companion Takes a Hit's
+ *                                         ("companion") own miss (issue #362 D8)
+ *     { kind: "resist",       moveId }  — the resist roll a suffer move owes at 0 (issue #330 D3, #362 D8)
+ *     { kind: "mark-vehicle", impact }  — the vehicle's battered / cursed (issue #362 D8)
+ *     { kind: "vehicle-cost", cost }    — a module broken / destroyed, recorded (issue #362 D8)
  */
 export function resolveSufferSelection(sufferPrompt, selection = {}) {
   if (!sufferPrompt) return [];
@@ -147,9 +154,20 @@ function optionToCalls(opt, selection) {
   }
 
   // The resist roll a suffer move owes at 0 (issue #330 D3): roll Endure
-  // Harm / Endure Stress as the PC.
-  if (opt.resist === "endure_harm" || opt.resist === "endure_stress") {
+  // Harm / Endure Stress as the PC — Withstand Damage / Companion Takes a Hit
+  // for the vehicle / companion the card names (issue #362 D8).
+  if (RESIST_MOVES.has(opt.resist)) {
     return [{ kind: "resist", moveId: opt.resist }];
+  }
+
+  // Withstand Damage's at-0 cost on its own miss (issue #362 D8): the
+  // vehicle marked battered or cursed, or a module broken / destroyed — the
+  // player's to mark on the starship sheet, the card recording it.
+  if (opt.markVehicle === "battered" || opt.markVehicle === "cursed") {
+    return [{ kind: "mark-vehicle", impact: opt.markVehicle }];
+  }
+  if (opt.vehicleCost === "module_broken" || opt.vehicleCost === "module_destroyed") {
+    return [{ kind: "vehicle-cost", cost: opt.vehicleCost }];
   }
 
   // "+1 on next move" situational bonus — surfaced as a reminder card;
@@ -181,11 +199,15 @@ function optionToCalls(opt, selection) {
     // Stress" names no amount (issue #330 D7; it was a fixed -2).
     const amounts = Array.isArray(opt.amountPick) ? opt.amountPick.filter(a => Number.isInteger(a) && a >= 1 && a <= 3) : [];
     if (amounts.length) return [{ kind: "needs-amount", sufferId: opt.suffer, amounts }];
-    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    // An option for one asset — a "which companion?" card's (sufferCard.js,
+    // issue #362 AC28) — names it.
+    const itemId = typeof opt.itemId === "string" && opt.itemId ? opt.itemId : (selection.itemId ?? null);
+    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId }];
     // Endure Harm / Stress's miss: "If your health is 0, you must also mark …
     // or roll on the table" whichever option is taken — the Lose Momentum
-    // pick's at-0 choice follows it (known-issues ENDURE-ZERO-ON-OTHER-OPTION).
-    if (opt.atZeroChoice === "harm" || opt.atZeroChoice === "stress") {
+    // pick's at-0 choice follows it (known-issues ENDURE-ZERO-ON-OTHER-OPTION);
+    // so do Withstand Damage's and Companion Takes a Hit's (issue #362 D8).
+    if (AT_ZERO_WHICH.has(opt.atZeroChoice)) {
       calls.push({ kind: "at-zero-choice", which: opt.atZeroChoice });
     }
     return calls;
@@ -212,8 +234,19 @@ function optionToCalls(opt, selection) {
   // Optional debility mark on the same option (face_death "mark doomed",
   // face_desolation "mark tormented").
   if (opt.mark) meterCalls.push({ kind: "mark", debility: opt.mark });
+  // Withstand Damage's / Companion Takes a Hit's own miss: its "-1 integrity"
+  // / "-1 companion health" is a meter, and "If your integrity is 0, also
+  // suffer a cost according to the vehicle type" — or the companion's fate —
+  // follows it, as it follows the miss's Lose Momentum (issue #362 D8).
+  if (AT_ZERO_WHICH.has(opt.atZeroChoice)) meterCalls.push({ kind: "at-zero-choice", which: opt.atZeroChoice });
   return meterCalls;
 }
+
+// The resist rolls a suffer move owes at 0 (issue #330 D3, #362 D8).
+const RESIST_MOVES = new Set(["endure_harm", "endure_stress", "withstand_damage", "companion_takes_a_hit"]);
+
+// What follows a resist roll's miss at 0, whichever option it took.
+const AT_ZERO_WHICH = new Set(["harm", "stress", "vehicle", "companion"]);
 
 
 // Meters a "meter" call may change: the PC's four, the vehicle's integrity and
@@ -239,6 +272,8 @@ export function isRetryableSufferCall(call) {
     case "mark":
     case "clear-impact":
       return typeof call.debility === "string" && /^[a-z0-9]+$/i.test(call.debility);
+    case "mark-vehicle":
+      return call.impact === "battered" || call.impact === "cursed";
     case "combat-progress":
     case "expedition-progress":
       return smallInt(call.count ?? 1, 4);
@@ -408,14 +443,20 @@ async function runSufferCall(call, actor, opts) {
       // at-0 choice. Held while another move resolves (deferWhileBusy). It is
       // owed (`owedMove`): in a Batch Mode round it is the roller's entry,
       // never an optional offer beside one (src/batch/round.js
-      // offerForcedMove, issue #342 D2).
-      const what = call.moveId === "endure_stress" ? "the stress" : "the harm";
+      // offerForcedMove, issue #342 D2). A vehicle's Withstand Damage and a
+      // companion's Companion Takes a Hit name what they are for, by its
+      // asset's id (`forcedMoveTargetId`): the roll is +that vehicle's
+      // integrity — the command vehicle's when the card names none — or
+      // +that companion's health (statEnrichment; issue #362 D8).
+      const subject = await resistSubject(call.moveId, actor, opts);
+      if (subject.missing) return { kind: "resist", moveId: call.moveId, ok: false, reason: subject.missing };
       try {
         await ChatMessage.create({
-          content: `${actor?.name ?? "The character"} resists ${what}.`,
+          content: subject.content,
           ...(actor ? { speaker: { actor: actor.id, alias: actor.name } } : {}),
           flags: { [MODULE_ID]: {
             bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true,
+            ...(subject.targetId ? { forcedMoveTargetId: subject.targetId, forcedMoveTarget: subject.targetName } : {}),
             // The card that owes it: a roll then not made re-opens it (issue #347 AB06).
             ...(typeof opts?.sufferCardId === "string" && opts.sufferCardId
               ? { sourceCard: { messageId: opts.sufferCardId, kind: "suffer" } } : {}),
@@ -426,6 +467,21 @@ async function runSufferCall(call, actor, opts) {
         return { kind: "resist", moveId: call.moveId, ok: false, reason: "post-failed" };
       }
       return { kind: "resist", moveId: call.moveId };
+    }
+    case "mark-vehicle":
+      // Withstand Damage's at-0 cost (issue #362 D8): the vehicle the card
+      // names, through its one writer — a support vehicle's Battered
+      // condition, the command vehicle's native impacts (updateShip writes
+      // them through to its record and its STARSHIP asset).
+      return markVehicleImpact(call.impact, actor, opts);
+    case "vehicle-cost": {
+      // A module has no broken mark the module can set: the card records
+      // the cost chosen, the player marks it on the starship sheet.
+      const what = call.cost === "module_destroyed"
+        ? "A broken module is destroyed — discard it on the starship sheet."
+        : "A module is broken — mark it on the starship sheet.";
+      await postDeferredCard("The vehicle's cost", what, { vehicleCost: call.cost });
+      return { kind: "vehicle-cost", cost: call.cost };
     }
     case "roll-table": {
       const rolled = await rollImpactTable(call.table, { ...opts, actorName: actor?.name ?? null });
@@ -582,6 +638,70 @@ async function runSufferCall(call, actor, opts) {
     default:
       return { kind: "unknown", call };
   }
+}
+
+/**
+ * What a resist roll's forced move says and names (issue #362 D8): Endure
+ * Harm / Stress the PC alone; Withstand Damage the support vehicle the card
+ * names (`opts.vehicleItemId`) — none for the command vehicle, whose
+ * integrity the move rolls by default — and Companion Takes a Hit the
+ * companion it names (`opts.companionItemId`), by their asset ids. One the
+ * card names that is gone since is `missing`: nothing is posted for it.
+ *
+ * @param {string} moveId
+ * @param {Actor|null} actor
+ * @param {Object} opts — the resist card's executor opts
+ * @returns {Promise<{ content: string, targetId?: string, targetName?: string, missing?: string }>}
+ */
+async function resistSubject(moveId, actor, opts = {}) {
+  const who = actor?.name ?? "The character";
+  if (moveId === "withstand_damage") {
+    const itemId = typeof opts.vehicleItemId === "string" && opts.vehicleItemId ? opts.vehicleItemId : null;
+    if (!itemId) return { content: `${who} resists the damage.` };
+    const { listSupportVehicleAssets } = await import("../character/actorBridge.js");
+    const asset = listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null;
+    if (!asset) return { content: "", missing: "no-vehicle" };
+    return { content: `${who} resists the damage to the ${asset.name ?? "vehicle"}.`, targetId: asset.id, targetName: asset.name ?? "vehicle" };
+  }
+  if (moveId === "companion_takes_a_hit") {
+    const { getCompanionAsset, companionGivenName } = await import("../character/actorBridge.js");
+    const companion = getCompanionAsset(actor, opts.companionItemId ?? null);
+    if (!companion) return { content: "", missing: "no-companion" };
+    const name = companionGivenName(companion) ?? companion.name ?? "companion";
+    return { content: `${who} tests ${name}'s resilience.`, targetId: companion.id, targetName: name };
+  }
+  return { content: `${who} resists ${moveId === "endure_stress" ? "the stress" : "the harm"}.` };
+}
+
+/**
+ * Mark a vehicle's impact — Withstand Damage's at-0 cost "Mark the vehicle as
+ * battered or cursed" (issue #362 D8): the support vehicle the card names
+ * (its Battered condition, actorBridge.setVehicleAssetBattered — a support
+ * vehicle is never cursed), else the vehicle the move was rolled against,
+ * else the command vehicle (entities/ship.js updateShip — its native impacts,
+ * the canonical store, written through to its record and STARSHIP asset). A
+ * write the world refuses throws (the card reports it, with a Retry).
+ *
+ * @param {"battered"|"cursed"} impact
+ * @param {Actor} actor
+ * @param {Object} opts — the cost card's executor opts
+ * @returns {Promise<Object>} the call's result
+ */
+async function markVehicleImpact(impact, actor, opts = {}) {
+  const itemId = typeof opts.vehicleItemId === "string" && opts.vehicleItemId ? opts.vehicleItemId : null;
+  if (itemId) {
+    if (impact !== "battered") return { kind: "mark-vehicle", impact, skipped: true, ok: false, reason: "no-vehicle" };
+    const { setVehicleAssetBattered } = await import("../character/actorBridge.js");
+    const res = await setVehicleAssetBattered(actor, itemId, true);
+    if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's battered mark");
+    return res.ok ? { kind: "mark-vehicle", impact, itemId } : { kind: "mark-vehicle", impact, skipped: true, ok: false, reason: res.reason ?? "no-vehicle" };
+  }
+  const { getCommandVehicleActorId, getShip, updateShip } = await import("../entities/ship.js");
+  const id = opts.vehicleActorId
+    ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) ?? null;
+  if (!id || !getShip(id)) return { kind: "mark-vehicle", impact, skipped: true, ok: false, reason: "no-vehicle" };
+  await updateShip(id, { [impact]: true });
+  return { kind: "mark-vehicle", impact, vehicleActorId: id };
 }
 
 /**
@@ -871,6 +991,12 @@ export function isOptionAvailable(opt, ctx = {}) {
     // (issue #309 N02: the PC's impacts were read instead).
     if ("vehicleBattered" in ctx) return ctx.vehicleBattered === false;
     return !debility.battered;
+  }
+  // The command vehicle's permanent impact — Withstand Damage's at-0 cost
+  // "Mark the vehicle as … cursed" (issue #362 D8); null: no command vehicle.
+  if (req === "!cursed") {
+    if ("vehicleCursed" in ctx) return ctx.vehicleCursed === false;
+    return !debility.cursed;
   }
   if (req === "!unprepared") return !debility.unprepared;
   if (req === "shaken")      return !!debility.shaken;
