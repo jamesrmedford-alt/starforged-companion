@@ -35,8 +35,10 @@ label naming no site and no tracked place
 unexplored; its name the label written as a name, `nameMatch.generatedName`:
 "the corridor" → "Corridor", issue #354 P2-18), a discovery record of type
 `uncharted` with `workingLabel: true`
-on the active sector's `mapData.discoveries` (the next periphery slot,
-`sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
+on the active sector's `mapData.discoveries` (the first periphery cell no
+site of the sector holds, `sectorGenerator.layoutDiscovery` — the next slot by
+count wrapped the seventh site onto the first one's pin, issue #362 AC51; on
+the pipeline's working copy, which its
 persist saves — an upgrade saves `sectors` at once; when the world refuses
 the persist, the record is a step on the GMs' payoff failure card, whose
 Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the

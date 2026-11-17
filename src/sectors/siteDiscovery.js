@@ -123,7 +123,7 @@ export const UNCHARTED_SITE_TYPE = "uncharted";
  * @param {Object} campaignState — mutated: the sector's discoveries, locationIds
  * @param {Object} [deps] — injection seams
  * @param {Function} [deps.createLoc] — (data, state) => Promise — entities/location.js createLocation
- * @param {Function} [deps.layout] — (site, index, mapSettlements) => discovery — sectorGenerator layoutDiscovery
+ * @param {Function} [deps.layout] — (site, index, mapSettlements, occupied) => discovery — sectorGenerator layoutDiscovery
  * @param {Function} [deps.addPin] — (scene, discovery, mapSettlements) => Promise — sceneBuilder addSiteToScene
  * @param {Function} [deps.getScene] — (sceneId) => Scene|null
  * @returns {Promise<{ sector: Object, site: Object }|null>}
@@ -166,7 +166,9 @@ export async function recordUnchartedDestination(label, campaignState, deps = {}
   };
   const mapSettlements = sector.mapData.settlements ?? [];
   const discoveries    = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
-  const discovery = { ...(await layout(site, discoveries.length, mapSettlements)), workingLabel: true };
+  // The first cell none of the sector's sites holds — the next slot by count
+  // wrapped the seventh onto the first site's pin (issue #362 AC51).
+  const discovery = { ...(await layout(site, discoveries.length, mapSettlements, discoveries)), workingLabel: true };
 
   // The location Actor first — the record links it. A refused creation
   // records nothing: no record without its place.

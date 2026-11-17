@@ -191,21 +191,53 @@ function layoutSites(sites, mapSettlements) {
   return (sites ?? []).map((s, i) => layoutDiscovery(s, i, mapSettlements));
 }
 
+// The cells a site recorded in play may take once the six slots are full:
+// the slots again, two columns in (still clear of the settlement cluster),
+// then any cell of the periphery (issue #362 AC51).
+const SITE_RING_CELLS = SITE_SLOTS.map(({ gridX, gridY }) => ({ gridX: gridX - 2, gridY }));
+const PERIPHERY_CELLS = [];
+for (let gridY = 1; gridY <= 9; gridY += 1) {
+  for (let gridX = 16; gridX >= 11; gridX -= 1) PERIPHERY_CELLS.push({ gridX, gridY });
+}
+
+/**
+ * The first cell of the periphery no site of the sector occupies — the six
+ * slots in order, then their ring two columns in, then any free cell.
+ * `index % 6` wrapped the seventh site onto the first one's pin, so one
+ * "Unexplored Site" pin hid another and a token parked there read as near
+ * the older site (issue #362 AC51). With every cell taken, the slot the index
+ * names, as before.
+ *
+ * @param {Array<{gridX?: number, gridY?: number}>} occupied — the sector's discoveries
+ * @param {number} index
+ * @returns {{ gridX: number, gridY: number }}
+ */
+function freeSiteCell(occupied, index) {
+  const taken = new Set((occupied ?? []).map(d => `${d?.gridX},${d?.gridY}`));
+  return [...SITE_SLOTS, ...SITE_RING_CELLS, ...PERIPHERY_CELLS].find(c => !taken.has(`${c.gridX},${c.gridY}`))
+    ?? SITE_SLOTS[Math.max(0, Number(index) || 0) % SITE_SLOTS.length];
+}
+
 /**
  * One site's map discovery record: the periphery slot for the sector's
  * `index`-th site, its undiscovered passage anchored to the rightmost
  * (frontier-facing) settlement. Shared by the generator's sites and an
  * uncharted destination recorded in play (siteDiscovery
- * recordUnchartedDestination, issue #348 PT07), which takes the next slot.
+ * recordUnchartedDestination, issue #348 PT07), which passes the sector's
+ * discoveries as `occupied` and takes the first cell none of them holds
+ * (issue #362 AC51).
  *
  * @param {{ id: string, type: string, name: string }} site
  * @param {number} index — the site's place among the sector's discoveries
  * @param {Array} mapSettlements — mapData.settlements (with gridX/gridY)
+ * @param {Array|null} [occupied] — the sector's discoveries, for a site recorded in play
  * @returns {Object} a mapData.discoveries entry
  */
-export function layoutDiscovery(site, index, mapSettlements) {
+export function layoutDiscovery(site, index, mapSettlements, occupied = null) {
   const jumpOff = [...(mapSettlements ?? [])].sort((a, b) => b.gridX - a.gridX)[0] ?? null;
-  const slot = SITE_SLOTS[Math.max(0, Number(index) || 0) % SITE_SLOTS.length];
+  const slot = Array.isArray(occupied)
+    ? freeSiteCell(occupied, index)
+    : SITE_SLOTS[Math.max(0, Number(index) || 0) % SITE_SLOTS.length];
   return {
     id:                  site.id,
     type:                site.type,
