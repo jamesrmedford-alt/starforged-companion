@@ -6,6 +6,18 @@ rejected.
 
 ---
 
+## Issue #362 D14: a session over after four idle hours is not begun — the chat gate points at Begin a Session (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D14; the maintainer's answer of 2026-11-17, option A.) The chat pipeline's session gate narrates a typed line only into a session **in play** (`session/lifecycle.js` `sessionInPlay`): begun (its gate open), not being replaced by this GM's world load (issue #345 AA58), and **not over** — End a Session's mark, or `SESSION_IDLE_HOURS` (four) since the session was last seen live, the later of its mint and its latest chat-activity stamp. A line typed into an over session is not narrated and no move is rolled; the author and the GMs are whispered the "No session has begun" notice, which says the last session is over and points at Begin a Session. Begin takes the boundary (`rollSessionIfDue` mints the next session — it already did for an over session — then begins it), so the boundary falls when play resumes, never mid-scene. The gate's mirrors ask the same question: the too-short notice, the "Held — no session has begun" note on a held forced move, and the drain that hands a held move back. A session whose last sighting is unknown is not taken as over: the gate fails open on what it cannot read, as it does on an unreadable state (the world load's `sessionNeedsMint` still mints such a session).
+
+**Reason:** with the GM's game left loaded through four idle hours nothing mints — the boundary is applied only at a canonical GM's world load or at Begin a Session — and the gate read only the session-active flag. Play went on in a session the Session panel read as "Over — four hours without chat" with Begin enabled, the activity stamp never wrote again ("never revives"), and any reload during that play minted, closed the gate and asked for Begin mid-scene.
+
+**Amends:** "A session ends at End Session or after four idle hours; the next is told about the last (2026-10)" — what happens to play after the boundary and before the next load or Begin. Its rejection of *re-minting on the first message after an idle gap* stands: the gate refuses the line; Begin mints.
+
+**Rejected:** *leaving it* (D14's option B) — the panel and the narration disagreed about whether a session was running, and the boundary landed at whatever reload came next.
+
+---
+
 ## Issue #362 D9: wounded caps health at 4, shaken caps spirit at 3 — a house rule, not the rulebook's (2026-11)
 
 **Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D9; the maintainer's answer of 2026-11-17, option A — not the audit lead's recommendation.) The module keeps its caps as a **house rule**: while a character is **wounded**, a meter change the module makes (`actorBridge.applyMeterChanges` — a move's outcome, a suffer move, a heal) holds health at most 4; while **shaken**, spirit at most 3. Unmarked, both run to 5 as the sheet does. What it covers, exactly:

@@ -173,7 +173,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, serialiseSessionMint } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { reportSnapshotEvent, registerSnapshotEventsSetting } from "./narration/snapshotEvents.js";
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
@@ -929,10 +929,16 @@ export function registerChatHook() {
     // open until the mint lands: a line typed meanwhile was narrated into it
     // after its LAST SESSION was taken, under its old id — the new session's
     // ring never showed it either (issue #345 AA58; Z24's rule for rounds).
+    // A session over — four idle hours with the GM's game left loaded — is
+    // not begun either: play went on in a session the Session panel read as
+    // "Over", and the next reload closed it mid-scene; the notice points at
+    // Begin a Session, which takes the boundary (issue #362 D14).
     let sessionActive = true;
+    let sessionOver   = false;
     try {
       const gateState = game.settings.get(MODULE_ID, "campaignState");
-      sessionActive = isSessionActive(gateState) && !sessionBeingReplaced(gateState);
+      sessionActive = sessionInPlay(gateState);
+      sessionOver   = !sessionActive && isSessionActive(gateState) && !sessionBeingReplaced(gateState);
     } catch (err) {
       // Defensive: if the read fails, fail-OPEN — treat the session as
       // active and run the pipeline. The downside of fail-closed is
@@ -946,7 +952,7 @@ export function registerChatHook() {
         deferForcedMove(message, { untilSession: true });
         markHeldUntilSession(message, true);
       }
-      await postSessionGateNotice(message, { held }).catch(err =>
+      await postSessionGateNotice(message, { held, over: sessionOver }).catch(err =>
         console.warn(`${MODULE_ID} | the no-session notice failed:`, err?.message ?? err));
       return;
     }
@@ -1709,13 +1715,16 @@ const _sessionGateTold = new Set();
  * passes the gate again; a button's forced move is told every time. A
  * button's forced move is the card's roller's, and a relayed press posts it
  * on the GM — its author — so the roller's players are told too: the one who
- * pressed, or whose card a GM pressed (issue #335 Y17).
+ * pressed, or whose card a GM pressed (issue #335 Y17). A session that went
+ * over — four hours with nothing said in chat — is said to be over first; the
+ * notice points at Begin a Session all the same (issue #362 D14).
  *
  * @param {ChatMessage} message
- * @param {{ held?: boolean }} [opts] — the forced move is held until a session begins
+ * @param {{ held?: boolean, over?: boolean }} [opts] — the forced move is held
+ *   until a session begins; the session in the store is over
  * @returns {Promise<void>}
  */
-async function postSessionGateNotice(message, { held = false } = {}) {
+async function postSessionGateNotice(message, { held = false, over = false } = {}) {
   const forced   = !!message?.flags?.[MODULE_ID]?.forcedMoveId;
   const authorId = messageAuthorId(message);
   const rollerPlayerIds = forced ? speakerOwnerIds(message) : [];
@@ -1727,11 +1736,14 @@ async function postSessionGateNotice(message, { held = false } = {}) {
     if (authorId) _sessionGateTold.add(authorId);
   }
   const how = "Begin a Session (the Session panel, or <code>!begin-session</code>)";
+  const why = over
+    ? `The last session is over — ${SESSION_IDLE_HOURS} hours passed with nothing said in chat — and no session has begun since`
+    : "No session has begun";
   const body = !forced
-    ? `No session has begun, so this was not narrated and no move was rolled. Press ${how} to start play.`
+    ? `${why}, so this was not narrated and no move was rolled. Press ${how} to start play.`
     : held
-      ? `No session has begun — this move will be rolled once ${how} starts one.`
-      : `This move was not rolled: no session has begun. Press ${how}, then press the button again.`;
+      ? `${why} — this move will be rolled once ${how} starts one.`
+      : `This move was not rolled: ${why.charAt(0).toLowerCase()}${why.slice(1)}. Press ${how}, then press the button again.`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>No session has begun</strong><p>${body}</p></div>`,
     whisper: [...new Set([authorId, ...rollerPlayerIds, ...gmUserIds()].filter(Boolean))],
@@ -1887,7 +1899,8 @@ async function tellLineTooShort(message) {
   if (!authorId || authorId !== game.user?.id) return;
   let narrated = false;
   try {
-    narrated = isSessionActive(game.settings.get(MODULE_ID, "campaignState")) && !isBatchModeEnabled();
+    // The chat gate's own question (issue #362 D14: an over session narrates nothing either).
+    narrated = sessionInPlay(game.settings.get(MODULE_ID, "campaignState")) && !isBatchModeEnabled();
   } catch (err) {
     console.warn(`${MODULE_ID} | too-short notice: the session could not be read — the line's author is not told:`, err?.message ?? err);
   }
@@ -1973,7 +1986,7 @@ function markHeldUntilSession(message, held) {
 function renderHeldUntilSessionNote(message, root) {
   if (!liveCardFlags(message)?.heldUntilSession) return;
   let active = true;
-  try { active = isSessionActive(game.settings.get(MODULE_ID, "campaignState")); }
+  try { active = sessionInPlay(game.settings.get(MODULE_ID, "campaignState")); }   // as the gate holds it (issue #362 D14)
   catch (err) { console.debug?.(`${MODULE_ID} | held-move note: session state unread:`, err?.message ?? err); }
   if (active) return;
   const at = root?.querySelector?.(".message-content") ?? root;
@@ -2009,8 +2022,9 @@ function drainDeferredForcedMoves() {
   // be held again — and drained again, at once, forever (issue #342 Z25).
   if (state?.pendingMove || _moveLockClaimInFlight) return;
   // Held until a session begins: the gate would only hold it again (issue #329 X14),
-  // and so while this load replaces the stored session (issue #345 AA58).
-  if (!isSessionActive(state) || sessionBeingReplaced(state)) return;
+  // and so while this load replaces the stored session (issue #345 AA58), and
+  // while the stored session is over (issue #362 D14) — the gate's own question.
+  if (!sessionInPlay(state)) return;
   let message = null;
   while (!message && _deferredForcedMoves.length) {
     const id = _deferredForcedMoves.shift();
