@@ -1444,12 +1444,17 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
  * answers to this name. Used by routeWorldJournalResults to divert entity-
  * specific lore to the entity's generative tier instead of the WJ lore journal.
  *
- * The name as recorded first (a title aside). Then, when exactly one record
- * answers (issue #354 P2-17): a person under part of their name or a near
- * spelling ("Archer" for Vuldar Archer), any other entity when one name is
- * inside the other as whole words ("blockade corridor" for "The Corridor").
- * The narration rarely uses a record's whole name, so the facts it
- * established about a place sat in the Lore journal and never reached the
+ * The name as recorded first (a title aside) — and a name several records
+ * bear is the active sector's (activeSectorNamesakeFirst's rule, issue #342
+ * Z15 / #345 AA06): generated site names repeat across sectors, and the first
+ * record in creation order — the older sector's "Derelict Starship" — took
+ * the fact about the one the crew is aboard (issue #362 AC22); none of them
+ * the active sector's, or two of them, is nobody's. Then, when exactly one
+ * record answers (issue #354 P2-17): a person under part of their name or a
+ * near spelling ("Archer" for Vuldar Archer), any other entity when one name
+ * is inside the other as whole words ("blockade corridor" for "The
+ * Corridor"). The narration rarely uses a record's whole name, so the facts
+ * it established about a place sat in the Lore journal and never reached the
  * place. Two records answering is nobody's: the fact stays world lore.
  *
  * @param {string} entityName
@@ -1459,6 +1464,7 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
 function findEntityForLoreRouting(entityName, campaignState) {
   const target = normalizeEntityName(entityName);
   if (!target) return null;
+  const exact = [];
   const variants = [];
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
@@ -1469,10 +1475,18 @@ function findEntityForLoreRouting(entityName, campaignState) {
       try { rec = getter(journalId); } catch { continue; }
       if (!rec?.name) continue;
       const recorded = normalizeEntityName(rec.name);
-      if (recorded === target) return { journalId, type };
+      if (recorded === target) {
+        exact.push({ journalId, type, sectorId: typeof rec.sectorId === "string" ? rec.sectorId : null });
+        continue;
+      }
       const answers = type === "connection" ? !!personNameMatch(target, recorded) : nameWithin(target, recorded);
       if (answers) variants.push({ journalId, type });
     }
+  }
+  if (exact.length) {
+    const activeSectorId = campaignState?.activeSectorId ?? null;
+    const here = exact.length === 1 ? exact : exact.filter(e => activeSectorId && e.sectorId === activeSectorId);
+    return here.length === 1 ? { journalId: here[0].journalId, type: here[0].type } : null;
   }
   return variants.length === 1 ? variants[0] : null;
 }
