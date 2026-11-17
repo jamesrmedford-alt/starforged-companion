@@ -22,6 +22,10 @@ Two cross-cutting facts to hold onto:
   is one (`moves/stakes.js` `statedPrice` → `postMovePayThePriceCard`'s
   `stated`: no d100, its one suffer route dispatched as a rolled route is,
   the same receipts on `ptpReversals`), else rolls the table (issue #353 R1).
+  A Battle or Clash **weak hit** that routes Pay the Price rolls the table:
+  the stated miss is a miss's price only — `rollMove` passes `stated` for a
+  miss alone, and a held miss burned or improved to such a weak hit pays the
+  table's too (`heldResult.payHeldPrice`, issue #362 AC01).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,

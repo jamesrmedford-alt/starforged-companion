@@ -1488,8 +1488,11 @@ export async function rollMove({
     // The miss stated before the roll is the price (issue #353 R1, decided:
     // the table is the alternative — rolled when none was stated, or with
     // the world setting off): its suffer move runs through the same
-    // executors, and leaves the receipts a burn undoes.
-    const stated = statedPrice(resolution.stakes);
+    // executors, and leaves the receipts a burn undoes. A miss's price only:
+    // a Battle or Clash weak hit that pays one pays the table's — it paid the
+    // line the dialog showed "On a miss", beside a narration told to deliver
+    // the hit (issue #362 AC01).
+    const stated = resolution.outcome === "miss" ? statedPrice(resolution.stakes) : null;
     if (hold) {
       // Paid when the result is kept — or by an upgraded result that pays a
       // price too (heldResult.js payHeldPrice).
