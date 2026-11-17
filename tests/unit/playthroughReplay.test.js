@@ -219,7 +219,10 @@ describe('strict replay fails what a permissive replay only reported', () => {
     // A required call that never starts: the wait gives up, and the check names it.
     harness.setStep('drag-home');
     await expect(harness.waitForCalls('drag-home', SCENARIO.steps[6], [], { timeoutMs: 300 })).resolves.toBe(false);
-    expect(harness.checkStep('drag-home', SCENARIO.steps[6], []).failures).toHaveLength(2);
+    // One failure per required call: the drag's stakes reading (issue #362
+    // D11 reads a forced one-stat move's stakes), its narration and its
+    // Chronicle entry.
+    expect(harness.checkStep('drag-home', SCENARIO.steps[6], []).failures).toHaveLength(3);
   });
 
   it('and for the optional calls its recording made in that step, so they do not start in the next one', async () => {

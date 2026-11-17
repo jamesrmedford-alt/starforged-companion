@@ -4,6 +4,21 @@
   "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Each exchange names the scenario step that makes its call (strict replay, issue #302). Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
   "exchanges": [
     {
+      "step": "begin",
+      "kind": "prewarmNarratorCache>warmNarratorCacheAfterBegin",
+      "user": "Session start.",
+      "response": {
+        "content": [],
+        "stop_reason": "max_tokens",
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        }
+      }
+    },
+    {
       "step": "mira-acts",
       "kind": "callClassifierAPI>classifyInput",
       "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",

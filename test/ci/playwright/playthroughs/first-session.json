@@ -102,6 +102,7 @@
     { "id": "drag-home", "do": "dragShip", "as": "gm", "to": "Hollow Spire",
       "dice": { "challenge": [2, 3], "action": 5 }, "outcome": "strong_hit",
       "calls": [
+        { "kind": "callClaudeAPI>interpretMove" },
         { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
       ],
