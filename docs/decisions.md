@@ -6,6 +6,21 @@ rejected.
 
 ---
 
+## Issue #362 D9: wounded caps health at 4, shaken caps spirit at 3 — a house rule, not the rulebook's (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D9; the maintainer's answer of 2026-11-17, option A — not the audit lead's recommendation.) The module keeps its caps as a **house rule**: while a character is **wounded**, a meter change the module makes (`actorBridge.applyMeterChanges` — a move's outcome, a suffer move, a heal) holds health at most 4; while **shaken**, spirit at most 3. Unmarked, both run to 5 as the sheet does. What it covers, exactly:
+- Only the module's own meter writes are capped. A GM's or player's edit on the ironsworn sheet is not (the vendor sheet and its condition-meter fields carry no cap), and the impacts' own rules — Heal and Hearten clear the impact, Endure Harm and Endure Stress mark it — are the move texts' as written.
+- A change the module makes while the meter stands above the cap brings it down to the cap (a +1 heal on a wounded character at 5 health leaves 4), since the clamp is applied to the result of every change.
+- The two numbers differ, as the module wrote them; nothing in the vendored moves or the play kit sets either, so neither is the rulebook's.
+
+**Reason:** the fourteenth audit (#362, MOVB and CHAR) found the caps recorded in `docs/rules-reference/playkit-rules-and-coverage.md` as "(rulebook)", while neither the vendored move texts nor the vendor sheet carries a cap and two reviewers knew of no such Starforged rule. The maintainer keeps the behaviour the table plays with and asks that it be named for what it is, so a later session does not "fix" it to the rulebook or cite it as one.
+
+**Supersedes:** the rules reference's "(rulebook)" attribution of the caps (Part 1 §1.2, and the Part 2 coverage row for the condition meters), corrected in the same commit.
+
+**Rejected:** *removing the caps* (D9's option B) — not chosen; a playtest that wants rulebook meters can revisit it here.
+
+---
+
 ## The world snapshot: the whole world state, frozen and cached for the session (2026-11)
 
 **Decision:** ([#357](https://github.com/jamesrmedford-alt/starforged-companion/issues/357); the maintainer's answers of 2026-11-14 — "all plans go in", "scene boundaries and major oracle rolls, new plans, etc.", "no size limit", "make that list accessible for later modifications", "also, at sector creation". Phases 1–3 are built; phase 4 is open, below.)
