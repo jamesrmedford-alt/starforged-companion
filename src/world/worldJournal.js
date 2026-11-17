@@ -186,13 +186,21 @@ export function splitThreatName(raw) {
  * in play before a resolved one, then the shortest name. null for a threat
  * the journal does not hold.
  *
+ * A page a GM's Merge duplicates closed is the threat it was merged into
+ * (`mergedInto`, followed — mergedThreatPage): the closed page's name is a
+ * variant of the kept one's — the detector dropped an article or tacked the
+ * same words on again, which is how the duplicate was made — so the kept page
+ * takes the update and the closed page stays closed (issue #362 AC21: the
+ * page so named was returned before anything was ranked, and nothing read
+ * `mergedInto`, so the closed page was written and active again).
+ *
  * @param {JournalEntry|null} journal — the Threats journal
  * @param {string} name — splitThreatName's
  * @returns {JournalEntryPage|null}
  */
 function findThreatPageVariant(journal, name) {
   const exact = findPageByName(journal, name);
-  if (exact) return exact;
+  if (exact) return mergedThreatPage(journal, exact);
   const key = nameKey(name);
   if (!key) return null;
   const pages = (journal?.pages?.contents ?? [])
@@ -201,9 +209,31 @@ function findThreatPageVariant(journal, name) {
     .map(p => ({ ...p, key: nameKey(p.entry.name) }));
   const rank = (p) => (p.entry.severity === "resolved" ? 1 : 0);
   const best = (hits) => hits.sort((a, b) => (rank(a) - rank(b)) || (a.key.length - b.key.length))[0]?.page ?? null;
-  return best(pages.filter(p => p.key === key))
-      ?? best(pages.filter(p => suffixedName(p.entry.name, name)))
-      ?? null;
+  const hit = best(pages.filter(p => p.key === key))
+      ?? best(pages.filter(p => suffixedName(p.entry.name, name)));
+  return hit ? mergedThreatPage(journal, hit) : null;
+}
+
+/**
+ * The page a threat page was merged into (`mergedInto`, mergeDuplicateThreats),
+ * followed to the page that holds the threat now — a kept page merged later
+ * into another is followed on; a mark that names no page, or loops, stops
+ * where it is. A page never merged is itself (issue #362 AC21).
+ *
+ * @param {JournalEntry|null} journal — the Threats journal
+ * @param {JournalEntryPage} page
+ * @returns {JournalEntryPage}
+ */
+function mergedThreatPage(journal, page) {
+  const seen = new Set();
+  let at = page;
+  for (;;) {
+    seen.add(at);
+    const into = at?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats]?.mergedInto;
+    const next = typeof into === "string" && into.trim() ? findPageByName(journal, into) : null;
+    if (!next || seen.has(next)) return at;
+    at = next;
+  }
 }
 
 /**
@@ -682,6 +712,12 @@ export async function recordThreat(name, entry, campaignState) {
     history:     cappedThreatHistory(history),
     createdAt:   existing?.createdAt ?? now,
     updatedAt:   now,
+    // A page this write lands on is the threat's own: the capture's follows a
+    // merged page to the one it was merged into (findThreatPageVariant), so
+    // only a GM's `!journal` naming a closed page re-opens it — and then it is
+    // no longer merged away. Written null, not left out: Foundry merges a flag
+    // key by key, so the old mark would stay (issue #362 AC21).
+    mergedInto:  null,
     ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
   };
 
