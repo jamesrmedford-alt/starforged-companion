@@ -211,9 +211,18 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
     const changed = change(record);
     const next = changed ? normaliseSkeleton({ ...changed, id: record.id, createdAt: record.createdAt, updatedAt: new Date().toISOString() }) : null;
     if (!next) return null;
+    // One version a narration (issue #362 AC34): a plan is written several
+    // times by one narration — its decision, its clock's link, a write per
+    // `reveals` entry, its capture's link to a Threats page — and each write
+    // pushed the narration's own last version onto `previous`, which keeps
+    // NARRATION_HISTORY. Four writes pushed off the version before the
+    // narration, and the X-Card on it then deleted a plan an earlier, kept
+    // narration had made. The narration's own versions are never what an
+    // undo restores: its next write keeps the history the first one made.
+    const again = typeof narrationId === "string" && !!narrationId && stored.narrationId === narrationId;
     const stamp = keepStamp
       ? { narrationId: stored.narrationId ?? null, previous: stored.previous ?? null }
-      : narrationStamp(narrationId, stored);
+      : again ? { narrationId, previous: stored.previous ?? null } : narrationStamp(narrationId, stored);
     const data = { ...next, ...stamp };
     try {
       await writeEntryPage(page, FLAG_KEYS.secrets, data);

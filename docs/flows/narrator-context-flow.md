@@ -905,7 +905,10 @@ the other name in `aliases` (read by `secrets.subjectNames` and
 improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`);
 each write stamped with the narration's id, which the X-Card's
-`undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
+`undoNarrationEntries` takes back — a plan keeps one version a narration,
+however often that narration writes it (decision, clock link, each reveal, its
+capture's link), so the version before it is never pushed off the three-deep
+history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute
