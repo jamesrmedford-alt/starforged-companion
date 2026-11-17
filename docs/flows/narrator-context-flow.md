@@ -540,7 +540,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   (`mergeFactionLandscape`, uncapped), every World Journal threat not
   resolved, all confirmed lore with the Locations journal's places and
   `campaignState.loreRecap`, the newest three earlier sessions' summaries
-  (`previousSessionSummary`, and each Session Log page's story) with the open
+  (`previousSessionSummary`, and each Session Log page's story — one with no
+  number, an unbegun session's, reads "An earlier session", not "Session 0",
+  and the session that closed last is the newest numbered or not, issue #362
+  AC71) with the open
   vows and tracks by name, and every active plan of the Secrets journal
   (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
   context settings and the rolling summary's setting leave their sections

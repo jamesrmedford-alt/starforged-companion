@@ -325,6 +325,21 @@ function loreUnits(campaignState) {
  * `previousSessionSummary`) and the "Story so far" each session's Session Log
  * page holds — and what stands open: the open vows and tracks, by name.
  */
+/**
+ * A stored session number, or NaN for none. The mint keeps an unbegun
+ * session's summary with `sessionNumber: null` (its number passes to the next
+ * session — LAST SESSION, not "Session 4"), and a Session Log page may hold
+ * null too; `Number(null)` is 0, a finite number, so such a summary read
+ * "Session 0" (issue #362 AC71).
+ *
+ * @param {*} value
+ * @returns {number}
+ */
+function sessionNumberOf(value) {
+  if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return NaN;
+  return Number(value);
+}
+
 function memoryUnits(campaignState, { progressTracks = [], summaries = true } = {}) {
   const out = [];
   if (summaries) {
@@ -333,13 +348,17 @@ function memoryUnits(campaignState, { progressTracks = [], summaries = true } = 
     for (const { entry } of listWorldJournalEntries('sessionLog')) {
       const text = oneLine(entry.summary?.narrative);
       if (!entry.sessionId || entry.sessionId === current || !text) continue;
-      bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: Number(entry.sessionNumber), text });
+      bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: sessionNumberOf(entry.sessionNumber), text });
     }
     const prev = campaignState?.previousSessionSummary;
     if (prev?.sessionId && prev.sessionId !== current && oneLine(prev.text)) {
-      bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: Number(prev.sessionNumber), text: oneLine(prev.text) });
+      // The session that closed last — the newest earlier one, numbered or not.
+      bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: sessionNumberOf(prev.sessionNumber), text: oneLine(prev.text), last: true });
     }
-    const numbered = (s) => (Number.isFinite(s.number) ? s.number : -1);
+    // An unnumbered summary of the session that closed last is still the
+    // newest: ranked as the oldest, it was the one the newest three left out.
+    const LAST_UNNUMBERED = 999998;   // after every numbered session, before 'memory:open'
+    const numbered = (s) => (Number.isFinite(s.number) ? s.number : (s.last ? LAST_UNNUMBERED : -1));
     const newest = [...bySession.values()]
       .sort((a, b) => (numbered(b) - numbered(a)) || String(b.sessionId).localeCompare(String(a.sessionId)))
       .slice(0, SNAPSHOT_SESSION_SUMMARIES);
