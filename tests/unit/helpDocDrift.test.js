@@ -39,8 +39,9 @@ describe("the help journal against the code (issue #326 W83)", () => {
     const gmLine = { content: "I brace against the hull and push through the breach.", whisper: [], rolls: [], flags: {}, author: { isGM: true } };
     expect(isPlayerNarration(gmLine)).toBe(true);                        // control: the code runs it
     const src = readFileSync("src/index.js", "utf8");
-    // control: the session gate — which also refuses the session a world load is replacing (issue #345 AA58)
-    expect(src).toMatch(/sessionActive = isSessionActive\(gateState\) && !sessionBeingReplaced\(gateState\)/);
+    // control: the session gate — which also refuses the session a world load is replacing (issue #345 AA58),
+    // and one that is over after four idle hours (issue #362 D14: lifecycle.js sessionInPlay)
+    expect(src).toMatch(/sessionActive = sessionInPlay\(gateState\)/);
     expect(src).toMatch(/if \(!sessionActive\) \{/);
     const entry = plain(page("Troubleshooting")).match(/No move card after typing narration(.*?)(?=Safety settings not applying)/)?.[1] ?? "";
     expect(entry).not.toMatch(/GM messages are excluded/);
