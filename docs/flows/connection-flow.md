@@ -200,7 +200,14 @@ recorded under its name promoted to it; its bond is §2's.
   Placeholder-name reveals rename in place rather than duplicating; a reveal
   whose `from` names no recorded placeholder connection drafts the newly
   named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
-  U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
+  U27). A reveal onto a name someone already holds — a record's whole name,
+  or a person's part name or near spelling ("it is Sable" with Sable Ortiz
+  known, "Isaac" for the PC Isaac Sutton; the placeholder itself not counted)
+  — is refused, and the GMs are whispered which known person it named
+  ("Identity revealed — not renamed", `postRenameRefusedCard`): whether the
+  two are one person is theirs to say, nothing merges two records (issue
+  #362 AC40 — the placeholder was renamed "Sable", a second card answering to
+  every "Sable"). A rename carries its narration's id (`renamedBy`), and an X-Card on
   that narration puts the placeholder name back unless the card was renamed
   since; the card's still-pending rows are withdrawn (`xCarded`) — issue
   #335 Y02, #338 D6(i). A revealed name the GM once dismissed from a draft

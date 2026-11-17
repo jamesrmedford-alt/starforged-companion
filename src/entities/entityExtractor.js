@@ -169,19 +169,19 @@ export function isPlaceholderName(name) {
  * listed connections (every named NPC is a connection card — FOLDER-002).
  *
  * @param {Object|null} campaignState — with the store's lists (withStoredEntityIds)
- * @returns {Array<{ name: string, pc: boolean }>}
+ * @returns {Array<{ name: string, pc: boolean, id: string|null }>} — `id` the PC's Actor id, or the connection's listed host id
  */
 function knownPeople(campaignState) {
   const people = [];
   try {
-    for (const a of getPlayerActors()) if (a?.name) people.push({ name: a.name.trim(), pc: true });
+    for (const a of getPlayerActors()) if (a?.name) people.push({ name: a.name.trim(), pc: true, id: a.id ?? null });
   } catch (err) {
     console.warn(`${MODULE_ID} | knownPeople: PC roster lookup failed:`, err?.message ?? err);
   }
   for (const id of campaignState?.connectionIds ?? []) {
     let rec = null;
     try { rec = getConnection(id); } catch { continue; }
-    if (rec?.name) people.push({ name: rec.name.trim(), pc: false });
+    if (rec?.name) people.push({ name: rec.name.trim(), pc: false, id });
   }
   return people;
 }
@@ -191,18 +191,28 @@ function knownPeople(campaignState) {
  * title aside (normalizeEntityName), or — what a whole-name comparison missed
  * — part of it ("Archer" for Vuldar Archer, the name the narration keeps
  * using) or a near spelling of it ("Valdur Archer"). `names` — more people to
- * match against (the pending draft rows). null when it names nobody known.
+ * match against (the pending draft rows); `exceptId` — a listed connection
+ * left out (a placeholder being renamed is not its own namesake). null when it
+ * names nobody known.
  *
  * @param {string} name
  * @param {Object|null} campaignState
- * @param {string[]} [names]
- * @returns {string|null} the known person's name
+ * @param {{ names?: string[], exceptId?: string|null }} [opts]
+ * @returns {{ name: string, pc: boolean, id: string|null }|null} the known person
  */
-function knownPersonNamed(name, campaignState, names = []) {
+function knownPersonFor(name, campaignState, { names = [], exceptId = null } = {}) {
   const target = normalizeEntityName(name);
   if (!target) return null;
-  const candidates = [...knownPeople(campaignState).map(p => p.name), ...names];
-  return candidates.find(n => personNameMatch(target, normalizeEntityName(n))) ?? null;
+  const candidates = [
+    ...knownPeople(campaignState).filter(p => !exceptId || p.pc || p.id !== exceptId),
+    ...names.map(n => ({ name: n, pc: false, id: null })),
+  ];
+  return candidates.find(p => personNameMatch(target, normalizeEntityName(p.name))) ?? null;
+}
+
+/** The known person's name a detected name means (knownPersonFor), or null. */
+function knownPersonNamed(name, campaignState, names = []) {
+  return knownPersonFor(name, campaignState, { names })?.name ?? null;
 }
 
 /** Whether a name is a player character's — whole, in part, or nearly spelled. */
@@ -911,7 +921,9 @@ function connectionSlots(options) {
  * duplicated into a second connection card. GM-gated (writes the actor /
  * record). Bounded to placeholder connections — a "rename" whose `from` is a
  * genuinely-named entity is ignored, so two distinct characters are never
- * auto-merged on a model hiccup. Fail-open per rename; never throws.
+ * auto-merged on a model hiccup — and never onto a name someone already
+ * holds, whole or as a person's part name (issue #362 AC40; the GMs are
+ * told). Fail-open per rename; never throws.
  *
  * A rename a narration's capture made carries that narration's id on the
  * card (`renamedBy: { narrationId, from, to }`), so an X-Card on the
@@ -927,6 +939,8 @@ function connectionSlots(options) {
  * @param {Function} [deps.updateConn]     (id, updates) => Promise
  * @param {Function} [deps.entityExists]   (name, state) => boolean
  * @param {Function} [deps.postNotice]     (applied) => Promise
+ * @param {Function} [deps.postRefusedNotice] (refused) => Promise — the GMs'
+ *   notice of a reveal onto a name someone already holds (issue #362 AC40)
  * @returns {Promise<Array<{from:string,to:string,id:string}>>} applied renames
  */
 export async function applyEntityRenames(renames, campaignState, deps = {}) {
@@ -940,19 +954,36 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const narrationId  = typeof deps.narrationId === "string" && deps.narrationId ? deps.narrationId : null;
   const applied      = [];
 
+  const refused      = [];
+
   for (const { from, to } of renames) {
     // Nothing for a narration the X-Card removed (XCARD-LATE-CAPTURE).
     if (isNarrationXCarded(narrationId)) break;
     const fromNorm = normalizeEntityName(from);
     const toNorm   = normalizeEntityName(to);
     if (!fromNorm || !toNorm || fromNorm === toNorm) continue;
-    // Never rename onto a name that already belongs to another entity.
-    if (entityExists(to, campaignState)) continue;
 
     // The placeholder connection this rename targets — only placeholder
     // figures collapse, never properly-named ones.
     const target = findPlaceholderConnection(from, campaignState, getConn);
     if (!target) continue;
+
+    // Never rename onto a name that already belongs to another entity — nor
+    // onto a person's under part of it or a near spelling (issue #362 AC40):
+    // since issue #354 P2-16 "Sable" is Sable Ortiz and "Isaac" the PC Isaac
+    // Sutton, and a placeholder renamed "Sable" was a second card answering
+    // to every "Sable" (the name index takes a whole name over a part). The
+    // placeholder is no namesake of its own. The GMs are told, the two cards
+    // theirs to reconcile: nothing merges two records in code.
+    if (entityExists(to, campaignState)) {
+      refused.push({ from: target.rec.name, to, known: null });
+      continue;
+    }
+    const known = knownPersonFor(to, withStoredEntityIds(campaignState), { exceptId: target.id });
+    if (known) {
+      refused.push({ from: target.rec.name, to, known });
+      continue;
+    }
 
     try {
       await updateConn(target.id, {
@@ -983,6 +1014,14 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
       await postNotice(applied);
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: rename notice failed:`, err?.message ?? err);
+    }
+  }
+  if (refused.length && !isNarrationXCarded(narrationId)) {
+    const postRefused = deps.postRefusedNotice ?? postRenameRefusedCard;
+    try {
+      await postRefused(refused);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | applyEntityRenames: the refused-rename notice failed:`, err?.message ?? err);
     }
   }
   return applied;
@@ -1024,6 +1063,32 @@ async function postRenameNoticeCard(applied) {
   await globalThis.ChatMessage?.create?.({
     content: `<div class="sf-card sf-card--rename"><div class="sf-card-header">◈ Identity revealed</div><ul>${lines}</ul></div>`,
     flags:   { [MODULE_ID]: { entityRenameCard: true } },
+  });
+}
+
+/**
+ * GM whisper: an identity reveal named a placeholder figure by a name someone
+ * the table knows already holds — whole, in part or nearly spelled — so the
+ * card was not renamed (applyEntityRenames, issue #362 AC40). The GMs say
+ * whether the two are one person: nothing merges two records in code
+ * (decisions.md → "Placeholder figures are renamed in place; genuinely-named
+ * entities are never auto-merged").
+ *
+ * @param {Array<{ from: string, to: string, known: { name: string, pc: boolean }|null }>} refused
+ */
+async function postRenameRefusedCard(refused) {
+  const lines = refused.map(({ from, to, known }) => {
+    const whose = !known ? "a name the table already knows"
+      : known.pc ? `the name of the player character <strong>${escapeHtml(known.name)}</strong>`
+      : `the name of <strong>${escapeHtml(known.name)}</strong>, whom the table already knows`;
+    const then = known?.pc
+      ? `rename <strong>${escapeHtml(from)}</strong> in the Actors sidebar if the figure is someone else`
+      : `if they are one person, keep the known card and delete <strong>${escapeHtml(from)}</strong>'s; if not, rename it in the Actors sidebar`;
+    return `<li>The narration names <strong>${escapeHtml(from)}</strong> as <strong>${escapeHtml(to)}</strong> — ${whose}. The card was left as it is: ${then}.</li>`;
+  }).join("");
+  await globalThis.ChatMessage?.create?.({
+    content: `<div class="sf-card sf-card--rename"><div class="sf-card-header">◈ Identity revealed — not renamed</div><ul>${lines}</ul></div>`,
+    whisper: collectGmIds(),
   });
 }
 
