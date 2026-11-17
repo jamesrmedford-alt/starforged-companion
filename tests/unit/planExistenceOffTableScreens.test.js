@@ -141,13 +141,20 @@ describe('issue #362 D3 — the world setting marks the snapshot out of date, an
 
   it('a plan made, decided and an enemy revealed leave one opaque mark in the setting — on every client', async () => {
     await decidedThreat();
+    const store = await gmOf(table).import('../../src/narration/worldSnapshotStore.js');
+    await gmOf(table).run(() => store.resolveWorldSnapshot(foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState'))));
+    await table.settle();
     const events = await eventsOn('gm-1');
+    const writes = [];
+    table.interceptWrites((w) => { if (w.kind === 'setting' && /worldSnapshotEvents/.test(w.key)) writes.push(w); });
+    gmOf(table).run(() => events.reportSnapshotEvent('plan_made'));
+    await table.settle();
     gmOf(table).run(() => {
-      events.reportSnapshotEvent('plan_made');
       events.reportSnapshotEvent('plan_decided');
       events.reportSnapshotEvent('new_enemy_revealed');
     });
     await table.settle();
+    expect(writes, 'the mark standing covers the events after it').toHaveLength(1);
     for (const id of ['gm-1', 'gm-2', 'pl-1']) {
       const held = table.client(id).run(() => game.settings.get(MODULE_ID, 'worldSnapshotEvents'));
       expect(held.events.map(e => e.id), id).toEqual(['out_of_date']);

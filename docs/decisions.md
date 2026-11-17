@@ -125,11 +125,15 @@ never to hint that a plan exists; the module's own surfaces no longer do:
   pending marks, and the snapshot page's log, which names the events that
   client reported since the snapshot it replaces —
   `snapshotEvents.namedSnapshotCauses`; a mark another GM's client set logs as
-  `out_of_date`). A new event writes a mark newer than any stored, so a
-  snapshot another GM took meanwhile, answering the older mark, does not
-  answer it; the same event reported again under the mark that covers it
-  writes nothing (the named marks' "marks once"). A named mark a world stored
-  before this still counts, and is cleared by the snapshot that answers it.
+  `out_of_date`). While a mark stands that no snapshot on the reporting
+  client has answered, any event is covered by it and writes nothing (the
+  next snapshot reads the world after it); otherwise the event writes a mark
+  timed after any stored, so a snapshot that answered an older one reads it
+  as pending. The named marks' residual — the same event reported on another
+  GM's client inside the round trip of the snapshot that answers its mark —
+  now holds for any event (accepted: a window of one socket round trip). A
+  named mark a world stored before this still counts, and is cleared by the
+  snapshot that answers it.
 
 **Reason:** issue #362 D3 (coverage SKEL 1 and 2, NARP D1). "<subject> —
 escalation" on every player's Session panel and `!clock list`, the consulted

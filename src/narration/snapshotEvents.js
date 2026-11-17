@@ -94,10 +94,9 @@ const EVENT_BY_ID = new Map(SNAPSHOT_EVENTS.map(row => [row.id, row]));
 const _local = new Map();
 
 /**
- * The world's mark each event this client reported was saved under, id →
- * markKey: the same event reported again while that mark still stands is
- * covered by it and writes nothing (the named marks' "marks once" rule, kept
- * now the setting names none — issue #362 D3).
+ * The world's mark each event this client saved was written under, id →
+ * markKey — which marks are this client's own, so the snapshot page's log can
+ * name their events (namedSnapshotCauses; issue #362 D3).
  */
 const _reportedUnder = new Map();
 
@@ -244,10 +243,12 @@ async function dropAnsweredFromStore() {
  * the snapshot switched off nothing is marked.
  *
  * The world's setting is given one opaque mark (issue #362 D3) — the event's
- * id stays on this client (pendingSnapshotEvents, snapshotEventDetail). The
- * same event reported again while the mark that covers it stands writes
- * nothing; another event writes a newer mark, so a snapshot another GM's
- * client took meanwhile, answering the older one, does not answer it.
+ * id stays on this client (snapshotEventDetail, for the page's log). While a
+ * mark no snapshot on this client has answered stands, any event is covered
+ * by it and writes nothing: the next snapshot, which answers it, reads the
+ * world after the event (the residual the named marks had for the same event
+ * reported again — a report on another GM's client inside the round trip of
+ * the snapshot that answers the mark — now holds for any event).
  *
  * @param {string} id — a SNAPSHOT_EVENTS row's id
  * @param {{ now?: number }} [opts]
@@ -266,8 +267,7 @@ export function reportSnapshotEvent(id, { now = Date.now() } = {}) {
   }
   _detail.push({ id, at: now });
   if (_detail.length > DETAIL_KEPT) _detail.splice(0, _detail.length - DETAIL_KEPT);
-  const under = _reportedUnder.get(id);
-  if (_local.has(id) || (under && storedEvents().some(e => markKey(e) === under))) return true;
+  if (_local.has(id) || storedEvents().length) return true;
   _local.set(id, now);
   persistEvents().catch(err =>
     console.warn(`${MODULE_ID} | world snapshot: the "${id}" mark was not saved — it stands on this client only:`, err?.message ?? err));
@@ -281,12 +281,12 @@ function localEvents() {
 
 /**
  * Write the world's mark (read and set with no await between): one opaque
- * mark covering this client's events and the marks the setting already
- * holds, timed after all of them — a new mark, so a GM whose snapshot answered
- * an older one still reads it as pending (issue #362 D3). A mark the world
- * took leaves this client's own list: the setting holds it from then on, and
- * the GM whose snapshot answers it clears it there — kept here too, this
- * client would write it back with its next mark.
+ * mark covering this client's events and any mark the setting still holds,
+ * timed after all of them — a new mark, so a GM whose snapshot answered an
+ * older one reads it as pending (issue #362 D3). A mark the world took leaves
+ * this client's own list: the setting holds it from then on, and the GM whose
+ * snapshot answers it clears it there — kept here too, this client would
+ * write it back with its next mark.
  */
 async function persistEvents() {
   if (typeof globalThis.game?.settings?.set !== 'function') return;
