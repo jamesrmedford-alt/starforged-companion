@@ -159,7 +159,10 @@ recorded under its name promoted to it; its bond is §2's.
   always bonded the person to the acting PC. A detected person is the one
   already known under part of their name or a near spelling
   (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
-  PC's first name), in the detection filter and the draft gate alike, so they
+  PC's first name; a near spelling is the same letters in another order or a
+  doubled letter written once — "Valdur", "Suton" — never another vowel:
+  "Seren Okoro" beside "Soren Okoro" is his sister, offered on the card,
+  issue #362 AC17), in the detection filter and the draft gate alike, so they
   are not offered again; the bond Item's creation is marked as the module's
   write (`actorBridge` `moduleWriteOn`), so the system's "Added …" note is
   re-attributed as PT14's are. Each Confirm / Dismiss is a GM's

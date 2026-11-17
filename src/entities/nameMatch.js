@@ -63,11 +63,24 @@ function editDistance(a, b, max) {
   return prev[b.length];
 }
 
+/** A word's letters in alphabetical order: two words with the same are each other's letters rearranged. */
+const sortedLetters = (word) => [...word].sort().join("");
+
+/** A word with each doubled letter written once. */
+const singleLetters = (word) => word.replace(/(.)\1+/g, "$1");
+
 /**
  * Two words one of which is a small misspelling of the other: "valdur" for
- * "vuldar", "suton" for "sutton". Both five letters or more, the same first
- * letter, the same consonants in the same order, at most two letters apart.
- * Deliberately narrow — "maren" and "marek" are two people.
+ * "vuldar" (the same letters, the vowels in another order), "suton" for
+ * "sutton" (a doubled letter written once). Both five letters or more, the
+ * same first letter, the same consonants in the same order, at most two
+ * letters apart — and the same letters, or the same word once its doubled
+ * letters are single. Deliberately narrow — "maren" and "marek" are two
+ * people, and so are "soren" and "seren", "maria" and "mario", "simon" and
+ * "simone": a vowel changed, added or dropped is another name, not a typo
+ * (issue #362 AC17 — any two names that differed only in their vowels were
+ * one person's, so his sister was never offered and her facts went on his
+ * card).
  *
  * @param {string} a — lower case
  * @param {string} b — lower case
@@ -76,7 +89,8 @@ function editDistance(a, b, max) {
 export function misspelledWord(a, b) {
   if (a === b || a.length < 5 || b.length < 5) return false;
   if (a[0] !== b[0] || Math.abs(a.length - b.length) > 1) return false;
-  return skeleton(a) === skeleton(b) && editDistance(a, b, 2) <= 2;
+  if (skeleton(a) !== skeleton(b) || editDistance(a, b, 2) > 2) return false;
+  return sortedLetters(a) === sortedLetters(b) || singleLetters(a) === singleLetters(b);
 }
 
 /**
