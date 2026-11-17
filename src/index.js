@@ -7437,17 +7437,6 @@ async function knownPriceRoutes(routes) {
 }
 
 /**
- * Dispatch each route a Pay the Price roll landed on, in order, once — a
- * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
- * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
- * dispatch throws is logged and the next still runs.
- *
- * @param {Array<Object>} routes — rollOracle's `sufferRoutes`
- * @param {string|null} actorId
- * @param {string} where — for the log
- * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
- */
-/**
  * gmRelay handler for "payThePrice.suffer" — runs on the canonical GM (issue
  * #325 W10). A typed `!ptp` rolls on its author's client (RUN_ON.AUTHOR); its
  * suffer routes land here, on the typist's PC (`actorId`), where every write
@@ -7479,6 +7468,25 @@ export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
   return { applied: true, landed };
 }
 
+/**
+ * Dispatch each route a Pay the Price roll landed on, in order, once — a
+ * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
+ * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
+ * dispatch throws is logged and the next still runs.
+ *
+ * A route's write the world refused goes on the GMs' payoff failure card, one
+ * card for the price: a `suffer` step whose Retry applies it once — the
+ * route's executor whole when its first write was refused (nothing landed),
+ * or the second write alone when the meter landed (`retryCall` — its card
+ * says "not saved (the GMs have a Retry)"). As a suffer card's pick reports
+ * the same refusal (sufferCard reportRefusedCalls); it was a console line,
+ * and that Retry was never posted (issue #362 AC59).
+ *
+ * @param {Array<Object>} routes — rollOracle's `sufferRoutes`
+ * @param {string|null} actorId
+ * @param {string} where — for the log
+ * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
+ */
 async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null, upgradeOffered = false } = {}) {
   const landed = [];
   for (const route of routes ?? []) {
@@ -7487,6 +7495,18 @@ async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolut
       return null;
     });
     if (res) landed.push(res);
+  }
+  const refused = landed.filter(r => r?.ok === false && r.reason === "refused" && r.retryCall);
+  if (refused.length) {
+    const { isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+    const failures = refused.filter(r => isRetryableSufferCall(r.retryCall)).map(r => ({
+      step: "suffer", call: r.retryCall, reason: "refused", error: r.error ?? null,
+      opts: { isMiss: true, ...(resolutionId ? { resolutionId, priceCard: true } : {}) },
+    }));
+    if (failures.length) {
+      await postPayoffFailureCard({ source: "suffer", actorId: refused[0].actorId ?? actorId ?? null, failures })
+        .catch(err => console.warn(`${MODULE_ID} | ${where}: the refused route's failure card failed:`, err?.message ?? err));
+    }
   }
   return landed;
 }
@@ -7556,17 +7576,28 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     }
   }
 
-  const landed = await executeSuffer(move, actor, {
-    amount: route.amount ?? 1,
-    itemId,
-    isMiss: true,  // Pay the Price always implies a miss context.
-    resolutionId,
-    // A move's price: the cards its route posts — the resist roll a harm
-    // owes, a redirected loss's picker — are stamped `priceCard`, so a burn
-    // to a result that pays the price too keeps them (issue #335 Y09).
-    ...(resolutionId ? { priceCard: true } : {}),
-    ...(upgradeOffered ? { upgradeOffered: true } : {}),
-  });
+  const amount = route.amount ?? 1;
+  let landed;
+  try {
+    landed = await executeSuffer(move, actor, {
+      amount,
+      itemId,
+      isMiss: true,  // Pay the Price always implies a miss context.
+      resolutionId,
+      // A move's price: the cards its route posts — the resist roll a harm
+      // owes, a redirected loss's picker — are stamped `priceCard`, so a burn
+      // to a result that pays the price too keeps them (issue #335 Y09).
+      ...(resolutionId ? { priceCard: true } : {}),
+      ...(upgradeOffered ? { upgradeOffered: true } : {}),
+    });
+  } catch (err) {
+    // The executor's first write — the meter itself — was refused: nothing of
+    // the route landed. The call that applies it whole, for the GMs' Retry
+    // (dispatchPayThePriceSufferRoutes; issue #362 AC59).
+    console.warn(`${MODULE_ID} | ${STATED_SUFFER_MOVES[move] ?? move} (-${amount}) for ${actor.name ?? "the roller"} was not saved — the GMs have a Retry:`, err?.message ?? err);
+    return { move, actorId: actor.id, skipped: true, ok: false, reason: "refused", error: String(err?.message ?? err),
+      retryCall: { kind: "suffer", sufferId: move, amount, ...(itemId ? { itemId } : {}) } };
+  }
   return { ...landed, move, actorId: actor.id };
 }
 
