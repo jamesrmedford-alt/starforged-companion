@@ -99,7 +99,11 @@ record and pin for it).
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
   "Arrived" with no place and narrated a launch) — for every narration of the
   resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
-  Expedition's arrival too. The **Set a Course resolved** card names the
+  Expedition's arrival too. A hit burned or improved to a strong hit arrived
+  at the roll: its narration — the move's only one while the result was held
+  — is told the ship ARRIVED at the place the roll did, in the strong hit's
+  words, with no second docking (the card's `move.arrivalPlace`; issue #362
+  AC06 — it was told "Arrived" with no place, PT08's prompt). The **Set a Course resolved** card names the
   place (the arrival's, else the destination's words) and says "Token moved"
   only when the token moved; a token that did not move says why — no pin
   marks the place, no ship token on the map, the ship token setting off, no

@@ -1110,7 +1110,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard, arrivalPlace } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -1613,6 +1613,9 @@ export async function rollMove({
     // table's (issue #362 AC15).
     ...(resolution.skeletonRequests?.length
       ? { planRequests: withoutHiddenRolls({ skeletonRequests: resolution.skeletonRequests }).skeletonRequests } : {}),
+    // Where the ship arrived (Set a Course): an upgrade of this hit is told
+    // it arrived there, as this narration is (issue #362 AC06).
+    ...(arrivalPlace ? { arrivalPlace } : {}),
   };
   const burnActor   = rollerActor;
   const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets, moveContext);

@@ -2199,11 +2199,13 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
- * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[],
- *   afterMoveCard: Array<() => Promise<void>> }>}
+ * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, arrivalPlace: string|null,
+ *   applied: string[], notApplied: string[], afterMoveCard: Array<() => Promise<void>> }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
  *   else the stamped or selected open fight, else the one it ended; thresholdResolutionId —
  *   the resolution whose threshold card this posted (Enter the Fray against a new foe);
+ *   arrivalPlace — the place an arrival reached, by name (its narration's ARRIVAL line), for
+ *   an upgrade of the hit to tell its narration (issue #362 AC06);
  *   applied / notApplied — what the effects did, in words, for an upgrade's card;
  *   afterMoveCard — the cards that summarize the move's roll card, for the pipeline to
  *   post after it (an upgrade's are posted at once)
@@ -2216,7 +2218,7 @@ async function applyOutcomeEffects({
   const notApplied = [];
   // afterMoveCard — cards that summarize the roll card, which the pipeline
   // posts once that card is on the table (issue #348 PT10).
-  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied, afterMoveCard: [] };
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied, afterMoveCard: [] };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2346,6 +2348,8 @@ async function applyOutcomeEffects({
     // pipeline's, a round's, an upgrade's re-narration).
     resolution.loremasterContext = [resolution.loremasterContext, arrivalNarratorLine(placeName, resolution.outcome)]
       .filter(Boolean).join(" ");
+    // The place, for an upgrade of this result to tell its narration (below).
+    out.arrivalPlace = placeName;
 
     // F15 (folded into F16 Phase F): surface a follow-up card so the
     // user sees whether the token moved, and where to. The card is
@@ -2363,6 +2367,16 @@ async function applyOutcomeEffects({
       else out.afterMoveCard.push(postCard);
     }
     applied.push(placeName ? `arrived at ${placeName}` : "arrived (no destination named)");
+  } else if (arrivalMove && upgrade && resolution.outcome !== "miss") {
+    // The recorded hit already arrived; this one is narrated in its place —
+    // the move's only narration while the result was held. It is told the
+    // ship ARRIVED, and where, in its own outcome's words, with no second
+    // docking: it was narrated as the crew setting off, the prompt issue #348
+    // PT08 was filed for (issue #362 AC06). The place is the one the roll
+    // arrived at, as its card carries it (`move.arrivalPlace`), else the
+    // destination's words.
+    resolution.loremasterContext = [resolution.loremasterContext,
+      arrivalNarratorLine(interpretation?.arrivalPlace ?? moveTarget, resolution.outcome)].filter(Boolean).join(" ");
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
