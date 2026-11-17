@@ -17,6 +17,7 @@
 
 import { getPlayerActors } from './actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
+import { isCanonicalGM } from '../multiplayer/gmGate.js';
 
 const MODULE_ID      = 'starforged-companion';
 const CHRONICLE_KEY  = 'chronicle';
@@ -72,8 +73,15 @@ export async function retractNarrationChronicle(narrationIds) {
  * a pinned tier detail does: the table keeps it. The campaign recap is
  * rebuilt from what remains (its cache key is the entries' text, issue #301
  * B04). A strike may be made on any GM's client: each entry is deleted by id
- * through the canonical GM, the Chronicle's one writer (requestChronicleEdit's
- * GM-only "delete"). Never creates a journal. Fail-open.
+ * by the canonical GM, the Chronicle's one writer — directly when this client
+ * is that GM, through requestChronicleEdit's GM-only "delete" from any other.
+ * On the canonical GM the strike usually runs inside a queued relay handler
+ * (`!truth strike` is "factContinuity.command", End a Session's scene end
+ * takes back a correction): a "chronicle.edit" asked for from there queued
+ * behind the handler awaiting it, so the strike — and every relayed action
+ * after it — waited out the handler's whole run budget (issue #362 AC27,
+ * reachability.md §8). The direct delete runs on the actor's write chain,
+ * as the relayed one does. Never creates a journal. Fail-open.
  *
  * @param {string} sessionId
  * @param {(entry: Object) => boolean} states — true when the entry states the struck fact
@@ -89,6 +97,10 @@ export async function retractStruckChronicle(sessionId, states) {
         && entry.pinned !== true && entry.playerEdited !== true
         && states(entry));
       for (const entry of struck) {
+        if (isCanonicalGM()) {
+          if (await deleteChronicleEntry(actorId, entry.id)) count += 1;
+          continue;
+        }
         const res = await requestChronicleEdit(actorId, { op: 'delete', entryId: entry.id });
         if (res?.ok && res.result?.applied !== false) count += 1;
       }
