@@ -1575,10 +1575,15 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     }
     const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
     if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
+      // The fact is its text, else its title (issue #362 AC45: `text ?? title`
+      // kept an empty "text", so a blank detail went on the card — another
+      // each time — and the fact was recorded nowhere). Neither: nothing to file.
+      const detail = [lore.text, lore.title].find(v => typeof v === "string" && v.trim())?.trim();
+      if (!detail) continue;
       await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
         sessionId:  campaignState?.currentSessionId ?? "",
         sessionNum: campaignState?.sessionNumber ?? null,
-        detail:     lore.text ?? lore.title,
+        detail,
         source:     "wj_lore_entity_route",
         pinned:     false,
         promoted:   false,
