@@ -12,7 +12,7 @@
  * clients short-circuit and rely on the GM client to record decisions.
  */
 
-import { FOLDER_NAME } from "../world/worldJournal.js";
+import { companionJournalFolderId } from "../world/worldJournal.js";
 
 const MODULE_ID = "starforged-companion";
 const JOURNAL_NAME = "Pacing Telemetry";
@@ -261,10 +261,11 @@ async function getOrCreateJournal() {
   let journal = findJournal();
   if (journal) return journal;
 
+  // The module's folder by its stamp, whatever the GM renamed it; none is
+  // made for the telemetry (issue #362 AC48).
   let folderId = null;
   try {
-    const folder = game.folders?.find(f => f.type === "JournalEntry" && f.name === FOLDER_NAME);
-    folderId = folder?.id ?? null;
+    folderId = await companionJournalFolderId();
   } catch {
     folderId = null;
   }

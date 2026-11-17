@@ -34,9 +34,9 @@
 
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "../multiplayer/settleWithin.js";
+import { companionJournalFolderId } from "../world/worldJournal.js";
 
 const MODULE_ID   = "starforged-companion";
-const FOLDER_NAME = "Starforged Companion";
 const FLAG_KEY    = "privateChannelPage";
 const DEFAULT_DEBOUNCE_MS = 5000;
 /** Automatic retries after a failed write (5 s, 10 s, 15 s); the next flush trigger retries after that. */
@@ -257,14 +257,11 @@ export async function applyPrivateJournalCreate(_payload = {}, ctx = {}) {
 
 /** Create a user's transcript journal here: they are OWNER, the GM OBSERVER, everyone else NONE. */
 async function createPrivateJournal(userId) {
-  // Folder lookup mirrors worldJournal.js; create lazily, tolerate failure.
+  // The World Journal's folder, by its stamp whatever the GM renamed it,
+  // made (stamped) only when there is none (issue #362 AC48); tolerate failure.
   let folderId = null;
   try {
-    const folder = game.folders?.find(f => f.type === "JournalEntry" && f.name === FOLDER_NAME)
-      ?? (globalThis.Folder?.create
-            ? await globalThis.Folder.create({ name: FOLDER_NAME, type: "JournalEntry" })
-            : null);
-    folderId = folder?.id ?? null;
+    folderId = await companionJournalFolderId({ create: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: folder resolve failed:`, err?.message ?? err);
   }

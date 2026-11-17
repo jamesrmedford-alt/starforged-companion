@@ -354,33 +354,87 @@ export async function initWorldJournals() {
   // reconnected together each found none and created one (issue #326 W54).
   if (!isCanonicalGM()) return;
 
-  let folder = null;
-  try {
-    folder = game.folders?.find(f => f.type === "JournalEntry" && f.name === FOLDER_NAME)
-          ?? null;
-    if (!folder && globalThis.Folder?.create) {
-      folder = await globalThis.Folder.create({ name: FOLDER_NAME, type: "JournalEntry" });
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | worldJournal: folder create failed:`, err);
-    folder = null;
-  }
-  const folderId = folder?.id ?? null;
-
+  const missing = [];
   for (const name of Object.values(JOURNAL_NAMES)) {
     // By its category, so a journal the GM renamed is not made again beside
     // it (issue #345 AA63).
     const existing = findJournal(name);
-    if (existing) {
-      await stampJournalCategory(existing, name);
-      continue;
-    }
+    if (existing) await stampJournalCategory(existing, name);
+    else missing.push(name);
+  }
+  if (!missing.length) return;
+
+  // The folder is looked for — and made — only for a journal about to be
+  // made, and found by its stamp, not its name: a load after the GM renamed
+  // it made an empty "Starforged Companion" folder beside it, again at every
+  // load once the GM deleted that (issue #362 AC48).
+  const folderId = await companionJournalFolderId({ create: true });
+  for (const name of missing) {
     try {
       await JournalEntry.create(journalCreateData(name, folderId));
     } catch (err) {
       console.error(`${MODULE_ID} | worldJournal: failed to create journal ${name}:`, err);
     }
   }
+}
+
+/** The module's journal folder's own mark, set when the module makes it (issue #362 AC48). */
+const FOLDER_FLAG = "companionJournalFolder";
+
+/**
+ * The module's journal folder — where the World Journal, the Pacing Telemetry
+ * journal and the Private Channel transcripts are made — or null: the folder
+ * stamped FOLDER_FLAG when the module made it, what a GM's rename in the
+ * sidebar leaves alone; else the folder of its name (one made before the
+ * stamp); else the folder a World Journal journal sits in (such a folder the
+ * GM renamed). Found by its name alone, a renamed folder was passed over and
+ * a second, empty one made beside it (issue #362 AC48; rules/reachability.md
+ * §6, §7). Never creates.
+ *
+ * @returns {Folder|null}
+ */
+function findCompanionJournalFolder() {
+  const folders = globalThis.game?.folders;
+  if (typeof folders?.find !== "function") return null;
+  const journalFolder = (f) => f?.type === "JournalEntry";
+  const found = folders.find(f => journalFolder(f) && f.flags?.[MODULE_ID]?.[FOLDER_FLAG] === true)
+             ?? folders.find(f => journalFolder(f) && f.name === FOLDER_NAME);
+  if (found) return found;
+  for (const name of Object.values(JOURNAL_NAMES)) {
+    // A document's `folder` is its Folder (Foundry v13); a stub's, the id.
+    const ref = findJournal(name)?.folder;
+    const id  = typeof ref === "object" ? ref?.id : ref;
+    if (typeof id !== "string" || !id) continue;
+    const folder = folders.get?.(id) ?? folders.find(f => f?.id === id);
+    if (journalFolder(folder)) return folder;
+  }
+  return null;
+}
+
+/**
+ * The id of the module's journal folder (findCompanionJournalFolder), or null.
+ * With `create`, a folder is made — stamped — when there is none: only a
+ * caller about to make a journal in it asks for that. A refused create is
+ * logged, and the journal is made outside any folder.
+ *
+ * @param {{ create?: boolean }} [opts]
+ * @returns {Promise<string|null>}
+ */
+export async function companionJournalFolderId({ create = false } = {}) {
+  let folder = null;
+  try {
+    folder = findCompanionJournalFolder();
+    if (!folder && create && globalThis.Folder?.create) {
+      folder = await globalThis.Folder.create({
+        name: FOLDER_NAME, type: "JournalEntry",
+        flags: { [MODULE_ID]: { [FOLDER_FLAG]: true } },
+      });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: the journal folder could not be found or made:`, err?.message ?? err);
+    folder = null;
+  }
+  return folder?.id ?? null;
 }
 
 
