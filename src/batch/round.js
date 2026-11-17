@@ -704,13 +704,16 @@ export function takeCardMoves(round, { acting = [] } = {}) {
  * The confirm's choices, checked against the reading: only abilities it
  * offered, a stat substitution one of the chosen abilities offers (a stat no
  * ability offered is refused; one whose ability is unchecked is dropped, as
- * the confirm dialog drops it), and a target among the reading's choices — a
- * pick required when there are choices, none allowed when there are not. A
- * reading the roll could not use (a vow already fulfilled) cannot be confirmed.
+ * the confirm dialog drops it) and the asset it was picked for when two
+ * offer it (`statAssetId` — one no ability offered that stat for is refused,
+ * one whose ability is unchecked dropped; issue #362 AC61), and a target
+ * among the reading's choices — a pick required when there are choices, none
+ * allowed when there are not. A reading the roll could not use (a vow already
+ * fulfilled) cannot be confirmed.
  *
  * @param {Object} reading
- * @param {*} choices — { abilityIds?, statReplacement?, targetId? }
- * @returns {{ abilityIds: string[], statReplacement: string|null, targetId: string|null }}
+ * @param {*} choices — { abilityIds?, statReplacement?, statAssetId?, targetId? }
+ * @returns {{ abilityIds: string[], statReplacement: string|null, statAssetId?: string, targetId: string|null }}
  */
 export function validateChoices(reading, choices) {
   const c = choices && typeof choices === "object" ? choices : {};
@@ -730,6 +733,14 @@ export function validateChoices(reading, choices) {
     if (!statOptions.includes(statReplacement)) refuse("bad-stat", "That stat wasn't offered.");
     if (!abilityIds.some(k => offered.get(k)?.statReplacement === statReplacement)) statReplacement = null;
   }
+  // The asset whose ability offers the substitution — two companions' "+its
+  // health" (COMPANION-TRIGGER-SWAP-UNCUED): the window's radio per asset.
+  let statAssetId = statReplacement && typeof c.statAssetId === "string" && c.statAssetId ? c.statAssetId : null;
+  if (statAssetId) {
+    const offersIt = (a) => a?.statReplacement === statReplacement && a.assetId === statAssetId;
+    if (![...offered.values()].some(offersIt)) refuse("bad-stat", "That stat wasn't offered.");
+    if (!abilityIds.some(k => offersIt(offered.get(k)))) statAssetId = null;
+  }
 
   const options = Array.isArray(reading.targetChoices?.options) ? reading.targetChoices.options : [];
   const targetId = typeof c.targetId === "string" && c.targetId ? c.targetId : null;
@@ -739,7 +750,7 @@ export function validateChoices(reading, choices) {
   } else if (targetId) {
     refuse("bad-target", "That choice wasn't offered.");
   }
-  return { abilityIds, statReplacement, targetId };
+  return { abilityIds, statReplacement, ...(statAssetId ? { statAssetId } : {}), targetId };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

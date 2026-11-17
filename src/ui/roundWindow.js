@@ -612,6 +612,10 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       const form = readMoveAbilitiesForm(root);
       choices.abilityIds = form.applied;
       choices.statReplacement = form.pickedStat || null;
+      // Whose "+its health" / "+integrity" was picked when two assets offer
+      // it — the confirm dialog's appliedStatAssetId (COMPANION-TRIGGER-SWAP-
+      // UNCUED): dropped, the round rolled the healthiest (issue #362 AC61).
+      if (form.pickedStat && form.pickedStatAssetId) choices.statAssetId = form.pickedStatAssetId;
       choices.targetId = root?.querySelector?.("input[name='sf-round-target']:checked")?.value ?? null;
       if (entry.reading.targetChoices?.options?.length && !choices.targetId) {
         this.#failure = `${entry.reading.targetChoices.prompt ?? "Choose one"} — pick one first.`;
