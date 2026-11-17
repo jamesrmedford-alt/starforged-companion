@@ -52,9 +52,6 @@ export const FactionSchema = {
   portraitId:                null,
   portraitSourceDescription: "",
 
-  // Context injection
-  loremasterNotes: "",
-
   // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
   canonicalLocked: false,
   generativeTier:  [],

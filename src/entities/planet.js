@@ -92,9 +92,6 @@ export const PlanetSchema = {
   portraitId:                  null,
   portraitSourceDescription:   "",
 
-  // Context injection
-  loremasterNotes: "",
-
   // Narrator entity-discovery flags
   canonicalLocked: false,
   generativeTier:  [],

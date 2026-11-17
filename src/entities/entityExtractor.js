@@ -215,6 +215,23 @@ function knownPersonNamed(name, campaignState, names = []) {
   return knownPersonFor(name, campaignState, { names })?.name ?? null;
 }
 
+/**
+ * Whether a name is a player character's whole name as written — case and
+ * spacing aside, a title kept: "Sutton" is PC Sutton's, "Captain Sutton" is
+ * not (issue #362 AC41).
+ */
+function namesPlayerCharacterInFull(name) {
+  const key = (n) => (typeof n === "string" ? n.trim().replace(/\s+/g, " ").toLowerCase() : "");
+  const target = key(name);
+  if (!target) return false;
+  try {
+    return getPlayerActors().some(a => key(a?.name) === target);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | namesPlayerCharacterInFull: PC roster lookup failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
 /** Whether a name is a player character's — whole, in part, or nearly spelled. */
 function namesPlayerCharacter(name) {
   const target = normalizeEntityName(name);
@@ -717,19 +734,35 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   );
   const pendingPeople = collectPendingDraftNames("connection");
   const slots = connectionSlots(options);
-  // A free-flow hit is with the figure the player's line names — else the
-  // interpreter's target — among the people the narration newly introduces,
-  // the pending rows and the NPCs the table knows, taken together; a newly
-  // detected person takes it by default only when neither names any of them
-  // (issue #362 AC19: the first person the detector listed took it before the
-  // line was read — a bystander the prose named first, or a deckhand beside
-  // the known NPC the line named).
-  for (const slot of slots.filter(s => s.choosesFirst)) {
-    slot.choice = chooseConnectionFigure(slot, [
-      ...freshDetectedPeople(entities, campaignState, pendingNormalized, pendingPeople),
-      ...(slot.names ? namedConnectionCandidates(slot, campaignState, storedDismissedNames(campaignState)) : []),
-    ], options.lineText);
-    slot.takes = (entity) => slot.choice.pick?.kind === "detected" && slot.choice.pick.key === normalizeEntityName(entity.name);
+  // A Make a Connection hit is with the figure its player's line names — else
+  // the interpreter's target — among the people the narration newly
+  // introduces, the pending rows and the NPCs the table knows, taken together;
+  // a newly detected person takes it by default only when neither names any
+  // of them (issue #362 AC19: the first person the detector listed took it
+  // before the line was read — a bystander the prose named first, or a
+  // deckhand beside the known NPC the line named). A Batch Mode round's hit
+  // chooses the same way, among the newcomers its own roller met (`owns`,
+  // issue #342 Z09), by its own entry's line (`lineText`): it took a newcomer
+  // its roller met before the known NPC its line named was tried (AC19's
+  // round path).
+  if (slots.length) {
+    const fresh = freshDetectedPeople(entities, campaignState, pendingNormalized, pendingPeople);
+    const detectedByKey = new Map();
+    for (const detected of entities ?? []) {
+      if (detected?.type !== "connection" || typeof detected.name !== "string") continue;
+      const figure = { ...detected, name: generatedName(detected.name) };
+      const key = normalizeEntityName(figure.name);
+      if (key && !detectedByKey.has(key)) detectedByKey.set(key, figure);
+    }
+    const dismissed = storedDismissedNames(campaignState);
+    for (const slot of slots) {
+      const met = typeof slot.owns === "function" ? fresh.filter(f => slot.owns(detectedByKey.get(f.key) ?? f)) : fresh;
+      slot.choice = chooseConnectionFigure(slot, [
+        ...met,
+        ...(slot.names ? namedConnectionCandidates(slot, campaignState, dismissed) : []),
+      ], slot.lineText ?? options.lineText);
+      slot.takes = (entity) => slot.choice.pick?.kind === "detected" && slot.choice.pick.key === normalizeEntityName(entity.name);
+    }
   }
 
   for (const detected of entities ?? []) {
@@ -845,7 +878,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   for (const slot of slots) {
     if (slot.done || !slot.names || removed()) continue;
     const made = await connectNamedFigure(slot, campaignState, {
-      namingText: options.namingText, lineText: slot.lineText ?? options.lineText, narrationId,
+      namingText: options.namingText, narrationId,
       waiting: queued.filter(e => e.type === "connection").map(e => e.name),
     }).catch(err => {
       console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the NPC the move names failed:`, err?.message ?? err);
@@ -900,23 +933,27 @@ function readAsRows(people, queued) {
  * takes the figure its player's line names — else its interpreted target —
  * among the people the narration newly introduces, the pending rows and the
  * NPCs the table knows its `namingText` names; naming none, the first
- * connection detected (`choosesFirst` → chooseConnectionFigure, issue #362
- * AC19 — it took the first detected before the line was read). A text names
- * a figure by their whole name or by their first or last name alone
- * (figuresNamedIn, AC18). A Batch Mode round's hits
- * (`connectionRollers`) each take only a figure their `owns` gives their own
- * roller (issue #342 Z09: the round's first connection, whoever met them,
- * went to the first hit's roller with that roller's seed), and a pending row
- * only when the round's `namingText` — its lines and its narration — names it
- * too, as free-flow's must (issue #345 AA09: `owns` alone gave a one-PC
- * round every row, and read a two-PC round's off the row's old description,
- * so the first pending row on the newest card — an NPC the round never
- * mentioned — was confirmed and bonded to the roller).
+ * connection detected (chooseConnectionFigure, issue #362 AC19 — it took the
+ * first detected before the line was read). A text names a figure by their
+ * whole name or by their first or last name alone (figuresNamedIn, AC18). A
+ * Batch Mode round's hits (`connectionRollers`) each choose the same way, by
+ * their own entry's line, among only the newcomers their `owns` gives their
+ * own roller (issue #342 Z09: the round's first connection, whoever met them,
+ * went to the first hit's roller with that roller's seed — and AC19's round
+ * path: an owned newcomer was taken before the known NPC the hit's line named
+ * was tried) and a pending row only when the round's `namingText` — its
+ * lines and its narration — names it too, as free-flow's must (issue #345
+ * AA09: `owns` alone gave a one-PC round every row, and read a two-PC round's
+ * off the row's old description, so the first pending row on the newest card
+ * — an NPC the round never mentioned — was confirmed and bonded to the
+ * roller).
  *
  * @param {Object} options — routeEntityDrafts' options
- * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, choosesFirst?: boolean, done: boolean }>}
- *   — `names(figures)` the figures the hit's text names, of those given;
- *   `lineText` a round's hit's own line (null: the move's, `options.lineText`)
+ * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, owns?: Function, done: boolean }>}
+ *   — `takes(entity)` replaced by the slot's choice (routeEntityDrafts);
+ *   `names(figures)` the figures the hit's text names, of those given;
+ *   `lineText` a round's hit's own line (null: the move's, `options.lineText`);
+ *   `owns(figure)` a round's hit's: whether its roller met that newcomer
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
@@ -943,7 +980,8 @@ function connectionSlots(options) {
         return {
           actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
           connectionSeed: r.connectionSeed ?? null,
-          takes:          (entity) => r.owns(entity) === true,
+          owns:           (figure) => r.owns(figure) === true,
+          takes:          () => false,         // replaced by the slot's choice (routeEntityDrafts)
           names:          ownNamed ? (figures) => ownNamed(figures).filter(f => r.owns(f) === true) : null,
           lineText:       typeof r.lineText === "string" ? r.lineText : null,
           done:           false,
@@ -958,9 +996,6 @@ function connectionSlots(options) {
     names:          named,
     lineText:       null,
     targetName:     typeof options.targetName === "string" && options.targetName.trim() ? options.targetName.trim() : null,
-    // Its figure is chosen before anything is made, the newly detected people
-    // counted in (chooseConnectionFigure — issue #362 AC19).
-    choosesFirst:   true,
     done:           false,
   }];
 }
@@ -1444,21 +1479,29 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
  * answers to this name. Used by routeWorldJournalResults to divert entity-
  * specific lore to the entity's generative tier instead of the WJ lore journal.
  *
- * The name as recorded first (a title aside). Then, when exactly one record
- * answers (issue #354 P2-17): a person under part of their name or a near
- * spelling ("Archer" for Vuldar Archer), any other entity when one name is
- * inside the other as whole words ("blockade corridor" for "The Corridor").
- * The narration rarely uses a record's whole name, so the facts it
- * established about a place sat in the Lore journal and never reached the
+ * The name as recorded first (a title aside) — and a name several records
+ * bear is the active sector's (activeSectorNamesakeFirst's rule, issue #342
+ * Z15 / #345 AA06): generated site names repeat across sectors, and the first
+ * record in creation order — the older sector's "Derelict Starship" — took
+ * the fact about the one the crew is aboard (issue #362 AC22); none of them
+ * the active sector's, or two of them, is nobody's. Then, when exactly one
+ * record answers (issue #354 P2-17): a person under part of their name or a
+ * near spelling ("Archer" for Vuldar Archer), any other entity when one name
+ * is inside the other as whole words ("blockade corridor" for "The
+ * Corridor"). The narration rarely uses a record's whole name, so the facts
+ * it established about a place sat in the Lore journal and never reached the
  * place. Two records answering is nobody's: the fact stays world lore.
+ * `exact` says the record bears the name itself (a title aside): it outranks
+ * a player character's part name (routeWorldJournalResults, issue #362 AC41).
  *
  * @param {string} entityName
  * @param {Object} campaignState
- * @returns {{ journalId: string, type: string }|null}
+ * @returns {{ journalId: string, type: string, exact: boolean }|null}
  */
 function findEntityForLoreRouting(entityName, campaignState) {
   const target = normalizeEntityName(entityName);
   if (!target) return null;
+  const exact = [];
   const variants = [];
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
@@ -1469,12 +1512,20 @@ function findEntityForLoreRouting(entityName, campaignState) {
       try { rec = getter(journalId); } catch { continue; }
       if (!rec?.name) continue;
       const recorded = normalizeEntityName(rec.name);
-      if (recorded === target) return { journalId, type };
+      if (recorded === target) {
+        exact.push({ journalId, type, sectorId: typeof rec.sectorId === "string" ? rec.sectorId : null });
+        continue;
+      }
       const answers = type === "connection" ? !!personNameMatch(target, recorded) : nameWithin(target, recorded);
       if (answers) variants.push({ journalId, type });
     }
   }
-  return variants.length === 1 ? variants[0] : null;
+  if (exact.length) {
+    const activeSectorId = campaignState?.activeSectorId ?? null;
+    const here = exact.length === 1 ? exact : exact.filter(e => activeSectorId && e.sectorId === activeSectorId);
+    return here.length === 1 ? { journalId: here[0].journalId, type: here[0].type, exact: true } : null;
+  }
+  return variants.length === 1 ? { ...variants[0], exact: false } : null;
 }
 
 /**
@@ -1568,17 +1619,28 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // entity record where the narrator can use it, not as world-level canon.
     // Entity not found (no record yet) — the lore gate and WJ lore as usual.
     // A player character's own doings are the story so far, not world lore
-    // (issue #354 P2-17): the Session Log's, whatever their salience.
-    if (loreIsAboutPlayerCharacter(lore)) {
+    // (issue #354 P2-17): the Session Log's, whatever their salience. Who it
+    // is about (issue #362 AC41): a PC named in full is the PC; a record of
+    // exactly the name the detector used is that record's — before the PC
+    // rule's part names, which took "Captain Sutton", on record, for PC Isaac
+    // Sutton ("sutton") and filed the NPC's fact as the PC's doing; then a PC
+    // by part of their name, or leading the title; then a record the name
+    // answers to.
+    const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
+    if (namesPlayerCharacterInFull(lore.entityName) || (!entityRef?.exact && loreIsAboutPlayerCharacter(lore))) {
       await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
       continue;
     }
-    const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
     if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
+      // The fact is its text, else its title (issue #362 AC45: `text ?? title`
+      // kept an empty "text", so a blank detail went on the card — another
+      // each time — and the fact was recorded nowhere). Neither: nothing to file.
+      const detail = [lore.text, lore.title].find(v => typeof v === "string" && v.trim())?.trim();
+      if (!detail) continue;
       await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
         sessionId:  campaignState?.currentSessionId ?? "",
         sessionNum: campaignState?.sessionNumber ?? null,
-        detail:     lore.text ?? lore.title,
+        detail,
         source:     "wj_lore_entity_route",
         pinned:     false,
         promoted:   false,
@@ -2977,20 +3039,63 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   return record;
 }
 
+/** The words that say what a site is, by the location type they make it (detectedSiteType). */
+const SITE_TYPE_WORDS = [
+  ["vault",    /^vaults?$/],
+  ["derelict", /^(?:derelicts?|wrecks?|wreckage|hulks?)$/],
+];
+
+/**
+ * Words that end a name's or a description's opening phrase: what follows
+ * says where the place is, what it holds or what happens there — "a docking
+ * spar built beside the wreck", "a market where salvagers trade precursor
+ * trinkets" — not what it is (detectedSiteType).
+ */
+const SITE_PHRASE_STOPS = new Set([
+  "where", "that", "which", "who", "whom", "whose", "when", "while", "whilst", "because", "since", "until",
+  "though", "although", "if", "and", "or", "but", "nor", "yet", "so",
+  "of", "beside", "besides", "near", "nearby", "by", "in", "on", "at", "with", "without", "from", "for", "to",
+  "into", "onto", "upon", "behind", "around", "round", "under", "underneath", "beneath", "over", "above",
+  "below", "against", "along", "alongside", "among", "amongst", "amid", "amidst", "between", "inside",
+  "outside", "within", "past", "through", "throughout", "toward", "towards", "across", "beyond", "off",
+  "after", "before", "like", "as", "than", "via", "about", "atop", "aboard", "orbiting", "overlooking",
+]);
+
+/** The site type the opening phrase of a name or a description gives a place (detectedSiteType), or null. */
+function openingPhraseSiteType(text) {
+  const head = String(text ?? "").split(/[,;:.!?()[\]{}"“”—–]|\s-\s/u)[0];
+  for (const raw of head.toLowerCase().split(/\s+/)) {
+    const word = raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    if (!word) continue;
+    if (SITE_PHRASE_STOPS.has(word)) break;
+    const hit = SITE_TYPE_WORDS.find(([, re]) => re.test(word));
+    if (hit) return hit[0];
+  }
+  return null;
+}
+
 /**
  * The site type a detected place's own words give it: "derelict" (a derelict,
- * a wreck, a hulk) or "vault" (a vault, a precursor site) — the two location
- * types the system's sheet and the module share — or null when they name
- * neither. Never guessed from anything else: a blank type is honest.
+ * a wreck, a hulk) or "vault" — the two location types the system's sheet and
+ * the module share — or null when they name neither. Never guessed from
+ * anything else: a blank type is honest.
+ *
+ * Only the words that say what the place is count: its name, and the opening
+ * phrase of its description ("A derelict Exodus ship", "The wreck of the
+ * Anwen", "Kessan's dig site is a precursor vault"), up to the first comma or
+ * the first word that says where it is or what it holds (SITE_PHRASE_STOPS).
+ * Issue #362 AC44: any of the words anywhere in the name or the description —
+ * and "precursor" alone — decided it, so "a market where salvagers trade
+ * precursor trinkets" was made a precursor vault, "a docking spar built
+ * beside the wreck of the Anwen" a derelict, and Explore a Waypoint there
+ * rolled the site's interior tables. A place that is precursor but not called
+ * a vault stays blank, for the GM to set.
  *
  * @param {{ name?: string, description?: string }} draft
  * @returns {"derelict"|"vault"|null}
  */
 function detectedSiteType(draft) {
-  const text = `${draft?.name ?? ""} ${draft?.description ?? ""}`.toLowerCase();
-  if (/\b(?:vault|precursor)\b/.test(text)) return "vault";
-  if (/\b(?:derelict|wreck|wreckage|hulk)\b/.test(text)) return "derelict";
-  return null;
+  return openingPhraseSiteType(draft?.name) ?? openingPhraseSiteType(draft?.description);
 }
 
 /**
@@ -3113,10 +3218,10 @@ async function completeListedEntity(draft, campaignState) {
  *     dismissed name keeps a record out of the narrator's name index).
  *
  * Which one is the player's line's to say (issue #347 AB10;
- * chooseConnectionFigure): a free-flow hit's choice is made before anything
- * is created, the newly detected people counted in (`slot.choice`, issue
- * #362 AC19); a round's hit chooses here, among the NPCs the move names. An
- * NPC is named by their whole name or by their first or last name alone
+ * chooseConnectionFigure): the hit's choice is made before anything is
+ * created, the newly detected people counted in (`slot.choice`, issue #362
+ * AC19 — a round's hit's among those its own roller met, by its own entry's
+ * line). An NPC is named by their whole name or by their first or last name alone
  * (figuresNamedIn — issue #362 AC18: "Archer" for Vuldar Archer was no
  * candidate, so the hit said "Connection made" and made nothing). Several
  * named and none singled out, the GMs are told which; a hit that ends with no
@@ -3129,16 +3234,15 @@ async function completeListedEntity(draft, campaignState) {
  *   narrator's; a round's hit, the ones the round names whose figure its
  *   roller met (issue #342 Z09, #345 AA09)
  * @param {Object} campaignState
- * @param {{ namingText?: string, lineText?: string, narrationId?: string|null, waiting?: string[] }} opts
- *   — `namingText` the line and the narration; `lineText` the player's line
- *   (a round's hit: its own entry's — ROUND-CONNECTION-LINE-JOINED);
- *   `waiting` the people this capture queues on a draft card
+ * @param {{ namingText?: string, narrationId?: string|null, waiting?: string[] }} opts
+ *   — `namingText` the line and the narration; `waiting` the people this
+ *   capture queues on a draft card
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null, waiting = [] } = {}) {
+async function connectNamedFigure(slot, campaignState, { namingText = "", narrationId = null, waiting = [] } = {}) {
   if (!String(namingText ?? "").trim() || typeof slot?.names !== "function") return null;
   const dismissed = storedDismissedNames(campaignState);
-  const choice = slot.choice ?? chooseConnectionFigure(slot, namedConnectionCandidates(slot, campaignState, dismissed), lineText);
+  const choice = slot.choice ?? { none: true };
   if (choice.several) {
     console.warn(`${MODULE_ID} | make a connection: the move names several NPCs (${choice.several.map(c => c.name).join(", ")}) — none was made the roller's connection.`);
     await postNamedNpcsNotice(choice.several, slot.actorId);

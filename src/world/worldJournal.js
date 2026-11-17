@@ -91,6 +91,14 @@ const SEVERITY_WORDS = {
 };
 const SEVERITY_BY_WORD = new Map(Object.entries(SEVERITY_WORDS).flatMap(([severity, words]) => words.map(w => [w, severity])));
 
+/**
+ * The words of SEVERITY_WORDS that say a threat grew, not how urgent it now
+ * is. A stored one is read as "active"; on an "escalated" transition one only
+ * repeats the change, so it names no level (issue #362 AC42: "escalated" read
+ * as "active" lowered an immediate threat, and left an active one unmoved).
+ */
+const ESCALATION_WORDS = new Set(["escalating", "escalated", "rising", "growing", "elevated"]);
+
 /** How many words a severity value may run to and still be read as one ("high severity", "very high"). */
 const SEVERITY_MAX_WORDS = 3;
 
@@ -106,11 +114,16 @@ const THREAT_HISTORY_CAP = 24;
  * @returns {"immediate"|"active"|"looming"|"resolved"|null}
  */
 export function normalizeThreatSeverity(value) {
+  return severityNamedBy(value);
+}
+
+/** normalizeThreatSeverity, leaving out the words in `ignored` (a Set). */
+function severityNamedBy(value, ignored = null) {
   if (typeof value !== "string") return null;
   const words = value.toLowerCase().replace(/[^a-z\s-]+/g, " ").split(/[\s-]+/).filter(Boolean);
   if (!words.length || words.length > SEVERITY_MAX_WORDS) return null;
   for (const w of words) {
-    const severity = SEVERITY_BY_WORD.get(w);
+    const severity = ignored?.has(w) ? null : SEVERITY_BY_WORD.get(w);
     if (severity) return severity;
   }
   return null;
@@ -126,6 +139,22 @@ function strayThreatNote(value) {
 /** The severity one step more urgent (looming → active → immediate); a resolved threat that escalates is active again. */
 function escalatedSeverity(severity) {
   return severity === "looming" || severity === "resolved" ? "active" : "immediate";
+}
+
+/**
+ * The severity an "escalated" transition leaves a threat at — never a lower
+ * one (issue #362 AC42): the severity its value names, when that is at least
+ * as urgent as the threat was; else — a value that names none, or only
+ * repeats the change ("escalated", "rising": ESCALATION_WORDS), or names a
+ * less urgent one — one step more urgent (escalatedSeverity).
+ *
+ * @param {*} value — the transition's `newValue`
+ * @param {string} was — the threat's severity, one of THREAT_SEVERITIES
+ * @returns {string}
+ */
+function escalationSeverity(value, was) {
+  const given = severityNamedBy(value, ESCALATION_WORDS);
+  return given && SEVERITY_ORDER[given] <= SEVERITY_ORDER[was] ? given : escalatedSeverity(was);
 }
 
 /**
@@ -157,13 +186,26 @@ export function splitThreatName(raw) {
  * in play before a resolved one, then the shortest name. null for a threat
  * the journal does not hold.
  *
+ * A page a GM's Merge duplicates closed is the threat it was merged into
+ * (`mergedInto`, followed — mergedThreatPage): the closed page's name is a
+ * variant of the kept one's — the detector dropped an article or tacked the
+ * same words on again, which is how the duplicate was made — so the kept page
+ * takes the update and the closed page stays closed (issue #362 AC21: the
+ * page so named was returned before anything was ranked, and nothing read
+ * `mergedInto`, so the closed page was written and active again).
+ *
+ * Variants that are the name with a sector's name added — two sectors' one
+ * Sector Trouble — are narrowed to the active sector's first
+ * (activeSectorTroublePages, issue #362 AC43).
+ *
  * @param {JournalEntry|null} journal — the Threats journal
  * @param {string} name — splitThreatName's
+ * @param {Object|null} [campaignState] — its `sectors` and `activeSectorId`
  * @returns {JournalEntryPage|null}
  */
-function findThreatPageVariant(journal, name) {
+function findThreatPageVariant(journal, name, campaignState = null) {
   const exact = findPageByName(journal, name);
-  if (exact) return exact;
+  if (exact) return mergedThreatPage(journal, exact);
   const key = nameKey(name);
   if (!key) return null;
   const pages = (journal?.pages?.contents ?? [])
@@ -172,25 +214,85 @@ function findThreatPageVariant(journal, name) {
     .map(p => ({ ...p, key: nameKey(p.entry.name) }));
   const rank = (p) => (p.entry.severity === "resolved" ? 1 : 0);
   const best = (hits) => hits.sort((a, b) => (rank(a) - rank(b)) || (a.key.length - b.key.length))[0]?.page ?? null;
-  return best(pages.filter(p => p.key === key))
-      ?? best(pages.filter(p => suffixedName(p.entry.name, name)))
-      ?? null;
+  const hit = best(pages.filter(p => p.key === key))
+      ?? best(activeSectorTroublePages(pages.filter(p => suffixedName(p.entry.name, name)), name, campaignState));
+  return hit ? mergedThreatPage(journal, hit) : null;
+}
+
+/**
+ * Of several Threats pages a detected name is a variant of, the ones that are
+ * a sector's: each sector's Sector Trouble is its own threat, named
+ * "<trouble> — <sector>" (sectorGenerator, issue #342 Z65 — resolving it for
+ * one resolved both), so a trouble two sectors rolled, named by the trouble
+ * alone, is the active sector's — the shorter sector name took it, whichever
+ * sector the crew was in (issue #362 AC43). Another sector's page is left
+ * out; with none of them the active sector's, what is left — maybe nothing,
+ * and the name is then no recorded threat's: a new page, or a transition
+ * skipped. Pages that are no sector's, and a single hit, are kept as they are.
+ *
+ * @param {Array<{ page: JournalEntryPage, key: string }>} hits — the variant pages (`key` nameKey of their name)
+ * @param {string} name — the detected name
+ * @param {Object|null} campaignState
+ * @returns {Array} the hits to choose from
+ */
+function activeSectorTroublePages(hits, name, campaignState) {
+  if (hits.length < 2) return hits;
+  const sectors = (Array.isArray(campaignState?.sectors) ? campaignState.sectors : [])
+    .map(s => ({ id: s?.id ?? null, key: nameKey(s?.name) }))
+    .filter(s => s.key);
+  if (!sectors.length) return hits;
+  const base = nameKey(name);
+  const sectorOf = (hit) => {
+    if (hit.key.length <= base.length || !hit.key.startsWith(base)) return null;
+    const added = nameKey(hit.key.slice(base.length).replace(/^\s*(?:[:;(—–]|-\s)\s*/u, "").replace(/\)\s*$/u, ""));
+    return sectors.find(s => s.key === added) ?? null;
+  };
+  const tagged = hits.map(hit => ({ hit, sector: sectorOf(hit) }));
+  if (!tagged.some(t => t.sector)) return hits;
+  const activeSectorId = campaignState?.activeSectorId ?? null;
+  const here = tagged.filter(t => t.sector && activeSectorId && t.sector.id === activeSectorId);
+  return (here.length ? here : tagged.filter(t => !t.sector)).map(t => t.hit);
+}
+
+/**
+ * The page a threat page was merged into (`mergedInto`, mergeDuplicateThreats),
+ * followed to the page that holds the threat now — a kept page merged later
+ * into another is followed on; a mark that names no page, or loops, stops
+ * where it is. A page never merged is itself (issue #362 AC21).
+ *
+ * @param {JournalEntry|null} journal — the Threats journal
+ * @param {JournalEntryPage} page
+ * @returns {JournalEntryPage}
+ */
+function mergedThreatPage(journal, page) {
+  const seen = new Set();
+  let at = page;
+  for (;;) {
+    seen.add(at);
+    const into = at?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats]?.mergedInto;
+    const next = typeof into === "string" && into.trim() ? findPageByName(journal, into) : null;
+    if (!next || seen.has(next)) return at;
+    at = next;
+  }
 }
 
 /**
  * The recorded threat a name the detector returned means, by its own name —
  * or the name itself, cleaned, when the journal holds no such threat. A name
  * that runs two threats together ("A: looming; B: immediate" — the list the
- * detector was shown) is the first of them the journal holds.
+ * detector was shown) is the first of them the journal holds. A Sector
+ * Trouble two sectors share is the active sector's (`campaignState`, issue
+ * #362 AC43).
  *
  * @param {string} raw
+ * @param {Object|null} [campaignState] — its `sectors` and `activeSectorId`
  * @returns {{ name: string, severity: string|null, known: boolean }}
  */
-export function resolveThreatName(raw) {
+export function resolveThreatName(raw, campaignState = null) {
   const journal = findJournal(JOURNAL_NAMES.threats);
   const whole = splitThreatName(raw);
   const named = (split) => {
-    const page = split.name ? findThreatPageVariant(journal, split.name) : null;
+    const page = split.name ? findThreatPageVariant(journal, split.name, campaignState) : null;
     const name = page ? (entryTitle(page) ?? page.name) : null;
     return name ? { name, severity: split.severity, known: true } : null;
   };
@@ -628,7 +730,7 @@ export async function recordThreat(name, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
-  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed) : { name: typed, severity: null };
+  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed, campaignState) : { name: typed, severity: null };
   const cleanName = resolved.name || typed;
   const existing  = findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
   const now       = new Date().toISOString();
@@ -653,6 +755,12 @@ export async function recordThreat(name, entry, campaignState) {
     history:     cappedThreatHistory(history),
     createdAt:   existing?.createdAt ?? now,
     updatedAt:   now,
+    // A page this write lands on is the threat's own: the capture's follows a
+    // merged page to the one it was merged into (findThreatPageVariant), so
+    // only a GM's `!journal` naming a closed page re-opens it — and then it is
+    // no longer merged away. Written null, not left out: Foundry merges a flag
+    // key by key, so the old mark would stay (issue #362 AC21).
+    mergedInto:  null,
     ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
   };
 
@@ -829,8 +937,11 @@ export async function recordLocation(name, entry, campaignState) {
  *
  * The severity is one of THREAT_SEVERITIES (normalizeThreatSeverity). A
  * value that is none changes nothing — unless `escalate` is set (the
- * detector's "escalated" transition): the threat then moves one step more
- * urgent. `note` — what the threat is now doing — becomes its summary and the
+ * detector's "escalated" transition), which never leaves the threat less
+ * urgent: the severity given when it is at least as urgent as the threat was,
+ * else — none given, a word that only repeats the change ("escalated",
+ * "rising"), or a lower one — one step more urgent (escalationSeverity,
+ * issue #362 AC42). `note` — what the threat is now doing — becomes its summary and the
  * history line; it was stored as the severity (issue #354 P2-15).
  * `fromDetection` finds the threat by a variant of its name
  * (resolveThreatName), as recordThreat does.
@@ -845,7 +956,7 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
   if (!journal) return null;
 
   const typed = name?.trim() ?? "";
-  const page = findPageByName(journal, fromDetection ? resolveThreatName(typed).name : typed);
+  const page = findPageByName(journal, fromDetection ? resolveThreatName(typed, campaignState).name : typed);
   if (!page) {
     // Not a warning: the detector may reference a danger that was never
     // recorded as a threat. The detection prompt now discourages this, but a
@@ -859,7 +970,7 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
   if (!existing) return null;
 
   const was  = normalizeThreatSeverity(existing.severity) ?? "active";
-  const next = normalizeThreatSeverity(severity) ?? (escalate ? escalatedSeverity(was) : null);
+  const next = escalate ? escalationSeverity(severity, was) : normalizeThreatSeverity(severity);
   if (!next) {
     console.warn(`${MODULE_ID} | worldJournal: updateThreatSeverity — "${severity}" is no severity (${THREAT_SEVERITIES.join(", ")}); "${existing.name}" is unchanged.`);
     return null;

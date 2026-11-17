@@ -426,10 +426,13 @@ live, and its writes after the card's own undo left the removed fact as a
 detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`; a detected threat is the recorded one when its name
-is a variant of it — `resolveThreatName` — and its severity one of four
+is a variant of it — `resolveThreatName`; a Sector Trouble two sectors share is
+the active sector's, issue #362 AC43 — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
-page: issue #354 P2-15; a GM's **Merge duplicates** folds earlier ones,
-`mergeDuplicateThreats`), lore confirmed (`promoteLoreToConfirmed`), a
+page: issue #354 P2-15; an escalation never leaves it less urgent — issue
+#362 AC42; a GM's **Merge duplicates** folds earlier ones,
+`mergeDuplicateThreats`, and a later detection naming a folded page lands on
+the page it was merged into — issue #362 AC21), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
 put back with it; the stance an attitude moved on the faction's record (the
 canonical stance, `recordStance` before → after) is put back too, where the
@@ -748,7 +751,10 @@ index (full name + first/last word of multi-word names, lowercased,
 dismissed-list filtered — a name a record takes by a rename comes off that
 list, issue #345 AA55; since issue #286 a name part is never an article,
 title or other noise word, never a word two entities share, and never
-shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
+shadows another entity's full name; a one-word key — a name part, or a name
+of one word — is a hit only written as a name, capitalised as typed or in
+address position, `namesOneWordName`, issue #362 D6: "an echo on the scanner"
+brought in Echo Vega); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the
 move path's relevance call deliberately does not (architecture §8.2,
 reaffirmed 2026-07). Since issue #286 (B3) every path then adds the frame's

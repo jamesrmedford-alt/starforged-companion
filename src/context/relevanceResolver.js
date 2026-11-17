@@ -215,6 +215,11 @@ export function resolveEntityName(name, entities, dismissedEntities = []) {
 /**
  * Phase 1 string match. Scans the narration for any indexed name, returns
  * the matched entities (deduplicated) and the names that triggered the match.
+ * A name of more than one word matches in any case; a one-word name — a name
+ * part, or an entity called by one word — only as a name is written: with
+ * its capital as typed, or in address position (namesOneWordName, issue #362
+ * D6: "I check the scanner for an echo" brought in Echo Vega's card and made
+ * a hybrid move an interaction with her).
  *
  * @param {string} playerNarration
  * @param {Map<string, EntityRef>} index
@@ -225,14 +230,14 @@ export function matchNamesInNarration(playerNarration, index) {
     return { entities: [], matchedNames: [] };
   }
 
-  const text = playerNarration.toLowerCase();
+  const text = String(playerNarration);
   const seen = new Set();
   const entities = [];
   const matchedNames = [];
 
   for (const [token, entity] of index.entries()) {
-    const re = wholeWordPattern(token);
-    if (!re.test(text)) continue;
+    const named = /\s/u.test(token) ? wholeWordPattern(token).test(text) : namesOneWordName(text, token);
+    if (!named) continue;
     const key = entity.journalId ?? entity._id ?? entity.name;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -540,6 +545,38 @@ function escapeRegExp(s) {
  */
 export function wholeWordPattern(token, flags = "i") {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(String(token ?? ""))}(?![\\p{L}\\p{N}_])`, `${flags}u`);
+}
+
+/**
+ * Whether a typed text names a one-word name — a first or last name, or a
+ * name of one word — as a name is written (issue #362 D6, decided A): as a
+ * whole word that starts with a capital as typed, or, in any case, in
+ * address position — the first word of its line, or a vocative set off by a
+ * comma ("hand me the codes, will."). resolveEntityName's rule for a name
+ * part (a lowercase word never matches), read in free text: the module's own
+ * name oracles give Will, Ash, Echo, Hope, Sage, and "I will press the
+ * dockmaster" cancelled the roll of a PC called Will's crewmate, "an echo on
+ * the scanner" brought in Echo Vega. A name of more than one word is matched
+ * whole, in any case, by its callers.
+ *
+ * @param {string} text — the typed line (any case)
+ * @param {string} word — the one-word name (any case)
+ * @returns {boolean}
+ */
+export function namesOneWordName(text, word) {
+  const t = String(text ?? "");
+  const w = String(word ?? "").trim();
+  if (!t || !w) return false;
+  for (const m of t.matchAll(wholeWordPattern(w, "gi"))) {
+    if (/^\p{Lu}/u.test(m[0])) return true;
+    const before = t.slice(0, m.index);
+    const after  = t.slice(m.index + m[0].length);
+    // The first word of its line, a quote, bracket or dash before it aside.
+    if (/(?:^|\n)[\s"“”'‘’([{—–-]*$/u.test(before)) return true;
+    // A vocative: after a comma, at the end of its clause.
+    if (/,\s*$/u.test(before) && /^\s*(?:[,.!?;:…\n]|$)/u.test(after)) return true;
+  }
+  return false;
 }
 
 /**
