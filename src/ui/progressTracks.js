@@ -713,7 +713,7 @@ export class ProgressTrackApp extends ApplicationV2 {
         </div>
         ${t.vowLinkable && vowOptions.length ? `
           <div class="track-vow-link">
-            ${vowSelect(`name="trackVow" data-track-id="${t.id}"`, t.linkedVowId ?? null)}
+            ${vowSelect(`name="trackVow" data-track-id="${t.id}" data-linked="${escapeHtml(t.linkedVowId ?? '')}"`, t.linkedVowId ?? null)}
             <button class="track-btn btn-link-vow" data-action="linkTrackVow"
                     data-track-id="${t.id}" title="Link this track to the vow it serves">
               🔗
@@ -769,10 +769,19 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   /** @override */
   _replaceHTML(result, content, _options) {
+    // The vows chosen on the tracks' rows and not yet linked, by track — the
+    // row selects share one name, so the add form's carry (by name) cannot
+    // hold them, and anyone's re-render put a choice back to the stored link
+    // before its 🔗 was pressed (issue #362 AC63).
+    const chosen = rowVowChoices(content);
     // Replace inner content without destroying the window chrome — keeping
     // the add form's typed name, type and rank across a hook's re-render
     // (issue #337 Y45).
     replaceKeepingInput(content, result, { fields: '.add-track-fields [name]' });
+    for (const [trackId, vowId] of chosen) {
+      const select = [...(result.querySelectorAll?.('select[name="trackVow"]') ?? [])].find(el => el.dataset?.trackId === trackId);
+      if (select && [...select.querySelectorAll('option')].some(o => o.value === vowId)) select.value = vowId;
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1012,7 +1021,9 @@ export class ProgressTrackApp extends ApplicationV2 {
    * Link an open expedition or scene challenge to the vow it serves — the
    * vow chosen on its row, or none (issue #353 R3). An expedition the move
    * pipeline began has no other place to be linked. The canonical GM checks
-   * the vow is open as it stands (`progressTrack.edit` op `linkVow`).
+   * the vow is open as it stands (`progressTrack.edit` op `linkVow`). None
+   * chosen on a track that serves none is said, and nothing is sent (issue
+   * #362 AC63); the row keeps its choice across a re-render (`_replaceHTML`).
    * @param {PointerEvent} event
    * @param {HTMLElement}  target
    */
@@ -1026,7 +1037,16 @@ export class ProgressTrackApp extends ApplicationV2 {
       this.render();
       return undefined;
     }
-    const work = ProgressTrackApp.#requestEdit(this, { op: 'linkVow', trackId, vowId });
+    const work = (async () => {
+      // "— no vow —" on a track that serves none links nothing: said, not
+      // sent as an unlink of an unlinked track, "applied" in silence (issue
+      // #362 AC63). On a linked track it is the unlink.
+      if (!vowId && !(await getProgressTrack(trackId).catch(() => null))?.linkedVowId) {
+        ui.notifications?.info?.('Starforged Companion: choose the vow this track serves in its row first — nothing was linked.');
+        return false;
+      }
+      return ProgressTrackApp.#requestEdit(this, { op: 'linkVow', trackId, vowId });
+    })();
     this._lastAction = work;
     return work;
   }
@@ -1418,6 +1438,27 @@ const EDIT_REFUSAL_TEXT = {
  * changed mid-fight: a won linked fight pays the vow's milestone and reward.
  */
 const VOW_LINK_TYPES = new Set(['expedition', 'scene_challenge']);
+
+/**
+ * The vows chosen on the panel's track rows and not linked yet — each row
+ * select whose value is not the link it was drawn with (`data-linked`, or "—
+ * no vow —" when that vow is no longer offered) — by track id (issue #362
+ * AC63: a re-render reset them).
+ *
+ * @param {HTMLElement} content — the panel's content element, before a re-render
+ * @returns {Map<string, string>} track id → the vow id chosen ("" for "— no vow —")
+ */
+function rowVowChoices(content) {
+  const chosen = new Map();
+  for (const select of content?.querySelectorAll?.('select[name="trackVow"]') ?? []) {
+    const trackId = select.dataset?.trackId;
+    if (!trackId) continue;
+    const linked = select.dataset?.linked ?? '';
+    const shown  = [...select.querySelectorAll('option')].some(o => o.value === linked) ? linked : '';
+    if (select.value !== shown) chosen.set(trackId, select.value);
+  }
+  return chosen;
+}
 
 /** Position toggle cycle: neutral → in control → in a bad spot → neutral. */
 const NEXT_POSITION = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
