@@ -1285,8 +1285,12 @@ export async function addProgressTrack(data) {
  * keeps its position (`combatState`): Take Decisive Action's tick enrichment
  * reads the scored fight's own position for the bad-spot downgrade, and this
  * projection dropped it — with two fights open, no downgrade ever applied
- * (issue #306 R05).
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null),positions?:Object}>>}
+ * (issue #306 R05). An expedition keeps its site link (`siteId`): Finish an
+ * Expedition's arrival reads its track from this listing, and without the
+ * link it followed the label — the ship stayed where it set out, or docked at
+ * another sector's namesake, while the same move charted the linked site
+ * (issue #362 AC24).
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null),positions?:Object,siteId?:string}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
@@ -1295,6 +1299,8 @@ export async function listProgressTracks() {
     combatState: t.combatState ?? null,
     // Each character's own position in a fight (issue #322 V03).
     ...(t.positions ? { positions: { ...t.positions } } : {}),
+    // An expedition's site (issue #362 AC24).
+    ...(t.siteId ? { siteId: t.siteId } : {}),
   }));
 }
 

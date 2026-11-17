@@ -304,8 +304,12 @@ are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
 ("docked at …"). It arrives at the site the expedition was for — its track's
 `siteId` link, else the unexplored site its label names
-(`siteDiscovery.selectExpeditionSite`, never the sole-site guess) — by the
-site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
+(`siteDiscovery.selectExpeditionSite`, never the sole-site guess; the link is
+read off `listProgressTracks`, whose projection dropped it, so the arrival
+followed the label while the reveal charted the linked site — the ship stayed
+where it set out when the GM had charted the site first or a second unexplored
+site had been recorded since, or docked at another sector's namesake: issue
+#362 AC24) — by the site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
 `currentLocationForEntityId`), so the ship record, its token (onto the site's
 pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored
