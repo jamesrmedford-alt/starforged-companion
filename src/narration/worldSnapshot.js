@@ -320,12 +320,6 @@ function loreUnits(campaignState) {
 }
 
 /**
- * Earlier sessions' summaries — the newest SNAPSHOT_SESSION_SUMMARIES before
- * this one, oldest first: the summary the last mint kept (LAST SESSION,
- * `previousSessionSummary`) and the "Story so far" each session's Session Log
- * page holds — and what stands open: the open vows and tracks, by name.
- */
-/**
  * A stored session number, or NaN for none. The mint keeps an unbegun
  * session's summary with `sessionNumber: null` (its number passes to the next
  * session — LAST SESSION, not "Session 4"), and a Session Log page may hold
@@ -340,6 +334,12 @@ function sessionNumberOf(value) {
   return Number(value);
 }
 
+/**
+ * Earlier sessions' summaries — the newest SNAPSHOT_SESSION_SUMMARIES before
+ * this one, oldest first: the summary the last mint kept (LAST SESSION,
+ * `previousSessionSummary`) and the "Story so far" each session's Session Log
+ * page holds — and what stands open: the open vows and tracks, by name.
+ */
 function memoryUnits(campaignState, { progressTracks = [], summaries = true } = {}) {
   const out = [];
   if (summaries) {
