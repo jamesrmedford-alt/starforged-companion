@@ -104,7 +104,7 @@ them, reverting an X-Card, Take a Break or `!bond` relayed meanwhile (issue
 | SITE-ANCHOR-ABSENT | LOSE-PLOT | `formatActiveSector` listed settlements only → discovered sites now render a "Charted sites (established — do not reinvent them)" block with type + status, so "the derelict" has a standing anchor from discovery onward |
 | SITE-TYPE-TABLE-MISMATCH | canon fidelity | `derelict_type` always rolled deep-space weights → `derelictTypeTableFor(location)` routes the roll to the planetside / orbital / deep-space type table matching the rolled location |
 | SITE-DISCOVERY-CARD-GENERIC | LOSE-PAYOFF | The Site Discovered card omitted the rolled exterior → it now reads the location record's first look and renders it beneath the announcement (fail-open) |
-| SITE-NO-COMPLETION | minor | `status: "cleared"` was never set → new `clearSectorSite` + `!clear-site <name>` (GM-only) close the unexplored → visited → cleared lifecycle, stamping the discovery record and the location Actor |
+| SITE-NO-COMPLETION | minor | `status: "cleared"` was never set → new `clearSectorSite` + `!clear-site <name>` (GM-only) close the unexplored → visited → cleared lifecycle, stamping the discovery record and the location Actor; its card names the site's kind — the vault, the derelict, or "the place" for an uncharted destination, which it called a derelict (issue #362 AC52) |
 
 ## 4. Design-level observations — dispositions (2026-07)
 

@@ -3946,8 +3946,11 @@ async function handleClearSiteCommand(message) {
       throw err;
     }
     if (cleared) {
+      // The site's own kind: an uncharted destination (issue #348 PT07) is no
+      // derelict — every type but a vault was worded as one (issue #362 AC52).
+      const kind = { vault: "vault", derelict: "derelict" }[cleared.site.type] ?? "place";
       await ChatMessage.create({
-        content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${cleared.site.type === "vault" ? "vault" : "derelict"} is fully explored. Its secrets are yours — or spent.</p></div>`,
+        content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${kind} is fully explored. Its secrets are yours — or spent.</p></div>`,
         flags:   { [MODULE_ID]: { siteCleared: true, siteId: cleared.site.id } },
       });
     } else {
