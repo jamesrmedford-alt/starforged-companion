@@ -3808,11 +3808,16 @@ function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = n
  *                                          X-Card on it drops the card's result
  *                                          from RECENT ORACLE RESULTS (issue
  *                                          #345 AA01)
+ * @param {string|null} [args.trackId]     — a waypoint peril's expedition, the
+ *                                          one the move was on: its plan's
+ *                                          next danger is the peril (issue
+ *                                          #362 AC11)
  * @param {Object}  args.campaignState
  * @returns {Promise<string|null>} the rendered narration text or null on skip / failure
  */
 export async function narrateOracleFollowup({
   kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null, oracleCardId = null, scope = null,
+  trackId = null,
 }) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
@@ -3852,7 +3857,7 @@ export async function narrateOracleFollowup({
   // A chosen complication is the next escalation step of the plan in play —
   // a waypoint's peril the open expedition's (issue #353 Phase 3) — so it
   // has something concrete to be. Marked played with this narration.
-  const step = kind === 'complication' ? complicationStep(campaignState, scope) : null;
+  const step = kind === 'complication' ? await complicationStep(campaignState, scope, trackId) : null;
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
     character,
@@ -3949,23 +3954,34 @@ async function forgetInterruptedOracleResult(oracleCardId) {
 
 /**
  * The plan step a chosen complication plays (issue #353 Phase 3): a
- * waypoint's peril is the next danger of the open expedition's plan; any
- * other complication is the next escalation step of the most recently changed
- * plan made in this scene. Null when no plan in play has a step left.
+ * waypoint's peril is the next danger of the plan of the expedition under way
+ * — the one the move was on (`trackId`, its choice card's), else the open
+ * expedition's, the most recently changed when several are open; never a
+ * finished or removed expedition's plan, which took it in the Secrets
+ * journal's page order (issue #362 AC11). Any other complication — or a peril
+ * with no open expedition planned — is the next escalation step of the most
+ * recently changed plan made in this scene. Null when no plan in play has a
+ * step left.
  *
  * @param {Object} campaignState
  * @param {string|null} scope — the complication's ("waypoint", "destination", "scene")
- * @returns {{ plan: Object, step: Object }|null}
+ * @param {string|null} [trackId] — the expedition the move was on
+ * @returns {Promise<{ plan: Object, step: Object }|null>}
  */
-function complicationStep(campaignState, scope) {
+async function complicationStep(campaignState, scope, trackId = null) {
   if (!skeletonsEnabled()) return null;
   try {
     const withStep = listSkeletons().filter(r => r.escalation.some(e => !e.done));
     const time = (r) => String(r.updatedAt ?? r.createdAt ?? '');
+    const newest = (list) => [...list].sort((a, b) => time(b).localeCompare(time(a)))[0] ?? null;
     const sceneId = campaignState?.currentSceneId ?? null;
-    const plan = (scope === 'waypoint' ? withStep.find(r => r.kind === 'expedition') : null)
-      ?? withStep.filter(r => sceneId && r.sceneId === sceneId).sort((a, b) => time(b).localeCompare(time(a)))[0]
-      ?? null;
+    let peril = null;
+    if (scope === 'waypoint') {
+      const open = new Set((await readOpenProgressTracks()).filter(t => t?.type === 'expedition').map(t => t.id));
+      const underWay = withStep.filter(r => r.kind === 'expedition' && r.subject?.id && open.has(r.subject.id));
+      peril = (trackId ? underWay.find(r => r.subject.id === trackId) : null) ?? newest(underWay);
+    }
+    const plan = peril ?? newest(withStep.filter(r => sceneId && r.sceneId === sceneId));
     return plan ? { plan, step: plan.escalation.find(e => !e.done) } : null;
   } catch {
     return null;

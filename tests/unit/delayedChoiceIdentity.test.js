@@ -144,7 +144,13 @@ const typedWaypoint = (moveTarget) => ({
   moveTarget, rationale: 'test', mischiefApplied: false,
 });
 
+const typedUndertake = (moveTarget) => ({
+  moveId: 'undertake_an_expedition', moveName: 'Undertake an Expedition', statUsed: 'wits', adds: 0,
+  moveTarget, expeditionRank: 'dangerous', rationale: 'test', mischiefApplied: false,
+});
+
 const IN_CONTROL = '[data-action="sf-suffer-pick"][data-option-index="1"]';
+const PERIL = '[data-action="sf-suffer-pick"][data-option-index="2"]';
 const MARK_PROGRESS = '[data-action="sf-suffer-pick"][data-option-index="0"]';
 const choiceCard = () => table.cards(f => f.sufferCard && !f.resolved)[0];
 
@@ -217,6 +223,21 @@ describe('Explore a Waypoint\'s "Mark expedition progress" is about its own expe
 
     expect(track(vault.id).ticks).toBe(12 + 4);                        // one formidable mark
     expect(track(drift.id).ticks).toBe(0);
+  });
+
+  it('Undertake an Expedition\'s weak hit names the expedition it marked, and its "Peril at the waypoint" carries it (issue #362 AC11)', async () => {
+    const vault = await openTrack('The Vault of Tears', { type: 'expedition', rank: 'formidable', ticks: 12 });
+    const drift = await openTrack('The Drift', { type: 'expedition', ticks: 0 });
+    await typedMove(typedUndertake('The Drift'), FRAY_WEAK);
+    const choice = choiceCard();
+    expect(choice, 'the weak hit\'s choice card').toBeTruthy();
+    expect(choice.flags[MODULE_ID].executorOpts.expeditionTrackId).toBe(drift.id);
+    expect(track(drift.id).ticks).toBeGreaterThan(0);   // the move marked The Drift
+    expect(track(vault.id).ticks).toBe(12);
+
+    await clickCard('pl-1', choice._id, PERIL);
+    const peril = table.cards(f => f.complication === true && f.scope === 'waypoint').at(-1);
+    expect(peril?.flags?.[MODULE_ID]?.oracleNarration?.trackId, 'the peril is The Drift\'s').toBe(drift.id);
   });
 
   it('marks nothing once its expedition is over — not the one open now', async () => {

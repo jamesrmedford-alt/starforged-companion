@@ -541,7 +541,7 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "next-bonus", amount: call.amount };
     }
     case "complication":
-      return postChosenComplication(call, actor);
+      return postChosenComplication(call, actor, opts);
     case "route":
       // A priced Pay the Price (Sojourn's "No relief"): the price the move's
       // narration depicted is paid — its card, its suffer routes and the
@@ -738,11 +738,17 @@ const COMPLICATION_LABELS = Object.freeze({
  * (`oracleCommandCard`), so the GM narrates what it carries and nothing a
  * relay brings (oracleFollowup.js).
  *
+ * A waypoint's peril names the expedition the move was on (the choice
+ * card's `expeditionTrackId`): its plan's next danger is the peril (issue #362
+ * AC11 — the first expedition plan in the journal, a finished one's or
+ * another's, was played).
+ *
  * @param {{ scope?: string, label?: string|null }} call
  * @param {Actor|null} actor — the card's PC, whose beat it is
+ * @param {{ expeditionTrackId?: string|null }} [opts] — the card's executor opts
  * @returns {Promise<{ kind: "complication", scope: string, roll?: string }>}
  */
-async function postChosenComplication(call, actor) {
+async function postChosenComplication(call, actor, opts = {}) {
   const scope = typeof call?.scope === "string" && call.scope ? call.scope : "scene";
   const label = (typeof call?.label === "string" && call.label.trim()) ? call.label.trim()
     : (COMPLICATION_LABELS[scope] ?? "A complication");
@@ -764,6 +770,8 @@ async function postChosenComplication(call, actor) {
     rolledLine:     roll ? `${roll.tableName}: ${roll.result}` : "",
     speakerActorId: actor?.id ?? null,
     scope,
+    ...(scope === "waypoint" && typeof opts?.expeditionTrackId === "string" && opts.expeditionTrackId
+      ? { trackId: opts.expeditionTrackId } : {}),
   };
   const body = roll
     ? `<p>${escapeHtml(roll.tableName)}: d${roll.die} = <strong>${roll.roll}</strong> · ${escapeHtml(roll.result)}</p>`

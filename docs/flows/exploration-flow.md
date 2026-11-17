@@ -161,7 +161,13 @@ Discovered card says so). With no active sector nothing is recorded.
   narrator plays it at once as its own beat (`sufferDialog.js`
   `postChosenComplication` → the oracle follow-up) — its card only promised
   that the narrator would "surface" it. That peril is the open expedition's
-  plan's next danger when one is planned (issue #353 Phase 3). An expedition
+  plan's next danger when one is planned (issue #353 Phase 3) — the
+  expedition the move marked, which its choice card names
+  (`executorOpts.expeditionTrackId`, `movePipeline` `waypointExpedition`) and
+  the peril's card carries (`oracleNarration.trackId` → `narrateOracleFollowup`
+  `trackId` → `complicationStep`), else the most recently changed open one;
+  never a finished or removed expedition's leftover plan, which the journal's
+  page order handed it (issue #362 AC11). An expedition
   the move begins asks its narration to plan it — `expeditionPlanRequest`
   (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
   `result.created`: its waypoints (clues), the danger along the way
