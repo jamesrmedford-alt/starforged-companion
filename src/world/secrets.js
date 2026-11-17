@@ -25,13 +25,15 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { isNarrationXCarded } from "../context/safety.js";
 import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
+  undoNarrationEntries,
 } from "./worldJournal.js";
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
-  normaliseNewThreats, withAlias, BEING_KINDS,
+  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay,
   SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
@@ -147,6 +149,48 @@ function mayWrite(byGm) {
 }
 
 /**
+ * A plan write for a narration the X-Card removed is not made (issue #362
+ * AC35; rules/narrator-memory.md 6b, XCARD-LATE-CAPTURE): each writer asks
+ * right before its write — the plan writes run after the narration's card is
+ * on screen, several server round trips long — and again after it, since the
+ * card may land while the write is on its way: the X-Card's own undo then ran
+ * before this write existed, so the write is taken back as that undo takes
+ * back the rest (a plan it made deleted, one it changed restored). True when
+ * the narration was removed.
+ *
+ * @param {string|null} narrationId
+ * @returns {Promise<boolean>}
+ */
+async function takenBackForXCard(narrationId) {
+  if (!isNarrationXCarded(narrationId)) return false;
+  try {
+    await undoNarrationEntries([narrationId], { categories: ["secrets"] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a plan write the X-Card overtook could not be taken back:`, err?.message ?? err);
+  }
+  return true;
+}
+
+/**
+ * takenBackForXCard for a clock a narration just started: the X-Card's pause
+ * write drops the clocks stamped with the narration it removes, so one
+ * created after that write is removed here (issue #362 AC35).
+ *
+ * @param {string|null} narrationId
+ * @returns {Promise<boolean>} true when the narration was removed
+ */
+async function clockTakenBackForXCard(narrationId) {
+  if (!isNarrationXCarded(narrationId)) return false;
+  try {
+    const { removeClocksMadeBy } = await import("../clocks/clocks.js");
+    await removeClocksMadeBy([narrationId]);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a clock the X-Card overtook could not be removed:`, err?.message ?? err);
+  }
+  return true;
+}
+
+/**
  * File a new plan. On the canonical GM (narration), or any GM with `byGm`.
  * Stamped with the narration that made it, for the X-Card.
  *
@@ -164,6 +208,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
     const now = new Date().toISOString();
     const record = normaliseSkeleton({ ...input, ...(reroll ? { reroll } : {}), id: newSkeletonId(), createdAt: now, updatedAt: now });
     if (!record) return null;
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const journal = await getOrCreateWorldJournal("secrets");
     if (!journal) return null;
     const data = { ...record, ...narrationStamp(narrationId, null) };
@@ -176,6 +221,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
       }]);
       const page = Array.isArray(created) ? created[0] : created;
       if (page) await writeEntryPage(page, FLAG_KEYS.secrets, data);   // its body, for the GM who opens it
+      if (await takenBackForXCard(narrationId)) return null;
       // A new plan: the narrator's world snapshot is out of date (issue #357).
       reportSnapshotEvent("plan_made");
       return record;
@@ -211,14 +257,25 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
     const changed = change(record);
     const next = changed ? normaliseSkeleton({ ...changed, id: record.id, createdAt: record.createdAt, updatedAt: new Date().toISOString() }) : null;
     if (!next) return null;
+    // One version a narration (issue #362 AC34): a plan is written several
+    // times by one narration — its decision, its clock's link, a write per
+    // `reveals` entry, its capture's link to a Threats page — and each write
+    // pushed the narration's own last version onto `previous`, which keeps
+    // NARRATION_HISTORY. Four writes pushed off the version before the
+    // narration, and the X-Card on it then deleted a plan an earlier, kept
+    // narration had made. The narration's own versions are never what an
+    // undo restores: its next write keeps the history the first one made.
+    const again = typeof narrationId === "string" && !!narrationId && stored.narrationId === narrationId;
     const stamp = keepStamp
       ? { narrationId: stored.narrationId ?? null, previous: stored.previous ?? null }
-      : narrationStamp(narrationId, stored);
+      : again ? { narrationId, previous: stored.previous ?? null } : narrationStamp(narrationId, stored);
     const data = { ...next, ...stamp };
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     try {
       await writeEntryPage(page, FLAG_KEYS.secrets, data);
       const name = skeletonPageName(next);
       if (page.name !== name) await page.update?.({ name });
+      if (await takenBackForXCard(narrationId)) return null;
       return next;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: updating the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -367,7 +424,8 @@ async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
     return next;
   }, { narrationId });
   if (!merged) return null;
-  await updateSkeleton(waiting.id, r => ({ ...r, status: "retired" }), { narrationId });
+  const retired = await updateSkeleton(waiting.id, r => ({ ...r, status: "retired" }), { narrationId });
+  if (retired) await retirePlanClock(retired);   // a countdown it held goes with it (issue #362 AC10)
   await ensureThreatClock(merged, { narrationId });
   return merged;
 }
@@ -446,15 +504,19 @@ async function rollMysteryAnswer() {
  * so the X-Card retracts them with it.
  *
  * @param {Object} sidecar — normaliseSidecar's
+ * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
+ *   narration's beat ends: a plan their end resolved is still its to reveal
+ *   (skeletons.js planInPlay, issue #362 D4)
  * @returns {Array<{ subject: string, fact: string }>}
  */
-export function revealedTruthsOf(sidecar) {
+export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   if (!skeletonsEnabled()) return [];
+  const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
   const out = [];
   for (const reveal of normaliseReveals(sidecar?.reveals)) {
     if (!reveal.revealed.includes("truth")) continue;
     const record = getSkeleton(reveal.id);
-    if (!record || record.status !== "active" || record.truthRevealed || !record.truth) continue;
+    if (!record || !planInPlay(record, ending) || record.truthRevealed || !record.truth) continue;
     out.push(record.kind === "mystery" && record.question
       ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
       : { subject: record.subject.name, fact: record.truth });
@@ -483,13 +545,19 @@ export function revealedTruthsOf(sidecar) {
  * plan its subject already has (issue #354 P2-30).
  * Every write is stamped with the narration's id. Never throws.
  *
+ * A plan its subject's end resolved — its expedition's track completed, its
+ * vow fulfilled (closePlansAbout) — is still decided and revealed by the
+ * narration whose beat ended it (`endingSubjectIds`, issue #362 D4).
+ *
  * @param {Object} sidecar — normaliseSidecar's
- * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[] }} ctx
+ * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[],
+ *           endingSubjectIds?: string[] }} ctx
  * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
-export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [] } = {}) {
+export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [] } = {}) {
   const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
+  const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
   try {
     const plans     = normalisePlans(sidecar?.plans);
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
@@ -539,7 +607,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
 
     for (const plan of byId.values()) {
       const existing = getSkeleton(plan.id);
-      if (!existing || existing.status !== "active") continue;
+      if (!existing || !planInPlay(existing, ending)) continue;
       // A plan waiting to be decided that the narrator says is a subject
       // already planned (issue #354 P2-30) joins that plan, and is retired.
       if (plan.sameAs) {
@@ -573,7 +641,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
 
     for (const reveal of reveals) {
       const before = getSkeleton(reveal.id);
-      if (!before || before.status !== "active") continue;
+      if (!before || !planInPlay(before, ending)) continue;
       const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
       const after = await updateSkeleton(reveal.id,
         r => ({ ...applyRevealToSkeleton(r, reveal), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
@@ -585,7 +653,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       reportSnapshotEvent(truthNow ? "plan_revealed" : (after.status === "resolved" ? "plan_resolved" : "plan_progressed"));
       if (truthNow && after.status === "resolved") reportSnapshotEvent("plan_resolved");
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
-      await paceAfterReveal(before, after);
+      await paceAfterReveal(before, after, narrationId);
     }
 
     // An enemy the prose introduced gets a plan (issue #354 P2-29) — after
@@ -619,6 +687,7 @@ function loreTitleOf(record) {
  * then shown" (decided) — unless they already were.
  */
 async function onTruthRevealed(record, { campaignState, narrationId, rollsWereShown }) {
+  if (isNarrationXCarded(narrationId)) return;   // issue #362 AC35
   await recordLoreDiscovery(loreTitleOf(record), {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
     ...(narrationId ? { narrationId } : {}),
@@ -651,6 +720,40 @@ export function planClock(record) {
 }
 
 /**
+ * The plan clocks that hold a slot of MAX_PLAN_CLOCKS: running, not full, and
+ * an active plan's. A clock whose plan left play — retired, resolved, its page
+ * gone — or one that is full turns on no price (issue #362 AC10: four retired
+ * plans' clocks held every slot, and no decided threat got a clock again).
+ *
+ * @returns {Object[]}
+ */
+function livePlanClocks() {
+  const active = new Set(listSkeletons().map(r => r.id));
+  return storedClocks().filter(c => c?.planId && c.active !== false && active.has(c.planId) && (c.filled ?? 0) < c.segments);
+}
+
+/**
+ * A plan that leaves play takes its clock with it (issue #362 AC10): retired
+ * — kept on the list for the record, turned by no price — unless an open
+ * scene challenge holds it (heldBySceneChallenge: the challenge's, retired
+ * with the challenge). A narration's `resolved` reveal retires it in
+ * paceAfterReveal; a GM's Retire and a waiting plan retired as another
+ * (planAsAnother) left it running. Never throws.
+ *
+ * @param {Object|null} record — the plan, as written
+ */
+async function retirePlanClock(record) {
+  const clock = planClock(record);
+  if (!clock || await heldBySceneChallenge(clock._id)) return;
+  try {
+    const { retireClock } = await import("../clocks/clocks.js");
+    await retireClock(clock._id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the clock of "${record?.subject?.name ?? "a plan"}" was not retired with it:`, err?.message ?? err);
+  }
+}
+
+/**
  * A decided threat plan's escalation is paced by a clock (issue #353 "Threat
  * ↔ clock"): when it fills, the narrator plays the next step (narrator.js
  * narrateClockAdvancement). A threat the fiction just revealed is a scene's —
@@ -666,8 +769,9 @@ export function planClock(record) {
  */
 async function ensureThreatClock(record, { narrationId = null } = {}) {
   if (record?.kind !== "threat" || !record.truth || !record.escalation?.some(e => !e.done) || planClock(record)) return null;
-  if (storedClocks().filter(c => c?.planId && c.active !== false).length >= MAX_PLAN_CLOCKS) return null;
+  if (livePlanClocks().length >= MAX_PLAN_CLOCKS) return null;
   try {
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const campaignLevel = record.createdFrom?.trigger === "significant_threat";
     const clock = await createClock({
@@ -675,7 +779,9 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
       type: campaignLevel ? "campaign" : "tension", segments: campaignLevel ? 6 : 4,
       narrationId, planId: record.id,
     });
+    if (await clockTakenBackForXCard(narrationId)) return null;
     await updateSkeleton(record.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    if (await clockTakenBackForXCard(narrationId)) return null;   // the card landed during the link
     return clock;
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: "${record.subject.name}"'s escalation clock was not made:`, err?.message ?? err);
@@ -684,20 +790,48 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
 }
 
 /**
+ * Whether an open scene challenge holds the clock as its tension clock — a
+ * countdown the GMs began a challenge on (sceneChallengeOffer.js). It is the
+ * challenge's then: its filling is the challenge's time running out ("the
+ * scene ends when either fills", progressTracks.js), and the challenge's
+ * completion or removal retires it. A plan's pacing leaves it alone (issue
+ * #362 AC09): rewound "for the step after" on the miss that filled it, the
+ * challenge never ran out of time. Fail-open: false.
+ *
+ * @param {string|null} clockId
+ * @returns {Promise<boolean>}
+ */
+async function heldBySceneChallenge(clockId) {
+  if (typeof clockId !== "string" || !clockId) return false;
+  try {
+    const { listOpenProgressTracks } = await import("../ui/progressTracks.js");
+    return (listOpenProgressTracks() ?? []).some(t => t?.type === "scene_challenge" && t.tensionClockId === clockId);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | secrets: the open scene challenges could not be read:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
  * After a beat played a step of a plan with a clock, the clock paces the next
  * one: back to empty while a step is left, retired when none is — or when the
- * plan's story ended, or a countdown's mystery came out. Never throws.
+ * plan's story ended, or a countdown's mystery came out. A clock an open scene
+ * challenge holds is left as it is (heldBySceneChallenge). The pacing carries
+ * the narration (`pacedBy`, clocks.js pacePlanClock), so taking it back puts
+ * the clock back one short of full with the step. Never throws.
  */
-async function paceAfterReveal(before, after) {
+async function paceAfterReveal(before, after, narrationId = null) {
   const clock = planClock(after);
-  if (!clock) return;
+  if (!clock || await heldBySceneChallenge(clock._id)) return;
   const played = after.escalation.some((e, i) => e.done && !before.escalation[i]?.done);
   const over = after.status !== "active"
     || !after.escalation.some(e => !e.done) && (played || (after.kind === "mystery" && after.truthRevealed));
+  if (!over && !played) return;
   try {
-    const clocks = await import("../clocks/clocks.js");
-    if (over) await clocks.retireClock(clock._id);
-    else if (played) await clocks.adjustClockSegments(clock._id, -clock.segments);
+    // Stamped with the narration that paced it: the X-Card or a supersede
+    // that takes the step back re-arms the clock (issue #362 AC33).
+    const { pacePlanClock } = await import("../clocks/clocks.js");
+    await pacePlanClock(clock._id, { retire: over, pacedBy: narrationId });
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the clock of "${after.subject.name}" was not reset:`, err?.message ?? err);
   }
@@ -733,9 +867,14 @@ async function applyCountdown(countdown, { campaignState, narrationId = null, mo
       }, { narrationId });
       if (!plan) return null;
     }
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const clock = await createClock({ name: countdown.label, type: "tension", segments: countdown.segments, narrationId, planId: plan.id });
+    if (await clockTakenBackForXCard(narrationId)) return null;
     await updateSkeleton(plan.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    // The card landed during the link: the clock goes too, and no challenge
+    // is offered for a countdown the table removed.
+    if (await clockTakenBackForXCard(narrationId)) return null;
     const { offerSceneChallenge } = await import("../moves/sceneChallengeOffer.js");
     await offerSceneChallenge({ label: countdown.label, clockId: clock._id, campaignState });
     return clock;
@@ -760,6 +899,38 @@ export function planForClock(clockId) {
   if (!plan) return null;
   const step = plan.escalation.find(e => !e.done) ?? null;
   return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed };
+}
+
+/**
+ * A plan's clock that filled while its trigger vignette could not be written
+ * — the X-Card active, no key, narration off, the call failed, an empty reply
+ * — goes back one segment short of full (issue #362 AC08): the step it was to
+ * play is still owed, and the next price that fills it plays it. The step is
+ * marked and the clock paced only by the vignette's own sidecar apply, so
+ * left full it was turned by no price again (advanceTensionClocksForPayThePrice
+ * takes only clocks not yet full), its step never played, and it held a
+ * plan-clock slot for good. Only while the clock is still full, its plan
+ * active with a step to play (or a countdown's answer to come out), and no
+ * open scene challenge holds it — a challenge's full clock is its time run
+ * out (AC09). A GM's write, on the client that ran the vignette (each post
+ * site is the clock's one emitter). Never throws.
+ *
+ * @param {string|null} clockId
+ * @returns {Promise<Object|null>} the clock as re-armed, or null
+ */
+export async function rearmUnplayedPlanClock(clockId) {
+  if (globalThis.game?.user?.isGM !== true || !skeletonsEnabled()) return null;
+  try {
+    const paced = planForClock(clockId);
+    if (!paced || (!paced.step && !paced.revealsTruth)) return null;
+    const clock = planClock(paced.plan);
+    if (!clock || (clock.filled ?? 0) < clock.segments || await heldBySceneChallenge(clock._id)) return null;
+    const { rearmClock } = await import("../clocks/clocks.js");
+    return await rearmClock(clock._id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a plan's clock whose trigger was not narrated could not be re-armed:`, err?.message ?? err);
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -930,6 +1101,131 @@ export async function planSignificantThreat(threat, { campaignState = null, narr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A PLAN'S SUBJECT ENDS — the plan leaves play with it (issue #362 D4)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Nothing closed a plan but the narrator's own `resolved` or a GM's Retire: a
+// finished expedition's, a fulfilled or forsaken vow's and an old scene's
+// mystery stayed active when the closing narration omitted it, failed or was
+// paused — in every world snapshot, under every player's Unanswered questions,
+// and the plan a waypoint's peril picked (AC11). Decided (D4, answer A): the
+// code closes them as their subject ends.
+
+/** The plan kinds whose subject of each type, ending, closes them. */
+const ENDING_KINDS = Object.freeze({ track: Object.freeze(["expedition"]), vow: Object.freeze(["vow"]) });
+
+/**
+ * Close the active plans about a subject that ended (issue #362 D4): resolved
+ * when its story ended — an expedition's track completed, a vow fulfilled or
+ * forsaken — retired when the subject is gone — the track removed, the vow's
+ * last copy deleted. Its clock leaves with it (retirePlanClock). The narration
+ * whose beat ended it still has it in play to reveal its end
+ * (`endingTrackIds`, skeletons.js planInPlay). The write keeps the plan's
+ * narration stamp (`keepStamp`), so an X-Card on the narration that decided it
+ * still takes that decision back. Canonical GM. Never throws.
+ *
+ * @param {{ type: "track"|"vow", id: string }} subject
+ * @param {"resolved"|"retired"} status
+ * @returns {Promise<Object[]>} the plans closed, as written
+ */
+export async function closePlansAbout(subject, status) {
+  const kinds = ENDING_KINDS[subject?.type];
+  const id = typeof subject?.id === "string" && subject.id ? subject.id : null;
+  if (!kinds || !id || !["resolved", "retired"].includes(status) || !skeletonsEnabled() || !isCanonicalGM()) return [];
+  const closed = [];
+  try {
+    const about = listSkeletons().filter(r => kinds.includes(r.kind) && r.subject.type === subject.type && r.subject.id === id);
+    for (const plan of about) {
+      const written = await updateSkeleton(plan.id, r => (r.status === "active" ? { ...r, status } : null), { keepStamp: true });
+      if (!written) continue;
+      closed.push(written);
+      await retirePlanClock(written);
+    }
+    if (closed.length) reportSnapshotEvent(status === "resolved" ? "plan_resolved" : "plan_retired");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plans of a ${subject.type} that ended were not closed:`, err?.message ?? err);
+  }
+  return closed;
+}
+
+/**
+ * A scene ended (issue #362 D4): the mysteries it posed that were never
+ * answered — a question, a countdown's "what happens when it runs out?" —
+ * leave play with it, retired with their clocks (a clock an open scene
+ * challenge holds stays the challenge's). Left active, a countdown kept
+ * turning on every later price and its answer "came out" in an unrelated
+ * scene, and the same question posed in the next scene filed a second
+ * mystery. One whose truth was revealed is left as it is. Canonical GM (the
+ * scene lifecycle's emitter). Never throws.
+ *
+ * @param {string|null} sceneId — the scene that ended
+ * @returns {Promise<Object[]>} the mysteries retired, as written
+ */
+export async function retireSceneMysteries(sceneId) {
+  if (typeof sceneId !== "string" || !sceneId || !skeletonsEnabled() || !isCanonicalGM()) return [];
+  const retired = [];
+  try {
+    const unanswered = listSkeletons().filter(r => r.kind === "mystery" && r.subject.type === "scene"
+      && r.subject.id === sceneId && !r.truthRevealed);
+    for (const plan of unanswered) {
+      const written = await updateSkeleton(plan.id,
+        r => (r.status === "active" && !r.truthRevealed ? { ...r, status: "retired" } : null), { keepStamp: true });
+      if (!written) continue;
+      retired.push(written);
+      await retirePlanClock(written);
+    }
+    if (retired.length) reportSnapshotEvent("plan_retired");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the ended scene's unanswered mysteries were not retired:`, err?.message ?? err);
+  }
+  return retired;
+}
+
+/**
+ * A vow Item completed or deleted closes its vow's plan once no copy of the
+ * vow is left open (a shared vow has a copy per PC): completed — fulfilled,
+ * forsaken (the pipeline marks every copy completed), or closed on the sheet
+ * — resolves it; its last copy deleted retires it (issue #362 D4). Never throws.
+ *
+ * @param {Object} item — the vow Item (progress, subtype vow)
+ * @param {"resolved"|"retired"} status
+ */
+async function closeVowPlanIfEnded(item, status) {
+  try {
+    const { getPlayerActors, vowCopyId, isVowCopy } = await import("../character/actorBridge.js");
+    const vowId = vowCopyId(item);
+    if (!vowId) return;
+    const copies = (getPlayerActors() ?? []).flatMap(a => [...(a.items?.contents ?? a.items ?? [])])
+      .filter(i => i?.id !== item.id && isVowCopy(i, vowId));
+    // A copy still open keeps the vow; any copy left keeps a deleted one's.
+    if (status === "resolved" ? copies.some(i => i.system?.completed !== true) : copies.length) return;
+    await closePlansAbout({ type: "vow", id: vowId }, status);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plan of a vow that ended was not closed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Wire the vow Items' ends to their plans (issue #362 D4): a vow completed or
+ * deleted — by a move, on the sheet, in the sidebar — closes its plan
+ * (closeVowPlanIfEnded). Document hooks fire on every client: the canonical
+ * GM closes it, once. Register once, at ready.
+ */
+export function registerPlanSubjectHooks() {
+  if (registerPlanSubjectHooks._installed) return;
+  registerPlanSubjectHooks._installed = true;
+  const isVow = (item) => item?.type === "progress" && item.system?.subtype === "vow";
+  Hooks.on("updateItem", (item, change) => {
+    if (!isCanonicalGM() || !isVow(item) || change?.system?.completed !== true) return;
+    void closeVowPlanIfEnded(item, "resolved");
+  });
+  Hooks.on("deleteItem", (item) => {
+    if (!isCanonicalGM() || !isVow(item)) return;
+    void closeVowPlanIfEnded(item, "retired");
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SHOWN TO THE TABLE — a plan's rolls, and its truth when revealed
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -945,6 +1241,7 @@ function rollsLine(record) {
  */
 async function postRollsCard(record, { narrationId = null } = {}) {
   if (!record?.oracleSeeds?.length) return null;
+  if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
   return postSecretCard(
     `The oracle, behind the scenes`,
     `<p><strong>${escapeHtml(record.kind === "mystery" ? record.question : record.subject.name)}</strong></p><p>${escapeHtml(rollsLine(record))}</p>`,
@@ -995,7 +1292,10 @@ export async function revealSkeletonNow(id) {
  */
 export async function retireSkeleton(id) {
   const retired = await updateSkeleton(id, r => ({ ...r, status: "retired" }), { byGm: true });
-  if (retired) reportSnapshotEvent("plan_retired");
+  if (retired) {
+    await retirePlanClock(retired);   // its clock leaves play with it (issue #362 AC10)
+    reportSnapshotEvent("plan_retired");
+  }
   return retired;
 }
 

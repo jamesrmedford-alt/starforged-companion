@@ -179,13 +179,23 @@ record and pin for it).
   narrator plays it at once as its own beat (`sufferDialog.js`
   `postChosenComplication` → the oracle follow-up) — its card only promised
   that the narrator would "surface" it. That peril is the open expedition's
-  plan's next danger when one is planned (issue #353 Phase 3). An expedition
+  plan's next danger when one is planned (issue #353 Phase 3) — the
+  expedition the move marked, which its choice card names
+  (`executorOpts.expeditionTrackId`, `movePipeline` `waypointExpedition`) and
+  the peril's card carries (`oracleNarration.trackId` → `narrateOracleFollowup`
+  `trackId` → `complicationStep`), else the most recently changed open one;
+  never a finished or removed expedition's leftover plan, which the journal's
+  page order handed it (issue #362 AC11). An expedition
   the move begins asks its narration to plan it — `expeditionPlanRequest`
   (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
   `result.created`: its waypoints (clues), the danger along the way
   (escalation) and what waits at the end (truth), about the track by id, in
   play while the track is open; the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
+  The plan closes with the track (issue #362 D4): resolved when it completes
+  (`completeProgressTrack`, the panel's Complete), retired when it is removed
+  (`progressTracks.js` `closeTrackPlans` → `secrets.closePlansAbout`) — the
+  finishing narration still has it in play (`skeletons.planInPlay`).
   The Progress Tracks panel marks a planned expedition's row with the GM-only
   ◆ (`secrets.plannedSubjects`, Phase 4). Make a Discovery and Confront Chaos
   ask their narration for a `discovery` plan from their rolls (less any

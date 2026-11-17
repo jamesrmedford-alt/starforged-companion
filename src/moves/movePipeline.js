@@ -1591,8 +1591,11 @@ export async function rollMove({
     ...(thresholdResolutionId ? { thresholdResolutionId } : {}),
     // Explore a Waypoint: the expedition it explored, resolved now — its
     // "Mark expedition progress" marks that one, not the sole open one at
-    // click time (DELAYED-CHOICE-IDENTITY).
-    ...(resolution.moveId === "explore_a_waypoint" ? await waypointExpedition(interpretation) : {}),
+    // click time (DELAYED-CHOICE-IDENTITY). Undertake an Expedition: the
+    // expedition it marked — a weak hit's "Peril at the waypoint" plays that
+    // expedition's plan (issue #362 AC11).
+    ...(resolution.moveId === "explore_a_waypoint" || resolution.moveId === "undertake_an_expedition"
+      ? await waypointExpedition(interpretation) : {}),
   };
   // What an upgrade of this result needs to apply the upgraded outcome's
   // other effects as this pipeline applied the original's — the move's
@@ -1798,12 +1801,13 @@ export async function applyDevelopRelationship({ resolution, interpretation, cam
 }
 
 /**
- * The expedition an Explore a Waypoint explored, as its move targets carry
- * it: `{ expeditionTrackId }` — the open expedition its target names, else
- * the sole open one — or nothing when none resolves (none open, or several
- * and none named), so its choice card resolves as before. The card's "Mark
- * expedition progress" then marks this one, gone or over or not
- * (DELAYED-CHOICE-IDENTITY).
+ * The expedition an Explore a Waypoint explored — or an Undertake an
+ * Expedition marked — as its move targets carry it: `{ expeditionTrackId }` —
+ * the open expedition its target names, else the sole open one — or nothing
+ * when none resolves (none open, or several and none named), so its choice
+ * card resolves as before. The card's "Mark expedition progress" then marks
+ * this one, gone or over or not (DELAYED-CHOICE-IDENTITY), and a "Peril at
+ * the waypoint" plays this one's plan (issue #362 AC11).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null }} interpretation
  * @returns {Promise<{ expeditionTrackId?: string }>}

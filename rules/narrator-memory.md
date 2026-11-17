@@ -28,7 +28,10 @@ layers. This file is the never-break list.
    `burnSuperseded`: the move narration, and the trigger vignette of a clock
    its reversal rewinds, which names its clock (`clockId`, issue #338 D8; a
    trigger rewound while its vignette is still being written is never
-   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST) —
+   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST; a hidden plan's
+   clock, which its vignette paced, by the vignette's own id — `pacedBy` —
+   and a removed or superseded narration's pacing of a plan clock is taken
+   back with its step, issue #362 AC33) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
@@ -50,7 +53,9 @@ layers. This file is the never-break list.
    tolerant; never let a malformed sidecar block a narration post, and never
    let raw sidecar JSON reach the prose — a ```` ```json ````, ```` ``` json ````
    or bare ```` ``` ```` fence holding an object is the sidecar, stripped
-   every time (issue #321 U41).
+   every time (issue #321 U41). A reply with no prose is no narration: its
+   caller posts a fallback card (no `narrationId`) or nothing, so nothing of
+   its block is applied or relayed (issue #362 AC39).
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
@@ -76,7 +81,9 @@ layers. This file is the never-break list.
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only — the frame's scene
    question with it (issue #353 R2: kept for the scene, never carried into
-   the next; no narration ends a scene). Anything that must
+   the next; no narration ends a scene), and the scene's unanswered hidden
+   mysteries with their clocks, retired at every scene end (issue #362 D4).
+   Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
    also files scene-subject truths on the recorded place each was asserted
@@ -183,8 +190,11 @@ layers. This file is the never-break list.
    MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
    caller, and checks the stored `xCardedNarrationIds` right before it
    writes — `isNarrationXCarded`, after any Claude call — so a capture still
-   running when the card is played writes nothing more: XCARD-LATE-CAPTURE),
-   and the state transitions
+   running when the card is played writes nothing more: XCARD-LATE-CAPTURE;
+   the hidden plans' writers too — a plan, its clock, its rolls card, its
+   revealed truth's lore — and a plan or clock write the card overtook on
+   its way is taken back, as the X-Card's undo takes the rest, issue #362
+   AC35), and the state transitions
    it applies to existing entries, a faction's record stance included
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST

@@ -9182,6 +9182,10 @@ Hooks.once("ready", () => {
   // clients). Its reward and link picks relay through GM_ACTIONS (issue #325
   // W11: "vow.reward", "vow.link").
   registerSharedVowSyncHook();
+  // A vow completed or deleted closes its hidden plan (issue #362 D4; the
+  // canonical GM's, on the vow Item's update / delete hook).
+  import("./world/secrets.js").then(({ registerPlanSubjectHooks }) => registerPlanSubjectHooks())
+    .catch(err => console.warn(`${MODULE_ID} | the hidden plans' vow hooks were not registered:`, err?.message ?? err));
   // Reward-choice card (#241 Phase 2) — pick a proposed reward or write your own.
   registerRewardChoiceHook();
   // Player-authored vows (#248 B1) — a vow made on the sheet gets the same setup
