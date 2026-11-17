@@ -720,8 +720,13 @@ async function advanceOnce() {
       // The X-Card stops a round resolving: decided, it waits for a GM to
       // resume (the lift runs this pass again), as a collecting round does —
       // it went on to its narration, and closed behind the paused notice,
-      // its moves never narrated (issue #345 AA43).
-      if (isXCardActive(null)) return false;
+      // its moves never narrated (issue #345 AA43). While its session lasts:
+      // once that is over it waits for no resume, and goes on to the
+      // narrating phase, whose close under the X-Card posts the paused
+      // notice and tells the GMs (narrateTheRound's closingUnnarrated). Held
+      // here, End a Session left it "being resolved", unannounced, until the
+      // next load closed it unseen (issue #362 AC57).
+      if (isXCardActive(null) && !roundSessionOver(getStoredRound())) return false;
       await queueRoundWrite(r => beginNarration(r));
       return true;
     case ROUND_PHASE.NARRATING:
@@ -2285,10 +2290,13 @@ function onCampaignStateChanged(setting) {
         await closeCollectingRound("session-ended");
       }
       // A round whose narration waits for a keyed GM, or for a GM to resume
-      // from the X-Card: the session ending closes it, unnarrated
-      // (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
-      // ROUND-CLOSED-UNNARRATED-WORDING).
-      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard) && roundSessionOver(round, cs)) {
+      // from the X-Card — narrating, or decided at its upgrade step, where
+      // the X-Card holds it too (issue #345 AA43): the session ending closes
+      // it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
+      // ROUND-CLOSED-UNNARRATED-WORDING; the upgrade step, issue #362 AC57).
+      const heldNarrating = round?.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard);
+      const heldUpgrading = round?.phase === ROUND_PHASE.UPGRADING && xCard;
+      if (roundIsOpen(round) && (heldNarrating || heldUpgrading) && roundSessionOver(round, cs)) {
         await advanceRound("session-ended");
       }
       if (active && (!roundIsOpen(getStoredRound()) || getStoredRound()?.sessionId !== sessionId)) {
