@@ -77,7 +77,7 @@ import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
 import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
-import { decidePacing } from "../pacing/router.js";
+import { decidePacing, classifierReadingOf } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
@@ -612,9 +612,9 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
       playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
       apiKey, ignoreForceMove: true,
     });
-    if (pacing.runMove) {
-      classifier = { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
-    }
+    // None when no classifier read the line: pacing off, a failed call or an
+    // unreadable reply (issue #362 AC64).
+    if (pacing.runMove) classifier = classifierReadingOf(pacing);
     if (!pacing.runMove) {
       // The offer is the classifier's alone — no narration exists yet to
       // reconcile it with — and never a social move against a fellow PC
