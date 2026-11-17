@@ -4484,8 +4484,10 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
     if (request) await fileRequestedPlan(request, { campaignState }).catch(() => null);
     return null;
   }
-  const clean = stripMarkup(text)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // The prose rendered as every narrator-prose card renders it (proseToHtml,
+  // issue #348 PT13): stripMarkup and a hand escape left the narrator's
+  // Markdown emphasis as literal asterisks — "*Forgeborn*" (issue #362 AC73).
+  const clean = proseToHtml(text);
   try {
     // Flag family (NARR-RING-VOWSCENE, narrator-context audit 2026-07): the
     // oath scene is fiction the narrator must remember — without these flags
