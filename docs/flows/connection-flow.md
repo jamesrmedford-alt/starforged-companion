@@ -36,7 +36,11 @@ passed the host Actor id, which no Item carries).
 
 ## 1. Meet (creation)
 
-Four paths converge on `createConnection()`. It registers the NPC card's id
+Four paths converge on `createConnection()` — five with a GM's own NPC: the
+Entities panel's **＋ New NPC** (GM only) posts a New Entities card with that
+one row (`entityExtractor.offerNewPerson`, `newPerson`), offered to each PC
+and No one, so its Confirm makes the card as a detected one is made (issue
+#362 D10 — no GM-facing path made an NPC card). It registers the NPC card's id
 in `connectionIds` on the caller's copy and on the latest stored campaignState
 (`registerEntityIdInStore`, on the GM's campaignState write chain —
 CAMPSTATE-CHAIN-REST) — never by writing the caller's copy whole, which
@@ -183,7 +187,19 @@ recorded under its name promoted to it; its bond is §2's.
   doubled letter written once — "Valdur", "Suton" — never another vowel:
   "Seren Okoro" beside "Soren Okoro" is his sister, offered on the card,
   issue #362 AC17), in the detection filter and the draft gate alike, so they
-  are not offered again; the bond Item's creation is marked as the module's
+  are not offered again — they are listed, a row read as the known one
+  ("Read as Vuldar Archer", `status: "known"`, `readAs`; the parse's `readAs`
+  list rides `routeEntityDrafts`' `options.readAs`, one row a name), whose
+  **No — a new person** (`draft.newPerson` → `applyDraftNewPersonFromRelay`, a
+  GM's press) makes it a pending row with `newPerson` (issue #362 D10, the
+  maintainer's answer A — they were dropped with no row and no notice: a PC's
+  father introduced as "Captain Sutton" never got a card). A later name of one
+  reply is read as the earlier ("Archer" after "Vuldar Archer"), and Confirm's
+  own gate applies the person rule: a stale "Archer" row pressed after Vuldar
+  Archer was made is read as him, not made a second card with a second bond
+  (a `newPerson` row is made; Make a Connection's candidates skip such a row
+  for the known one — the coverage's D8). The X-Card withdraws read-as rows
+  with the pending ones. The bond Item's creation is marked as the module's
   write (`actorBridge` `moduleWriteOn`), so the system's "Added …" note is
   re-attributed as PT14's are. Each Confirm / Dismiss is a GM's
   press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
@@ -237,7 +253,20 @@ AUTOSEED-KEYLESS-CANONICAL). A character Actor made by
 hand in the Actors sidebar carries no module flag: it is never seeded, never
 listed in `connectionIds`, and the module takes it for a **player character**
 (`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and
-the CHARACTER blocks (issue #342 Z73).
+the CHARACTER blocks (issue #342 Z73); a GM's own NPC is made with ＋ New NPC
+(above).
+
+**Deleting an NPC card** (a GM, in the Actors sidebar) runs the X-Card's
+connection teardown on the canonical GM (`connection.registerConnectionDeleteHook`
+→ `onConnectionActorDeleted`, issue #362 D10 — it cleaned up nothing): its
+`connectionIds` entry goes and the scene-ledger facts keyed to it are handed
+back to its name (`unregisterDeletedConnection` → `ledgers.demoteEntitySubject`),
+the PCs' bond Items keyed to it are deleted — a bond a player marked (a tick,
+a forged bond) is kept and marked lost instead, as a severed one is
+(`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
+(`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
+(`secrets.retireSkeleton`). The X-Card's own delete of a narration's NPC passes
+`{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a

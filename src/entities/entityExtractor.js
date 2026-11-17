@@ -572,10 +572,13 @@ function detectionFromParsed(parsed, campaignState) {
   );
   // A person the table knows — or one waiting on a draft card — under part of
   // their name or a near spelling is that person, not a new one (issue #354
-  // P2-16: "Archer" was offered as a new NPC beside Vuldar Archer).
+  // P2-16: "Archer" was offered as a new NPC beside Vuldar Archer). They are
+  // not offered, but listed on the card as read as that person, with a "No —
+  // a new person" button (`readAs`; issue #362 D10 — they were dropped with
+  // no row and no notice).
   const listedState   = withStoredEntityIds(campaignState);
   const pendingPeople = collectPendingDraftNames("connection");
-  const knownPerson   = (e) => e.type === "connection" && !!knownPersonNamed(e.name, listedState, pendingPeople);
+  const knownPerson   = (e) => (e.type === "connection" ? knownPersonFor(e.name, listedState, { names: pendingPeople }) : null);
 
   // Renames: a placeholder figure (e.g. "Unknown Suited Figure") revealed to
   // have a proper name (e.g. "Vex"). Validate to { from, to } string pairs.
@@ -596,27 +599,33 @@ function detectionFromParsed(parsed, campaignState) {
     .map(r => normalizeEntityName(r.to))
     .filter(Boolean));
 
-  const filteredEntities = entities
+  // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
+  // pronoun-shaped values ("she/her", "ze/zir", up to three tokens);
+  // anything else — prose, guesses, junk — drops to "". The role and goal
+  // the narration gave a connection (issue #286 D3) are short strings.
+  const sanitised = (e) => ({
+    ...e,
+    pronouns: normalisePronounSet(e.pronouns),
+    role:     detectedPhrase(e.role),
+    goal:     detectedPhrase(e.goal),
+  });
+  const filteredEntities = [];
+  const readAs = [];
+  for (const e of entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
     .filter(e => (e.confidence ?? "high") !== "low")
     .filter(e => !dismissed.has(normalizeEntityName(e.name)))
     .filter(e => !established.has(normalizeEntityName(e.name)))
     .filter(e => !pending.has(normalizeEntityName(e.name)))
-    .filter(e => !renameTargets.has(normalizeEntityName(e.name)))
-    .filter(e => !knownPerson(e))
-    // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
-    // pronoun-shaped values ("she/her", "ze/zir", up to three tokens);
-    // anything else — prose, guesses, junk — drops to "". The role and goal
-    // the narration gave a connection (issue #286 D3) are short strings.
-    .map(e => ({
-      ...e,
-      pronouns: normalisePronounSet(e.pronouns),
-      role:     detectedPhrase(e.role),
-      goal:     detectedPhrase(e.goal),
-    }));
+    .filter(e => !renameTargets.has(normalizeEntityName(e.name)))) {
+    const known = knownPerson(e);
+    if (known) readAs.push({ ...sanitised(e), readAs: known.name, readAsPc: known.pc });
+    else filteredEntities.push(sanitised(e));
+  }
 
   return {
     entities: filteredEntities,
+    readAs,
     renames,
     worldJournal: {
       lore:             Array.isArray(wj.lore)             ? wj.lore             : [],
@@ -680,6 +689,10 @@ function detectionFromParsed(parsed, campaignState) {
  *   with two or more, the draft card carries them all (`flags.actorIds`) in
  *   place of `actorId`, and a connection row's Confirm asks which of them the
  *   NPC is a connection of, or none (issue #342 D3).
+ * @param {Array<Object>} [options.readAs] — the detection's people the person
+ *   rule read as someone known (parseDetectionResponse's `readAs`): listed on
+ *   the draft card as read as them, with a "No — a new person" button
+ *   (issue #362 D10)
  * @param {string|null} [options.narrationId] — the narration whose capture
  *   this is: stamped on the faction it surfaces to the World Journal, so an
  *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
@@ -695,6 +708,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const removed = () => isNarrationXCarded(narrationId);
   const created = [];
   const queued  = [];
+  // People read as someone the table knows: listed on the card as read as
+  // them, not offered (issue #362 D10) — the parse's (`options.readAs`) and
+  // this pass's own.
+  const readAs  = [];
   const pendingNormalized = new Set(
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
@@ -730,12 +747,25 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // Location even though the parent settlement is also called Oxidized
     // Kettle), so the type-scoped entityExistsForName(name, type, …) lets
     // duplicates through. entityExistsAnyType catches the cross-type case.
-    if (entityExistsAnyType(entity.name, campaignState, { type: entity.type })) continue;
+    if (entityExistsAnyType(entity.name, campaignState)) continue;
     // Skip names already sitting in an unresolved draft card — the GM is
-    // already reviewing them; re-flagging causes the suggestion loop. A
-    // person waiting there under a fuller name too (issue #354 P2-16).
+    // already reviewing them; re-flagging causes the suggestion loop.
     if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
-    if (entity.type === "connection" && knownPersonNamed(entity.name, null, pendingPeople)) continue;
+    // A person known under part of the name or a near spelling — a PC, a
+    // listed NPC, one waiting on a draft card, or one this reply already
+    // queued ("Archer" beside "Vuldar Archer" in one reply) — is that person
+    // (issue #354 P2-16): listed as read as them, not offered (issue #362
+    // D10; the coverage's D8 — a reply's two names for one person made two
+    // rows, two cards and two bonds).
+    if (entity.type === "connection") {
+      const known = knownPersonFor(entity.name, withStoredEntityIds(campaignState), {
+        names: [...pendingPeople, ...queued.filter(e => e.type === "connection").map(e => e.name)],
+      });
+      if (known) {
+        readAs.push({ ...entity, readAs: known.name, readAsPc: known.pc });
+        continue;
+      }
+    }
 
     const slot = entity.type === "connection" ? slots.find(s => !s.done && s.takes(entity)) : null;
     if (slot) {
@@ -828,13 +858,40 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (removed()) return { created, queued: [] };
-  if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, {
+  const known = readAsRows([...(Array.isArray(options.readAs) ? options.readAs : []), ...readAs], queued);
+  if (queued.length || known.length) {
+    await postDraftEntityCard([...queued, ...known], campaignState, {
       source: options.source, actorId: options.actorId, actorIds: options.actorIds ?? null, narrationId,
     });
   }
 
   return { created, queued };
+}
+
+/**
+ * The read-as rows a capture lists (issue #362 D10): each detected person the
+ * person rule read as someone known, once — not a name this capture queues,
+ * nor one a card already lists as read as someone (the narration keeps using
+ * the short name; one row is enough).
+ *
+ * @param {Array<Object>} people — detected entities with `readAs` (the known person's name) and `readAsPc`
+ * @param {Array<Object>} queued — the entities this capture queues as pending rows
+ * @returns {Array<Object>} the rows, `status: "known"`
+ */
+function readAsRows(people, queued) {
+  const listed = new Set([
+    ...collectDraftRowNames(DRAFT_KNOWN),
+    ...queued.map(e => e?.name),
+  ].map(normalizeEntityName).filter(Boolean));
+  const rows = [];
+  for (const person of people) {
+    const name = generatedName(String(person?.name ?? ""));
+    const key = normalizeEntityName(name);
+    if (!key || listed.has(key) || typeof person?.readAs !== "string" || !person.readAs.trim()) continue;
+    listed.add(key);
+    rows.push({ ...person, name, readAsPc: person.readAsPc === true, status: DRAFT_KNOWN });
+  }
+  return rows;
 }
 
 /**
@@ -2286,14 +2343,47 @@ const TYPE_LABELS = {
   creature:   "Creature",
 };
 
+/**
+ * A GM's own NPC, made by hand (issue #362 D10 — no GM-facing path made an NPC
+ * card: createConnection's callers are the detection pass, a draft Confirm,
+ * sector creation and the inciting vow, and a character Actor made in the
+ * sidebar is taken for a player character, issue #342 Z73). Posts a New
+ * Entities card with the one row, offered to each player character and No
+ * one, so the NPC is made the way a detected one is — Confirm's seed,
+ * portrait, agenda plan and bond (confirmDraft). The row is the GM's new
+ * person (`newPerson`): a name like a known person's is the GM's to give,
+ * Confirm's person gate leaves it alone. A name an NPC already has is refused.
+ * Any GM (the card is a GM's whisper; its Confirm relays to the canonical GM).
+ *
+ * @param {{ name?: string, description?: string }} person
+ * @returns {Promise<ChatMessage|null>} the card, or null when refused or not posted
+ */
+export async function offerNewPerson({ name = "", description = "" } = {}) {
+  if (!globalThis.game?.user?.isGM) return null;
+  const clean = String(name ?? "").replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  if (entityExistsForName(clean, "connection", campaignState)) {
+    globalThis.ui?.notifications?.warn?.(`An NPC called ${clean} is already on record.`);
+    return null;
+  }
+  let pcs = [];
+  try { pcs = getPlayerActors().map(a => a?.id).filter(id => typeof id === "string" && id); }
+  catch (err) { console.warn(`${MODULE_ID} | offerNewPerson: PC roster lookup failed:`, err?.message ?? err); }
+  return postDraftEntityCard([{
+    type: "connection", name: clean, description: String(description ?? "").trim(), confidence: "high", newPerson: true,
+  }], campaignState, { actorId: pcs.length === 1 ? pcs[0] : null, actorIds: pcs.length > 1 ? pcs : null });
+}
+
 async function postDraftEntityCard(entities, _campaignState, options = {}) {
   if (!globalThis.ChatMessage?.create) return null;
   if (!entities?.length) return null;
 
   // Stable index lets click handlers identify the right draft after re-render.
   // We never reorder the array so the index in the flag matches the index in
-  // the rendered DOM.
-  const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: "pending" }));
+  // the rendered DOM. A person read as someone known keeps that status
+  // (readAsRows — issue #362 D10); every other row is pending.
+  const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: e?.status === DRAFT_KNOWN ? DRAFT_KNOWN : "pending" }));
 
   // A Batch Mode round's narration is several PCs' (issue #342 D3): the card
   // carries every acting PC (`actorIds`), and a connection row's Confirm asks
@@ -2398,6 +2488,16 @@ function renderDraftCardHtml(drafts, holders = null) {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
     } else if (status === DRAFT_XCARDED) {
       actions = `<span class="sf-draft-status sf-draft-status-xcarded">Withdrawn — X-Card</span>`;
+    } else if (status === DRAFT_KNOWN) {
+      // Read as someone the table knows (issue #362 D10): not offered — the
+      // GM says when they are someone else.
+      const who = e.readAsPc
+        ? `the player character <strong>${escapeHtml(e.readAs)}</strong>`
+        : `<strong>${escapeHtml(e.readAs)}</strong>`;
+      actions =
+        `<span class="sf-draft-status sf-draft-status-known">Read as ${who}</span>` +
+        `<button class="sf-draft-btn sf-draft-new-person" data-action="sf-draft-new-person" data-index="${e.index}" ` +
+        `title="They are someone else — offer them as a new person">No — a new person</button>`;
     } else if (e.type === "connection" && Array.isArray(holders)) {
       actions =
         `<span class="sf-draft-holder-ask">Confirm — whose connection?</span>` +
@@ -2435,11 +2535,15 @@ function renderDraftCardHtml(drafts, holders = null) {
 
   const allResolved = drafts.every(d => d.status && d.status !== "pending");
   const personPending = drafts.some(d => d.type === "connection" && (d.status ?? "pending") === "pending");
+  const readAsKnown = drafts.some(d => d.status === DRAFT_KNOWN);
+  const knownHint = readAsKnown
+    ? ` A person read as someone already known is not added again — press No — a new person if they are someone else.`
+    : ``;
   const hint = allResolved
-    ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.</div>`
+    ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.${knownHint}</div>`
     : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.` +
       (personPending ? ` A person is added as a connection on the sheet of the character you pick — or pick No one to add them with no connection on any sheet.` : ``) +
-      `</div>`;
+      knownHint + `</div>`;
 
   return (
     `<div class="sf-draft-entity-card">` +
@@ -2489,7 +2593,7 @@ export function registerDraftCardHooks() {
       return;
     }
 
-    const wire = (action, kind) => root.querySelectorAll(`[data-action="${action}"]`).forEach(btn => {
+    const wire = (action, kind, settled = draftRowSettled) => root.querySelectorAll(`[data-action="${action}"]`).forEach(btn => {
       btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -2501,22 +2605,30 @@ export function registerDraftCardHooks() {
           kind,
           // A round's connection row: whose connection the GM picked ("" — no one).
           payload:    { messageId: message?.id ?? null, draftIndex: idx, pick: btn.dataset.actorId },
-          isResolved: () => draftRowSettled(message?.id, idx),
+          isResolved: () => settled(message?.id, idx),
           restore:    () => { btn.disabled = false; },
         });
       });
     });
     wire("sf-draft-confirm", "draft.confirm");
     wire("sf-draft-dismiss", "draft.dismiss");
+    // A person read as someone known: "No — a new person" (issue #362 D10).
+    wire("sf-draft-new-person", "draft.newPerson", (messageId, idx) => draftRowStatus(messageId, idx) !== DRAFT_KNOWN);
   });
 }
 
 /** True when the live card's row is no longer pending (confirmed or dismissed). */
 function draftRowSettled(messageId, draftIndex) {
+  const status = draftRowStatus(messageId, draftIndex);
+  return !!status && status !== "pending";
+}
+
+/** The live card's row's status (null when there is no such row; "pending" for a row with none). */
+function draftRowStatus(messageId, draftIndex) {
   const message = globalThis.game?.messages?.get?.(messageId);
   const drafts = message?.flags?.[MODULE_ID]?.drafts;
   const row = Array.isArray(drafts) ? drafts.find(d => d?.index === draftIndex) : null;
-  return !!row && !!row.status && row.status !== "pending";
+  return row ? (row.status || "pending") : null;
 }
 
 /**
@@ -2574,6 +2686,32 @@ export async function applyDraftDismissFromRelay(payload = {}, ctx = {}) {
   if (!press) return { applied: false };
   await handleDraftDismiss(press.message, press.draftIndex);
   return { applied: true };
+}
+
+/**
+ * gmRelay handler for "draft.newPerson" — a GM's "No — a new person" on a
+ * row the person rule read as someone known (issue #362 D10): the row becomes
+ * a pending one, offered as a new person (`newPerson`, which Confirm's person
+ * gate — confirmDraft — then leaves alone). Canonical GM, one press at a
+ * time; a row no longer read as known is left as it is.
+ *
+ * @param {{ messageId?: string, draftIndex?: number }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ applied: boolean }>}
+ */
+export async function applyDraftNewPersonFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { applied: false };
+  const rows = await changeDraftRows(press.message, (drafts) => {
+    const at = drafts.findIndex(d => d?.index === press.draftIndex);
+    if (at < 0 || drafts[at].status !== DRAFT_KNOWN) return null;
+    const row = { ...drafts[at], status: "pending", newPerson: true };
+    delete row.readAs;
+    delete row.readAsPc;
+    drafts[at] = row;
+    return drafts;
+  });
+  return { applied: !!rows };
 }
 
 // "<messageId>:<draftIndex>" drafts this client is confirming. The card says
@@ -2708,6 +2846,25 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     await completeListedEntity(draft, campaignState);
     await setDraftStatus(message, draftIndex, "confirmed");
     return existing ?? null;
+  }
+
+  // A person the table knows under part of the name or a near spelling — a
+  // stale "Archer" row pressed after "Vuldar Archer" was made, a player
+  // character's first name — is not made a second time: the row is read as
+  // them, and "No — a new person" is the GM's to press (issue #362 D10; the
+  // coverage's D8 — the gate was the whole name only, so one person got two
+  // cards and two bonds). A row the GM made a new person is made.
+  if (draft.type === "connection" && draft.newPerson !== true) {
+    const known = knownPersonFor(draft.name, withStoredEntityIds(campaignState));
+    if (known) {
+      await changeDraftRows(message, (rows) => {
+        const at = rows.findIndex(d => d.index === draftIndex);
+        if (at < 0 || (rows[at].status ?? "pending") !== "pending") return null;
+        rows[at] = { ...rows[at], status: DRAFT_KNOWN, readAs: known.name, readAsPc: known.pc };
+        return rows;
+      });
+      return null;
+    }
   }
 
   let record = null;
@@ -3112,7 +3269,10 @@ function freshDetectedPeople(entities, campaignState, pendingNormalized, pending
     const name = generatedName(detected.name);
     const key = normalizeEntityName(name);
     if (!key || out.some(f => f.key === key) || pendingNormalized.has(key)) continue;
-    if (entityExistsAnyType(name, campaignState, { type: "connection" }) || knownPersonNamed(name, null, pendingPeople)) continue;
+    // Nor one this reply already names under a fuller name ("Archer" after
+    // "Vuldar Archer"): routeEntityDrafts lists them as read as that person.
+    if (entityExistsAnyType(name, campaignState, { type: "connection" })
+      || knownPersonNamed(name, null, [...pendingPeople, ...out.map(f => f.name)])) continue;
     out.push({ kind: "detected", key, name });
   }
   return out;
@@ -3130,16 +3290,27 @@ function freshDetectedPeople(entities, campaignState, pendingNormalized, pending
  */
 function namedConnectionCandidates(slot, campaignState, dismissed) {
   const all = [];
+  const listedState = withStoredEntityIds(campaignState);
+  // A row the person rule reads as someone known (a stale "Archer" beside the
+  // listed Vuldar Archer) stands for them: they are the candidate, never a
+  // second card from the row (issue #362 D10; confirmDraft's gate). A row
+  // under the known one's own name is the row's (confirmDraft bonds the
+  // listed one); a row the GM made a new person is its own.
+  const readAsKnown = (draft) => {
+    if (draft?.newPerson === true) return false;
+    const known = knownPersonFor(draft?.name, listedState);
+    return !!known && normalizeEntityName(known.name) !== normalizeEntityName(draft.name);
+  };
   const cards = [...(globalThis.game?.messages?.contents ?? [])].reverse()   // the newest card first
     .filter(m => m?.flags?.[MODULE_ID]?.draftEntityCard);
   const rows = (status) => cards.flatMap(message => (Array.isArray(message.flags[MODULE_ID].drafts) ? message.flags[MODULE_ID].drafts : [])
-    .filter(draft => draft?.type === "connection" && String(draft?.name ?? "").trim() && status(draft.status))
+    .filter(draft => draft?.type === "connection" && String(draft?.name ?? "").trim() && status(draft.status) && !readAsKnown(draft))
     .map(draft => ({ message, draft })));
 
   for (const { message, draft } of rows(status => !status || status === "pending")) {
     all.push({ kind: "pending", key: normalizeEntityName(draft.name), name: draft.name.trim(), message, draft, figure: draft });
   }
-  for (const id of withStoredEntityIds(campaignState)?.connectionIds ?? []) {
+  for (const id of listedState?.connectionIds ?? []) {
     let rec = null;
     try { rec = getConnection(id); } catch { continue; }
     if (rec?._id && rec.active !== false && String(rec.name ?? "").trim()) {
@@ -3417,9 +3588,17 @@ async function changeDraftRows(message, change) {
 const DRAFT_XCARDED = "xCarded";
 
 /**
+ * A draft row for a detected person the person rule read as someone known
+ * (`readAs`, the known person's name; `readAsPc` when a player character's):
+ * not offered — "No — a new person" makes it a pending row (issue #362 D10).
+ */
+const DRAFT_KNOWN = "known";
+
+/**
  * Withdraw the draft rows X-carded narrations queued (issue #338 D6(i) — U07
  * full exclusion): each ◈ New Entities card stamped with one of their ids
- * (postDraftEntityCard's `narrationId`) has its still-pending rows marked
+ * (postDraftEntityCard's `narrationId`) has its still-pending rows — and its
+ * rows read as someone known (issue #362 D10) — marked
  * `xCarded` and re-rendered, so Confirm can no longer mint an NPC from the
  * removed prose and the names stop suppressing re-detection and riding the
  * detection prompt's PENDING DRAFTS (collectPendingDraftNames reads pending
@@ -3442,7 +3621,9 @@ export async function withdrawNarrationDrafts(narrationIds) {
       let rows = 0;
       await changeDraftRows(message, (drafts) => {
         const next = drafts.map((d) => {
-          if (d?.status && d.status !== "pending") return d;
+          // A row read as someone known too: its "No — a new person" would
+          // make a draft from the removed prose (issue #362 D10).
+          if (d?.status && d.status !== "pending" && d.status !== DRAFT_KNOWN) return d;
           rows += 1;
           return { ...d, status: DRAFT_XCARDED };
         });
@@ -3594,6 +3775,7 @@ function readApiKey() {
 function emptyDetection() {
   return {
     entities: [],
+    readAs: [],
     renames: [],
     worldJournal: {
       lore: [], threats: [], factionUpdates: [],
@@ -3681,6 +3863,32 @@ function collectPlaceholderConnectionNames(campaignState) {
  * Suppresses the same NPC being re-flagged on every subsequent narration
  * that mentions them.
  */
+/**
+ * The names of the draft rows of one `status` on every draft card (a type's
+ * only, when given) — `DRAFT_KNOWN`'s, so a person read as someone known is
+ * listed once (readAsRows).
+ *
+ * @param {string} status
+ * @param {string|null} [type]
+ * @returns {string[]}
+ */
+function collectDraftRowNames(status, type = null) {
+  try {
+    const names = new Set();
+    for (const m of globalThis.game?.messages?.contents ?? []) {
+      const f = m?.flags?.[MODULE_ID];
+      if (!f?.draftEntityCard) continue;
+      for (const d of Array.isArray(f.drafts) ? f.drafts : []) {
+        if (d?.status !== status || (type && d?.type !== type)) continue;
+        if (typeof d?.name === "string" && d.name.trim()) names.add(d.name.trim());
+      }
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
+}
+
 function collectPendingDraftNames(type = null) {
   try {
     const messages = globalThis.game?.messages?.contents ?? [];

@@ -58,7 +58,14 @@ describe('issue #354 P2-16 — an established person under part of their name is
       [person('Archer'), person('Ms Archer'), person('Vuldar'), person('Valdur Archer')],
       CS(), { autoCreateConnection: false });
     expect(queued.map(e => e.name)).toEqual([]);
-    expect(draftCards()).toHaveLength(0);
+    // Issue #362 D10: not offered, but listed — read as Vuldar Archer, each
+    // with "No — a new person" — where they were dropped with no row. One row
+    // a name, a title aside ("Ms Archer" is the "Archer" row).
+    const [card] = draftCards();
+    expect(card, 'a New Entities card').toBeTruthy();
+    expect(card.flags[MODULE].drafts.map(d => [d.name, d.status, d.readAs]))
+      .toEqual([['Archer', 'known', 'Vuldar Archer'], ['Vuldar', 'known', 'Vuldar Archer'],
+        ['Valdur Archer', 'known', 'Vuldar Archer']]);
   });
 
   it('a player character under their first name is not offered as an NPC', async () => {
