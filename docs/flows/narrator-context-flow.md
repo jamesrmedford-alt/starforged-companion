@@ -1102,7 +1102,10 @@ no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
 frame's location by the same ladder, else the current location when the
 frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
-the scene id).
+the scene id) — save a hidden plan's revealed truth, marked `revealOf` (its
+plan's id) by the sidecar apply: the reveal filed it as Lore already
+("Threat: the escort"), and archived again it was two entries (issue #362
+AC37).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,

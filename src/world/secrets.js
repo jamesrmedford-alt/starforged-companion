@@ -570,7 +570,8 @@ async function rollMysteryAnswer() {
  * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
  *   narration's beat ends: a plan their end resolved is still its to reveal
  *   (skeletons.js planInPlay, issue #362 D4)
- * @returns {Array<{ subject: string, fact: string }>}
+ * @returns {Array<{ subject: string, fact: string, revealOf: string }>} `revealOf`: the plan's id — the
+ *   reveal files the truth as Lore itself, so the scene's end does not archive it again (issue #362 AC37)
  */
 export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   if (!skeletonsEnabled()) return [];
@@ -585,8 +586,8 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
     const record = plan && !plan.sameAs && !joinedByName(stored, plan) ? applyPlanToSkeleton(stored, plan) : stored;
     if (!record.truth) continue;
     out.push(record.kind === "mystery" && record.question
-      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
-      : { subject: record.subject.name, fact: record.truth });
+      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}`, revealOf: record.id }
+      : { subject: record.subject.name, fact: record.truth, revealOf: record.id });
   }
   return out;
 }

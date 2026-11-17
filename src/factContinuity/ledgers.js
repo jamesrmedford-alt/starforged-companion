@@ -148,6 +148,11 @@ export function applySidecar(sidecar, ctx) {
       correctedTo: null,
       migratedTo:  null,
       sceneLocation,
+      // A hidden plan's truth the narration revealed carries the plan's id
+      // (secrets.js revealedTruthsOf; the sidecar apply strips the key from
+      // the model's own truths): its reveal filed it as Lore, and the scene's
+      // end does not archive it again (issue #362 AC37).
+      ...(typeof t.revealOf === 'string' && /^[\w-]{1,64}$/.test(t.revealOf) ? { revealOf: t.revealOf } : {}),
       ...stamp,
     });
     truthIds.push(id);

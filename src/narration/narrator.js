@@ -6017,10 +6017,21 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // The tracks and vows the beat ends: a plan their end resolved is still
   // this narration's to reveal (issue #362 D4).
   const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
+  // A revealed truth is marked with its plan's id (`revealOf`): its reveal
+  // files it as Lore, and the scene's end archives it no second time (issue
+  // #362 AC37). The marker is the code's: one the model's own truths carry
+  // is dropped. The revealed ones go first, so a model truth stating the same
+  // fact is the duplicate the ledger skips, not the marked one.
+  const ownTruths = (sidecar.newTruths ?? []).map(t => {
+    if (!t || typeof t !== 'object' || !('revealOf' in t)) return t;
+    const rest = { ...t };
+    delete rest.revealOf;
+    return rest;
+  });
   const filteredSidecar = {
     ...sidecar,
     stateChanges: otherChanges,
-    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar, { endingSubjectIds })],
+    newTruths:    [...revealedTruthsOf(sidecar, { endingSubjectIds }), ...ownTruths],
   };
 
   try {
