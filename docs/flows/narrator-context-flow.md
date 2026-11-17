@@ -622,7 +622,9 @@ Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
 Information's Story Clue / Story Complication, a Compel weak hit's Action +
 Theme counteroffer, an Undertake an Expedition hit's region Space Sighting,
 and a price that reveals a new enemy its Character Role + Goal + Disposition,
-`priceSeedLines` — issue #353 Phase 0) · **[3b] recent
+`priceSeedLines` — issue #353 Phase 0; an outcome a Burn Momentum or Improve
+Result reached rolls its own, with the price it keeps — `upgradedOracleSeeds`,
+issue #362 AC05) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
 choice card's mortal-wound / desolation roll — the table's one roll, no move

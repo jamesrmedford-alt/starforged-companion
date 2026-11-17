@@ -65,7 +65,9 @@ import {
   applyMomentumBurn,
   mapConsequences,
   buildLoremasterContext,
+  upgradedOracleSeeds,
 } from "./resolver.js";
+import { getCurrentSiteKind } from "../entities/location.js";
 import {
   getActor,
   readMomentumState,
@@ -87,6 +89,7 @@ import {
   retractSupersededNarrations,
   upgradeAllyId,
   momentumShares,
+  standingPriceOf,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -702,7 +705,8 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // The working copy it writes is the one the re-narration reads and logs
   // against; a copy, never the cached setting (rules/foundry-api.md).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
+  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState,
+    standingPrice: priceStands ? standingPriceOf(burn.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
 
   await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), momentumNote) })
@@ -758,9 +762,11 @@ function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newCon
 /**
  * The burned outcome as a resolution — what the effects applier, the narrator
  * and the session log take: the dice as rolled, the action score the burned
- * momentum set, the upgraded consequences.
+ * momentum set, the upgraded consequences, and the burned outcome's own
+ * behind-the-scenes oracle rolls — with the price it keeps (`standingPrice`,
+ * a weak hit that pays the price too — issue #362 AC05).
  */
-function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState }) {
+function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState, standingPrice = null }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
@@ -783,7 +789,11 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     // (issue #347 D2).
     upgradeOf:       burn.resolutionId ?? null,
     consequences:    newConsequences,
-    oracleSeeds:     null,
+    // What the burned outcome says to envision, rolled for it now — the
+    // outcome it replaces had its own, for a narration struck or never made
+    // (issue #362 AC05).
+    oracleSeeds:     upgradedOracleSeeds({ moveId: burn.moveId, outcome: burnResult.outcome, isMatch: burnResult.isMatch,
+      consequences: newConsequences, campaignState, currentSite: getCurrentSiteKind(campaignState), price: standingPrice }),
     // The plans the roll's narration was asked to decide — an expedition it
     // began: this narration replaces that one, or is the move's only one
     // (issue #362 AC04). Their hidden rolls are rolled as it is narrated

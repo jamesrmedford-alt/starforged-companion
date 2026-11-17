@@ -705,6 +705,26 @@ export async function supersedePriceCards(resolutionId, kind) {
 }
 
 /**
+ * The Pay the Price a move paid at its roll, as its card shows it — what an
+ * upgraded outcome that pays the price too keeps (a Battle or Clash burned to
+ * a weak hit): its narration is seeded with it, as the pipeline seeds the
+ * rolled outcome's (issue #362 AC05; the upgraded resolution was told no
+ * price). Null when no price card of the move stands.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @returns {string|null}
+ */
+export function standingPriceOf(resolutionId) {
+  if (typeof resolutionId !== "string" || !resolutionId) return null;
+  const card = allMessages().find(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.payThePriceCard === true && !f.priceSuperseded && f.oracleMemory?.resolutionId === resolutionId;
+  });
+  const answer = card?.flags?.[MODULE_ID]?.oracleMemory?.answer;
+  return typeof answer === "string" && answer.trim() ? answer : null;
+}
+
+/**
  * The reverted price leaves the narrator's memory: its card's `oracleMemory`
  * (stamped with the move's `resolutionId`, index.js postMovePayThePriceCard)
  * stood in RECENT ORACLE RESULTS — "the dice established these outcomes …

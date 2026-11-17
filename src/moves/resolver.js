@@ -1732,6 +1732,37 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
 }
 
 /**
+ * The oracle seeds of an outcome a Burn Momentum or an Improve Result reached
+ * (issue #362 AC05): its own behind-the-scenes rolls — a Story Clue, the
+ * counteroffer, the waypoint the expedition reaches, a new connection's role
+ * and goal — rolled once, now, as resolveMove rolls a rolled outcome's
+ * (buildOracleSeeds). The upgraded resolution had none, and since issue #354
+ * P2-10 its narration is the move's only one; the seeds of the outcome it
+ * replaces belonged to a narration struck, or never made. A price the
+ * upgraded outcome keeps is not rolled here (`routePayThePrice`): it is the
+ * one already paid (`price`, its card's text), seeded as the pipeline seeds
+ * it (withPayThePriceSeed).
+ *
+ * @param {Object} args
+ * @param {string} args.moveId
+ * @param {string} args.outcome — the upgraded outcome
+ * @param {boolean} args.isMatch
+ * @param {Object} args.consequences — the upgraded outcome's
+ * @param {Object|null} [args.campaignState] — for the active sector's region
+ * @param {Object|null} [args.currentSite] — the vault or derelict the crew is in (location.js getCurrentSiteKind)
+ * @param {string|null} [args.price] — the Pay the Price that stands, as its card shows it
+ * @returns {Object|null}
+ */
+export function upgradedOracleSeeds({ moveId, outcome, isMatch, consequences, campaignState = null, currentSite = null, price = null }) {
+  const seeds = buildOracleSeeds(moveId, outcome, !!isMatch, currentSite, {
+    routesPayThePrice:       consequences?.routePayThePrice === true,
+    rollsDecisiveActionCost: consequences?.rollDecisiveActionCost === true,
+    region:                  activeSectorRegion(campaignState),
+  });
+  return price ? withPayThePriceSeed(seeds, moveId, price) : seeds;
+}
+
+/**
  * Whether a result's Pay the Price is one of its choices: a miss whose
  * play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but that routes
  * none, with an enumerated option routing `pay_the_price` — Sojourn's "No

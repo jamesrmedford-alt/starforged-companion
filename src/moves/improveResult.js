@@ -40,7 +40,8 @@
  * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
-import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolver.js";
+import { mapConsequences, OUTCOME_RANK, buildLoremasterContext, upgradedOracleSeeds } from "./resolver.js";
+import { getCurrentSiteKind }          from "../entities/location.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import { refusePress }                   from "../multiplayer/gmRelay.js";
@@ -58,6 +59,7 @@ import {
   effectsNoteHtml,
   upgradeAllyId,
   momentumShares,
+  standingPriceOf,
 } from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
@@ -388,7 +390,8 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Its working copy of the campaign is the one the re-narration reads and
   // logs against — a copy, never the cached setting (rules/foundry-api.md).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState });
+  const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState,
+    standingPrice: priceStands ? standingPriceOf(improve.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: improve, actor, campaignState, kind: "improve" });
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
@@ -470,9 +473,10 @@ function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") 
 /**
  * The improved outcome as a resolution — what the effects applier, the
  * narrator and the session log take. No dice: the result changed, not the
- * roll.
+ * roll. Its own behind-the-scenes oracle rolls are rolled for it (issue #362
+ * AC05), as a burned outcome's are.
  */
-function buildImprovedResolution({ improve, newConsequences, campaignState }) {
+function buildImprovedResolution({ improve, newConsequences, campaignState, standingPrice = null }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
@@ -494,7 +498,8 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     // (issue #347 D2).
     upgradeOf:       improve.resolutionId ?? null,
     consequences:    newConsequences,
-    oracleSeeds:     null,
+    oracleSeeds:     upgradedOracleSeeds({ moveId: improve.moveId, outcome: improve.improveTo, isMatch: improve.isMatch,
+      consequences: newConsequences, campaignState, currentSite: getCurrentSiteKind(campaignState), price: standingPrice }),
     // The plans the roll's narration was asked to decide (issue #362 AC04),
     // as a burn's (burnMomentum.js buildBurnedResolution).
     skeletonRequests: Array.isArray(improve.move?.planRequests) ? improve.move.planRequests : [],
