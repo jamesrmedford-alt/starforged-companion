@@ -86,15 +86,22 @@ export function statedPriceEnabled() {
 
 /**
  * Stakes as the interpretation carries them: with `priceStated` — whether a
- * miss pays the stated miss (one was stated, and the setting is on) — fixed
- * when they are read, so the dialog shows what the roll then pays.
+ * miss pays the stated miss (one was stated, the move's miss pays a price,
+ * and the setting is on) — fixed when they are read, so the dialog shows what
+ * the roll then pays. A move whose miss pays no price (`missPays` false —
+ * Enter the Fray's bad spot, Swear an Iron Vow's obstacle, the resist rolls)
+ * has no price for the stated miss to be: the dialog showed "On a miss: …
+ * (Endure Harm −1)" and the narrator was told "it is what this miss costs",
+ * and nothing charged it (issue #362 AC02).
  *
  * @param {Object|null} stakes — normaliseStakes'
+ * @param {boolean} [missPays] — whether the move's miss pays a price
+ *   (resolver.js missPaysPrice): routed, or a choice that pays it (Sojourn's)
  * @returns {Object|null}
  */
-export function withPriceSource(stakes) {
+export function withPriceSource(stakes, missPays = false) {
   if (!stakes) return null;
-  return { ...stakes, priceStated: !!stakes.miss && statedPriceEnabled() };
+  return { ...stakes, priceStated: !!stakes.miss && missPays === true && statedPriceEnabled() };
 }
 
 /**

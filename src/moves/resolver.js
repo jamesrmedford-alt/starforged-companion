@@ -1729,6 +1729,40 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
 }
 
 /**
+ * Whether a result's Pay the Price is one of its choices: a miss whose
+ * play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but that routes
+ * none, with an enumerated option routing `pay_the_price` — Sojourn's "No
+ * relief" (SOJOURN-PTP-ADVISORY).
+ *
+ * @param {string} moveId
+ * @param {Object} consequences
+ * @returns {boolean}
+ */
+function choiceOffersPrice(moveId, consequences) {
+  if (!PAY_THE_PRICE_ON_MISS.has(moveId) || consequences?.routePayThePrice === true) return false;
+  const prompt = consequences?.sufferPrompt;
+  return prompt?.kind === "enumerated" && (prompt.options ?? []).some(o => o?.route === "pay_the_price");
+}
+
+/**
+ * Whether a move's miss pays a price — what a miss stated before the roll can
+ * be (issue #362 AC02): the pipeline routes one (`routePayThePrice`, on a miss
+ * without a match), or the miss offers it as a choice (choiceOffersPrice —
+ * Sojourn's). Enter the Fray's bad spot, Swear an Iron Vow's obstacle, Test
+ * Your Relationship's choice, the suffer moves' own resist rolls and Face
+ * Death / Desolation pay none: their stated miss was shown and narrated as
+ * "what this miss costs", and nothing charged it. Pure.
+ *
+ * @param {string} moveId
+ * @returns {boolean}
+ */
+export function missPaysPrice(moveId) {
+  if (typeof moveId !== "string" || !Object.hasOwn(CONSEQUENCE_MAP, moveId)) return false;
+  const consequences = mapConsequences(moveId, "miss", false);
+  return consequences?.routePayThePrice === true || choiceOffersPrice(moveId, consequences);
+}
+
+/**
  * A move's oracle seeds with the Pay the Price its pipeline rolled for the
  * card, so the narration depicts the price the table is shown and pays — one
  * roll per result (issue #321 U03). A new object; `seeds` is not changed.
@@ -1750,9 +1784,7 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
  * @returns {{ roll: number, result: string }|null}
  */
 export function rollChoicePrice(moveId, outcome, consequences) {
-  if (outcome !== "miss" || !PAY_THE_PRICE_ON_MISS.has(moveId) || consequences?.routePayThePrice === true) return null;
-  const prompt = consequences?.sufferPrompt;
-  if (prompt?.kind !== "enumerated" || !(prompt.options ?? []).some(o => o?.route === "pay_the_price")) return null;
+  if (outcome !== "miss" || !choiceOffersPrice(moveId, consequences)) return null;
   try {
     const r = rollOracle("pay_the_price");
     return Number.isInteger(r?.roll) && r.result && r.result !== "—" ? { roll: r.roll, result: r.result } : null;

@@ -31,7 +31,7 @@
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import {
-  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
+  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed, missPaysPrice,
   rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
 } from "./resolver.js";
 import { statedPrice } from "./stakes.js";
@@ -369,6 +369,17 @@ export async function readMove({
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }
+  }
+
+  // The miss stated before the roll is its price only for a move whose miss
+  // pays one — the move the line is read as now (a forced move's reading, a
+  // course rerouted to an expedition, a scene-challenge variant made the
+  // ordinary move), whatever move its stakes were read for (issue #362
+  // AC02). The Confirm dialog, a round's reading and the narrator's STAKES
+  // block show the miss as the price on this alone (stakes.js stakesShown).
+  // It is only ever taken away here: the setting was read with the stakes.
+  if (interpretation.stakes?.priceStated && !missPaysPrice(interpretation.moveId)) {
+    interpretation.stakes = { ...interpretation.stakes, priceStated: false };
   }
 
   if (interpretation.mischiefApplied) {
