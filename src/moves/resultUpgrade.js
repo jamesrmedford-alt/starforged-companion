@@ -520,7 +520,9 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // and the resolution upgraded — what the struck vignette is stamped with
   // (issue #347 D2).
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
-    for (const c of tension) reverted.push(`${c.name} clock rewound`);
+    // A clock's name is text: the narrator's countdown label, a scene
+    // challenge's, a GM's `!clock` — never markup (issue #362 AC83).
+    for (const c of tension) reverted.push(`${escapeHtml(c.name)} clock rewound`);
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
@@ -540,7 +542,7 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     for (const v of entries) {
       if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
       said.add(vowOf(v));
-      reverted.push(`${v.name} clock rewound`);
+      reverted.push(`${escapeHtml(v.name)} clock rewound`);
     }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }

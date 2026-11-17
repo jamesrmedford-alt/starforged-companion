@@ -98,6 +98,12 @@ const MODULE_ID = "starforged-companion";
 // Foundry's OWNER ownership level (CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER).
 const OWNERSHIP_OWNER = 3;
 
+/** Text into a card's HTML: an outcome's consequence text is plain text (issue #362 AC83). */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // How long a relayed button click waits for the GM to consume the card before
 // the button re-enables. The relay is fire-and-forget (no ack): if the GM
 // refused or failed the action the card never updates, and without this the
@@ -923,7 +929,7 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
       (burnResult.isMatch ? `<div class="sf-move-match">${matchLine(burnResult.outcome)}</div>` : "") +
       (momentumNote ? `<div class="sf-move-effect sf-move-burned-momentum">${momentumNote}</div>` : "") +
       (newConsequences.otherEffect
-        ? `<div class="sf-move-effect">${newConsequences.otherEffect}</div>`
+        ? `<div class="sf-move-effect">${escapeHtml(newConsequences.otherEffect)}</div>`
         : "") +
       effectsNote +
     `</div>`

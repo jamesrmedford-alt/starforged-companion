@@ -79,6 +79,11 @@ import {
 
 const MODULE_ID = "starforged-companion";
 
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // narrate / applyEffects injected by registerImproveResultHook
 // (src/index.js), kept at module scope for the GM-side relay handler.
 let _deps = { narrate: null, applyEffects: null };
@@ -157,7 +162,9 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
  */
 export function renderImproveButtonHtml(improveState) {
   if (!improveState?.canImprove) return "";
-  const label = improveButtonLabel(improveState);
+  // The asset's name is the player's (an Item they may rename): text, never
+  // markup (issue #362 AC83).
+  const label = escapeHtml(improveButtonLabel(improveState));
   return (
     `<div class="sf-improve-result-row">` +
       `<button type="button" class="sf-improve-result-btn" data-action="sf-improve-result">${label}</button>` +
@@ -467,7 +474,8 @@ async function advanceAbilityClock(actor, improve) {
  * AC31).
  */
 function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null) {
-  const note = clockNote ? ` ${clockNote}` : "";
+  // The cost names the asset — text, as the button's label is (issue #362 AC83).
+  const note = clockNote ? ` ${escapeHtml(clockNote)}` : "";
   const match = improve?.isMatch ? `<div class="sf-move-match">${matchLine(improve.improveTo ?? "strong_hit")}</div>` : "";
   const banner =
     `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effectsNote}</div>`;

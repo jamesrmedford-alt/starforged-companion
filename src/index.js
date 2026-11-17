@@ -8581,7 +8581,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
       ${!noRoll && resolution.isMatch ? `<div class="sf-move-match">${matchLine(resolution.outcome)}</div>` : ""}
       ${resolution.consequences.otherEffect
-        ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
+        ? `<div class="sf-move-effect">${escapeChatHtml(resolution.consequences.otherEffect)}</div>`
         : ""}
       ${aside
         ? `<div class="sf-move-aside">🎲 ${aside}</div>`
