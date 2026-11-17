@@ -177,6 +177,93 @@ own, `worldSnapshotEvents`: an id and a time"): the setting holds one opaque
 mark and its time; the ids are the reporting client's.
 
 ---
+## Issue #362 D5: a held result is kept by its roller going on — and by the session's end and Batch Mode's start (2026-11)
+
+**Decision:** (issue #362 D5, HELD-RESULT-WHO-KEEPS-IT; decided A,
+maintainer 2026-11-17; with AC32 HELD-RESULT-OUTLIVES-ROUND-ENTRY, which it
+settles.) A free-flow result held for Burn / Improve / Keep (issue #354
+P2-10) is kept — its price paid, its narration posted — by:
+- **the roller's own next line** (`heldResult.actsAsRoller`, index.js
+  onMessage): a line spoken as the roller (the message's speaker — a
+  selected token, the author's own character), or written by the roller's
+  own player — a player who owns the PC, or a GM when no player does (a
+  GM-run PC, solo play). A GM's typed line with no speaker is read as the
+  first PC's (`speaker.js`: a GM owns every PC) and no longer keeps another
+  player's result while they are still choosing;
+- **a move rolled for the roller**, whoever typed it (`movePipeline.rollMove`,
+  before its dice): a later move closes the card's upgrades anyway (issue
+  #326 D4), and keeping first puts its price and narration before the new
+  move's — it was kept after the move was recorded, un-awaited;
+- **the roller's sheet roll, `!ptp` and `!oracle`**, first (the canonical
+  GM's native-roll hook; `oracleFollowup.narrateOracleFollowupOnGm` before
+  the follow-up's narration);
+- **a consequence chosen** on its choice card (as before);
+- **End a Session** — every held result, before the scene closes and the
+  summary is finalised, so it is narrated into the session it was rolled in
+  (`keepEveryHeldResult("session-end")`);
+- **Batch Mode switched on** — every held result, before the first round
+  opens (`keepEveryHeldResult("batch-mode")`): a round's line is table talk,
+  which kept nothing. A result held while Batch Mode is on (a
+  non-participant's card move, run as free-flow) is kept before the round
+  that takes its roller's next action rolls (`batch/driver.js` rollRound).
+The card says what kept it (`awaitingUpgrade.resolvedBy`, issue #362 AC82).
+
+**Reason:** a GM's "Take your time deciding…" paid and narrated a player's
+held miss while they were still choosing; a sheet roll, `!ptp` or `!oracle`
+by the roller was narrated before the result it followed; a result held
+across End a Session was paid and narrated into the next session; and in
+Batch Mode the round told the next beat with the miss unpaid and still
+burnable.
+
+**Supersedes** issue #354 P2-10's "Known limit: a held result whose roller
+never acts again, and whose card nobody presses, stays held — End a Session
+does not settle it" (End a Session settles it now; a session that ends by
+four idle hours still leaves it held until its roller goes on).
+
+**Rejected:** *(B) leave who keeps it as it was and reword the card's "Your
+next line keeps it"* — a GM's table talk would still settle a player's
+result, and the story would still run out of order.
+
+## Issue #362 D7: a weak-hit win burned or improved to a strong hit is paid the difference (2026-11)
+
+**Decision:** (issue #362 D7, WON-FIGHT-PAYOFF-NOT-RESCALED; decided B,
+maintainer 2026-11-17.) A Battle won on a weak hit and then burned or
+improved to a strong hit is paid what the strong hit adds to the win's
+payoff, as an upgrade pays the legacy ticks, companion health and progress
+marks it adds (issue #313 UPGRADE-PIPELINE-EFFECTS) — never twice:
+- **The milestone marks.** The victory card the weak hit posted carries its
+  move's `resolutionId`. While its ⚑ Mark milestone is still to press, the
+  card shows the strong hit's count (`flags.marks` and the label raised —
+  one press pays them all); once pressed, the marks it lacks are marked at
+  the upgrade, once (the vow's payoff ledger, step `milestone:<card>:upgrade`).
+  A fight whose rank gives one mark on either hit (troublesome, dangerous)
+  adds none.
+- **The promised reward.** A granted reward now records the outcome it was
+  granted at (`reward.grantedAt`). A reward granted at a weak hit gets the
+  strong hit's: a supply or momentum reward its second point, any other
+  form its string lifted ("no string attached now"). Claimed before it is
+  given — `grantedAt` is raised on every copy first — and a refused give is
+  on the GMs' payoff card with a Retry. A reward granted before `grantedAt`
+  was recorded is left as it stands.
+(`index.js` `payWonFightDifference`, `upgradeLinkedVowReward`.) A lost miss
+burned or improved to a win is paid the upgraded outcome's payoff in full,
+as before.
+
+**Reason:** with results held (issue #354 P2-10) the weak hit's payoff
+lands at the roll, before the roller has chosen to burn — so the strong hit
+the table ends up with was paid as a weak one, though every other effect of
+the upgrade is paid at the upgraded scale.
+
+**Supersedes** the issue #313 trade-off "a Battle won on a weak hit and
+improved to a strong one keeps the weak hit's milestone count and reward",
+and its rejection of "pay a Battle's win again": the win is not paid again —
+only its difference, and the victory card is not posted a second time.
+
+**Rejected:** *(A) defer a held result's payoff until it is settled* — the
+fight's end, its card and its payoff would split from the record the roll
+already made, and an upgrade in a Batch Mode round or with holding off
+would still need the difference. *(C) keep the weak hit's payoff* — the
+trade-off this replaces.
 
 ## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
 

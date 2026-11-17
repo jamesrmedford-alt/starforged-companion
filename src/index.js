@@ -23,7 +23,7 @@
  */
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
-import { mapConsequences, buildLoremasterContext, expeditionPlanRequest } from "./moves/resolver.js";
+import { mapConsequences, buildLoremasterContext, expeditionPlanRequest, matchLine } from "./moves/resolver.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -172,7 +172,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
-import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
+import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { reportSnapshotEvent, registerSnapshotEventsSetting } from "./narration/snapshotEvents.js";
@@ -219,7 +219,7 @@ import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, reque
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
 import { registerPlansInPlaySocket, registerPlansTableViewSync, registerPlansTableViewSetting } from "./world/secrets.js";
 import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
-import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
+import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled, actsAsRoller } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -976,8 +976,11 @@ export function registerChatHook() {
     // held for Burn / Improve / Keep is kept — its price paid, its narration
     // posted — before this line is read, so the story stays in order. A
     // follow-up pressed on the held card itself is such a line: "burn
-    // momentum before applying any other effects of the move".
-    if (speakerActorId) {
+    // momentum before applying any other effects of the move". Only the
+    // roller's own line (issue #362 D5, decided A): a GM's line is read as
+    // the first PC's, and kept another player's result while they were still
+    // choosing — a move it rolls for that PC keeps it first (rollMove).
+    if (speakerActorId && actsAsRoller(message, speakerActorId)) {
       await keepHeldResultsOf(speakerActorId).catch(err =>
         console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next line:`, err?.message ?? err));
     }
@@ -2202,11 +2205,13 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
- * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[],
- *   afterMoveCard: Array<() => Promise<void>> }>}
+ * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, arrivalPlace: string|null,
+ *   applied: string[], notApplied: string[], afterMoveCard: Array<() => Promise<void>> }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
  *   else the stamped or selected open fight, else the one it ended; thresholdResolutionId —
  *   the resolution whose threshold card this posted (Enter the Fray against a new foe);
+ *   arrivalPlace — the place an arrival reached, by name (its narration's ARRIVAL line), for
+ *   an upgrade of the hit to tell its narration (issue #362 AC06);
  *   applied / notApplied — what the effects did, in words, for an upgrade's card;
  *   afterMoveCard — the cards that summarize the move's roll card, for the pipeline to
  *   post after it (an upgrade's are posted at once)
@@ -2219,7 +2224,11 @@ async function applyOutcomeEffects({
   const notApplied = [];
   // afterMoveCard — cards that summarize the roll card, which the pipeline
   // posts once that card is on the table (issue #348 PT10).
-  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied, afterMoveCard: [] };
+  // failures — an upgrade's own writes the world refused, as payoff steps for
+  // its card's Retry (issue #362 AC49; the pipeline's are on its copy, for
+  // persistResolution's report).
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied,
+    afterMoveCard: [], failures: [] };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2313,9 +2322,19 @@ async function applyOutcomeEffects({
         campaignState.currentLocationId   = arrivedAt.id;
         campaignState.currentLocationType = arrivedAt.type;
         // The pipeline's persistResolution saves its working copy; an upgrade's
-        // location is saved here, beside the ship record just written.
+        // location is saved here, beside the ship record just written. Refused,
+        // it is a step on the upgrade's payoff card, whose Retry saves it — it
+        // was a console line (issue #362 AC49, X18's rule for the upgrade).
         if (upgrade) {
-          await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          try {
+            await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          } catch (err) {
+            console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
+            const name = arrivedAt.entity?.name ?? arrivalName ?? null;
+            out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
+              locationId: arrivedAt.id, locationType: arrivedAt.type, name });
+            notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
+          }
         } else {
           noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
             name: arrivedAt.entity?.name ?? arrivalName ?? null });
@@ -2349,6 +2368,8 @@ async function applyOutcomeEffects({
     // pipeline's, a round's, an upgrade's re-narration).
     resolution.loremasterContext = [resolution.loremasterContext, arrivalNarratorLine(placeName, resolution.outcome)]
       .filter(Boolean).join(" ");
+    // The place, for an upgrade of this result to tell its narration (below).
+    out.arrivalPlace = placeName;
 
     // F15 (folded into F16 Phase F): surface a follow-up card so the
     // user sees whether the token moved, and where to. The card is
@@ -2366,6 +2387,16 @@ async function applyOutcomeEffects({
       else out.afterMoveCard.push(postCard);
     }
     applied.push(placeName ? `arrived at ${placeName}` : "arrived (no destination named)");
+  } else if (arrivalMove && upgrade && resolution.outcome !== "miss") {
+    // The recorded hit already arrived; this one is narrated in its place —
+    // the move's only narration while the result was held. It is told the
+    // ship ARRIVED, and where, in its own outcome's words, with no second
+    // docking: it was narrated as the crew setting off, the prompt issue #348
+    // PT08 was filed for (issue #362 AC06). The place is the one the roll
+    // arrived at, as its card carries it (`move.arrivalPlace`), else the
+    // destination's words.
+    resolution.loremasterContext = [resolution.loremasterContext,
+      arrivalNarratorLine(interpretation?.arrivalPlace ?? moveTarget, resolution.outcome)].filter(Boolean).join(" ");
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2410,7 +2441,7 @@ async function applyOutcomeEffects({
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
-            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
+            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
             let   linked = selectExpeditionSite(campaignState, label);
             // A destination that is no site and no tracked place — the
@@ -2429,9 +2460,16 @@ async function applyOutcomeEffects({
               // refuses it the record is a step on the GMs' card, whose Retry
               // saves it: it was lost, and the expedition's link named no
               // stored site (issue #362 AC49). An upgrade's record is saved
-              // here, as its arrival's location is.
-              if (recorded && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
-              else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
+              // here, onto its stored sector, as its arrival's location is —
+              // refused, a step on the upgrade's payoff card.
+              if (recorded && upgrade) {
+                const saved = await saveUnchartedSite({ sectorId: recorded.sector?.id ?? null, site: recorded.site });
+                if (!saved?.ok) {
+                  out.failures.push({ step: "uncharted", reason: saved?.reason ?? "refused", ...(saved?.error ? { error: saved.error } : {}),
+                    sectorId: recorded.sector?.id ?? null, site: recorded.site, name: recorded.site?.name ?? null });
+                  notApplied.push(`the uncharted destination ${recorded.site?.name ?? label} on the sector map — the GMs have a Retry`);
+                }
+              } else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
                 site: recorded.site, name: recorded.site?.name ?? null });
               linked ??= recorded;
             }
@@ -2789,8 +2827,8 @@ async function applyOutcomeEffects({
           console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
         // Won fight that served a vow → surface the milestone (#241). Win =
         // a hit on Take Decisive Action / Battle (not Face Defeat).
-        if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && fin.track.linkedVowName) {
-          await applyWonFightPayoff(fin.track, resolution.outcome, rollerActor);
+        if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && (fin.track.linkedVowName || fin.track.linkedVowId)) {
+          await applyWonFightPayoff(fin.track, resolution.outcome, rollerActor, { resolutionId: resolution._id ?? null });
         }
       }
     } catch (err) {
@@ -2799,13 +2837,26 @@ async function applyOutcomeEffects({
   } else if (next.endCombat && upgrade && resolution.moveId !== "face_defeat"
       && isHit(resolution.outcome) && !isHit(against.outcome)) {
     // A Battle lost on the recorded miss is won on the upgraded hit: the
-    // fight it ended (its card named it; finished by now) pays off. A win
-    // already paid on a weak hit is not paid again on a strong one.
-    if (stamped?.linkedVowName) {
-      await applyWonFightPayoff(stamped, resolution.outcome, rollerActor);
-      applied.push(`the fight won — a milestone toward ${stamped.linkedVowName}`);
+    // fight it ended (its card named it; finished by now) pays off.
+    if (stamped?.linkedVowName || stamped?.linkedVowId) {
+      await applyWonFightPayoff(stamped, resolution.outcome, rollerActor, { resolutionId: against.resolutionId ?? null });
+      applied.push(`the fight won — a milestone toward ${fightLinkedVow(stamped, rollerActor?.id ?? null).vowName ?? "its vow"}`);
     } else if (!stamped) {
       console.debug(`${MODULE_ID} | won fight: the upgraded ${resolution.moveId} names no fight — no payoff.`);
+    }
+  } else if (next.endCombat && upgrade && resolution.moveId !== "face_defeat"
+      && resolution.outcome === "strong_hit" && against.outcome === "weak_hit") {
+    // A win already paid on a weak hit, upgraded to a strong one: the
+    // difference — the milestone marks and the promised reward's scale the
+    // weak hit did not pay, as an upgrade pays legacy ticks, companion health
+    // and progress marks (issue #362 D7, decided B). Never twice: the
+    // victory card's marks are raised before its ⚑ is pressed, or the marks
+    // it lacks marked once on the vow's payoff ledger; the reward's
+    // `grantedAt` is its claim.
+    if (stamped?.linkedVowName || stamped?.linkedVowId) {
+      const paid = await payWonFightDifference(stamped, rollerActor, against.resolutionId ?? null);
+      applied.push(...paid.applied);
+      notApplied.push(...paid.notApplied);
     }
   }
 
@@ -2819,14 +2870,15 @@ async function applyOutcomeEffects({
  *
  * @param {{ resolution: Object, against: Object, interpretation: Object, targets: Object,
  *   actor: Actor|null, campaignState: Object }} args — resultUpgrade.js applyUpgradedOutcomeEffects
- * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ applied: string[], notApplied: string[], failures: Object[] }>} — `failures`:
+ *   the upgrade's own writes the world refused, as payoff steps (issue #362 AC49)
  */
 async function applyUpgradedOutcomeEffects({ resolution, against, interpretation, targets, actor, campaignState }) {
-  const { applied, notApplied } = await applyOutcomeEffects({
+  const { applied, notApplied, failures } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, against, targets,
     rollerActor: actor, speakerActor: actor,
   });
-  return { applied, notApplied };
+  return { applied, notApplied, failures };
 }
 
 /**
@@ -2852,24 +2904,119 @@ function legacyMarkAdded(next, orig) {
  * GMs, with a Retry (issue #306 R04). Shared by the pipeline's end-of-fight
  * branch and a Battle upgraded from a lost miss.
  *
- * @param {{ rank?: string, linkedVowName: string }} track — the fight
+ * The vow is the one the fight was linked to by its id when it has one — the
+ * Progress Tracks panel's add stores `linkedVowId` (issue #353 R3) — under
+ * the name it carries now: by the name it was linked under, a vow renamed
+ * mid-fight was "no longer on any character's sheet" on the victory card,
+ * its ⚑ dead and its reward not found (issue #362 AC46). A fight linked at
+ * its threshold card carries the name alone, and is paid by it.
+ *
+ * @param {{ rank?: string, linkedVowName?: string|null, linkedVowId?: string|null }} track — the fight
  * @param {"strong_hit"|"weak_hit"} outcome
  * @param {Actor|null} rollerActor
+ * @param {{ resolutionId?: string|null }} [opts] — the move whose win it pays: its victory card
+ *   carries it, for an upgrade of that move to pay the difference (payWonFightDifference)
  */
-async function applyWonFightPayoff(track, outcome, rollerActor) {
-  const marks = Math.max(1, marksForSourceRank(track.rank) - (outcome === "weak_hit" ? 1 : 0));
-  await postFightVowMilestoneCard(track.linkedVowName, marks, rollerActor?.id ?? null).catch(err =>
+async function applyWonFightPayoff(track, outcome, rollerActor, { resolutionId = null } = {}) {
+  const marks = wonFightMarks(track, outcome);
+  const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
+  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId, resolutionId }).catch(err =>
     console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
-  const granted = await grantLinkedVowReward(track.linkedVowName, outcome, { actorId: rollerActor?.id ?? null }).catch(err => {
+  const granted = await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
     return null;
   });
   if (granted && !granted.ok) {
     await postPayoffFailureCard({
-      source: "fight", vowName: track.linkedVowName, vowId: granted.vowId ?? null,
+      source: "fight", vowName, vowId: granted.vowId ?? null,
       actorId: rollerActor?.id ?? null, outcome, failures: [granted],
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
+}
+
+/**
+ * The vow a fight serves, as its payoff finds it: by the track's `linkedVowId`
+ * — every PC's copy of it, the roller's copy's name — when a copy carries it,
+ * else by the name it was linked under (a threshold link, or a vow gone from
+ * every sheet). `vowId` and `copies` are null when found by name.
+ *
+ * @param {{ linkedVowName?: string|null, linkedVowId?: string|null }} track
+ * @param {string|null} actorId — the roller
+ * @returns {{ vowName: string|null, vowId: string|null, copies: Array<{actor, item}>|null }}
+ */
+function fightLinkedVow(track, actorId) {
+  const id = typeof track?.linkedVowId === "string" && track.linkedVowId ? track.linkedVowId : null;
+  const copies = id ? collectPlayerVowItems().filter(e => isVowCopy(e.item, id)) : [];
+  if (!copies.length) return { vowName: track?.linkedVowName ?? null, vowId: null, copies: null };
+  const own = copies.find(e => e.actor?.id === actorId && e.item.system?.completed !== true)
+    ?? copies.find(e => e.item.system?.completed !== true) ?? copies[0];
+  return { vowName: own.item.name ?? track.linkedVowName ?? null, vowId: id, copies };
+}
+
+/** A won fight's milestone marks: by the fight's rank (marksForSourceRank); a weak-hit win one fewer, min 1. */
+function wonFightMarks(track, outcome) {
+  return Math.max(1, marksForSourceRank(track?.rank) - (outcome === "weak_hit" ? 1 : 0));
+}
+
+/**
+ * A Battle won on a weak hit and burned or improved to a strong hit (issue
+ * #362 D7, decided B — it was "the weak hit's payoff stands", issue #313):
+ * the difference of the win's payoff, never paid twice.
+ *   - The milestone marks: the victory card the weak hit posted (its
+ *     `resolutionId`) shows the strong hit's count when its ⚑ is still to
+ *     press — one press pays them; once pressed, the marks it lacks are
+ *     marked now, once (the vow's payoff ledger, `milestone:<card>:upgrade`).
+ *   - The promised reward, granted at the weak hit's scale (its `grantedAt`):
+ *     the strong hit's (upgradeLinkedVowReward).
+ * What landed and what did not, in words, for the upgraded move card.
+ *
+ * @param {Object} track — the fight, as stored
+ * @param {Actor|null} rollerActor
+ * @param {string|null} resolutionId — the move whose weak-hit win was paid
+ * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ */
+async function payWonFightDifference(track, rollerActor, resolutionId) {
+  const applied = [];
+  const notApplied = [];
+  const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
+  const label = vowName ?? "the vow";
+  const now = wonFightMarks(track, "strong_hit");
+  const card = resolutionId ? (game.messages?.contents ?? []).find(m =>
+    m?.flags?.[MODULE_ID]?.fightVowCard === true && m.flags[MODULE_ID].resolutionId === resolutionId) : null;
+  const f = card?.flags?.[MODULE_ID] ?? null;
+  const more = f ? now - Number(f.marks ?? now) : 0;
+  if (more > 0 && !f.resolvedActions?.markMilestone) {
+    try {
+      await card.update({
+        [`flags.${MODULE_ID}.marks`]: now,
+        content: String(card.content ?? "").replace(/⚑ Mark milestone \(×\d+\)/, `⚑ Mark milestone (×${now})`),
+      });
+      applied.push(`the victory card's milestone toward ${label} raised to ×${now}`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | won fight: the victory card's milestone could not be raised:`, err?.message ?? err);
+      notApplied.push(`the strong hit's milestone ×${now} on the victory card — the world refused it`);
+    }
+  } else if (more > 0) {
+    const res = await markFightVowMilestoneOnce({ cardId: `${card.id}:upgrade`, vowName: f.vowName ?? vowName,
+      vowId: typeof f.vowId === "string" ? f.vowId : vowId, actorId: f.actorId ?? rollerActor?.id ?? null, marks: more })
+      .catch(err => ({ ok: false, error: err?.message ?? String(err) }));
+    if (res?.ok) applied.push(`${more} more milestone mark${more === 1 ? "" : "s"} toward ${label}`);
+    else notApplied.push(`${more} more milestone mark${more === 1 ? "" : "s"} toward ${label} (${res?.reason ?? "refused"})`);
+  }
+  const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
+    console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
+    return { ok: false, step: "reward", reason: "refused" };
+  });
+  if (reward?.ok && !reward.skipped) applied.push(reward.applied);
+  else if (reward && !reward.ok && reward.step === "rewardGrant") {
+    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? null, actorId: rollerActor?.id ?? null,
+      outcome: "strong_hit", failures: [reward] })
+      .catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
+    notApplied.push("the reward's strong-hit difference — the GMs have a Retry");
+  } else if (reward && !reward.ok) {
+    notApplied.push("the reward's strong-hit difference — the world refused it");
+  }
+  return { applied, notApplied };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3342,6 +3489,17 @@ function registerNativeProgressRollHook() {
       // the canonical GM, whatever the keys.
       const toRound = sheetRollJoinsRound(message);
       const narratesHere = toRound ? isCanonicalGM() : nativeRollNarratesHere(message);
+      // The roller's sheet roll is their going on (issue #362 D5, decided A):
+      // a result of theirs still held for Burn / Improve / Keep is kept first,
+      // on the canonical GM — before its own narration of the roll, when it is
+      // the one narrating — so the story stays in order. A participant's roll
+      // in Batch Mode is the round's, which keeps it as it rolls (driver.js).
+      const keptFirst = !toRound && isCanonicalGM() && rolledByPlayerCharacter(message)
+        && ["progress", "action"].includes(ironswornRollKind(String(message?.content ?? "")))
+        && actsAsRoller(message, message.speaker.actor)
+        ? keepHeldResultsOf(message.speaker.actor).catch(err =>
+          console.warn(`${MODULE_ID} | native-roll: a result held for its roller's choice could not be kept first:`, err?.message ?? err))
+        : null;
 
       const content = String(message?.content ?? "");
       const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
@@ -3372,6 +3530,7 @@ function registerNativeProgressRollHook() {
         : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
 
       import("./narration/narrator.js").then(async ({ narrateResolution }) => {
+        if (keptFirst) await keptFirst;
         // A working copy: narrateResolution starts the scene and applies the
         // sidecar on it (issue #335 Y04, the X09 rule).
         const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
@@ -5610,14 +5769,17 @@ function registerWayOutHook() {
 // ── Won-fight vow milestone (#241): surface the vow the fight served ─────────
 
 // Exported for unit testing.
-export async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
+export async function postFightVowMilestoneCard(vowName, marks, actorId = null, { vowId: linkedId = null, resolutionId = null } = {}) {
   // The linked vow's rank + connection link — read from the vow the card's
   // buttons will act on: the roller's own (resolveVowItemCopies; the milestone
   // button marks resolveVowHolderActor's). The first PC's same-named vow used
   // to supply them, so 🤝 Deepen could name another PC's connection (issue
-  // #301 B02). Open vows only, as before.
-  const { primary } = resolveVowItemCopies(vowName, { actorId });
-  const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
+  // #301 B02). Open vows only, as before. A fight linked by the vow's id
+  // finds it by that id, whatever it is named now (issue #362 AC46).
+  const linked = linkedId ? fightCardVow({ vowId: linkedId, actorId }) : null;
+  const { primary } = linked ? { primary: null } : resolveVowItemCopies(vowName, { actorId });
+  const item = linked ? (linked.state === "open" ? linked.item : null)
+    : (primary?.item?.system?.completed === true ? null : (primary?.item ?? null));
   const vowRank        = item?.system?.rank ?? null;
   // Named as its copies are found (vowCopyId: the flag, else the Item's own
   // id): from the flag alone, a sheet vow whose stamp never landed carried
@@ -5639,7 +5801,10 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
       // actorId: the PC whose winning roll ended the fight — the milestone
       // marks their copy of the vow (credit the roller). vowId: the vow whose
       // payoff ledger 🤝 Deepen records on (deepenVowConnectionOnce).
-      flags: { [MODULE_ID]: { fightVowCard: true, vowName, vowId, marks, connectionName, vowRank, actorId } },
+      // resolutionId: the move whose win this is — an upgrade of it to a
+      // strong hit raises this card's marks (issue #362 D7).
+      flags: { [MODULE_ID]: { fightVowCard: true, vowName, vowId, marks, connectionName, vowRank, actorId,
+        ...(resolutionId ? { resolutionId } : {}) } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFightVowMilestoneCard: chat post failed:`, err?.message ?? err);
@@ -6013,7 +6178,11 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
   const plan = planRewardGrant(reward, outcome);
   const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
   const pc   = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
-  if (vowId && !(await setSharedVowReward(vowId, { ...reward, status: plan.status })).ok) {
+  // A granted reward keeps the outcome it was granted at: a weak-hit win
+  // upgraded to a strong one pays the difference, once (issue #362 D7 —
+  // upgradeLinkedVowReward).
+  if (vowId && !(await setSharedVowReward(vowId, { ...reward, status: plan.status,
+    ...(plan.status === "granted" ? { grantedAt: outcome } : {}) })).ok) {
     return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
   }
   if (plan.status === "granted") {
@@ -6028,6 +6197,54 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
   await postRewardGrantCard(reward, plan).catch(err =>
     console.warn(`${MODULE_ID} | reward grant card failed:`, err?.message ?? err));
   return { ok: true, vowId };
+}
+
+// GM-side: a linked vow's promised reward granted at a weak hit's scale, its
+// win upgraded to a strong hit (issue #362 D7, decided B): the strong hit's —
+// a supply or momentum reward's second point, a reward of any other form
+// without the string the weak hit tied to it. Claimed before it is given, as
+// the grant is: `grantedAt` is raised on every copy first, so nothing pays the
+// difference twice. A reward granted before `grantedAt` was recorded, one not
+// granted, and a lower outcome are left as they stand (`skipped`).
+//
+// @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, step?: string,
+//   reason?: string, vowId?: string|null }>}
+async function upgradeLinkedVowReward(vowName, outcome, { actorId = null, copies: knownCopies = null } = {}) {
+  const copies = Array.isArray(knownCopies) && knownCopies.length
+    ? knownCopies
+    : resolveVowItemCopies(vowName, { actorId }).copies;
+  let reward = null, vowId = null, rewardHolder = null;
+  for (const { actor, item } of copies) {
+    const r = item?.flags?.[MODULE_ID]?.reward;
+    if (r?.status === "granted" && r.grantedAt === "weak_hit") { reward = r; vowId = vowCopyId(item); rewardHolder = actor ?? null; break; }
+  }
+  if (!reward || outcome !== "strong_hit") return { ok: true, skipped: true };
+  const was = planRewardGrant(reward, reward.grantedAt);
+  const now = planRewardGrant(reward, outcome);
+  const more = Number(now.amount ?? 0) - Number(was.amount ?? 0);
+  const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
+  const pc = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
+  if (vowId && !(await setSharedVowReward(vowId, { ...reward, grantedAt: outcome })).ok) {
+    return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
+  }
+  const plan = { status: "granted", form: reward.form, description: reward.description, ...(more > 0 ? { amount: more } : {}) };
+  if (more > 0) {
+    const given = await giveReward(pc, reward, plan);
+    if (!given.ok) {
+      return { ...given, step: "rewardGrant", vowId, pcId: pc?.id ?? null,
+        reward: { description: reward.description ?? null, form: reward.form ?? null }, plan };
+    }
+  }
+  const desc = escapeChatHtml(reward.description);
+  const body = more > 0
+    ? `🎁 The strong hit's reward: <strong>${desc}</strong> <em>(+${more} ${escapeChatHtml(reward.form)} more)</em>`
+    : `🎁 The strong hit's reward: <strong>${desc}</strong> — <em>no string attached now</em>`;
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-reward-grant"><div class="sf-card-body"><p>${body}</p></div></div>`,
+    flags:   { [MODULE_ID]: { rewardGrantCard: true, rewardUpgraded: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | reward upgrade card failed:`, err?.message ?? err));
+  return { ok: true, vowId,
+    applied: more > 0 ? `the reward “${reward.description}”: +${more} ${reward.form} more` : `the reward “${reward.description}” without its string` };
 }
 
 // Give a granted reward to `pc`: a supply / momentum boost, or the record of
@@ -8494,6 +8711,17 @@ function renderKeepResultHtml(resolution) {
     `<p class="sf-card-hint sf-keep-result-hint">${owes} Your next line keeps it.</p></div>`;
 }
 
+// How a held result was kept, as its card says once settled — by the
+// `awaitingUpgrade.resolvedBy` its wait was closed with (heldResult.js).
+const KEPT_BY = Object.freeze({
+  keep:          "Kept — its price and its narration followed.",
+  later:         "Kept by the roller's next line or move.",
+  choice:        "Kept — a consequence was chosen on its choice card.",
+  // Issue #362 D5: every held result is kept as a session ends, and as Batch Mode begins.
+  "session-end": "Kept as the session ended.",
+  "batch-mode":  "Kept as Batch Mode was switched on.",
+});
+
 /**
  * Wire a held move card's **Keep the result** button. A press relays to the
  * canonical GM ("move.keepResult" → moves/heldResult.js
@@ -8509,7 +8737,12 @@ export function wireKeepResultButton(message, root) {
   if (!btn) return;
   const held = liveCardFlags(message)?.awaitingUpgrade;
   if (!held?.open) {
-    // Settled: nothing left to ask.
+    // Settled: nothing left to ask. A kept result's row says what kept it —
+    // the stamp its wait was closed with (`resolvedBy`, heldResult.js), read
+    // by nothing until now (issue #362 AC82); a burned or improved card shows
+    // its upgrade already.
+    const said = KEPT_BY[held?.resolvedBy] ?? null;
+    if (said && row?.insertAdjacentHTML) row.insertAdjacentHTML("beforebegin", `<p class="sf-card-hint sf-keep-result-settled">${said}</p>`);
     if (row?.remove) row.remove();
     else btn.disabled = true;
     return;
@@ -8527,22 +8760,6 @@ export function wireKeepResultButton(message, root) {
       restore:    () => { fresh.disabled = false; },
     });
   });
-}
-
-/**
- * What a match adds, in one line under the outcome (issue #354 P2-14): the
- * card said "with a Match" and nothing told the player why the narration took
- * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
- * on a miss, a heightened negative outcome. (Matched challenge dice are both
- * beaten or neither, so a weak hit never matches.)
- *
- * @param {string} outcome
- * @returns {string} card HTML text
- */
-export function matchLine(outcome) {
-  return outcome === "miss"
-    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
-    : "✦ Match: a twist — something unexpected, or a new opportunity.";
 }
 
 /**
@@ -8597,7 +8814,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
       ${!noRoll && resolution.isMatch ? `<div class="sf-move-match">${matchLine(resolution.outcome)}</div>` : ""}
       ${resolution.consequences.otherEffect
-        ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
+        ? `<div class="sf-move-effect">${escapeChatHtml(resolution.consequences.otherEffect)}</div>`
         : ""}
       ${aside
         ? `<div class="sf-move-aside">🎲 ${aside}</div>`

@@ -39,7 +39,7 @@ on the active sector's `mapData.discoveries` (the first periphery cell no
 site of the sector holds, `sectorGenerator.layoutDiscovery` — the next slot by
 count wrapped the seventh site onto the first one's pin, issue #362 AC51; on
 the pipeline's working copy, which its
-persist saves — an upgrade saves `sectors` at once; when the world refuses
+persist saves — an upgrade saves the record onto its stored sector at once (`saveUnchartedSite`), and a refused save is a step on the upgrade's payoff card, whose Retry saves it (issue #362 AC49); when the world refuses
 the persist, the record is a step on the GMs' payoff failure card, whose
 Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
 expedition's link named no stored site, issue #362 AC49) and its pin
@@ -99,7 +99,11 @@ record and pin for it).
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
   "Arrived" with no place and narrated a launch) — for every narration of the
   resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
-  Expedition's arrival too. The **Set a Course resolved** card names the
+  Expedition's arrival too. A hit burned or improved to a strong hit arrived
+  at the roll: its narration — the move's only one while the result was held
+  — is told the ship ARRIVED at the place the roll did, in the strong hit's
+  words, with no second docking (the card's `move.arrivalPlace`; issue #362
+  AC06 — it was told "Arrived" with no place, PT08's prompt). The **Set a Course resolved** card names the
   place (the arrival's, else the destination's words) and says "Token moved"
   only when the token moved; a token that did not move says why — no pin
   marks the place, no ship token on the map, the ship token setting off, no
@@ -192,7 +196,11 @@ record and pin for it).
   (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
   `result.created`: its waypoints (clues), the danger along the way
   (escalation) and what waits at the end (truth), about the track by id, in
-  play while the track is open; the Finish an Expedition that completes it
+  play while the track is open. The request's rolls — two waypoint sightings
+  and an Action + Theme — are hidden: a held result's card and a Batch Mode
+  round keep the request without them (`withoutHiddenRolls`), and the
+  narration rolls them on the GM that narrates it (`withHiddenRolls`, issue
+  #362 AC15); the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
   The plan closes with the track (issue #362 D4): resolved when it completes
   (`completeProgressTrack`, the panel's Complete), retired when it is removed
@@ -210,7 +218,17 @@ record and pin for it).
   `src/index.js`) that Burn Momentum and Improve Result run for what the
   upgraded outcome adds over the recorded original (issue #313,
   UPGRADE-PIPELINE-EFFECTS). An upgrade saves its own location and legacy
-  mark; no persistResolution follows.
+  mark; no persistResolution follows — a refused location write (or
+  uncharted record) is a step on the upgrade's payoff card ("Upgraded result
+  not fully applied"), whose Retry saves it: it was a console line (issue
+  #362 AC49). The upgraded result is narrated in
+  the roll's place, so it is asked for the plan the roll's narration was —
+  an expedition the weak hit began (the card's `move.planRequests`, without
+  their hidden rolls; issue #362 AC04): held, the burned result's narration
+  is the move's only one; with holding off the plan the struck narration
+  filed is taken back with it and asked for again; a round's upgraded entry
+  carries it to the round's narration. A plan already filed about the track
+  (the struck narration's fallback filed it unstamped) is not asked twice.
 - **`!reveal-site <name>`** (GM): manual site discovery — same reveal flow as
   §4.
 

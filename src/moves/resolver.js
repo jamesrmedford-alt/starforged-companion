@@ -109,6 +109,24 @@ export function buildOutcomeLabel(outcome, isMatch) {
 }
 
 /**
+ * What a match adds, in one line under the outcome (issue #354 P2-14): the
+ * card said "with a Match" and nothing told the player why the narration took
+ * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
+ * on a miss, a heightened negative outcome. (Matched challenge dice are both
+ * beaten or neither, so a weak hit never matches.) The move card's, and the
+ * line a burned or improved card puts in place of the one its first outcome
+ * had (issue #362 AC31).
+ *
+ * @param {string} outcome
+ * @returns {string} card HTML text
+ */
+export function matchLine(outcome) {
+  return outcome === "miss"
+    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
+    : "✦ Match: a twist — something unexpected, or a new opportunity.";
+}
+
+/**
  * Determine the outcome of a progress move.
  * No action die — tally filled boxes as the progress score,
  * then compare against challenge dice.
@@ -1740,6 +1758,37 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
 }
 
 /**
+ * The oracle seeds of an outcome a Burn Momentum or an Improve Result reached
+ * (issue #362 AC05): its own behind-the-scenes rolls — a Story Clue, the
+ * counteroffer, the waypoint the expedition reaches, a new connection's role
+ * and goal — rolled once, now, as resolveMove rolls a rolled outcome's
+ * (buildOracleSeeds). The upgraded resolution had none, and since issue #354
+ * P2-10 its narration is the move's only one; the seeds of the outcome it
+ * replaces belonged to a narration struck, or never made. A price the
+ * upgraded outcome keeps is not rolled here (`routePayThePrice`): it is the
+ * one already paid (`price`, its card's text), seeded as the pipeline seeds
+ * it (withPayThePriceSeed).
+ *
+ * @param {Object} args
+ * @param {string} args.moveId
+ * @param {string} args.outcome — the upgraded outcome
+ * @param {boolean} args.isMatch
+ * @param {Object} args.consequences — the upgraded outcome's
+ * @param {Object|null} [args.campaignState] — for the active sector's region
+ * @param {Object|null} [args.currentSite] — the vault or derelict the crew is in (location.js getCurrentSiteKind)
+ * @param {string|null} [args.price] — the Pay the Price that stands, as its card shows it
+ * @returns {Object|null}
+ */
+export function upgradedOracleSeeds({ moveId, outcome, isMatch, consequences, campaignState = null, currentSite = null, price = null }) {
+  const seeds = buildOracleSeeds(moveId, outcome, !!isMatch, currentSite, {
+    routesPayThePrice:       consequences?.routePayThePrice === true,
+    rollsDecisiveActionCost: consequences?.rollDecisiveActionCost === true,
+    region:                  activeSectorRegion(campaignState),
+  });
+  return price ? withPayThePriceSeed(seeds, moveId, price) : seeds;
+}
+
+/**
  * Whether a result's Pay the Price is one of its choices: a miss whose
  * play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but that routes
  * none, with an enumerated option routing `pay_the_price` — Sojourn's "No
@@ -1919,6 +1968,19 @@ export function newEnemySeedLines() {
  *   subject: { type: "track", id: string, name: string }, oracleSeeds: string[] }}
  */
 export function expeditionPlanRequest(track, campaignState, resolutionId) {
+  const name = String(track?.label ?? "").trim() || "the expedition";
+  return {
+    ref:     `plan-${resolutionId ?? track?.id ?? "x"}-expedition`.slice(0, 64),
+    kind:    "expedition",
+    trigger: "expedition",
+    label:   `the expedition to ${name}`,
+    subject: { type: "track", id: track?.id ?? null, name },
+    oracleSeeds: expeditionPlanSeeds(campaignState),
+  };
+}
+
+/** An expedition plan's hidden rolls: two waypoint sightings of the active sector's region and what waits at the end. */
+function expeditionPlanSeeds(campaignState) {
   const region = activeSectorRegion(campaignState);
   const tableId = SPACE_SIGHTING_BY_REGION[region] ?? SPACE_SIGHTING_BY_REGION.terminus;
   const seeds = [];
@@ -1928,15 +1990,75 @@ export function expeditionPlanRequest(track, campaignState, resolutionId) {
   }
   const end = safeRollPaired("action", "theme");
   if (end) seeds.push(`What waits at the end — Action + Theme: ${end}`);
-  const name = String(track?.label ?? "").trim() || "the expedition";
-  return {
-    ref:     `plan-${resolutionId ?? track?.id ?? "x"}-expedition`.slice(0, 64),
-    kind:    "expedition",
-    trigger: "expedition",
-    label:   `the expedition to ${name}`,
-    subject: { type: "track", id: track?.id ?? null, name },
-    oracleSeeds: seeds,
-  };
+  return seeds;
+}
+
+/** The seed lines that tell what a new enemy a price revealed is and wants (newEnemySeedLines). */
+const NEW_ENEMY_SEED_LINE = /^The new enemy — /;
+
+/** A price's own seed line (priceSeedLines). */
+const PRICE_SEED_LINE = /^Pay the Price: /;
+
+/** Whether a plan request is an expedition's whose hidden rolls a store dropped (withoutHiddenRolls). */
+const owesExpeditionSeeds = (r) => r?.kind === "expedition" && !(Array.isArray(r.oracleSeeds) && r.oracleSeeds.length);
+
+/**
+ * A narration's input as a store every client receives keeps it — a held
+ * result's move card (`awaitingUpgrade`), a Batch Mode round
+ * (`batchMode.round`), a burn's or an improvement's card state — without the
+ * hidden oracle rolls behind a plan (issue #362 AC15; decisions.md "Hidden
+ * oracle rolls": "No hidden roll is on a player-visible card or a card's
+ * flags"). They rode into those stores with the whole narration input: an
+ * expedition's two waypoint sightings and what waits at the end, a new
+ * enemy's Character Role, Goal and Disposition. What stays says a plan is
+ * owed — the expedition's request, about its track; the price line — and the
+ * narration rolls them on the GM that narrates it (withHiddenRolls). A new
+ * object; `input` is not changed.
+ *
+ * @param {Object|null} input — a resolution, or a narration input (narrationInputFrom)
+ * @returns {Object|null}
+ */
+export function withoutHiddenRolls(input) {
+  if (!input || typeof input !== "object") return input ?? null;
+  const out = { ...input };
+  if (Array.isArray(input.skeletonRequests)) {
+    out.skeletonRequests = input.skeletonRequests.map(r => (r && typeof r === "object" ? { ...r, oracleSeeds: [] } : r));
+  }
+  if (Array.isArray(input.oracleSeeds?.results)) {
+    out.oracleSeeds = { ...input.oracleSeeds,
+      results: input.oracleSeeds.results.filter(l => !(typeof l === "string" && NEW_ENEMY_SEED_LINE.test(l))) };
+  }
+  return out;
+}
+
+/**
+ * The hidden oracle rolls a narration's input owes, rolled now — on the GM
+ * that narrates it (issue #362 AC15): a store every client receives keeps
+ * none (withoutHiddenRolls), so an expedition plan request with no seeds gets
+ * its waypoint sightings and what waits at the end (expeditionPlanRequest's),
+ * and a price that reveals a new enemy with none of its rolls gets them
+ * (newEnemySeedLines), after its price line. No one has seen a dropped roll,
+ * so this is that roll. An input that owes nothing is returned as it is; else
+ * a new object.
+ *
+ * @param {Object|null} input — a resolution, or a narration input
+ * @param {Object|null} [campaignState] — for the active sector's region
+ * @returns {Object|null}
+ */
+export function withHiddenRolls(input, campaignState = null) {
+  if (!input || typeof input !== "object") return input ?? null;
+  let out = input;
+  const requests = Array.isArray(input.skeletonRequests) ? input.skeletonRequests : [];
+  if (requests.some(owesExpeditionSeeds)) {
+    out = { ...out, skeletonRequests: requests.map(r => (owesExpeditionSeeds(r) ? { ...r, oracleSeeds: expeditionPlanSeeds(campaignState) } : r)) };
+  }
+  const lines = Array.isArray(input.oracleSeeds?.results) ? input.oracleSeeds.results : [];
+  const enemyPrice = lines.findIndex(l => typeof l === "string" && PRICE_SEED_LINE.test(l) && priceRevealsNewEnemy(l));
+  if (enemyPrice >= 0 && !lines.some(l => typeof l === "string" && NEW_ENEMY_SEED_LINE.test(l))) {
+    const results = [...lines.slice(0, enemyPrice + 1), ...newEnemySeedLines(), ...lines.slice(enemyPrice + 1)];
+    out = { ...out, oracleSeeds: { ...input.oracleSeeds, results } };
+  }
+  return out;
 }
 
 /**

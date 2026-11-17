@@ -520,7 +520,9 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // and the resolution upgraded — what the struck vignette is stamped with
   // (issue #347 D2).
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
-    for (const c of tension) reverted.push(`${c.name} clock rewound`);
+    // A clock's name is text: the narrator's countdown label, a scene
+    // challenge's, a GM's `!clock` — never markup (issue #362 AC83).
+    for (const c of tension) reverted.push(`${escapeHtml(c.name)} clock rewound`);
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
@@ -540,7 +542,7 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     for (const v of entries) {
       if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
       said.add(vowOf(v));
-      reverted.push(`${v.name} clock rewound`);
+      reverted.push(`${escapeHtml(v.name)} clock rewound`);
     }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
@@ -702,6 +704,26 @@ export async function supersedePriceCards(resolutionId, kind) {
     }
   }
   return struck;
+}
+
+/**
+ * The Pay the Price a move paid at its roll, as its card shows it — what an
+ * upgraded outcome that pays the price too keeps (a Battle or Clash burned to
+ * a weak hit): its narration is seeded with it, as the pipeline seeds the
+ * rolled outcome's (issue #362 AC05; the upgraded resolution was told no
+ * price). Null when no price card of the move stands.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @returns {string|null}
+ */
+export function standingPriceOf(resolutionId) {
+  if (typeof resolutionId !== "string" || !resolutionId) return null;
+  const card = allMessages().find(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.payThePriceCard === true && !f.priceSuperseded && f.oracleMemory?.resolutionId === resolutionId;
+  });
+  const answer = card?.flags?.[MODULE_ID]?.oracleMemory?.answer;
+  return typeof answer === "string" && answer.trim() ? answer : null;
 }
 
 /**
@@ -1193,17 +1215,12 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
     // Its choice cards no longer say to burn or improve first
-    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT). A result still held for Burn /
+    // Improve / Keep was kept before the later move was rolled (movePipeline
+    // rollMove, batch/driver.js rollRound — issue #362 D5): its keep here,
+    // after the move's record and un-awaited, narrated it after the later
+    // move (AC32). One whose keep the world refused keeps its Keep button.
     await dropUpgradeHints(f.resolutionId ?? null);
-    // A result still held for Burn / Improve / Keep (issue #354 P2-10) is
-    // kept: the free-flow pipeline keeps it before the roller's next line is
-    // read (index.js), so this is the later move that did not come through
-    // it — a Batch Mode round's entry. Not awaited.
-    if (f.awaitingUpgrade?.open) {
-      void import("./heldResult.js")
-        .then(({ keepHeldResult }) => keepHeldResult(card, "later"))
-        .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after a later move:`, err?.message ?? err));
-    }
   }
 }
 
@@ -1420,12 +1437,13 @@ export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt
  * @param {Actor} args.actor — the upgrading PC
  * @param {Object} args.campaignState — the upgrade's working copy
  * @param {"burn"|"improve"} args.kind
- * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ applied: string[], notApplied: string[], failures: Object[] }>} — `failures`:
+ *   the applier's refused writes, as payoff steps the caller puts on its card
  */
 export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, state, actor, campaignState, kind }) {
   if (typeof applyEffects !== "function") {
     console.debug(`${MODULE_ID} | ${kind}: no effects applier registered — the upgraded outcome's other effects are not applied.`);
-    return { applied: [], notApplied: [] };
+    return { applied: [], notApplied: [], failures: [] };
   }
   try {
     const res = await applyEffects({
@@ -1441,10 +1459,12 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
-    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
+    // The upgrade's own writes the world refused (its arrival, an uncharted
+    // destination's record): steps for its payoff card (issue #362 AC49).
+    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [], failures: Array.isArray(res?.failures) ? res.failures : [] };
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
-    return { applied: [], notApplied: ["the upgraded result's other effects"] };
+    return { applied: [], notApplied: ["the upgraded result's other effects"], failures: [] };
   }
 }
 

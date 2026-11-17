@@ -32,7 +32,7 @@ import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import {
   resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed, missPaysPrice,
-  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
+  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie, withoutHiddenRolls,
 } from "./resolver.js";
 import { statedPrice } from "./stakes.js";
 import { buildMischiefAside } from "./mischief.js";
@@ -40,6 +40,7 @@ import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
 import { buildImproveState } from "./improveResult.js";
 import { closeUpgradesForLaterMove } from "./resultUpgrade.js";
+import { keepHeldResultsOf } from "./heldResult.js";
 import { scanForApplicableAbilities, getCommandVehicleActor } from "./abilityScanner.js";
 import {
   enrichInterpretationStatValue,
@@ -901,6 +902,15 @@ export async function rollMove({
     postForsakeVowCard, postDecisiveActionCostCard, postMovePayThePriceCard, postMoveResult,
   } = pipelineHost();
   const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+  // A result of the roller's still held for Burn / Improve / Keep is kept
+  // before this move: an upgrade belongs to the move being made, and this
+  // one closes it (closeUpgradesForLaterMove, issue #326 D4) — kept first, its
+  // price and its narration come before this move's, whoever typed the line
+  // (issue #362 D5; it was kept after this move was narrated, un-awaited).
+  // The roller's own line kept it already (index.js onMessage); a round keeps
+  // its entries' first (batch/driver.js rollRound). Canonical GM.
+  await keepHeldResultsOf(rollerActor?.id ?? null).catch(err =>
+    console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next move:`, err?.message ?? err));
   if (combatPosition === undefined) {
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }
@@ -1139,7 +1149,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard, arrivalPlace } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -1640,6 +1650,16 @@ export async function rollMove({
     moveTargetId:   interpretation.moveTargetId ?? null,
     combatRank:     interpretation.combatRank ?? null,
     expeditionRank: interpretation.expeditionRank ?? null,
+    // The plans this roll's narration is asked to decide — an expedition it
+    // began: the upgraded result is narrated in its place, so it is asked too
+    // (issue #362 AC04 — the request rode only the narration the upgrade
+    // struck or never made). Without their hidden rolls: the card is the
+    // table's (issue #362 AC15).
+    ...(resolution.skeletonRequests?.length
+      ? { planRequests: withoutHiddenRolls({ skeletonRequests: resolution.skeletonRequests }).skeletonRequests } : {}),
+    // Where the ship arrived (Set a Course): an upgrade of this hit is told
+    // it arrived there, as this narration is (issue #362 AC06).
+    ...(arrivalPlace ? { arrivalPlace } : {}),
   };
   const burnActor   = rollerActor;
   const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets, moveContext);
@@ -1663,11 +1683,14 @@ export async function rollMove({
   );
   // A held result's card carries what its wait needs (heldResult.js): the
   // resolution to narrate, the price not yet paid, and the narration's
-  // context — as a round's entry keeps its narration input.
+  // context — as a round's entry keeps its narration input. Not the hidden
+  // rolls behind a plan its narration is asked to decide: the card is the
+  // table's, and every client holds its flags — the narration rolls them on
+  // the GM (resolver.js withHiddenRolls; issue #362 AC15).
   const awaitingUpgrade = hold ? {
     open: true,
     heldPrice,
-    resolution: jsonCopy(resolution),
+    resolution: jsonCopy(withoutHiddenRolls(resolution)),
     relevance: relevance ? {
       resolvedClass: relevance.resolvedClass ?? "embellishment",
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
@@ -1862,14 +1885,18 @@ async function waypointExpedition(interpretation) {
  * round resumed after a reload narrates without rolling again (issue #340):
  * the move, its outcome and match, the outcome text the narrator is given
  * (with the price it paid — the oracle seeds carry a Pay the Price's), and the
- * relevance the roll resolved (its class and matched entities).
+ * relevance the roll resolved (its class and matched entities). The round is a
+ * world setting every client holds, so the hidden rolls behind a plan are not
+ * kept — an expedition's waypoints and its end, a new enemy's role, goal and
+ * disposition: the round's narration rolls them on the GM that narrates it
+ * (resolver.js withoutHiddenRolls / withHiddenRolls; issue #362 AC15).
  *
  * @param {Object} resolution
  * @param {Object|null} [relevance]
  * @returns {Object}
  */
 export function narrationInputFrom(resolution, relevance = null) {
-  return jsonCopy({
+  return jsonCopy(withoutHiddenRolls({
     kind:              "move",
     resolutionId:      resolution?._id ?? null,
     moveId:            resolution?.moveId ?? null,
@@ -1892,7 +1919,7 @@ export function narrationInputFrom(resolution, relevance = null) {
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
       entityTypes:   Array.isArray(relevance.entityTypes) ? relevance.entityTypes : [],
     } : null,
-  });
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

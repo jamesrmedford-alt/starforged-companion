@@ -17,21 +17,31 @@
  * narration's context), so it survives a reload and any GM's client can
  * settle it. A held result is settled exactly once, on the canonical GM:
  *
- *   - **Keep** (the button — gmRelay "move.keepResult") or an automatic keep
- *     (the roller's next line or move, a consequence chosen on the outcome's
- *     choice card): the held price is paid, the result is narrated, and the
- *     card's Burn / Improve close (`kept`).
+ *   - **Keep** (the button — gmRelay "move.keepResult") or an automatic keep:
+ *     the held price is paid, the result is narrated, and the card's Burn /
+ *     Improve close (`kept`). Who goes on keeps it (issue #362 D5, decided A):
+ *     the roller's own player's next line (actsAsRoller — a GM's line kept
+ *     another player's held result while they were still choosing), any move
+ *     rolled for the roller (movePipeline.js rollMove — a move closes the
+ *     card's upgrades, issue #326 D4, so it is kept first), the roller's sheet
+ *     roll, `!ptp` or `!oracle` (index.js, oracleFollowup.js), a consequence
+ *     chosen on the outcome's choice card; and every held result is kept when
+ *     the session ends (End a Session) and when Batch Mode is switched on
+ *     (keepEveryHeldResult) — a round's line is table talk, which kept none.
  *   - **Burn / Improve**: the upgrade's own handler applies it; where it
  *     re-narrates (index.js narrateUpgradedResolution) this module narrates
  *     the upgraded result as the move's one narration — with the player's own
  *     line — after paying the held price if the upgraded result pays one too.
  *
- * Nothing here is reached by a Batch Mode round: a round rolls without
- * `holdForUpgrade` and narrates its own entries.
+ * A Batch Mode round rolls without `holdForUpgrade` and narrates its own
+ * entries; a result held before its roller's entry (a non-participant's card
+ * move run as free-flow) is kept before the round rolls (batch/driver.js
+ * rollRound).
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
+import { messageAuthorId } from "../multiplayer/speaker.js";
 import { withPayThePriceSeed } from "./resolver.js";
 import { requesterOwnsActor, claimResultUpgrade, releaseResultUpgrade } from "./burnMomentum.js";
 import { dropUpgradeHints } from "./resultUpgrade.js";
@@ -52,7 +62,10 @@ export function holdForUpgradeEnabled() {
 
 // How a held result was settled, as its card records it
 // (`awaitingUpgrade.resolvedBy`): "keep" (the button), "later" (the roller's
-// next line or move), "choice" (a consequence chosen), "burn", "improve".
+// next line or move), "choice" (a consequence chosen), "session-end" (End a
+// Session), "batch-mode" (Batch Mode switched on — issue #362 D5), "burn",
+// "improve". The settled card says what kept it (index.js
+// wireKeepResultButton — issue #362 AC82: the stamp had no reader).
 
 // A keep takes the card's result-upgrade claim (burnMomentum.js
 // claimResultUpgrade — the one a burn and an improvement share) for as long
@@ -93,7 +106,7 @@ export function heldCardsOf(actorId) {
  * refused the write: nothing is then paid or narrated, and the card still asks.
  *
  * @param {ChatMessage} message
- * @param {"keep"|"later"|"choice"|"burn"|"improve"} by
+ * @param {"keep"|"later"|"choice"|"session-end"|"batch-mode"|"burn"|"improve"} by
  * @returns {Promise<boolean>}
  */
 async function closeWait(message, by) {
@@ -161,7 +174,8 @@ function workingState() {
  * it held, and narrate it — once. Canonical GM. Never throws.
  *
  * @param {ChatMessage} message — the held move card
- * @param {"keep"|"later"|"choice"} [by] — the button, the roller's next line or move, or a chosen consequence
+ * @param {"keep"|"later"|"choice"|"session-end"|"batch-mode"} [by] — the button, the roller's next line or
+ *   move, a chosen consequence, the session's end, Batch Mode switched on
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
 export async function keepHeldResult(message, by = "keep") {
@@ -213,16 +227,78 @@ export async function keepHeldResult(message, by = "keep") {
  */
 export async function keepHeldResultsOf(actorId, { except = null } = {}) {
   if (!actorId || !isCanonicalGM()) return 0;
+  return keepCards(heldCardsOf(actorId), "later", except);
+}
+
+/**
+ * Keep every held result at the table, whoever rolled it: the session is
+ * ending (End a Session — a result held across it was paid and narrated by
+ * its roller's first line of the next session, into that session's story),
+ * or Batch Mode is switched on (a round's line is table talk, so nothing kept
+ * a result held before it, and the round told the next beat with the miss
+ * unpaid) — issue #362 D5, decided A (AC32). Each is paid and narrated, in
+ * the order rolled. Canonical GM; never throws.
+ *
+ * @param {"session-end"|"batch-mode"} by
+ * @returns {Promise<number>} how many were kept
+ */
+export async function keepEveryHeldResult(by) {
+  if (!isCanonicalGM()) return 0;
+  try {
+    return await keepCards(allMessages().filter(isAwaitingUpgrade), by, null);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | held result: the held results were not all kept (${by}):`, err?.message ?? err);
+    return 0;
+  }
+}
+
+/** Keep each card, oldest first — but not one still being recorded by its pipeline (the stamp recordMove leaves). */
+async function keepCards(cards, by, except) {
   let kept = 0;
-  for (const card of heldCardsOf(actorId)) {
+  for (const card of cards) {
     const f = card.flags?.[MODULE_ID] ?? {};
     if (except && f.resolutionId === except) continue;
-    // Not while its own pipeline is still recording it (the stamp recordMove
-    // leaves): it stays held, and the next line — or its button — keeps it.
+    // Not while its own pipeline is still recording it: it stays held, and
+    // the next line — or its button — keeps it.
     if (f.burn?.originalApplied !== true && f.improve?.originalApplied !== true) continue;
-    if ((await keepHeldResult(card, "later")).applied) kept += 1;
+    if ((await keepHeldResult(card, by)).applied) kept += 1;
   }
   return kept;
+}
+
+/**
+ * Whether a chat line or an action keeps `actorId`'s held results — the
+ * roller's own going on (issue #362 D5, decided A): spoken as the roller (the
+ * message's speaker — a selected token, the author's own character, the PC's
+ * sheet), or written by the roller's own player: a player who owns the PC, or
+ * a GM when no player does (a GM-run PC, solo play). A GM's typed line is read
+ * as the first PC's (speaker.js — a GM owns every PC), and at a table where
+ * that PC is a player's it paid that player's held price and narrated it
+ * while they were still choosing Burn or Keep.
+ *
+ * @param {ChatMessage|{ author?: User|string|null, speaker?: { actor?: string|null } }|null} message
+ * @param {string|null} actorId — the PC whose held results would be kept
+ * @returns {boolean}
+ */
+export function actsAsRoller(message, actorId) {
+  if (!actorId) return false;
+  if (message?.speaker?.actor === actorId) return true;
+  const game = globalThis.game;
+  const actor = game?.actors?.get?.(actorId) ?? null;
+  const author = (message?.author && typeof message.author === "object") ? message.author
+    : (game?.users?.get?.(messageAuthorId(message)) ?? null);
+  if (!actor || !author) return false;
+  const charId = typeof author.character === "string" ? author.character : author.character?.id;
+  if (charId === actorId) return true;
+  const players = Array.from(game?.users ?? []).filter(u => u && !u.isGM && ownsActor(actor, u));
+  return author.isGM ? players.length === 0 : players.some(u => u.id === author.id);
+}
+
+/** OWNER permission on an actor — the vendor's test, else the ownership map (test stubs). */
+function ownsActor(actor, user) {
+  if (typeof actor?.testUserPermission === "function") return !!actor.testUserPermission(user, "OWNER");
+  const own = actor?.ownership ?? {};
+  return own[user?.id] === 3 || own.default === 3;
 }
 
 /**

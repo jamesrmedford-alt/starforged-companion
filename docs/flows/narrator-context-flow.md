@@ -73,8 +73,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
   stat, outcome, outcome text and price, the stakes shown before its roll
-  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds, the
-  player's sanitised line and a latitude line — and the instruction to act for no one else and
+  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds (the
+  round — a world setting every client holds — keeps no hidden plan roll: a
+  new enemy's role, goal and disposition and an expedition plan's rolls are
+  rolled as the round is narrated, on the GM — `withHiddenRolls`, issue #362
+  AC15), the player's sanitised line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent.
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
@@ -657,7 +660,9 @@ Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
 Information's Story Clue / Story Complication, a Compel weak hit's Action +
 Theme counteroffer, an Undertake an Expedition hit's region Space Sighting,
 and a price that reveals a new enemy its Character Role + Goal + Disposition,
-`priceSeedLines` — issue #353 Phase 0) · **[3b] recent
+`priceSeedLines` — issue #353 Phase 0; an outcome a Burn Momentum or Improve
+Result reached rolls its own, with the price it keeps — `upgradedOracleSeeds`,
+issue #362 AC05) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
 choice card's mortal-wound / desolation roll — the table's one roll, no move

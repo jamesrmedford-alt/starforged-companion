@@ -40,12 +40,22 @@ Two cross-cutting facts to hold onto:
   known-issues RELAY-REFUSED-PRESS-UNTOLD).
   In free-flow play a result whose card offers either is **held** (issue
   #354 P2-10; `movePipeline.rollMove` `holdForUpgrade`, `moves/heldResult.js`):
-  the card carries `flags.awaitingUpgrade` and a **Keep the result** button
+  the card carries `flags.awaitingUpgrade` (the resolution, without the
+  hidden rolls behind a plan its narration decides — rolled when it is
+  narrated, on the GM: issue #362 AC15) and a **Keep the result** button
   (relay `move.keepResult`), its Pay the Price is not paid and it is not
-  narrated until the roller burns, improves or keeps — or goes on: their next
-  line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence
-  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`). A kept
-  result's upgrades close (`kept`). So in free-flow a burn has no paid price
+  narrated until the roller burns, improves or keeps — or goes on: their own
+  next line (`keepHeldResultsOf`, `index.js` onMessage — the roller's own
+  player's or one spoken as the roller, `actsAsRoller`: a GM's line read as
+  the first PC's kept another player's result, issue #362 D5), a move rolled
+  for them (`movePipeline.rollMove` keeps it before the dice), their sheet
+  roll, `!ptp` or `!oracle` (kept before that narration), or a consequence
+  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`); End a
+  Session and Batch Mode switched on keep every held result
+  (`keepEveryHeldResult`), and a round keeps an acting player's before it
+  rolls (`batch/driver.js` rollRound — issue #362 AC32). A kept
+  result's upgrades close (`kept`), and its card says what kept it where the
+  Keep button was (`awaitingUpgrade.resolvedBy` — issue #362 AC82). So in free-flow a burn has no paid price
   to revert; the reversal below is a Batch Mode round entry's — a round pays
   the price at the roll and holds only its narration — and free-flow's with
   the world setting `holdResultForUpgrade` off.
@@ -108,7 +118,12 @@ Two cross-cutting facts to hold onto:
   the Fray burned while its threshold card waits puts the new opening
   position on that card (found by the card's `resolutionId`); a Battle burned
   from a lost miss pays the won fight's milestone and reward
-  (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
+  (`applyWonFightPayoff`, shared with the end-of-fight branch), and a Battle
+  won on a weak hit and burned or improved to a strong one is paid the
+  difference — the victory card's ⚑ raised to the strong hit's marks (or the
+  marks it lacks marked once, when ⚑ was pressed) and the promised reward
+  granted at the weak hit's scale raised to the strong hit's
+  (`payWonFightDifference`, issue #362 D7); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
@@ -117,6 +132,9 @@ Two cross-cutting facts to hold onto:
   upgraded outcome's, not retired with the superseded outcome's (issue #335
   Y09), and so is a card a kept card's pick posts after the burn — the resist
   roll the redirected loss's Endure Harm owes at 0 (issue #342 Z47). The
+  upgraded outcome's narration is seeded as a rolled one's: its own
+  behind-the-scenes rolls, and the price it keeps (`upgradedOracleSeeds`,
+  `standingPriceOf` — issue #362 AC05). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **A fight played in Batch Mode rounds** (issue #340) uses the same stages.
@@ -186,8 +204,9 @@ track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges. A fight added by hand in the Progress
 Tracks panel can be linked to a vow at creation too — the add form's vow
 select (issue #353 R3): it carries `linkedVowName` and `linkedVowId`, and a
-won linked fight pays off as a threshold fight does (§4). A fight's link is
-not changed on its row afterwards.
+won linked fight pays off as a threshold fight does (§4) — the vow found by
+its id, under its name now (issue #362 AC46). A fight's link is not changed
+on its row afterwards.
 
 **Find another way** posts the way-out card (from the canonical GM, once per
 threshold card): the `WAY_OUT_PROMPT` nudge plus
@@ -414,8 +433,12 @@ the price a second time (issue #325 W03).
 
 ## 4. The win payoff (linked fights)
 
-On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track has
-`linkedVowName`, the pipeline posts the **victory card**
+On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track links
+a vow — by its id (`linkedVowId`, the panel's add: found among the PCs' vow
+copies, under the name it carries now — `fightLinkedVow`; by the name it was
+linked under, a vow renamed mid-fight left the victory card naming a vow
+nobody held, issue #362 AC46), else by `linkedVowName` (a threshold link) —
+the pipeline posts the **victory card**
 (`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
 `marks`, `connectionName`, `vowRank` and the roller's `actorId`):
 **⚑ Mark milestone (×N)** — N scales with the *fight's* rank
@@ -457,7 +480,11 @@ GM marks or rolls nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
-grant's claim); it lands on the roller's copy when they hold one, else on the
+grant's claim — and a granted reward records the outcome it was granted at,
+`reward.grantedAt`, so a weak-hit win upgraded to a strong hit gets the
+strong hit's once: its second point, or its string lifted — the victory card
+carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
+lands on the roller's copy when they hold one, else on the
 PC holding the promised reward. A grant that does not land is not swallowed:
 the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
 with a one-press Retry, and "🎁 Reward earned" is posted only once the grant

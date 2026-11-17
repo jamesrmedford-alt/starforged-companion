@@ -337,8 +337,8 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
   (`resolveVowChoice`; refused `no-vow`, said first on the presser's screen,
   since a relayed refusal reaches no player) and stores **`linkedVowId`** (the
   vow's id across copies — canonical) and **`linkedVowName`** (the name [4j]
-  and the fight path read). A fight's link stays its threshold card's (a
-  name) and is not changed on its row.
+  reads; a won fight's payoff reads the id first, issue #362 AC46). A fight's
+  link stays its threshold card's (a name) and is not changed on its row.
 - **The Session panel's "What's open"** (`ui/sessionPanel.js`): the open vows
   (one per vow, with rank, boxes, countdown clock and holders), the open
   tracks with the vow each serves (`trackVowName`, by id first) and a scene
@@ -418,7 +418,10 @@ vow's linked connection by name alone, `strict` — a link severed or renamed
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
 bonded or active connection, DEEPEN-LINK-FALLBACK) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
-weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
+weak = reduced/with-a-string, miss = lost; one-time via `reward.status`; the
+outcome it was granted at kept as `reward.grantedAt`, so a weak-hit win burned
+or improved to a strong hit is paid the difference once —
+`upgradeLinkedVowReward`, issue #362 D7).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**
