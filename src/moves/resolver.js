@@ -1778,28 +1778,36 @@ export function missPaysPrice(moveId) {
  * that routes none — the price is one of its choices, an enumerated option
  * routing `pay_the_price`. Null for any other result, or when the roll fails.
  *
+ * The price is kept as it was rolled — its text and the suffer routes it
+ * lands — so the pick pays the price the narration depicted: a "Roll twice"
+ * (96–100) is two rows its d100 does not name, which a re-read of the table
+ * by that roll rolled again (issue #362 AC30).
+ *
  * @param {string} moveId
  * @param {string|null} outcome
  * @param {Object} consequences
- * @returns {{ roll: number, result: string }|null}
+ * @returns {{ roll: number, result: string, sufferRoutes: Array<Object> }|null}
  */
 export function rollChoicePrice(moveId, outcome, consequences) {
   if (outcome !== "miss" || !choiceOffersPrice(moveId, consequences)) return null;
   try {
     const r = rollOracle("pay_the_price");
-    return Number.isInteger(r?.roll) && r.result && r.result !== "—" ? { roll: r.roll, result: r.result } : null;
+    return Number.isInteger(r?.roll) && r.result && r.result !== "—"
+      ? { roll: r.roll, result: r.result, sufferRoutes: Array.isArray(r.sufferRoutes) ? r.sufferRoutes : [] }
+      : null;
   } catch {
     return null;
   }
 }
 
 /**
- * A choice prompt whose `pay_the_price` option carries the rolled price (and
- * the move that owes it), for the pick to pay (sufferDialog's "route"). A new
- * prompt; `prompt` is not changed.
+ * A choice prompt whose `pay_the_price` option carries the rolled price — its
+ * text and routes (and the move that owes it), for the pick to pay
+ * (sufferDialog's "route" → index.js payChosenPrice). A new prompt; `prompt`
+ * is not changed.
  *
  * @param {Object} prompt — an enumerated sufferPrompt
- * @param {{ roll: number, result: string }} price
+ * @param {{ roll: number, result: string, sufferRoutes?: Array<Object> }} price
  * @param {string|null} moveName
  * @returns {Object}
  */
@@ -1807,7 +1815,8 @@ export function withChoicePrice(prompt, price, moveName = null) {
   return {
     ...prompt,
     options: (prompt.options ?? []).map(o => (o?.route === "pay_the_price"
-      ? { ...o, price: { roll: price.roll, result: price.result, ...(moveName ? { moveName } : {}) } }
+      ? { ...o, price: { roll: price.roll, result: price.result,
+        sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [], ...(moveName ? { moveName } : {}) } }
       : o)),
   };
 }

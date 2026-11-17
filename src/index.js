@@ -7334,29 +7334,39 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
 
 /**
  * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
- * relief — Pay the Price" carries the d100 its narration was seeded with
+ * relief — Pay the Price" carries the price its narration was seeded with
  * (resolver rollChoicePrice), and its pick pays that price — the card, its
  * suffer routes on the roller, the countdown clocks — as a routed price is
  * paid (postMovePayThePriceCard). It only posted a reminder to roll one, which
- * differed from the narrated price. The result is read from the table by the
- * roll, never from the card's text. No follow-up narration: the move's own
- * depicted it. Runs where the pick is applied — the canonical GM (sufferCard
- * "suffer.pick"); elsewhere its world writes are relayed. A card the world
- * refuses is logged: the price is paid all the same (the pick is claimed).
+ * differed from the narrated price. The option carries the price as it was
+ * rolled — its text and the routes it lands — and that is what is paid: read
+ * back from the table by its d100, a "Roll twice" rolled its two rows again,
+ * so the pick paid two prices the narration never told (issue #362 AC30). The
+ * routes are checked as a relayed `!ptp`'s are (knownPriceRoutes). An option
+ * posted before then carries the d100 alone: its row is read back by the
+ * roll. No follow-up narration: the move's own depicted it. Runs where the
+ * pick is applied — the canonical GM (sufferCard "suffer.pick"); elsewhere
+ * its world writes are relayed. A card the world refuses is logged: the
+ * price is paid all the same (the pick is claimed).
  *
- * @param {{ roll: number, moveName?: string|null }} price
+ * @param {{ roll: number, result?: string, sufferRoutes?: Array<Object>, moveName?: string|null }} price
  * @param {Actor} actor — the card's PC, the roller
  * @returns {Promise<{ ok: boolean, reason?: string, price?: string }>}
  */
 export async function payChosenPrice(price, actor) {
   if (!isPlayerCharacterActor(actor)) return { ok: false, reason: "no-pc" };
-  const { rollOracle } = await import("./oracles/roller.js");
-  let result;
-  try {
-    result = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100 ? rollOracle("pay_the_price", { roll: price.roll }) : null;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
-    result = null;
+  const rolled = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100;
+  let result = null;
+  if (rolled && typeof price.result === "string" && price.result.trim() && Array.isArray(price.sufferRoutes)) {
+    result = { roll: price.roll, result: price.result.trim(), sufferRoutes: await knownPriceRoutes(price.sufferRoutes) };
+  } else if (rolled) {
+    const { rollOracle } = await import("./oracles/roller.js");
+    try {
+      result = rollOracle("pay_the_price", { roll: price.roll });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
+      result = null;
+    }
   }
   if (!result?.result) return { ok: false, reason: "invalid" };
   const paidFor = typeof price.moveName === "string" && price.moveName.trim() ? price.moveName.trim() : "";
@@ -7401,6 +7411,23 @@ function sufferRoutesFooter(routes, { notApplied = null } = {}) {
 }
 
 /**
+ * The Pay the Price routes a payload or a card carries, as the table
+ * annotates them: a known suffer move (or "any"), 1–3, at most four (a "Roll
+ * twice" lands two; a roll twice of rolls twice, four) — a relayed `!ptp`'s
+ * (applyPayThePriceSufferFromRelay) and a chosen price's (payChosenPrice).
+ *
+ * @param {*} routes
+ * @returns {Promise<Array<{ move: string, amount: number, soloFallback?: string }>>}
+ */
+async function knownPriceRoutes(routes) {
+  const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
+  const known = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
+  return (Array.isArray(routes) ? routes : []).slice(0, 4).filter(r =>
+    r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
+    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)));
+}
+
+/**
  * Dispatch each route a Pay the Price roll landed on, in order, once — a
  * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
  * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
@@ -7426,11 +7453,7 @@ function sufferRoutesFooter(routes, { notApplied = null } = {}) {
  * @returns {Promise<{ applied: boolean, reason?: string, landed?: Array<Object> }>}
  */
 export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
-  const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
-  const known  = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
-  const routes = (Array.isArray(payload.routes) ? payload.routes : []).slice(0, 4).filter(r =>
-    r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
-    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)));
+  const routes = await knownPriceRoutes(payload.routes);
   if (!routes.length) return { applied: false, reason: "no-routes" };
 
   const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;

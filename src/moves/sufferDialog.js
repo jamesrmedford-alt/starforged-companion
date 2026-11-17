@@ -116,8 +116,14 @@ function optionToCalls(opt, selection) {
   // Route to another move (e.g. "Pay the Price", "Swear an Iron Vow").
   if (opt.route) {
     // A priced Pay the Price option (Sojourn's miss — resolver rollChoicePrice)
-    // carries the roll its narration depicted, for the pick to pay.
-    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll) ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null } : null;
+    // carries the price its narration depicted — the roll, its text and the
+    // routes it lands (a "Roll twice"'s two rows, issue #362 AC30) — for the
+    // pick to pay (index.js payChosenPrice).
+    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll)
+      ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null,
+        ...(typeof opt.price.result === "string" ? { result: opt.price.result } : {}),
+        ...(Array.isArray(opt.price.sufferRoutes) ? { sufferRoutes: opt.price.sufferRoutes } : {}) }
+      : null;
     return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
   }
 

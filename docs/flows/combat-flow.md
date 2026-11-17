@@ -386,8 +386,13 @@ the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
-paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
-its advisory seed. The card records the price under the move that paid it
+paid — another (issue #321 U03). A miss whose price is one of its choices
+(Sojourn's "No relief") is seeded with the price its option carries —
+rolled once at resolution (`rollChoicePrice`), its text and suffer routes
+kept on the option — and its pick pays that price as rolled
+(`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
+the narration depicted, never two rolled again (issue #362 AC30). The card
+records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts
 the price. It used to say "Face Defeat" for every routed price and narrate
