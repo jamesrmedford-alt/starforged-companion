@@ -145,7 +145,10 @@ async function runUpgradeStep(step) {
     }
     case "tensionClocks": {
       const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id));
+      // The clocks the reverted price filled: a hidden plan's goes back to one
+      // short of full, its trigger undone (issue #362 AC33).
+      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id),
+        { triggered: step.clocks.filter(c => c.triggered === true).map(c => c._id) });
       return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
     case "vowClocks": {
@@ -334,7 +337,7 @@ export function upgradeStepRecord(f) {
     // rewound clock's trigger vignette by (retryUpgradeStep), and the
     // resolution upgraded, which the struck vignette is stamped with (issue
     // #347 D2).
-    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind),
+    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null, ...(c.triggered === true ? { triggered: true } : {}) })), kind: upgradeKind(f.kind),
       ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
@@ -499,7 +502,10 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
   // 1. Rewind clock advances
-  const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
+  // Each with whether this price filled it: a hidden plan's clock it filled
+  // is put back one short of full, its trigger undone (issue #362 AC33).
+  const tension = advanced.filter(c => c.type === "tension" && c._id)
+    .map(c => ({ _id: c._id, name: c.name ?? null, ...(c.triggered === true ? { triggered: true } : {}) }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
     .map(c => ({ actorId: c.actorId, itemId: c.itemId, vowId: c.vowId ?? null, name: c.name ?? null }));
   // The clocks whose landed rewind takes them out of their triggered state:
@@ -800,8 +806,11 @@ async function undoSupersededPlans(ids, label) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
   try {
-    const { removeClocksMadeBy } = await import("../clocks/clocks.js");
+    const { removeClocksMadeBy, restoreClocksPacedBy } = await import("../clocks/clocks.js");
     await removeClocksMadeBy(ids);
+    // A plan clock it paced goes back one short of full, the step it played
+    // put back unplayed above (issue #362 AC33).
+    await restoreClocksPacedBy(ids);
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's countdown clocks could not be removed:`, err?.message ?? err);
   }
@@ -885,12 +894,30 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
     const { vignetteClockId, triggerVignetteInFlight, noteRewindDuringVignette } = await import("../clocks/payThePriceClocks.js");
+    // A hidden plan's clock whose trigger vignette paced it is undone by that
+    // vignette, by its narration (`pacedBy`, clocks.js revertTensionClocksForBurn):
+    // the clock may have triggered before in the session, and the newest of
+    // its vignettes need not be this price's (issue #362 AC33).
+    const paced = new Map();
+    for (const c of clocks) {
+      const id = vignetteClockId(c);
+      if (id && typeof c?.pacedBy === "string" && c.pacedBy) paced.set(id, c.pacedBy);
+    }
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
     const cards = [];
     for (const clockId of clockIds) {
+      if (paced.has(clockId)) {
+        const card = newestFirst.find(m => {
+          const f = m?.flags?.[MODULE_ID];
+          return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
+            && f.narrationId === paced.get(clockId) && f.xCarded !== true && f.burnSuperseded !== true;
+        });
+        if (card) cards.push(card);
+        continue;
+      }
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
       // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).

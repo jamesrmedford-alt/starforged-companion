@@ -913,7 +913,12 @@ under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
 the other name in `aliases` (read by `secrets.subjectNames` and
 `selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
-entries (`retractSupersededNarrations`);
+entries (`retractSupersededNarrations`) — and a plan clock it paced: the pacing
+is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
+the narration back — a supersede, or the X-Card's pause write — runs the clock
+again at its fill from before, at most one short of full, the step it played
+owed again (`planClockPacing.js`; a burned price's plan clock is put back one
+short of full and its vignette struck by that id, issue #362 AC33);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its

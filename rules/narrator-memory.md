@@ -28,7 +28,10 @@ layers. This file is the never-break list.
    `burnSuperseded`: the move narration, and the trigger vignette of a clock
    its reversal rewinds, which names its clock (`clockId`, issue #338 D8; a
    trigger rewound while its vignette is still being written is never
-   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST) —
+   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST; a hidden plan's
+   clock, which its vignette paced, by the vignette's own id — `pacedBy` —
+   and a removed or superseded narration's pacing of a plan clock is taken
+   back with its step, issue #362 AC33) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

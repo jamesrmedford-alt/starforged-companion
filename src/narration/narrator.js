@@ -28,6 +28,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
+import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, IMAGE_SOURCE_CARDS } from './proseVariety.js';
@@ -2565,6 +2566,14 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // same write: a clock is campaignState's, and this is the pause's write.
   if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(c?.narrationId))) {
     cs.clocks = cs.clocks.filter(c => !ids.includes(c?.narrationId));
+  }
+  // A plan's clock one of them paced — emptied, or retired after a last step,
+  // when its beat played the step — is re-armed one short of full: the undo
+  // puts the step back unplayed (undoNarrationEntries), and the next price
+  // plays it (issue #362 AC33; the clock stayed empty or retired, and a last
+  // step was never paced again).
+  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(standingPacedBy(c)))) {
+    cs.clocks = cs.clocks.map(c => (ids.includes(standingPacedBy(c)) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;

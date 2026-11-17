@@ -643,7 +643,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       reportSnapshotEvent(truthNow ? "plan_revealed" : (after.status === "resolved" ? "plan_resolved" : "plan_progressed"));
       if (truthNow && after.status === "resolved") reportSnapshotEvent("plan_resolved");
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
-      await paceAfterReveal(before, after);
+      await paceAfterReveal(before, after, narrationId);
     }
 
     // An enemy the prose introduced gets a plan (issue #354 P2-29) — after
@@ -806,18 +806,22 @@ async function heldBySceneChallenge(clockId) {
  * After a beat played a step of a plan with a clock, the clock paces the next
  * one: back to empty while a step is left, retired when none is — or when the
  * plan's story ended, or a countdown's mystery came out. A clock an open scene
- * challenge holds is left as it is (heldBySceneChallenge). Never throws.
+ * challenge holds is left as it is (heldBySceneChallenge). The pacing carries
+ * the narration (`pacedBy`, clocks.js pacePlanClock), so taking it back puts
+ * the clock back one short of full with the step. Never throws.
  */
-async function paceAfterReveal(before, after) {
+async function paceAfterReveal(before, after, narrationId = null) {
   const clock = planClock(after);
   if (!clock || await heldBySceneChallenge(clock._id)) return;
   const played = after.escalation.some((e, i) => e.done && !before.escalation[i]?.done);
   const over = after.status !== "active"
     || !after.escalation.some(e => !e.done) && (played || (after.kind === "mystery" && after.truthRevealed));
+  if (!over && !played) return;
   try {
-    const clocks = await import("../clocks/clocks.js");
-    if (over) await clocks.retireClock(clock._id);
-    else if (played) await clocks.adjustClockSegments(clock._id, -clock.segments);
+    // Stamped with the narration that paced it: the X-Card or a supersede
+    // that takes the step back re-arms the clock (issue #362 AC33).
+    const { pacePlanClock } = await import("../clocks/clocks.js");
+    await pacePlanClock(clock._id, { retire: over, pacedBy: narrationId });
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the clock of "${after.subject.name}" was not reset:`, err?.message ?? err);
   }
