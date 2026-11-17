@@ -66,7 +66,7 @@ describe('issue #362 AC10 — a plan that leaves play takes its clock out of pla
 
     const { advanceClocksOnPayThePrice } = await gmOf(table).import('../../src/clocks/payThePriceClocks.js');
     const advanced = await onGm(table, () => advanceClocksOnPayThePrice());
-    expect(advanced.map(c => c.name)).not.toContain('the escort — escalation');
+    expect(advanced.map(c => c._id)).not.toContain(plan.clockId);
     expect(clockOf(plan.clockId).filled).toBe(0);
   }, 60_000);
 

@@ -314,16 +314,25 @@ describe('!oracle <tableId> — roll any registered oracle table', () => {
 describe("!oracle yes — the rulebook's two-word odds names", () => {
   const memory = () => table.cards(f => f.oracleCommandCard && f.oracleMemory).at(-1)?.flags?.[MODULE_ID]?.oracleMemory;
 
+  // The card shows no threshold (issue #362 D3): the d100 is held, so the
+  // answer says which odds it was rolled at.
+  const rolling = async (d100, userId, line) => {
+    vi.spyOn(Math, 'random').mockReturnValue((d100 - 0.5) / 100);
+    try {
+      await type(userId, line);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  };
+
   it('"almost certain" rolls at Almost Certain odds, not 50/50', async () => {
-    await type('pl-1', '!oracle yes almost certain is the station still there');
-    expect(memory()).toMatchObject({ name: 'Ask the Oracle (almost certain)', question: 'is the station still there' });
-    expect(table.cards(f => f.oracleCommandCard).at(-1).content).toMatch(/≤ 90\?/);
+    await rolling(80, 'pl-1', '!oracle yes almost certain is the station still there');   // 80: YES at 90, NO at 50
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (almost certain)', question: 'is the station still there', answer: 'YES' });
   });
 
   it('"small chance" keeps "chance" out of the question', async () => {
-    await type('pl-1', '!oracle yes Small Chance will the patrol spot us');
-    expect(memory()).toMatchObject({ name: 'Ask the Oracle (small chance)', question: 'will the patrol spot us' });
-    expect(table.cards(f => f.oracleCommandCard).at(-1).content).toMatch(/≤ 10\?/);
+    await rolling(20, 'pl-1', '!oracle yes Small Chance will the patrol spot us');        // 20: NO at 10, YES at 50
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (small chance)', question: 'will the patrol spot us', answer: 'NO' });
   });
 
   it('a one-word alias still works, and a question that merely starts with an odds word is not eaten', async () => {

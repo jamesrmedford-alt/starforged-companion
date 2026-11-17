@@ -203,6 +203,26 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
 }
 
 /**
+ * The stable id of the vow a forced Swear an Iron Vow names — its card's
+ * `vowId` (buildSwearMovePostForName's forcedMoveTargetId) — when a player
+ * character holds that vow: its copies' id (vowCopyId: the module `vowId`
+ * flag, else the Item's own id). Null for a swear with no vow Item behind it,
+ * or an id no vow answers to (issue #362 AC14).
+ *
+ * @param {string|null} moveTargetId
+ * @returns {string|null}
+ */
+function swornVowId(moveTargetId) {
+  if (typeof moveTargetId !== "string" || !moveTargetId) return null;
+  for (const actor of getPlayerActors()) {
+    const item = (actor?.items?.contents ?? []).find(i => i?.type === "progress" && i.system?.subtype === "vow"
+      && (i.id === moveTargetId || i.flags?.[MODULE_ID]?.vowId === moveTargetId));
+    if (item) return vowCopyId(item);
+  }
+  return null;
+}
+
+/**
  * Whether a forced travel move with no destination reads one from its line
  * (readMove, issue #348 PT05): a Set a Course always; an Undertake an
  * Expedition only with no expedition open — with one open it continues that
@@ -1169,8 +1189,13 @@ export async function rollMove({
       await swearSharedVowForAll(incitingMsg, { speakerActorId: rollerActor?.id ?? null }).catch(err =>
         console.warn(`${MODULE_ID} | inciting swear creation failed:`, err?.message ?? err));
     } else {
+      // A vow sworn from its "New vow recorded" card names it by id (its
+      // forced post's forcedMoveTargetId): the vow's hidden plan is filed
+      // about the vow by that id, so a reworded vow, or a fulfilment whose
+      // line does not name it, keeps its plan (issue #362 AC14). A typed
+      // swear with no vow Item behind it stays name-only.
       await narrateAndPostVowSwearing({
-        vow: { name: interpretation.moveTarget ?? null, rank: null },
+        vow: { name: interpretation.moveTarget ?? null, rank: null, vowId: swornVowId(interpretation.moveTargetId) },
         campaignState,
         speakerActorId: rollerActor?.id ?? null,
       }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));

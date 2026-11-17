@@ -806,14 +806,32 @@ export function shouldOfferVowSetup(item) {
 }
 
 /**
+ * Whether a vow Item still carries the name the character sheet gave it
+ * before its player named it: the sheet's + Vow creates the Item as its
+ * subtype ("Vow") and only then opens it (vendor progress-controls.vue
+ * addProgressItem) — or no name at all (issue #362 AC23).
+ *
+ * @param {string|null|undefined} name
+ * @returns {boolean}
+ */
+function isPlaceholderVowName(name) {
+  const n = typeof name === "string" ? name.trim() : "";
+  return !n || /^(?:new\s+|unnamed\s+)?vow$/i.test(n);
+}
+
+/**
  * Pure: the "new vow recorded" setup card HTML — states the mechanical stakes
  * and offers a ⚔ Swear it (roll) button. The reward-choice card is posted
  * alongside (same flow as swearing the inciting vow). Escapes its inputs.
+ * A vow its player has not named yet (`unnamed` — the sheet's + Vow posts the
+ * card before the Item is named or ranked) is worded as one: no name, no
+ * rank's stakes, and the swear said to take the vow as its sheet then has it
+ * (issue #362 AC23).
  *
- * @param {{ name: string, rank: string|null }} vow
+ * @param {{ name: string, rank: string|null, connections?: string[], unnamed?: boolean }} vow
  * @returns {string}
  */
-export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
+export function buildPlayerVowSetupHtml({ name, rank, connections = [], unnamed = false } = {}) {
   // A sheet-made vow's rank is the vendor's ChallengeRank number: the card
   // names it — "(formidable)", never "(3)" (issue #325 W01).
   if (rank != null && rank !== "") rank = rankName(rank);
@@ -826,10 +844,13 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
       + connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
       + `</select> <button type="button" class="entity-btn" data-action="sf-player-vow-link">Link</button></p>`
     : "";
+  const what = unnamed
+    ? `<p>A new vow — name it and set its rank on its sheet. ⚔ Swear it (roll) swears the vow as its sheet has it then.</p>`
+    : `<p>"${escapeHtml(name ?? "Unnamed Vow")}"${rank ? ` <em>(${escapeHtml(rank)})</em>` : ""}</p>`
+      + `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`;
   return `<div class="sf-card sf-player-vow"><div class="sf-card-header">🆕 New vow recorded</div>`
     + `<div class="sf-card-body">`
-    + `<p>"${escapeHtml(name ?? "Unnamed Vow")}"${rank ? ` <em>(${escapeHtml(rank)})</em>` : ""}</p>`
-    + `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`
+    + what
     + `<p><button type="button" class="entity-btn" data-action="sf-player-vow-swear">⚔ Swear it (roll)</button></p>`
     + linkHtml
     + `<p class="sf-incite-hint">Pick a reward for it below${linkHtml ? "; linking a connection makes fulfilling this vow deepen that bond" : ""}.</p>`
@@ -846,9 +867,13 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
  * @param {string|null} [actorId] — the PC whose vow it is: the post speaks as
  *   them, so the swear's roll, momentum and oath scene are theirs whoever
  *   presses the button (issue #329 X05)
+ * @param {string|null} [vowId] — the vow's stable id (its card's `vowId`): the
+ *   swear's hidden plan is filed about the vow by it, so a vow reworded on the
+ *   sheet, or fulfilled by a line that does not name it, keeps its plan
+ *   (issue #362 AC14)
  * @returns {{ content: string, flags: object, speaker?: object } | null}
  */
-export function buildSwearMovePostForName(vowName, linkedConnectionName = null, actorId = null) {
+export function buildSwearMovePostForName(vowName, linkedConnectionName = null, actorId = null, vowId = null) {
   const name = String(vowName ?? "").trim();
   if (!name) return null;
   const linked = typeof linkedConnectionName === "string" ? linkedConnectionName.trim() : "";
@@ -859,6 +884,7 @@ export function buildSwearMovePostForName(vowName, linkedConnectionName = null, 
       bypassPacing:     true,
       forcedMoveId:     "swear_an_iron_vow",
       forcedMoveTarget: name,
+      ...(typeof vowId === "string" && vowId ? { forcedMoveTargetId: vowId } : {}),
       // Linked to a connection (🤝 Link): sworn to them — +1, or +2 bonded
       // (issue #325 W18).
       ...(linked ? { swearToConnection: linked } : {}),
@@ -890,6 +916,11 @@ export function registerPlayerVowHook() {
 
       const name = item.name ?? "Unnamed Vow";
       const rank = item.system?.rank ?? null;
+      // The sheet's + Vow makes the Item as "Vow", at the default rank, and
+      // opens it to be named: the card is worded for a vow still to be named,
+      // and its rewards proposed for no name (issue #362 AC23; coverage SESS
+      // D5). ⚔ Swear it swears the vow as the sheet has it then.
+      const unnamed = isPlaceholderVowName(item.name);
       // Enumerate existing connections for the link picker (#248 B-link).
       let connections = [];
       try {
@@ -903,7 +934,7 @@ export function registerPlayerVowHook() {
       }
       // actorId: the vow's holder — ⚔ Swear it posts as them (issue #329 X05).
       await ChatMessage.create({
-        content: buildPlayerVowSetupHtml({ name, rank, connections }),
+        content: buildPlayerVowSetupHtml({ name, rank, connections, unnamed }),
         flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name, vowId: item.id, actorId: item.parent?.id ?? null } },
       }).catch(err => console.warn(`${MODULE_ID} | playerVow: setup card failed:`, err?.message ?? err));
 
@@ -911,7 +942,7 @@ export function registerPlayerVowHook() {
       // write-your-own), stored on the vow as promised, delivered on fulfilment.
       try {
         const apiKey  = globalThis.game?.settings?.get?.(MODULE_ID, "claudeApiKey") ?? "";
-        const options = await proposeRewards({ kind: "vow", target: name, apiKey });
+        const options = await proposeRewards({ kind: "vow", target: unnamed ? null : name, apiKey });
         await postRewardChoiceCard(item.id, options);
       } catch (err) {
         console.warn(`${MODULE_ID} | playerVow: reward proposal failed:`, err?.message ?? err);
@@ -1002,7 +1033,13 @@ export async function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
     isCard: (f) => f.playerVowCard === true,
     roller: (f) => (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId),
     build:  (f, actor) => {
-      const post = buildSwearMovePostForName(f.vowName, f.linkedConnection ?? null, actor?.id ?? null);
+      // The vow as it stands on the sheet now (issue #362 AC23): the sheet's
+      // + Vow makes the Item as "Vow" and only then opens it to be named, so
+      // the card's `vowName` is the name it had when it was made — the oath
+      // scene, the move and the plan were all about "Vow".
+      const item = (actor?.items?.contents ?? []).find(i => isVowCopy(i, f.vowId));
+      const name = typeof item?.name === "string" && item.name.trim() ? item.name : f.vowName;
+      const post = buildSwearMovePostForName(name, f.linkedConnection ?? null, actor?.id ?? null, f.vowId ?? null);
       return post ? { content: post.content, flags: post.flags[MODULE_ID] } : null;
     },
   });

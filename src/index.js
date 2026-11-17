@@ -51,7 +51,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand, applyClockAdvances, registerClocksPanelHooks } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, applyClockAdvances, registerClocksPanelHooks, renamePlanClocksBySubject } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -217,6 +217,7 @@ import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.j
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
+import { registerPlansInPlaySocket, registerPlansTableViewSync, registerPlansTableViewSetting } from "./world/secrets.js";
 import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
 import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
@@ -329,6 +330,7 @@ function registerCoreSettings() {
   // The chat-activity stamp, its own setting beside campaignState (issue #342 Z01).
   registerSessionActivitySetting();
   registerSnapshotEventsSetting();         // #357: the events reported since the narrator's last world snapshot
+  registerPlansTableViewSetting();         // #362 D1: what the table has been shown of the hidden plans (the canonical GM's view)
 
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name:    "Claude API Key",
@@ -4282,10 +4284,11 @@ const ODDS_ALIASES = new Map([
  *   !oracle <tableId> [question?]      — roll any registered oracle table
  *                                        (built-in or a custom !oracle-add one)
  *
- * The yes/no form posts a card with the d100 result, the threshold for the
- * chosen odds, the yes/no answer, and (on a match) a "MATCH" badge prompting
- * the GM/player to envision an extreme result or twist. Anything else posts
- * the usage card.
+ * The yes/no form posts a card with the odds typed, the d100 result, the
+ * yes/no answer, and (on a match) a "MATCH" badge prompting the GM/player to
+ * envision an extreme result or twist — no threshold: a roll a hidden plan's
+ * odds set would show them (issue #362 D3). Anything else posts the usage
+ * card.
  */
 async function handleOracleCommand(message) {
   const text  = message.content?.trim() ?? "";
@@ -4324,20 +4327,26 @@ async function handleOracleCommand(message) {
 
   // A question about a subject the narrator holds a hidden plan for is
   // rolled at odds its truth sets, so the answer cannot contradict it (issue
-  // #353, decided). The plans are the GM's: a GM's roll reads them here; a
-  // player's asks the canonical GM for the odds — the one word — and rolls
-  // at the odds they gave when no answer comes (issue #354 P2-31).
+  // #353, decided). The plans are the GM's: a keyed GM's roll reads them
+  // here; a player's — or a keyless co-GM's (issue #362 AC78) — asks the
+  // canonical GM for the odds, the one word, and rolls at the odds they gave
+  // when no answer comes (issue #354 P2-31).
+  //
+  // What the table is shown is the odds typed, and no threshold (issue #362
+  // D3, the maintainer's answer A): the consulted odds on the card ("Ask the
+  // Oracle (almost certain)") and its threshold stated the hidden truth one
+  // yes/no at a time. The roll is made at the consulted odds all the same;
+  // the card, its flags and the oracle memory name the odds typed.
+  const typedOdds = oddsKey;
   {
-    const { oddsFromPlan, requestPlanOdds } = await import("./oracles/oracleConsult.js");
-    const consulted = game.user?.isGM
-      ? (await oddsFromPlan(question).catch(() => null))?.odds
-      : await requestPlanOdds(question);
+    const { consultedOdds } = await import("./oracles/oracleConsult.js");
+    const consulted = await consultedOdds(question);
     if (consulted) oddsKey = consulted;
   }
 
   const result = rollYesNo(oddsKey, { question });
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
-  const oddsLabel = oddsKey === "50_50" ? "50/50" : oddsKey.replace(/_/g, " ");
+  const oddsLabel = typedOdds === "50_50" ? "50/50" : typedOdds.replace(/_/g, " ");
   const matchBadge = result.isMatch
     ? ` <em>· MATCH — envision an extreme result or twist</em>`
     : "";
@@ -4352,11 +4361,11 @@ async function handleOracleCommand(message) {
     kind:           "oracle_yes_no",
     oracleName:     `Ask the Oracle (${oddsLabel})`,
     question,
-    rolledLine:     `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+    rolledLine:     `d100 = ${result.roll} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
     speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
   };
   const card = await ChatMessage.create({
-    content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
+    content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> → <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleCommandCard: true,
@@ -9120,6 +9129,11 @@ Hooks.once("ready", () => {
   // A player's yes/no oracle question asks the canonical GM for its odds
   // when a hidden plan covers its subject (issue #354 P2-31).
   registerOracleConsultSocket();
+  // A player's client reads no hidden plan (issue #362 D1): its Private
+  // Channel asks the canonical GM for the plans in play, and the canonical GM
+  // keeps the table's view of them (the Session panel's What's open).
+  registerPlansInPlaySocket();
+  registerPlansTableViewSync();
   // Relays emitted while this GM's client was still loading reached no
   // listener and were dropped; tell players the relay is live so they can
   // re-send state (onGmRelayReady — e.g. their Private Lines). Canonical GM
@@ -9146,6 +9160,9 @@ Hooks.once("ready", () => {
     // stored "on" is switched off once, and its GMs told.
     applySpotlightDefaultOff().catch(err =>
       console.warn(`${MODULE_ID} | spotlight default switch-off failed:`, err?.message ?? err));
+    // Issue #362 D3: a hidden plan's clock is named by its subject alone —
+    // a world's "<subject> — escalation" clocks are renamed once.
+    void renamePlanClocksBySubject();
   }
   registerEntityRenameSyncHook();
   registerConnectionDeleteHook();          // #362 D10: a GM's delete of an NPC card tears its connection down

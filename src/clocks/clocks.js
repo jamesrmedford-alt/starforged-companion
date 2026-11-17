@@ -291,6 +291,41 @@ export async function createClock(input) {
   return clock;
 }
 
+/** What a hidden plan's clock was named after its subject before issue #362 D3. */
+const PLAN_CLOCK_SUFFIX = / — escalation$/;
+
+/**
+ * A hidden plan's clock is named by its subject alone (issue #362 D3, the
+ * maintainer's answer A): "<subject> — escalation" on the clock cards,
+ * `!clock list` and every player's Session panel told the table a plan stood
+ * behind it, which the narrator is told never to hint at. The clocks a world
+ * made before are renamed once, at load, by the canonical GM (index.js ready):
+ * a clock with a `planId` whose name still carries the suffix. One write, on
+ * the clock write queue; none when there is nothing to rename. Never throws.
+ *
+ * @returns {Promise<string[]>} the ids of the clocks renamed
+ */
+export async function renamePlanClocksBySubject() {
+  try {
+    return await serialiseClockWrite(async () => {
+      const state = foundry.utils.deepClone(readState());
+      const renamed = [];
+      for (const clock of state.clocks ?? []) {
+        if (!clock?.planId || typeof clock.name !== "string" || !PLAN_CLOCK_SUFFIX.test(clock.name)) continue;
+        const name = clock.name.replace(PLAN_CLOCK_SUFFIX, "").trim();
+        if (!name) continue;
+        clock.name = name;
+        renamed.push(clock._id);
+      }
+      if (renamed.length) await writeState(state);
+      return renamed;
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | clocks: the hidden plans' clocks were not renamed:`, err?.message ?? err);
+    return [];
+  }
+}
+
 /**
  * Remove the clocks the given narrations started (`narrationId` — createClock),
  * for a narration a Burn Momentum or Improve Result superseded

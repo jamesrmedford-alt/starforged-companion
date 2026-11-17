@@ -73,7 +73,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -554,7 +554,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // play this beat — made in this scene, its entity matched or in the frame's
   // cast, its name in the frame or the player's line — and the plans this
   // narration must decide (a price that revealed a new enemy). Rendered as
-  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
+  // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans. A
+  // narration on a player's own key reads none — a player's client reads no
+  // plan (issue #362 D1), as it is sent no world snapshot — and still files
+  // the plans its own rolls ask it to decide (DECIDE NOW, relayed).
   extras.unrevealed   = [];
   extras.planRequests = [];
   extras.plannedSubjects = [];
@@ -953,15 +956,20 @@ export async function buildPrivateChannelStory(campaignState, playerMessage, { a
   addSceneFrameCast(extras, campaignState);
   // The hidden plans relevant to what the player asks, under the main
   // narrator's rule (issue #353, decided: the Private Channel reads them).
+  // A player's client reads no plan (issue #362 D1): it asks the canonical
+  // GM for the decided ones this message brings into play — none with no GM
+  // connected, or no answer in time.
   extras.unrevealed = [];
   if (skeletonsEnabled()) {
     try {
-      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
-        sceneId:          campaignState?.currentSceneId ?? null,
-        frame:            campaignState?.sceneFrame ?? null,
-        matchedEntityIds: extras.matchedEntityIds ?? [],
-        text:             playerMessage,
-      });
+      extras.unrevealed = globalThis.game?.user?.isGM === true
+        ? selectRelevantSkeletons(listSkeletons(), {
+          sceneId:          campaignState?.currentSceneId ?? null,
+          frame:            campaignState?.sceneFrame ?? null,
+          matchedEntityIds: extras.matchedEntityIds ?? [],
+          text:             playerMessage,
+        })
+        : await requestPlansInPlay({ text: playerMessage, matchedEntityIds: extras.matchedEntityIds ?? [] });
     } catch (err) {
       console.warn(`${MODULE_ID} | privateChannel: the hidden plans could not be read:`, err?.message ?? err);
     }
@@ -3911,6 +3919,9 @@ export async function narrateOracleFollowup({
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
+  // What forced the step, for a relay off the canonical GM to be checked by
+  // (issue #362 D2: a relayed fact block's own reveals are dropped).
+  const forcedFor = step ? { complication: { scope, trackId } } : null;
   // Whether the side-data was applied, the price's plan request with it
   // (issue #362 AC07; narrateResolution's rule).
   let sideDataApplied = false;
@@ -3923,7 +3934,7 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -3947,7 +3958,7 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4229,6 +4240,22 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
 }
 
 /**
+ * What a filled plan clock's trigger vignette is made to play, as reveals:
+ * its plan's next escalation step, or — a countdown's mystery with no step
+ * left — its answer coming out (issue #353 Phase 3). The vignette marks it
+ * (narrateClockAdvancement), and a relayed vignette's is checked against it
+ * (standingForcedReveals, issue #362 D2). [] for no plan.
+ *
+ * @param {{ plan: Object, step: Object|null, revealsTruth: boolean }|null} paced — secrets.js planForClock's
+ * @returns {Array<{ id: string, advanced?: string, revealed?: string[] }>}
+ */
+function stepRevealsOf(paced) {
+  if (!paced?.plan) return [];
+  if (paced.step) return [{ id: paced.plan.id, advanced: paced.step.id }];
+  return paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : [];
+}
+
+/**
  * Generate a brief (2-3 sentence) narrative vignette for a clock segment
  * filling — a story beat describing what it feels like as that faction plot
  * tightens, a reactor gauge drops another notch, or a deadline finally
@@ -4281,10 +4308,10 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     // "the Choir — escalation" grows with the Choir's plan not in play).
     const ofPlan = skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
     const paced = clock.triggered ? ofPlan : null;
-    const pacedReveals = paced
-      ? (paced.step ? [{ id: paced.plan.id, advanced: paced.step.id }]
-        : (paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : []))
-      : [];
+    const pacedReveals = stepRevealsOf(paced);
+    // What forced the step, for a relay off the canonical GM to be checked by
+    // (issue #362 D2: a relayed fact block's own reveals are dropped).
+    const forcedFor = pacedReveals.length ? { clockId: clock._id ?? null } : null;
     const extras = await buildNarratorExtras('clock_advance', campaignState, {
       character, planIds: ofPlan ? [ofPlan.plan.id] : [],
     });
@@ -4325,7 +4352,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       });
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
-      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
       if (!text?.trim()) return null;
       // The developments of the recorded NPCs it names → their cards, as a
       // session vignette's (#286 D4) — every post site goes through here
@@ -4349,7 +4376,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           });
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
-          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
           if (!text?.trim()) return null;
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
           narrated = true;
@@ -5940,19 +5967,32 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
  * ended. Fire-and-forget; with no GM connected nothing can be recorded.
  */
 function relayNarratorSidecar(sidecar, campaignState, ctx) {
+  // The step a clock vignette or a chosen complication was made to play rides
+  // apart from the fact block, with what forced it, for the GM to check: a
+  // relayed block's own reveals are dropped there (issue #362 D2).
+  const forced = normaliseReveals(ctx.reveals);
+  const cause = ctx.forcedFor && typeof ctx.forcedFor === 'object' ? ctx.forcedFor : {};
   import('../multiplayer/gmRelay.js').then(({ requestGmAction, hasActiveGM }) => {
     if (!hasActiveGM()) {
       console.debug?.(`${MODULE_ID} | factContinuity: no GM connected — narrator side-data (truths, state changes, scene frame) not recorded.`);
       return null;
     }
     return requestGmAction('narrator.sidecar', {
-      sidecar,
+      sidecar:          { ...sidecar, reveals: [] },
       sceneId:          campaignState.currentSceneId ?? null,
       moveId:           ctx.moveId ?? null,
       matchedEntityIds: Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : [],
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // The plans the narration was asked to decide (issue #353): the GM files them.
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      ...(forced.length ? { forced: {
+        reveals: forced,
+        ...(typeof cause.clockId === 'string' && cause.clockId ? { clockId: cause.clockId } : {}),
+        ...(cause.complication && typeof cause.complication === 'object' ? { complication: {
+          scope:   typeof cause.complication.scope === 'string' ? cause.complication.scope : null,
+          trackId: typeof cause.complication.trackId === 'string' ? cause.complication.trackId : null,
+        } } : {}),
+      } } : {}),
     });
   }).catch(err =>
     console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
@@ -5997,7 +6037,20 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * dropped when the X-Card has removed the narration it came with (issue #321
  * U07): it may arrive after the X-Card retracted that narration's facts.
  *
- * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null }} payload
+ * What it may do to the hidden plans is narrower (issue #362 D2, the
+ * maintainer's answer A): plan ids are public (a clock's `planId`, a rolls
+ * card's `skeletonId`), so a hand-made relay could reveal a hidden truth into
+ * the ledger, Lore and a table card, or rewrite or end a plan. Its `reveals`
+ * are dropped, and its `plans` but the answers to its own plan requests (by
+ * their refs, `sameAs` taken off: a plan by id is no relay's to name); its
+ * `openQuestions`, `newThreats` and `countdown` stand. The step a clock
+ * vignette or a chosen complication was made to play rides apart (`forced`)
+ * and stands only as this GM would force it for the same cause
+ * (standingForcedReveals) — dropping it would leave the plan's clock full
+ * with its vignette written (issue #362 AC08).
+ *
+ * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null,
+ *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
@@ -6007,6 +6060,10 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   if (!sidecar) return;
   sidecar.newTruths    = sidecar.newTruths.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
   sidecar.stateChanges = sidecar.stateChanges.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
+  const planRequests = normalisePlanRequests(payload.planRequests);
+  const refs = new Set(planRequests.map(r => r.ref));
+  sidecar.plans   = sidecar.plans.filter(p => refs.has(p.id)).map(p => ({ ...p, sameAs: '' }));
+  sidecar.reveals = [];
   const narrationId = (typeof payload.narrationId === 'string' && /^[\w-]{1,64}$/.test(payload.narrationId))
     ? payload.narrationId : null;
   // A working copy: the scene start and the sidecar apply change the object
@@ -6024,9 +6081,46 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     return;
   }
   await ensureSceneStarted(campaignState, 'relayed_narration');
+  sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
-    moveId: payload.moveId ?? null, narrationId, planRequests: normalisePlanRequests(payload.planRequests),
+    moveId: payload.moveId ?? null, narrationId, planRequests,
   });
+}
+
+/**
+ * The step marks a relayed narration was made to play (`forced` — a clock
+ * vignette's, a chosen complication's) that stand on this GM (issue #362 D2):
+ * those this GM forces itself for the same cause — the plan the clock paces,
+ * its next step or its answer, while that clock is full (stepRevealsOf); the
+ * in-scene plan's next step a complication of that scope plays
+ * (complicationStep) — and nothing else. Never throws.
+ *
+ * @param {{ reveals?: Object[], clockId?: string, complication?: { scope?: string|null, trackId?: string|null } }|null} forced
+ * @param {Object} campaignState — the store's, as this GM reads it
+ * @returns {Promise<Object[]>} normaliseReveals' entries
+ */
+async function standingForcedReveals(forced, campaignState) {
+  const given = normaliseReveals(forced?.reveals);
+  if (!given.length || !skeletonsEnabled()) return [];
+  try {
+    let expected = [];
+    if (typeof forced.clockId === 'string' && forced.clockId) {
+      const paced = planForClock(forced.clockId);
+      const clock = paced ? planClock(paced.plan) : null;
+      expected = clock && (clock.filled ?? 0) >= clock.segments ? stepRevealsOf(paced) : [];
+    } else if (forced.complication && typeof forced.complication === 'object') {
+      const scope   = typeof forced.complication.scope === 'string' ? forced.complication.scope : null;
+      const trackId = typeof forced.complication.trackId === 'string' ? forced.complication.trackId : null;
+      const step = await complicationStep(campaignState, scope, trackId);
+      expected = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
+    }
+    const key = (r) => JSON.stringify([r.id, r.advanced ?? null, [...(r.revealed ?? [])].sort(), r.resolved === true]);
+    const standing = new Set(normaliseReveals(expected).map(key));
+    return given.filter(r => standing.has(key(r)));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | factContinuity: a relayed narration's forced step could not be checked — dropped:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /**
@@ -6061,10 +6155,21 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // The tracks and vows the beat ends: a plan their end resolved is still
   // this narration's to reveal (issue #362 D4).
   const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
+  // A revealed truth is marked with its plan's id (`revealOf`): its reveal
+  // files it as Lore, and the scene's end archives it no second time (issue
+  // #362 AC37). The marker is the code's: one the model's own truths carry
+  // is dropped. The revealed ones go first, so a model truth stating the same
+  // fact is the duplicate the ledger skips, not the marked one.
+  const ownTruths = (sidecar.newTruths ?? []).map(t => {
+    if (!t || typeof t !== 'object' || !('revealOf' in t)) return t;
+    const rest = { ...t };
+    delete rest.revealOf;
+    return rest;
+  });
   const filteredSidecar = {
     ...sidecar,
     stateChanges: otherChanges,
-    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar, { endingSubjectIds })],
+    newTruths:    [...revealedTruthsOf(sidecar, { endingSubjectIds }), ...ownTruths],
   };
 
   try {

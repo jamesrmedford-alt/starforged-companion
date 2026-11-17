@@ -199,7 +199,13 @@ campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
 the recorded entities the message or the scene frame names (lexical, plus
 `addSceneFrameCast`), the scene ledger and the hidden plans in play (the
 narrative skeleton's UNREVEALED, decided plans only and no instruction to
-write — issue #353, decided) in the per-turn message. Its
+write — issue #353, decided) in the per-turn message. A player's client reads
+no plan (issue #362 D1, `secrets.secretPages`): its turn asks the canonical GM
+for the decided plans its message and the scene bring into play
+(`requestPlansInPlay` → the `plansInPlay.ask` / `.answer` socket kinds, as the
+oracle consult's; projected without rolls, re-roll, clock or provenance;
+bounded at `PLANS_WAIT_MS`) — none with no GM connected or no answer in time;
+a GM's client reads them itself, as before. Its
 character is the player's own PC (`resolveUserActorId` — never another
 player's; with none of their own in a multi-PC game the window says "Set up
 your character first", issue #321 U23), and the transcript it sends is the
@@ -561,7 +567,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   `worldSnapshot`: session, time taken, causes, text, manifest, and a log of
   new snapshots, shown on the page). The canonical GM writes it; a GM's
   client reads it; a reload sends it unchanged. A player's client has none —
-  narration on a player's own key is sent the per-beat sections, as before.
+  narration on a player's own key is sent the per-beat sections, as before,
+  and no hidden plan in them: a player's client reads no plan (issue #362
+  D1), so its UNREVEALED is empty and only the plans its own rolls ask it to
+  decide (DECIDE NOW) go with it.
 - **Sent as stored**, with the world compared against the manifest at each
   call (`diffWorldUnits`): the units made or changed since go to the context
   in full, under **CHANGED SINCE THE SNAPSHOT** (`renderUnitSections`), which
@@ -591,10 +600,16 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   no request for an hour (the session's newest narrator card stands in for
   this client's memory after a reload). `snapshotEvents.js` `SNAPSHOT_EVENTS`
   is the one list; every trigger site reports its event by id
-  (`reportSnapshotEvent`) and the table decides. Marks are kept in the world
-  setting `worldSnapshotEvents` (an id and a time), so any GM's client reports
-  and the narrating GM reads them; several between two calls take one
-  snapshot, and the marks it answered are cleared with it.
+  (`reportSnapshotEvent`) and the table decides. The world setting
+  `worldSnapshotEvents` holds one opaque mark and its time — never which
+  event set it (issue #362 D3: named marks told a player at the console a
+  hidden plan was just made or decided) — so any GM's client reports and the
+  narrating GM reads it; the ids stay on the reporting client (its pending
+  marks, and the snapshot page's log — `namedSnapshotCauses`; another GM's
+  mark logs as `out_of_date`). Several between two calls take one snapshot,
+  and the mark it answered is cleared with it; an event reported while a mark
+  stands writes nothing (the next snapshot covers it), and one reported once
+  the mark is answered writes a newer one.
 
   | Event | Snapshot | Reported by |
   |---|---|---|
@@ -938,8 +953,12 @@ exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
-the truth itself, which becomes a ledger truth of the narration's own
-(`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
+the truth itself (only once decided — a "truth" reveal of a plan still waiting
+for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
+(`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
+correction or decision of the same id is laid on first, so a truth changed or
+decided and revealed in one beat is the one the ledger and Lore both state,
+issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
@@ -958,12 +977,17 @@ issue #362 AC08) — Phase 3; an enemy or danger the
 prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan
 (`planNarratedThreat`: Character Role, Goal and Disposition rolled once, no
 truth, so the next narration decides it), unless one of its names is already
-planned or it names a PC; and a plan answered `sameAs` — the narrator's say
+planned or it names a PC (a person's titles aside, and a title alone only ever
+the same title: "the Captain" is neither Captain Reyes's agenda nor the PC
+Captain Ryn — `secrets.planIsAbout`, issue #362 AC12); and a plan answered `sameAs` — the narrator's say
 that a subject it was asked to decide is one already planned, shown to it
 under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
 `extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps
 the other name in `aliases` (read by `secrets.subjectNames` and
-`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
+`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); so
+does a waiting plan decided by its id under the name of a subject another plan
+already has (`joinedByName`, issue #362 AC36 — it became a second plan, with a
+truth and a clock of its own); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`) — and a plan clock it paced: the pacing
 is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
@@ -991,7 +1015,16 @@ X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
 and the same `narrationId`) for the ring. Off the canonical GM the sidecar is still stripped from the
 prose and no audit runs; the side-data is relayed to the canonical GM
-(`narrator.sidecar`, issue #286 D2 — see "Where each call runs").
+(`narrator.sidecar`, issue #286 D2 — see "Where each call runs"), which takes
+no plan write by id from it (issue #362 D2, the maintainer's answer A — plan
+ids are public, so a hand-made relay could reveal or rewrite a plan): its
+`reveals`, and its `plans` but the answers to its own plan requests (their
+`sameAs` taken off), are dropped; `openQuestions`, `newThreats` and
+`countdown` stand; the step a clock vignette or a chosen complication was made
+to play rides apart (`forced`, with its `clockId` or complication scope) and
+stands only as the canonical GM would force it for that cause
+(`standingForcedReveals` — the clock still full, its plan's next step; the
+scene's complication step), so a co-GM's vignette still paces its clock.
 
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class
@@ -1130,7 +1163,10 @@ no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
 frame's location by the same ladder, else the current location when the
 frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
-the scene id).
+the scene id) — save a hidden plan's revealed truth, marked `revealOf` (its
+plan's id) by the sidecar apply: the reveal filed it as Lore already
+("Threat: the escort"), and archived again it was two entries (issue #362
+AC37).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,

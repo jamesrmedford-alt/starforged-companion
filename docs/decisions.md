@@ -31,6 +31,150 @@ Not changed: names the detection pass returns (the capture's `namesPlayerCharact
 **Amends:** "Issue #330 decisions: D1–D15" D3 — the resist roll now covers all four suffer moves with a track (health, spirit, integrity, companion health); SUFFER-EXECUTOR-ASSET-SCHEMA's "the at-0 vehicle-damage d100 is kept" and the play-kit coverage's "the at-0 vehicle-type cost stays card text" are superseded.
 
 **Rejected:** *recording the approximation* (option B) — the vendored data carries the roll, and D3 had already built the card and the call for it.
+## Issue #362 D2: a fact block relayed to the canonical GM writes no hidden plan by id (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) On the `narrator.sidecar`
+relay — the fact block of a narration made off the canonical GM, sent there to
+be applied — `applyRelayedNarratorSidecar` drops the block's `reveals`, and its
+`plans` but the answers to the relay's own plan requests (by their refs), with
+`sameAs` taken off those answers. Its `openQuestions`, `newThreats` and
+`countdown` stand, as do its truths, state and frame. The step a clock's
+trigger vignette or a chosen complication was made to play — the code's own
+mark, not the model's — no longer rides inside the block: it is sent apart
+(`forced`, with the clock's id or the complication's scope) and stands only as
+the canonical GM would force it for that cause (`standingForcedReveals`: the
+plan that clock paces, its next step or its answer, while the clock is full;
+the in-scene plan's next step for that complication). Anything else in it is
+dropped.
+
+**Reason:** issue #362 D2 (coverage FC D1, NARB). Plan ids are public — a
+clock's `planId`, a rolls card's `skeletonId` — and a relayed block was applied
+as sent, so a hand-made relay could make the GM write a hidden truth into the
+scene ledger, Lore and a table card, or rewrite, resolve or merge a plan: more
+than any UI could have done (gmRelay's trust model). Since D1 a player's
+narration is shown no plan, so an honest relay carries none of these by id.
+Dropping every reveal would also drop the step a co-GM's vignette was made to
+play, and leave that plan's clock full with its vignette written (issue #362
+AC08).
+
+**Rejected:** *Accepting it within the relay's trust model* (answer B). *Keeping
+a relayed block's reveals when the requester is a GM* — the requester is
+client-asserted. *Trusting `forced` as sent* — it is checked against what this
+GM would force. Accepted with it: a co-GM narrating on its own client (its own
+key) has its model's own reveals and corrections dropped too — the canonical GM
+narrates most beats; a reveal a co-GM's prose made is told again by a later
+narration.
+
+---
+
+## Issue #362 D1: the hidden plans are read on a GM's client only; a player's Private Channel gets its plans from the canonical GM (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) Whether Foundry
+delivers an ownership-NONE journal to a player's client was never checked
+live, and the code held both answers: `listSkeletons()` ran on players'
+clients (the Private Channel's story, narration on a player's own key, the
+Session panel's "What's open") while the consult relay (P2-31),
+SNAPSHOT-PLAYER-KEY and the snapshot store assumed a player's client cannot
+read the Secrets journal. Decided: it does not.
+- **Every plan read is a GM's.** `secrets.js` `secretPages` returns nothing on
+  a non-GM client, so `listSkeletons`, `getSkeleton`, `plannedSubjects`,
+  `planForClock` and every reader over them give a player's client no plan,
+  whatever its journal collection holds.
+- **The Private Channel reads its plans by relay.** A player's turn asks the
+  canonical GM over the module socket (`requestPlansInPlay` →
+  `plansInPlay.ask` / `.answer`, the oracle consult's shape): the GM answers
+  with the decided plans the message and the scene bring into play
+  (`selectRelevantSkeletons`, the GM's own scene and frame), projected to what
+  UNREVEALED renders — never their rolls, re-roll, clock or provenance. The
+  wait is bounded (`PLANS_WAIT_MS`); no GM, no answer: the turn reads none. A
+  GM's own Private Channel reads them itself.
+- **Narration on a player's own key gets no plan**, as it gets no world
+  snapshot (SNAPSHOT-PLAYER-KEY): its UNREVEALED is empty. The plans its own
+  rolls ask it to decide (DECIDE NOW, a price's new enemy) still go with it
+  and are filed by the canonical GM from its relayed fact block.
+- **"What's open" shows the table's view the canonical GM keeps.** The
+  unanswered questions and standing demands (R4's definitions, unchanged —
+  `secrets.tableViewOf`) live in a world setting of their own,
+  `narrativeSkeletonsTableView`, written by the canonical GM alone, only when
+  it changes (a plan made or decided in secret writes nothing): after its own
+  plan writes, on every Secrets page created, changed or deleted (a GM's edit
+  in the journal, an X-Card's undo), and once at load
+  (`registerPlansTableViewSync`). Every client's panel reads it
+  (`plansShownToTable`) — a player's list and a GM's are the same — and
+  re-renders when it changes. It holds those two rows' text and nothing else.
+
+**Reason:** issue #362 D1 (coverage SESS D1, NARA, NARB, SKEL 3). On the
+simulated table a player's Private Channel request — sent from the player's
+browser on the player's key — carried a plan's `Truth:` line; if Foundry
+delivers the journal, every plan was in every browser and the relay and the
+snapshot gate protected nothing.
+
+**Rejected:** *Accepting that plans are in every browser* (answer B). *A
+relay for the Session panel* — a player's panel re-renders on hooks that fire
+for documents it may never be sent; a view the canonical GM writes is read at
+once and survives the GM being away. *Sending the store, or every plan, to
+the Private Channel* — the turn is given only the decided plans it brings
+into play. Not solved: a socket answer reaches every connected client
+(Foundry's module socket cannot address one), so the asker's few plans pass
+through the other players' browsers, unread; and a forged ask can name any
+subject, within the relay's trust model.
+
+**Amends:** "Issue #353 R3 and R4" ("a player's list is the GM's (the store
+is read alike on every client)" — the list is the canonical GM's view, read
+alike); "The narrative skeleton" Phase 1 ("The Private Channel reads plans" —
+on a player's client, by relay).
+
+---
+
+## Issue #362 D3: a hidden plan's existence stays off the table's screens — clocks named by their subject, the odds typed on the oracle card, one opaque snapshot mark (2026-11)
+
+**Decision:** (the maintainer's answer A, 2026-11-17.) The narrator is told
+never to hint that a plan exists; the module's own surfaces no longer do:
+- **A plan's clock is named by its subject alone** — "the escort", not "the
+  escort — escalation" (`secrets.ensureThreatClock`). A world's existing plan
+  clocks (a `planId`, the old suffix) are renamed once, at load, by the
+  canonical GM (`clocks.renamePlanClocksBySubject`, index.js ready); a GM's
+  own clock is never renamed. A countdown's clock keeps the label the prose
+  gave it.
+- **Ask the Oracle shows the odds the player typed, and no threshold.** A
+  yes/no about a planned subject is still rolled at the odds the plan's truth
+  sets (Phase 3; issue #354 P2-31), but the card ("Ask the Oracle (likely)",
+  "d100 = 50 → NO"), its flags (`oracleNarration.oracleName`, `rolledLine`) and
+  the oracle memory every client holds (`recentOracles`) name the typed odds.
+  No yes/no card shows a threshold: shown only on unconsulted rolls, its
+  absence would say a plan stood behind the question.
+- **The snapshot's world setting holds one opaque mark.** `worldSnapshotEvents`
+  is `{ events: [{ id: "out_of_date", at }] }` — never which event set it. The
+  events table and every reporter are unchanged (`SNAPSHOT_EVENTS`,
+  `reportSnapshotEvent(id)`); the ids stay on the reporting GM's client (its
+  pending marks, and the snapshot page's log, which names the events that
+  client reported since the snapshot it replaces —
+  `snapshotEvents.namedSnapshotCauses`; a mark another GM's client set logs as
+  `out_of_date`). While a mark stands that no snapshot on the reporting
+  client has answered, any event is covered by it and writes nothing (the
+  next snapshot reads the world after it); otherwise the event writes a mark
+  timed after any stored, so a snapshot that answered an older one reads it
+  as pending. The named marks' residual — the same event reported on another
+  GM's client inside the round trip of the snapshot that answers its mark —
+  now holds for any event (accepted: a window of one socket round trip). A
+  named mark a world stored before this still counts, and is cleared by the
+  snapshot that answers it.
+
+**Reason:** issue #362 D3 (coverage SKEL 1 and 2, NARP D1). "<subject> —
+escalation" on every player's Session panel and `!clock list`, the consulted
+odds printed on the card (the hidden truth, one yes/no at a time), and
+`plan_made` / `plan_decided` / `new_enemy_revealed` in a world setting each
+told the table — or a player at the console — that a hidden plan had just
+been made, decided or consulted.
+
+**Rejected:** *Accepting them as table-facing* (answer B). *Keeping plan
+clocks off the players' lists* — a clock that turns on every Pay the Price is
+the table's to see; its name was the leak. *Hiding the d100 too* — the roll
+and its match are the table's; a player who knows the thresholds can still
+infer, from a roll answered against the odds typed, that something set them
+(accepted). **Amends** "The world snapshot" below ("a world setting of its
+own, `worldSnapshotEvents`: an id and a time"): the setting holds one opaque
+mark and its time; the ids are the reporting client's.
 
 ---
 

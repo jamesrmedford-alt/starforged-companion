@@ -625,7 +625,8 @@ export const CampaignStateSchema = {
   //   sceneTruths    — append-only ledger of narrator-asserted truths
   //                    { id, subject: { kind, ... }, fact, sessionId, sceneId,
   //                      moveId, source, asserter, createdAt, retracted,
-  //                      retractedBy, retractedAt, correctedTo, migratedTo }
+  //                      retractedBy, retractedAt, correctedTo, migratedTo,
+  //                      revealOf? — a revealed hidden plan's id: its Lore is the reveal's, issue #362 AC37 }
   //   sceneState     — supersede-on-attribute state ledger
   //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt, subjectText? }] }, sceneId }
   //                    (subjectText: a text subject as the narrator wrote it — its key is lowercased;

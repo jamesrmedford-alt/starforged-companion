@@ -10,9 +10,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
 import {
   nameWords, misspelledWord, personNameMatch, nameWithin, nameKey, suffixedName, sameSubject, generatedName, loreTitle,
+  withoutTitle, isBareTitle,
 } from '../../src/entities/nameMatch.js';
+import { HONORIFIC_PREFIXES } from '../../src/context/relevanceResolver.js';
 
 describe('personNameMatch — a person under part of their name or a near spelling', () => {
   it('a single word that is the first or last name is that person', () => {
@@ -138,5 +141,34 @@ describe('generatedName / loreTitle — names the module files, written one way 
     expect(loreTitle('blockade corridor: an uncharted route.')).toBe('Blockade corridor: an uncharted route');
     expect(loreTitle('  Uncharted route discovered in  blockade corridor ')).toBe('Uncharted route discovered in blockade corridor');
     expect(loreTitle('"quoted" title')).toBe('"Quoted" title');
+  });
+});
+
+describe('withoutTitle / isBareTitle — a person\'s title is not their name (issue #362 AC12)', () => {
+  it('a leading title — and an article before it — is dropped; the rest is returned as written', () => {
+    expect(withoutTitle('Captain Reyes')).toBe('Reyes');
+    expect(withoutTitle('Dr. Chen')).toBe('Chen');
+    expect(withoutTitle('the Captain Reyes')).toBe('Reyes');
+    expect(withoutTitle('Administrator Lyssa Chen')).toBe('Lyssa Chen');
+    expect(withoutTitle('Vuldar Archer')).toBe('Vuldar Archer');
+  });
+
+  it('a title alone is kept: nothing would be left to call them by', () => {
+    expect(withoutTitle('the Captain')).toBe('the Captain');
+    expect(withoutTitle('Captain')).toBe('Captain');
+    expect(isBareTitle('the Captain')).toBe(true);
+    expect(isBareTitle('Dr.')).toBe(true);
+    expect(isBareTitle('Captain Reyes')).toBe(false);
+    expect(isBareTitle('the escort')).toBe(false);
+    expect(isBareTitle('')).toBe(false);
+  });
+
+  it('strips every title the entity gates strip — the honorifics and the NPC role titles (a drift guard)', () => {
+    const source = fs.readFileSync(new URL('../../src/entities/connection.js', import.meta.url), 'utf8');
+    const roles = [...source.matchAll(/\[\/\^[^\]]*?\\b\/i,\s*"([A-Z][a-z]+)"\]/g)].map(m => m[1]);
+    expect(roles.length, 'connection.js NAME_TITLE_ROLES read').toBeGreaterThan(15);
+    const titles = [...HONORIFIC_PREFIXES, ...roles, 'Councillor', 'Dr.'];
+    expect(titles.filter(t => withoutTitle(`${t} Chen`) !== 'Chen')).toEqual([]);
+    expect(titles.filter(t => !isBareTitle(`the ${t}`))).toEqual([]);
   });
 });

@@ -282,7 +282,17 @@ layers. This file is the never-break list.
    - **It holds every active hidden plan**, so it is the GMs' alone: stored
      in the Secrets journal, read only by `narrator.js`
      (`secretsStayHidden.test.js`), never by a card builder, a panel or a
-     player's client. Narration on a player's own key sends none.
+     player's client. Narration on a player's own key sends none. Nor does a
+     player's client read the plans themselves (issue #362 D1): every plan
+     read is a GM's (`secrets.js` `secretPages`); a Private Channel turn
+     there asks the canonical GM for the decided plans in play
+     (`requestPlansInPlay`), and the Session panel reads the table's view
+     the canonical GM keeps (`plansShownToTable`). A fact block relayed to
+     the canonical GM (`narrator.sidecar`) writes no plan by id: its
+     `reveals` and its `plans` but the answers to its own requests are
+     dropped, and the step a vignette or complication was made to play rides
+     apart (`forced`), standing only as the canonical GM would force it
+     (issue #362 D2).
    - **Section moves are two-sided.** A per-beat section the snapshot covers
      is left out of the context when there is one (`buildNarratorSystemBlocks`
      — nothing is sent twice) and still rendered when there is none. A new

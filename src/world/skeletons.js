@@ -95,6 +95,7 @@ export function normaliseSkeleton(raw) {
   const clues = (Array.isArray(raw.clues) ? raw.clues : []).slice(0, LIST_MAX)
     .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true }))
     .filter(c => c.text);
+  const truth = text(raw.truth, TEXT_MAX);
   return {
     id,
     kind,
@@ -104,13 +105,15 @@ export function normaliseSkeleton(raw) {
     // the subject's name is: secrets.js subjectNames, selectRelevantSkeletons.
     aliases:       normaliseAliases(raw.aliases, subject.name),
     question:      text(raw.question, QUESTION_MAX),
-    truth:         text(raw.truth, TEXT_MAX),
+    truth,
     wants:         text(raw.wants, TEXT_MAX),
     knows:         text(raw.knows, TEXT_MAX),
     escalation,
     clues,
     resolutions:   textList(raw.resolutions),
-    truthRevealed: raw.truthRevealed === true,
+    // A truth not yet decided was never revealed: a flag set on one (a
+    // reveal of an undecided plan, before issue #362 AC16) does not stand.
+    truthRevealed: raw.truthRevealed === true && !!truth,
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     // The one re-roll a plan awaiting its decision may use in place of a
@@ -327,7 +330,11 @@ export function normaliseCountdown(countdown) {
 
 /**
  * What a beat showed, laid onto the plan: its clues shown, its truth
- * revealed, its step played, its story ended (`status: "resolved"`).
+ * revealed, its step played, its story ended (`status: "resolved"`). A truth
+ * not yet decided cannot be revealed (issue #362 AC16): a "truth" reveal of a
+ * plan still waiting for its decision changes nothing — marked, the plan read
+ * as revealed once a later narration decided it, and its hidden wants showed
+ * on every player's Session panel as a standing demand.
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
@@ -337,7 +344,7 @@ export function applyRevealToSkeleton(record, reveal) {
   const shown = new Set(reveal.revealed);
   return {
     ...record,
-    truthRevealed: record.truthRevealed || shown.has("truth"),
+    truthRevealed: record.truthRevealed || (shown.has("truth") && !!record.truth),
     clues:         record.clues.map(c => (shown.has(c.id) ? { ...c, revealed: true } : c)),
     escalation:    record.escalation.map(e => (e.id === reveal.advanced ? { ...e, done: true } : e)),
     status:        reveal.resolved ? "resolved" : record.status,
@@ -490,6 +497,23 @@ export function selectRelevantSkeletons(records, ctx = {}) {
 /** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines). */
 const NEW_ENEMY_SEED = /^The new enemy — /;
 
+/** What a new enemy's plan is called until a narration names it. */
+const NEW_ENEMY_LABEL = "the new enemy this price reveals";
+
+/**
+ * Whether a name is a plan request's placeholder — what a plan is filed under
+ * when the narration asked to decide it named none ("the new enemy this price
+ * reveals", "the discovery this move makes"): never a name the story gave its
+ * subject (secrets.js planAsAnother keeps it off the plan it joins' aliases,
+ * issue #362 AC36).
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isPlanRequestLabel(name) {
+  return [NEW_ENEMY_LABEL, ...Object.values(DISCOVERY_MOVES).map(d => d.label)].some(label => sameSubjectName(label, name));
+}
+
 /**
  * The plans a narration's oracle seeds ask it to decide (issue #353 Phase 1):
  * a price that revealed a new enemy (its Character Role, Goal and Disposition
@@ -510,7 +534,7 @@ export function planRequestsFromSeeds(seeds, refBase) {
       ref:         `plan-${refBase}-enemy`.slice(0, 64),
       kind:        "threat",
       trigger:     "new_enemy",
-      label:       "the new enemy this price reveals",
+      label:       NEW_ENEMY_LABEL,
       oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
     });
   }

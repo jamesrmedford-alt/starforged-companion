@@ -33,11 +33,12 @@ import {
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
-  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay,
-  SKELETON_KIND_LABELS,
+  normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
+  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS,
 } from "./skeletons.js";
+import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
-import { sameSubject, personNameMatch } from "../entities/nameMatch.js";
+import { sameSubject, personNameMatch, withoutTitle, isBareTitle } from "../entities/nameMatch.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 
 const MODULE_ID = "starforged-companion";
@@ -69,7 +70,20 @@ function hiddenRollsShownAtOnce() {
 // READ
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The Secrets journal's pages — on a GM's client only (issue #362 D1, the
+ * maintainer's answer A). Every plan read goes through here (listSkeletons,
+ * getSkeleton, plannedSubjects, planForClock …), so a player's client reads
+ * no plan whether or not Foundry delivers it an ownership-NONE journal (never
+ * checked live; the simulated table shares journals): a player-key
+ * narration's UNREVEALED, the Private Channel's story and the Session panel
+ * read the plans there, and a Private Channel request carried a plan's truth
+ * from a player's browser. What a player-run prompt is decided to read comes
+ * from the canonical GM (requestPlansInPlay); what the table may see of the
+ * plans, from the view the canonical GM writes (plansShownToTable).
+ */
 function secretPages() {
+  if (globalThis.game?.user?.isGM !== true) return [];
   try {
     return findWorldJournal("secrets")?.pages?.contents ?? [];
   } catch {
@@ -115,6 +129,253 @@ export function plannedSubjects() {
 /** The plan `id` as a record, or null. */
 export function getSkeleton(id) {
   return typeof id === "string" ? normaliseSkeleton(entryOf(pageOf(id))) : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHAT A PLAYER'S CLIENT IS GIVEN (issue #362 D1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A player's client reads no plan (secretPages). Two of its readers keep what
+// they were decided to have, from the canonical GM:
+//   - the Private Channel reads the plans in play for the player's message
+//     (decided, issue #353): asked of the canonical GM over the module socket,
+//     as an oracle question's odds are (oracleConsult.js) — only the decided
+//     plans the message and the scene bring into play, never the store;
+//   - the Session panel's "What's open" shows the table what it has been
+//     shown (issue #353 R4): the canonical GM keeps that view in a world
+//     setting of its own, rewritten when it changes.
+// Narration on a player's own key gets no plan, as it gets no world snapshot
+// (known-issues SNAPSHOT-PLAYER-KEY).
+
+/** The module-socket kinds of a player's ask for the plans in play and the GM's answer (not gmRelay actions: an answer comes back). */
+export const PLANS_ASK_KIND    = "plansInPlay.ask";
+export const PLANS_ANSWER_KIND = "plansInPlay.answer";
+
+/** How long a player's Private Channel turn waits for the GM's plans; past it, the turn reads none. */
+export const PLANS_WAIT_MS = 4_000;
+
+const PLANS_TEXT_MAX = 2_000;
+const PLANS_IDS_MAX  = 24;
+
+const _plansWaiting = new Map();   // ask id → resolve
+let _plansSocketInstalled = false;
+
+/**
+ * The decided plans a beat on a player's client brings into play — what the
+ * Private Channel's story shows under UNREVEALED, chosen as the main narrator
+ * chooses (selectRelevantSkeletons: this scene's, its frame's, the entities
+ * and names the message matches) — on the GM's client, as records holding
+ * only what UNREVEALED renders: never their oracle rolls, re-roll, clock or
+ * provenance. None with the narrative skeleton off. Never throws.
+ *
+ * @param {{ text?: string, matchedEntityIds?: string[] }} ctx
+ * @returns {Object[]}
+ */
+function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
+  if (!skeletonsEnabled()) return [];
+  try {
+    const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    return selectRelevantSkeletons(listSkeletons(), {
+      sceneId:          stored?.currentSceneId ?? null,
+      frame:            stored?.sceneFrame ?? null,
+      matchedEntityIds: (Array.isArray(matchedEntityIds) ? matchedEntityIds : []).filter(id => typeof id === "string").slice(0, PLANS_IDS_MAX),
+      text:             typeof text === "string" ? text.slice(0, PLANS_TEXT_MAX) : "",
+    }).filter(r => r.truth).map(r => ({
+      id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
+      truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
+      escalation: r.escalation, clues: r.clues, resolutions: r.resolutions,
+    }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the plans in play could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Install the plans-in-play listener on the module socket (idempotent; every
+ * client, at ready — index.js). The canonical GM answers an ask with the
+ * plans it brings into play (plansInPlayFor); the client that asked takes the
+ * answer carrying its ask's id. The answer is a socket message, which reaches
+ * every connected client (Foundry's module socket cannot address one); only
+ * the asker takes it.
+ */
+export function registerPlansInPlaySocket() {
+  if (_plansSocketInstalled) return;
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.on) return;
+  _plansSocketInstalled = true;
+  socket.on(GM_RELAY_SOCKET, (message) => {
+    if (message?.kind === PLANS_ANSWER_KIND) {
+      const resolve = typeof message.id === "string" ? _plansWaiting.get(message.id) : null;
+      if (resolve) resolve(Array.isArray(message.plans) ? message.plans : []);
+      return;
+    }
+    if (message?.kind !== PLANS_ASK_KIND || !isCanonicalGM()) return;
+    const id = typeof message.id === "string" && /^[\w-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return;
+    const plans = plansInPlayFor({ text: message.text, matchedEntityIds: message.matchedEntityIds });
+    globalThis.game?.socket?.emit?.(GM_RELAY_SOCKET, { kind: PLANS_ANSWER_KIND, id, plans });
+  });
+}
+
+/**
+ * The decided plans a player's Private Channel turn brings into play, asked of
+ * the canonical GM, whose client holds them (issue #362 D1): records as
+ * selectRelevantSkeletons gives them, at most MAX_RELEVANT_SKELETONS. None —
+ * the turn is narrated without plans — with no GM connected, no answer within
+ * `waitMs`, or the narrative skeleton off. Never throws.
+ *
+ * @param {{ text?: string, matchedEntityIds?: string[] }} ctx — the player's message and the entities it names
+ * @param {{ waitMs?: number }} [opts]
+ * @returns {Promise<Object[]>}
+ */
+export async function requestPlansInPlay({ text = "", matchedEntityIds = [] } = {}, { waitMs = PLANS_WAIT_MS } = {}) {
+  if (!skeletonsEnabled()) return [];
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.emit || !hasActiveGM()) return [];
+  registerPlansInPlaySocket();
+  const id = globalThis.foundry?.utils?.randomID?.() ?? Math.random().toString(36).slice(2, 14);
+  let timer = null;
+  try {
+    const plans = await new Promise((resolve) => {
+      _plansWaiting.set(id, resolve);
+      timer = setTimeout(() => resolve([]), Math.max(0, waitMs));
+      socket.emit(GM_RELAY_SOCKET, {
+        kind: PLANS_ASK_KIND, id,
+        text: typeof text === "string" ? text.slice(0, PLANS_TEXT_MAX) : "",
+        matchedEntityIds: (Array.isArray(matchedEntityIds) ? matchedEntityIds : []).filter(m => typeof m === "string").slice(0, PLANS_IDS_MAX),
+      });
+    });
+    return plans.map(normaliseSkeleton).filter(r => r && r.truth).slice(0, MAX_RELEVANT_SKELETONS);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: asking the GM for the plans in play failed — the turn reads none:`, err?.message ?? err);
+    return [];
+  } finally {
+    if (timer) clearTimeout(timer);
+    _plansWaiting.delete(id);
+  }
+}
+
+/** The world setting that holds what the table has been shown of the plans (issue #362 D1; written by the canonical GM). */
+export const TABLE_VIEW_SETTING = "narrativeSkeletonsTableView";
+
+/** Register the table's view of the plans. Call from `init` (index.js). */
+export function registerPlansTableViewSetting() {
+  globalThis.game?.settings?.register?.(MODULE_ID, TABLE_VIEW_SETTING, {
+    name:    "Narrative skeleton — what the table has been shown",
+    scope:   "world",
+    config:  false,
+    type:    Object,
+    default: { questions: [], demands: [] },
+  });
+}
+
+/**
+ * What the table has been shown of the plans (issue #353 R4, the maintainer's
+ * definitions) — the only plan fields any player-facing view reads:
+ *   - an unanswered question: an active mystery whose truth is not revealed —
+ *     its question alone (the fiction posed it to the characters);
+ *   - a standing demand: an active threat or NPC agenda whose truth is
+ *     revealed — its subject and what it wants, no longer secret.
+ * Never a plan's truth, what it knows, its clues, escalation, endings or
+ * oracle rolls, nor its id.
+ *
+ * @param {Object[]} records — normaliseSkeleton's
+ * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
+ */
+function tableViewOf(records) {
+  const out = { questions: [], demands: [] };
+  for (const plan of Array.isArray(records) ? records : []) {
+    if (plan?.status !== "active") continue;
+    if (plan.kind === "mystery" && plan.truthRevealed !== true && plan.question) {
+      out.questions.push({ question: plan.question });
+    } else if ((plan.kind === "threat" || plan.kind === "npcAgenda") && plan.truthRevealed === true && plan.wants) {
+      out.demands.push({ name: plan.subject?.name ?? "", wants: plan.wants });
+    }
+  }
+  return out;
+}
+
+/** Only strings, bounded — the setting crosses every client. */
+function cleanTableView(view) {
+  const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+  return {
+    questions: (Array.isArray(view?.questions) ? view.questions : []).map(q => ({ question: str(q?.question, 240) })).filter(q => q.question),
+    demands:   (Array.isArray(view?.demands) ? view.demands : []).map(d => ({ name: str(d?.name, 120), wants: str(d?.wants, 600) })).filter(d => d.wants),
+  };
+}
+
+/**
+ * What the table has been shown of the plans, as the canonical GM keeps it —
+ * on every client alike, a player's and a GM's (the Session panel's "What's
+ * open", decisions.md R4): nothing read from the Secrets journal. Empty with
+ * the narrative skeleton off. Fail-open.
+ *
+ * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
+ */
+export function plansShownToTable() {
+  if (!skeletonsEnabled()) return { questions: [], demands: [] };
+  try {
+    return cleanTableView(globalThis.game?.settings?.get?.(MODULE_ID, TABLE_VIEW_SETTING));
+  } catch {
+    return { questions: [], demands: [] };
+  }
+}
+
+let _tableViewSync = Promise.resolve();
+
+/**
+ * Rewrite the table's view of the plans from the store, when it changed — on
+ * the canonical GM, its single writer: after its own plan writes, on any
+ * change to a Secrets page (a GM's edit in the journal, an X-Card's undo, a
+ * page deleted), and once at load. One at a time on this client, each reading
+ * the store at its turn. Only a change the table could see writes, so a plan
+ * made or decided in secret moves nothing on a player's client. Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+function syncPlansTableView() {
+  if (!isCanonicalGM()) return _tableViewSync;
+  const run = _tableViewSync.then(async () => {
+    try {
+      const next = cleanTableView(tableViewOf(listSkeletons()));
+      const stored = cleanTableView(globalThis.game?.settings?.get?.(MODULE_ID, TABLE_VIEW_SETTING));
+      if (JSON.stringify(next) === JSON.stringify(stored)) return;
+      await globalThis.game?.settings?.set?.(MODULE_ID, TABLE_VIEW_SETTING, next);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | secrets: what the table has been shown of the plans was not updated:`, err?.message ?? err);
+    }
+  });
+  _tableViewSync = run;
+  return run;
+}
+
+/**
+ * Keep the table's view of the plans with the store (issue #362 D1): the
+ * canonical GM rewrites it on every Secrets page created, changed or deleted
+ * (document hooks fire on every client; only the canonical GM writes), and
+ * once now. Register once, at ready (index.js).
+ */
+export function registerPlansTableViewSync() {
+  if (registerPlansTableViewSync._installed) return;
+  registerPlansTableViewSync._installed = true;
+  const onPage = (page) => {
+    if (!isCanonicalGM()) return;
+    const journal = findWorldJournal("secrets");
+    if (!journal || (page?.parent?.id ?? null) !== journal.id) return;
+    void syncPlansTableView();
+  };
+  Hooks.on("createJournalEntryPage", onPage);
+  Hooks.on("updateJournalEntryPage", onPage);
+  Hooks.on("deleteJournalEntryPage", onPage);
+  if (isCanonicalGM()) void syncPlansTableView();
+}
+
+/** Test seam: forget the plans-in-play listener and any ask in flight. */
+export function _resetPlanRelayForTests() {
+  _plansSocketInstalled = false;
+  _plansWaiting.clear();
+  _tableViewSync = Promise.resolve();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +429,7 @@ async function takenBackForXCard(narrationId) {
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a plan write the X-Card overtook could not be taken back:`, err?.message ?? err);
   }
+  void syncPlansTableView();
   return true;
 }
 
@@ -224,6 +486,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
       if (await takenBackForXCard(narrationId)) return null;
       // A new plan: the narrator's world snapshot is out of date (issue #357).
       reportSnapshotEvent("plan_made");
+      void syncPlansTableView();   // a question posed is the table's to see (issue #362 D1)
       return record;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: filing the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -276,6 +539,7 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
       const name = skeletonPageName(next);
       if (page.name !== name) await page.update?.({ name });
       if (await takenBackForXCard(narrationId)) return null;
+      void syncPlansTableView();   // a truth revealed, a question answered (issue #362 D1)
       return next;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: updating the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -327,10 +591,30 @@ function subjectNames(record) {
 }
 
 /**
+ * Whether two people's names can be one person's, as the entity gates compare
+ * them (entityExtractor.js normalizeEntityName): each name's leading title is
+ * stripped first ("Captain Reyes" is called "Reyes", "Administrator Lyssa
+ * Chen" "Lyssa"), and a title alone is nobody's part-name — "the Captain" is
+ * the same person only as another "the Captain" (issue #362 AC12: the
+ * raider the narration called "the Captain" was laid onto Captain Reyes's
+ * agenda, "captain" being the first word of her name).
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function samePersonName(a, b) {
+  if (isBareTitle(a) || isBareTitle(b)) return personNameMatch(a, b) === "same";
+  return !!personNameMatch(withoutTitle(a), withoutTitle(b));
+}
+
+/**
  * Whether a plan is about the subject a name names: one of the plan's names
  * (subjectNames) is that name, a variant of it, or its start or end
  * (nameMatch.js sameSubject) — and, for an NPC's agenda, either name of the
- * person ("Vuldar" for Vuldar Archer, personNameMatch).
+ * person ("Vuldar" for Vuldar Archer), their titles aside (samePersonName). A
+ * title alone ("the Captain") is only ever the same title: it is not the end
+ * of "Mara the Captain", nor part of "Captain Reyes" (issue #362 AC12).
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {string} name
@@ -338,7 +622,9 @@ function subjectNames(record) {
  */
 export function planIsAbout(record, name) {
   if (typeof name !== "string" || !name.trim()) return false;
-  return subjectNames(record).some(n => sameSubject(n, name) || (record.kind === "npcAgenda" && !!personNameMatch(n, name)));
+  return subjectNames(record).some(n => ((isBareTitle(n) || isBareTitle(name))
+    ? personNameMatch(n, name) === "same"
+    : sameSubject(n, name) || (record.kind === "npcAgenda" && samePersonName(n, name))));
 }
 
 /**
@@ -348,11 +634,48 @@ export function planIsAbout(record, name) {
  *
  * @param {string} name
  * @param {string} kind — the plan about to be filed
+ * @param {{ except?: string|null }} [opts] — a plan never doubled by itself (the one being decided)
  * @returns {Object|null}
  */
-function activePlanAbout(name, kind) {
+function activePlanAbout(name, kind, { except = null } = {}) {
   const kinds = BEING_KINDS.includes(kind) ? BEING_KINDS : [kind];
-  return listSkeletons().find(r => kinds.includes(r.kind) && planIsAbout(r, name)) ?? null;
+  return listSkeletons().find(r => r.id !== except && kinds.includes(r.kind) && planIsAbout(r, name)) ?? null;
+}
+
+/**
+ * The plan a request about a known subject (an expedition's track, a vow)
+ * already has: one of its kind about that subject by its id, or by its name
+ * where either was filed by name alone — resolved and retired ones included
+ * (their story was told). Null for a request with no subject.
+ *
+ * @param {Object} req — normalisePlanRequests'
+ * @returns {Object|null}
+ */
+function planOfRequestSubject(req) {
+  const subject = req?.subject;
+  if (!subject) return null;
+  return listSkeletons({ includeInactive: true }).find(r => r.kind === req.kind
+    && ((subject.id && r.subject.id === subject.id) || ((!subject.id || !r.subject.id) && planIsAbout(r, subject.name)))) ?? null;
+}
+
+/**
+ * The plan a decision of a waiting plan joins because it names a subject
+ * another active plan of a being already has (issue #362 AC36; P2-30's "a
+ * plan that names a subject already planned is merged into that plan", on the
+ * by-id path too). A price's new enemy whose narration decided nothing waits
+ * as "the new enemy this price reveals"; the next narration, asked to decide
+ * it by its id, names it as its prose does — "the escort" — and it became a
+ * second decided plan for the escort, with its own truth and clock. Null for
+ * a decided plan (a duplicate holding a truth is a GM's to Retire), a
+ * decision that names no subject, and a plan not of a being.
+ *
+ * @param {Object} waiting — the plan the decision's id names
+ * @param {Object} plan — normalisePlans'
+ * @returns {Object|null}
+ */
+function joinedByName(waiting, plan) {
+  if (!waiting || waiting.truth || !plan?.subject || plan.sameAs || !BEING_KINDS.includes(waiting.kind)) return null;
+  return activePlanAbout(plan.subject, waiting.kind, { except: waiting.id });
 }
 
 /**
@@ -403,19 +726,24 @@ function plannedAs(id, kind) {
  * a Threats page or an NPC's card when it had none of its own — and the
  * waiting plan is retired. Only for a plan not yet decided: a decided
  * duplicate holds a truth of its own, which is a GM's to Retire. Both writes
- * carry the narration, so the X-Card on it puts both back.
+ * carry the narration, so the X-Card on it puts both back. The plan it joins
+ * is the one `sameAs` names, or `target` — the plan the decision's subject
+ * names (joinedByName, issue #362 AC36). A waiting plan filed under its
+ * request's placeholder ("the new enemy this price reveals") gives the plan
+ * it joins no alias: that is no name the story used.
  *
  * @param {Object} waiting — the undecided plan (its id is the answer's)
  * @param {Object} plan — normalisePlans', with `sameAs`
- * @param {{ narrationId?: string|null }} [opts]
+ * @param {{ narrationId?: string|null, target?: Object|null }} [opts]
  * @returns {Promise<Object|null>} the plan it joined, as written
  */
-async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
+async function planAsAnother(waiting, plan, { narrationId = null, target: named = null } = {}) {
   if (waiting.truth) return null;
-  const target = plannedAs(plan.sameAs, waiting.kind);
+  const target = named ?? plannedAs(plan.sameAs, waiting.kind);
   if (!target || target.id === waiting.id) return null;
+  const waitingName = isPlanRequestLabel(waiting.subject.name) ? "" : waiting.subject.name;
   const merged = await updateSkeleton(target.id, r => {
-    let next = withAlias(withAlias(mergePlanInto(r, plan), waiting.subject.name), plan.subject);
+    let next = withAlias(withAlias(mergePlanInto(r, plan), waitingName), plan.subject);
     for (const alias of waiting.aliases ?? []) next = withAlias(next, alias);
     // A plan known only by name takes the waiting plan's page or card.
     if (next.subject.type === "name" && waiting.subject.id && waiting.subject.type !== "name") {
@@ -430,11 +758,15 @@ async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
   return merged;
 }
 
-/** A player character's name, or part of one: never an enemy to plan (the acting PC named in a sidecar). */
+/**
+ * A player character's name, or part of one: never an enemy to plan (the
+ * acting PC named in a sidecar). Titles aside, as the plans' own matching
+ * (samePersonName): "the Captain" is not the PC Captain Ryn (issue #362 AC12).
+ */
 async function namesPlayerCharacter(name) {
   try {
     const { getPlayerActors } = await import("../character/actorBridge.js");
-    return getPlayerActors().some(a => typeof a?.name === "string" && !!personNameMatch(a.name, name));
+    return getPlayerActors().some(a => typeof a?.name === "string" && samePersonName(a.name, name));
   } catch {
     return false;
   }
@@ -503,23 +835,39 @@ async function rollMysteryAnswer() {
  * sidecar apply to add to the narration's own truths — stamped with its id,
  * so the X-Card retracts them with it.
  *
+ * The truth is the one this sidecar leaves on the plan: a `plans` entry for
+ * the same id — the narration recording the change its prose made, or
+ * deciding the plan it reveals — is laid on first (issue #362 AC13). The
+ * ledger was read before applyPlanSideData applied that entry, so a truth
+ * changed and revealed in one beat put the old, contradicted truth in the
+ * scene's facts beside a Lore entry stating the new one, and a plan decided
+ * and revealed in one beat got no scene fact at all. An entry answered
+ * `sameAs`, or one deciding a waiting plan under another plan's subject
+ * (joinedByName), is not laid on: applyPlanSideData joins it to that plan —
+ * the waiting plan retired, its reveal with it — or leaves the plan as it is.
+ *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
  *   narration's beat ends: a plan their end resolved is still its to reveal
  *   (skeletons.js planInPlay, issue #362 D4)
- * @returns {Array<{ subject: string, fact: string }>}
+ * @returns {Array<{ subject: string, fact: string, revealOf: string }>} `revealOf`: the plan's id — the
+ *   reveal files the truth as Lore itself, so the scene's end does not archive it again (issue #362 AC37)
  */
 export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   if (!skeletonsEnabled()) return [];
   const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
+  const decided = new Map(normalisePlans(sidecar?.plans).map(p => [p.id, p]));
   const out = [];
   for (const reveal of normaliseReveals(sidecar?.reveals)) {
     if (!reveal.revealed.includes("truth")) continue;
-    const record = getSkeleton(reveal.id);
-    if (!record || !planInPlay(record, ending) || record.truthRevealed || !record.truth) continue;
+    const stored = getSkeleton(reveal.id);
+    if (!stored || !planInPlay(stored, ending) || stored.truthRevealed) continue;
+    const plan = decided.get(reveal.id);
+    const record = plan && !plan.sameAs && !joinedByName(stored, plan) ? applyPlanToSkeleton(stored, plan) : stored;
+    if (!record.truth) continue;
     out.push(record.kind === "mystery" && record.question
-      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
-      : { subject: record.subject.name, fact: record.truth });
+      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}`, revealOf: record.id }
+      : { subject: record.subject.name, fact: record.truth, revealOf: record.id });
   }
   return out;
 }
@@ -587,6 +935,28 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         }
         continue;
       }
+      // A request about a subject that has a plan already — a vow sworn a
+      // second time (typed, then from its card), an expedition's plan asked
+      // for again — files no second one, as the no-scene path
+      // (fileRequestedPlan) never did (issue #362 AC14): the decision joins
+      // the plan still in play, which takes the subject's id when it was
+      // filed by name alone; a plan whose story was told is left.
+      const known = planOfRequestSubject(req);
+      if (known) {
+        const link = req.subject.id && !known.subject.id ? { ...req.subject } : null;
+        if (known.status === "active" && (plan || link)) {
+          const joined = await updateSkeleton(known.id, r => {
+            const next = plan ? mergePlanInto(r, plan) : r;
+            return link ? { ...next, subject: link } : next;
+          }, { narrationId });
+          if (joined && plan) {
+            out.decided += 1;
+            reportSnapshotEvent("plan_decided");
+            await ensureThreatClock(joined, { narrationId });
+          }
+        }
+        continue;
+      }
       // A request about a known subject (an expedition's track) keeps it, by
       // id; any other takes the name the narration gave it.
       const subject = req.subject ? { ...req.subject } : { type: "name", id: null, name: plan?.subject || req.label };
@@ -609,9 +979,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const existing = getSkeleton(plan.id);
       if (!existing || !planInPlay(existing, ending)) continue;
       // A plan waiting to be decided that the narrator says is a subject
-      // already planned (issue #354 P2-30) joins that plan, and is retired.
-      if (plan.sameAs) {
-        if (await planAsAnother(existing, plan, { narrationId })) {
+      // already planned (issue #354 P2-30) — by its `sameAs`, or by deciding
+      // it under that subject's name (issue #362 AC36) — joins that plan, and
+      // is retired.
+      const named = joinedByName(existing, plan);
+      if (plan.sameAs || named) {
+        if (await planAsAnother(existing, plan, { narrationId, target: named })) {
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
         }
@@ -774,8 +1147,10 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
     if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const campaignLevel = record.createdFrom?.trigger === "significant_threat";
+    // Named by its subject alone (issue #362 D3): "<subject> — escalation"
+    // told every player's screen a hidden plan stood behind the clock.
     const clock = await createClock({
-      name: `${record.subject.name} — escalation`.slice(0, 80),
+      name: record.subject.name.slice(0, 80),
       type: campaignLevel ? "campaign" : "tension", segments: campaignLevel ? 6 : 4,
       narrationId, planId: record.id,
     });
