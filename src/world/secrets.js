@@ -379,6 +379,22 @@ function activePlanAbout(name, kind, { except = null } = {}) {
 }
 
 /**
+ * The plan a request about a known subject (an expedition's track, a vow)
+ * already has: one of its kind about that subject by its id, or by its name
+ * where either was filed by name alone — resolved and retired ones included
+ * (their story was told). Null for a request with no subject.
+ *
+ * @param {Object} req — normalisePlanRequests'
+ * @returns {Object|null}
+ */
+function planOfRequestSubject(req) {
+  const subject = req?.subject;
+  if (!subject) return null;
+  return listSkeletons({ includeInactive: true }).find(r => r.kind === req.kind
+    && ((subject.id && r.subject.id === subject.id) || ((!subject.id || !r.subject.id) && planIsAbout(r, subject.name)))) ?? null;
+}
+
+/**
  * The plan a decision of a waiting plan joins because it names a subject
  * another active plan of a being already has (issue #362 AC36; P2-30's "a
  * plan that names a subject already planned is merged into that plan", on the
@@ -652,6 +668,28 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
           await ensureThreatClock(merged, { narrationId });
+        }
+        continue;
+      }
+      // A request about a subject that has a plan already — a vow sworn a
+      // second time (typed, then from its card), an expedition's plan asked
+      // for again — files no second one, as the no-scene path
+      // (fileRequestedPlan) never did (issue #362 AC14): the decision joins
+      // the plan still in play, which takes the subject's id when it was
+      // filed by name alone; a plan whose story was told is left.
+      const known = planOfRequestSubject(req);
+      if (known) {
+        const link = req.subject.id && !known.subject.id ? { ...req.subject } : null;
+        if (known.status === "active" && (plan || link)) {
+          const joined = await updateSkeleton(known.id, r => {
+            const next = plan ? mergePlanInto(r, plan) : r;
+            return link ? { ...next, subject: link } : next;
+          }, { narrationId });
+          if (joined && plan) {
+            out.decided += 1;
+            reportSnapshotEvent("plan_decided");
+            await ensureThreatClock(joined, { narrationId });
+          }
         }
         continue;
       }

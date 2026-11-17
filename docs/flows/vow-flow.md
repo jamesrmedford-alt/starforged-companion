@@ -344,8 +344,15 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 **The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
 asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an
 Action + Theme, a `vow` plan about the vow by its stable `vowId` — the swear
-passes the inciting card's message id); the scene's sidecar `plans` decides
-it into the GM-only Secrets journal (`secrets.applyPlanSideData`). No scene
+passes the inciting card's message id, and a sheet-made vow's ⚔ Swear it
+(roll) its card's `vowId`: the forced post's `forcedMoveTargetId`
+(`swearVow.buildSwearMovePostForName`), which the pipeline's swear branch
+checks names a vow a PC holds and hands on (`movePipeline.swornVowId` — it
+went by name alone, so a reworded vow lost its plan, issue #362 AC14); a
+typed swear with no vow Item behind it stays name-only); the scene's sidecar `plans` decides
+it into the GM-only Secrets journal (`secrets.applyPlanSideData` — a request
+about a subject that already has a plan, the same vow sworn again, files no
+second one, issue #362 AC14). No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
 plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the

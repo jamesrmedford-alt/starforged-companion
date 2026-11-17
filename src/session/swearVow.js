@@ -846,9 +846,13 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
  * @param {string|null} [actorId] — the PC whose vow it is: the post speaks as
  *   them, so the swear's roll, momentum and oath scene are theirs whoever
  *   presses the button (issue #329 X05)
+ * @param {string|null} [vowId] — the vow's stable id (its card's `vowId`): the
+ *   swear's hidden plan is filed about the vow by it, so a vow reworded on the
+ *   sheet, or fulfilled by a line that does not name it, keeps its plan
+ *   (issue #362 AC14)
  * @returns {{ content: string, flags: object, speaker?: object } | null}
  */
-export function buildSwearMovePostForName(vowName, linkedConnectionName = null, actorId = null) {
+export function buildSwearMovePostForName(vowName, linkedConnectionName = null, actorId = null, vowId = null) {
   const name = String(vowName ?? "").trim();
   if (!name) return null;
   const linked = typeof linkedConnectionName === "string" ? linkedConnectionName.trim() : "";
@@ -859,6 +863,7 @@ export function buildSwearMovePostForName(vowName, linkedConnectionName = null, 
       bypassPacing:     true,
       forcedMoveId:     "swear_an_iron_vow",
       forcedMoveTarget: name,
+      ...(typeof vowId === "string" && vowId ? { forcedMoveTargetId: vowId } : {}),
       // Linked to a connection (🤝 Link): sworn to them — +1, or +2 bonded
       // (issue #325 W18).
       ...(linked ? { swearToConnection: linked } : {}),
@@ -1002,7 +1007,7 @@ export async function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
     isCard: (f) => f.playerVowCard === true,
     roller: (f) => (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId),
     build:  (f, actor) => {
-      const post = buildSwearMovePostForName(f.vowName, f.linkedConnection ?? null, actor?.id ?? null);
+      const post = buildSwearMovePostForName(f.vowName, f.linkedConnection ?? null, actor?.id ?? null, f.vowId ?? null);
       return post ? { content: post.content, flags: post.flags[MODULE_ID] } : null;
     },
   });
