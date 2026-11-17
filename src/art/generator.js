@@ -52,6 +52,11 @@ const MODULE_ID = "starforged-companion";
 // Across clients the claim is on the record (claimFirstPortrait).
 const _portraitsInFlight = new Map();
 
+// This client's regenerations in flight, by entity (`<type>:<host id>` → how
+// many): an own regeneration claim stands only while one runs here — one a
+// reload left does not (regenerationClaimStands, issue #362 AC56).
+const _regenerationsInFlight = new Map();
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
@@ -295,18 +300,59 @@ async function linkFirstPortrait(journalEntryId, entityType, entity, asset, repo
 }
 
 /**
+ * Whether a portrait's one regeneration is spent — used, or claimed by a
+ * regeneration still being made — so Regenerate is not offered (the Entities
+ * panel) nor run (regeneratePortrait). A claim (`regenerationUsed` with
+ * `regenerationClaim: { by, at, token }`) stands while a regeneration is out
+ * (regenerationClaimStands); one a reload left — the page that made it gone
+ * before its image came back — does not: no image came of it, so the
+ * regeneration is not spent (issue #362 AC56). It was a bare
+ * `regenerationUsed`, given back only by the call that set it, so the
+ * portrait kept no Regenerate and the next press locked it for good.
+ *
+ * @param {ArtAsset|null|undefined} asset — the portrait the record names
+ * @param {string} entityType
+ * @param {string} journalEntryId — its entity's host document id
+ * @returns {boolean}
+ */
+export function regenerationSpent(asset, entityType, journalEntryId) {
+  if (!asset?.regenerationUsed) return false;
+  if (asset.locked || asset.superseded) return true;
+  return regenerationClaimStands(asset.regenerationClaim, `${entityType}:${journalEntryId}`);
+}
+
+/**
+ * A regeneration claim stands while it is younger than PORTRAIT_CLAIM_TTL_MS
+ * — an image request and its download are each bounded, so an older one is
+ * one its page dropped — and is this user's with a regeneration in flight on
+ * this client, or another user's who is still in the game: a first
+ * portrait's claim's rule (standingClaimOfAnother). One with no owner was
+ * made before claims carried one: nothing can be making it.
+ */
+function regenerationClaimStands(claim, slot) {
+  if (!claim || typeof claim !== "object") return false;
+  const by = typeof claim.by === "string" ? claim.by : null;
+  const at = Number(claim.at);
+  if (!by || !Number.isFinite(at) || Date.now() - at > PORTRAIT_CLAIM_TTL_MS) return false;
+  if (by === (globalThis.game?.user?.id ?? null)) return (_regenerationsInFlight.get(slot) ?? 0) > 0;
+  return globalThis.game?.users?.get?.(by)?.active !== false;
+}
+
+/**
  * Regenerate a portrait — the one permitted second attempt.
  * Only callable if: portrait exists, regeneration not yet used, not locked.
  *
  * The regeneration is claimed before its image is bought (known-issues
  * REGEN-LINK-REFUSED-SECOND-REGEN): the portrait the record names is marked
- * `regenerationUsed`, so a second press — another GM's included — finds it
- * spent, and only an image that could not be made gives it back. It used to
- * be marked only by the new portrait, once linked: a refused link left the
- * record on a portrait that carried no sign of it, and Regenerate was offered
- * — and billed — again. A regenerated portrait the world did not save (its
- * store or its record write refused) spends it: the earlier portrait stays
- * the entity's, locked, and the GM is told.
+ * `regenerationUsed`, with the claim's owner, time and token
+ * (`regenerationClaim`), so a second press — another GM's included — finds
+ * it claimed, and only an image that could not be made gives it back; a
+ * claim a reload left does not stand (regenerationSpent, issue #362 AC56).
+ * It used to be marked only by the new portrait, once linked: a refused link
+ * left the record on a portrait that carried no sign of it, and Regenerate
+ * was offered — and billed — again. A regenerated portrait the world did not
+ * save (its store or its record write refused) spends it: the earlier
+ * portrait stays the entity's, locked, and the GM is told.
  *
  * @param {string} journalEntryId
  * @param {string} entityType
@@ -330,16 +376,44 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
     return null;
   }
 
-  if (existing?.regenerationUsed) {
+  const slot = `${entityType}:${journalEntryId}`;
+  if (regenerationSpent(existing, entityType, journalEntryId)) {
+    if (regenerationClaimStands(existing.regenerationClaim, slot)) {
+      // A regeneration is out — another GM's, or this GM's own still running
+      // here: its image is the entity's, and no second one is bought.
+      console.debug(`${MODULE_ID} | Art: the portrait for ${entity._id} is already being regenerated — no second image.`);
+      tell(report, "info", `Starforged Companion: The portrait for ${entity.name ?? "this entity"} is already being regenerated — the new one appears when it is done.`);
+      return null;
+    }
     console.warn(`${MODULE_ID} | Art: regeneration already used for ${entity._id}`);
     tell(report, "warn", "Starforged Companion: One regeneration has already been used for this portrait. It is now locked.");
     // Lock it now so this check is fast next time
     await storeArtAsset({ ...existing, locked: true }, campaignState);
     return null;
   }
+  if (existing?.regenerationUsed) {
+    console.debug(`${MODULE_ID} | Art: the regeneration claimed for ${entity._id} came to nothing (its page was reloaded, or its claimant left) — regenerating.`);
+  }
 
-  // The claim — before anything is billed.
-  const claimed = existing ? { ...existing, regenerationUsed: true } : null;
+  _regenerationsInFlight.set(slot, (_regenerationsInFlight.get(slot) ?? 0) + 1);
+  try {
+    return await makeRegeneration(journalEntryId, entityType, entity, existing, campaignState, report);
+  } finally {
+    const left = (_regenerationsInFlight.get(slot) ?? 1) - 1;
+    if (left > 0) _regenerationsInFlight.set(slot, left);
+    else _regenerationsInFlight.delete(slot);
+  }
+}
+
+/** regeneratePortrait's claim, image call and writes, once its slot is this client's. */
+async function makeRegeneration(journalEntryId, entityType, entity, existing, campaignState, report) {
+  // The claim — before anything is billed: who made it, when, and its token
+  // (issue #362 AC56: a bare flag, it outlived a reload as a spent
+  // regeneration).
+  const claimed = existing
+    ? { ...existing, regenerationUsed: true,
+        regenerationClaim: { by: globalThis.game?.user?.id ?? null, at: Date.now(), token: generateId() } }
+    : null;
   if (claimed) {
     try {
       await storeArtAsset(claimed, campaignState);
@@ -391,7 +465,7 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
   // one — as it stands now (another GM's press may have locked it meanwhile).
   if (claimed) {
     const current = (await loadArtAsset(claimed._id)) ?? claimed;
-    await storeArtAsset({ ...current, superseded: true }, campaignState).catch(err =>
+    await storeArtAsset({ ...current, superseded: true, regenerationClaim: null }, campaignState).catch(err =>
       console.warn(`${MODULE_ID} | Art: marking the earlier portrait of ${entity._id} superseded failed:`, err?.message ?? err));
   }
   await attachPortraitToActor(journalEntryId, entityType, lockedAsset.b64, lockedAsset._id);
@@ -402,9 +476,11 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 
 /**
  * An image that could not be made gives the claimed regeneration back: the
- * portrait the record names is as it was before the claim — unlocked too, as
- * it was then (a second GM's press during the call, reading the claim as
- * spent, locks it). A refused write leaves the regeneration spent, logged.
+ * portrait the record names is as it was before the claim, its claim cleared
+ * — unlocked too, as it was then (a press that read a claim as spent locked
+ * it, before claims carried their owner). A refused write leaves the
+ * regeneration claimed, logged; the claim lapses once nothing makes it
+ * (regenerationClaimStands).
  *
  * @param {ArtAsset|null} claimed
  * @param {Object} campaignState
@@ -412,7 +488,11 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 async function releaseRegeneration(claimed, campaignState) {
   if (!claimed) return;
   const current = (await loadArtAsset(claimed._id)) ?? claimed;
-  await storeArtAsset({ ...current, regenerationUsed: false, locked: false }, campaignState).catch(err =>
+  // A later regeneration's claim — made once this one's had lapsed — is that
+  // one's to give back.
+  const token = claimed.regenerationClaim?.token ?? null;
+  if (current.regenerationClaim?.token && current.regenerationClaim.token !== token) return;
+  await storeArtAsset({ ...current, regenerationUsed: false, locked: false, regenerationClaim: null }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | Art: giving the regeneration of ${claimed.entityId ?? "?"} back failed — it stays spent:`, err?.message ?? err));
 }
 
@@ -429,7 +509,7 @@ async function releaseRegeneration(claimed, campaignState) {
 async function keepRegenerationSpent(claimed, entity, campaignState, report) {
   if (claimed) {
     const current = (await loadArtAsset(claimed._id)) ?? claimed;
-    await storeArtAsset({ ...current, regenerationUsed: true, locked: true }, campaignState).catch(err =>
+    await storeArtAsset({ ...current, regenerationUsed: true, locked: true, regenerationClaim: null }, campaignState).catch(err =>
       console.warn(`${MODULE_ID} | Art: locking the earlier portrait of ${entity._id} failed — its regeneration stays spent:`, err?.message ?? err));
   }
   tell(report, "warn", `Starforged Companion: The regenerated portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. The earlier portrait stays, now locked: the one regeneration is spent.`);
@@ -753,6 +833,8 @@ function generateId() {
  * @property {string}  size            — "1024x1024" | "1792x1024"
  * @property {string}  generatedAt     — ISO timestamp
  * @property {boolean} regenerationUsed
+ * @property {{ by: string|null, at: number, token: string }|null} [regenerationClaim]
+ *   — the regeneration's claim while its image is out (regeneratePortrait; issue #362 AC56)
  * @property {boolean} locked
  * @property {boolean} superseded
  */
