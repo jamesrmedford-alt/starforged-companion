@@ -32,7 +32,7 @@ import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import {
   resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed, missPaysPrice,
-  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
+  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie, withoutHiddenRolls,
 } from "./resolver.js";
 import { statedPrice } from "./stakes.js";
 import { buildMischiefAside } from "./mischief.js";
@@ -1629,11 +1629,14 @@ export async function rollMove({
   );
   // A held result's card carries what its wait needs (heldResult.js): the
   // resolution to narrate, the price not yet paid, and the narration's
-  // context — as a round's entry keeps its narration input.
+  // context — as a round's entry keeps its narration input. Not the hidden
+  // rolls behind a plan its narration is asked to decide: the card is the
+  // table's, and every client holds its flags — the narration rolls them on
+  // the GM (resolver.js withHiddenRolls; issue #362 AC15).
   const awaitingUpgrade = hold ? {
     open: true,
     heldPrice,
-    resolution: jsonCopy(resolution),
+    resolution: jsonCopy(withoutHiddenRolls(resolution)),
     relevance: relevance ? {
       resolvedClass: relevance.resolvedClass ?? "embellishment",
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
@@ -1828,14 +1831,18 @@ async function waypointExpedition(interpretation) {
  * round resumed after a reload narrates without rolling again (issue #340):
  * the move, its outcome and match, the outcome text the narrator is given
  * (with the price it paid — the oracle seeds carry a Pay the Price's), and the
- * relevance the roll resolved (its class and matched entities).
+ * relevance the roll resolved (its class and matched entities). The round is a
+ * world setting every client holds, so the hidden rolls behind a plan are not
+ * kept — an expedition's waypoints and its end, a new enemy's role, goal and
+ * disposition: the round's narration rolls them on the GM that narrates it
+ * (resolver.js withoutHiddenRolls / withHiddenRolls; issue #362 AC15).
  *
  * @param {Object} resolution
  * @param {Object|null} [relevance]
  * @returns {Object}
  */
 export function narrationInputFrom(resolution, relevance = null) {
-  return jsonCopy({
+  return jsonCopy(withoutHiddenRolls({
     kind:              "move",
     resolutionId:      resolution?._id ?? null,
     moveId:            resolution?.moveId ?? null,
@@ -1858,7 +1865,7 @@ export function narrationInputFrom(resolution, relevance = null) {
       entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
       entityTypes:   Array.isArray(relevance.entityTypes) ? relevance.entityTypes : [],
     } : null,
-  });
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

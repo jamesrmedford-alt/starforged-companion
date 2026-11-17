@@ -73,8 +73,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
   stat, outcome, outcome text and price, the stakes shown before its roll
-  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds, the
-  player's sanitised line and a latitude line — and the instruction to act for no one else and
+  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds (the
+  round — a world setting every client holds — keeps no hidden plan roll: a
+  new enemy's role, goal and disposition and an expedition plan's rolls are
+  rolled as the round is narrated, on the GM — `withHiddenRolls`, issue #362
+  AC15), the player's sanitised line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent.
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the

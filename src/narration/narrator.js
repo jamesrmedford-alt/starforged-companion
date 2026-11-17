@@ -72,7 +72,7 @@ import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
-import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
+import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls } from '../moves/resolver.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
@@ -1149,6 +1149,12 @@ export async function narrateResolution(resolution, campaignState, options = {})
     );
   }
 
+  // The hidden rolls behind a plan this narration decides, which a store
+  // every client holds kept none of — a held result's card, an upgrade's card
+  // state — are rolled here, on the GM that narrates it (issue #362 AC15). A
+  // player's own key rolls none: plans are a GM's.
+  if (globalThis.game?.user?.isGM === true) resolution = withHiddenRolls(resolution, campaignState);
+
   // A price that revealed a new enemy asks this narration to decide what it
   // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
   // So does an expedition the move began (its track — Phase 3).
@@ -1372,7 +1378,11 @@ export function roundNarrationEntries(round) {
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
 export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
-  const entries = roundNarrationEntries(round);
+  // The hidden rolls behind the plans its entries ask for, which the round —
+  // a world setting every client holds — keeps none of, are rolled here, on
+  // the GM that narrates it (issue #362 AC15).
+  const entries = roundNarrationEntries(round).map(e => (globalThis.game?.user?.isGM === true
+    ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return { posted: null };

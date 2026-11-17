@@ -40,7 +40,9 @@ Two cross-cutting facts to hold onto:
   known-issues RELAY-REFUSED-PRESS-UNTOLD).
   In free-flow play a result whose card offers either is **held** (issue
   #354 P2-10; `movePipeline.rollMove` `holdForUpgrade`, `moves/heldResult.js`):
-  the card carries `flags.awaitingUpgrade` and a **Keep the result** button
+  the card carries `flags.awaitingUpgrade` (the resolution, without the
+  hidden rolls behind a plan its narration decides — rolled when it is
+  narrated, on the GM: issue #362 AC15) and a **Keep the result** button
   (relay `move.keepResult`), its Pay the Price is not paid and it is not
   narrated until the roller burns, improves or keeps — or goes on: their next
   line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence

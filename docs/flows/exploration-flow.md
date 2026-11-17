@@ -190,7 +190,11 @@ record and pin for it).
   (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
   `result.created`: its waypoints (clues), the danger along the way
   (escalation) and what waits at the end (truth), about the track by id, in
-  play while the track is open; the Finish an Expedition that completes it
+  play while the track is open. The request's rolls — two waypoint sightings
+  and an Action + Theme — are hidden: a held result's card and a Batch Mode
+  round keep the request without them (`withoutHiddenRolls`), and the
+  narration rolls them on the GM that narrates it (`withHiddenRolls`, issue
+  #362 AC15); the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
   The plan closes with the track (issue #362 D4): resolved when it completes
   (`completeProgressTrack`, the panel's Complete), retired when it is removed
