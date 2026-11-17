@@ -372,8 +372,11 @@ export async function updateShip(actorId, updates) {
     updatedAt: new Date().toISOString(),
   };
 
-  // Enforce: cursed can only be set, never cleared
-  if (current.cursed && updates.cursed === false) {
+  // Enforce: cursed can only be set, never cleared — by the record's say or
+  // the canonical native impact's (the starship sheet's toggle writes that
+  // alone, so the record may not know it yet; issue #362 AC54).
+  const nativeCursed = document.system?.debility?.cursed === true;
+  if ((current.cursed || nativeCursed) && updates.cursed === false) {
     console.warn(`${MODULE_ID} | Attempted to clear 'cursed' impact — this is permanent.`);
     updated.cursed = true;
   }
@@ -426,17 +429,22 @@ export async function updateShip(actorId, updates) {
   // canonical for battered (isShipBattered) and what the ironsworn starship
   // sheet renders — alongside the flag mirror. The flag payload remains the
   // source of truth for everything else.
+  // Cursed is written whenever the update names it, against the native impact
+  // — not only when the record's value changes: a refused clear changed
+  // nothing, so the asset card's un-ticked Cursed box was never put back and
+  // the card and the impact disagreed (issue #362 AC54). Both writes are
+  // skipped when the store already holds the value.
   const systemPatch = {};
   if (updates.notes !== undefined)    systemPatch["system.notes"] = updated.notes ?? "";
   if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
-  if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
+  if (updates.cursed !== undefined && nativeCursed !== !!updated.cursed) systemPatch["system.debility.cursed"] = !!updated.cursed;
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
   // The STARSHIP asset's own Battered / Cursed conditions mirror the native
   // impacts written above (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
-  if (updates.battered !== undefined || current.cursed !== updated.cursed) {
+  if (updates.battered !== undefined || updates.cursed !== undefined) {
     await setCommandVehicleConditions(document, {
       ...(updates.battered !== undefined ? { battered: !!updated.battered } : {}),
-      ...(current.cursed !== updated.cursed ? { cursed: !!updated.cursed } : {}),
+      ...(updates.cursed !== undefined ? { cursed: !!updated.cursed } : {}),
     });
   }
 
