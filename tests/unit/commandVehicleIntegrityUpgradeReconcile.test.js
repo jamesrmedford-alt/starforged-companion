@@ -146,8 +146,10 @@ describe('a world played before AA20: the integrity the module recorded survives
     expect(notices()).toHaveLength(0);
   });
 
-  it('a new ship record is born reconciled', () => {
-    expect(ShipSchema.integritySheetReconciled).toBe(true);
+  it('a new ship record is not born reconciled — only beside a STARSHIP asset\'s track (issue #362 AC25, shipIntegrityAssetAddedLater.test.js)', () => {
+    // Born reconciled with no track, a sidebar starship's damage was erased by
+    // the asset added later.
+    expect(ShipSchema.integritySheetReconciled).toBe(false);
   });
 });
 

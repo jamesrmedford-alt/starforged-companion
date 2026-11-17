@@ -35,13 +35,24 @@ label naming no site and no tracked place
 unexplored; its name the label written as a name, `nameMatch.generatedName`:
 "the corridor" → "Corridor", issue #354 P2-18), a discovery record of type
 `uncharted` with `workingLabel: true`
-on the active sector's `mapData.discoveries` (the next periphery slot,
-`sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
-persist saves — an upgrade saves `sectors` at once) and its pin
+on the active sector's `mapData.discoveries` (the first periphery cell no
+site of the sector holds, `sectorGenerator.layoutDiscovery` — the next slot by
+count wrapped the seventh site onto the first one's pin, issue #362 AC51; on
+the pipeline's working copy, which its
+persist saves — an upgrade saves `sectors` at once; when the world refuses
+the persist, the record is a step on the GMs' payoff failure card, whose
+Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
+expedition's link named no stored site, issue #362 AC49) and its pin
 (`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
 there it is a site like any other: §3's finish arrives there and §4's reveal
 charts it, under the location's name (the GM may rename it; the Site
-Discovered card says so). With no active sector nothing is recorded.
+Discovered card says so). With no active sector nothing is recorded, nor for
+a label that names a site already on the map — charted or not, by its
+location's name or the working label its record keeps
+(`siteDiscovery.siteNamedBy`): the expedition is linked to that site, so its
+finish arrives there (issue #362 AC50 — after the GM renamed a charted
+destination, a course by its old working label minted a second location,
+record and pin for it).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -69,7 +80,10 @@ Discovered card says so). With no active sector nothing is recorded.
   setting** (`rerouteUnchartedCourse`; maintainer decision): the confirm
   dialog's rationale and the move card (`resolution.courseRerouted`) say why,
   and the dialog's Cancel lets the player re-word. A course named by its pin's
-  Actor (the token drag) is to a charted place and stays.
+  Actor (the token drag) is to a charted place and stays; so is one named by
+  the working label a charted destination's record keeps, its location
+  renamed since — its `moveTargetId` the site's location Actor, which the
+  arrival docks at by id (issue #362 AC50).
 
 ## 1. Setting out
 
@@ -86,8 +100,11 @@ Discovered card says so). With no active sector nothing is recorded.
   resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
   Expedition's arrival too. The **Set a Course resolved** card names the
   place (the arrival's, else the destination's words) and says "Token moved"
-  only when the token moved; a place no pin marks says so, and no position
-  written (none named, no command vehicle) points to `!at` (PT09). It is
+  only when the token moved; a token that did not move says why — no pin
+  marks the place, no ship token on the map, the ship token setting off, no
+  map scene (the token sync's `tokenStayed`; it blamed a missing pin for all of
+  them, issue #362 AC53) — and no position written (none named, no command
+  vehicle) points to `!at` (PT09). It is
   posted after the roll card it summarizes — `applyOutcomeEffects` returns it
   in `afterMoveCard`, which `rollMove` posts after `postMoveResult`; an
   upgrade's posts at once (PT10).
@@ -304,8 +321,12 @@ are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
 ("docked at …"). It arrives at the site the expedition was for — its track's
 `siteId` link, else the unexplored site its label names
-(`siteDiscovery.selectExpeditionSite`, never the sole-site guess) — by the
-site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
+(`siteDiscovery.selectExpeditionSite`, never the sole-site guess; the link is
+read off `listProgressTracks`, whose projection dropped it, so the arrival
+followed the label while the reveal charted the linked site — the ship stayed
+where it set out when the GM had charted the site first or a second unexplored
+site had been recorded since, or docked at another sector's namesake: issue
+#362 AC24) — by the site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
 `currentLocationForEntityId`), so the ship record, its token (onto the site's
 pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored

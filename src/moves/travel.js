@@ -17,6 +17,7 @@
 
 import { MOVES } from "../schemas.js";
 import { moveDisplayName } from "../system/i18n.js";
+import { siteNamedExactly } from "../sectors/precursorSites.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -46,6 +47,28 @@ export function chartedPlaceFor(destination, campaignState, resolvePlace) {
   if (!place) return null;
   if (place.type === "location" && isUnchartedSite(place, campaignState)) return null;
   return place;
+}
+
+/**
+ * The charted site a destination names by the name its discovery record
+ * keeps — an uncharted destination's working label, its location renamed
+ * since (its Site Discovered card invites the GM to): the name resolver knows
+ * the location by its new name only, so a course by the label the story kept
+ * using was "not a charted place", rerouted to an expedition that minted a
+ * second site for it (issue #362 AC50). Its location Actor is listed; the
+ * active sector's first (precursorSites.siteNamedExactly). Null when the site
+ * the label names is not charted — reached by expedition — or there is none.
+ *
+ * @param {string} destination
+ * @param {Object} campaignState
+ * @returns {Object|null} the discovery record
+ */
+function chartedSiteByRecordName(destination, campaignState) {
+  const found = siteNamedExactly(Array.isArray(campaignState?.sectors) ? campaignState.sectors : [], destination,
+    { activeSectorId: campaignState?.activeSectorId ?? null });
+  const site = found?.site ?? null;
+  const listed = Array.isArray(campaignState?.locationIds) ? campaignState.locationIds : [];
+  return site?.discovered === true && typeof site.actorId === "string" && listed.includes(site.actorId) ? site : null;
 }
 
 /** A location still undiscovered: its record unexplored, or its site not yet charted. */
@@ -121,9 +144,12 @@ export async function readForcedTravelDestination(interpretation, { interpret } 
  * onto the resolution so the move card says why too.
  *
  * A course named by its pin's Actor (a token dropped on a settlement pin —
- * `moveTargetId`) is to a charted place and stays. A course naming no
- * destination stays: nothing says where it goes (the caller first tries the
- * scene's destination, sceneDestination).
+ * `moveTargetId`) is to a charted place and stays. So is one named by the
+ * working label a charted destination's record keeps, its location renamed
+ * since: it stays, its `moveTargetId` the site's location Actor, which the
+ * arrival docks at by id (issue #362 AC50). A course naming no destination
+ * stays: nothing says where it goes (the caller first tries the scene's
+ * destination, sceneDestination).
  *
  * @param {Object} interpretation — mutated
  * @param {Object} campaignState
@@ -136,6 +162,11 @@ export function rerouteUnchartedCourse(interpretation, campaignState, { resolveP
   const destination = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget.trim() : "";
   if (!destination) return null;
   if (chartedPlaceFor(destination, campaignState, resolvePlace)) return null;
+  const charted = chartedSiteByRecordName(destination, campaignState);
+  if (charted) {
+    interpretation.moveTargetId = charted.actorId;
+    return null;
+  }
 
   const to = "undertake_an_expedition";
   const reroute = { from: "set_a_course", destination };

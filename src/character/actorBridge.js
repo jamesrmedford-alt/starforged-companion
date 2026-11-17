@@ -862,11 +862,13 @@ export function readCommandVehicleIntegrity(shipActor) {
 }
 
 /**
- * What a ship record from before the STARSHIP asset's track became canonical
- * reconciles to (issue #347 AB08): the lower of the record's integrity and
- * the track's, within the track — or null for a record already reconciled
- * (`integritySheetReconciled`, set by every ship write since) or one with no
- * integrity of its own. Up to v1.8.0 the module applied its losses to the
+ * What a ship record not reconciled with its STARSHIP asset's track — one
+ * from before that track became canonical (issue #347 AB08), or one kept
+ * while the ship had no STARSHIP asset, the asset added since (issue #362
+ * AC25) — reconciles to: the lower of the record's integrity and the track's,
+ * within the track — or null for a record already reconciled
+ * (`integritySheetReconciled`, set by every ship write that saw the track) or
+ * one with no integrity of its own. Up to v1.8.0 the module applied its losses to the
  * record alone, so record 2 beside sheet 5 is damage the sheet never saw, and
  * reading — then mirroring — the sheet's 5 erased it from both stores. Every
  * reader of the command vehicle's integrity (registry withSheetNotes,

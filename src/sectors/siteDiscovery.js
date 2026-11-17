@@ -14,7 +14,7 @@
  */
 
 import { generatedName } from "../entities/nameMatch.js";
-import { selectSectorSite, buildSiteLocationData } from "./precursorSites.js";
+import { selectSectorSite, siteNamedExactly, buildSiteLocationData } from "./precursorSites.js";
 import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -74,6 +74,26 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
   });
 }
 
+/**
+ * The site a label names exactly, charted or not — by its location Actor's
+ * name or the name its record keeps (an uncharted destination's working
+ * label, after the GM renamed its location) — the active sector's first, or
+ * null (precursorSites.siteNamedExactly). An Undertake an Expedition by a
+ * charted destination's old working label is for that site — linked to it,
+ * so its finish arrives there — and records no second one (issue #362 AC50).
+ * A read of the given state.
+ *
+ * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
+ * @param {string|null} label
+ * @returns {{ sector: Object, site: Object }|null}
+ */
+export function siteNamedBy(state, label) {
+  return siteNamedExactly(Array.isArray(state?.sectors) ? state.sectors : [], label, {
+    activeSectorId: state?.activeSectorId ?? null,
+    siteName:       siteDisplayName,
+  });
+}
+
 // The site type an uncharted destination is recorded as (recordUnchartedDestination).
 export const UNCHARTED_SITE_TYPE = "uncharted";
 
@@ -93,7 +113,9 @@ export const UNCHARTED_SITE_TYPE = "uncharted";
  *
  * The discovery record goes onto the caller's `campaignState` — the move
  * pipeline's working copy, which its persist saves (an upgrade saves it at
- * once); the location Actor is listed in the store as it is made. With no
+ * once; a refused persist puts it on the GMs' payoff failure card, whose
+ * Retry saves it — saveUnchartedSite, issue #362 AC49); the location Actor is
+ * listed in the store as it is made. With no
  * active sector, or a label that already names a site or a tracked place,
  * nothing is recorded. GM-gated by the caller.
  *
@@ -101,7 +123,7 @@ export const UNCHARTED_SITE_TYPE = "uncharted";
  * @param {Object} campaignState — mutated: the sector's discoveries, locationIds
  * @param {Object} [deps] — injection seams
  * @param {Function} [deps.createLoc] — (data, state) => Promise — entities/location.js createLocation
- * @param {Function} [deps.layout] — (site, index, mapSettlements) => discovery — sectorGenerator layoutDiscovery
+ * @param {Function} [deps.layout] — (site, index, mapSettlements, occupied) => discovery — sectorGenerator layoutDiscovery
  * @param {Function} [deps.addPin] — (scene, discovery, mapSettlements) => Promise — sceneBuilder addSiteToScene
  * @param {Function} [deps.getScene] — (sceneId) => Scene|null
  * @returns {Promise<{ sector: Object, site: Object }|null>}
@@ -118,8 +140,12 @@ export async function recordUnchartedDestination(label, campaignState, deps = {}
   const sector = (Array.isArray(campaignState.sectors) ? campaignState.sectors : [])
     .find(s => s?.id && s.id === campaignState.activeSectorId && s.mapData) ?? null;
   if (!sector) return null;
-  // A destination already on the map — a site it names — is that site's.
-  if (selectExpeditionSite(campaignState, name)) return null;
+  // A destination already on the map — a site it names — is that site's: the
+  // unexplored one the expedition ladder finds, or any it names exactly,
+  // charted since — by the working label its record keeps once the GM has
+  // renamed its location: read as "no such site", a second location, record
+  // and pin were made for it (issue #362 AC50).
+  if (selectExpeditionSite(campaignState, name) || siteNamedBy(campaignState, name)) return null;
 
   const createLoc = deps.createLoc ?? (async (data, state) => (await import("../entities/location.js")).createLocation(data, state));
   const layout    = deps.layout    ?? (async (...args) => (await import("./sectorGenerator.js")).layoutDiscovery(...args));
@@ -140,7 +166,9 @@ export async function recordUnchartedDestination(label, campaignState, deps = {}
   };
   const mapSettlements = sector.mapData.settlements ?? [];
   const discoveries    = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
-  const discovery = { ...(await layout(site, discoveries.length, mapSettlements)), workingLabel: true };
+  // The first cell none of the sector's sites holds — the next slot by count
+  // wrapped the seventh onto the first site's pin (issue #362 AC51).
+  const discovery = { ...(await layout(site, discoveries.length, mapSettlements, discoveries)), workingLabel: true };
 
   // The location Actor first — the record links it. A refused creation
   // records nothing: no record without its place.
@@ -261,6 +289,42 @@ export async function saveSiteDiscovered({ sectorId = null, siteId = null } = {}
     return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | saveSiteDiscovered: the world refused the write:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+  }
+}
+
+/**
+ * Save an uncharted destination's discovery record onto its sector in the
+ * latest stored campaignState — the record of the move that recorded it
+ * refused, applied again from the GMs' payoff failure card (issue #362 AC49;
+ * the issue #331 X18 rule). Its location Actor and map pin were made at once
+ * and the expedition links the record by id; only the record rode on the
+ * move's record, so without it the link named no stored site and the Finish
+ * an Expedition that completed it charted nothing. A record already there is
+ * left as it is. Read and written at its turn on the client's campaignState
+ * write chain (CAMPSTATE-CHAIN-REST).
+ *
+ * @param {{ sectorId?: string|null, site?: Object|null }} ref — the record as recordUnchartedDestination made it
+ * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ */
+export async function saveUnchartedSite({ sectorId = null, site = null } = {}) {
+  if (!sectorId || typeof site?.id !== "string" || !site.id || site.type !== UNCHARTED_SITE_TYPE) {
+    return { ok: false, reason: "invalid step" };
+  }
+  try {
+    return await serialiseCampaignStateWrite(async () => {
+      const latest  = storedState() ?? {};
+      const sectors = Array.isArray(latest.sectors) ? latest.sectors : [];
+      const sector  = sectors.find(s => s?.id === sectorId && s.mapData) ?? null;
+      if (!sector) return { ok: false, reason: "sector-gone" };
+      const discoveries = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
+      if (discoveries.some(d => d?.id === site.id)) return { ok: true };
+      const recorded = { ...sector, mapData: { ...sector.mapData, discoveries: [...discoveries, { ...site }] } };
+      await game.settings.set(MODULE_ID, "campaignState", { ...latest, sectors: sectors.map(s => (s === sector ? recorded : s)) });
+      return { ok: true };
+    }, "saveUnchartedSite");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | saveUnchartedSite: the world refused the write:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: String(err?.message ?? err) };
   }
 }

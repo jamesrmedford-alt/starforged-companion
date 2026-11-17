@@ -2262,10 +2262,12 @@ async function applyOutcomeEffects({
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
 
     // Whether the ship's position was written, and its token moved — the
-    // Set a Course card says so only when it did (issue #348 PT09).
-    let docked     = null;
-    let tokenMoved = false;
-    let arrivedAt  = null;
+    // Set a Course card says so only when it did (issue #348 PT09), and why
+    // it did not (issue #362 AC53).
+    let docked      = null;
+    let tokenMoved  = false;
+    let tokenStayed = null;
+    let arrivedAt   = null;
     if (positioning) {
       const tokenReport = {};
       docked = await maybeUpdateShipPositionFromName(
@@ -2276,7 +2278,8 @@ async function applyOutcomeEffects({
           : "set_a_course",
         { entityId: named?.id ?? destinationId, report: tokenReport },
       );
-      tokenMoved = tokenReport.tokenMoved === true;
+      tokenMoved  = tokenReport.tokenMoved === true;
+      tokenStayed = tokenReport.tokenStayed ?? null;
 
       // When the id and the name both miss, the place the ship just docked at:
       // the position's word scan finds "Bleakhold" in "the expedition to
@@ -2339,7 +2342,7 @@ async function applyOutcomeEffects({
     // roll card, so the pipeline posts it after that card (issue #348 PT10);
     // an upgrade's roll card is already on the table.
     if (resolution.moveId === "set_a_course" && positioning) {
-      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved })
+      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
         .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
       if (upgrade) await postCard();
       else out.afterMoveCard.push(postCard);
@@ -2389,7 +2392,7 @@ async function applyOutcomeEffects({
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
-            const { selectExpeditionSite, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
+            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
             let   linked = selectExpeditionSite(campaignState, label);
             // A destination that is no site and no tracked place — the
@@ -2397,12 +2400,22 @@ async function applyOutcomeEffects({
             // the active sector under the expedition's working label, with its
             // location and map pin (issue #348 PT07): the expedition is for it,
             // and the Finish an Expedition that completes it charts it and
-            // docks there. It never became a place in the game.
+            // docks there. It never became a place in the game. A site the
+            // label names exactly, charted since — by the working label its
+            // record keeps, its location renamed — is the one it is for, by
+            // the link: a second site was minted for it (issue #362 AC50).
             if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
-              linked = await recordUnchartedDestination(label, campaignState);
-              // The pipeline's persist saves its working copy; an upgrade's
-              // record is saved here, as its arrival's location is.
-              if (linked && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
+              linked = siteNamedBy(campaignState, label);
+              const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
+              // The pipeline's persist saves its working copy — when the world
+              // refuses it the record is a step on the GMs' card, whose Retry
+              // saves it: it was lost, and the expedition's link named no
+              // stored site (issue #362 AC49). An upgrade's record is saved
+              // here, as its arrival's location is.
+              if (recorded && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
+              else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
+                site: recorded.site, name: recorded.site?.name ?? null });
+              linked ??= recorded;
             }
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
@@ -3936,8 +3949,11 @@ async function handleClearSiteCommand(message) {
       throw err;
     }
     if (cleared) {
+      // The site's own kind: an uncharted destination (issue #348 PT07) is no
+      // derelict — every type but a vault was worded as one (issue #362 AC52).
+      const kind = { vault: "vault", derelict: "derelict" }[cleared.site.type] ?? "place";
       await ChatMessage.create({
-        content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${cleared.site.type === "vault" ? "vault" : "derelict"} is fully explored. Its secrets are yours — or spent.</p></div>`,
+        content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${kind} is fully explored. Its secrets are yours — or spent.</p></div>`,
         flags:   { [MODULE_ID]: { siteCleared: true, siteId: cleared.site.id } },
       });
     } else {
@@ -4611,6 +4627,18 @@ function arrivalNarratorLine(place, outcome) {
   return `[ARRIVAL: The ship has ARRIVED at ${where || "its destination"}. Open the scene there — not on the departure or the journey. ${how}; end the beat on something unresolved there.]`;
 }
 
+// Why the Set a Course card's token did not move — the token sync's
+// `tokenStayed` (sectorSceneHooks syncCommandVehicleTokenToPosition). A reason
+// it does not name ("not-gm") says nothing more than that the token stayed.
+const TOKEN_STAYED_WHY = {
+  "no-pin":    "no sector-map pin marks it",
+  "no-token":  "there is no ship token on the sector map",
+  "no-scene":  "its sector has no map scene",
+  "off":       "the ship token is turned off in the settings",
+  "no-anchor": "no settlement or site pin anchors that position",
+  "refused":   "the world did not take the token's move",
+};
+
 /**
  * F16 Phase F (F15 fold-in): post an informational follow-up card to chat
  * when Set a Course resolves to a non-miss, so players can see that the
@@ -4624,10 +4652,11 @@ function arrivalNarratorLine(place, outcome) {
  *
  * @param {string|null} destination — the place reached, by name (null: none named)
  * @param {Object} resolution — full move resolution from resolveMove()
- * @param {{ docked?: boolean, tokenMoved?: boolean }} [map] — whether the ship's
- *   position was written, and whether its sector-map token moved
+ * @param {{ docked?: boolean, tokenMoved?: boolean, tokenStayed?: string|null }} [map] — whether
+ *   the ship's position was written, whether its sector-map token moved, and
+ *   why not (syncCommandVehicleTokenToPosition's `tokenStayed`)
  */
-async function postSetACourseFeedbackCard(destination, resolution, { docked = false, tokenMoved = false } = {}) {
+async function postSetACourseFeedbackCard(destination, resolution, { docked = false, tokenMoved = false, tokenStayed = null } = {}) {
   // The place by name — the arrival's, or the scene's established destination
   // the pipeline read for a line that named none. It said "the destination"
   // for a course that named no place, and "Token moved" whether or not the
@@ -4638,9 +4667,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
     : resolution.outcome === "weak_hit"
       ? `<p>Arrived at ${dest ?? "the destination"} with a cost or complication — see the suffer prompt for your choice.</p>`
       : `<p>Course not held — the ship did not arrive.</p>`;
+  // Why the token stayed, as far as it is known: the card blamed a missing
+  // pin whatever the reason — no ship token on the map, the setting off, a
+  // pin that was there (issue #362 AC53).
+  const why = TOKEN_STAYED_WHY[tokenStayed] ?? null;
   const mapLine = resolution.outcome === "miss" ? ""
     : tokenMoved && dest ? `<p>Token moved to ${dest}.</p>`
-    : docked && dest ? `<p>The ship's position is now ${dest}; no sector-map pin marks it, so its token did not move.</p>`
+    : docked && dest ? `<p>The ship's position is now ${dest}; its sector-map token did not move${why ? ` — ${why}` : ""}.</p>`
     : `<p>The ship's position was not updated${dest ? "" : " — no destination was named"}. Type <code>!at &lt;place&gt;</code> to set where it is.</p>`;
   try {
     await ChatMessage.create({
@@ -5160,9 +5193,10 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
 }
 
 // What a working copy holds that only the write saving it puts in the world —
-// the move pipeline's legacy marks, an arrival, a site reveal — as payoff
-// steps, by the copy (issue #331 X18). Read when persistResolution's write is
-// refused: the GMs' card lists them, and its Retry applies each alone.
+// the move pipeline's legacy marks, an arrival, a site reveal, an uncharted
+// destination's record (issue #362 AC49) — as payoff steps, by the copy
+// (issue #331 X18). Read when persistResolution's write is refused: the GMs'
+// card lists them, and its Retry applies each alone.
 const UNSAVED_ON_COPY = new WeakMap();
 
 function noteUnsavedOnCopy(campaignState, step) {
@@ -5174,11 +5208,11 @@ function noteUnsavedOnCopy(campaignState, step) {
 
 /**
  * A write of persistResolution's was refused. The move's record — its one
- * campaignState write: the working copy's legacy marks, arrival and site
- * reveal never reached the world. The roller's meters — the Actor write
- * before it (issue #336 Y16): written apart, so the record was still saved
- * unless it was refused as well (`recordSaved`). The move's suffer-choice
- * card likewise (ERROR-TEXT-BLAMES-KEY — its refusal was swallowed, the cost
+ * campaignState write: the working copy's legacy marks, arrival, site reveal
+ * and uncharted destination's record never reached the world. The roller's
+ * meters — the Actor write before it (issue #336 Y16): written apart, so the
+ * record was still saved unless it was refused as well (`recordSaved`). The
+ * move's suffer-choice card likewise (ERROR-TEXT-BLAMES-KEY — its refusal was swallowed, the cost
  * never paid). Tell the GM running the pipeline which (not the API key — the
  * move resolved), and put each owed step on the GMs' payoff failure card,
  * whose Retry applies it alone (issue #331 X18; the #306 R04 / #315 S08 /
@@ -6397,6 +6431,7 @@ const SUFFER_ASSET_TRACKS = { withstand_damage: "integrity", companion_takes_a_h
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
   "site-gone": "the site is no longer on the sector map",
+  "sector-gone": "its sector is no longer stored",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
@@ -6473,6 +6508,10 @@ function payoffStepRecord(f) {
     case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
     case "arrival":     return { step: "arrival", locationId: f.locationId ?? null, locationType: f.locationType ?? null, name: f.name ?? null };
     case "site":        return { step: "site", sectorId: f.sectorId ?? null, siteId: f.siteId ?? null, name: f.name ?? null };
+    case "uncharted":   return { step: "uncharted", sectorId: f.sectorId ?? null, name: f.name ?? null,
+      site: f.site ? { id: f.site.id ?? null, type: f.site.type ?? null, name: f.site.name ?? null, discovered: false,
+        gridX: f.site.gridX ?? null, gridY: f.site.gridY ?? null, nearestSettlementId: f.site.nearestSettlementId ?? null,
+        actorId: f.site.actorId ?? null, workingLabel: true } : null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -6537,6 +6576,15 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === f.siteId);
         const now    = !site ? " It is no longer on the map." : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
         return `The site ${escapeChatHtml(f.name ?? "it reached")} charted as discovered — ${why}.${now}`;
+      }
+      case "uncharted": {
+        // An uncharted destination whose move record the world refused (issue #362 AC49).
+        const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
+        const onMap  = !!sector?.mapData?.discoveries?.some?.(d => d?.id === f.site?.id);
+        const now    = !sector ? " Its sector is no longer stored."
+          : onMap ? " It is on the map now."
+          : " Until it is, the expedition that set out for it charts nothing when it is finished.";
+        return `The uncharted destination ${escapeChatHtml(f.name ?? "the crew set out for")} recorded on the sector map — ${why}.${now}`;
       }
       case "clocks": {
         // A session-start campaign clock advance the world refused (issue #316 T04).
@@ -6682,6 +6730,11 @@ async function runPayoffStep(s, card, copies) {
       // A move's site reveal whose record the world refused (issue #331 X18).
       const { saveSiteDiscovered } = await import("./sectors/siteDiscovery.js");
       return saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+    }
+    case "uncharted": {
+      // An uncharted destination's record, whose move record the world refused (issue #362 AC49).
+      const { saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
+      return saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
     }
     case "clocks": {
       // A session-start clock advance the world refused: the rolled fills are
@@ -7831,7 +7884,8 @@ async function handleAtCommand(message) {
  * that resolves to no settlement / planet / location (issue #321 U52, U56).
  * `opts.report`, when given, gets `tokenMoved`: whether the sector-map token
  * now stands on the pin the position names (the Set a Course card says
- * "Token moved" only then — issue #348 PT09).
+ * "Token moved" only then — issue #348 PT09) — and, when it did not move,
+ * `tokenStayed`: why (syncCommandVehicleTokenToPosition; issue #362 AC53).
  */
 export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null, report = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
@@ -7854,7 +7908,7 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // to the new position. The drag path already moved its own Token
     // (moveCommandVehicleTokenToDestination), so scene_token skips the sync.
     if (source !== "scene_token") {
-      const token = await syncCommandVehicleTokenToPosition(position, campaignState).catch(err => {
+      const token = await syncCommandVehicleTokenToPosition(position, campaignState, { report }).catch(err => {
         console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err);
         return null;
       });

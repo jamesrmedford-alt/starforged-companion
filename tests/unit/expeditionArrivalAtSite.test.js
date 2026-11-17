@@ -5,7 +5,7 @@
 //
 // An unexplored site's pin reads "Unexplored Site" until it is revealed, so
 // the expedition the crew undertakes toward it is named in their words ("the
-// derelict signal") — never the site's hidden generated name. The arrival
+// distress beacon") — never the site's hidden generated name. The arrival
 // inferred the position from that label alone (`maybeUpdateShipPositionFromName
 // (moveTarget, …, "expedition")`, with no entity id for a Finish an
 // Expedition), before the reveal resolved the site: the label named no place,
@@ -15,7 +15,10 @@
 // the site the expedition was for — its track's `siteId` link, else the
 // unexplored site its label names — by the site's location Actor id, as a
 // token-drop Set a Course arrives by id (issue #321 U52). An expedition whose
-// label names another place arrives there, never at a guessed site.
+// label names another place arrives there, never at a guessed site. The
+// linked cases use a label with no site-type word ("derelict", "wreck",
+// "ghost", "vault"): with one, the label ladder's type-keyword rung found the
+// site and hid that the arrival never saw the link (issue #362 AC24).
 //
 // Production wiring: a player's typed line → the real move pipeline on the
 // canonical GM (interpreter / dice / Claude stubbed at their boundaries).
@@ -170,8 +173,8 @@ const position = () => ship.flags[MODULE_ID].ship.position;
 const state    = () => table.world.campaignState();
 
 describe('finishing the expedition that charts a site arrives at that site', () => {
-  it('an expedition the crew named in their own words ("the derelict signal", linked to the site): the current location becomes the revealed site', async () => {
-    await play('the derelict signal', { siteLinked: true });
+  it('an expedition the crew named in their own words ("the distress beacon", linked to the site): the current location becomes the revealed site', async () => {
+    await play('the distress beacon', { siteLinked: true });
 
     // The finish revealed the linked site (the setup is real).
     expect(state().sectors[0].mapData.discoveries[0].discovered).toBe(true);
@@ -181,14 +184,14 @@ describe('finishing the expedition that charts a site arrives at that site', () 
   }, 30_000);
 
   it('…and the ship position names the site, not the label as free text', async () => {
-    await play('the derelict signal', { siteLinked: true });
+    await play('the distress beacon', { siteLinked: true });
 
-    // It was { nearestLocationId: null, freeText: 'the derelict signal', updatedBy: 'expedition' }.
+    // It was { nearestLocationId: null, freeText: 'the distress beacon', updatedBy: 'expedition' }.
     expect(position()).toMatchObject({ nearestLocationId: 'actor-site', nearestSettlementId: null, sectorId: 'sec-1', updatedBy: 'expedition' });
   }, 30_000);
 
   it('…and the map follows: the token leaves Bleakhold for the site pin', async () => {
-    await play('the derelict signal', { siteLinked: true });
+    await play('the distress beacon', { siteLinked: true });
 
     expect(token.update).toHaveBeenCalledWith({ x: SITE_XY.x, y: SITE_XY.y }, { sfcPositionSync: true });
     expect({ x: token.x, y: token.y }).toEqual(SITE_XY);
