@@ -662,17 +662,26 @@ describe('enrichForcedMoveStat', () => {
     expect(interp.statUsed).toBe('edge');
   });
 
-  it('nothing to choose — one stat, a progress or no-roll move, or "whichever is higher" — makes no reading', async () => {
+  it('nothing to read — a progress or no-roll move, or "whichever is higher" — makes no reading', async () => {
     const interpret = reads('wits');
     for (const [moveId, statUsed] of [
-      ['gather_information', 'wits'], ['swear_an_iron_vow', 'heart'], ['take_decisive_action', null],
-      ['reach_a_milestone', null], ['endure_harm', 'health'], ['endure_stress', 'spirit'],
+      ['take_decisive_action', null], ['reach_a_milestone', null], ['endure_harm', 'health'], ['endure_stress', 'spirit'],
     ]) {
       const interp = forced(moveId, statUsed);
       expect(await enrichForcedMoveStat(interp, { interpret }), moveId).toBeNull();
       expect(interp.statUsed, moveId).toBe(statUsed);
     }
     expect(interpret).not.toHaveBeenCalled();
+  });
+
+  it('one stat to roll: read for its stakes alone (issue #362 D11), the listed stat kept', async () => {
+    for (const [moveId, statUsed] of [['gather_information', 'wits'], ['swear_an_iron_vow', 'heart']]) {
+      const interpret = reads('shadow');
+      const interp = forced(moveId, statUsed);
+      expect(await enrichForcedMoveStat(interp, { interpret }), moveId).toBeNull();
+      expect(interpret, moveId).toHaveBeenCalledTimes(1);
+      expect(interp.statUsed, moveId).toBe(statUsed);
+    }
   });
 
   it('a stat the move does not list keeps the listed one', async () => {
@@ -682,7 +691,7 @@ describe('enrichForcedMoveStat', () => {
   });
 
   it('a failed reading keeps the listed stat and says so', async () => {
-    expectConsoleError(/reading the stat failed/);
+    expectConsoleError(/reading the line failed/);
     const interp = forced('face_danger', 'edge');
     const interpret = vi.fn(async () => { throw new Error('overloaded'); });
     expect(await enrichForcedMoveStat(interp, { interpret })).toBeNull();
