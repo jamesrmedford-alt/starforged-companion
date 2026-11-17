@@ -258,7 +258,6 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
         // random set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
         pronouns:                  meta.target.pronouns ?? "",
         sectorId:                  campaignState.activeSectorId ?? null,
-        firstAppearance:           campaignState.currentSessionId ?? "",
         portraitSourceDescription: meta.target.description ?? "",
       }, campaignState);
       await postCreationEnrichment("connection", connection, campaignState).catch(err =>

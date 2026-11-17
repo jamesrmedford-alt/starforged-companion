@@ -1967,7 +1967,6 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // A round's acting PCs: its draft card asks which of them a new
       // connection belongs to (issue #342 D3).
       actorIds:             options.actorIds ?? null,
-      sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
       // (issue #325 W23); the player's line says which when the narration
@@ -4706,7 +4705,6 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     await applyEntityRenames(detection.renames, campaignState, { narrationId });
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
-      sessionId:            campaignState?.currentSessionId ?? '',
       source:               options.source ?? 'paced_narrative',
       actorId:              options.actorId ?? null,
       narrationId,

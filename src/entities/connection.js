@@ -270,9 +270,8 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
   const ticksPerMark = RANK_TICKS[connection.rank] ?? RANK_TICKS.dangerous;
   const ticksAdded   = ticksPerMark * marks;
 
-  // Update the progress track (stored separately via progressTrackId)
-  // If no progress track exists yet, the UI layer should create one first.
-  // Here we just update the connection's cached tick count for context injection.
+  // The relationship track is the record's own `relationshipTicks` (mirrored
+  // onto each PC's bond Item below).
   const currentTicks = connection.relationshipTicks ?? 0;
   const newTicks     = Math.min(40, currentTicks + ticksAdded);
 

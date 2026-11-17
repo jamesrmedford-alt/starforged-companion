@@ -492,7 +492,12 @@ of them; it was told every NPC card, and leaned toward a roll whenever a line
 addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
-writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).
+writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN),
+and so are `progressTrackId`, `firstAppearance` (written by the inciting vow's
+target and Make a Connection's auto-create, read by nothing), `loremasterNotes`
+(only ever its empty default) and `playerVisible` (a "GM-only record" switch
+nothing implemented — a secret NPC's agenda is its hidden plan) — issue #362
+AC81.
 The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that

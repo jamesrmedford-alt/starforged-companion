@@ -670,7 +670,6 @@ function detectionFromParsed(parsed, campaignState) {
  *   queued — the round's narration is several characters', so its first
  *   connection is not the first hit's. `lineText` is the hit's own entry's
  *   line, in place of `options.lineText` (ROUND-CONNECTION-LINE-JOINED).
- * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
  *   anything else / omitted is treated as "move_resolution" (default).
@@ -749,7 +748,6 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           goal:                      seedData.goal,
           pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
-          firstAppearance:           options.sessionId ?? "",
           // The narration that made them: an X-Card on it takes the card
           // away again while nobody has used it (retractNarrationConnections
           // — issue #338 D6(ii)).
