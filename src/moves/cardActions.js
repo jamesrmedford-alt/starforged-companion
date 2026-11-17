@@ -40,6 +40,7 @@
 
 import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
+import { messageAuthorId } from "../multiplayer/speaker.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
@@ -890,7 +891,12 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
  * The roller is the card's (`spec.roller`, by default its `actorId`): their
  * player or a GM may press it, and the move speaks as that PC. A card that
  * names no roller rolls for the clicker's own PC (the payload's `actorId`,
- * which the requester must own); with none relayed, it is a GM's to press.
+ * which the requester must own); with none relayed, it is a GM's to press —
+ * and a card whose move posts a player's own line again (`spec.lineSpeaker`)
+ * pressed by a GM is that line's typist's: it speaks as the line was typed
+ * and names who typed it (`lineAuthorId`, which the pipeline rolls as theirs
+ * — speaker.js), never the PC a GM's press relays (a GM owns every Actor, so
+ * that was the first PC — another player's character — issue #362 AC74).
  * One press per card: the GM-authored card is claimed (`spec.claim`) before
  * the post, behind the in-flight guard, and a post that fails releases the
  * claim. The forced move is held while the move lock or the session gate
@@ -909,10 +915,11 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
  * @param {(f: Object) => boolean} [spec.offers] — a pick: the press names one
  *   of the card's own choices (the payload is client-asserted); false refuses
  *   it, `not-on-card`
- * @param {(f: Object, card: ChatMessage) => Object|null} [spec.lineSpeaker] —
+ * @param {(f: Object, card: ChatMessage) => ({ alias: string, authorId?: string }|null)} [spec.lineSpeaker] —
  *   who the forced move speaks as when no PC rolls it (a player's own line
- *   posted again): it spoke as the presser — a GM's press put the player's
- *   words under the GM's name (issue #348 PT14)
+ *   posted again), and who typed it: it spoke as the presser — a GM's press
+ *   put the player's words under the GM's name (issue #348 PT14), or under
+ *   the first PC's (issue #362 AC74)
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
 export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
@@ -940,7 +947,11 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
 
   const rolled  = spec.roller ? spec.roller(f) : f.actorId;
   const cardActorId = typeof rolled === "string" && rolled ? rolled : null;
-  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  // A GM's press of a player's own line with no PC named on its card is the
+  // line's (issue #362 AC74): the PC it relays is the GM's fallback — the
+  // first PC, another player's, who then spoke the line and made the move.
+  const gmPressOfLine = !cardActorId && typeof spec.lineSpeaker === "function" && ctx?.requesterIsGM === true;
+  const actorId = cardActorId ?? (gmPressOfLine ? null : (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null));
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
@@ -966,12 +977,16 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
-    const lineSpeaker = actor ? null : (spec.lineSpeaker?.(f, message) ?? null);
+    const line = actor ? null : (spec.lineSpeaker?.(f, message) ?? null);
+    const lineAlias = typeof line?.alias === "string" && line.alias ? line.alias : null;
     try {
       await ChatMessage.create({
         content: move.content,
-        ...(actor ? { speaker: speakerFor(actor) } : lineSpeaker ? { speaker: lineSpeaker } : {}),
+        ...(actor ? { speaker: speakerFor(actor) } : lineAlias ? { speaker: { alias: lineAlias } } : {}),
         flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true,
+          // Who typed the line: its move is theirs — their own PC, or none
+          // (speaker.js resolveSpeakerActorId, issue #362 AC74).
+          ...(!actor && typeof line?.authorId === "string" && line.authorId ? { lineAuthorId: line.authorId } : {}),
           ...sourceCardFlag(messageId, claim, false, { value: move.stamp ?? true }) } },
       });
     } catch (err) {
@@ -1111,8 +1126,10 @@ export function applyNotRolledNarrate(payload = {}, ctx = {}) {
     isCard: (f) => !!f.moveNotRolledNotice && f.narrateOffered === true
       && typeof f.restoreLine === "string" && !!f.restoreLine,
     roller: (f) => (typeof f.lineActorId === "string" && f.lineActorId ? f.lineActorId : null),
+    // The line's speaker and typist, as the notice recorded them (issue #362 AC74).
     lineSpeaker: (f) => (f.lineSpeaker && typeof f.lineSpeaker === "object" && f.lineSpeaker.alias
-      ? { alias: String(f.lineSpeaker.alias) } : null),
+      ? { alias: String(f.lineSpeaker.alias), ...(typeof f.lineAuthorId === "string" && f.lineAuthorId ? { authorId: f.lineAuthorId } : {}) }
+      : null),
     build: (f) => ({ content: f.restoreLine, flags: { narrateOnly: true } }),
   });
 }
@@ -1923,11 +1940,12 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
  * The speaker a player's line was typed under: the newest chat message before
  * `card` with exactly that text and none of the module's flags — the line the
  * paced card answered — as its alias (the player's name with no PC of their
- * own). Null when it is not in chat any more.
+ * own), and who typed it (`authorId` — the line's move is theirs, issue #362
+ * AC74). Null when it is not in chat any more.
  *
  * @param {string} text
  * @param {ChatMessage} card
- * @returns {{ alias: string }|null}
+ * @returns {{ alias: string, authorId?: string }|null}
  */
 function speakerOfLine(text, card) {
   if (typeof text !== "string" || !text) return null;
@@ -1939,7 +1957,8 @@ function speakerOfLine(text, card) {
     const author = m.author;
     const authorName = typeof author === "object" ? author?.name : globalThis.game?.users?.get?.(author)?.name;
     const alias = m.speaker?.alias || authorName || null;
-    return alias ? { alias } : null;
+    const authorId = messageAuthorId(m);
+    return alias ? { alias, ...(authorId ? { authorId } : {}) } : null;
   }
   return null;
 }
