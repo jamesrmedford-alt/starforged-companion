@@ -117,12 +117,15 @@ function optionToCalls(opt, selection) {
   if (opt.route) {
     // A priced Pay the Price option (Sojourn's miss — resolver rollChoicePrice)
     // carries the price its narration depicted — the roll, its text and the
-    // routes it lands (a "Roll twice"'s two rows, issue #362 AC30) — for the
-    // pick to pay (index.js payChosenPrice).
-    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll)
-      ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null,
+    // routes it lands (a "Roll twice"'s two rows, issue #362 AC30), or the
+    // miss stated before the roll, which rolled nothing (`stated`, AC03) — for
+    // the pick to pay (index.js payChosenPrice).
+    const stated = opt.price?.stated === true && typeof opt.price.result === "string";
+    const price = opt.route === "pay_the_price" && (Number.isInteger(opt.price?.roll) || stated)
+      ? { roll: Number.isInteger(opt.price.roll) ? opt.price.roll : null, moveName: opt.price.moveName ?? null,
         ...(typeof opt.price.result === "string" ? { result: opt.price.result } : {}),
-        ...(Array.isArray(opt.price.sufferRoutes) ? { sufferRoutes: opt.price.sufferRoutes } : {}) }
+        ...(Array.isArray(opt.price.sufferRoutes) ? { sufferRoutes: opt.price.sufferRoutes } : {}),
+        ...(stated ? { stated: true } : {}) }
       : null;
     return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
   }

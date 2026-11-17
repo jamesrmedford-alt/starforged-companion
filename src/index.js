@@ -7341,23 +7341,29 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
  * differed from the narrated price. The option carries the price as it was
  * rolled — its text and the routes it lands — and that is what is paid: read
  * back from the table by its d100, a "Roll twice" rolled its two rows again,
- * so the pick paid two prices the narration never told (issue #362 AC30). The
- * routes are checked as a relayed `!ptp`'s are (knownPriceRoutes). An option
- * posted before then carries the d100 alone: its row is read back by the
- * roll. No follow-up narration: the move's own depicted it. Runs where the
- * pick is applied — the canonical GM (sufferCard "suffer.pick"); elsewhere
- * its world writes are relayed. A card the world refuses is logged: the
- * price is paid all the same (the pick is claimed).
+ * so the pick paid two prices the narration never told (issue #362 AC30). A
+ * miss stated before the roll is the price the option carries instead
+ * (`stated` — nothing was rolled): its card says so, as a routed stated miss's
+ * does, and its one suffer move lands (issue #362 AC03). The routes are
+ * checked as a relayed `!ptp`'s are (knownPriceRoutes). An option posted
+ * before then carries the d100 alone: its row is read back by the roll. No
+ * follow-up narration: the move's own depicted it. Runs where the pick is
+ * applied — the canonical GM (sufferCard "suffer.pick"); elsewhere its world
+ * writes are relayed. A card the world refuses is logged: the price is paid
+ * all the same (the pick is claimed).
  *
- * @param {{ roll: number, result?: string, sufferRoutes?: Array<Object>, moveName?: string|null }} price
+ * @param {{ roll: number|null, result?: string, sufferRoutes?: Array<Object>, stated?: true, moveName?: string|null }} price
  * @param {Actor} actor — the card's PC, the roller
  * @returns {Promise<{ ok: boolean, reason?: string, price?: string }>}
  */
 export async function payChosenPrice(price, actor) {
   if (!isPlayerCharacterActor(actor)) return { ok: false, reason: "no-pc" };
   const rolled = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100;
+  const stated = price?.stated === true && typeof price.result === "string" && !!price.result.trim();
   let result = null;
-  if (rolled && typeof price.result === "string" && price.result.trim() && Array.isArray(price.sufferRoutes)) {
+  if (stated) {
+    result = { roll: null, result: price.result.trim(), sufferRoutes: (await knownPriceRoutes(price.sufferRoutes)).slice(0, 1) };
+  } else if (rolled && typeof price.result === "string" && price.result.trim() && Array.isArray(price.sufferRoutes)) {
     result = { roll: price.roll, result: price.result.trim(), sufferRoutes: await knownPriceRoutes(price.sufferRoutes) };
   } else if (rolled) {
     const { rollOracle } = await import("./oracles/roller.js");
@@ -7371,8 +7377,11 @@ export async function payChosenPrice(price, actor) {
   if (!result?.result) return { ok: false, reason: "invalid" };
   const paidFor = typeof price.moveName === "string" && price.moveName.trim() ? price.moveName.trim() : "";
   const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
+  const priceLine = stated
+    ? `<p>As stated before the roll: <strong>${escapeChatHtml(result.result)}</strong></p>`
+    : `<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>`;
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
     flags:   { [MODULE_ID]: {
       payThePriceCard: true,
       sufferRoutes:    result.sufferRoutes,

@@ -391,7 +391,9 @@ paid — another (issue #321 U03). A miss whose price is one of its choices
 rolled once at resolution (`rollChoicePrice`), its text and suffer routes
 kept on the option — and its pick pays that price as rolled
 (`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
-the narration depicted, never two rolled again (issue #362 AC30). The card
+the narration depicted, never two rolled again (issue #362 AC30). With a miss
+stated before the roll, that price is the stated miss — the seed and the
+pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). The card
 records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts

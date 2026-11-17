@@ -1383,17 +1383,20 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // A miss whose Pay the Price is one of its choices (Sojourn's "No relief")
   // rolls its price once: the narration is seeded with that roll, and the
   // choice's option carries it, so picking it pays the price the narration
-  // depicted — not a reminder to roll another (SOJOURN-PTP-ADVISORY).
+  // depicted — not a reminder to roll another (SOJOURN-PTP-ADVISORY). With a
+  // miss stated before the roll that price is the stated one, and nothing is
+  // rolled (issue #362 AC03 — the issue #353 R1 rule for every miss).
   // So is a Take Decisive Action weak hit's cost (`rollDecisiveActionCost`):
   // the pipeline's cost card rolls it and seeds the narration with that one
   // (withDecisiveActionCostSeed — TDA-COST-DOUBLE-ROLL).
-  const choicePrice = rollChoicePrice(moveId, outcome, consequences);
+  const stated = statedPrice(interpretation.stakes);
+  const choicePrice = rollChoicePrice(moveId, outcome, consequences, { stated });
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
     { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice,
       rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
       region: activeSectorRegion(campaignState),
-      statedPriceText: statedPrice(interpretation.stakes)?.price ?? null });
+      statedPriceText: stated?.price ?? null });
   const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
@@ -1783,13 +1786,26 @@ export function missPaysPrice(moveId) {
  * (96–100) is two rows its d100 does not name, which a re-read of the table
  * by that roll rolled again (issue #362 AC30).
  *
+ * A miss stated before the roll is the price instead (issue #353 R1: the
+ * table is rolled only when no miss was stated, or with the world setting
+ * off): nothing is rolled, and the option carries the stated line and its one
+ * suffer move (`stated: true`). The table's price was the seed and the pick's
+ * payment beside the narrator's "deliver the miss as stated — it is what this
+ * miss costs" (issue #362 AC03).
+ *
  * @param {string} moveId
  * @param {string|null} outcome
  * @param {Object} consequences
- * @returns {{ roll: number, result: string, sufferRoutes: Array<Object> }|null}
+ * @param {{ stated?: { price: string, sufferRoutes: Array<Object> }|null }} [opts] — stakes.js statedPrice
+ * @returns {{ roll: number|null, result: string, sufferRoutes: Array<Object>, stated?: true }|null}
  */
-export function rollChoicePrice(moveId, outcome, consequences) {
+export function rollChoicePrice(moveId, outcome, consequences, { stated = null } = {}) {
   if (outcome !== "miss" || !choiceOffersPrice(moveId, consequences)) return null;
+  const statedText = typeof stated?.price === "string" ? stated.price.trim() : "";
+  if (statedText) {
+    return { roll: null, result: statedText, stated: true,
+      sufferRoutes: Array.isArray(stated.sufferRoutes) ? stated.sufferRoutes.slice(0, 1) : [] };
+  }
   try {
     const r = rollOracle("pay_the_price");
     return Number.isInteger(r?.roll) && r.result && r.result !== "—"
@@ -1807,7 +1823,7 @@ export function rollChoicePrice(moveId, outcome, consequences) {
  * is not changed.
  *
  * @param {Object} prompt — an enumerated sufferPrompt
- * @param {{ roll: number, result: string, sufferRoutes?: Array<Object> }} price
+ * @param {{ roll: number|null, result: string, sufferRoutes?: Array<Object>, stated?: true }} price
  * @param {string|null} moveName
  * @returns {Object}
  */
@@ -1815,8 +1831,9 @@ export function withChoicePrice(prompt, price, moveName = null) {
   return {
     ...prompt,
     options: (prompt.options ?? []).map(o => (o?.route === "pay_the_price"
-      ? { ...o, price: { roll: price.roll, result: price.result,
-        sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [], ...(moveName ? { moveName } : {}) } }
+      ? { ...o, price: { roll: price.roll ?? null, result: price.result,
+        sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [],
+        ...(price.stated === true ? { stated: true } : {}), ...(moveName ? { moveName } : {}) } }
       : o)),
   };
 }
