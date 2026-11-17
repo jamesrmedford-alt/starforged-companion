@@ -50,7 +50,9 @@ layers. This file is the never-break list.
    tolerant; never let a malformed sidecar block a narration post, and never
    let raw sidecar JSON reach the prose — a ```` ```json ````, ```` ``` json ````
    or bare ```` ``` ```` fence holding an object is the sidecar, stripped
-   every time (issue #321 U41).
+   every time (issue #321 U41). A reply with no prose is no narration: its
+   caller posts a fallback card (no `narrationId`) or nothing, so nothing of
+   its block is applied or relayed (issue #362 AC39).
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)

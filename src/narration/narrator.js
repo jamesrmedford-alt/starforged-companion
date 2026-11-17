@@ -5721,11 +5721,22 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // src/index.js chat routing). There the side-data is relayed to the
   // canonical GM (issue #286 D2: it was dropped, so a keyless-GM table's
   // narrated facts never reached the ledger).
+  //
+  // A reply with no prose is no narration (issue #362 AC39): every caller
+  // posts its fallback card, or nothing, for it — and a fallback card carries
+  // no narrationId (invariant 1) — so nothing of its fact block is recorded.
+  // Its truths, state, frame and plan writes were stamped with an id no card
+  // carries: told to every later narration as established, and out of every
+  // X-Card's reach.
+  const narrated = typeof prose === 'string' && prose.trim().length > 0;
+  if (sidecar && !narrated) {
+    console.debug?.(`${MODULE_ID} | factContinuity: the narrator's reply had no prose — its fact block is not recorded.`);
+  }
   const applySidecarHere = isCanonicalGM();
-  if (sidecar && campaignState && !applySidecarHere) {
+  if (sidecar && campaignState && narrated && !applySidecarHere) {
     relayNarratorSidecar(sidecar, campaignState, ctx);
   }
-  if (sidecar && campaignState && applySidecarHere) {
+  if (sidecar && campaignState && narrated && applySidecarHere) {
     applySidecarSideData(sidecar, campaignState, ctx);
   }
 

@@ -871,7 +871,11 @@ fence used to post the raw JSON on the card and lose the turn's facts, issue
 unknown keys dropped; an unclosed fence's tail is stripped and parsed — a
 complete object applies, a truncated one is a parseError and is discarded; a response with
 **no fence at all now warns** in `applyNarratorSidecar` — the sidecar is
-mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
+mandatory, so a missing fence is a lost frame update, not a quiet no-op; and a
+reply that is its fence alone, with no prose, is no narration: its caller
+posts a fallback card (no `narrationId`) or nothing, so nothing of the block
+is applied or relayed — written, it was stamped with an id no card carries,
+out of every X-Card's reach, issue #362 AC39) →
 `applyNarratorSidecar` (canonical-GM only; the narrative skeleton's keys —
 `plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
 `secrets.js` `applyPlanSideData`, which files the narration's requested plans
