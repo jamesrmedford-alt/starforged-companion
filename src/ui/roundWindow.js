@@ -47,7 +47,7 @@ import { renderMoveAbilitiesForm, readMoveAbilitiesForm, renderStakesBlock } fro
 import { isXCardActive } from "../narration/narrator.js";
 import { sanitizePlayerText } from "../narration/narratorPrompt.js";
 import { isNarrationXCarded } from "../context/safety.js";
-import { isSessionActive } from "../session/lifecycle.js";
+import { sessionInPlay } from "../session/lifecycle.js";
 import { moveDisplayName, localizeStat } from "../system/i18n.js";
 
 const MODULE_ID = "starforged-companion";
@@ -164,7 +164,9 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const users = Array.from(game.users ?? []);
     const view = buildRoundView(round, { userId: game.user?.id, isGM: !!game.user?.isGM }, {
       enabled:          isBatchModeEnabled(),
-      sessionActive:    isSessionActive(campaignState),
+      // In play as the chat gate and the round driver read it: a session over
+      // by four idle hours says no session has begun (issue #362 D14).
+      sessionActive:    sessionInPlay(campaignState),
       xCardActive:      isXCardActive(campaignState),
       gmConnected:      hasActiveGM(),
       gmReload:         onlyStoodDownGMs(),

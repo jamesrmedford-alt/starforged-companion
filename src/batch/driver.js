@@ -49,7 +49,7 @@
 import { isCanonicalGM, hasKeyedActiveGM, onGmStoodDown, gmPageCanAct } from "../multiplayer/gmGate.js";
 import { pageIsStale, connectionDrops } from "../multiplayer/connectionWatch.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
-import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
+import { sessionInPlay, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
 import { isXCardActive, narrateRound, narrateResolution } from "../narration/narrator.js";
@@ -391,9 +391,15 @@ function narrationWaitsForKey() {
   return Array.isArray(keyed) && keyed.some(id => id && id !== game.user?.id && game.users?.get?.(id)?.isGM === true);
 }
 
-/** Whether a round's session is over: ended, another one current, or being replaced. */
+/**
+ * Whether a round's session is over: another one current, or the stored one
+ * not in play — ended, being replaced, or over by End a Session's mark or
+ * four idle hours (lifecycle.js sessionInPlay, the chat gate's question). A
+ * round read only the session-active flag, so one still opened, collected and
+ * waited in a session the Session panel read as "Over" (issue #362 D14).
+ */
 function roundSessionOver(round, cs = campaignStateNow()) {
-  return !isSessionActive(cs) || round?.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
+  return !sessionInPlay(cs) || round?.sessionId !== (cs.currentSessionId ?? null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,7 +419,9 @@ function roundSessionOver(round, cs = campaignStateNow()) {
 export async function openRoundIfDue(reason = "due") {
   if (!isCanonicalGM() || !isBatchModeEnabled()) return null;
   const cs = campaignStateNow();
-  if (!isSessionActive(cs) || sessionBeingReplaced(cs)) return null;
+  // Only into a session in play: not one over by four idle hours, which the
+  // chat gate treats as not begun (issue #362 D14).
+  if (!sessionInPlay(cs)) return null;
   const sessionId = cs.currentSessionId ?? null;
   let opened = null;
   try {
@@ -2247,8 +2255,8 @@ let _xCardWas = false;
 /**
  * campaignState changed (the canonical GM acts; every client keeps its X-Card
  * memory, so a GM who becomes canonical later starts from the truth): a
- * collecting round that belongs to no active session — End a Session, a
- * session re-minted after four idle hours — is closed, and a round opens when
+ * collecting round that belongs to no session in play — End a Session, four
+ * idle hours (issue #362 D14), a session re-minted — is closed, and a round opens when
  * none is (Begin a Session; get-or-create, so a repeat opens nothing). Read
  * from the state as it is, never from a remembered "last session", which a
  * client that was not canonical then could hold stale. The X-Card lifting and
@@ -2262,7 +2270,9 @@ function onCampaignStateChanged(setting) {
   _xCardWas = xCard;
   if (!isCanonicalGM()) return;
   if (isBatchModeEnabled()) {
-    const active = isSessionActive(cs);
+    // In play, as the chat gate reads it: an over session — four idle hours —
+    // closes its collecting round and opens none (issue #362 D14).
+    const active = sessionInPlay(cs);
     const sessionId = cs.currentSessionId ?? null;
     const round = getStoredRound();
     const work = (async () => {
