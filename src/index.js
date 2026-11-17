@@ -2389,7 +2389,7 @@ async function applyOutcomeEffects({
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
-            const { selectExpeditionSite, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
+            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
             let   linked = selectExpeditionSite(campaignState, label);
             // A destination that is no site and no tracked place — the
@@ -2397,17 +2397,22 @@ async function applyOutcomeEffects({
             // the active sector under the expedition's working label, with its
             // location and map pin (issue #348 PT07): the expedition is for it,
             // and the Finish an Expedition that completes it charts it and
-            // docks there. It never became a place in the game.
+            // docks there. It never became a place in the game. A site the
+            // label names exactly, charted since — by the working label its
+            // record keeps, its location renamed — is the one it is for, by
+            // the link: a second site was minted for it (issue #362 AC50).
             if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
-              linked = await recordUnchartedDestination(label, campaignState);
+              linked = siteNamedBy(campaignState, label);
+              const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world
               // refuses it the record is a step on the GMs' card, whose Retry
               // saves it: it was lost, and the expedition's link named no
               // stored site (issue #362 AC49). An upgrade's record is saved
               // here, as its arrival's location is.
-              if (linked && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
-              else if (linked) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: linked.sector?.id ?? null,
-                site: linked.site, name: linked.site?.name ?? null });
+              if (recorded && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
+              else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
+                site: recorded.site, name: recorded.site?.name ?? null });
+              linked ??= recorded;
             }
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {

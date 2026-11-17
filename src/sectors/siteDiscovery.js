@@ -14,7 +14,7 @@
  */
 
 import { generatedName } from "../entities/nameMatch.js";
-import { selectSectorSite, buildSiteLocationData } from "./precursorSites.js";
+import { selectSectorSite, siteNamedExactly, buildSiteLocationData } from "./precursorSites.js";
 import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -74,6 +74,26 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
   });
 }
 
+/**
+ * The site a label names exactly, charted or not — by its location Actor's
+ * name or the name its record keeps (an uncharted destination's working
+ * label, after the GM renamed its location) — the active sector's first, or
+ * null (precursorSites.siteNamedExactly). An Undertake an Expedition by a
+ * charted destination's old working label is for that site — linked to it,
+ * so its finish arrives there — and records no second one (issue #362 AC50).
+ * A read of the given state.
+ *
+ * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
+ * @param {string|null} label
+ * @returns {{ sector: Object, site: Object }|null}
+ */
+export function siteNamedBy(state, label) {
+  return siteNamedExactly(Array.isArray(state?.sectors) ? state.sectors : [], label, {
+    activeSectorId: state?.activeSectorId ?? null,
+    siteName:       siteDisplayName,
+  });
+}
+
 // The site type an uncharted destination is recorded as (recordUnchartedDestination).
 export const UNCHARTED_SITE_TYPE = "uncharted";
 
@@ -120,8 +140,12 @@ export async function recordUnchartedDestination(label, campaignState, deps = {}
   const sector = (Array.isArray(campaignState.sectors) ? campaignState.sectors : [])
     .find(s => s?.id && s.id === campaignState.activeSectorId && s.mapData) ?? null;
   if (!sector) return null;
-  // A destination already on the map — a site it names — is that site's.
-  if (selectExpeditionSite(campaignState, name)) return null;
+  // A destination already on the map — a site it names — is that site's: the
+  // unexplored one the expedition ladder finds, or any it names exactly,
+  // charted since — by the working label its record keeps once the GM has
+  // renamed its location: read as "no such site", a second location, record
+  // and pin were made for it (issue #362 AC50).
+  if (selectExpeditionSite(campaignState, name) || siteNamedBy(campaignState, name)) return null;
 
   const createLoc = deps.createLoc ?? (async (data, state) => (await import("../entities/location.js")).createLocation(data, state));
   const layout    = deps.layout    ?? (async (...args) => (await import("./sectorGenerator.js")).layoutDiscovery(...args));

@@ -49,7 +49,9 @@ with the move's record; a refused one is a Retry step on the GMs' payoff
 failure card — issue #362 AC49), a pin placed on the existing Scene
 (`sceneBuilder.addSiteToScene`) — and the same reveal; its Site Discovered card says it was charted under its working label
 and invites the GM to rename it (a discovered site's pin follows the rename,
-issue #331 X46).
+issue #331 X46). Its old working label still names it — a course by it is a
+Set a Course there, an expedition by it is linked to it — and records no
+second site (issue #362 AC50).
 
 ## 2. Discovery
 
