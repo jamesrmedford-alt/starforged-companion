@@ -424,7 +424,8 @@ async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
     return next;
   }, { narrationId });
   if (!merged) return null;
-  await updateSkeleton(waiting.id, r => ({ ...r, status: "retired" }), { narrationId });
+  const retired = await updateSkeleton(waiting.id, r => ({ ...r, status: "retired" }), { narrationId });
+  if (retired) await retirePlanClock(retired);   // a countdown it held goes with it (issue #362 AC10)
   await ensureThreatClock(merged, { narrationId });
   return merged;
 }
@@ -709,6 +710,40 @@ export function planClock(record) {
 }
 
 /**
+ * The plan clocks that hold a slot of MAX_PLAN_CLOCKS: running, not full, and
+ * an active plan's. A clock whose plan left play — retired, resolved, its page
+ * gone — or one that is full turns on no price (issue #362 AC10: four retired
+ * plans' clocks held every slot, and no decided threat got a clock again).
+ *
+ * @returns {Object[]}
+ */
+function livePlanClocks() {
+  const active = new Set(listSkeletons().map(r => r.id));
+  return storedClocks().filter(c => c?.planId && c.active !== false && active.has(c.planId) && (c.filled ?? 0) < c.segments);
+}
+
+/**
+ * A plan that leaves play takes its clock with it (issue #362 AC10): retired
+ * — kept on the list for the record, turned by no price — unless an open
+ * scene challenge holds it (heldBySceneChallenge: the challenge's, retired
+ * with the challenge). A narration's `resolved` reveal retires it in
+ * paceAfterReveal; a GM's Retire and a waiting plan retired as another
+ * (planAsAnother) left it running. Never throws.
+ *
+ * @param {Object|null} record — the plan, as written
+ */
+async function retirePlanClock(record) {
+  const clock = planClock(record);
+  if (!clock || await heldBySceneChallenge(clock._id)) return;
+  try {
+    const { retireClock } = await import("../clocks/clocks.js");
+    await retireClock(clock._id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the clock of "${record?.subject?.name ?? "a plan"}" was not retired with it:`, err?.message ?? err);
+  }
+}
+
+/**
  * A decided threat plan's escalation is paced by a clock (issue #353 "Threat
  * ↔ clock"): when it fills, the narrator plays the next step (narrator.js
  * narrateClockAdvancement). A threat the fiction just revealed is a scene's —
@@ -724,7 +759,7 @@ export function planClock(record) {
  */
 async function ensureThreatClock(record, { narrationId = null } = {}) {
   if (record?.kind !== "threat" || !record.truth || !record.escalation?.some(e => !e.done) || planClock(record)) return null;
-  if (storedClocks().filter(c => c?.planId && c.active !== false).length >= MAX_PLAN_CLOCKS) return null;
+  if (livePlanClocks().length >= MAX_PLAN_CLOCKS) return null;
   try {
     if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
@@ -1086,7 +1121,10 @@ export async function revealSkeletonNow(id) {
  */
 export async function retireSkeleton(id) {
   const retired = await updateSkeleton(id, r => ({ ...r, status: "retired" }), { byGm: true });
-  if (retired) reportSnapshotEvent("plan_retired");
+  if (retired) {
+    await retirePlanClock(retired);   // its clock leaves play with it (issue #362 AC10)
+    reportSnapshotEvent("plan_retired");
+  }
   return retired;
 }
 
