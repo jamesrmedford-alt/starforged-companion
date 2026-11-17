@@ -6,6 +6,33 @@ rejected.
 
 ---
 
+## Issue #362 D12: a Pay the Price is paid even when its card cannot be posted (2026-11)
+
+**Decision:** (issue #362 D12, REFUSED-PRICE-CARD-DROPS-THE-PRICE; decided A,
+maintainer 2026-11-17.) A move's Pay the Price (`index.js`
+`postMovePayThePriceCard` — a routed miss's, a stated miss's, a held
+result's when it is kept or upgraded to a result that pays one) and a Take
+Decisive Action weak hit's cost (`postDecisiveActionCostCard`) are paid
+whether or not the world saves their card: the suffer routes land, the
+countdown clocks turn, and the move's narration is seeded with the price —
+as `payChosenPrice` already decided for a chosen price ("the price is paid
+all the same"). The refused card is logged, and the GM whose client paid
+the price is told with a notice on their screen (`priceCardRefusedNotice`)
+— another chat card to the GMs is the write the world just refused. With no
+card the price is not in RECENT ORACLE RESULTS (which reads the cards); the
+move's narration still depicts it.
+
+**Reason:** a refused card returned before anything ran: the price was
+dropped whole — routes, clocks and seed — with one console line, and with
+the result held, keeping it had already closed the wait, so nothing could
+pay it later.
+
+**Rejected:** *(B) keep dropping it and report it on the GMs' payoff
+failure card with a Retry* — the narration would go on without the price
+while it waited for a GM's press, and the report is itself a chat card.
+
+---
+
 ## The world snapshot: the whole world state, frozen and cached for the session (2026-11)
 
 **Decision:** ([#357](https://github.com/jamesrmedford-alt/starforged-companion/issues/357); the maintainer's answers of 2026-11-14 — "all plans go in", "scene boundaries and major oracle rolls, new plans, etc.", "no size limit", "make that list accessible for later modifications", "also, at sector creation". Phases 1–3 are built; phase 4 is open, below.)

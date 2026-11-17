@@ -7082,7 +7082,9 @@ async function postCombatFinishCard({ track }) {
  * A Take Decisive Action weak hit's cost: roll the table once, post its card,
  * land its suffer routes on the roller. The cost seeds the move's own
  * narration (the pipeline's withDecisiveActionCostSeed), so the narration
- * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL).
+ * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL). A card the world
+ * refuses is logged and the GM told: the cost is paid all the same (issue
+ * #362 D12).
  *
  * @param {string|null} [actorId] — the roller
  * @returns {Promise<{ cost: string }|null>} the rolled result's text; null when nothing was rolled
@@ -7100,17 +7102,32 @@ async function postDecisiveActionCostCard(actorId = null) {
   const routeFooter = result.sufferRoutes.length
     ? `<p><em>Triggers: ${result.sufferRoutes.map(r => `choose a suffer move (-${r.amount})`).join("; ")}.</em></p>`
     : "";
+  // Paid whether or not its card posts, as a Pay the Price is (issue #362 D12).
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Decisive Action — Cost</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
       flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoutes: result.sufferRoutes } },
     });
   } catch (err) {
-    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
-    return null;
+    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+    priceCardRefusedNotice("Decisive Action — Cost", "Take Decisive Action");
   }
   await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
   return result.result && result.result !== "—" ? { cost: result.result } : null;
+}
+
+/**
+ * Tell the GM whose client paid a price that the world refused its card
+ * (issue #362 D12): the price is paid all the same, and the move's narration
+ * depicts it. A notice on this screen — the canonical GM's, where the price
+ * runs — since a chat card to the GMs would be refused as this one was.
+ *
+ * @param {string} card — the card's title
+ * @param {string} paidFor — the move that paid it
+ */
+function priceCardRefusedNotice(card, paidFor) {
+  if (!game.user?.isGM) return;
+  ui.notifications?.warn?.(`Starforged Companion: the world did not save the ${card} card${paidFor ? ` for ${paidFor}` : ""}. The price was paid all the same, and the narration tells it.`);
 }
 
 /**
@@ -7119,6 +7136,8 @@ async function postDecisiveActionCostCard(actorId = null) {
  * card under the move that paid it, land its suffer routes on the roller and
  * advance the countdown clocks. Its price seeds the move's own narration
  * (the caller's withPayThePriceSeed), so it asks for no narration of its own.
+ * A card the world refuses is logged and the GM told: the price — its routes,
+ * the clocks, the seed — is paid all the same (issue #362 D12).
  *
  * @param {string|null} actorId — the roller
  * @param {string|null} moveName — the move that paid it ("Face Danger")
@@ -7158,6 +7177,10 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
   const priceLine = statedText
     ? `<p>As stated before the roll: <strong>${escapeChatHtml(result.result)}</strong></p>`
     : `<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>`;
+  // The price is paid whether or not its card posts (issue #362 D12, decided
+  // — as payChosenPrice's is): a refused card dropped the suffer routes, the
+  // clocks and the narration's seed, and with the result held its wait had
+  // already closed, so nothing could pay it later.
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
@@ -7172,8 +7195,8 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
       },
     });
   } catch (err) {
-    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed:`, err?.message ?? err);
-    return null;
+    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+    priceCardRefusedNotice("Pay the Price", paidFor);
   }
 
   // Dispatch the suffer executors first (before clock advance) so meter changes

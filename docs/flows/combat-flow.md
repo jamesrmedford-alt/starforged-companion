@@ -386,7 +386,10 @@ the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
-paid — another (issue #321 U03). A miss whose price is one of its choices
+paid — another (issue #321 U03). A card the world refuses does not drop the
+price: its routes, the clocks and the seed are paid all the same, and the GM
+who paid it is told (`priceCardRefusedNotice` — issue #362 D12; Take
+Decisive Action's cost card too). A miss whose price is one of its choices
 (Sojourn's "No relief") is seeded with the price its option carries —
 rolled once at resolution (`rollChoicePrice`), its text and suffer routes
 kept on the option — and its pick pays that price as rolled
