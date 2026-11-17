@@ -8775,7 +8775,11 @@ Hooks.once("ready", () => {
       // Notify the GMs if no World Truths have been established yet — posted
       // once (this canonical-GM block) and whispered to every GM: it went to
       // this client's GM alone, so a second GM never saw it (issue #331 X54).
+      // One card at a time: the card an earlier load posted is replaced, not
+      // stacked — every load before the truths were saved added one, and the
+      // save took one away (issue #362 AC58).
       if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
+        await dismissSetupCards();
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
             <div class="sf-card-header">◈ Campaign Setup</div>
@@ -9786,14 +9790,26 @@ Hooks.on("createJournalEntryPage", async (page) => {
     return;
   }
 
-  // Dismiss the setup notification card if it is still in chat
-  const setupCard = game.messages?.contents?.find(
-    m => m.flags?.[MODULE_ID]?.setupCard
-  );
-  if (setupCard) await setupCard.delete().catch(() => {});
+  // Dismiss the setup notification card — every one still in chat.
+  await dismissSetupCards();
 
   ui?.notifications?.info("Starforged Companion: World Truths recorded.");
 });
+
+/**
+ * Delete every "◈ Campaign Setup" card in chat (`setupCard`): before `ready`
+ * posts the next, and once the World Truths are saved. It found and deleted
+ * one — every load before the save had posted its own, so the rest kept
+ * saying no World Truths were established, their button live (issue #362
+ * AC58). Canonical GM (its callers); a refused delete is logged.
+ */
+async function dismissSetupCards() {
+  const cards = (game.messages?.contents ?? []).filter(m => m?.flags?.[MODULE_ID]?.setupCard);
+  for (const card of cards) {
+    await card.delete().catch(err =>
+      console.warn(`${MODULE_ID} | the Campaign Setup card could not be removed:`, err?.message ?? err));
+  }
+}
 
 /**
  * updateJournalEntryPage — an edit of the campaign's saved "Setting Truths"
