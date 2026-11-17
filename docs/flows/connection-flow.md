@@ -59,7 +59,15 @@ recorded under its name promoted to it; its bond is §2's.
   lower-id keyed GM joining while the narration was written left the hit
   saying "Connection made" with no one made (issue #345 AA34; a round's
   likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
-  `routeEntityDrafts` auto-creates the first connection draft
+  `routeEntityDrafts` auto-creates one connection draft — the one the
+  player's line names, else the interpreter's target names, else the first
+  detected; the hit's figure is chosen before anything is made, the newly
+  detected people counted with the pending rows and the known NPCs the move
+  names (`chooseConnectionFigure`, the free-flow slot's `choosesFirst`;
+  issue #362 AC19 — the first person the detector listed took the hit
+  before the line was read, so a bystander the prose named first, or a
+  deckhand beside the known NPC the line named, became the roller's
+  connection, and the one the move was with was queued)
   (`buildConnectionSeedData` → `createConnection` →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
   Item — on the roller's PC: the narration's `actorId` rides
