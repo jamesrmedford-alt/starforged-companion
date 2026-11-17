@@ -734,19 +734,35 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   );
   const pendingPeople = collectPendingDraftNames("connection");
   const slots = connectionSlots(options);
-  // A free-flow hit is with the figure the player's line names — else the
-  // interpreter's target — among the people the narration newly introduces,
-  // the pending rows and the NPCs the table knows, taken together; a newly
-  // detected person takes it by default only when neither names any of them
-  // (issue #362 AC19: the first person the detector listed took it before the
-  // line was read — a bystander the prose named first, or a deckhand beside
-  // the known NPC the line named).
-  for (const slot of slots.filter(s => s.choosesFirst)) {
-    slot.choice = chooseConnectionFigure(slot, [
-      ...freshDetectedPeople(entities, campaignState, pendingNormalized, pendingPeople),
-      ...(slot.names ? namedConnectionCandidates(slot, campaignState, storedDismissedNames(campaignState)) : []),
-    ], options.lineText);
-    slot.takes = (entity) => slot.choice.pick?.kind === "detected" && slot.choice.pick.key === normalizeEntityName(entity.name);
+  // A Make a Connection hit is with the figure its player's line names — else
+  // the interpreter's target — among the people the narration newly
+  // introduces, the pending rows and the NPCs the table knows, taken together;
+  // a newly detected person takes it by default only when neither names any
+  // of them (issue #362 AC19: the first person the detector listed took it
+  // before the line was read — a bystander the prose named first, or a
+  // deckhand beside the known NPC the line named). A Batch Mode round's hit
+  // chooses the same way, among the newcomers its own roller met (`owns`,
+  // issue #342 Z09), by its own entry's line (`lineText`): it took a newcomer
+  // its roller met before the known NPC its line named was tried (AC19's
+  // round path).
+  if (slots.length) {
+    const fresh = freshDetectedPeople(entities, campaignState, pendingNormalized, pendingPeople);
+    const detectedByKey = new Map();
+    for (const detected of entities ?? []) {
+      if (detected?.type !== "connection" || typeof detected.name !== "string") continue;
+      const figure = { ...detected, name: generatedName(detected.name) };
+      const key = normalizeEntityName(figure.name);
+      if (key && !detectedByKey.has(key)) detectedByKey.set(key, figure);
+    }
+    const dismissed = storedDismissedNames(campaignState);
+    for (const slot of slots) {
+      const met = typeof slot.owns === "function" ? fresh.filter(f => slot.owns(detectedByKey.get(f.key) ?? f)) : fresh;
+      slot.choice = chooseConnectionFigure(slot, [
+        ...met,
+        ...(slot.names ? namedConnectionCandidates(slot, campaignState, dismissed) : []),
+      ], slot.lineText ?? options.lineText);
+      slot.takes = (entity) => slot.choice.pick?.kind === "detected" && slot.choice.pick.key === normalizeEntityName(entity.name);
+    }
   }
 
   for (const detected of entities ?? []) {
@@ -862,7 +878,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   for (const slot of slots) {
     if (slot.done || !slot.names || removed()) continue;
     const made = await connectNamedFigure(slot, campaignState, {
-      namingText: options.namingText, lineText: slot.lineText ?? options.lineText, narrationId,
+      namingText: options.namingText, narrationId,
       waiting: queued.filter(e => e.type === "connection").map(e => e.name),
     }).catch(err => {
       console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the NPC the move names failed:`, err?.message ?? err);
@@ -917,23 +933,27 @@ function readAsRows(people, queued) {
  * takes the figure its player's line names — else its interpreted target —
  * among the people the narration newly introduces, the pending rows and the
  * NPCs the table knows its `namingText` names; naming none, the first
- * connection detected (`choosesFirst` → chooseConnectionFigure, issue #362
- * AC19 — it took the first detected before the line was read). A text names
- * a figure by their whole name or by their first or last name alone
- * (figuresNamedIn, AC18). A Batch Mode round's hits
- * (`connectionRollers`) each take only a figure their `owns` gives their own
- * roller (issue #342 Z09: the round's first connection, whoever met them,
- * went to the first hit's roller with that roller's seed), and a pending row
- * only when the round's `namingText` — its lines and its narration — names it
- * too, as free-flow's must (issue #345 AA09: `owns` alone gave a one-PC
- * round every row, and read a two-PC round's off the row's old description,
- * so the first pending row on the newest card — an NPC the round never
- * mentioned — was confirmed and bonded to the roller).
+ * connection detected (chooseConnectionFigure, issue #362 AC19 — it took the
+ * first detected before the line was read). A text names a figure by their
+ * whole name or by their first or last name alone (figuresNamedIn, AC18). A
+ * Batch Mode round's hits (`connectionRollers`) each choose the same way, by
+ * their own entry's line, among only the newcomers their `owns` gives their
+ * own roller (issue #342 Z09: the round's first connection, whoever met them,
+ * went to the first hit's roller with that roller's seed — and AC19's round
+ * path: an owned newcomer was taken before the known NPC the hit's line named
+ * was tried) and a pending row only when the round's `namingText` — its
+ * lines and its narration — names it too, as free-flow's must (issue #345
+ * AA09: `owns` alone gave a one-PC round every row, and read a two-PC round's
+ * off the row's old description, so the first pending row on the newest card
+ * — an NPC the round never mentioned — was confirmed and bonded to the
+ * roller).
  *
  * @param {Object} options — routeEntityDrafts' options
- * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, choosesFirst?: boolean, done: boolean }>}
- *   — `names(figures)` the figures the hit's text names, of those given;
- *   `lineText` a round's hit's own line (null: the move's, `options.lineText`)
+ * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, owns?: Function, done: boolean }>}
+ *   — `takes(entity)` replaced by the slot's choice (routeEntityDrafts);
+ *   `names(figures)` the figures the hit's text names, of those given;
+ *   `lineText` a round's hit's own line (null: the move's, `options.lineText`);
+ *   `owns(figure)` a round's hit's: whether its roller met that newcomer
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
@@ -960,7 +980,8 @@ function connectionSlots(options) {
         return {
           actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
           connectionSeed: r.connectionSeed ?? null,
-          takes:          (entity) => r.owns(entity) === true,
+          owns:           (figure) => r.owns(figure) === true,
+          takes:          () => false,         // replaced by the slot's choice (routeEntityDrafts)
           names:          ownNamed ? (figures) => ownNamed(figures).filter(f => r.owns(f) === true) : null,
           lineText:       typeof r.lineText === "string" ? r.lineText : null,
           done:           false,
@@ -975,9 +996,6 @@ function connectionSlots(options) {
     names:          named,
     lineText:       null,
     targetName:     typeof options.targetName === "string" && options.targetName.trim() ? options.targetName.trim() : null,
-    // Its figure is chosen before anything is made, the newly detected people
-    // counted in (chooseConnectionFigure — issue #362 AC19).
-    choosesFirst:   true,
     done:           false,
   }];
 }
@@ -3200,10 +3218,10 @@ async function completeListedEntity(draft, campaignState) {
  *     dismissed name keeps a record out of the narrator's name index).
  *
  * Which one is the player's line's to say (issue #347 AB10;
- * chooseConnectionFigure): a free-flow hit's choice is made before anything
- * is created, the newly detected people counted in (`slot.choice`, issue
- * #362 AC19); a round's hit chooses here, among the NPCs the move names. An
- * NPC is named by their whole name or by their first or last name alone
+ * chooseConnectionFigure): the hit's choice is made before anything is
+ * created, the newly detected people counted in (`slot.choice`, issue #362
+ * AC19 — a round's hit's among those its own roller met, by its own entry's
+ * line). An NPC is named by their whole name or by their first or last name alone
  * (figuresNamedIn — issue #362 AC18: "Archer" for Vuldar Archer was no
  * candidate, so the hit said "Connection made" and made nothing). Several
  * named and none singled out, the GMs are told which; a hit that ends with no
@@ -3216,16 +3234,15 @@ async function completeListedEntity(draft, campaignState) {
  *   narrator's; a round's hit, the ones the round names whose figure its
  *   roller met (issue #342 Z09, #345 AA09)
  * @param {Object} campaignState
- * @param {{ namingText?: string, lineText?: string, narrationId?: string|null, waiting?: string[] }} opts
- *   — `namingText` the line and the narration; `lineText` the player's line
- *   (a round's hit: its own entry's — ROUND-CONNECTION-LINE-JOINED);
- *   `waiting` the people this capture queues on a draft card
+ * @param {{ namingText?: string, narrationId?: string|null, waiting?: string[] }} opts
+ *   — `namingText` the line and the narration; `waiting` the people this
+ *   capture queues on a draft card
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null, waiting = [] } = {}) {
+async function connectNamedFigure(slot, campaignState, { namingText = "", narrationId = null, waiting = [] } = {}) {
   if (!String(namingText ?? "").trim() || typeof slot?.names !== "function") return null;
   const dismissed = storedDismissedNames(campaignState);
-  const choice = slot.choice ?? chooseConnectionFigure(slot, namedConnectionCandidates(slot, campaignState, dismissed), lineText);
+  const choice = slot.choice ?? { none: true };
   if (choice.several) {
     console.warn(`${MODULE_ID} | make a connection: the move names several NPCs (${choice.several.map(c => c.name).join(", ")}) — none was made the roller's connection.`);
     await postNamedNpcsNotice(choice.several, slot.actorId);
