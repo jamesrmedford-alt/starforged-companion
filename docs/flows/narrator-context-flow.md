@@ -666,7 +666,9 @@ matched or in the frame's cast, its name in the frame or the player's line,
 `skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
 plan every beat, Phase 2; an open expedition's plan, a finished one's in the
 narration that finishes it, and the plan a clock vignette or a chosen
-complication plays, Phase 3; the plan of the vow the scene serves
+complication plays, Phase 3 — a vignette of a plan's own clock has its plan
+in play whether the clock filled or only advanced (a step is played on a fill
+alone, issue #362 AC38); the plan of the vow the scene serves
 (`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
 (its `vowId` on `endingTrackIds`), Phase 4 —
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,

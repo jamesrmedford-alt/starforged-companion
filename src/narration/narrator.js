@@ -4186,14 +4186,18 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
     // plan's next escalation step — or a countdown's answer coming out — and
     // marks it played with this narration (a rewind that supersedes the
-    // vignette takes it back with it).
-    const paced = clock.triggered && skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
+    // vignette takes it back with it). Every vignette of the clock is about
+    // the plan, filling or not: an advance is written with it in play, so the
+    // beat grows the threat the plan holds (issue #362 AC38 — it was asked how
+    // "the Choir — escalation" grows with the Choir's plan not in play).
+    const ofPlan = skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
+    const paced = clock.triggered ? ofPlan : null;
     const pacedReveals = paced
       ? (paced.step ? [{ id: paced.plan.id, advanced: paced.step.id }]
         : (paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : []))
       : [];
     const extras = await buildNarratorExtras('clock_advance', campaignState, {
-      character, planIds: paced ? [paced.plan.id] : [],
+      character, planIds: ofPlan ? [ofPlan.plan.id] : [],
     });
     const systemPrompt = buildNarratorSystemPrompt(
       campaignState, settings, character, '', extras,
