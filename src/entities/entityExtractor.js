@@ -2982,20 +2982,63 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   return record;
 }
 
+/** The words that say what a site is, by the location type they make it (detectedSiteType). */
+const SITE_TYPE_WORDS = [
+  ["vault",    /^vaults?$/],
+  ["derelict", /^(?:derelicts?|wrecks?|wreckage|hulks?)$/],
+];
+
+/**
+ * Words that end a name's or a description's opening phrase: what follows
+ * says where the place is, what it holds or what happens there — "a docking
+ * spar built beside the wreck", "a market where salvagers trade precursor
+ * trinkets" — not what it is (detectedSiteType).
+ */
+const SITE_PHRASE_STOPS = new Set([
+  "where", "that", "which", "who", "whom", "whose", "when", "while", "whilst", "because", "since", "until",
+  "though", "although", "if", "and", "or", "but", "nor", "yet", "so",
+  "of", "beside", "besides", "near", "nearby", "by", "in", "on", "at", "with", "without", "from", "for", "to",
+  "into", "onto", "upon", "behind", "around", "round", "under", "underneath", "beneath", "over", "above",
+  "below", "against", "along", "alongside", "among", "amongst", "amid", "amidst", "between", "inside",
+  "outside", "within", "past", "through", "throughout", "toward", "towards", "across", "beyond", "off",
+  "after", "before", "like", "as", "than", "via", "about", "atop", "aboard", "orbiting", "overlooking",
+]);
+
+/** The site type the opening phrase of a name or a description gives a place (detectedSiteType), or null. */
+function openingPhraseSiteType(text) {
+  const head = String(text ?? "").split(/[,;:.!?()[\]{}"“”—–]|\s-\s/u)[0];
+  for (const raw of head.toLowerCase().split(/\s+/)) {
+    const word = raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    if (!word) continue;
+    if (SITE_PHRASE_STOPS.has(word)) break;
+    const hit = SITE_TYPE_WORDS.find(([, re]) => re.test(word));
+    if (hit) return hit[0];
+  }
+  return null;
+}
+
 /**
  * The site type a detected place's own words give it: "derelict" (a derelict,
- * a wreck, a hulk) or "vault" (a vault, a precursor site) — the two location
- * types the system's sheet and the module share — or null when they name
- * neither. Never guessed from anything else: a blank type is honest.
+ * a wreck, a hulk) or "vault" — the two location types the system's sheet and
+ * the module share — or null when they name neither. Never guessed from
+ * anything else: a blank type is honest.
+ *
+ * Only the words that say what the place is count: its name, and the opening
+ * phrase of its description ("A derelict Exodus ship", "The wreck of the
+ * Anwen", "Kessan's dig site is a precursor vault"), up to the first comma or
+ * the first word that says where it is or what it holds (SITE_PHRASE_STOPS).
+ * Issue #362 AC44: any of the words anywhere in the name or the description —
+ * and "precursor" alone — decided it, so "a market where salvagers trade
+ * precursor trinkets" was made a precursor vault, "a docking spar built
+ * beside the wreck of the Anwen" a derelict, and Explore a Waypoint there
+ * rolled the site's interior tables. A place that is precursor but not called
+ * a vault stays blank, for the GM to set.
  *
  * @param {{ name?: string, description?: string }} draft
  * @returns {"derelict"|"vault"|null}
  */
 function detectedSiteType(draft) {
-  const text = `${draft?.name ?? ""} ${draft?.description ?? ""}`.toLowerCase();
-  if (/\b(?:vault|precursor)\b/.test(text)) return "vault";
-  if (/\b(?:derelict|wreck|wreckage|hulk)\b/.test(text)) return "derelict";
-  return null;
+  return openingPhraseSiteType(draft?.name) ?? openingPhraseSiteType(draft?.description);
 }
 
 /**
