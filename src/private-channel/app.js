@@ -18,8 +18,7 @@ import {
   scheduleDebouncedWrite,
   flushNow,
   renderTurnsHtml,
-  parseTurnsHtml,
-  loadCurrentSessionTranscript,
+  loadSessionTurns,
   isTranscriptUnsaved,
   onTranscriptUnsavedChange,
 } from "./transcript.js";
@@ -123,7 +122,10 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
    * CHANGE), dropping the previous session's turns, which its page keeps.
    * Re-reading on every render — whenever the first read was empty — loaded
    * this window's own turns back from the page once the debounced save
-   * landed, and showed them twice.
+   * landed, and showed them twice. The read is the page and the turns still
+   * kept in this browser for it (loadSessionTurns): a window reopened before
+   * its journal could be written opened empty, and its narrator was sent none
+   * of the exchange (issue #362 AC79).
    */
   async #syncSession() {
     const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
@@ -131,8 +133,13 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const kept = this.loaded ? [] : this.turns;
     this.loaded    = true;
     this.sessionId = sessionId;
-    const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
-    this.turns = [...parseTurnsHtml(saved), ...kept];
+    let held = [];
+    try {
+      held = loadSessionTurns(this.userId, sessionId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | private channel: the session's conversation could not be read:`, err?.message ?? err);
+    }
+    this.turns = [...held, ...kept];
   }
 
   async _prepareContext(_options) {

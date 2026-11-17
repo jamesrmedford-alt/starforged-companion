@@ -321,6 +321,11 @@ async function getOrCreateSessionPage(journal, sessionId) {
  * @returns {Promise<string>}
  */
 export async function loadCurrentSessionTranscript(userId, sessionId) {
+  return savedSessionHtml(userId, sessionId);
+}
+
+/** loadCurrentSessionTranscript's read, synchronous. */
+function savedSessionHtml(userId, sessionId) {
   // A session split over two journals by an earlier rename reads as one, oldest page first.
   const pages = findPrivateJournals(userId)
     .map(journal => findSessionPage(journal, sessionId))
@@ -328,6 +333,30 @@ export async function loadCurrentSessionTranscript(userId, sessionId) {
     .sort((a, b) => String(a.flags?.[MODULE_ID]?.[FLAG_KEY]?.createdAt ?? "")
       .localeCompare(String(b.flags?.[MODULE_ID]?.[FLAG_KEY]?.createdAt ?? "")));
   return pages.map(page => page.text?.content ?? "").join("");
+}
+
+/**
+ * A session's private conversation as this browser holds it: the turns its
+ * page holds, then the turns still waiting here for their page write — in
+ * the buffer, or being written — that the page does not hold yet. A window
+ * reopened while its conversation was "kept in this browser" read the page
+ * alone: it opened empty under that very line, and the narrator's next turn
+ * was sent none of the exchange (issue #362 AC79). Read at once, page and
+ * buffer together, so a write landing between the two reads is neither
+ * missed nor shown twice; a batch whose write landed after it was given up
+ * on (issue #347 AB05) is on the page already. Read-only.
+ *
+ * @param {string} userId
+ * @param {string} sessionId
+ * @returns {Array<{who:"player"|"narrator", name:string, text:string}>}
+ */
+export function loadSessionTurns(userId, sessionId) {
+  const saved   = savedSessionHtml(userId, sessionId);
+  const entry   = _buffers.get(userId);
+  const waiting = [...(entry?.writing ?? []), ...(entry?.batches ?? [])]
+    .filter(b => b?.sessionId === sessionId && b.turns?.length)
+    .filter(b => !saved.includes(renderTurnsHtml(b.turns)));
+  return [...parseTurnsHtml(saved), ...waiting.flatMap(b => b.turns.map(t => ({ ...t })))];
 }
 
 /**
@@ -346,7 +375,7 @@ export function appendToBuffer(userId, turn) {
   registerFlushOnHide();
   let entry = _buffers.get(userId);
   if (!entry) {
-    entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0, unsaved: false };
+    entry = { batches: [], writing: [], timerId: null, chain: Promise.resolve(), failures: 0, unsaved: false };
     _buffers.set(userId, entry);
   }
   const sessionId = currentSessionId();
@@ -397,15 +426,21 @@ async function writePending(userId, entry) {
   // Taken for this write: turns appended meanwhile start a fresh batch.
   const batches = entry.batches.splice(0);
   let page = null;
-  for (let i = 0; i < batches.length; i++) {
-    const written = await writeBatch(userId, batches[i]);
-    if (!written) {
-      entry.batches.unshift(...batches.slice(i));
-      entry.failures += 1;
-      if (entry.failures <= MAX_AUTO_RETRIES) scheduleDebouncedWrite(userId, DEFAULT_DEBOUNCE_MS * entry.failures);
-      return null;
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      // Still this browser's until it lands: a window opened meanwhile reads it (loadSessionTurns).
+      entry.writing = batches.slice(i);
+      const written = await writeBatch(userId, batches[i]);
+      if (!written) {
+        entry.batches.unshift(...batches.slice(i));
+        entry.failures += 1;
+        if (entry.failures <= MAX_AUTO_RETRIES) scheduleDebouncedWrite(userId, DEFAULT_DEBOUNCE_MS * entry.failures);
+        return null;
+      }
+      page = written;
     }
-    page = written;
+  } finally {
+    entry.writing = [];
   }
   if (page) {
     entry.failures = 0;
