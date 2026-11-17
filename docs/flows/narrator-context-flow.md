@@ -82,8 +82,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   second person). Otherwise "auto" is the perspective the session recorded
   when it began (`campaignState.sessionPerspective`, written by
   `beginSession`, cleared by `mintSession`; read by `sessionPerspectiveOf`
-  for every mode — issue #348 PT03), not a per-call count of connected
-  users; a session not begun counts them per call. Its
+  for every mode — issue #348 PT03 — and by the Sector Creator's stubs,
+  `sectorGenerator.generateNarratorStubs`, issue #362 AC70), not a per-call
+  count of connected users; a session not begun counts them per call. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a

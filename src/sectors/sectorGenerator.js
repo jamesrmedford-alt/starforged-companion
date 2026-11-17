@@ -744,8 +744,20 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
   // resolves it. The stub compared the setting with "first", a value it never
   // holds (auto / second_person / third_person), so a third-person campaign's
   // Sector Record and settlement descriptions addressed "you" (issue #326 W73).
-  const { resolveNarrationPerspective } = await import("../narration/narratorPrompt.js");
-  const perspective = resolveNarrationPerspective(narratorSettings.perspective ?? "auto");
+  // With the session's own Auto reading (issue #348 PT03: decided once, at
+  // Begin a Session), as the narrator reads it: counted per call, a sector
+  // created after a second window connected mid-session was described in the
+  // third person in a session narrated as "you" (issue #362 AC70).
+  const { resolveNarrationPerspective, sessionPerspectiveOf } = await import("../narration/narratorPrompt.js");
+  let stored = null;
+  try {
+    stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+  } catch {
+    stored = null;   // unreadable: Auto counts the table, as before
+  }
+  const perspective = resolveNarrationPerspective(narratorSettings.perspective ?? "auto", {
+    sessionPerspective: sessionPerspectiveOf(stored),
+  });
   const perspectiveNote = perspective === "third_person"
     ? "Narrate in third person (refer to the characters by name, never as 'you')"
     : "Narrate in second person (address the protagonist as 'you')";
