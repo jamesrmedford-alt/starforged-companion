@@ -110,16 +110,41 @@ export function withPriceSource(stakes, missPays = false) {
  * Endure Harm with no companion, as the table's route does). Null when the
  * stakes state no price — the table is rolled.
  *
+ * A stated Withstand Damage or Companion Takes a Hit lands on what the move
+ * was made against (issue #362 D11, decided — the move's targets forwarded
+ * to the price): the support vehicle it was rolled for (`vehicleItemId`), the
+ * companion it was rolled for or tends (`companionItemId`,
+ * `patientCompanionItemId`). They landed on the command vehicle and the first
+ * companion whatever the line named. With none, those defaults stand.
+ *
  * @param {Object|null} stakes — the interpretation's (withPriceSource)
- * @returns {{ price: string, sufferRoutes: Array<{ move: string, amount: number, soloFallback?: string }> }|null}
+ * @param {{ vehicleItemId?: string|null, companionItemId?: string|null, patientCompanionItemId?: string|null }|null} [targets]
+ *   — the move's (its interpretation, statEnrichment's)
+ * @returns {{ price: string, sufferRoutes: Array<{ move: string, amount: number, soloFallback?: string,
+ *   vehicleItemId?: string, companionItemId?: string }> }|null}
  */
-export function statedPrice(stakes) {
+export function statedPrice(stakes, targets = null) {
   if (!stakes?.priceStated || !stakes.miss) return null;
   const s = stakes.missSuffer;
   const route = s && Object.hasOwn(STATED_SUFFER_MOVES, s.move)
-    ? { move: s.move, amount: s.amount, ...(s.move === "companion_takes_a_hit" ? { soloFallback: "endure_harm" } : {}) }
+    ? { move: s.move, amount: s.amount, ...(s.move === "companion_takes_a_hit" ? { soloFallback: "endure_harm" } : {}),
+      ...routeTarget(s.move, targets) }
     : null;
   return { price: stakes.miss, sufferRoutes: route ? [route] : [] };
+}
+
+/** A stated route's vehicle or companion, from the move's targets — `{}` for none, or for another suffer move. */
+function routeTarget(move, targets) {
+  const id = (v) => (typeof v === "string" && v ? v : null);
+  if (move === "withstand_damage") {
+    const vehicle = id(targets?.vehicleItemId);
+    return vehicle ? { vehicleItemId: vehicle } : {};
+  }
+  if (move === "companion_takes_a_hit") {
+    const companion = id(targets?.companionItemId) ?? id(targets?.patientCompanionItemId);
+    return companion ? { companionItemId: companion } : {};
+  }
+  return {};
 }
 
 /** "Endure Harm −1" — a stated suffer move as the dialog and the narrator show it. */

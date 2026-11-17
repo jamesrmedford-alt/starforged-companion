@@ -7447,16 +7447,24 @@ function sufferRoutesFooter(routes, { notApplied = null } = {}) {
  * annotates them: a known suffer move (or "any"), 1–3, at most four (a "Roll
  * twice" lands two; a roll twice of rolls twice, four) — a relayed `!ptp`'s
  * (applyPayThePriceSufferFromRelay) and a chosen price's (payChosenPrice).
+ * Each comes back with those fields alone, and a stated route's vehicle or
+ * companion id (issue #362 D11) — an id the executor checks against the
+ * payer's own assets.
  *
  * @param {*} routes
- * @returns {Promise<Array<{ move: string, amount: number, soloFallback?: string }>>}
+ * @returns {Promise<Array<{ move: string, amount: number, soloFallback?: string, vehicleItemId?: string, companionItemId?: string }>>}
  */
 async function knownPriceRoutes(routes) {
   const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
   const known = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
+  const assetId = (v) => typeof v === "string" && v.length > 0 && v.length <= 64;
   return (Array.isArray(routes) ? routes : []).slice(0, 4).filter(r =>
     r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
-    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)));
+    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)))
+    .map(r => ({ move: r.move, amount: r.amount,
+      ...(r.soloFallback ? { soloFallback: r.soloFallback } : {}),
+      ...(assetId(r.vehicleItemId) ? { vehicleItemId: r.vehicleItemId } : {}),
+      ...(assetId(r.companionItemId) ? { companionItemId: r.companionItemId } : {}) }));
 }
 
 /**
@@ -7586,17 +7594,25 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
   }
 
   // companion_takes_a_hit needs an item id. If the PC has a companion
-  // asset, surface it; otherwise fall back to Endure Harm (the "you are,
-  // if alone" branch in the entry text).
+  // asset, surface it — the one the route names (a stated price's: the
+  // companion its move was made for, issue #362 D11), else the first;
+  // otherwise fall back to Endure Harm (the "you are, if alone" branch in the
+  // entry text). A stated Withstand Damage names the support vehicle its move
+  // was rolled for; with none, the executor takes the command vehicle.
   let move = route.move;
   let itemId = null;
   if (move === "companion_takes_a_hit") {
-    const companion = actor.items?.find?.(i => i?.system?.category?.toLowerCase?.() === "companion");
+    const isCompanion = (i) => i?.system?.category?.toLowerCase?.() === "companion";
+    const named = typeof route.companionItemId === "string" && route.companionItemId
+      ? actor.items?.find?.(i => i?.id === route.companionItemId && isCompanion(i)) : null;
+    const companion = named ?? actor.items?.find?.(isCompanion);
     if (companion) {
       itemId = companion.id;
     } else if (route.soloFallback) {
       move = route.soloFallback;
     }
+  } else if (move === "withstand_damage" && typeof route.vehicleItemId === "string" && route.vehicleItemId) {
+    itemId = route.vehicleItemId;
   }
 
   const amount = route.amount ?? 1;

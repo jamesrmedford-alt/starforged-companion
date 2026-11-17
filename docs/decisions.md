@@ -6,6 +6,49 @@ rejected.
 
 ---
 
+## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
+
+**Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,
+maintainer 2026-11-17.) A card-forced move — a paced card's "Roll ⟨move⟩"
+(the move a no-move reading offers included), the way-out and Battle
+buttons, a Batch Mode round's Roll — builds its interpretation without the
+interpreter, so it stated no stakes: the Confirm dialog showed no "At stake"
+and its miss always rolled the Pay the Price table.
+- **The reading's stakes are kept.** A move with several stats keeps the
+  stakes its stat reading states (`statEnrichment.enrichForcedMoveStat`,
+  `interpretMove`'s `expectedMoveSlug`); a forced travel move's destination
+  reading keeps them too (`travel.readForcedTravelDestination`).
+- **A move with one listed stat is read for them** — Gather Information,
+  Make a Connection, Explore a Waypoint, Set a Course, Swear an Iron Vow …:
+  one interpreter (Haiku) call more, through the same reading. A move that
+  rolls no stat (a progress move, a move with no roll) makes none, nor do
+  Endure Harm / Endure Stress (their stat is "whichever is higher", settled
+  from the sheet, and their miss pays no price — #362 AC02). No key, no
+  reading, as before. The reading is given the recent scene and the roller
+  (their vehicles and companions), as a typed line's is: the stakes are drawn
+  from them.
+- **A stated Withstand Damage or Companion Takes a Hit goes to what the move
+  was made against**: the move's targets are forwarded to the Pay the Price
+  dispatch on the stated route itself (`stakes.statedPrice(stakes, targets)`
+  — the support vehicle it was rolled for, `vehicleItemId`; the companion it
+  was rolled for, `companionItemId`, or a Heal's patient companion). It
+  landed on the command vehicle and the first companion in item order. With
+  no such target the defaults stand; the table's own routes are unchanged.
+
+**Reason:** the alpha 23 playtest's "the scan's miss came back 'delayed'"
+case, when the scan was rolled from the button; and a stated "the glowcat is
+clipped" landing on the Rockhorn.
+
+**Rejected:** *(B) record forced moves as table-priced* — a forced move is
+the same move a typed line makes, and its player sees the same dialog.
+*Restricting a stated miss's suffer move to the PC's meters when the move has
+no vehicle or companion target* — not asked for. *Reading the vehicle or
+companion off the stated miss line by name* — a line that mentions a vehicle
+in passing ("an enemy fighter rakes the hull") is the issue #345 AA14
+regression; the move's own targets are the record.
+
+---
+
 ## Issue #362 D12: a Pay the Price is paid even when its card cannot be posted (2026-11)
 
 **Decision:** (issue #362 D12, REFUSED-PRICE-CARD-DROPS-THE-PRICE; decided A,

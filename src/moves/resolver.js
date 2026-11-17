@@ -1389,7 +1389,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // So is a Take Decisive Action weak hit's cost (`rollDecisiveActionCost`):
   // the pipeline's cost card rolls it and seeds the narration with that one
   // (withDecisiveActionCostSeed — TDA-COST-DOUBLE-ROLL).
-  const stated = statedPrice(interpretation.stakes);
+  const stated = statedPrice(interpretation.stakes, interpretation);
   const choicePrice = rollChoicePrice(moveId, outcome, consequences, { stated });
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,

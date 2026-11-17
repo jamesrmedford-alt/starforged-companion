@@ -59,8 +59,9 @@ Discovered card says so). With no active sector nothing is recorded.
   ("Archer's rendezvous — the gap").
 - **Pipeline** (`movePipeline.readMove`, `src/moves/travel.js`): a forced
   travel move with no destination (a paced card's Roll — the move alone)
-  reads it and its stat from the line and the recent scene
-  (`readForcedTravelDestination`; an Undertake an Expedition only with none
+  reads it, its stat and its stakes from the line and the recent scene
+  (`readForcedTravelDestination` — the stakes since issue #362 D11, as every
+  forced move's stat reading; an Undertake an Expedition only with none
   open — with one open it continues it). A Set a Course naming none takes the
   scene's destination — the uncharted destination recorded last
   (`sceneDestination`). A Set a Course whose destination is not a charted,

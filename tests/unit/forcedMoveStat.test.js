@@ -119,13 +119,14 @@ describe('a forced move rolls the stat its narration fits (issue #321 U04)', () 
     expect(moveCards()[0].content).toContain('+shadow (4)');
   }, 30_000);
 
-  it('control: a forced move with one stat to roll makes no reading', async () => {
+  it('a forced move with one stat to roll is read once — for its stakes (issue #362 D11) — and rolls its stat', async () => {
     const id = await postPacedCard('gather_information', 'I comb the logs for the courier\'s route.');
 
     table.client('pl-1').click(id, '[data-action="sf-paced-roll"]');
     await table.settle(); await table.drain();
 
-    expect(table.claude.calls.filter(isInterpreter)).toHaveLength(0);
+    // Was no reading at all: the move stated no stakes (forcedMoveStakes.test.js).
+    expect(table.claude.calls.filter(isInterpreter)).toHaveLength(1);
     expect(control.confirmed).toEqual([{ moveId: 'gather_information', statUsed: 'wits' }]);
   }, 30_000);
 });
