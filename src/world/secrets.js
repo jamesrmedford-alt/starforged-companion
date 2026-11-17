@@ -25,8 +25,10 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { isNarrationXCarded } from "../context/safety.js";
 import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
+  undoNarrationEntries,
 } from "./worldJournal.js";
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
@@ -147,6 +149,48 @@ function mayWrite(byGm) {
 }
 
 /**
+ * A plan write for a narration the X-Card removed is not made (issue #362
+ * AC35; rules/narrator-memory.md 6b, XCARD-LATE-CAPTURE): each writer asks
+ * right before its write — the plan writes run after the narration's card is
+ * on screen, several server round trips long — and again after it, since the
+ * card may land while the write is on its way: the X-Card's own undo then ran
+ * before this write existed, so the write is taken back as that undo takes
+ * back the rest (a plan it made deleted, one it changed restored). True when
+ * the narration was removed.
+ *
+ * @param {string|null} narrationId
+ * @returns {Promise<boolean>}
+ */
+async function takenBackForXCard(narrationId) {
+  if (!isNarrationXCarded(narrationId)) return false;
+  try {
+    await undoNarrationEntries([narrationId], { categories: ["secrets"] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a plan write the X-Card overtook could not be taken back:`, err?.message ?? err);
+  }
+  return true;
+}
+
+/**
+ * takenBackForXCard for a clock a narration just started: the X-Card's pause
+ * write drops the clocks stamped with the narration it removes, so one
+ * created after that write is removed here (issue #362 AC35).
+ *
+ * @param {string|null} narrationId
+ * @returns {Promise<boolean>} true when the narration was removed
+ */
+async function clockTakenBackForXCard(narrationId) {
+  if (!isNarrationXCarded(narrationId)) return false;
+  try {
+    const { removeClocksMadeBy } = await import("../clocks/clocks.js");
+    await removeClocksMadeBy([narrationId]);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a clock the X-Card overtook could not be removed:`, err?.message ?? err);
+  }
+  return true;
+}
+
+/**
  * File a new plan. On the canonical GM (narration), or any GM with `byGm`.
  * Stamped with the narration that made it, for the X-Card.
  *
@@ -164,6 +208,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
     const now = new Date().toISOString();
     const record = normaliseSkeleton({ ...input, ...(reroll ? { reroll } : {}), id: newSkeletonId(), createdAt: now, updatedAt: now });
     if (!record) return null;
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const journal = await getOrCreateWorldJournal("secrets");
     if (!journal) return null;
     const data = { ...record, ...narrationStamp(narrationId, null) };
@@ -176,6 +221,7 @@ export async function createSkeleton(input, { narrationId = null, byGm = false }
       }]);
       const page = Array.isArray(created) ? created[0] : created;
       if (page) await writeEntryPage(page, FLAG_KEYS.secrets, data);   // its body, for the GM who opens it
+      if (await takenBackForXCard(narrationId)) return null;
       // A new plan: the narrator's world snapshot is out of date (issue #357).
       reportSnapshotEvent("plan_made");
       return record;
@@ -224,10 +270,12 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
       ? { narrationId: stored.narrationId ?? null, previous: stored.previous ?? null }
       : again ? { narrationId, previous: stored.previous ?? null } : narrationStamp(narrationId, stored);
     const data = { ...next, ...stamp };
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     try {
       await writeEntryPage(page, FLAG_KEYS.secrets, data);
       const name = skeletonPageName(next);
       if (page.name !== name) await page.update?.({ name });
+      if (await takenBackForXCard(narrationId)) return null;
       return next;
     } catch (err) {
       console.warn(`${MODULE_ID} | secrets: updating the plan for "${record.subject.name}" failed:`, err?.message ?? err);
@@ -628,6 +676,7 @@ function loreTitleOf(record) {
  * then shown" (decided) — unless they already were.
  */
 async function onTruthRevealed(record, { campaignState, narrationId, rollsWereShown }) {
+  if (isNarrationXCarded(narrationId)) return;   // issue #362 AC35
   await recordLoreDiscovery(loreTitleOf(record), {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
     ...(narrationId ? { narrationId } : {}),
@@ -677,6 +726,7 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
   if (record?.kind !== "threat" || !record.truth || !record.escalation?.some(e => !e.done) || planClock(record)) return null;
   if (storedClocks().filter(c => c?.planId && c.active !== false).length >= MAX_PLAN_CLOCKS) return null;
   try {
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const campaignLevel = record.createdFrom?.trigger === "significant_threat";
     const clock = await createClock({
@@ -684,7 +734,9 @@ async function ensureThreatClock(record, { narrationId = null } = {}) {
       type: campaignLevel ? "campaign" : "tension", segments: campaignLevel ? 6 : 4,
       narrationId, planId: record.id,
     });
+    if (await clockTakenBackForXCard(narrationId)) return null;
     await updateSkeleton(record.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    if (await clockTakenBackForXCard(narrationId)) return null;   // the card landed during the link
     return clock;
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: "${record.subject.name}"'s escalation clock was not made:`, err?.message ?? err);
@@ -742,9 +794,14 @@ async function applyCountdown(countdown, { campaignState, narrationId = null, mo
       }, { narrationId });
       if (!plan) return null;
     }
+    if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
     const { createClock } = await import("../clocks/clocks.js");
     const clock = await createClock({ name: countdown.label, type: "tension", segments: countdown.segments, narrationId, planId: plan.id });
+    if (await clockTakenBackForXCard(narrationId)) return null;
     await updateSkeleton(plan.id, r => ({ ...r, clockId: clock._id }), { narrationId });
+    // The card landed during the link: the clock goes too, and no challenge
+    // is offered for a countdown the table removed.
+    if (await clockTakenBackForXCard(narrationId)) return null;
     const { offerSceneChallenge } = await import("../moves/sceneChallengeOffer.js");
     await offerSceneChallenge({ label: countdown.label, clockId: clock._id, campaignState });
     return clock;
@@ -954,6 +1011,7 @@ function rollsLine(record) {
  */
 async function postRollsCard(record, { narrationId = null } = {}) {
   if (!record?.oracleSeeds?.length) return null;
+  if (isNarrationXCarded(narrationId)) return null;   // issue #362 AC35
   return postSecretCard(
     `The oracle, behind the scenes`,
     `<p><strong>${escapeHtml(record.kind === "mystery" ? record.question : record.subject.name)}</strong></p><p>${escapeHtml(rollsLine(record))}</p>`,

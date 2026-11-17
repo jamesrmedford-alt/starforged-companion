@@ -185,8 +185,11 @@ layers. This file is the never-break list.
    MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
    caller, and checks the stored `xCardedNarrationIds` right before it
    writes — `isNarrationXCarded`, after any Claude call — so a capture still
-   running when the card is played writes nothing more: XCARD-LATE-CAPTURE),
-   and the state transitions
+   running when the card is played writes nothing more: XCARD-LATE-CAPTURE;
+   the hidden plans' writers too — a plan, its clock, its rolls card, its
+   revealed truth's lore — and a plan or clock write the card overtook on
+   its way is taken back, as the X-Card's undo takes the rest, issue #362
+   AC35), and the state transitions
    it applies to existing entries, a faction's record stance included
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST
