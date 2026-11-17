@@ -784,6 +784,11 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     upgradeOf:       burn.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
+    // The plans the roll's narration was asked to decide — an expedition it
+    // began: this narration replaces that one, or is the move's only one
+    // (issue #362 AC04). Their hidden rolls are rolled as it is narrated
+    // (resolver.js withHiddenRolls).
+    skeletonRequests: Array.isArray(burn.move?.planRequests) ? burn.move.planRequests : [],
     // The stakes shown before the roll: the re-narration delivers the line
     // the burned outcome calls for (issue #353 R1).
     stakes:          burn.stakes ?? null,

@@ -1606,6 +1606,13 @@ export async function rollMove({
     moveTargetId:   interpretation.moveTargetId ?? null,
     combatRank:     interpretation.combatRank ?? null,
     expeditionRank: interpretation.expeditionRank ?? null,
+    // The plans this roll's narration is asked to decide — an expedition it
+    // began: the upgraded result is narrated in its place, so it is asked too
+    // (issue #362 AC04 — the request rode only the narration the upgrade
+    // struck or never made). Without their hidden rolls: the card is the
+    // table's (issue #362 AC15).
+    ...(resolution.skeletonRequests?.length
+      ? { planRequests: withoutHiddenRolls({ skeletonRequests: resolution.skeletonRequests }).skeletonRequests } : {}),
   };
   const burnActor   = rollerActor;
   const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets, moveContext);

@@ -212,7 +212,14 @@ record and pin for it).
   `src/index.js`) that Burn Momentum and Improve Result run for what the
   upgraded outcome adds over the recorded original (issue #313,
   UPGRADE-PIPELINE-EFFECTS). An upgrade saves its own location and legacy
-  mark; no persistResolution follows.
+  mark; no persistResolution follows. The upgraded result is narrated in
+  the roll's place, so it is asked for the plan the roll's narration was —
+  an expedition the weak hit began (the card's `move.planRequests`, without
+  their hidden rolls; issue #362 AC04): held, the burned result's narration
+  is the move's only one; with holding off the plan the struck narration
+  filed is taken back with it and asked for again; a round's upgraded entry
+  carries it to the round's narration. A plan already filed about the track
+  (the struck narration's fallback filed it unstamped) is not asked twice.
 - **`!reveal-site <name>`** (GM): manual site discovery — same reveal flow as
   §4.
 

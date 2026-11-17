@@ -1159,7 +1159,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
   // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
   // So does an expedition the move began (its track — Phase 3).
   const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...normalisePlanRequests(resolution.skeletonRequests)]
+    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...unplannedRequests(normalisePlanRequests(resolution.skeletonRequests))]
     : [];
   // The tracks and vows this move ends: their plans are in play to reveal
   // their end, resolved or not (issue #362 D4).
@@ -1297,6 +1297,29 @@ export async function narrateResolution(resolution, campaignState, options = {})
   }
 }
 
+
+/**
+ * A narration's plan requests about a known subject (an expedition's track),
+ * less those whose subject already has a plan of their kind. A burned or
+ * improved result is asked for the plan its roll's narration was (issue #362
+ * AC04): a plan that narration filed is taken back with it, but one its
+ * fallback filed unstamped (a failed call — issue #362 AC07) stays, and was
+ * planned a second time. Fail-open: an unreadable journal asks for them all.
+ *
+ * @param {Object[]} requests — normalisePlanRequests'
+ * @returns {Object[]}
+ */
+function unplannedRequests(requests) {
+  const about = (r) => (typeof r?.subject?.id === 'string' && r.subject.id ? r.subject.id : null);
+  if (!requests.some(about)) return requests;
+  let plans;
+  try {
+    plans = listSkeletons();
+  } catch {
+    return requests;
+  }
+  return requests.filter(r => !about(r) || !plans.some(p => p?.kind === r.kind && p?.subject?.id === about(r)));
+}
 
 // ---------------------------------------------------------------------------
 // A Batch Mode round — every acting player's action, narrated once (issue #340)

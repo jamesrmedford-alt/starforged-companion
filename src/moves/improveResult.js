@@ -495,6 +495,9 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     upgradeOf:       improve.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
+    // The plans the roll's narration was asked to decide (issue #362 AC04),
+    // as a burn's (burnMomentum.js buildBurnedResolution).
+    skeletonRequests: Array.isArray(improve.move?.planRequests) ? improve.move.planRequests : [],
     // The stakes shown before the roll: the re-narration delivers the hit
     // (issue #353 R1).
     stakes:          improve.stakes ?? null,
