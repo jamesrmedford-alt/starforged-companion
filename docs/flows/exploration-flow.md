@@ -39,7 +39,7 @@ on the active sector's `mapData.discoveries` (the first periphery cell no
 site of the sector holds, `sectorGenerator.layoutDiscovery` — the next slot by
 count wrapped the seventh site onto the first one's pin, issue #362 AC51; on
 the pipeline's working copy, which its
-persist saves — an upgrade saves `sectors` at once; when the world refuses
+persist saves — an upgrade saves the record onto its stored sector at once (`saveUnchartedSite`), and a refused save is a step on the upgrade's payoff card, whose Retry saves it (issue #362 AC49); when the world refuses
 the persist, the record is a step on the GMs' payoff failure card, whose
 Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
 expedition's link named no stored site, issue #362 AC49) and its pin
@@ -216,7 +216,10 @@ record and pin for it).
   `src/index.js`) that Burn Momentum and Improve Result run for what the
   upgraded outcome adds over the recorded original (issue #313,
   UPGRADE-PIPELINE-EFFECTS). An upgrade saves its own location and legacy
-  mark; no persistResolution follows. The upgraded result is narrated in
+  mark; no persistResolution follows — a refused location write (or
+  uncharted record) is a step on the upgrade's payoff card ("Upgraded result
+  not fully applied"), whose Retry saves it: it was a console line (issue
+  #362 AC49). The upgraded result is narrated in
   the roll's place, so it is asked for the plan the roll's narration was —
   an expedition the weak hit began (the card's `move.planRequests`, without
   their hidden rolls; issue #362 AC04): held, the burned result's narration

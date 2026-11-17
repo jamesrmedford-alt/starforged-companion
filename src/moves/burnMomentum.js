@@ -715,6 +715,8 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState,
     standingPrice: priceStands ? standingPriceOf(burn.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
+  // Its own writes the world refused go on its payoff card, with a Retry (issue #362 AC49).
+  failures.push(...(effects.failures ?? []));
 
   await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), momentumNote) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));

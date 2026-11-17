@@ -401,6 +401,8 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState,
     standingPrice: priceStands ? standingPriceOf(improve.resolutionId ?? null) : null });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: improve, actor, campaignState, kind: "improve" });
+  // Its own writes the world refused go on its payoff card, with a Retry (issue #362 AC49).
+  failures.push(...(effects.failures ?? []));
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);

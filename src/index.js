@@ -172,7 +172,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
-import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
+import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { reportSnapshotEvent, registerSnapshotEventsSetting } from "./narration/snapshotEvents.js";
@@ -2218,7 +2218,11 @@ async function applyOutcomeEffects({
   const notApplied = [];
   // afterMoveCard — cards that summarize the roll card, which the pipeline
   // posts once that card is on the table (issue #348 PT10).
-  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied, afterMoveCard: [] };
+  // failures — an upgrade's own writes the world refused, as payoff steps for
+  // its card's Retry (issue #362 AC49; the pipeline's are on its copy, for
+  // persistResolution's report).
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied,
+    afterMoveCard: [], failures: [] };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2312,9 +2316,19 @@ async function applyOutcomeEffects({
         campaignState.currentLocationId   = arrivedAt.id;
         campaignState.currentLocationType = arrivedAt.type;
         // The pipeline's persistResolution saves its working copy; an upgrade's
-        // location is saved here, beside the ship record just written.
+        // location is saved here, beside the ship record just written. Refused,
+        // it is a step on the upgrade's payoff card, whose Retry saves it — it
+        // was a console line (issue #362 AC49, X18's rule for the upgrade).
         if (upgrade) {
-          await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          try {
+            await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          } catch (err) {
+            console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
+            const name = arrivedAt.entity?.name ?? arrivalName ?? null;
+            out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
+              locationId: arrivedAt.id, locationType: arrivedAt.type, name });
+            notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
+          }
         } else {
           noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
             name: arrivedAt.entity?.name ?? arrivalName ?? null });
@@ -2421,7 +2435,7 @@ async function applyOutcomeEffects({
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
-            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
+            const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
             let   linked = selectExpeditionSite(campaignState, label);
             // A destination that is no site and no tracked place — the
@@ -2440,9 +2454,16 @@ async function applyOutcomeEffects({
               // refuses it the record is a step on the GMs' card, whose Retry
               // saves it: it was lost, and the expedition's link named no
               // stored site (issue #362 AC49). An upgrade's record is saved
-              // here, as its arrival's location is.
-              if (recorded && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
-              else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
+              // here, onto its stored sector, as its arrival's location is —
+              // refused, a step on the upgrade's payoff card.
+              if (recorded && upgrade) {
+                const saved = await saveUnchartedSite({ sectorId: recorded.sector?.id ?? null, site: recorded.site });
+                if (!saved?.ok) {
+                  out.failures.push({ step: "uncharted", reason: saved?.reason ?? "refused", ...(saved?.error ? { error: saved.error } : {}),
+                    sectorId: recorded.sector?.id ?? null, site: recorded.site, name: recorded.site?.name ?? null });
+                  notApplied.push(`the uncharted destination ${recorded.site?.name ?? label} on the sector map — the GMs have a Retry`);
+                }
+              } else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
                 site: recorded.site, name: recorded.site?.name ?? null });
               linked ??= recorded;
             }
@@ -2843,14 +2864,15 @@ async function applyOutcomeEffects({
  *
  * @param {{ resolution: Object, against: Object, interpretation: Object, targets: Object,
  *   actor: Actor|null, campaignState: Object }} args — resultUpgrade.js applyUpgradedOutcomeEffects
- * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ applied: string[], notApplied: string[], failures: Object[] }>} — `failures`:
+ *   the upgrade's own writes the world refused, as payoff steps (issue #362 AC49)
  */
 async function applyUpgradedOutcomeEffects({ resolution, against, interpretation, targets, actor, campaignState }) {
-  const { applied, notApplied } = await applyOutcomeEffects({
+  const { applied, notApplied, failures } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, against, targets,
     rollerActor: actor, speakerActor: actor,
   });
-  return { applied, notApplied };
+  return { applied, notApplied, failures };
 }
 
 /**

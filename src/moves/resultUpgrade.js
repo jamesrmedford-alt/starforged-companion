@@ -1442,12 +1442,13 @@ export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt
  * @param {Actor} args.actor — the upgrading PC
  * @param {Object} args.campaignState — the upgrade's working copy
  * @param {"burn"|"improve"} args.kind
- * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ applied: string[], notApplied: string[], failures: Object[] }>} — `failures`:
+ *   the applier's refused writes, as payoff steps the caller puts on its card
  */
 export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, state, actor, campaignState, kind }) {
   if (typeof applyEffects !== "function") {
     console.debug(`${MODULE_ID} | ${kind}: no effects applier registered — the upgraded outcome's other effects are not applied.`);
-    return { applied: [], notApplied: [] };
+    return { applied: [], notApplied: [], failures: [] };
   }
   try {
     const res = await applyEffects({
@@ -1463,10 +1464,12 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
-    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
+    // The upgrade's own writes the world refused (its arrival, an uncharted
+    // destination's record): steps for its payoff card (issue #362 AC49).
+    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [], failures: Array.isArray(res?.failures) ? res.failures : [] };
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
-    return { applied: [], notApplied: ["the upgraded result's other effects"] };
+    return { applied: [], notApplied: ["the upgraded result's other effects"], failures: [] };
   }
 }
 
