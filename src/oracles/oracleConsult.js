@@ -11,12 +11,13 @@
  * consulted; any failure keeps the odds the player gave (fail-open).
  *
  * The yes/no is rolled on the client that typed `!oracle yes` (index.js
- * handleOracleCommand); the plans are the GM's, in a journal a player's
- * client cannot read. A GM's roll consults here directly. A player's asks the
- * canonical GM for the odds over the module socket (issue #354 P2-31:
- * requestPlanOdds → registerOracleConsultSocket → oddsFromPlan there) and gets
- * back the one word — never the plan, its truth or its id. No GM connected,
- * no answer in time, no plan: the odds the player gave stand.
+ * handleOracleCommand → consultedOdds); the plans are the GM's, in a journal a
+ * player's client cannot read. A keyed GM's roll consults here directly. A
+ * player's — or a keyless co-GM's (issue #362 AC78) — asks the canonical GM
+ * for the odds over the module socket (issue #354 P2-31: requestPlanOdds →
+ * registerOracleConsultSocket → oddsFromPlan there) and gets back the one
+ * word — never the plan, its truth or its id. No GM connected, no answer in
+ * time, no plan: the odds the player gave stand.
  */
 
 import { apiPost } from "../api-proxy.js";
@@ -177,6 +178,36 @@ export async function requestPlanOdds(question, { waitMs = CONSULT_WAIT_MS } = {
     if (timer) clearTimeout(timer);
     _waiting.delete(id);
   }
+}
+
+/** Whether this client holds a Claude key of its own (the client-scoped setting). */
+function hasOwnClaudeKey() {
+  try {
+    return !!globalThis.game?.settings?.get?.(MODULE_ID, "claudeApiKey");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The odds a yes/no typed on this client is rolled at, when its subject has a
+ * hidden plan — or null for the odds typed. Chosen by whether this client can
+ * make the consult, not by its role (issue #362 AC78): a GM with a key
+ * consults the plans here (oddsFromPlan); any other client — a player, a GM
+ * without a key — asks the canonical GM (requestPlanOdds, issue #354 P2-31).
+ * A keyless co-GM's roll was rolled at the odds typed while a player's at the
+ * same table was rolled at the plan's. The canonical GM without a key asks no
+ * one (it is the one asks go to): the odds typed stand, fail-open as before.
+ * Never throws.
+ *
+ * @param {string} question
+ * @returns {Promise<string|null>} one of CONSULT_ODDS, or null
+ */
+export async function consultedOdds(question) {
+  const isGM = globalThis.game?.user?.isGM === true;
+  if (isGM && hasOwnClaudeKey()) return (await oddsFromPlan(question).catch(() => null))?.odds ?? null;
+  if (isGM && isCanonicalGM()) return null;
+  return requestPlanOdds(question);
 }
 
 /** Test seam: forget the listener and any ask in flight. */

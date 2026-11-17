@@ -4323,14 +4323,13 @@ async function handleOracleCommand(message) {
 
   // A question about a subject the narrator holds a hidden plan for is
   // rolled at odds its truth sets, so the answer cannot contradict it (issue
-  // #353, decided). The plans are the GM's: a GM's roll reads them here; a
-  // player's asks the canonical GM for the odds — the one word — and rolls
-  // at the odds they gave when no answer comes (issue #354 P2-31).
+  // #353, decided). The plans are the GM's: a keyed GM's roll reads them
+  // here; a player's — or a keyless co-GM's (issue #362 AC78) — asks the
+  // canonical GM for the odds, the one word, and rolls at the odds they gave
+  // when no answer comes (issue #354 P2-31).
   {
-    const { oddsFromPlan, requestPlanOdds } = await import("./oracles/oracleConsult.js");
-    const consulted = game.user?.isGM
-      ? (await oddsFromPlan(question).catch(() => null))?.odds
-      : await requestPlanOdds(question);
+    const { consultedOdds } = await import("./oracles/oracleConsult.js");
+    const consulted = await consultedOdds(question);
     if (consulted) oddsKey = consulted;
   }
 
