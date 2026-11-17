@@ -44,9 +44,10 @@ destination** (type `uncharted`, `workingLabel: true`) — a place the story
 names without a proper name, recorded by the Undertake an Expedition toward
 it (`siteDiscovery.recordUnchartedDestination`, issue #348 PT07; see
 `exploration-flow.md` §0). Same stores — a location Actor through
-`buildSiteLocationData`, a discovery record in the next periphery slot, a pin
-placed on the existing Scene (`sceneBuilder.addSiteToScene`) — and the same
-reveal; its Site Discovered card says it was charted under its working label
+`buildSiteLocationData`, a discovery record in the next periphery slot (saved
+with the move's record; a refused one is a Retry step on the GMs' payoff
+failure card — issue #362 AC49), a pin placed on the existing Scene
+(`sceneBuilder.addSiteToScene`) — and the same reveal; its Site Discovered card says it was charted under its working label
 and invites the GM to rename it (a discovered site's pin follows the rename,
 issue #331 X46).
 

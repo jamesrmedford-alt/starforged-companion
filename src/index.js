@@ -2400,9 +2400,14 @@ async function applyOutcomeEffects({
             // docks there. It never became a place in the game.
             if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
               linked = await recordUnchartedDestination(label, campaignState);
-              // The pipeline's persist saves its working copy; an upgrade's
-              // record is saved here, as its arrival's location is.
+              // The pipeline's persist saves its working copy — when the world
+              // refuses it the record is a step on the GMs' card, whose Retry
+              // saves it: it was lost, and the expedition's link named no
+              // stored site (issue #362 AC49). An upgrade's record is saved
+              // here, as its arrival's location is.
               if (linked && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
+              else if (linked) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: linked.sector?.id ?? null,
+                site: linked.site, name: linked.site?.name ?? null });
             }
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
@@ -5160,9 +5165,10 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
 }
 
 // What a working copy holds that only the write saving it puts in the world —
-// the move pipeline's legacy marks, an arrival, a site reveal — as payoff
-// steps, by the copy (issue #331 X18). Read when persistResolution's write is
-// refused: the GMs' card lists them, and its Retry applies each alone.
+// the move pipeline's legacy marks, an arrival, a site reveal, an uncharted
+// destination's record (issue #362 AC49) — as payoff steps, by the copy
+// (issue #331 X18). Read when persistResolution's write is refused: the GMs'
+// card lists them, and its Retry applies each alone.
 const UNSAVED_ON_COPY = new WeakMap();
 
 function noteUnsavedOnCopy(campaignState, step) {
@@ -5174,11 +5180,11 @@ function noteUnsavedOnCopy(campaignState, step) {
 
 /**
  * A write of persistResolution's was refused. The move's record — its one
- * campaignState write: the working copy's legacy marks, arrival and site
- * reveal never reached the world. The roller's meters — the Actor write
- * before it (issue #336 Y16): written apart, so the record was still saved
- * unless it was refused as well (`recordSaved`). The move's suffer-choice
- * card likewise (ERROR-TEXT-BLAMES-KEY — its refusal was swallowed, the cost
+ * campaignState write: the working copy's legacy marks, arrival, site reveal
+ * and uncharted destination's record never reached the world. The roller's
+ * meters — the Actor write before it (issue #336 Y16): written apart, so the
+ * record was still saved unless it was refused as well (`recordSaved`). The
+ * move's suffer-choice card likewise (ERROR-TEXT-BLAMES-KEY — its refusal was swallowed, the cost
  * never paid). Tell the GM running the pipeline which (not the API key — the
  * move resolved), and put each owed step on the GMs' payoff failure card,
  * whose Retry applies it alone (issue #331 X18; the #306 R04 / #315 S08 /
@@ -6397,6 +6403,7 @@ const SUFFER_ASSET_TRACKS = { withstand_damage: "integrity", companion_takes_a_h
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
   "site-gone": "the site is no longer on the sector map",
+  "sector-gone": "its sector is no longer stored",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
@@ -6473,6 +6480,10 @@ function payoffStepRecord(f) {
     case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
     case "arrival":     return { step: "arrival", locationId: f.locationId ?? null, locationType: f.locationType ?? null, name: f.name ?? null };
     case "site":        return { step: "site", sectorId: f.sectorId ?? null, siteId: f.siteId ?? null, name: f.name ?? null };
+    case "uncharted":   return { step: "uncharted", sectorId: f.sectorId ?? null, name: f.name ?? null,
+      site: f.site ? { id: f.site.id ?? null, type: f.site.type ?? null, name: f.site.name ?? null, discovered: false,
+        gridX: f.site.gridX ?? null, gridY: f.site.gridY ?? null, nearestSettlementId: f.site.nearestSettlementId ?? null,
+        actorId: f.site.actorId ?? null, workingLabel: true } : null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -6537,6 +6548,15 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === f.siteId);
         const now    = !site ? " It is no longer on the map." : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
         return `The site ${escapeChatHtml(f.name ?? "it reached")} charted as discovered — ${why}.${now}`;
+      }
+      case "uncharted": {
+        // An uncharted destination whose move record the world refused (issue #362 AC49).
+        const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
+        const onMap  = !!sector?.mapData?.discoveries?.some?.(d => d?.id === f.site?.id);
+        const now    = !sector ? " Its sector is no longer stored."
+          : onMap ? " It is on the map now."
+          : " Until it is, the expedition that set out for it charts nothing when it is finished.";
+        return `The uncharted destination ${escapeChatHtml(f.name ?? "the crew set out for")} recorded on the sector map — ${why}.${now}`;
       }
       case "clocks": {
         // A session-start campaign clock advance the world refused (issue #316 T04).
@@ -6682,6 +6702,11 @@ async function runPayoffStep(s, card, copies) {
       // A move's site reveal whose record the world refused (issue #331 X18).
       const { saveSiteDiscovered } = await import("./sectors/siteDiscovery.js");
       return saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+    }
+    case "uncharted": {
+      // An uncharted destination's record, whose move record the world refused (issue #362 AC49).
+      const { saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
+      return saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
     }
     case "clocks": {
       // A session-start clock advance the world refused: the rolled fills are

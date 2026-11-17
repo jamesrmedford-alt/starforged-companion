@@ -37,7 +37,10 @@ unexplored; its name the label written as a name, `nameMatch.generatedName`:
 `uncharted` with `workingLabel: true`
 on the active sector's `mapData.discoveries` (the next periphery slot,
 `sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
-persist saves — an upgrade saves `sectors` at once) and its pin
+persist saves — an upgrade saves `sectors` at once; when the world refuses
+the persist, the record is a step on the GMs' payoff failure card, whose
+Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
+expedition's link named no stored site, issue #362 AC49) and its pin
 (`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
 there it is a site like any other: §3's finish arrives there and §4's reveal
 charts it, under the location's name (the GM may rename it; the Site
