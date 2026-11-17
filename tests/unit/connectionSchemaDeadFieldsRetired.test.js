@@ -25,11 +25,17 @@
  * only fed `firstAppearance`, and the dead fallback read (rules/reachability.md
  * §1, §2: a field with no consumer is a bug; teardown is bidirectional).
  * Stored records keep the stale fields, which do no harm.
+ *
+ * The planet, settlement and faction templates carried the same
+ * `loremasterNotes: ""` — no writer, no reader — and are retired the same way.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ConnectionSchema, CampaignStateSchema } from '../../src/schemas.js';
 import { createConnection } from '../../src/entities/connection.js';
+import { PlanetSchema, createPlanet } from '../../src/entities/planet.js';
+import { SettlementSchema, createSettlement } from '../../src/entities/settlement.js';
+import { FactionSchema, createFaction } from '../../src/entities/faction.js';
 import { productionSources } from '../helpers/sourceScan.js';
 
 const MODULE = 'starforged-companion';
@@ -96,6 +102,27 @@ describe('issue #362 AC81 — the connection template carries no field without a
   it('control: the fields a card renders are still on the template', () => {
     for (const key of ['role', 'goal', 'description', 'pronouns', 'history', 'relationshipTicks', 'generativeTier']) {
       expect(ConnectionSchema).toHaveProperty(key);
+    }
+  });
+});
+
+describe('issue #362 AC81 — the planet, settlement and faction templates carry no loremasterNotes', () => {
+  const SIBLINGS = [
+    ['PlanetSchema',     PlanetSchema,     (cs) => createPlanet({ name: 'Ferrous' }, cs)],
+    ['SettlementSchema', SettlementSchema, (cs) => createSettlement({ name: 'Bleakhold' }, cs)],
+    ['FactionSchema',    FactionSchema,    (cs) => createFaction({ name: 'Iron Syndicate' }, cs)],
+  ];
+
+  it.each(SIBLINGS)('%s has no loremasterNotes — and so neither has a new record', async (_name, schema, create) => {
+    expect(schema).not.toHaveProperty('loremasterNotes');
+    const record = await create(global.game.settings.get(MODULE, 'campaignState'));
+    expect(record?.name, 'the record was made').toBeTruthy();
+    expect(record).not.toHaveProperty('loremasterNotes');
+  });
+
+  it.each(SIBLINGS)('control: %s keeps the fields its card and the narrator read', (_name, schema) => {
+    for (const key of ['description', 'notes', 'portraitSourceDescription', 'canonicalLocked', 'generativeTier']) {
+      expect(schema).toHaveProperty(key);
     }
   });
 });
