@@ -215,6 +215,23 @@ function knownPersonNamed(name, campaignState, names = []) {
   return knownPersonFor(name, campaignState, { names })?.name ?? null;
 }
 
+/**
+ * Whether a name is a player character's whole name as written — case and
+ * spacing aside, a title kept: "Sutton" is PC Sutton's, "Captain Sutton" is
+ * not (issue #362 AC41).
+ */
+function namesPlayerCharacterInFull(name) {
+  const key = (n) => (typeof n === "string" ? n.trim().replace(/\s+/g, " ").toLowerCase() : "");
+  const target = key(name);
+  if (!target) return false;
+  try {
+    return getPlayerActors().some(a => key(a?.name) === target);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | namesPlayerCharacterInFull: PC roster lookup failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
 /** Whether a name is a player character's — whole, in part, or nearly spelled. */
 function namesPlayerCharacter(name) {
   const target = normalizeEntityName(name);
@@ -1456,10 +1473,12 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
  * Corridor"). The narration rarely uses a record's whole name, so the facts
  * it established about a place sat in the Lore journal and never reached the
  * place. Two records answering is nobody's: the fact stays world lore.
+ * `exact` says the record bears the name itself (a title aside): it outranks
+ * a player character's part name (routeWorldJournalResults, issue #362 AC41).
  *
  * @param {string} entityName
  * @param {Object} campaignState
- * @returns {{ journalId: string, type: string }|null}
+ * @returns {{ journalId: string, type: string, exact: boolean }|null}
  */
 function findEntityForLoreRouting(entityName, campaignState) {
   const target = normalizeEntityName(entityName);
@@ -1486,9 +1505,9 @@ function findEntityForLoreRouting(entityName, campaignState) {
   if (exact.length) {
     const activeSectorId = campaignState?.activeSectorId ?? null;
     const here = exact.length === 1 ? exact : exact.filter(e => activeSectorId && e.sectorId === activeSectorId);
-    return here.length === 1 ? { journalId: here[0].journalId, type: here[0].type } : null;
+    return here.length === 1 ? { journalId: here[0].journalId, type: here[0].type, exact: true } : null;
   }
-  return variants.length === 1 ? variants[0] : null;
+  return variants.length === 1 ? { ...variants[0], exact: false } : null;
 }
 
 /**
@@ -1582,12 +1601,18 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // entity record where the narrator can use it, not as world-level canon.
     // Entity not found (no record yet) — the lore gate and WJ lore as usual.
     // A player character's own doings are the story so far, not world lore
-    // (issue #354 P2-17): the Session Log's, whatever their salience.
-    if (loreIsAboutPlayerCharacter(lore)) {
+    // (issue #354 P2-17): the Session Log's, whatever their salience. Who it
+    // is about (issue #362 AC41): a PC named in full is the PC; a record of
+    // exactly the name the detector used is that record's — before the PC
+    // rule's part names, which took "Captain Sutton", on record, for PC Isaac
+    // Sutton ("sutton") and filed the NPC's fact as the PC's doing; then a PC
+    // by part of their name, or leading the title; then a record the name
+    // answers to.
+    const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
+    if (namesPlayerCharacterInFull(lore.entityName) || (!entityRef?.exact && loreIsAboutPlayerCharacter(lore))) {
       await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
       continue;
     }
-    const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
     if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
       // The fact is its text, else its title (issue #362 AC45: `text ?? title`
       // kept an empty "text", so a blank detail went on the card — another
