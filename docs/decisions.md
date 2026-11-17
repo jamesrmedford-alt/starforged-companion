@@ -6,6 +6,47 @@ rejected.
 
 ---
 
+## Issue #362 D7: a weak-hit win burned or improved to a strong hit is paid the difference (2026-11)
+
+**Decision:** (issue #362 D7, WON-FIGHT-PAYOFF-NOT-RESCALED; decided B,
+maintainer 2026-11-17.) A Battle won on a weak hit and then burned or
+improved to a strong hit is paid what the strong hit adds to the win's
+payoff, as an upgrade pays the legacy ticks, companion health and progress
+marks it adds (issue #313 UPGRADE-PIPELINE-EFFECTS) — never twice:
+- **The milestone marks.** The victory card the weak hit posted carries its
+  move's `resolutionId`. While its ⚑ Mark milestone is still to press, the
+  card shows the strong hit's count (`flags.marks` and the label raised —
+  one press pays them all); once pressed, the marks it lacks are marked at
+  the upgrade, once (the vow's payoff ledger, step `milestone:<card>:upgrade`).
+  A fight whose rank gives one mark on either hit (troublesome, dangerous)
+  adds none.
+- **The promised reward.** A granted reward now records the outcome it was
+  granted at (`reward.grantedAt`). A reward granted at a weak hit gets the
+  strong hit's: a supply or momentum reward its second point, any other
+  form its string lifted ("no string attached now"). Claimed before it is
+  given — `grantedAt` is raised on every copy first — and a refused give is
+  on the GMs' payoff card with a Retry. A reward granted before `grantedAt`
+  was recorded is left as it stands.
+(`index.js` `payWonFightDifference`, `upgradeLinkedVowReward`.) A lost miss
+burned or improved to a win is paid the upgraded outcome's payoff in full,
+as before.
+
+**Reason:** with results held (issue #354 P2-10) the weak hit's payoff
+lands at the roll, before the roller has chosen to burn — so the strong hit
+the table ends up with was paid as a weak one, though every other effect of
+the upgrade is paid at the upgraded scale.
+
+**Supersedes** the issue #313 trade-off "a Battle won on a weak hit and
+improved to a strong one keeps the weak hit's milestone count and reward",
+and its rejection of "pay a Battle's win again": the win is not paid again —
+only its difference, and the victory card is not posted a second time.
+
+**Rejected:** *(A) defer a held result's payoff until it is settled* — the
+fight's end, its card and its payoff would split from the record the roll
+already made, and an upgrade in a Batch Mode round or with holding off
+would still need the difference. *(C) keep the weak hit's payoff* — the
+trade-off this replaces.
+
 ## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
 
 **Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,

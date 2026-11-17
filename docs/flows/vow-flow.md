@@ -401,7 +401,10 @@ vow's linked connection by name alone, `strict` — a link severed or renamed
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
 bonded or active connection, DEEPEN-LINK-FALLBACK) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
-weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
+weak = reduced/with-a-string, miss = lost; one-time via `reward.status`; the
+outcome it was granted at kept as `reward.grantedAt`, so a weak-hit win burned
+or improved to a strong hit is paid the difference once —
+`upgradeLinkedVowReward`, issue #362 D7).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**

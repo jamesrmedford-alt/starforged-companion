@@ -106,7 +106,12 @@ Two cross-cutting facts to hold onto:
   the Fray burned while its threshold card waits puts the new opening
   position on that card (found by the card's `resolutionId`); a Battle burned
   from a lost miss pays the won fight's milestone and reward
-  (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
+  (`applyWonFightPayoff`, shared with the end-of-fight branch), and a Battle
+  won on a weak hit and burned or improved to a strong one is paid the
+  difference — the victory card's ⚑ raised to the strong hit's marks (or the
+  marks it lacks marked once, when ⚑ was pressed) and the promised reward
+  granted at the weak hit's scale raised to the strong hit's
+  (`payWonFightDifference`, issue #362 D7); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
@@ -463,7 +468,11 @@ GM marks or rolls nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
-grant's claim); it lands on the roller's copy when they hold one, else on the
+grant's claim — and a granted reward records the outcome it was granted at,
+`reward.grantedAt`, so a weak-hit win upgraded to a strong hit gets the
+strong hit's once: its second point, or its string lifted — the victory card
+carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
+lands on the roller's copy when they hold one, else on the
 PC holding the promised reward. A grant that does not land is not swallowed:
 the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
 with a one-press Retry, and "🎁 Reward earned" is posted only once the grant
