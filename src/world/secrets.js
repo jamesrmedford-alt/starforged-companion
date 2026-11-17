@@ -529,6 +529,16 @@ async function rollMysteryAnswer() {
  * sidecar apply to add to the narration's own truths — stamped with its id,
  * so the X-Card retracts them with it.
  *
+ * The truth is the one this sidecar leaves on the plan: a `plans` entry for
+ * the same id — the narration recording the change its prose made, or
+ * deciding the plan it reveals — is laid on first (issue #362 AC13). The
+ * ledger was read before applyPlanSideData applied that entry, so a truth
+ * changed and revealed in one beat put the old, contradicted truth in the
+ * scene's facts beside a Lore entry stating the new one, and a plan decided
+ * and revealed in one beat got no scene fact at all. An entry answered
+ * `sameAs` is not laid on (applyPlanSideData joins it to the other plan, or
+ * leaves the plan as it is).
+ *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
  *   narration's beat ends: a plan their end resolved is still its to reveal
@@ -538,11 +548,15 @@ async function rollMysteryAnswer() {
 export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   if (!skeletonsEnabled()) return [];
   const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
+  const decided = new Map(normalisePlans(sidecar?.plans).map(p => [p.id, p]));
   const out = [];
   for (const reveal of normaliseReveals(sidecar?.reveals)) {
     if (!reveal.revealed.includes("truth")) continue;
-    const record = getSkeleton(reveal.id);
-    if (!record || !planInPlay(record, ending) || record.truthRevealed || !record.truth) continue;
+    const stored = getSkeleton(reveal.id);
+    if (!stored || !planInPlay(stored, ending) || stored.truthRevealed) continue;
+    const plan = decided.get(reveal.id);
+    const record = plan && !plan.sameAs ? applyPlanToSkeleton(stored, plan) : stored;
+    if (!record.truth) continue;
     out.push(record.kind === "mystery" && record.question
       ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
       : { subject: record.subject.name, fact: record.truth });

@@ -903,7 +903,10 @@ shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
 for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
-(`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
+(`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
+correction or decision of the same id is laid on first, so a truth changed or
+decided and revealed in one beat is the one the ledger and Lore both state,
+issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
