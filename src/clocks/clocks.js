@@ -427,6 +427,30 @@ export async function adjustClockSegments(clockId, delta) {
 }
 
 /**
+ * Put a full clock back one segment short of full: the trigger it reached is
+ * owed again, and the next advance fills it and fires it once more — a
+ * hidden plan's clock whose trigger vignette was not written (issue #362
+ * AC08; secrets.js rearmUnplayedPlanClock). Decided inside the clock write
+ * queue, on the clock as that write reads it (issue #337 Y37's rule): a clock
+ * that is no longer full — a rewind landed meanwhile — or retired, or gone, is
+ * left as it is. Written on a copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored after the re-arm, or null when nothing was written
+ */
+export async function rearmClock(clockId) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active === false || !isFull(clock)) return null;
+    clock.filled    = Math.max(0, clock.segments - 1);
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
+  });
+}
+
+/**
  * Revert tension-clock segments advanced by a Pay the Price that was
  * subsequently undone by burning momentum. Idempotent — clocks already at
  * zero or not found are silently skipped. GM-gated at the call site.

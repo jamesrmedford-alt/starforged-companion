@@ -887,6 +887,38 @@ export function planForClock(clockId) {
   return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed };
 }
 
+/**
+ * A plan's clock that filled while its trigger vignette could not be written
+ * — the X-Card active, no key, narration off, the call failed, an empty reply
+ * — goes back one segment short of full (issue #362 AC08): the step it was to
+ * play is still owed, and the next price that fills it plays it. The step is
+ * marked and the clock paced only by the vignette's own sidecar apply, so
+ * left full it was turned by no price again (advanceTensionClocksForPayThePrice
+ * takes only clocks not yet full), its step never played, and it held a
+ * plan-clock slot for good. Only while the clock is still full, its plan
+ * active with a step to play (or a countdown's answer to come out), and no
+ * open scene challenge holds it — a challenge's full clock is its time run
+ * out (AC09). A GM's write, on the client that ran the vignette (each post
+ * site is the clock's one emitter). Never throws.
+ *
+ * @param {string|null} clockId
+ * @returns {Promise<Object|null>} the clock as re-armed, or null
+ */
+export async function rearmUnplayedPlanClock(clockId) {
+  if (globalThis.game?.user?.isGM !== true || !skeletonsEnabled()) return null;
+  try {
+    const paced = planForClock(clockId);
+    if (!paced || (!paced.step && !paced.revealsTruth)) return null;
+    const clock = planClock(paced.plan);
+    if (!clock || (clock.filled ?? 0) < clock.segments || await heldBySceneChallenge(clock._id)) return null;
+    const { rearmClock } = await import("../clocks/clocks.js");
+    return await rearmClock(clock._id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a plan's clock whose trigger was not narrated could not be re-armed:`, err?.message ?? err);
+    return null;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NPCs AND VOWS (issue #353 Phase 4)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -72,7 +72,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -4154,101 +4154,112 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * @returns {Promise<string|null>}
  */
 export async function narrateClockAdvancement({ clock, campaignState, narrationId = newNarrationId(), stillTriggered = null }) {
-  const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
-  if (isXCardActive(campaignState))  return null;
-  const xCard = watchXCard(campaignState);
-
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-
-  // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'clock_vignette');
-
-  // Its own role (a threat tightening, or arriving), not the session
-  // vignette's "calm before / after" (issue #322 V23).
-  const character = getActiveCharacter(campaignState);
-  // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
-  // plan's next escalation step — or a countdown's answer coming out — and
-  // marks it played with this narration (a rewind that supersedes the
-  // vignette takes it back with it).
-  const paced = clock.triggered && skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
-  const pacedReveals = paced
-    ? (paced.step ? [{ id: paced.plan.id, advanced: paced.step.id }]
-      : (paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : []))
-    : [];
-  const extras = await buildNarratorExtras('clock_advance', campaignState, {
-    character, planIds: paced ? [paced.plan.id] : [],
-  });
-  const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '', extras,
-  );
-
-  const typeFlair = clock.type === "campaign"
-    ? "a long-running campaign threat or faction project"
-    : "an immediate scene danger or countdown";
-  const pacedLine = paced?.step
-    ? ` It paces ${paced.plan.subject.name} under UNREVEALED: what happens now is its next escalation step — "${paced.step.text}".`
-    : (paced?.revealsTruth ? ` It was counting down to the answer under UNREVEALED for ${paced.plan.subject.name}: that answer comes out now.` : '');
-  const userMessage = clock.triggered
-    ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments.${pacedLine} Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
-    : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
-
-  // A rewound trigger did not happen: nothing of it is applied (see above).
-  const triggerStands = async () => {
-    if (!clock.triggered || typeof stillTriggered !== 'function') return true;
-    try {
-      if (await stillTriggered()) return true;
-    } catch (err) {
-      console.debug?.(`${MODULE_ID} | narrateClockAdvancement: the clock could not be read — narrating:`, err?.message ?? err);
-      return true;
-    }
-    console.debug?.(`${MODULE_ID} | narrateClockAdvancement: "${clock.name}" was rewound before its trigger vignette — not narrated.`);
-    return false;
-  };
-
+  // A plan's clock whose trigger vignette is not written — on any exit below
+  // but the one that narrates it — is re-armed one short of full, its step
+  // still owed (issue #362 AC08; secrets.js rearmUnplayedPlanClock). A
+  // trigger rewound meanwhile is no longer full, and is left as it is.
+  let narrated = false;
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateClockAdvancement',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
+    const settings = getNarratorSettings();
+    if (!settings.narrationEnabled) return null;
+    if (isXCardActive(campaignState))  return null;
+    const xCard = watchXCard(campaignState);
+
+    const apiKey = getApiKey();
+    if (!apiKey) return null;
+
+    // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
+    await ensureSceneStarted(campaignState, 'clock_vignette');
+
+    // Its own role (a threat tightening, or arriving), not the session
+    // vignette's "calm before / after" (issue #322 V23).
+    const character = getActiveCharacter(campaignState);
+    // A clock a hidden plan holds (issue #353 Phase 3): its filling plays the
+    // plan's next escalation step — or a countdown's answer coming out — and
+    // marks it played with this narration (a rewind that supersedes the
+    // vignette takes it back with it).
+    const paced = clock.triggered && skeletonsEnabled() ? planForClock(clock._id ?? null) : null;
+    const pacedReveals = paced
+      ? (paced.step ? [{ id: paced.plan.id, advanced: paced.step.id }]
+        : (paced.revealsTruth ? [{ id: paced.plan.id, revealed: ['truth'] }] : []))
+      : [];
+    const extras = await buildNarratorExtras('clock_advance', campaignState, {
+      character, planIds: paced ? [paced.plan.id] : [],
     });
-    if (xCard.interrupted('narrateClockAdvancement')) return null;
-    if (!(await triggerStands())) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
-    if (!text?.trim()) return null;
-    // The developments of the recorded NPCs it names → their cards, as a
-    // session vignette's (#286 D4) — every post site goes through here
-    // (issue #345 AA33) — and the detection pass: a clock vignette is written
-    // at interaction latitude (issue #322 V23), so the figures, lore and
-    // threats it introduces are captured as a move's are
-    // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
-    // only for their embellishment latitude).
-    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
-    return text;
-  } catch (err) {
-    if (isRateLimit(err)) {
+    const systemPrompt = buildNarratorSystemPrompt(
+      campaignState, settings, character, '', extras,
+    );
+
+    const typeFlair = clock.type === "campaign"
+      ? "a long-running campaign threat or faction project"
+      : "an immediate scene danger or countdown";
+    const pacedLine = paced?.step
+      ? ` It paces ${paced.plan.subject.name} under UNREVEALED: what happens now is its next escalation step — "${paced.step.text}".`
+      : (paced?.revealsTruth ? ` It was counting down to the answer under UNREVEALED for ${paced.plan.subject.name}: that answer comes out now.` : '');
+    const userMessage = clock.triggered
+      ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments.${pacedLine} Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
+      : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
+
+    // A rewound trigger did not happen: nothing of it is applied (see above).
+    const triggerStands = async () => {
+      if (!clock.triggered || typeof stillTriggered !== 'function') return true;
       try {
-        await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narrateClockAdvancement',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(16000),
-        });
-        if (xCard.interrupted('narrateClockAdvancement')) return null;
-        if (!(await triggerStands())) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
-        if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
-        return text;
-      } catch (retryErr) {
-        console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
+        if (await stillTriggered()) return true;
+      } catch (err) {
+        console.debug?.(`${MODULE_ID} | narrateClockAdvancement: the clock could not be read — narrating:`, err?.message ?? err);
+        return true;
       }
+      console.debug?.(`${MODULE_ID} | narrateClockAdvancement: "${clock.name}" was rewound before its trigger vignette — not narrated.`);
+      return false;
+    };
+
+    try {
+      const raw = await callNarratorAPI({
+        label: 'narrateClockAdvancement',
+        apiKey, systemPrompt, userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(16000),
+      });
+      if (xCard.interrupted('narrateClockAdvancement')) return null;
+      if (!(await triggerStands())) return null;
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
+      if (!text?.trim()) return null;
+      // The developments of the recorded NPCs it names → their cards, as a
+      // session vignette's (#286 D4) — every post site goes through here
+      // (issue #345 AA33) — and the detection pass: a clock vignette is written
+      // at interaction latitude (issue #322 V23), so the figures, lore and
+      // threats it introduces are captured as a move's are
+      // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
+      // only for their embellishment latitude).
+      scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
+      narrated = true;
+      return text;
+    } catch (err) {
+      if (isRateLimit(err)) {
+        try {
+          await delay(RETRY_DELAY_MS);
+          const raw = await callNarratorAPI({
+        label: 'narrateClockAdvancement',
+            apiKey, systemPrompt, userMessage,
+            model:     settings.narrationModel,
+            maxTokens: maxTokensWithSidecar(16000),
+          });
+          if (xCard.interrupted('narrateClockAdvancement')) return null;
+          if (!(await triggerStands())) return null;
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals });
+          if (!text?.trim()) return null;
+          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
+          narrated = true;
+          return text;
+        } catch (retryErr) {
+          console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
+        }
+      }
+      console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
+      return null;
     }
-    console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
-    return null;
+  } finally {
+    if (!narrated && clock?.triggered) await rearmUnplayedPlanClock(clock?._id ?? null);
   }
 }
 
