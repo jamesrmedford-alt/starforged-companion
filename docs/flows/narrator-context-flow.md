@@ -424,7 +424,8 @@ applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`; a detected threat is the recorded one when its name
 is a variant of it — `resolveThreatName` — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
-page: issue #354 P2-15; a GM's **Merge duplicates** folds earlier ones,
+page: issue #354 P2-15; an escalation never leaves it less urgent — issue
+#362 AC42; a GM's **Merge duplicates** folds earlier ones,
 `mergeDuplicateThreats`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
 put back with it; the stance an attitude moved on the faction's record (the

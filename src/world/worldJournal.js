@@ -91,6 +91,14 @@ const SEVERITY_WORDS = {
 };
 const SEVERITY_BY_WORD = new Map(Object.entries(SEVERITY_WORDS).flatMap(([severity, words]) => words.map(w => [w, severity])));
 
+/**
+ * The words of SEVERITY_WORDS that say a threat grew, not how urgent it now
+ * is. A stored one is read as "active"; on an "escalated" transition one only
+ * repeats the change, so it names no level (issue #362 AC42: "escalated" read
+ * as "active" lowered an immediate threat, and left an active one unmoved).
+ */
+const ESCALATION_WORDS = new Set(["escalating", "escalated", "rising", "growing", "elevated"]);
+
 /** How many words a severity value may run to and still be read as one ("high severity", "very high"). */
 const SEVERITY_MAX_WORDS = 3;
 
@@ -106,11 +114,16 @@ const THREAT_HISTORY_CAP = 24;
  * @returns {"immediate"|"active"|"looming"|"resolved"|null}
  */
 export function normalizeThreatSeverity(value) {
+  return severityNamedBy(value);
+}
+
+/** normalizeThreatSeverity, leaving out the words in `ignored` (a Set). */
+function severityNamedBy(value, ignored = null) {
   if (typeof value !== "string") return null;
   const words = value.toLowerCase().replace(/[^a-z\s-]+/g, " ").split(/[\s-]+/).filter(Boolean);
   if (!words.length || words.length > SEVERITY_MAX_WORDS) return null;
   for (const w of words) {
-    const severity = SEVERITY_BY_WORD.get(w);
+    const severity = ignored?.has(w) ? null : SEVERITY_BY_WORD.get(w);
     if (severity) return severity;
   }
   return null;
@@ -126,6 +139,22 @@ function strayThreatNote(value) {
 /** The severity one step more urgent (looming → active → immediate); a resolved threat that escalates is active again. */
 function escalatedSeverity(severity) {
   return severity === "looming" || severity === "resolved" ? "active" : "immediate";
+}
+
+/**
+ * The severity an "escalated" transition leaves a threat at — never a lower
+ * one (issue #362 AC42): the severity its value names, when that is at least
+ * as urgent as the threat was; else — a value that names none, or only
+ * repeats the change ("escalated", "rising": ESCALATION_WORDS), or names a
+ * less urgent one — one step more urgent (escalatedSeverity).
+ *
+ * @param {*} value — the transition's `newValue`
+ * @param {string} was — the threat's severity, one of THREAT_SEVERITIES
+ * @returns {string}
+ */
+function escalationSeverity(value, was) {
+  const given = severityNamedBy(value, ESCALATION_WORDS);
+  return given && SEVERITY_ORDER[given] <= SEVERITY_ORDER[was] ? given : escalatedSeverity(was);
 }
 
 /**
@@ -829,8 +858,11 @@ export async function recordLocation(name, entry, campaignState) {
  *
  * The severity is one of THREAT_SEVERITIES (normalizeThreatSeverity). A
  * value that is none changes nothing — unless `escalate` is set (the
- * detector's "escalated" transition): the threat then moves one step more
- * urgent. `note` — what the threat is now doing — becomes its summary and the
+ * detector's "escalated" transition), which never leaves the threat less
+ * urgent: the severity given when it is at least as urgent as the threat was,
+ * else — none given, a word that only repeats the change ("escalated",
+ * "rising"), or a lower one — one step more urgent (escalationSeverity,
+ * issue #362 AC42). `note` — what the threat is now doing — becomes its summary and the
  * history line; it was stored as the severity (issue #354 P2-15).
  * `fromDetection` finds the threat by a variant of its name
  * (resolveThreatName), as recordThreat does.
@@ -859,7 +891,7 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
   if (!existing) return null;
 
   const was  = normalizeThreatSeverity(existing.severity) ?? "active";
-  const next = normalizeThreatSeverity(severity) ?? (escalate ? escalatedSeverity(was) : null);
+  const next = escalate ? escalationSeverity(severity, was) : normalizeThreatSeverity(severity);
   if (!next) {
     console.warn(`${MODULE_ID} | worldJournal: updateThreatSeverity — "${severity}" is no severity (${THREAT_SEVERITIES.join(", ")}); "${existing.name}" is unchanged.`);
     return null;
