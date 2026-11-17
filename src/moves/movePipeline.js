@@ -607,8 +607,9 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
   // The classifier's reading of a MOVE line, for the interpreter (issue #354 P2-02).
   let classifier = null;
+  let pacing = null;
   if (!readAs?.move) {
-    const pacing = await decidePacing({
+    pacing = await decidePacing({
       playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
       apiKey, ignoreForceMove: true,
     });
@@ -633,8 +634,11 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
     classifier,
-    // "Roll a move instead" asked for a roll: the line is read as a move.
-    allowNoMove: !readAs?.move,
+    // "Roll a move instead" asked for a roll: the line is read as a move. So
+    // is every line with pacing switched off, as free-flow reads it (index.js;
+    // decisions.md "Issue #354" P2-01) — a round's reading could still come
+    // back "No roll needed" there (issue #362 AC68).
+    allowNoMove: !readAs?.move && !pacing?.pacingDisabled,
   });
   // The interpreter read no move in it (issue #354 P2-01): a narrative
   // reading, as the classifier's own is — the window's "Roll a move instead"
