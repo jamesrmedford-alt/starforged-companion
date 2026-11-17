@@ -6,6 +6,21 @@ rejected.
 
 ---
 
+## Issue #362 D6: a one-word name counts only when capitalised as typed, or in address position (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D6 NAME-AS-ORDINARY-WORD; the maintainer's answer A of 2026-11-17 — "a one-word name counts only when capitalised as typed (or in address position) — fellow-PC rule and the relevance resolver".) Two rules read a player's typed line for names, and both matched a name's single word in any case — while the module's own name oracles give ordinary words (Will, Ash, Echo, Hope, Sage; callsigns Ghost, Shadow, Static).
+- **The rule (`relevanceResolver.namesOneWordName`).** A name of more than one word ("Echo Vega", "Will Harrow") still matches whole, in any case. A one-word name — a first or last name, or a name of one word — counts only as a name is written: a whole word that starts with a capital as typed, or, in any case, in address position: the first word of its line, or a vocative set off by a comma ("hand me the codes, will."). It is `resolveEntityName`'s rule for a name part (a lowercase word never matches), read in free text. A sentence's own capital is a capital: "Will you hand me the codes?" still names Will.
+- **The fellow-PC rule** (issue #354 P2-06, `narrator.lineIsToAFellowPlayerCharacter` on a MOVE decision, and finding G's offer filter `suppressPcDirectedSocialMove` — both through `inputNamesOtherPlayerCharacter`): another PC's first name, and the words of an NPC's name, count only so. "I will press the dockmaster" with a PC called Will at the table is rolled again (it was narrated, with no move offered), and so is "…or I leave this station in ash"; "Will, cover the door" — or "will, cover the door" — is still a line to Will, and a lowercase "an echo on the scanner" is no NPC named.
+- **The relevance resolver's Phase 1** (`matchNamesInNarration`): a single-word index key (a name part, or a name of one word) is a hit only so — "I check the scanner for an echo" no longer injects Echo Vega's card nor makes a hybrid move an interaction with her. The scene frame's `present` names, added to the paced match text, are names as recorded.
+
+Not changed: names the detection pass returns (the capture's `namesPlayerCharacter`, lore routing, the dedupe gate) — the model's names, not a typed line; Make a Connection's part-name naming (`figuresNamedIn`, issue #362 AC18) keeps its capital rule, without the address position.
+
+**Reason:** the fourteenth bug audit (coverage IDXA, MOVA D2, WJ D3). On a MOVE decision the fellow-PC rule cancels a roll, so a PC called Will, Ash or Hope turned every other player's Compel with that word in it into narration; relevance brought an NPC's card — and an interaction class — into a line that held only the ordinary word.
+
+**Rejected:** *(B) narrate with the move still offered* and *(C) leave it — `!roll` recovers*: the maintainer chose A. *A non-dictionary-word test* (WJ D3's other option) — the oracles' names are dictionary words. *A lowercase name kept for recall* — typed lowercase, "echo" is the word far more often than the name; a full name and an addressed name still match in any case.
+
+---
+
 ## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
 
 **Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,

@@ -21,7 +21,7 @@ import {
   resolveNarrationPerspective,
   sessionPerspectiveOf,
 } from './narratorPrompt.js';
-import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
+import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern, namesOneWordName } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
 import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
@@ -5093,9 +5093,30 @@ const PC_DIRECTED_SOCIAL_MOVES = new Set([
 ]);
 
 /**
+ * Whether a typed line names `name`: a name of more than one word whole, in
+ * any case; a one-word name — a name of one word, or the word of a name a
+ * player calls someone by — only as a name is written, with its capital as
+ * typed or in address position (relevanceResolver.namesOneWordName, issue
+ * #362 D6). Unicode-aware: "Zoë" and "Élise" are whole words too (issue #322
+ * V19).
+ *
+ * @param {string} text
+ * @param {string} name
+ * @returns {boolean}
+ */
+function lineNamesName(text, name) {
+  const n = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!n) return false;
+  return n.includes(' ') ? wholeWordPattern(n).test(text) : namesOneWordName(text, n);
+}
+
+/**
  * True when `playerText` names a player character other than the speaker. Used
  * to suppress social-move suggestions aimed at a fellow PC (finding G). Matches
- * each other PC's full name and its first-name token as whole words.
+ * each other PC's full name and their first name as whole words — a one-word
+ * name only as a name is written (lineNamesName, issue #362 D6: a PC called
+ * Will, Ash or Hope turned every other player's line with that word in it —
+ * "I will press the dockmaster" — into narration with no move offered).
  *
  * @param {string} playerText
  * @param {string|null} speakerName
@@ -5103,21 +5124,18 @@ const PC_DIRECTED_SOCIAL_MOVES = new Set([
  * @returns {boolean}
  */
 export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) {
-  const text = String(playerText ?? '').toLowerCase();
-  if (!text) return false;
+  const text = String(playerText ?? '');
+  if (!text.trim()) return false;
   let actors = pcActors;
   if (!Array.isArray(actors)) {
     try { actors = getPlayerActors(); } catch { actors = []; }
   }
   const speaker = String(speakerName ?? '').trim().toLowerCase();
   for (const a of actors) {
-    const name = String(a?.name ?? '').trim();
+    const name = String(a?.name ?? '').trim().replace(/\s+/g, ' ');
     if (!name || name.toLowerCase() === speaker) continue;
-    const tokens = new Set([name.toLowerCase(), name.split(/\s+/)[0].toLowerCase()]);
-    for (const t of tokens) {
-      if (t.length < 2) continue;
-      // Unicode-aware: a PC named "Zoë" or "Élise" is a whole word too (issue #322 V19).
-      if (wholeWordPattern(t, '').test(text)) return true;
+    for (const t of new Set([name, name.split(' ')[0]])) {
+      if (t.length >= 2 && lineNamesName(text, t)) return true;
     }
   }
   return false;
@@ -5132,7 +5150,9 @@ const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
  * P2-06; pacing/router.js decidePacing). Stricter than the offer's rule
  * (suppressPcDirectedSocialMove, which only withholds a suggestion): the line
  * must name another PC and name no tracked NPC, so "Archer, hand Karthik the
- * codes or I take them" — a Compel of Archer — is still rolled.
+ * codes or I take them" — a Compel of Archer — is still rolled. A one-word
+ * name — a PC's or an NPC's — counts only as a name is written, capitalised
+ * as typed or in address position (lineNamesName, issue #362 D6).
  *
  * @param {string|null} moveId — the move the classifier named
  * @param {string} playerText
@@ -5144,7 +5164,7 @@ const NAME_FILLER_WORDS = new Set(['the', 'of', 'and', 'von', 'van', 'del']);
 export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState = null, pcActors, npcNames } = {}) {
   if (!moveId || !PC_DIRECTED_SOCIAL_MOVES.has(moveId)) return false;
   if (!inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors)) return false;
-  const text = String(playerText ?? '').toLowerCase();
+  const text = String(playerText ?? '');
   let names = npcNames;
   if (!Array.isArray(names)) {
     names = [];
@@ -5158,12 +5178,12 @@ export function lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, 
     }
   }
   for (const raw of names) {
-    const name = String(raw ?? '').trim().toLowerCase();
+    const name = String(raw ?? '').trim().replace(/\s+/g, ' ');
     if (!name) continue;
     // The full name, or any word of it a player would call them by ("Archer").
-    const tokens = new Set([name, ...name.split(/\s+/).filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t))]);
+    const tokens = new Set([name, ...name.split(' ').filter(t => t.length >= 3 && !NAME_FILLER_WORDS.has(t.toLowerCase()))]);
     for (const t of tokens) {
-      if (wholeWordPattern(t, '').test(text)) return false;
+      if (lineNamesName(text, t)) return false;
     }
   }
   return true;

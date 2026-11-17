@@ -727,7 +727,10 @@ index (full name + first/last word of multi-word names, lowercased,
 dismissed-list filtered — a name a record takes by a rename comes off that
 list, issue #345 AA55; since issue #286 a name part is never an article,
 title or other noise word, never a word two entities share, and never
-shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
+shadows another entity's full name; a one-word key — a name part, or a name
+of one word — is a hit only written as a name, capitalised as typed or in
+address position, `namesOneWordName`, issue #362 D6: "an echo on the scanner"
+brought in Echo Vega); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the
 move path's relevance call deliberately does not (architecture §8.2,
 reaffirmed 2026-07). Since issue #286 (B3) every path then adds the frame's
