@@ -100,8 +100,11 @@ record and pin for it).
   resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
   Expedition's arrival too. The **Set a Course resolved** card names the
   place (the arrival's, else the destination's words) and says "Token moved"
-  only when the token moved; a place no pin marks says so, and no position
-  written (none named, no command vehicle) points to `!at` (PT09). It is
+  only when the token moved; a token that did not move says why — no pin
+  marks the place, no ship token on the map, the ship token setting off, no
+  map scene (the token sync's `tokenStayed`; it blamed a missing pin for all of
+  them, issue #362 AC53) — and no position written (none named, no command
+  vehicle) points to `!at` (PT09). It is
   posted after the roll card it summarizes — `applyOutcomeEffects` returns it
   in `afterMoveCard`, which `rollMove` posts after `postMoveResult`; an
   upgrade's posts at once (PT10).

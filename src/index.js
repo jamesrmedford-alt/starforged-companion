@@ -2262,10 +2262,12 @@ async function applyOutcomeEffects({
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
 
     // Whether the ship's position was written, and its token moved — the
-    // Set a Course card says so only when it did (issue #348 PT09).
-    let docked     = null;
-    let tokenMoved = false;
-    let arrivedAt  = null;
+    // Set a Course card says so only when it did (issue #348 PT09), and why
+    // it did not (issue #362 AC53).
+    let docked      = null;
+    let tokenMoved  = false;
+    let tokenStayed = null;
+    let arrivedAt   = null;
     if (positioning) {
       const tokenReport = {};
       docked = await maybeUpdateShipPositionFromName(
@@ -2276,7 +2278,8 @@ async function applyOutcomeEffects({
           : "set_a_course",
         { entityId: named?.id ?? destinationId, report: tokenReport },
       );
-      tokenMoved = tokenReport.tokenMoved === true;
+      tokenMoved  = tokenReport.tokenMoved === true;
+      tokenStayed = tokenReport.tokenStayed ?? null;
 
       // When the id and the name both miss, the place the ship just docked at:
       // the position's word scan finds "Bleakhold" in "the expedition to
@@ -2339,7 +2342,7 @@ async function applyOutcomeEffects({
     // roll card, so the pipeline posts it after that card (issue #348 PT10);
     // an upgrade's roll card is already on the table.
     if (resolution.moveId === "set_a_course" && positioning) {
-      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved })
+      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
         .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
       if (upgrade) await postCard();
       else out.afterMoveCard.push(postCard);
@@ -4624,6 +4627,18 @@ function arrivalNarratorLine(place, outcome) {
   return `[ARRIVAL: The ship has ARRIVED at ${where || "its destination"}. Open the scene there — not on the departure or the journey. ${how}; end the beat on something unresolved there.]`;
 }
 
+// Why the Set a Course card's token did not move — the token sync's
+// `tokenStayed` (sectorSceneHooks syncCommandVehicleTokenToPosition). A reason
+// it does not name ("not-gm") says nothing more than that the token stayed.
+const TOKEN_STAYED_WHY = {
+  "no-pin":    "no sector-map pin marks it",
+  "no-token":  "there is no ship token on the sector map",
+  "no-scene":  "its sector has no map scene",
+  "off":       "the ship token is turned off in the settings",
+  "no-anchor": "no settlement or site pin anchors that position",
+  "refused":   "the world did not take the token's move",
+};
+
 /**
  * F16 Phase F (F15 fold-in): post an informational follow-up card to chat
  * when Set a Course resolves to a non-miss, so players can see that the
@@ -4637,10 +4652,11 @@ function arrivalNarratorLine(place, outcome) {
  *
  * @param {string|null} destination — the place reached, by name (null: none named)
  * @param {Object} resolution — full move resolution from resolveMove()
- * @param {{ docked?: boolean, tokenMoved?: boolean }} [map] — whether the ship's
- *   position was written, and whether its sector-map token moved
+ * @param {{ docked?: boolean, tokenMoved?: boolean, tokenStayed?: string|null }} [map] — whether
+ *   the ship's position was written, whether its sector-map token moved, and
+ *   why not (syncCommandVehicleTokenToPosition's `tokenStayed`)
  */
-async function postSetACourseFeedbackCard(destination, resolution, { docked = false, tokenMoved = false } = {}) {
+async function postSetACourseFeedbackCard(destination, resolution, { docked = false, tokenMoved = false, tokenStayed = null } = {}) {
   // The place by name — the arrival's, or the scene's established destination
   // the pipeline read for a line that named none. It said "the destination"
   // for a course that named no place, and "Token moved" whether or not the
@@ -4651,9 +4667,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
     : resolution.outcome === "weak_hit"
       ? `<p>Arrived at ${dest ?? "the destination"} with a cost or complication — see the suffer prompt for your choice.</p>`
       : `<p>Course not held — the ship did not arrive.</p>`;
+  // Why the token stayed, as far as it is known: the card blamed a missing
+  // pin whatever the reason — no ship token on the map, the setting off, a
+  // pin that was there (issue #362 AC53).
+  const why = TOKEN_STAYED_WHY[tokenStayed] ?? null;
   const mapLine = resolution.outcome === "miss" ? ""
     : tokenMoved && dest ? `<p>Token moved to ${dest}.</p>`
-    : docked && dest ? `<p>The ship's position is now ${dest}; no sector-map pin marks it, so its token did not move.</p>`
+    : docked && dest ? `<p>The ship's position is now ${dest}; its sector-map token did not move${why ? ` — ${why}` : ""}.</p>`
     : `<p>The ship's position was not updated${dest ? "" : " — no destination was named"}. Type <code>!at &lt;place&gt;</code> to set where it is.</p>`;
   try {
     await ChatMessage.create({
@@ -7864,7 +7884,8 @@ async function handleAtCommand(message) {
  * that resolves to no settlement / planet / location (issue #321 U52, U56).
  * `opts.report`, when given, gets `tokenMoved`: whether the sector-map token
  * now stands on the pin the position names (the Set a Course card says
- * "Token moved" only then — issue #348 PT09).
+ * "Token moved" only then — issue #348 PT09) — and, when it did not move,
+ * `tokenStayed`: why (syncCommandVehicleTokenToPosition; issue #362 AC53).
  */
 export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null, report = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
@@ -7887,7 +7908,7 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // to the new position. The drag path already moved its own Token
     // (moveCommandVehicleTokenToDestination), so scene_token skips the sync.
     if (source !== "scene_token") {
-      const token = await syncCommandVehicleTokenToPosition(position, campaignState).catch(err => {
+      const token = await syncCommandVehicleTokenToPosition(position, campaignState, { report }).catch(err => {
         console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err);
         return null;
       });
