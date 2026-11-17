@@ -901,7 +901,8 @@ exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
-the truth itself, which becomes a ledger truth of the narration's own
+the truth itself (only once decided — a "truth" reveal of a plan still waiting
+for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
 (`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
