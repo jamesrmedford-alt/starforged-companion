@@ -30,11 +30,12 @@ vi.mock("../../src/character/actorBridge.js", async (importOriginal) => ({
   // …and the wrapper that keeps the system's change note from being posted
   // beside a suffer card (issue #354 P2-13) is the real one too.
   // The choice cards read the PC's companions too — which ones a Companion
-  // Takes a Hit pick could hit (sufferCard.js optionContext, issue #362 AC28).
+  // Takes a Hit pick could hit (sufferCard.js optionContext, issue #362 AC28)
+  // — and a support vehicle's battered mark (a resist card naming it, #362 D8).
   ...(({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes,
-    listCompanionAssets, getCompanionAsset, companionGivenName }) =>
+    listCompanionAssets, getCompanionAsset, companionGivenName, readVehicleAssetBattered }) =>
     ({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets, withoutSystemNotes,
-      listCompanionAssets, getCompanionAsset, companionGivenName }))(await importOriginal()),
+      listCompanionAssets, getCompanionAsset, companionGivenName, readVehicleAssetBattered }))(await importOriginal()),
   // The at-0 choice card (sufferCard.js, issue #329 X03) reads these.
   getActor:            vi.fn(() => null),
   readCompanionHealth: vi.fn(() => null),
@@ -99,6 +100,7 @@ import {
   companionTakesAHit,
   withstandDamage,
   executeSuffer,
+  rollImpactTable,
   SUFFER_EXECUTORS,
 } from "../../src/moves/sufferExecutor.js";
 
@@ -501,21 +503,30 @@ describe("companionTakesAHit", () => {
     expect(chatCalls[0].content).toMatch(/2 more as momentum: 2 → 0/);
   });
 
-  it("flags destroyed on miss-with-match at 0", async () => {
+  // Issue #362 D8: at 0 the harm step owes the resist roll — "Then, if their
+  // health is 0 … roll +your companion's health" — a card that rolls
+  // Companion Takes a Hit for this companion. It said "destroyed" on the
+  // match of whichever move's card it came from (its own miss's match is
+  // that roll's — offerAtZeroChoiceAfterMiss).
+  it("at 0 the harm step owes the resist roll for that companion — never destroyed on another move's match", async () => {
     const a = actor(1);
     const r = await companionTakesAHit(a, "comp-1", 1, { isMissWithMatch: true });
-    expect(r.atZero).toBe(true);
-    expect(r.destroyed).toBe(true);
-    expect(chatCalls[0].content).toMatch(/companion destroyed/i);
-    expect(chatCalls[0].content).toMatch(/discard/i);
+    expect(r).toMatchObject({ atZero: true, resistOwed: true });
+    expect(r.destroyed).toBeUndefined();
+    expect(chatCalls[0].content).toContain("at 0 health you must test its resilience: roll Companion Takes a Hit on the card below");
+    expect(chatCalls[0].content).not.toMatch(/destroyed|out of action/i);
+    const resist = chatCalls[1].flags["starforged-companion"];
+    expect(resist.sufferPrompt).toMatchObject({ resist: "companionHealth", options: [{ resist: "companion_takes_a_hit" }] });
+    expect(resist.sufferPrompt.options[0].label).toMatch(/Test Loyal Hound's resilience/);
+    expect(resist.executorOpts.companionItemId).toBe("comp-1");
   });
 
-  it("at 0 without miss-with-match is just out-of-action", async () => {
-    const a = actor(1);
+  it("control: above 0 nothing is owed", async () => {
+    const a = actor(3);
     const r = await companionTakesAHit(a, "comp-1", 1);
-    expect(r.atZero).toBe(true);
-    expect(r.destroyed).toBe(false);
-    expect(chatCalls[0].content).toMatch(/out of action/i);
+    expect(r.atZero).toBe(false);
+    expect(r.resistOwed ?? false).toBe(false);
+    expect(chatCalls, "the executor's own card alone").toHaveLength(1);
   });
 
   it("surfaces a not-found warning when the companion id is bogus, or no companion is named among several", async () => {
@@ -582,22 +593,40 @@ describe("withstandDamage", () => {
     expect(chatCalls[0].content).toMatch(/Kobayashi V: 5 → 3/);
   });
 
-  it("rolls vehicle-damage d100 at 0 integrity, and damage past 0 is momentum", async () => {
+  // Issue #362 D8: at 0 the damage step owes the resist roll — "Then, if
+  // your integrity is 0 … roll +integrity" — and rolls nothing: the
+  // vehicle-damage d100 is one of that roll's miss's costs. It was rolled
+  // at once, so a Face Danger miss could destroy the ship unresisted.
+  it("at 0 integrity the damage step owes the resist roll for that vehicle — no vehicle-damage d100; damage past 0 is momentum", async () => {
     const r = await withstandDamage(actor(1), "veh-1", 2, { fixedRoll: 5 });
-    expect(r.atZero).toBe(true);
-    expect(r.vehicleDamage).toEqual({ roll: 5, result: expect.stringMatching(/catastrophic/i) });
+    expect(r).toMatchObject({ atZero: true, resistOwed: true });
+    expect(r.vehicleDamage).toBeUndefined();
     expect(r.momentumLoss).toMatchObject({ amount: 1, taken: 1 });
-    expect(chatCalls[0].content).toMatch(/Vehicle Damage \(d100 5\)/);
-    // A support vehicle's catastrophic result is no command vehicle's destruction.
-    expect(chatCalls[0].content).not.toMatch(/Command vehicle destruction/i);
+    expect(chatCalls[0].content).not.toMatch(/Vehicle Damage/);
+    expect(chatCalls[0].content).toContain("at 0 integrity you must resist: roll Withstand Damage on the card below");
+    const resist = chatCalls[1].flags["starforged-companion"];
+    expect(resist.sufferPrompt).toMatchObject({ resist: "integrity", options: [{ resist: "withstand_damage" }] });
+    expect(resist.executorOpts.vehicleItemId).toBe("veh-1");
   });
 
-  it("surfaces Overcome Destruction prompt for command vehicle on catastrophic result", async () => {
+  it("the command vehicle's damage step at 0 names the command vehicle on its resist card", async () => {
     ship.integrity = 1;
     const r = await withstandDamage(actor(5), null, 1, { fixedRoll: 5 });
-    expect(r.atZero).toBe(true);
-    expect(chatCalls[0].content).toMatch(/Command vehicle destruction/i);
-    expect(chatCalls[0].content).toMatch(/Overcome Destruction/i);
+    expect(r).toMatchObject({ atZero: true, resistOwed: true, isCommandVehicle: true });
+    expect(chatCalls[0].content).not.toMatch(/Command vehicle destruction/i);
+    expect(chatCalls[1].flags["starforged-companion"].executorOpts.vehicleActorId).toBe("ship-1");
+  });
+
+  it("the vehicle-damage table (the resist roll's miss's cost) surfaces Overcome Destruction for the command vehicle, discard for a support vehicle", async () => {
+    await rollImpactTable("vehicle_damage", { fixedRoll: 5, actorName: "Kira" });
+    expect(chatCalls[0].content).toMatch(/d100 5: <em>Immediate catastrophic destruction/);
+    expect(chatCalls[0].content).toMatch(/Command vehicle destruction.*Overcome Destruction/);
+    expect(chatCalls[0].flags["starforged-companion"].oracleMemory).toMatchObject({ name: "Vehicle Damage", question: "Kira" });
+    await rollImpactTable("vehicle_damage", { fixedRoll: 5, vehicleItemId: "veh-1" });
+    expect(chatCalls[1].content).toMatch(/discard the asset/);
+    expect(chatCalls[1].content).not.toMatch(/Overcome Destruction/);
+    await rollImpactTable("vehicle_damage", { fixedRoll: 99 });
+    expect(chatCalls[2].content).not.toMatch(/destruction|discard/i);
   });
 
   it("a bogus vehicle id posts not-found; a refused write throws", async () => {

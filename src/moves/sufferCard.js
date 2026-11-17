@@ -29,7 +29,7 @@ import {
 } from "./sufferDialog.js";
 import { isUnprepared } from "./sufferExecutor.js";
 import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName } from "../character/actorBridge.js";
-import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
+import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
@@ -126,18 +126,24 @@ function optionContext(actor, executorOpts = {}) {
   const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
   const patientCompanion = !!executorOpts?.patientCompanionItemId;
   if (executorOpts?.vehicleItemId) {
-    return { actor, companionHealth, patient, patientCompanion, ...companions,
+    // A support vehicle is never cursed (the command vehicle's impact).
+    return { actor, companionHealth, patient, patientCompanion, ...companions, vehicleCursed: null,
       vehicleBattered: readVehicleAssetBattered(actor, executorOpts.vehicleItemId) };
   }
   let vehicleBattered = null;
+  // Withstand Damage's at-0 cost "Mark the vehicle as … cursed" (issue #362 D8).
+  let vehicleCursed = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
       ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
-    if (vehicleId && getShip(vehicleId)) vehicleBattered = isShipBattered(vehicleId);
+    if (vehicleId && getShip(vehicleId)) {
+      vehicleBattered = isShipBattered(vehicleId);
+      vehicleCursed   = isShipCursed(vehicleId);
+    }
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, companionHealth, vehicleBattered, patient, patientCompanion, ...companions };
+  return { actor, companionHealth, vehicleBattered, vehicleCursed, patient, patientCompanion, ...companions };
 }
 
 /**
@@ -283,8 +289,12 @@ export function summarizeSufferCalls(calls, results = []) {
         ? "combat position not applied"
         : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
-      case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
+      case "roll-table":          parts.push(`rolled the ${IMPACT_TABLE_NAMES[c.table] ?? "mortal-wound"} table`); break;
       case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
+      case "mark-vehicle":        parts.push(`marked the vehicle ${c.impact}`); break;
+      case "vehicle-cost":        parts.push(c.cost === "module_destroyed"
+        ? "a broken module destroyed (on the starship sheet)"
+        : "a module marked broken (on the starship sheet)"); break;
       case "route":               parts.push(c.route === "pay_the_price" && c.price
         ? "the price paid (see its card)"
         : `see "Trigger: ${c.route}"`); break;
@@ -294,6 +304,10 @@ export function summarizeSufferCalls(calls, results = []) {
   }
   return parts.length ? parts.join(", ") : "no change";
 }
+
+// What summarizeSufferCalls calls an at-0 table (issue #329 X03; Withstand
+// Damage's, issue #362 D8).
+const IMPACT_TABLE_NAMES = { mortal_wound: "mortal-wound", desolation: "desolation", vehicle_damage: "vehicle-damage" };
 
 /**
  * A vehicle's or companion's loss its track could not take, taken as
@@ -742,7 +756,9 @@ async function handleSufferPick(message, dataset) {
   // vehicle gone since the card was drawn — paid nothing: the card stays the
   // cost's, open for another pick (issue #362 AC28), and its move's Burn /
   // Improve with it.
-  if (!multi && results.length && results.every(r => r?.ok === false && NO_TARGET.has(r.reason))) {
+  // A resist card whose vehicle or companion is gone owes no roll: it
+  // resolves, saying so (below).
+  if (!multi && !prompt.resist && results.length && results.every(r => r?.ok === false && NO_TARGET.has(r.reason))) {
     const why = notAppliedLines(calls, results).join("; ");
     const reopened = await reopenSufferCard(message, { note: `Not applied: ${why}. Choose another.` });
     if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);

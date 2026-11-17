@@ -1016,11 +1016,15 @@ const CONSEQUENCE_MAP = {
         // The integrity options change the vehicle the move was rolled
         // against (sufferDialog applyVehicleIntegrity, issue #309 N02); the
         // damage the vehicle cannot take at 0 is momentum (sufferDialog
-        // lossPastZero, issue #345 AA15). At 0, the vehicle-type cost is the
-        // player's to apply (otherEffect).
+        // lossPastZero, issue #345 AA15). "If your integrity is 0, also
+        // suffer a cost according to the vehicle type" follows either option:
+        // a choice card of the vehicle's costs — battered or cursed, a module
+        // broken or destroyed, the vehicle-damage table (`atZeroChoice`,
+        // sufferExecutor offerAtZeroChoiceAfterMiss; issue #362 D8 — it was
+        // the player's to apply, and the damage step rolled the table itself).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 integrity",       integrity: -1 },
-          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
+          { label: "-1 integrity",       integrity: -1, atZeroChoice: "vehicle" },
+          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2, atZeroChoice: "vehicle" },
         ]},
         otherEffect: "Worse than thought. Suffer -1 integrity or Lose Momentum (-2). If integrity 0, suffer vehicle-type cost."
       };
@@ -1043,12 +1047,16 @@ const CONSEQUENCE_MAP = {
       };
       case "miss": return {
         ...emptyConsequences(),
-        // Executor handles at-0 + match → companion destroyed (Q2: prompt,
-        // not auto-discard). The harm the companion cannot take at 0 is
-        // momentum (sufferDialog lossPastZero, issue #345 AA15).
+        // The harm the companion cannot take at 0 is momentum (sufferDialog
+        // lossPastZero, issue #345 AA15). At 0, either option is followed by
+        // the companion's fate — out of action until given aid, or dead or
+        // destroyed with this miss's match (Q2: a prompt, not an
+        // auto-discard) — on its own card (`atZeroChoice`, sufferExecutor
+        // offerAtZeroChoiceAfterMiss; issue #362 D8: the executor said
+        // destroyed on the match of whichever move's card it came from).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 companion health", companionHealth: -1 },
-          { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2 },
+          { label: "-1 companion health", companionHealth: -1, atZeroChoice: "companion" },
+          { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2, atZeroChoice: "companion" },
         ]},
         // Dead or destroyed only at 0 health — as the executor gates it; the
         // card and the narrator's MOVE OUTCOME said so on the match alone

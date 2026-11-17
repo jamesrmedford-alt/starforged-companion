@@ -35,9 +35,15 @@
  *        - Endure Stress past 0 spirit → the remainder is Lose Momentum
  *          the same way; at 0 the resist roll (Endure Stress) is owed,
  *          and its miss offers shaken, traumatized or the DESOLATION d100.
- *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
- *          this is the command vehicle, surface an Overcome
- *          Destruction prompt (Q2 — prompt, don't auto-fire).
+ *        - Withstand Damage past 0 integrity → the remainder is Lose
+ *          Momentum; at 0 the damage step owes the resist roll — "Then, if
+ *          your integrity is 0 … roll +integrity": a card whose press rolls
+ *          Withstand Damage for that vehicle (issue #362 D8, #330 D3's shape;
+ *          it rolled the VEHICLE_DAMAGE d100 at once). That roll's own miss
+ *          at 0 offers the vehicle-type cost — battered or cursed, a module
+ *          broken or destroyed, or the VEHICLE_DAMAGE d100 (whose command
+ *          vehicle destruction surfaces an Overcome Destruction prompt — Q2,
+ *          prompt, don't auto-fire); a support vehicle battered, or the d100.
  *        - Sacrifice Resources at 0  → mark unprepared (the crew sharing
  *          the supply with the PC); a loss while unprepared, at any
  *          supply, goes to a picker of the other suffer moves (issue #325
@@ -46,9 +52,14 @@
  *          the "make a suffer move" picker for it, Lose Momentum excepted,
  *          with a "clear progress" button per open track
  *          (MOMENTUM-MIN-REDIRECT-MANUAL).
- *        - Companion Takes a Hit at 0 + miss + match → companion
- *          destroyed; surface a Q2 manual-discard prompt (v1 does NOT
- *          delete the asset Item).
+ *        - Companion Takes a Hit past 0 health → Lose Momentum; at 0 the
+ *          harm step owes the resist roll — "Then, if their health is 0 …
+ *          roll +your companion's health" — a card whose press rolls it for
+ *          that companion (issue #362 D8). That roll's own miss at 0 leaves
+ *          it out of action until given aid — dead or destroyed on a miss
+ *          with a match on that roll: a Q2 manual-discard prompt (v1 does NOT
+ *          delete the asset Item). The step said destroyed on the match of
+ *          whichever move's card it came from.
  *   5. Posts a chat card summarising what just happened: "Faye took
  *      Sacrifice Resources (-1): Supply 5 → 4".
  *
@@ -321,20 +332,25 @@ const AT_ZERO_CHOICES = {
 
 /** The d100 tables the at-0 choice can roll, by id. */
 const IMPACT_TABLES = {
-  mortal_wound: { table: MORTAL_WOUND, title: "Mortal Wound" },
-  desolation:   { table: DESOLATION,   title: "Desolation" },
+  mortal_wound:   { table: MORTAL_WOUND,   title: "Mortal Wound" },
+  desolation:     { table: DESOLATION,     title: "Desolation" },
+  // One of Withstand Damage's at-0 costs on its own miss (issue #362 D8).
+  vehicle_damage: { table: VEHICLE_DAMAGE, title: "Vehicle Damage" },
 };
 
 /**
  * The choice card's prompt for Endure Harm ("harm") or Endure Stress
  * ("stress") at 0 on a miss — an enumerated sufferPrompt: mark the impact,
  * mark the lasting one, or roll the table (sufferDialog's `mark` and
- * `rollTable` options).
+ * `rollTable` options) — or Withstand Damage's ("vehicle"): the vehicle-type
+ * cost (vehicleCostPrompt; `support`, `name` the vehicle's).
  *
- * @param {"harm"|"stress"} which
+ * @param {"harm"|"stress"|"vehicle"} which
+ * @param {{ support?: boolean, name?: string|null }} [vehicle] — "vehicle" only
  * @returns {Object|null}
  */
-export function atZeroChoicePrompt(which) {
+export function atZeroChoicePrompt(which, { support = false, name = null } = {}) {
+  if (which === "vehicle") return vehicleCostPrompt({ support, name });
   const c = AT_ZERO_CHOICES[which];
   if (!c) return null;
   return {
@@ -344,6 +360,38 @@ export function atZeroChoicePrompt(which) {
       { label: c.labels[0], mark: c.impact,  requires: `!${c.impact}` },
       { label: c.labels[1], mark: c.lasting, requires: `!${c.lasting}` },
       { label: c.labels[2], rollTable: c.table },
+    ],
+  };
+}
+
+/**
+ * Withstand Damage's at-0 cost on its own miss — "If your integrity is 0,
+ * also suffer a cost according to the vehicle type" (vendored
+ * Withstand_Damage; issue #362 D8): a command vehicle is marked battered or
+ * cursed, has a module marked broken, a broken module destroyed, or rolls the
+ * vehicle-damage table; a support vehicle is marked battered or rolls the
+ * table. One, the player's choice. A module has no broken mark in the
+ * system's schema: those two are the player's to make on the starship sheet,
+ * the card recording the choice (as Repair's "fix a broken module" spend is
+ * recorded). An impact already marked is not offered.
+ *
+ * @param {{ support?: boolean, name?: string|null }} [vehicle]
+ * @returns {Object} an enumerated sufferPrompt
+ */
+function vehicleCostPrompt({ support = false, name = null } = {}) {
+  const who = typeof name === "string" && name.trim() ? name.trim() : (support ? "the vehicle" : "the ship");
+  const battered = { label: "Mark the vehicle as battered", markVehicle: "battered", requires: "!battered" };
+  const table    = { label: "Roll on the vehicle-damage table", rollTable: "vehicle_damage" };
+  return {
+    kind: "enumerated",
+    atZero: "integrity",
+    hint: `At 0 integrity ${who} suffers a cost by its type: choose one.`,
+    options: support ? [battered, table] : [
+      battered,
+      { label: "Mark the vehicle as cursed", markVehicle: "cursed", requires: "!cursed" },
+      { label: "Mark a module as broken (on the starship sheet)", vehicleCost: "module_broken" },
+      { label: "Destroy a broken module (discard it on the starship sheet)", vehicleCost: "module_destroyed" },
+      table,
     ],
   };
 }
@@ -374,10 +422,20 @@ async function postAtZeroChoice(actor, which, opts = {}) {
   }
 }
 
-// The resist roll each suffer move owes at 0 (issue #330 D3).
+// The resist roll each suffer move owes at 0 (issue #330 D3) — a vehicle's
+// Withstand Damage and a companion's Companion Takes a Hit too (issue #362
+// D8): the move its card's press rolls, the card's `resist` key, its button
+// and the executor card's line.
 const RESIST_ROLLS = {
-  harm:   { moveId: "endure_harm",   meter: "health", label: "🛡 Resist the harm — roll Endure Harm (+health or +iron)" },
-  stress: { moveId: "endure_stress", meter: "spirit", label: "🛡 Resist the stress — roll Endure Stress (+spirit or +heart)" },
+  harm:   { moveId: "endure_harm",   meter: "health", label: "🛡 Resist the harm — roll Endure Harm (+health or +iron)",
+    line: "at 0 health you must resist: roll Endure Harm on the card below" },
+  stress: { moveId: "endure_stress", meter: "spirit", label: "🛡 Resist the stress — roll Endure Stress (+spirit or +heart)",
+    line: "at 0 spirit you must resist: roll Endure Stress on the card below" },
+  damage: { moveId: "withstand_damage", meter: "integrity", label: "🛡 Resist the damage — roll Withstand Damage (+integrity)",
+    line: "at 0 integrity you must resist: roll Withstand Damage on the card below" },
+  companion: { moveId: "companion_takes_a_hit", meter: "companionHealth",
+    label: "🛡 Test your companion's resilience — roll Companion Takes a Hit (+its health)",
+    line: "at 0 health you must test its resilience: roll Companion Takes a Hit on the card below" },
 };
 
 // The resist roll is the roller's next move, and it closes the open Burn
@@ -397,19 +455,25 @@ const REDIRECT_UPGRADE_FIRST = "Burn momentum or improve the result first — ch
 /**
  * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
  * Endure Stress ("stress") as the PC (sufferDialog's `resist` option) —
- * "Then, if your health is 0 … roll +health or +iron" (issue #330 D3).
- * `upgradeFirst`: the move whose price it is still offers a burn or an
- * improvement — the card says to take it first (`hint`).
+ * "Then, if your health is 0 … roll +health or +iron" (issue #330 D3) — or
+ * Withstand Damage ("damage") for the vehicle, Companion Takes a Hit
+ * ("companion") for the companion, the card's executor opts naming which
+ * (issue #362 D8). `upgradeFirst`: the move whose price it is still offers a
+ * burn or an improvement — the card says to take it first (`hint`). `name`:
+ * the companion's, for its button.
  *
- * @param {"harm"|"stress"} which
- * @param {{ upgradeFirst?: boolean }} [opts]
+ * @param {"harm"|"stress"|"damage"|"companion"} which
+ * @param {{ upgradeFirst?: boolean, name?: string|null }} [opts]
  * @returns {Object|null}
  */
-export function resistRollPrompt(which, { upgradeFirst = false } = {}) {
+export function resistRollPrompt(which, { upgradeFirst = false, name = null } = {}) {
   const r = RESIST_ROLLS[which];
   if (!r) return null;
+  const label = which === "companion" && typeof name === "string" && name.trim()
+    ? `🛡 Test ${name.trim()}'s resilience — roll Companion Takes a Hit (+its health)`
+    : r.label;
   return {
-    kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }],
+    kind: "enumerated", resist: r.meter, options: [{ label, resist: r.moveId }],
     ...(upgradeFirst ? { hint: RESIST_UPGRADE_FIRST } : {}),
   };
 }
@@ -437,19 +501,23 @@ async function upgradeFirstOwed(opts = {}) {
 }
 
 /**
- * Post the resist card for `actor` at 0 health / spirit: a choice card, so
+ * Post the resist card for `actor` at 0 health / spirit — or a vehicle's 0
+ * integrity, a companion's 0 health (issue #362 D8): a choice card, so
  * it is claimed once and pressed by the PC's player or a GM, and a Burn
  * Momentum or Improve Result of the move whose price it is retires it, as
  * the at-0 choice card is (`resolutionId`). `upgradeFirst`: the card says to
- * burn or improve first (upgradeFirstOwed). Never throws.
+ * burn or improve first (upgradeFirstOwed). `target`: the vehicle or
+ * companion the roll is for, in the card's executor opts (`vehicleItemId` /
+ * `vehicleActorId` / `companionItemId`), which its press rolls; `name`, the
+ * companion's. Never throws.
  *
  * @returns {Promise<boolean>} whether the card posted
  */
-async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
+async function postResistRoll(actor, which, opts = {}, upgradeFirst = false, { target = {}, name = null } = {}) {
   try {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
     const posted = await postSufferChoiceCard({
-      sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
+      sufferPrompt: resistRollPrompt(which, { upgradeFirst, name }),
       actor,
       // A move's Pay the Price owes it: the card is the price's, kept when an
       // upgrade keeps the price (issue #335 Y09) — and the upgraded outcome's
@@ -458,6 +526,9 @@ async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
       executorOpts: {
         ...(opts.priceCard === true ? { priceCard: true } : {}),
         ...(opts.upgraded === true ? { upgraded: true } : {}),
+        // What the roll is for (issue #362 D8): sufferDialog's `resist` posts
+        // it naming that vehicle or companion.
+        ...(target && typeof target === "object" ? target : {}),
       },
       moveId: RESIST_ROLLS[which].moveId,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
@@ -473,7 +544,7 @@ async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
 function resistLine(which, upgradeFirst = false) {
   const r = RESIST_ROLLS[which];
   const first = upgradeFirst ? ` (${RESIST_UPGRADE_FIRST.charAt(0).toLowerCase()}${RESIST_UPGRADE_FIRST.slice(1, -1)})` : "";
-  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below${first}`;
+  return ` — ${r.line}${first}`;
 }
 
 /**
@@ -491,10 +562,111 @@ function resistLine(which, upgradeFirst = false) {
  * @returns {Promise<{ offered: boolean }>}
  */
 export async function offerAtZeroChoiceAfterMiss(actor, which, opts = {}) {
+  // Withstand Damage's and Companion Takes a Hit's own miss (issue #362 D8).
+  if (which === "vehicle")   return offerVehicleCost(actor, opts);
+  if (which === "companion") return noteCompanionAtZero(actor, opts);
   const c = AT_ZERO_CHOICES[which];
   if (!c || !actor || !(opts.resistMiss || opts.isMiss)) return { offered: false };
   if (readMeter(actor, c.meter) > 0) return { offered: false };
   return { offered: await postAtZeroChoice(actor, which, opts) };
+}
+
+/**
+ * Withstand Damage's own miss at 0 integrity — its "-1 integrity" or its
+ * "Lose Momentum (-2)" (sufferDialog's `at-zero-choice` "vehicle"): the
+ * vehicle-type cost's choice card (vehicleCostPrompt) for the vehicle the
+ * roll was for — the support vehicle the card names (`opts.vehicleItemId`),
+ * else the vehicle the move was rolled against or the command vehicle. The
+ * cost came from no roll: at 0 the damage step rolled the vehicle-damage d100
+ * at once (issue #362 D8). Nothing above 0, or with no such vehicle. Never
+ * throws.
+ *
+ * @param {Actor} actor
+ * @param {Object} opts — the miss card's executor opts
+ * @returns {Promise<{ offered: boolean }>}
+ */
+async function offerVehicleCost(actor, opts = {}) {
+  if (!actor || !opts.isMiss) return { offered: false };
+  try {
+    const at = await vehicleNow(actor, opts);
+    if (!at || at.integrity > 0) return { offered: false };
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    const posted = await postSufferChoiceCard({
+      sufferPrompt: atZeroChoicePrompt("vehicle", { support: at.support, name: at.name }),
+      actor,
+      executorOpts: { ...at.target, ...(Number.isInteger(opts.fixedRoll) ? { fixedRoll: opts.fixedRoll } : {}) },
+      moveId: "withstand_damage",
+      resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
+    });
+    return { offered: !!posted };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: the vehicle's at-0 cost card could not be posted:`, err?.message ?? err);
+    return { offered: false };
+  }
+}
+
+/**
+ * The vehicle a Withstand Damage choice is for, as it stands now: its
+ * integrity, name and kind, and the executor opts that name it — the support
+ * vehicle `opts.vehicleItemId` names, else `opts.vehicleActorId`, else the
+ * command vehicle. Null when there is none.
+ *
+ * @param {Actor} actor
+ * @param {Object} opts
+ * @returns {Promise<{ support: boolean, integrity: number, name: string|null, target: Object }|null>}
+ */
+async function vehicleNow(actor, opts = {}) {
+  const itemId = typeof opts.vehicleItemId === "string" && opts.vehicleItemId ? opts.vehicleItemId : null;
+  if (itemId) {
+    const { listSupportVehicleAssets, readAssetIntegrity } = await import("../character/actorBridge.js");
+    const asset = listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null;
+    if (!asset) return null;
+    return { support: true, integrity: Number(readAssetIntegrity(actor, itemId) ?? 0), name: asset.name ?? null, target: { vehicleItemId: itemId } };
+  }
+  const { getCommandVehicleActorId, getShip } = await import("../entities/ship.js");
+  const vehicleActorId = opts.vehicleActorId
+    ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) ?? null;
+  const ship = vehicleActorId ? getShip(vehicleActorId) : null;
+  if (!ship) return null;
+  return { support: false, integrity: Number(ship.integrity ?? 0), name: ship.name ?? null, target: { vehicleActorId } };
+}
+
+/**
+ * Companion Takes a Hit's own miss at 0 health — its "-1 companion health"
+ * or its "Lose Momentum (-2)" (sufferDialog's `at-zero-choice` "companion"):
+ * "If your companion's health is 0, they are out of action until given aid.
+ * If their health is 0 and you rolled a miss with a match on this move, they
+ * are dead or destroyed; discard the asset" (vendored Companion_Takes_a_Hit).
+ * The card says which: the match is this miss card's own move's
+ * (`opts.isMissWithMatch`) — the harm step said destroyed on the match of
+ * whichever move's card it came from (issue #362 D8). The asset is not
+ * discarded (Q2 — a prompt). Nothing above 0, or with no such companion.
+ * Never throws.
+ *
+ * @param {Actor} actor
+ * @param {Object} opts — the miss card's executor opts
+ * @returns {Promise<{ offered: boolean, destroyed?: boolean }>}
+ */
+async function noteCompanionAtZero(actor, opts = {}) {
+  if (!actor || !opts.isMiss) return { offered: false };
+  try {
+    const { getCompanionAsset, companionGivenName } = await import("../character/actorBridge.js");
+    const companion = getCompanionAsset(actor, opts.companionItemId ?? null);
+    if (!companion || Number(companion.system?.track?.value ?? 0) > 0) return { offered: false };
+    const name = escapeHtml(companionGivenName(companion) ?? companion.name ?? "Your companion");
+    const destroyed = opts.isMissWithMatch === true;
+    await postSufferCard({
+      title: `Companion Takes a Hit — ${name} at 0 health`,
+      body: destroyed
+        ? `<strong>${name} is dead or destroyed</strong> — a miss with a match on this move. Open the character sheet → Assets and discard this companion.`
+        : `${name} is out of action until given aid.`,
+      flags: { suffer: "companion_takes_a_hit", atZero: true, destroyed, companionItemId: companion.id ?? null },
+    });
+    return { offered: true, destroyed };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: the companion's at-0 card could not be posted:`, err?.message ?? err);
+    return { offered: false };
+  }
 }
 
 /** The executor card's line for the at-0 choice that follows it. */
@@ -525,13 +697,31 @@ export async function rollImpactTable(tableId, opts = {}) {
   await postSufferCard({
     opts,
     title: t.title,
-    body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
+    body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>${tableId === "vehicle_damage" ? vehicleDestructionLine(rolled.result, opts) : ""}`,
     flags: {
       suffer: "impact_table", table: tableId, ...rolled,
       ...(rolled.result ? { oracleMemory: { name: t.title, question: who, answer: rolled.result } } : {}),
     },
   });
   return rolled;
+}
+
+/**
+ * The vehicle-damage row's prompt when it destroys the vehicle (Q2 — prompt
+ * only, the GM adjudicates): a command vehicle's player triggers Overcome
+ * Destruction; a support vehicle's asset is discarded on the sheet ("If the
+ * vehicle is destroyed, discard the asset"). Issue #362 D8 moved the roll to
+ * the at-0 cost's choice (rollImpactTable).
+ *
+ * @param {string|null} result
+ * @param {{ vehicleItemId?: string|null }} opts — the cost card's (a support vehicle's names it)
+ * @returns {string} HTML ("" for a row that destroys nothing)
+ */
+function vehicleDestructionLine(result, opts = {}) {
+  if (!/catastrophic|destruction/i.test(String(result ?? ""))) return "";
+  return opts.vehicleItemId
+    ? `<br/><strong>If the vehicle is destroyed, discard the asset</strong> on the character sheet.`
+    : `<br/><strong>Command vehicle destruction.</strong> Trigger Overcome Destruction when ready.`;
 }
 
 /**
@@ -884,28 +1074,31 @@ export async function sacrificeResources(actor, amount, opts = {}) {
  * not, and the picker passes no item id: it posted "Companion not found"
  * (SUFFER-EXECUTOR-ASSET-SCHEMA). With no id, the character's only
  * companion. Harm past 0 health is momentum (overflowToMomentum — the card's
- * rule, issue #345 AA15). At 0 on a miss with a match the companion is
- * destroyed: a prompt to discard it (Q2 — the asset is not deleted).
+ * rule, issue #345 AA15). At 0 the harm step owes the resist roll — "Then, if
+ * their health is 0 … roll +your companion's health": a card whose press
+ * rolls Companion Takes a Hit for this companion (`resistOwed`; issue #362
+ * D8, issue #330 D3's shape). "Out of action" and "dead or destroyed" are
+ * that roll's own miss's (offerAtZeroChoiceAfterMiss "companion"): this step
+ * said destroyed at 0 on the match of whichever move's card it came from.
  *
  * @param {Actor} actor
  * @param {string|null} companionItemId  the asset Item id (null: the move's
  *   companion, `opts.companionItemId`, else the only companion)
  * @param {number} amount
  * @param {Object} [opts]
- * @param {boolean} [opts.isMissWithMatch]  miss + match → destruction prompt
  * @param {boolean} [opts.skipCard]
- * @returns {Promise<Object>} `before`, `after`, `atZero`, `destroyed`, the
+ * @returns {Promise<Object>} `before`, `after`, `atZero`, `resistOwed`, the
  *   companion (`itemId`, `name`) and `momentumLoss` past 0; `skipped` with
  *   `ok: false` and the reason when there is no such companion. A write the
  *   world refuses throws (runSufferResolution reports it, with a Retry).
  */
 export async function companionTakesAHit(actor, companionItemId, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
-    return { before: 0, after: 0, destroyed: false, skipped: true };
+    return { before: 0, after: 0, atZero: false, skipped: true };
   }
   // The companion the move was about (the card's targets), when the pick names none.
   companionItemId = companionItemId ?? opts.companionItemId ?? null;
-  const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+  const { applyCompanionHealthChange, getCompanionAsset, companionGivenName } = await import("../character/actorBridge.js");
   const res = await withoutSystemNotes(() => applyCompanionHealthChange(actor, -amount, { itemId: companionItemId }));
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
   if (!res.ok) {
@@ -919,7 +1112,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
         : `No companion to take it — ${escapeHtml(actor.name ?? "the character")} has none, or several (apply it on the sheet).`,
       flags: { suffer: "companion_takes_a_hit", error: "companion-not-found" },
     });
-    return { before: 0, after: 0, destroyed: false, skipped: true, ok: false, reason: "no-companion" };
+    return { before: 0, after: 0, atZero: false, skipped: true, ok: false, reason: "no-companion" };
   }
 
   const { before, after } = res;
@@ -927,24 +1120,29 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the companion's harm past 0 health, as momentum");
   const atZero = after <= 0;
-  const destroyed = atZero && opts.isMissWithMatch === true;
+  // At 0 the step owes the resist roll (issue #362 D8); nothing is decided here.
+  const resistOwed   = atZero;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `${escapeHtml(res.name ?? "Companion")}: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
-    if (destroyed) {
-      body += `<br/><strong>Companion destroyed.</strong> Open the character sheet → Assets and discard this companion.`;
-    } else if (atZero) {
-      body += ` — out of action until aided`;
-    }
+    if (resistOwed) body += resistLine("companion", upgradeFirst);
     await postSufferCard({
       opts,
       title: `Companion Takes a Hit (-${amount})`,
       body,
-      flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, destroyed, companionItemId: res.itemId ?? null },
+      flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, resistOwed, companionItemId: res.itemId ?? null },
+    });
+  }
+  if (resistOwed) {
+    const companion = getCompanionAsset(actor, res.itemId ?? null);
+    await postResistRoll(actor, "companion", opts, upgradeFirst, {
+      target: { companionItemId: res.itemId ?? null },
+      name: (companion ? companionGivenName(companion) : null) ?? res.name ?? null,
     });
   }
 
-  return { before, after, atZero, destroyed, itemId: res.itemId ?? null, name: res.name ?? null, ...(momentumLoss ? { momentumLoss } : {}), ...(refused ?? {}) };
+  return { before, after, atZero, resistOwed, itemId: res.itemId ?? null, name: res.name ?? null, ...(momentumLoss ? { momentumLoss } : {}), ...(refused ?? {}) };
 }
 
 /**
@@ -961,9 +1159,13 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
  * `system.condition` / `system.integrity` on an asset Item, which neither
  * store is, and posted "Vehicle not found" for the picker's id-less call
  * (SUFFER-EXECUTOR-ASSET-SCHEMA). Damage past 0 is momentum (issue #345
- * AA15). At 0 the VEHICLE_DAMAGE d100 is rolled; for the command vehicle a
- * catastrophic result surfaces an Overcome Destruction prompt (Q2 — prompt
- * only, the GM adjudicates).
+ * AA15). At 0 the damage step owes the resist roll — "Then, if your
+ * integrity is 0 … roll +integrity": a card whose press rolls Withstand
+ * Damage for this vehicle (`resistOwed`; issue #362 D8, issue #330 D3's
+ * shape). The vehicle-type cost — the VEHICLE_DAMAGE d100 among its choices,
+ * with its Overcome Destruction prompt — is that roll's own miss's
+ * (offerAtZeroChoiceAfterMiss "vehicle"): this step rolled the d100 at once,
+ * so a Face Danger miss could destroy the ship with no Withstand Damage made.
  *
  * @param {Actor} actor
  * @param {string|null} vehicleItemId  a support vehicle asset's id (null: the
@@ -972,8 +1174,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
  * @param {Object} [opts]
  * @param {string|null} [opts.vehicleActorId]  the vehicle the move was rolled against
  * @param {boolean} [opts.skipCard]
- * @param {number} [opts.fixedRoll]  the vehicle-damage d100, for tests
- * @returns {Promise<Object>} `before`, `after`, `atZero`, `vehicleDamage`,
+ * @returns {Promise<Object>} `before`, `after`, `atZero`, `resistOwed`,
  *   `isCommandVehicle`, `momentumLoss` past 0; `skipped` with `ok: false` and
  *   the reason when there is no such vehicle. A write the world refuses throws.
  */
@@ -1016,26 +1217,26 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the vehicle's damage past 0 integrity, as momentum");
   const atZero = after <= 0;
-  const vehicleDamage = atZero ? rollD100Table(VEHICLE_DAMAGE, opts) : null;
+  // At 0 the step owes the resist roll (issue #362 D8); nothing is rolled here.
+  const resistOwed   = atZero;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `${escapeHtml(res.name ?? "The vehicle")}: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
-    if (vehicleDamage) {
-      body += `<br/>Vehicle Damage (d100 ${vehicleDamage.roll}): <em>${vehicleDamage.result}</em>`;
-      if (isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {
-        body += `<br/><strong>Command vehicle destruction.</strong> Trigger Overcome Destruction when ready.`;
-      }
-    }
+    if (resistOwed) body += resistLine("damage", upgradeFirst);
     await postSufferCard({
       opts,
       title: `Withstand Damage (-${amount})`,
       body,
-      flags: { suffer: "withstand_damage", amount, before, after, atZero, vehicleDamage,
+      flags: { suffer: "withstand_damage", amount, before, after, atZero, resistOwed,
         vehicleItemId: support ? vehicleItemId : null, vehicleActorId },
     });
   }
+  if (resistOwed) {
+    await postResistRoll(actor, "damage", opts, upgradeFirst, { target: support ? { vehicleItemId } : { vehicleActorId } });
+  }
 
-  return { before, after, atZero, vehicleDamage, isCommandVehicle, name: res.name ?? null,
+  return { before, after, atZero, resistOwed, isCommandVehicle, name: res.name ?? null,
     ...(support ? { itemId: vehicleItemId } : { vehicleActorId }), ...(momentumLoss ? { momentumLoss } : {}), ...(refused ?? {}) };
 }
 

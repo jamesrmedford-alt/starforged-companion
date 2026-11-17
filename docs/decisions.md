@@ -6,6 +6,22 @@ rejected.
 
 ---
 
+## Issue #362 D8: Withstand Damage and Companion Takes a Hit at 0 owe the resist roll; its miss decides the vehicle's cost and the companion's fate (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D8, RESIST-ROLL-AT-ZERO-FOR-SHIPS-AND-COMPANIONS; the maintainer's answer of 2026-11-17, option A — issue #330 D3's shape for both.) The vendored moves read "If your integrity is 0, Lose Momentum equal to any remaining damage. Then, if your integrity is 0 or you choose to resist the damage, roll +integrity … On a miss … If your integrity is 0, also suffer a cost according to the vehicle type" and "Then, if their health is 0 … roll +your companion's health … If their health is 0 and you rolled a miss with a match on this move, they are dead or destroyed".
+- **The damage / harm step takes the track and the overflow, and owes the roll at 0.** `withstandDamage` / `companionTakesAHit` (every Pay the Price route, a stated price, the "make a suffer move" card's buttons) write the vehicle's integrity / the companion's health, take what it cannot as momentum, and at 0 post a resist card (`resistRollPrompt` "damage" / "companion") naming the vehicle or companion in its executor opts. Its press posts the forced move as the PC (sufferDialog `resist`, `owedMove` — a Batch Mode round's entry), the support vehicle / companion by its asset id (`forcedMoveTargetId`; none for the command vehicle), which statEnrichment rolls before any name (`assetById`): +that vehicle's integrity, +that companion's health. The step rolls nothing and decides nothing.
+- **Only that roll's own miss decides, at 0, whichever option it took.** The resolver's Withstand Damage / Companion Takes a Hit miss options carry `atZeroChoice` ("vehicle" / "companion"; sufferDialog adds the call after either the meter or the Lose Momentum pick, as for Endure Harm). A vehicle at 0 gets the vehicle-type cost's choice card (`atZeroChoicePrompt("vehicle")`): a command vehicle marked battered or cursed (its native impacts, through `ship.updateShip`, offered only while unmarked — `isShipCursed` beside `isShipBattered`), a module marked broken or a broken module destroyed, or the vehicle-damage d100 (`rollImpactTable`, its row an oracle result, a destruction row surfacing Overcome Destruction — a prompt, as before); a support vehicle marked battered (`actorBridge.setVehicleAssetBattered`, its card's Battered condition) or the d100, whose destruction row says to discard the asset. A companion at 0 gets a card saying it is out of action until given aid — dead or destroyed when that miss had a match (the asset is not discarded: a prompt).
+- **The system has no broken mark for a module**, so "a module broken" / "a broken module destroyed" are recorded choices: the card says to mark it on the starship sheet, as Repair's "fix a broken module" spend is recorded.
+- **Dropped:** the executor's at-0 VEHICLE_DAMAGE roll (a Face Danger miss's "Your vehicle suffers damage" could put "Immediate catastrophic destruction" on the table with no Withstand Damage rolled) and its `isMissWithMatch` "Companion destroyed" branch (it read the match of whichever move's card the pick came from — reachable only through a picker chained from another move's miss — while the move's own miss option was a meter call that posted no prompt).
+
+**Reason:** issue #330 D3 decided exactly this for harm and stress ("it skipped a roll the move makes mandatory and could land Face Death on a Face Danger miss"); the two sibling suffer moves carry the same mandatory roll, and the vehicle's cost and the companion's death are that roll's outcomes. Rolling the d100 at the damage step made the ship's destruction one unresisted step away.
+
+**Amends:** "Issue #330 decisions: D1–D15" D3 — the resist roll now covers all four suffer moves with a track (health, spirit, integrity, companion health); SUFFER-EXECUTOR-ASSET-SCHEMA's "the at-0 vehicle-damage d100 is kept" and the play-kit coverage's "the at-0 vehicle-type cost stays card text" are superseded.
+
+**Rejected:** *recording the approximation* (option B) — the vendored data carries the roll, and D3 had already built the card and the call for it.
+
+---
+
 ## Issue #362 D11: a card-forced move states its stakes; a stated vehicle or companion price lands on the move's own (2026-11)
 
 **Decision:** (issue #362 D11, FORCED-MOVE-STATES-NO-STAKES; decided A,
