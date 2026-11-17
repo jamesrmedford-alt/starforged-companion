@@ -65,7 +65,7 @@ import {
 import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
 import { planSignificantThreat, planNpcAgenda } from "../world/secrets.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
-import { personNameMatch, nameWithin, generatedName, loreTitle } from "./nameMatch.js";
+import { personNameMatch, nameWithin, nameWords, generatedName, loreTitle } from "./nameMatch.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -639,7 +639,8 @@ function detectionFromParsed(parsed, campaignState) {
  *   When no connection was created, a pending draft row or a known NPC
  *   `namingText` names is made the roller's connection (issue #325 W23,
  *   #345 AA19) — the one `lineText` names, when the narration names several
- *   (connectNamedFigure; issue #347 AB10).
+ *   (connectNamedFigure; issue #347 AB10); a hit that ends with no one made
+ *   tells the GMs (issue #362 AC18).
  * @param {string}  [options.namingText] — the move's narration (player's and
  *   narrator's), for the pending-draft and known-NPC fallback
  * @param {string}  [options.lineText] — the player's line: which of several
@@ -785,12 +786,14 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   // one pending on a draft card (issue #325 W23) or one the table already
   // knows — a listed card, or a row the GM dismissed (issue #345 AA19). The
   // player's line says which (issue #347 AB10); naming several, none is
-  // guessed and the GMs are told. Each hit that made no one gets its own
-  // (a round's — issue #342 Z09).
+  // guessed and the GMs are told — as they are when the hit ends with no one
+  // made for any other reason (issue #362 AC18). Each hit that made no one
+  // gets its own (a round's — issue #342 Z09).
   for (const slot of slots) {
     if (slot.done || !slot.names || removed()) continue;
     const made = await connectNamedFigure(slot, campaignState, {
       namingText: options.namingText, lineText: slot.lineText ?? options.lineText, narrationId,
+      waiting: queued.filter(e => e.type === "connection").map(e => e.name),
     }).catch(err => {
       console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the NPC the move names failed:`, err?.message ?? err);
       return null;
@@ -815,7 +818,9 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * The connections a capture may create (routeEntityDrafts): one per Make a
  * Connection hit (scope §9). Free-flow's one hit (`autoCreateConnection`)
  * takes the first connection detected — its narration is that move's alone —
- * and a pending row its `namingText` names. A Batch Mode round's hits
+ * and a pending row its `namingText` names. A text names a figure by their
+ * whole name or by their first or last name alone (figuresNamedIn, issue
+ * #362 AC18). A Batch Mode round's hits
  * (`connectionRollers`) each take only a figure their `owns` gives their own
  * roller (issue #342 Z09: the round's first connection, whoever met them,
  * went to the first hit's roller with that roller's seed), and a pending row
@@ -827,12 +832,15 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  *
  * @param {Object} options — routeEntityDrafts' options
  * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, done: boolean }>}
- *   — `lineText` a round's hit's own line (null: the move's, `options.lineText`)
+ *   — `names(figures)` the figures the hit's text names, of those given;
+ *   `lineText` a round's hit's own line (null: the move's, `options.lineText`)
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
+  // The figures a text names — by whole name, or by first or last name
+  // alone (figuresNamedIn, issue #362 AC18) — of those it is given.
   const namedIn = (text) => (String(text ?? "").trim()
-    ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(String(text))
+    ? (figures) => figuresNamedIn(String(text), figures)
     : null);
   const named = namedIn(hay);
   if (Array.isArray(options.connectionRollers)) {
@@ -853,7 +861,7 @@ function connectionSlots(options) {
           actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
           connectionSeed: r.connectionSeed ?? null,
           takes:          (entity) => r.owns(entity) === true,
-          names:          ownNamed ? (draft) => ownNamed(draft) && r.owns(draft) === true : null,
+          names:          ownNamed ? (figures) => ownNamed(figures).filter(f => r.owns(f) === true) : null,
           lineText:       typeof r.lineText === "string" ? r.lineText : null,
           done:           false,
         };
@@ -2553,7 +2561,10 @@ function draftBondHolder(message, opts) {
  * `opts.actorId` — the roller of a Make a Connection that named the pending
  * NPC (issue #325 W23), or the PC a GM picked on a round's card — or to no
  * one (`opts.noBond`, issue #342 D3; draftBondHolder). Returns the created
- * record (null when nothing was created).
+ * record — or, for a connection row whose NPC exists already, that NPC's
+ * record, the bond put on the sheet: a Make a Connection that confirms the
+ * row has made them the roller's connection, and is not to tell the GMs
+ * none was made (issue #362 AC18) — null when nothing was made.
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
@@ -2600,7 +2611,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     // (issue #342 Z60).
     await completeListedEntity(draft, campaignState);
     await setDraftStatus(message, draftIndex, "confirmed");
-    return null;
+    return existing ?? null;
   }
 
   let record = null;
@@ -2848,53 +2859,55 @@ async function completeListedEntity(draft, campaignState) {
  *     row's stamps. A name in both is the listed NPC, un-dismissed (a
  *     dismissed name keeps a record out of the narrator's name index).
  *
- * Which one is the player's line's to say (issue #347 AB10). The first
- * pending row named anywhere in the line or the narration was confirmed: a
- * hit with Sable whose narration had pending Dace watching from the bar
- * bonded Dace, and the pending rows were tried before the known NPC the line
- * named. Now the line decides when it names exactly one of them; a line that
- * names none leaves it to the narration when that names exactly one; else
- * the interpreter's target for the move (`slot.targetName`) picks the one it
- * names, when it names exactly one of them (KNOWN-NPC-CONNECTION-NO-TARGET:
- * no target reached the capture, so "I win him over" with two known NPCs in
- * the narration got the GMs' notice); otherwise none is guessed and the GMs
- * are told which were named.
+ * Which one is the player's line's to say (issue #347 AB10;
+ * chooseConnectionFigure), among the NPCs the move names. An
+ * NPC is named by their whole name or by their first or last name alone
+ * (figuresNamedIn — issue #362 AC18: "Archer" for Vuldar Archer was no
+ * candidate, so the hit said "Connection made" and made nothing). Several
+ * named and none singled out, the GMs are told which; a hit that ends with no
+ * one made for any other reason is told to the GMs too (AC18 — it was
+ * silent).
  *
- * @param {{ actorId: string|null, names: Function }} slot — the hit
- *   (connectionSlots): whether the move names a figure as its roller's —
- *   free-flow's, its full name in the player's line or the narrator's; a
- *   round's hit, one the round names whose figure its roller met (issue #342
- *   Z09, #345 AA09)
+ * @param {{ actorId: string|null, names: Function }} slot —
+ *   the hit (connectionSlots): `names(figures)` gives the figures the move
+ *   names as its roller's — free-flow's, named in the player's line or the
+ *   narrator's; a round's hit, the ones the round names whose figure its
+ *   roller met (issue #342 Z09, #345 AA09)
  * @param {Object} campaignState
- * @param {{ namingText?: string, lineText?: string, narrationId?: string|null }} opts
+ * @param {{ namingText?: string, lineText?: string, narrationId?: string|null, waiting?: string[] }} opts
  *   — `namingText` the line and the narration; `lineText` the player's line
- *   (a round's hit: its own entry's — ROUND-CONNECTION-LINE-JOINED)
+ *   (a round's hit: its own entry's — ROUND-CONNECTION-LINE-JOINED);
+ *   `waiting` the people this capture queues on a draft card
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null } = {}) {
+async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null, waiting = [] } = {}) {
   if (!String(namingText ?? "").trim() || typeof slot?.names !== "function") return null;
-  const store = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState ?? {};
-  const dismissed = new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
-  const candidates = namedConnectionCandidates(slot, campaignState, dismissed);
-  if (!candidates.length) return null;
-
-  const line = String(lineText ?? "");
-  const inLine = line.trim() ? candidates.filter(c => wholeWordPattern(c.name).test(line)) : [];
-  const target = String(slot.targetName ?? "").trim();
-  const byTarget = target
-    ? (inLine.length ? inLine : candidates).filter(c => wholeWordPattern(c.name).test(target) || wholeWordPattern(target).test(c.name))
-    : [];
-  const pick = inLine.length === 1 ? inLine[0]
-    : inLine.length === 0 && candidates.length === 1 ? candidates[0]
-    : byTarget.length === 1 ? byTarget[0]
-    : null;
-  if (!pick) {
-    const named = inLine.length ? inLine : candidates;
-    console.warn(`${MODULE_ID} | make a connection: the move names several NPCs (${named.map(c => c.name).join(", ")}) — none was made the roller's connection.`);
-    await postNamedNpcsNotice(named, slot.actorId);
+  const dismissed = storedDismissedNames(campaignState);
+  const choice = chooseConnectionFigure(slot, namedConnectionCandidates(slot, campaignState, dismissed), lineText);
+  if (choice.several) {
+    console.warn(`${MODULE_ID} | make a connection: the move names several NPCs (${choice.several.map(c => c.name).join(", ")}) — none was made the roller's connection.`);
+    await postNamedNpcsNotice(choice.several, slot.actorId);
     return null;
   }
+  const pick = choice.pick ?? null;
+  const made = pick ? await connectChosenFigure(pick, slot, dismissed, narrationId) : null;
+  if (made) return made;
+  if (!isNarrationXCarded(narrationId)) await postNoConnectionNotice(slot.actorId, { name: pick?.name ?? null, waiting });
+  return null;
+}
 
+/**
+ * Make the NPC a Make a Connection hit chose (connectNamedFigure) the
+ * roller's connection: a pending row confirmed as theirs, a listed NPC given
+ * their bond Item, a dismissed row un-dismissed and confirmed.
+ *
+ * @param {{ kind: "pending"|"listed"|"dismissed", key: string, record?: Object, message?: Object, draft?: Object }} pick
+ * @param {{ actorId: string|null }} slot
+ * @param {Set<string>} dismissed — the store's dismissed names (normalizeEntityName)
+ * @param {string|null} narrationId
+ * @returns {Promise<{ entity: Object, record: Object }|null>}
+ */
+async function connectChosenFigure(pick, slot, dismissed, narrationId) {
   if (pick.kind === "pending") {
     const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId });
     return record ? { entity: pick.draft, record } : null;
@@ -2911,40 +2924,107 @@ async function connectNamedFigure(slot, campaignState, { namingText = "", lineTe
   return record ? { entity: pick.draft, record } : null;
 }
 
+/** The store's dismissed names, normalised (the caller's copy when no store is read). */
+function storedDismissedNames(campaignState) {
+  const store = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState ?? {};
+  return new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
+}
+
+/**
+ * Which of `figures` a Make a Connection hit is with (issue #347 AB10's
+ * rule): the one the player's line names; else — the line naming several or
+ * none — the one the interpreter's target for the move names
+ * (`slot.targetName`, KNOWN-NPC-CONNECTION-NO-TARGET); else, the line naming
+ * none, the narration's one NPC.
+ *
+ * @param {{ targetName?: string|null }} slot
+ * @param {Array<{ kind: string, name: string }>} figures — the NPCs the move
+ *   names (namedConnectionCandidates)
+ * @param {string} lineText — the player's line
+ * @returns {{ pick: Object }|{ several: Object[] }|{ none: true }}
+ */
+function chooseConnectionFigure(slot, figures, lineText) {
+  if (!figures.length) return { none: true };
+  const line = String(lineText ?? "");
+  const inLine = line.trim() ? figuresNamedIn(line, figures) : [];
+  const target = String(slot?.targetName ?? "").trim();
+  const byTarget = target
+    ? (inLine.length ? inLine : figures).filter(c => wholeWordPattern(c.name).test(target) || wholeWordPattern(target).test(c.name))
+    : [];
+  if (inLine.length === 1) return { pick: inLine[0] };
+  if (byTarget.length === 1) return { pick: byTarget[0] };
+  if (inLine.length) return { several: inLine };
+  return figures.length === 1 ? { pick: figures[0] } : { several: figures };
+}
+
+/**
+ * The figures a text names (issue #362 AC18): each whose whole name it holds
+ * as whole words, and each it calls by their first or last name alone — the
+ * person rule's "part" (nameMatch.personNameMatch; "Archer" for Vuldar
+ * Archer, the name the narration keeps using) — as a whole word written with
+ * its capital, as prose names someone. A word of the name of a figure the
+ * text names in full is that figure's: "Vuldar Archer … Archer nods" does not
+ * name Mara Archer as well. A middle name is no name to be called by.
+ *
+ * @param {string} text
+ * @param {Array<{ name: string }>} figures
+ * @returns {Array} the figures named, in their order
+ */
+function figuresNamedIn(text, figures) {
+  const t = String(text ?? "");
+  if (!t.trim()) return [];
+  const wordsOf = (figure) => nameWords(normalizeEntityName(figure?.name));
+  const full = new Set(figures.filter(f => String(f?.name ?? "").trim() && wholeWordPattern(String(f.name).trim()).test(t)));
+  const taken = new Set([...full].flatMap(wordsOf));
+  const capitalisedIn = (word) => [...t.matchAll(new RegExp(wholeWordPattern(word).source, "giu"))].some(m => /^\p{Lu}/u.test(m[0]));
+  const byPart = (figure) => {
+    const words = wordsOf(figure);
+    const ends = words.length > 1 ? [words[0], words[words.length - 1]] : words;
+    return ends.some(w => !taken.has(w) && capitalisedIn(w));
+  };
+  return figures.filter(f => full.has(f) || byPart(f));
+}
+
 /**
  * The NPCs a Make a Connection hit names that connectNamedFigure may connect,
  * one per name: pending connection rows (the newest card first), then active
  * listed connections — the store's list too (issue #347 AB09) — then the
- * newest dismissed connection row of a name still dismissed.
+ * newest dismissed connection row of a name still dismissed. Which of them
+ * the hit names is the slot's to say (`slot.names`, over them all at once —
+ * figuresNamedIn reads a part name against the others' whole names).
  *
  * @returns {Array<{ kind: "pending"|"listed"|"dismissed", key: string, name: string, record?: Object, message?: Object, draft?: Object }>}
  */
 function namedConnectionCandidates(slot, campaignState, dismissed) {
-  const out = [];
-  const seen = new Set();
-  const add = (candidate) => {
-    if (!candidate.key || seen.has(candidate.key)) return;
-    seen.add(candidate.key);
-    out.push(candidate);
-  };
-  const named = (figure) => !!String(figure?.name ?? "").trim() && slot.names(figure) === true;
+  const all = [];
   const cards = [...(globalThis.game?.messages?.contents ?? [])].reverse()   // the newest card first
     .filter(m => m?.flags?.[MODULE_ID]?.draftEntityCard);
   const rows = (status) => cards.flatMap(message => (Array.isArray(message.flags[MODULE_ID].drafts) ? message.flags[MODULE_ID].drafts : [])
-    .filter(draft => draft?.type === "connection" && status(draft.status))
+    .filter(draft => draft?.type === "connection" && String(draft?.name ?? "").trim() && status(draft.status))
     .map(draft => ({ message, draft })));
 
   for (const { message, draft } of rows(status => !status || status === "pending")) {
-    if (named(draft)) add({ kind: "pending", key: normalizeEntityName(draft.name), name: draft.name.trim(), message, draft });
+    all.push({ kind: "pending", key: normalizeEntityName(draft.name), name: draft.name.trim(), message, draft, figure: draft });
   }
   for (const id of withStoredEntityIds(campaignState)?.connectionIds ?? []) {
     let rec = null;
     try { rec = getConnection(id); } catch { continue; }
-    if (rec?._id && rec.active !== false && named(rec)) add({ kind: "listed", key: normalizeEntityName(rec.name), name: rec.name, record: rec });
+    if (rec?._id && rec.active !== false && String(rec.name ?? "").trim()) {
+      all.push({ kind: "listed", key: normalizeEntityName(rec.name), name: rec.name, record: rec, figure: rec });
+    }
   }
   for (const { message, draft } of rows(status => status === "dismissed")) {
     const key = normalizeEntityName(draft.name);
-    if (dismissed.has(key) && named(draft)) add({ kind: "dismissed", key, name: draft.name.trim(), message, draft });
+    if (dismissed.has(key)) all.push({ kind: "dismissed", key, name: draft.name.trim(), message, draft, figure: draft });
+  }
+
+  const named = new Set(slot.names(all.map(c => c.figure)) ?? []);
+  const out = [];
+  const seen = new Set();
+  for (const { figure, ...candidate } of all) {
+    if (!candidate.key || seen.has(candidate.key) || !named.has(figure)) continue;
+    seen.add(candidate.key);
+    out.push(candidate);
   }
   return out;
 }
@@ -3079,12 +3159,46 @@ export async function undismissRecordName(name, campaignState = null, { narratio
  * @param {string|null} actorId — the roller
  */
 async function postNamedNpcsNotice(named, actorId) {
-  const who = escapeHtml((actorId ? globalThis.game?.actors?.get?.(actorId)?.name : null) ?? "the character");
+  const who = connectionRollerName(actorId);
   const list = named.map(c => `<strong>${escapeHtml(c.name)}</strong>`).join(", ");
   const pending = named.some(c => c.kind === "pending");
   const text = pending
     ? `The move names more than one NPC it could make ${who}'s connection (${list}), and ${who}'s line does not say which, so none was made. Confirm the right one on its New Entities card, or add them on ${who}'s sheet.`
     : `The narration names more than one NPC the table already knows (${list}), so none was made ${who}'s connection. Add the right one on ${who}'s sheet.`;
+  await postNoConnectionCard(text);
+}
+
+/**
+ * GM whisper: a Make a Connection hit ended with no one made its roller's
+ * connection, for a reason other than several named (postNamedNpcsNotice) —
+ * nobody new detected and no NPC the table knows named, a creation that
+ * failed, a row no longer pending, or a round's newcomer the round could not
+ * place (issue #362 AC18: the move card said "Connection made", and nobody
+ * was told).
+ *
+ * @param {string|null} actorId — the roller
+ * @param {{ name?: string|null, waiting?: string[] }} [opts] — `name` the
+ *   figure the hit was with, when it chose one; `waiting` the people the
+ *   capture queued on a draft card
+ */
+async function postNoConnectionNotice(actorId, { name = null, waiting = [] } = {}) {
+  const who = connectionRollerName(actorId);
+  const people = (waiting ?? []).filter(n => typeof n === "string" && n.trim());
+  const text = name
+    ? `<strong>${escapeHtml(name)}</strong> could not be made ${who}'s connection, so none was made. Add them on ${who}'s sheet, or from their New Entities card.`
+    : people.length
+      ? `None was made ${who}'s connection: the people this narration introduced (${people.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ")}) wait on the New Entities card — confirm the right one as ${who}'s.`
+      : `Neither ${who}'s line nor the narration names anyone ${who} could make a connection with — no one new was detected, and no NPC the table knows is named — so none was made. Add the connection on ${who}'s sheet.`;
+  await postNoConnectionCard(text);
+}
+
+/** The roller's name for a Make a Connection notice, escaped. */
+function connectionRollerName(actorId) {
+  return escapeHtml((actorId ? globalThis.game?.actors?.get?.(actorId)?.name : null) ?? "the character");
+}
+
+/** The GMs' "Make a Connection — no connection made" card, its text already escaped. */
+async function postNoConnectionCard(text) {
   await globalThis.ChatMessage?.create?.({
     content: `<div class="sf-ptp-card"><strong>Make a Connection — no connection made</strong><p>${text}</p></div>`,
     whisper: collectGmIds(),

@@ -73,7 +73,12 @@ recorded under its name promoted to it; its bond is §2's.
   while the move was confirmed or narrated was in no list it read, so the
   hit made a second card with a second bond (issue #347 AB09).
   When it creates none, an NPC the move names (`namingText`: the player's
-  line and the narration, full name, whole words — and, in a round, a
+  line and the narration — by their whole name, or by their first or last
+  name alone as a whole word written with its capital, a word of a name the
+  text names in full being that figure's: "Archer" for Vuldar Archer, never
+  Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`, issue #362 AC18:
+  the whole name only, so a hit with a known NPC called by a short name said
+  "Connection made" and made nothing; and, in a round, a
   figure its own roller met) whom the detection pass leaves out becomes the
   roller's connection (`connectNamedFigure`): a pending draft row is
   confirmed (`confirmDraft` with the roller's `actorId`; issue #325 W23 —
@@ -99,7 +104,14 @@ recorded under its name promoted to it; its bond is §2's.
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
   narration had pending Dace at the bar bonded Dace, and the pending rows
-  outranked the known NPC the line named). A Batch Mode round's narration is several characters', so
+  outranked the known NPC the line named). A hit that ends with no one made
+  for any other reason — nobody new detected and no NPC named, a creation
+  that failed, a row no longer pending, a round's newcomer it could not
+  place — whispers the GMs "Make a Connection — no connection made" too
+  (`postNoConnectionNotice`, issue #362 AC18: it was silent under a move
+  card saying "Connection made"); a row whose NPC exists already counts as
+  made, its bond put on the roller (`confirmDraft` returns that record).
+  A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
   description and every clause of the narration naming them, taken
