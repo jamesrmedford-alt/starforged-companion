@@ -684,7 +684,11 @@ function mergeVeils(campaignState, sessionState) {
  * Returns only Lines belonging to the requesting user.
  * If currentUserId is null (e.g. system call), returns empty.
  * "gm" (a GM's client building shared narration) receives every player's
- * Lines, deduplicated.
+ * Lines, deduplicated, in the order of their users' ids — not the store's
+ * order, which follows the last sync: every client re-syncs its Lines at
+ * `ready`, and the sync moves its user's entry to the end, so a reload
+ * reordered the Lines in the narrator's cached standing block and the next
+ * narration rewrote the whole cached prefix (issue #362 AC67).
  */
 function resolvePrivateLines(campaignState, currentUserId) {
   if (!currentUserId) return [];
@@ -693,7 +697,9 @@ function resolvePrivateLines(campaignState, currentUserId) {
   const privateLines = safety.privateLines ?? [];
 
   if (currentUserId === "gm") {
-    return deduplicate(privateLines.flatMap(entry => entry.lines ?? []));
+    const key = (entry) => String(entry?.playerId ?? "");
+    const byUser = [...privateLines].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+    return deduplicate(byUser.flatMap(entry => entry?.lines ?? []));
   }
 
   const entry = privateLines.find(e => e.playerId === currentUserId);

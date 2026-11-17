@@ -184,6 +184,7 @@ import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
+  classifierReadingOf,
   consumeForceMove,
   applyPaceCommand,
   markForceNextAsMove,
@@ -1141,9 +1142,9 @@ export function registerChatHook() {
         swearToConnection,
         // What the classifier made of the line, for the interpreter (issue
         // #354 P2-02) — on a MOVE decision it named a move the router dropped.
-        classifier: pacingResult.decision === "MOVE" && (pacingResult.nominatedMove || pacingResult.category)
-          ? { moveId: pacingResult.nominatedMove ?? null, category: pacingResult.category ?? null, reasoning: pacingResult.reasoning ?? null }
-          : null,
+        // None when no classifier read it: pacing off, `!roll`, a failed call
+        // or an unreadable reply (issue #362 AC64).
+        classifier: classifierReadingOf(pacingResult),
         // The line may be read as no move at all (issue #354 P2-01) — unless a
         // roll was asked for (`!roll`), or pacing is switched off (every line
         // is a move then, as it always was).

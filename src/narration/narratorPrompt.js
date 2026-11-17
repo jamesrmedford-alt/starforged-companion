@@ -139,9 +139,16 @@ export function appendSidecarInstruction(options = {}) {
     '  dock worker", "the comms officer", "a guard" — so they stay light and',
     '  freely mutable rather than entering the record. A name is a commitment to',
     '  keep that character consistent forever; do not spend it on a spear-carrier.',
+    // Worded for both layouts (issue #362 AC66): with a world snapshot the
+    // cards are in WORLD SNAPSHOT and there is no ENTITIES IN SCENE, which the
+    // rule named — read as written it asked for an anchor for every recorded
+    // NPC a narration named. The other rules that pointed at a per-beat
+    // section the snapshot replaces (the third-person pronouns, DISCOVERY's
+    // reuse, the inciting incident's role and addendum) name none either.
     '- REQUIRED: the first time your prose introduces or names a character or',
-    '  faction who does NOT appear in the ENTITIES IN SCENE cards, emit a',
-    '  newTruth anchoring their identity — who or what they are, their role',
+    '  faction who has no card of their own in this prompt (a "NAME — Type"',
+    '  heading over ESTABLISHED FACTS), emit a newTruth',
+    '  anchoring their identity — who or what they are, their role',
     '  in this context, their agenda, their relationship to the player',
     '  character, and (for a person) the pronouns your prose used for them —',
     '  e.g. { "subject": "Kael Dros", "fact": "dockmaster at Bleakhold',
@@ -230,7 +237,7 @@ export function sidecarModeAddendum(mode) {
   if (mode !== 'inciting_incident') return '';
   return [
     'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
-    'sector: when an existing NPC (see the ACTIVE SECTOR cast) or settlement',
+    'sector: when an existing NPC (one recorded for the sector) or settlement',
     'trouble can carry the incident, build on them rather than cold-inventing',
     'a new NPC, and never give a settlement an authority figure its Authority',
     'rules out (a lawless settlement has no administrator or governor).',
@@ -682,9 +689,10 @@ fill the role the scene needs:
 
 You MUST:
 - Reuse before you invent: when the scene needs someone (or somewhere) to fill
-  a role, first check whether an established character or place — see the
-  ACTIVE SECTOR roster and any ENTITIES IN SCENE — can fill it, and use them by
-  name if so. Mint a new named entity only when none of the established cast can
+  a role, first check whether an established character or place — the people
+  and places recorded for the active sector, and anyone already in the scene —
+  can fill it, and use them by name if so.
+  Mint a new named entity only when none of the established cast can
 - Name sparingly: a functionary the scene needs only for a moment (a guard, a
   clerk, a deckhand, a voice on the comm) should stay generic and unnamed. Give
   a proper name only to a character meant to recur — an unnamed figure stays
@@ -1200,7 +1208,7 @@ const ROLE_DESCRIPTIONS = {
     `Vow target: <Name> (<pronouns — the set your prose established for them, ` +
     `e.g. she/her, he/him, they/them>) [<kind — exactly one of: person, creature, faction, ` +
     `vessel>] — <2-3 sentences on one line: who they are — for an ` +
-    `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
+    `already-established NPC (one recorded for the starting sector), consistent with their recorded ` +
     `role, goal, and pronouns, never reassigning or contradicting them — their ` +
     `history with the character, and their current situation and condition>\n` +
     `Situation: <one or two sentences on one line, third person, summarising the ` +
@@ -1410,8 +1418,8 @@ const PERSPECTIVE_DESCRIPTIONS = {
     'pronouns from the CHARACTER section.',
   third_person:
     'Refer to characters by name. e.g. "Kira feels the deck shudder..." Use ' +
-    'each character\'s recorded pronouns (CHARACTER, PARTY, and ENTITIES IN ' +
-    'SCENE sections) exactly as given. If no pronouns are recorded for ' +
+    'each character\'s recorded pronouns (in the CHARACTER and PARTY sections ' +
+    'and on their card) exactly as given. If no pronouns are recorded for ' +
     'someone, do not infer gender from their name — write around it or use ' +
     'they/them.',
 };

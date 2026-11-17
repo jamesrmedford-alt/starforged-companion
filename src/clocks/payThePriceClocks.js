@@ -11,7 +11,7 @@
  */
 
 import { newNarrationId } from "../factContinuity/ledgers.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -193,8 +193,10 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
               // enter the ring/summary or the narrator forgets it immediately.
               // narrationId: what an X-Card on it retracts (issue #321 U07).
               const card = await ChatMessage.create({
-                // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
-                content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(stripMarkup(text))}</em></div>`,
+                // NPC dialogue markup stripped, as on every fiction card (issue #331 X27),
+                // and emphasis rendered as the other clock vignette cards render it
+                // (proseToHtml, issue #348 PT13) — not as literal asterisks (issue #362 AC73).
+                content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${proseToHtml(text)}</em></div>`,
                 flags:   {
                   [MODULE_ID]: {
                     clockCard:         true,

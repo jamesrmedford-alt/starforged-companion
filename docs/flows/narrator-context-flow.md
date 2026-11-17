@@ -82,8 +82,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   second person). Otherwise "auto" is the perspective the session recorded
   when it began (`campaignState.sessionPerspective`, written by
   `beginSession`, cleared by `mintSession`; read by `sessionPerspectiveOf`
-  for every mode — issue #348 PT03), not a per-call count of connected
-  users; a session not begun counts them per call. Its
+  for every mode — issue #348 PT03 — and by the Sector Creator's stubs,
+  `sectorGenerator.generateNarratorStubs`, issue #362 AC70), not a per-call
+  count of connected users; a session not begun counts them per call. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a
@@ -177,7 +178,10 @@ GM-built prompt until their next load (issue #345 AA35). The global Lines /
 Veils copy is healed the same way by the canonical GM, from the world
 settings (`onSafetyListsWritten`, SAFETY-GLOBAL-LISTS-CROSS-WRITE). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
-building client: on a GM's client every player's lines (deduplicated); on a
+building client: on a GM's client every player's lines (deduplicated, listed
+by their users' ids — the stored entries are in the order of the last sync,
+every client re-syncs at `ready`, and a reload reordered the lines and
+rewrote the cached standing block, issue #362 AC67); on a
 player's client — narrating only with no keyed GM online — that player's own,
 read from their client setting, never another player's. Before 2026-10 the
 shared prompt passed no user id and carried no Private Line at all
@@ -526,13 +530,20 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
 - **Built from units** (`worldSnapshot.js` `collectWorldUnits`): one per
   durable record, each `{ key, section, text }`, read from the stores that
   hold them — every sector of `campaignState.sectors` with its roster by name
-  (the entity lists' records, `collectAllEntities`), every recorded entity's
+  (the entity lists' records, `collectAllEntities`) and, after them, the
+  people recorded with no sector of their own — an NPC a confirmed draft or
+  Make a Connection's auto-create made has no `sectorId`, and [5b]'s roster
+  counted them in the active sector's cast; the reuse rule names both (issue
+  #362 AC29) — every recorded entity's
   card (`formatEntityCard`; an uncharted site — a discovery record not yet
   `discovered` — left out), the whole faction landscape
   (`mergeFactionLandscape`, uncapped), every World Journal threat not
   resolved, all confirmed lore with the Locations journal's places and
   `campaignState.loreRecap`, the newest three earlier sessions' summaries
-  (`previousSessionSummary`, and each Session Log page's story) with the open
+  (`previousSessionSummary`, and each Session Log page's story — one with no
+  number, an unbegun session's, reads "An earlier session", not "Session 0",
+  and the session that closed last is the newest numbered or not, issue #362
+  AC71) with the open
   vows and tracks by name, and every active plan of the Secrets journal
   (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
   context settings and the rolling summary's setting leave their sections
@@ -562,7 +573,15 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
   play by heading and id (`coveredIds`), a plan the snapshot does not hold
   printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
-  recent oracles and STORY SO FAR are unchanged.
+  recent oracles and STORY SO FAR are unchanged. The rules name none of the
+  sections one layout lacks — the sidecar's identity anchor is for "a
+  character or faction who has no card of their own in this prompt", the
+  third-person pronouns are "in the CHARACTER and PARTY sections and on their
+  card", DISCOVERY's reuse is of "the people and places recorded for the
+  active sector", the inciting incident's of an NPC "recorded for the
+  sector" — so the standing and mode blocks
+  read true, and are the same bytes, with a snapshot or without (issue #362
+  AC66: they named ENTITIES IN SCENE and ACTIVE SECTOR).
 - **A new snapshot is taken** at a narrator call when an event reported since
   the last one takes a snapshot, or the store finds none for the session, a
   record gone, the changes past 2,000 tokens or a quarter of the snapshot, or
@@ -587,6 +606,7 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
   | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
   | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout` (a track removed, a vow deleted), `retireSceneMysteries` (an ended scene's unanswered mysteries) — issue #362 D4 |
+  | `entity_detail_removed` | yes | `entityPanel.js` `applyEntityEditFromRelay` — the Entities panel's Remove of a narrator-added detail, a rewrite that takes content back (issue #362 AC65) |
   | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
   | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
 
@@ -704,8 +724,12 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
-picked by its place in the session so two in a row never share one, nothing
-stored — and `extras.usedImages`, the comparisons the last six cards made,
+picked by its place among the session's beats so two in a row never share
+one, nothing stored: the count is of the beat cards (a move's, a paced
+line's, a round's — `isSessionBeatCard`), struck, X-Carded and unnarrated
+ones included, never the @scene answers, oracle follow-ups or vignettes
+between them, which brought the cycle round to the same shape (issue #362
+AC72) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and
@@ -743,10 +767,17 @@ it as well — the last 3 entries, the newest 2,400 characters
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
 playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
 speaker line, in the narrator's words) and what the classifier made of the line
-(`readMove`'s `classifier` → a PACING READ hint), and may answer that no move
+(`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
+classifier made, `router.classifierReadingOf`: never for pacing switched off,
+a `!roll`, the classifier's fallback for a failed call or an unreadable reply,
+or a router that failed, which carry a placeholder scene kind and a status
+string — issue #362 AC64), and may answer that no move
 is being made: that line — or a low-confidence reading outside a fight — is
 narrated as a paced line, the move it might be offered on its card
-(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06). Each entry leads with the player's line that
+(`index.js` `narrateLineWithoutMove`; issue #354 P2-01, P2-02, P2-06) —
+never when a roll was asked for or pacing is switched off, in free-flow or
+a Batch Mode round's reading (`movePipeline.readAction`, issue #362 AC68).
+Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several

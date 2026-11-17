@@ -182,6 +182,8 @@ function defaultDial(category) {
  *   confidence: number,
  *   reasoning: string,
  *   forced?: boolean,
+ *   pacingDisabled?: boolean,
+ *   classifierRead?: boolean,
  * }>}
  */
 export async function decidePacing({
@@ -275,6 +277,9 @@ export async function decidePacing({
       category: result.category,
       confidence: result.confidence,
       reasoning: result.reasoning,
+      // The classifier read the line — not its fallback for a failed call or
+      // an unreadable reply (classifierReadingOf; issue #362 AC64).
+      classifierRead: result.fallback !== true,
     };
   }
 
@@ -300,6 +305,26 @@ export async function decidePacing({
     confidence: result.confidence,
     reasoning: result.reasoning,
   };
+}
+
+/**
+ * What the classifier made of a line it called a MOVE, for the move
+ * interpreter's PACING READ hint (issue #354 P2-02) — free-flow's and a Batch
+ * Mode reading's (movePipeline.js readAction) — or null when no classifier
+ * read the line: pacing switched off, a `!roll`, the classifier's call failed
+ * or its reply could not be read, the router failed. Those decisions carry a
+ * placeholder scene kind ("exploration") and a status string ("pacing
+ * disabled", "fallback: …") where the reasoning goes; handed on, they told
+ * the interpreter a line was in an exploration scene nobody read (issue #362
+ * AC64). Pure.
+ *
+ * @param {Object|null} pacing — decidePacing's or routePacedInput's decision
+ * @returns {{ moveId: string|null, category: string|null, reasoning: string|null }|null}
+ */
+export function classifierReadingOf(pacing) {
+  if (pacing?.decision !== PACING_DECISION.MOVE || pacing.classifierRead !== true) return null;
+  if (!pacing.nominatedMove && !pacing.category) return null;
+  return { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
 }
 
 /**

@@ -242,7 +242,10 @@ layers. This file is the never-break list.
    request's: anything read per call — a perspective a round can force, the
    X-Card redirect, oracle seeds, the session-start recap, a name, a count,
    a timestamp — goes in `beat` (or `mode`, when it is constant for the
-   mode). Add a section to the block its volatility puts it in, never to
+   mode). A list a cached block renders is in a stable order, never the
+   order its writes landed in (the GM's Private Lines by user id — a
+   player's reload re-synced them to the end, issue #362 AC67). Add a
+   section to the block its volatility puts it in, never to
    `standing` because it reads well there; `tests/unit/
    narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached
    block. The sidecar instruction lives in `standing`, and the context closes
@@ -274,7 +277,8 @@ layers. This file is the never-break list.
      record another way is caught by the manifest (`record_removed`), but a
      path that *rewrites* one to take content back must report an event of
      its own — a changed record otherwise rides as a change while the
-     snapshot still states the old one.
+     snapshot still states the old one (the Entities panel's Remove of a
+     narrator-added detail reports `entity_detail_removed`, issue #362 AC65).
    - **It holds every active hidden plan**, so it is the GMs' alone: stored
      in the Secrets journal, read only by `narrator.js`
      (`secretsStayHidden.test.js`), never by a card builder, a panel or a
@@ -283,7 +287,13 @@ layers. This file is the never-break list.
      is left out of the context when there is one (`buildNarratorSystemBlocks`
      — nothing is sent twice) and still rendered when there is none. A new
      durable section is a new unit kind in `collectWorldUnits` *and* a
-     per-beat fallback; a new volatile one goes in the context only.
+     per-beat fallback; a new volatile one goes in the context only. A rule
+     in the standing or mode block names no section only one layout has: it
+     is worded for both — "a character who has no card of their own in this
+     prompt", "the people recorded for the active sector" — so the cached
+     rules are the same bytes with and without a snapshot (the identity
+     anchor named ENTITIES IN SCENE, which a snapshot request does not
+     have — issue #362 AC66).
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),
