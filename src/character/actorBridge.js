@@ -1464,6 +1464,45 @@ export async function setBondItemName(keys = {}, name) {
 }
 
 /**
+ * The bond Items of an NPC card a GM deleted (issue #362 D10 —
+ * connection.onConnectionActorDeleted): each one keyed to the connection that
+ * the table never marked — no tick, not forged — is deleted, as the X-Card's
+ * teardown deletes them (deleteUnmarkedBondItems); a marked one is the
+ * table's history, kept and marked lost (setBondItemLost's flag — the
+ * Connections tab keeps it, CHARACTER STATE lists it under "Connections
+ * lost"), as a severed bond is. One already lost stays. Only Items keyed by
+ * `connectionId` (bondItemsFor without a name). Each write is the module's
+ * (moduleWriteOn / moduleUpdate; the delete with `suppressLog`, so the
+ * system's "Deleted …" note is not the PC's line — known-issues AC76). Never
+ * throws; a refused write is logged.
+ *
+ * @param {{ connectionId?: string|null }} keys — the deleted record's `_id`
+ * @returns {Promise<{ deleted: number, lost: number }>}
+ */
+export async function retireDeletedConnectionBondItems({ connectionId = null } = {}) {
+  const out = { deleted: 0, lost: 0 };
+  if (!connectionId) return out;
+  for (const { actor, item } of bondItemsFor({ connectionId })) {
+    if (item.flags?.[MODULE_ID]?.lost === true) continue;
+    const marked = Number(item.system?.current ?? 0) > 0 || item.system?.completed === true;
+    try {
+      if (marked) {
+        await staleChecked('retireDeletedConnectionBondItems', () => moduleUpdate(item, { [`flags.${MODULE_ID}.lost`]: true }));
+        out.lost++;
+      } else {
+        refuseStaleActorWrite('retireDeletedConnectionBondItems');
+        await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
+        out.deleted++;
+      }
+    } catch (err) {
+      console.warn(`actorBridge | retireDeletedConnectionBondItems: ${item?.name ?? 'a bond'} on ${actor?.name ?? actor?.id} was not ${marked ? 'marked lost' : 'deleted'}:`, err?.message ?? err);
+    }
+    invalidateActorCache(actor.id);
+  }
+  return out;
+}
+
+/**
  * Mirror a connection's rank onto each PC's bond Item (NARR-BOND-RANK-STALE,
  * narrator-context audit 2026-07): the item's rank was seeded at creation and
  * never updated when the connection record's rank rose (develop-match /

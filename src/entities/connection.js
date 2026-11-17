@@ -32,6 +32,7 @@ import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
 import { deleteEntityArtAssets } from "../art/storage.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
@@ -270,9 +271,8 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
   const ticksPerMark = RANK_TICKS[connection.rank] ?? RANK_TICKS.dangerous;
   const ticksAdded   = ticksPerMark * marks;
 
-  // Update the progress track (stored separately via progressTrackId)
-  // If no progress track exists yet, the UI layer should create one first.
-  // Here we just update the connection's cached tick count for context injection.
+  // The relationship track is the record's own `relationshipTicks` (mirrored
+  // onto each PC's bond Item below).
   const currentTicks = connection.relationshipTicks ?? 0;
   const newTicks     = Math.min(40, currentTicks + ticksAdded);
 
@@ -424,7 +424,8 @@ export async function retractNarrationConnections(narrationIds) {
       const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
       const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
       if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
-      await document.delete();
+      // Its teardown is this one: the deleteActor hook leaves it alone (issue #362 D10).
+      await document.delete({ [MODULE_ID]: { [TORN_DOWN_OPTION]: true } });
       await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
       await deleteEntityArtAssets(FLAG_KEY, data._id ?? null, { portraitId: data.portraitId ?? null });
       if (data.createdFromDraft) {
@@ -437,6 +438,73 @@ export async function retractNarrationConnections(narrationIds) {
     }
   }
   return out;
+}
+
+/**
+ * The delete option the module's own delete of an NPC card carries when it
+ * tears the connection down itself (retractNarrationConnections): the
+ * deleteActor hook (onConnectionActorDeleted) then runs nothing twice.
+ */
+const TORN_DOWN_OPTION = "connectionTornDown";
+
+/**
+ * deleteActor hook (issue #362 D10 — the maintainer's answer A): a GM's delete
+ * of an NPC card in the Actors sidebar runs the X-Card's connection teardown
+ * (retractNarrationConnections). Deleting a card cleaned up nothing: its id
+ * stayed in `connectionIds`, the PCs' bond Items stayed (CHARACTER STATE and
+ * the pacing classifier kept listing the NPC), the scene-ledger facts stayed
+ * keyed to a card no one answers, and its hidden plan and portraits stayed.
+ * Document hooks fire on every client: the canonical GM runs it, once. The
+ * X-Card's own delete is torn down already (TORN_DOWN_OPTION). Never throws.
+ *
+ * @param {Actor} actor — the deleted card
+ * @param {Object} [options] — the delete's options
+ */
+function onConnectionActorDeleted(actor, options = {}) {
+  try {
+    if (!isCanonicalGM()) return;
+    if (actor?.flags?.[MODULE_ID]?.entityType !== FLAG_KEY) return;
+    if (options?.[MODULE_ID]?.[TORN_DOWN_OPTION]) return;
+    tearDownDeletedConnection(actor).catch(err =>
+      console.warn(`${MODULE_ID} | deleted NPC card ${actor?.name ?? actor?.id}: its connection teardown failed:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deleteActor connection teardown threw:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Register the deleteActor hook that takes a deleted NPC card's connection
+ * down (onConnectionActorDeleted — issue #362 D10). Once, at ready (index.js).
+ */
+export function registerConnectionDeleteHook() {
+  Hooks.on("deleteActor", onConnectionActorDeleted);
+}
+
+/**
+ * What a deleted NPC card leaves behind, taken down as the X-Card's
+ * retraction takes it (onConnectionActorDeleted): its id off `connectionIds`
+ * and the scene-ledger facts keyed to it handed back to its name
+ * (unregisterDeletedConnection); the PCs' bond Items — deleted, or marked lost
+ * where the table marked them (actorBridge.retireDeletedConnectionBondItems:
+ * the card is gone, a player's marks are not erased); its portraits
+ * (deleteEntityArtAssets); its hidden plan retired, as a GM's Retire does
+ * (secrets.retireSkeleton). Each step is a no-op once done.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<void>}
+ */
+async function tearDownDeletedConnection(actor) {
+  const record   = actor?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const recordId = typeof record._id === "string" && record._id ? record._id : null;
+  await unregisterDeletedConnection(actor.id, String(record.name || actor.name || ""));
+  // Dynamic imports, as the X-Card's: actorBridge and the Secrets journal import entity modules.
+  const { retireDeletedConnectionBondItems } = await import("../character/actorBridge.js");
+  await retireDeletedConnectionBondItems({ connectionId: recordId });
+  await deleteEntityArtAssets(FLAG_KEY, recordId, { portraitId: record.portraitId ?? null });
+  const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
+  for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === actor.id)) {
+    await retireSkeleton(plan.id);
+  }
 }
 
 /**

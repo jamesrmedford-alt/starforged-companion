@@ -202,6 +202,8 @@ export const GM_ACTIONS = Object.freeze({
   // Known-issues DRAFT-CONFIRM-TWO-GMS — a "New Entities Detected" card's Confirm / Dismiss, one press at a time
   "draft.confirm":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftConfirmFromRelay" },
   "draft.dismiss":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftDismissFromRelay" },
+  // Issue #362 D10 — "No — a new person" on a row read as someone the table knows
+  "draft.newPerson":           { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftNewPersonFromRelay" },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },

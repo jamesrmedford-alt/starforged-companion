@@ -1961,13 +1961,15 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
+      // People the detection read as someone known: listed on the card as
+      // read as them (issue #362 D10).
+      readAs:               detection.readAs ?? [],
       // A Batch Mode round's Make a Connection hits, each its own roller and
       // seed (runRoundNarrationPasses — issue #342 Z09).
       connectionRollers:    options.connectionRollers ?? null,
       // A round's acting PCs: its draft card asks which of them a new
       // connection belongs to (issue #342 D3).
       actorIds:             options.actorIds ?? null,
-      sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
       // (issue #325 W23); the player's line says which when the narration
@@ -4706,7 +4708,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     await applyEntityRenames(detection.renames, campaignState, { narrationId });
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
-      sessionId:            campaignState?.currentSessionId ?? '',
+      readAs:               detection.readAs ?? [],   // issue #362 D10
       source:               options.source ?? 'paced_narrative',
       actorId:              options.actorId ?? null,
       narrationId,

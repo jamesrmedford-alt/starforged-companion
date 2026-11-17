@@ -301,10 +301,7 @@ export const ConnectionSchema = {
                                 // (enrichProgressTicks). Was written ad-hoc without a
                                 // schema home until the 2026-07 soft-spot cleanup.
 
-  progressTrackId: null,        // Associated ProgressTrack _id
-
   // Narrative — populated progressively through play
-  firstAppearance: "",          // Session/scene reference
   description: "",              // Physical description
   pronouns: "",                 // Pronoun set ("she/her" | "he/him" | "they/them" | custom).
                                 // Established once: detection capture / inciting target line /
@@ -329,12 +326,14 @@ export const ConnectionSchema = {
     // { timestamp: ISO string, entry: "Rescued from Exodus-era pod in debris field" }
   ],
 
-  loremasterNotes: "",          // How to voice/play this character — injected into context
-
-  // Context injection flags
-
-  // Privacy — per Brief §3: individual player Lines must not be visible to other players
-  playerVisible: true,          // false = GM-only record (hidden antagonists, secret NPCs)
+  // `progressTrackId`, `firstAppearance`, `loremasterNotes` and `playerVisible`
+  // are retired (issue #362 AC81): none had both a production writer and a
+  // reader. The relationship track is `relationshipTicks`; `firstAppearance`
+  // was written (a session id) and never read; `loremasterNotes` was only ever
+  // this empty default; `playerVisible` promised a GM-only record nothing
+  // hides — a secret NPC's agenda lives in its hidden plan (secrets.js), and
+  // GM-only notes are the sheet's Notes. Stored records keep the stale
+  // fields, which do no harm (as CONN-BACKGROUND-UNWRITTEN's did).
 
   // Set true when this connection was authored by the sector creator (or any
   // other canonical source) and should not be overwritten by narrator entity

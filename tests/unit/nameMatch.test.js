@@ -42,6 +42,15 @@ describe('personNameMatch — a person under part of their name or a near spelli
   it('a middle word is no name to be called by', () => {
     expect(personNameMatch('Reyes', 'Ana Reyes Okafor')).toBeNull();
   });
+
+  // Issue #362 AC17: the rule dropped every vowel before comparing, so any two
+  // names of five letters or more that differed only in their vowels were one.
+  it('two people whose names differ in a vowel — changed, added or dropped — stay two people (issue #362 AC17)', () => {
+    const pairs = [['Maria', 'Mario'], ['Petra', 'Peter'], ['Talen', 'Talon'], ['Jonas', 'Jones'], ['Soren', 'Seren'],
+      ['Simon', 'Simone'], ['Daniel', 'Daniela'], ['Seren Okoro', 'Soren Okoro']];
+    expect(pairs.filter(([a, b]) => personNameMatch(a, b) !== null).map(p => p.join(' = '))).toEqual([]);
+    expect(personNameMatch('Seren', 'Soren Okoro')).toBeNull();
+  });
 });
 
 describe('misspelledWord — narrow on purpose', () => {
@@ -51,6 +60,14 @@ describe('misspelledWord — narrow on purpose', () => {
     expect(misspelledWord('maren', 'marek')).toBe(false);
     expect(misspelledWord('kira', 'kora')).toBe(false);
     expect(misspelledWord('archer', 'archer')).toBe(false);
+  });
+
+  it('only the same letters in another order, or a doubled letter written once — never another vowel (issue #362 AC17)', () => {
+    expect(misspelledWord('soren', 'seren')).toBe(false);
+    expect(misspelledWord('maria', 'mario')).toBe(false);
+    expect(misspelledWord('jonas', 'jones')).toBe(false);
+    expect(misspelledWord('simon', 'simone')).toBe(false);
+    expect(misspelledWord('matthias', 'mathias')).toBe(true);
   });
 });
 
@@ -92,6 +109,7 @@ describe('suffixedName / sameSubject — a threat or a plan\'s subject under a l
     expect(sameSubject('Hull', 'Hull breach')).toBe(false);
     expect(sameSubject('the second presence', 'the escort')).toBe(false);
     expect(sameSubject('Mara Archer', 'Vuldar Archer')).toBe(false);
+    expect(sameSubject('Seren Okoro', 'Soren Okoro')).toBe(false);   // issue #362 AC17
     expect(sameSubject('the escort', 'the blockade')).toBe(false);
     expect(sameSubject('', 'the escort')).toBe(false);
   });

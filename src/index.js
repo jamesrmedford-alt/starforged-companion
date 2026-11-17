@@ -196,6 +196,7 @@ import {
   spawnEncounter,
 } from "./system/encounterSpawn.js";
 import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
+import { registerConnectionDeleteHook } from "./entities/connection.js";
 import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
@@ -3213,6 +3214,7 @@ function registerEntityRenameSyncHook() {
   Hooks.on("updateActor", syncEntityRecordNameOnUpdate);
   Hooks.on("updateJournalEntry", syncJournalEntityRecordNameOnUpdate);
 }
+
 
 /**
  * Which client narrates a native sheet roll: the keyed-runner ladder of
@@ -9123,6 +9125,7 @@ Hooks.once("ready", () => {
       console.warn(`${MODULE_ID} | spotlight default switch-off failed:`, err?.message ?? err));
   }
   registerEntityRenameSyncHook();
+  registerConnectionDeleteHook();          // #362 D10: a GM's delete of an NPC card tears its connection down
   registerStarshipSeedHook();
   registerCommandVehicleHook();
   registerNativeProgressRollHook();

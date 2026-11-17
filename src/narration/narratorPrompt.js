@@ -3263,8 +3263,9 @@ function buildCharacterBlock(character, pinnedEntries = []) {
   const charNotes = (character.notes ?? '').trim();
   if (charNotes) lines.push(`Notes: ${charNotes}`);
 
-  // GM/narrator-facing notes (legacy field names retained for back-compat).
-  const narratorNotes = character.narratorNotes ?? character.loremasterNotes ?? '';
+  // GM/narrator-facing notes. (The `loremasterNotes` fallback is retired —
+  // nothing ever wrote it on any record — issue #362 AC81.)
+  const narratorNotes = character.narratorNotes ?? '';
   if (narratorNotes) lines.push(`Notes for narrator: ${narratorNotes}`);
 
   if (character.stats) {

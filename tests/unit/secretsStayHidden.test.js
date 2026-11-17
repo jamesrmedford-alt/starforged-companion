@@ -24,6 +24,7 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 
 /** The modules that may import the store or its record model, and why. */
 const STORE_READERS = new Map([
+  ['src/entities/connection.js', 'a deleted NPC card\'s agenda plan, retired with the card (issue #362 D10 — the plans\' subject ids are read, the plan retired; no plan field reaches a card)'],
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
   ['src/narration/worldSnapshot.js', 'the narrator\'s world snapshot (issue #357): every active plan, rendered as prompt text for the cached block — stored by worldSnapshotStore.js on a page of the GM-only Secrets journal, read by narrator.js alone'],

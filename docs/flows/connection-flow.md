@@ -36,7 +36,11 @@ passed the host Actor id, which no Item carries).
 
 ## 1. Meet (creation)
 
-Four paths converge on `createConnection()`. It registers the NPC card's id
+Four paths converge on `createConnection()` — five with a GM's own NPC: the
+Entities panel's **＋ New NPC** (GM only) posts a New Entities card with that
+one row (`entityExtractor.offerNewPerson`, `newPerson`), offered to each PC
+and No one, so its Confirm makes the card as a detected one is made (issue
+#362 D10 — no GM-facing path made an NPC card). It registers the NPC card's id
 in `connectionIds` on the caller's copy and on the latest stored campaignState
 (`registerEntityIdInStore`, on the GM's campaignState write chain —
 CAMPSTATE-CHAIN-REST) — never by writing the caller's copy whole, which
@@ -59,7 +63,15 @@ recorded under its name promoted to it; its bond is §2's.
   lower-id keyed GM joining while the narration was written left the hit
   saying "Connection made" with no one made (issue #345 AA34; a round's
   likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
-  `routeEntityDrafts` auto-creates the first connection draft
+  `routeEntityDrafts` auto-creates one connection draft — the one the
+  player's line names, else the interpreter's target names, else the first
+  detected; the hit's figure is chosen before anything is made, the newly
+  detected people counted with the pending rows and the known NPCs the move
+  names (`chooseConnectionFigure`, the free-flow slot's `choosesFirst`;
+  issue #362 AC19 — the first person the detector listed took the hit
+  before the line was read, so a bystander the prose named first, or a
+  deckhand beside the known NPC the line named, became the roller's
+  connection, and the one the move was with was queued)
   (`buildConnectionSeedData` → `createConnection` →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
   Item — on the roller's PC: the narration's `actorId` rides
@@ -73,7 +85,12 @@ recorded under its name promoted to it; its bond is §2's.
   while the move was confirmed or narrated was in no list it read, so the
   hit made a second card with a second bond (issue #347 AB09).
   When it creates none, an NPC the move names (`namingText`: the player's
-  line and the narration, full name, whole words — and, in a round, a
+  line and the narration — by their whole name, or by their first or last
+  name alone as a whole word written with its capital, a word of a name the
+  text names in full being that figure's: "Archer" for Vuldar Archer, never
+  Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`, issue #362 AC18:
+  the whole name only, so a hit with a known NPC called by a short name said
+  "Connection made" and made nothing; and, in a round, a
   figure its own roller met) whom the detection pass leaves out becomes the
   roller's connection (`connectNamedFigure`): a pending draft row is
   confirmed (`confirmDraft` with the roller's `actorId`; issue #325 W23 —
@@ -99,7 +116,14 @@ recorded under its name promoted to it; its bond is §2's.
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
   narration had pending Dace at the bar bonded Dace, and the pending rows
-  outranked the known NPC the line named). A Batch Mode round's narration is several characters', so
+  outranked the known NPC the line named). A hit that ends with no one made
+  for any other reason — nobody new detected and no NPC named, a creation
+  that failed, a row no longer pending, a round's newcomer it could not
+  place — whispers the GMs "Make a Connection — no connection made" too
+  (`postNoConnectionNotice`, issue #362 AC18: it was silent under a move
+  card saying "Connection made"); a row whose NPC exists already counts as
+  made, its bond put on the roller (`confirmDraft` returns that record).
+  A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
   description and every clause of the narration naming them, taken
@@ -159,8 +183,23 @@ recorded under its name promoted to it; its bond is §2's.
   always bonded the person to the acting PC. A detected person is the one
   already known under part of their name or a near spelling
   (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
-  PC's first name), in the detection filter and the draft gate alike, so they
-  are not offered again; the bond Item's creation is marked as the module's
+  PC's first name; a near spelling is the same letters in another order or a
+  doubled letter written once — "Valdur", "Suton" — never another vowel:
+  "Seren Okoro" beside "Soren Okoro" is his sister, offered on the card,
+  issue #362 AC17), in the detection filter and the draft gate alike, so they
+  are not offered again — they are listed, a row read as the known one
+  ("Read as Vuldar Archer", `status: "known"`, `readAs`; the parse's `readAs`
+  list rides `routeEntityDrafts`' `options.readAs`, one row a name), whose
+  **No — a new person** (`draft.newPerson` → `applyDraftNewPersonFromRelay`, a
+  GM's press) makes it a pending row with `newPerson` (issue #362 D10, the
+  maintainer's answer A — they were dropped with no row and no notice: a PC's
+  father introduced as "Captain Sutton" never got a card). A later name of one
+  reply is read as the earlier ("Archer" after "Vuldar Archer"), and Confirm's
+  own gate applies the person rule: a stale "Archer" row pressed after Vuldar
+  Archer was made is read as him, not made a second card with a second bond
+  (a `newPerson` row is made; Make a Connection's candidates skip such a row
+  for the known one — the coverage's D8). The X-Card withdraws read-as rows
+  with the pending ones. The bond Item's creation is marked as the module's
   write (`actorBridge` `moduleWriteOn`), so the system's "Added …" note is
   re-attributed as PT14's are. Each Confirm / Dismiss is a GM's
   press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
@@ -177,7 +216,14 @@ recorded under its name promoted to it; its bond is §2's.
   Placeholder-name reveals rename in place rather than duplicating; a reveal
   whose `from` names no recorded placeholder connection drafts the newly
   named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
-  U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
+  U27). A reveal onto a name someone already holds — a record's whole name,
+  or a person's part name or near spelling ("it is Sable" with Sable Ortiz
+  known, "Isaac" for the PC Isaac Sutton; the placeholder itself not counted)
+  — is refused, and the GMs are whispered which known person it named
+  ("Identity revealed — not renamed", `postRenameRefusedCard`): whether the
+  two are one person is theirs to say, nothing merges two records (issue
+  #362 AC40 — the placeholder was renamed "Sable", a second card answering to
+  every "Sable"). A rename carries its narration's id (`renamedBy`), and an X-Card on
   that narration puts the placeholder name back unless the card was renamed
   since; the card's still-pending rows are withdrawn (`xCarded`) — issue
   #335 Y02, #338 D6(i). A revealed name the GM once dismissed from a draft
@@ -207,7 +253,20 @@ AUTOSEED-KEYLESS-CANONICAL). A character Actor made by
 hand in the Actors sidebar carries no module flag: it is never seeded, never
 listed in `connectionIds`, and the module takes it for a **player character**
 (`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and
-the CHARACTER blocks (issue #342 Z73).
+the CHARACTER blocks (issue #342 Z73); a GM's own NPC is made with ＋ New NPC
+(above).
+
+**Deleting an NPC card** (a GM, in the Actors sidebar) runs the X-Card's
+connection teardown on the canonical GM (`connection.registerConnectionDeleteHook`
+→ `onConnectionActorDeleted`, issue #362 D10 — it cleaned up nothing): its
+`connectionIds` entry goes and the scene-ledger facts keyed to it are handed
+back to its name (`unregisterDeletedConnection` → `ledgers.demoteEntitySubject`),
+the PCs' bond Items keyed to it are deleted — a bond a player marked (a tick,
+a forged bond) is kept and marked lost instead, as a severed one is
+(`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
+(`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
+(`secrets.retireSkeleton`). The X-Card's own delete of a narration's NPC passes
+`{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
@@ -462,7 +521,12 @@ of them; it was told every NPC card, and leaned toward a roll whenever a line
 addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
-writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).
+writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN),
+and so are `progressTrackId`, `firstAppearance` (written by the inciting vow's
+target and Make a Connection's auto-create, read by nothing), `loremasterNotes`
+(only ever its empty default) and `playerVisible` (a "GM-only record" switch
+nothing implemented — a secret NPC's agenda is its hidden plan) — issue #362
+AC81.
 The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
