@@ -66,6 +66,7 @@ import {
   mapConsequences,
   buildLoremasterContext,
   upgradedOracleSeeds,
+  matchLine,
 } from "./resolver.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import {
@@ -907,17 +908,19 @@ export function burnedMomentumLine(before, after, reset) {
 
 /**
  * Rewrite the existing move-result card's HTML to reflect the burned
- * outcome. Strikes through the original outcome label and appends the
- * burned outcome, the momentum the burn spent (`momentumNote`,
+ * outcome. Strikes through the original outcome label — and the match line
+ * that read it (struckMatchLine) — and appends the burned outcome, what its
+ * match adds, the momentum the burn spent (`momentumNote`,
  * burnedMomentumLine) + new consequence text, and the note on its other
  * effects (`effectsNote`, HTML from effectsNoteHtml).
  */
 function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "", momentumNote = "") {
-  const html = String(originalContent ?? "");
+  const html = struckMatchLine(originalContent);
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
   const burnNote = (
     `<div class="sf-move-burn-result">` +
       `<div class="sf-move-outcome sf-move-outcome--upgraded">🔥 Burned → ${newLabel}</div>` +
+      (burnResult.isMatch ? `<div class="sf-move-match">${matchLine(burnResult.outcome)}</div>` : "") +
       (momentumNote ? `<div class="sf-move-effect sf-move-burned-momentum">${momentumNote}</div>` : "") +
       (newConsequences.otherEffect
         ? `<div class="sf-move-effect">${newConsequences.otherEffect}</div>`
@@ -939,6 +942,23 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
   );
   if (struck) return out;
   return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, `${burnNote}</div>`) : html + burnNote;
+}
+
+
+/**
+ * A move card with the match line its first outcome rendered (index.js
+ * formatMoveResult, issue #354 P2-14) struck through: an upgraded outcome's
+ * match reads otherwise — a miss's "dire turn" is a strong hit's "twist" —
+ * and the stale line stood unstruck under "Burned → Strong Hit ✦ Match"
+ * (issue #362 AC31). Improve Result strikes it the same way. A card with no
+ * match line is returned as it is.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+export function struckMatchLine(content) {
+  return String(content ?? "").replace(/<div class="sf-move-match">([\s\S]*?)<\/div>/,
+    (_full, inner) => `<div class="sf-move-match sf-move-match--struck"><s>${inner}</s></div>`);
 }
 
 

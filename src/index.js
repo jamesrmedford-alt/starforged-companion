@@ -23,7 +23,7 @@
  */
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
-import { mapConsequences, buildLoremasterContext, expeditionPlanRequest } from "./moves/resolver.js";
+import { mapConsequences, buildLoremasterContext, expeditionPlanRequest, matchLine } from "./moves/resolver.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -8527,22 +8527,6 @@ export function wireKeepResultButton(message, root) {
       restore:    () => { fresh.disabled = false; },
     });
   });
-}
-
-/**
- * What a match adds, in one line under the outcome (issue #354 P2-14): the
- * card said "with a Match" and nothing told the player why the narration took
- * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
- * on a miss, a heightened negative outcome. (Matched challenge dice are both
- * beaten or neither, so a weak hit never matches.)
- *
- * @param {string} outcome
- * @returns {string} card HTML text
- */
-export function matchLine(outcome) {
-  return outcome === "miss"
-    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
-    : "✦ Match: a twist — something unexpected, or a new opportunity.";
 }
 
 /**

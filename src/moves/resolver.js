@@ -109,6 +109,24 @@ export function buildOutcomeLabel(outcome, isMatch) {
 }
 
 /**
+ * What a match adds, in one line under the outcome (issue #354 P2-14): the
+ * card said "with a Match" and nothing told the player why the narration took
+ * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
+ * on a miss, a heightened negative outcome. (Matched challenge dice are both
+ * beaten or neither, so a weak hit never matches.) The move card's, and the
+ * line a burned or improved card puts in place of the one its first outcome
+ * had (issue #362 AC31).
+ *
+ * @param {string} outcome
+ * @returns {string} card HTML text
+ */
+export function matchLine(outcome) {
+  return outcome === "miss"
+    ? "✦ Match: a dire turn — the outcome is worse, with a complication or a new peril."
+    : "✦ Match: a twist — something unexpected, or a new opportunity.";
+}
+
+/**
  * Determine the outcome of a progress move.
  * No action die — tally filled boxes as the progress score,
  * then compare against challenge dice.

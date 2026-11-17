@@ -40,7 +40,7 @@
  * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
-import { mapConsequences, OUTCOME_RANK, buildLoremasterContext, upgradedOracleSeeds } from "./resolver.js";
+import { mapConsequences, OUTCOME_RANK, buildLoremasterContext, upgradedOracleSeeds, matchLine } from "./resolver.js";
 import { getCurrentSiteKind }          from "../entities/location.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
@@ -63,6 +63,7 @@ import {
 } from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
+  struckMatchLine,
   relayCardButtonClick,
   requesterOwnsActor,
   claimResultUpgrade,
@@ -397,7 +398,7 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), improve) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -461,13 +462,16 @@ async function advanceAbilityClock(actor, improve) {
 /**
  * Append a strong-hit + cost banner to the move-result card content, and the
  * note on the strong hit's other effects (`effectsNote`, HTML from
- * effectsNoteHtml).
+ * effectsNoteHtml). A match the result kept reads as the strong hit's: the
+ * miss's line is struck and the strong hit's is in the banner (issue #362
+ * AC31).
  */
-function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") {
+function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null) {
   const note = clockNote ? ` ${clockNote}` : "";
+  const match = improve?.isMatch ? `<div class="sf-move-match">${matchLine(improve.improveTo ?? "strong_hit")}</div>` : "";
   const banner =
-    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${effectsNote}</div>`;
-  return `${String(originalContent ?? "")}${banner}`;
+    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effectsNote}</div>`;
+  return `${struckMatchLine(originalContent)}${banner}`;
 }
 
 /**
