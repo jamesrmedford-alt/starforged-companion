@@ -1429,7 +1429,12 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
   let deleted = 0;
   for (const { actor, item } of items) {
     refuseStaleActorWrite('deleteUnmarkedBondItems');
-    await item.delete();
+    // The system's change log posted "Deleted <name>" as the PC speaking —
+    // the NPC the X-Card took back named again, in the PC's voice (issue #362
+    // AC76). Its preDeleteItem reads `suppressLog` from the delete's options,
+    // so the note is not posted; marked as the module's write too, a note
+    // posted all the same is said by the system (reattributeSystemNote).
+    await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
     invalidateActorCache(actor.id);
     deleted++;
   }
