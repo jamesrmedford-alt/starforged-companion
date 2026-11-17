@@ -1183,6 +1183,10 @@ export async function narrateResolution(resolution, campaignState, options = {})
     playerName:       character?.name ?? null,
     narrationId,
   };
+  // Whether this narration's side-data was applied, the plans it was asked
+  // to decide with it: an exit that wrote none files them with their rolls
+  // alone (issue #362 AC07).
+  let sideDataApplied = false;
 
   try {
     const raw = await callNarratorAPI({
@@ -1205,9 +1209,11 @@ export async function narrateResolution(resolution, campaignState, options = {})
     });
 
     if (!narration?.trim()) {
+      fileUnansweredPlanRequests(extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
       await postFallbackCard(resolution, campaignState, EMPTY_REPLY_REASON);
       return null;
     }
+    sideDataApplied = true;
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
     reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
@@ -1248,6 +1254,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
           planRequests:     extras.planRequests,
         });
         if (narration?.trim()) {
+          sideDataApplied = true;
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
           reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
@@ -1270,6 +1277,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
+    if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
     await postFallbackCard(resolution, campaignState, failure);
     return null;
   }
@@ -1439,6 +1447,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // a helper, so its caller is narrateRound (the playthrough harness files a
   // call under the two module functions above the proxy).
   let failure = claudeFailureReason(null);   // the fallback card's cause (ERROR-TEXT-BLAMES-KEY)
+  // Whether the side-data was applied, the entries' plan requests with it
+  // (issue #362 AC07; narrateResolution's rule).
+  let sideDataApplied = false;
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await delay(RETRY_DELAY_MS);
@@ -1456,6 +1467,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         failure = EMPTY_REPLY_REASON;
         break;
       }
+      sideDataApplied = true;
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
@@ -1477,6 +1489,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     }
   }
   if (superseded()) return { posted: null, superseded: true };
+  // A round no narration was written for: its entries' plan requests are
+  // filed with their rolls alone (issue #362 AC07).
+  if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState);
   return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, failure) };
 }
 
@@ -3848,6 +3863,9 @@ export async function narrateOracleFollowup({
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
+  // Whether the side-data was applied, the price's plan request with it
+  // (issue #362 AC07; narrateResolution's rule).
+  let sideDataApplied = false;
 
   try {
     const raw = await callNarratorAPI({
@@ -3859,7 +3877,11 @@ export async function narrateOracleFollowup({
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
 
-    if (!text?.trim()) return null;
+    if (!text?.trim()) {
+      fileUnansweredPlanRequests(extras.planRequests, campaignState);
+      return null;
+    }
+    sideDataApplied = true;
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
     reportNarratedOracle(kind, rolledLine);
@@ -3879,6 +3901,7 @@ export async function narrateOracleFollowup({
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals });
         if (text?.trim()) {
+          sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
           reportNarratedOracle(kind, rolledLine);
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
@@ -3889,6 +3912,7 @@ export async function narrateOracleFollowup({
       }
     }
     console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
+    if (!sideDataApplied) fileUnansweredPlanRequests(extras.planRequests, campaignState);
     return null;
   }
 }
@@ -5691,8 +5715,15 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // says: added to the sidecar's own reveals, so it is applied (or relayed)
   // with the narration's id like the rest.
   const forced = normaliseReveals(ctx.reveals);
-  const sidecar = forced.length
-    ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})), reveals: [...(parsedBlock.sidecar?.reveals ?? []), ...forced] }
+  // The plans this narration was asked to decide (DECIDE NOW) are filed
+  // whatever its fact block holds — cut off, unreadable or missing, with
+  // their rolls alone (issue #362 AC07; decisions.md "keep the raw rolls as
+  // the skeleton"): the request is the move's, and its rolls exist nowhere
+  // else.
+  const asked = Array.isArray(ctx.planRequests) && ctx.planRequests.length > 0;
+  const sidecar = (forced.length || asked)
+    ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})),
+      ...(forced.length ? { reveals: [...(parsedBlock.sidecar?.reveals ?? []), ...forced] } : {}) }
     : parsedBlock.sidecar;
 
   if (parseError) {
@@ -5783,6 +5814,32 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
     });
   }).catch(err =>
     console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
+}
+
+/**
+ * The plans a narration was asked to decide (UNREVEALED → DECIDE NOW — a
+ * price's new enemy, an expedition begun, a discovery), filed with their
+ * rolls alone when it wrote no narration: its reply had no prose, or its call
+ * failed (issue #362 AC07; decisions.md "keep the raw rolls as the
+ * skeleton"). The next narration they are in play for decides them. A reply
+ * with prose files them through its own side-data, its fact block readable or
+ * not (applyNarratorSidecar). Unstamped: no card carries the narration's id.
+ * On the canonical GM, else relayed to it, as a sidecar's are. Fire-and-forget;
+ * never throws.
+ *
+ * @param {Object[]} planRequests — the narration's extras.planRequests
+ * @param {Object|null} campaignState
+ * @param {{ moveId?: string|null }} [opts]
+ */
+function fileUnansweredPlanRequests(planRequests, campaignState, { moveId = null } = {}) {
+  if (!Array.isArray(planRequests) || !planRequests.length || !campaignState) return;
+  try {
+    const sidecar = normaliseSidecar({});
+    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests });
+    else relayNarratorSidecar(sidecar, campaignState, { moveId, planRequests });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the plans this narration was asked to decide were not filed:`, err?.message ?? err);
+  }
 }
 
 /** Truths and state changes taken from one relayed sidecar, at most (a response emits a handful). */

@@ -879,7 +879,12 @@ out of every X-Card's reach, issue #362 AC39) →
 `applyNarratorSidecar` (canonical-GM only; the narrative skeleton's keys —
 `plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
 `secrets.js` `applyPlanSideData`, which files the narration's requested plans
-— as decided, or with their rolls alone — decides or corrects the plans it was
+— as decided, or with their rolls alone: also when its fact block is cut off,
+unreadable or missing (the requests alone make the apply run), and, unstamped,
+when the narration is never written — an empty reply, a failed call — from the
+exits of `narrateResolution`, `narrateRound` and the oracle follow-up
+(`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
+the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself, which becomes a ledger truth of the narration's own
