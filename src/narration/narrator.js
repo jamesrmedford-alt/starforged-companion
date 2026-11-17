@@ -5813,9 +5813,13 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // the skeleton"): the request is the move's, and its rolls exist nowhere
   // else.
   const asked = Array.isArray(ctx.planRequests) && ctx.planRequests.length > 0;
+  // The forced reveals go first: the reveals are capped at
+  // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
+  // step the beat was made to play — its clock then stayed full though the
+  // vignette was written (issue #362 AC08; coverage FC D5).
   const sidecar = (forced.length || asked)
     ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})),
-      ...(forced.length ? { reveals: [...(parsedBlock.sidecar?.reveals ?? []), ...forced] } : {}) }
+      ...(forced.length ? { reveals: [...forced, ...(parsedBlock.sidecar?.reveals ?? [])] } : {}) }
     : parsedBlock.sidecar;
 
   if (parseError) {

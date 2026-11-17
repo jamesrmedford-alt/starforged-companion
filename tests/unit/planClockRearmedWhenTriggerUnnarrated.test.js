@@ -127,6 +127,19 @@ describe('issue #362 AC08 — a plan clock whose trigger vignette was not writte
     expect(clockOf(plan.clockId)).toMatchObject({ filled: 1 });
   }, 60_000);
 
+  it('a written vignette whose fact block already holds four reveals still plays its step: the forced one is kept, not cut', async () => {
+    const plan = await decidedThreat();
+    // The narrator records four reveals of its own (the cap): the step the
+    // vignette was made to play came after them and was dropped, so the
+    // clock stayed full though the vignette was written (coverage FC D5 / NARB).
+    table.replies = () => ({ prose: 'The escort drifts closer and asks again.', sidecar: { newTruths: [], stateChanges: [],
+      reveals: ['sk-other-a', 'sk-other-b', 'sk-other-c', 'sk-other-d'].map(id => ({ id, revealed: ['c1'] })) } });
+    await payThePrice();
+    expect(table.cards(f => f.clockVignetteCard === true)).toHaveLength(1);
+    expect(planOf(plan.id).escalation[0].done, 'the step the vignette played').toBe(true);
+    expect(clockOf(plan.clockId)).toMatchObject({ active: true, filled: 0 });
+  }, 60_000);
+
   it('control: an ordinary tension clock no plan holds stays full when its vignette fails', async () => {
     expectConsoleError(/narrateClockAdvancement failed/);
     const clocks = await gmOf(table).import('../../src/clocks/clocks.js');

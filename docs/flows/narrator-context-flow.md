@@ -907,7 +907,8 @@ once a challenge holds it as its tension clock it is the challenge's, and the
 plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
 #362 AC09) — and
 what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
-is marked played whatever the sidecar says — and a plan clock whose trigger
+is marked played whatever the sidecar says (put first, so the four-reveal cap
+never cuts it, issue #362 AC08) — and a plan clock whose trigger
 vignette is not written (the X-Card, no key, a failed call, an empty reply)
 goes back one short of full, its step still owed for the next price
 (`narrateClockAdvancement`'s `finally` → `secrets.rearmUnplayedPlanClock`,
