@@ -37,7 +37,7 @@ import {
   SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
-import { sameSubject, personNameMatch } from "../entities/nameMatch.js";
+import { sameSubject, personNameMatch, withoutTitle, isBareTitle } from "../entities/nameMatch.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 
 const MODULE_ID = "starforged-companion";
@@ -327,10 +327,30 @@ function subjectNames(record) {
 }
 
 /**
+ * Whether two people's names can be one person's, as the entity gates compare
+ * them (entityExtractor.js normalizeEntityName): each name's leading title is
+ * stripped first ("Captain Reyes" is called "Reyes", "Administrator Lyssa
+ * Chen" "Lyssa"), and a title alone is nobody's part-name — "the Captain" is
+ * the same person only as another "the Captain" (issue #362 AC12: the
+ * raider the narration called "the Captain" was laid onto Captain Reyes's
+ * agenda, "captain" being the first word of her name).
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function samePersonName(a, b) {
+  if (isBareTitle(a) || isBareTitle(b)) return personNameMatch(a, b) === "same";
+  return !!personNameMatch(withoutTitle(a), withoutTitle(b));
+}
+
+/**
  * Whether a plan is about the subject a name names: one of the plan's names
  * (subjectNames) is that name, a variant of it, or its start or end
  * (nameMatch.js sameSubject) — and, for an NPC's agenda, either name of the
- * person ("Vuldar" for Vuldar Archer, personNameMatch).
+ * person ("Vuldar" for Vuldar Archer), their titles aside (samePersonName). A
+ * title alone ("the Captain") is only ever the same title: it is not the end
+ * of "Mara the Captain", nor part of "Captain Reyes" (issue #362 AC12).
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {string} name
@@ -338,7 +358,9 @@ function subjectNames(record) {
  */
 export function planIsAbout(record, name) {
   if (typeof name !== "string" || !name.trim()) return false;
-  return subjectNames(record).some(n => sameSubject(n, name) || (record.kind === "npcAgenda" && !!personNameMatch(n, name)));
+  return subjectNames(record).some(n => ((isBareTitle(n) || isBareTitle(name))
+    ? personNameMatch(n, name) === "same"
+    : sameSubject(n, name) || (record.kind === "npcAgenda" && samePersonName(n, name))));
 }
 
 /**
@@ -430,11 +452,15 @@ async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
   return merged;
 }
 
-/** A player character's name, or part of one: never an enemy to plan (the acting PC named in a sidecar). */
+/**
+ * A player character's name, or part of one: never an enemy to plan (the
+ * acting PC named in a sidecar). Titles aside, as the plans' own matching
+ * (samePersonName): "the Captain" is not the PC Captain Ryn (issue #362 AC12).
+ */
 async function namesPlayerCharacter(name) {
   try {
     const { getPlayerActors } = await import("../character/actorBridge.js");
-    return getPlayerActors().some(a => typeof a?.name === "string" && !!personNameMatch(a.name, name));
+    return getPlayerActors().some(a => typeof a?.name === "string" && samePersonName(a.name, name));
   } catch {
     return false;
   }

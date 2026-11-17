@@ -921,7 +921,9 @@ issue #362 AC08) — Phase 3; an enemy or danger the
 prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan
 (`planNarratedThreat`: Character Role, Goal and Disposition rolled once, no
 truth, so the next narration decides it), unless one of its names is already
-planned or it names a PC; and a plan answered `sameAs` — the narrator's say
+planned or it names a PC (a person's titles aside, and a title alone only ever
+the same title: "the Captain" is neither Captain Reyes's agenda nor the PC
+Captain Ryn — `secrets.planIsAbout`, issue #362 AC12); and a plan answered `sameAs` — the narrator's say
 that a subject it was asked to decide is one already planned, shown to it
 under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
 `extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps

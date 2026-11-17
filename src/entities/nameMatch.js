@@ -125,6 +125,54 @@ export function personNameMatch(a, b) {
 }
 
 /**
+ * The titles a person's name may lead with: the honorifics the name index
+ * strips (relevanceResolver.js HONORIFIC_PREFIXES) and the titles the module
+ * writes into NPC names as their role (connection.js NAME_TITLE_ROLES) — the
+ * set entityExtractor.js normalizeEntityName strips before the entity gates
+ * compare people. Kept here because this module imports nothing;
+ * nameMatch.test.js fails when either source gains a title this set lacks.
+ */
+const PERSON_TITLES = new Set([
+  "dr", "mr", "mrs", "ms", "mx", "miss",
+  "cmdr", "commander", "captain", "capt", "cap", "cpt",
+  "lt", "lieutenant", "sgt", "sergeant",
+  "gen", "general", "col", "colonel", "maj", "major",
+  "prof", "professor", "rev", "reverend",
+  "sir", "dame", "lord", "lady",
+  "administrator", "admiral", "ambassador", "chancellor", "chief", "councilor", "councillor",
+  "director", "doctor", "elder", "foreman", "governor", "magistrate", "overseer", "warden",
+]);
+
+/**
+ * A person's name without its leading title — and a leading article before
+ * it: "Captain Reyes" → "Reyes", "Dr. Chen" → "Chen", "the Captain Reyes" →
+ * "Reyes". A name that is a title alone keeps it ("the Captain"): nothing is
+ * left to call them by. The rest is returned as written.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function withoutTitle(name) {
+  if (typeof name !== "string") return "";
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const at = words.length > 1 && ARTICLES.has(words[0].toLowerCase()) ? 1 : 0;
+  const first = (words[at] ?? "").toLowerCase().replace(/\.$/, "");
+  return words.length - at > 1 && PERSON_TITLES.has(first) ? words.slice(at + 1).join(" ") : name.trim();
+}
+
+/**
+ * Whether a name is a title and nothing more, an article aside: "the
+ * Captain", "Doctor", "Dr." — who it is depends on the scene, not the name.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isBareTitle(name) {
+  const words = nameWords(name);
+  return words.length === 1 && PERSON_TITLES.has(words[0]);
+}
+
+/**
  * Whether one place's (or thing's) name is inside another's as whole words:
  * "corridor" in "blockade corridor", "Kessan mine" in "the old Kessan mine".
  * Articles aside, either way round; the same words is a match too.
