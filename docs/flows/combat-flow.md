@@ -47,7 +47,8 @@ Two cross-cutting facts to hold onto:
   narrated until the roller burns, improves or keeps — or goes on: their next
   line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence
   chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`). A kept
-  result's upgrades close (`kept`). So in free-flow a burn has no paid price
+  result's upgrades close (`kept`), and its card says what kept it where the
+  Keep button was (`awaitingUpgrade.resolvedBy` — issue #362 AC82). So in free-flow a burn has no paid price
   to revert; the reversal below is a Batch Mode round entry's — a round pays
   the price at the roll and holds only its narration — and free-flow's with
   the world setting `holdResultForUpgrade` off.

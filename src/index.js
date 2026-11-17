@@ -8682,6 +8682,14 @@ function renderKeepResultHtml(resolution) {
     `<p class="sf-card-hint sf-keep-result-hint">${owes} Your next line keeps it.</p></div>`;
 }
 
+// How a held result was kept, as its card says once settled — by the
+// `awaitingUpgrade.resolvedBy` its wait was closed with (heldResult.js).
+const KEPT_BY = Object.freeze({
+  keep:   "Kept — its price and its narration followed.",
+  later:  "Kept by the roller's next line or move.",
+  choice: "Kept — a consequence was chosen on its choice card.",
+});
+
 /**
  * Wire a held move card's **Keep the result** button. A press relays to the
  * canonical GM ("move.keepResult" → moves/heldResult.js
@@ -8697,7 +8705,12 @@ export function wireKeepResultButton(message, root) {
   if (!btn) return;
   const held = liveCardFlags(message)?.awaitingUpgrade;
   if (!held?.open) {
-    // Settled: nothing left to ask.
+    // Settled: nothing left to ask. A kept result's row says what kept it —
+    // the stamp its wait was closed with (`resolvedBy`, heldResult.js), read
+    // by nothing until now (issue #362 AC82); a burned or improved card shows
+    // its upgrade already.
+    const said = KEPT_BY[held?.resolvedBy] ?? null;
+    if (said && row?.insertAdjacentHTML) row.insertAdjacentHTML("beforebegin", `<p class="sf-card-hint sf-keep-result-settled">${said}</p>`);
     if (row?.remove) row.remove();
     else btn.disabled = true;
     return;

@@ -52,7 +52,9 @@ export function holdForUpgradeEnabled() {
 
 // How a held result was settled, as its card records it
 // (`awaitingUpgrade.resolvedBy`): "keep" (the button), "later" (the roller's
-// next line or move), "choice" (a consequence chosen), "burn", "improve".
+// next line or move), "choice" (a consequence chosen), "burn", "improve". The
+// settled card says what kept it (index.js wireKeepResultButton — issue #362
+// AC82: the stamp had no reader).
 
 // A keep takes the card's result-upgrade claim (burnMomentum.js
 // claimResultUpgrade — the one a burn and an improvement share) for as long
