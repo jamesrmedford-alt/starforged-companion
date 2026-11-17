@@ -32,6 +32,7 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { reportSnapshotEvent } from '../narration/snapshotEvents.js';
 import { getCommandVehicleAsset } from '../character/actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
@@ -1498,6 +1499,12 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
     next = { ...data, generativeTier: tier.filter(e => !shown(e)) };
   }
   await writeEntityFlag(typeKey, document, { ...next, updatedAt: now });
+  // A Remove rewrites the record to take content back: the record still
+  // stands, so the manifest's `record_removed` never fires, and the changed
+  // card rode under CHANGED SINCE THE SNAPSHOT while the cached snapshot went
+  // on stating the detail as an established fact (rules/narrator-memory.md 7c;
+  // issue #362 AC65). The table decides what the event takes.
+  if (op === 'remove') reportSnapshotEvent('entity_detail_removed');
   return { applied: true };
 }
 

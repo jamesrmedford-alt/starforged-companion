@@ -591,6 +591,7 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
   | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
   | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout` (a track removed, a vow deleted), `retireSceneMysteries` (an ended scene's unanswered mysteries) — issue #362 D4 |
+  | `entity_detail_removed` | yes | `entityPanel.js` `applyEntityEditFromRelay` — the Entities panel's Remove of a narrator-added detail, a rewrite that takes content back (issue #362 AC65) |
   | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
   | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
 

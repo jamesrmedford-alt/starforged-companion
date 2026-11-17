@@ -62,6 +62,7 @@ export const SNAPSHOT_EVENTS = Object.freeze([
   { id: 'fact_retracted',         snapshot: true,  description: 'a fact is struck or corrected, and its copies retracted' },
   { id: 'plan_edited',            snapshot: true,  description: 'a GM edits a hidden plan' },
   { id: 'plan_retired',           snapshot: true,  description: 'a hidden plan is retired — a GM\'s Retire, its subject gone, an ended scene\'s unanswered mystery' },
+  { id: 'entity_detail_removed',  snapshot: true,  description: 'a narrator-added detail is taken off a recorded entity\'s card (the Entities panel\'s Remove)' },
   { id: 'record_removed',         snapshot: true,  description: 'a record the snapshot holds is gone or no longer stands' },
   // ── Size and age ──────────────────────────────────────────────────────────
   { id: 'changes_large',          snapshot: true,  description: 'the changes since the snapshot have grown large' },

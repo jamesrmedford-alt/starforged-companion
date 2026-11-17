@@ -274,7 +274,8 @@ layers. This file is the never-break list.
      record another way is caught by the manifest (`record_removed`), but a
      path that *rewrites* one to take content back must report an event of
      its own — a changed record otherwise rides as a change while the
-     snapshot still states the old one.
+     snapshot still states the old one (the Entities panel's Remove of a
+     narrator-added detail reports `entity_detail_removed`, issue #362 AC65).
    - **It holds every active hidden plan**, so it is the GMs' alone: stored
      in the Secrets journal, read only by `narrator.js`
      (`secretsStayHidden.test.js`), never by a card builder, a panel or a
