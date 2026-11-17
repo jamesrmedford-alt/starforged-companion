@@ -116,6 +116,15 @@ describe("the Entities panel shows Generate / Regenerate portrait to GMs only (i
     expect(await detailActions(entity(portraitArt))).toContain("regeneratePortrait");
   });
 
+  // Issue #362 AC56: the claim was a bare `regenerationUsed` — a page reloaded
+  // while the image was out left no Regenerate for good.
+  it("a GM sees Regenerate again on a portrait whose regeneration claim this GM's reloaded page left — not while another GM's stands", async () => {
+    const claimedBy = (by) => ({ ...portraitArt, regenerationUsed: true, regenerationClaim: { by, at: Date.now(), token: "tok-1" } });
+    expect(await detailActions(entity(claimedBy(game.user.id)))).toContain("regeneratePortrait");
+    expect(await detailActions(entity(claimedBy("gm-other")))).not.toContain("regeneratePortrait");
+    expect(await detailActions(entity({ ...portraitArt, regenerationUsed: true, locked: true }))).not.toContain("regeneratePortrait");
+  });
+
   it("a player's click on a button left from before generates nothing and says the GM generates portraits", async () => {
     const info = vi.spyOn(ui.notifications, "info");
     const restore = asPlayer();

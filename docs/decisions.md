@@ -85,6 +85,48 @@ This amends "One thing has one record, whatever it is called (P2-15 – P2-17, P
 **Reason:** the fourteenth bug audit (ENT D1, D5, D8): a PC's relative introduced by title and surname, or anyone the near-spelling rule caught (AC17), never got a row and nothing said so — and there was no other way to make their card; deleting an NPC card left its id listed, its bond Items on the sheets (CHARACTER STATE and the pacing classifier kept listing the NPC), its facts keyed to a card no one answers, and its plan and portraits behind.
 
 **Rejected:** *(B) keep the silent drop* — the maintainer chose A. *A whisper per name instead of a row* (the coverage's option c) — the card already lists what the detection found, and a row carries its own way out. *Making the NPC straight from the ＋ New NPC dialog* — a second creation path beside Confirm's, to drift from it. *Deleting a marked bond Item with the card* — a player's progress is the player's; it is kept as lost.
+## Issue #362 D13: a published Private Channel reflection goes through the canonical GM, which checks it against every player's Private Lines (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D13; the maintainer's answer of 2026-11-17, option A.) Publishing a Private Channel reflection goes through the canonical GM, which holds every player's Private Lines (the `campaignState.safety.privateLines` copy the `safety.syncPrivateLines` relay keeps). The publisher's client asks it (`privateChannel.publish`, `private-channel/publish.js` `applyPrivateChannelPublish`); the GM posts the card — signed as the publisher's own PC, the narrator flag family on it, as before.
+- **When another player has Private Lines** (any entry but the publisher's), the GM checks the text against the table's lines with **one short call** — the cheap model the module's checks use, through `src/api-proxy.js` — and **refuses** a text that crosses one. The refusal is a whisper to the publisher that names no one and no line ("it touches on something the table's safety settings keep out of the story").
+- **When nobody else has Private Lines**, nothing is checked and no call is made: the publisher's own lines were the private narrator's already.
+- **When the check cannot run** — no Claude key on the canonical GM's client, the call failed, or its reply names neither answer — the reflection is refused with a neutral "can't be checked right now" notice; never published as if clear. With **no GM connected** the publisher's client refuses the same way: it cannot know the others' lines (the copy it holds lags a line added while no GM was online).
+- The X-Card is checked on the publisher's client, on the GM before the check, and again once the call returns.
+
+**Behaviour change:** a reflection could be published with no GM connected, and with a keyless GM; now it is refused in both cases whenever a check is needed — and with no GM connected at all, even when none would be. The card is now authored by the canonical GM (its speaker alias is still the publisher's PC).
+
+**Reason:** the private narrator writes under its publisher's lines alone (`formatOwnSafetyContext`, by decision), yet a published reflection is read by the whole table and becomes canon — shared narration in effect, for which "Private Lines in shared narration" says a limit someone else set must hold in a scene they are reading. Nothing checked a published text against the other players' lines, and the publisher's client cannot be sent them.
+
+**Amends:** "The Private Channel reads the shared story; a published reflection is canon" (its **Write** bullet: the reflection is posted by the canonical GM once checked) and "Private Lines in shared narration" (a published reflection is held to every player's lines, checked on the GM's client; the Private Channel's own narrator still carries its player's lines only).
+
+**Rejected:** *accepting it* (D13's option B — the publisher reads it first and the X-Card covers it): a limit is not a limit if it holds only when someone notices in time. *Sending the other players' lines to the publisher's client to check there* — "Private Lines in shared narration" rules out sending one player's lines in another's request.
+
+---
+
+## Issue #362 D14: a session over after four idle hours is not begun — the chat gate points at Begin a Session (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D14; the maintainer's answer of 2026-11-17, option A.) The chat pipeline's session gate narrates a typed line only into a session **in play** (`session/lifecycle.js` `sessionInPlay`): begun (its gate open), not being replaced by this GM's world load (issue #345 AA58), and **not over** — End a Session's mark, or `SESSION_IDLE_HOURS` (four) since the session was last seen live, the later of its mint and its latest chat-activity stamp. A line typed into an over session is not narrated and no move is rolled; the author and the GMs are whispered the "No session has begun" notice, which says the last session is over and points at Begin a Session. Begin takes the boundary (`rollSessionIfDue` mints the next session — it already did for an over session — then begins it), so the boundary falls when play resumes, never mid-scene. The gate's mirrors ask the same question: the too-short notice, the "Held — no session has begun" note on a held forced move, and the drain that hands a held move back. A session whose last sighting is unknown is not taken as over: the gate fails open on what it cannot read, as it does on an unreadable state (the world load's `sessionNeedsMint` still mints such a session).
+
+**Reason:** with the GM's game left loaded through four idle hours nothing mints — the boundary is applied only at a canonical GM's world load or at Begin a Session — and the gate read only the session-active flag. Play went on in a session the Session panel read as "Over — four hours without chat" with Begin enabled, the activity stamp never wrote again ("never revives"), and any reload during that play minted, closed the gate and asked for Begin mid-scene.
+
+**Amends:** "A session ends at End Session or after four idle hours; the next is told about the last (2026-10)" — what happens to play after the boundary and before the next load or Begin. Its rejection of *re-minting on the first message after an idle gap* stands: the gate refuses the line; Begin mints.
+
+**Rejected:** *leaving it* (D14's option B) — the panel and the narration disagreed about whether a session was running, and the boundary landed at whatever reload came next.
+
+---
+
+## Issue #362 D9: wounded caps health at 4, shaken caps spirit at 3 — a house rule, not the rulebook's (2026-11)
+
+**Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D9; the maintainer's answer of 2026-11-17, option A — not the audit lead's recommendation.) The module keeps its caps as a **house rule**: while a character is **wounded**, a meter change the module makes (`actorBridge.applyMeterChanges` — a move's outcome, a suffer move, a heal) holds health at most 4; while **shaken**, spirit at most 3. Unmarked, both run to 5 as the sheet does. What it covers, exactly:
+- Only the module's own meter writes are capped. A GM's or player's edit on the ironsworn sheet is not (the vendor sheet and its condition-meter fields carry no cap), and the impacts' own rules — Heal and Hearten clear the impact, Endure Harm and Endure Stress mark it — are the move texts' as written.
+- A change the module makes while the meter stands above the cap brings it down to the cap (a +1 heal on a wounded character at 5 health leaves 4), since the clamp is applied to the result of every change.
+- The two numbers differ, as the module wrote them; nothing in the vendored moves or the play kit sets either, so neither is the rulebook's.
+
+**Reason:** the fourteenth audit (#362, MOVB and CHAR) found the caps recorded in `docs/rules-reference/playkit-rules-and-coverage.md` as "(rulebook)", while neither the vendored move texts nor the vendor sheet carries a cap and two reviewers knew of no such Starforged rule. The maintainer keeps the behaviour the table plays with and asks that it be named for what it is, so a later session does not "fix" it to the rulebook or cite it as one.
+
+**Supersedes:** the rules reference's "(rulebook)" attribution of the caps (Part 1 §1.2, and the Part 2 coverage row for the condition meters), corrected in the same commit.
+
+**Rejected:** *removing the caps* (D9's option B) — not chosen; a playtest that wants rulebook meters can revisit it here.
 
 ---
 

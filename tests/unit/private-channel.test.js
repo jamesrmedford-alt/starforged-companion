@@ -30,6 +30,8 @@ const MODULE_ID = "starforged-companion";
 // (the player's own lines from their client setting) — tests/unit/privateChannelOwnPrivateLines.test.js.
 vi.mock("../../src/context/safety.js", () => ({
   formatOwnSafetyContext: vi.fn(() => "## SAFETY CONFIGURATION\n\n(safety rules)"),
+  // The canonical GM's publish check reads the table's Private Lines (issue #362 D13): none here.
+  privateLinesOfTable:    vi.fn(() => []),
 }));
 vi.mock("../../src/system/campaignTruths.js", () => ({
   buildCampaignTruthsBlock: vi.fn(async () => "## WORLD TRUTHS\n\n(14 truths verbatim)"),
@@ -115,6 +117,7 @@ beforeEach(() => {
     get: (id) => _users.get(id) ?? null,
     get contents() { return [..._users.values()]; },
     find: (fn) => [..._users.values()].find(fn) ?? null,
+    [Symbol.iterator]: () => _users.values(),
   };
   global.game.folders = { find: () => ({ id: "folder-sfc" }) };
   global.JournalEntry = {
@@ -657,7 +660,7 @@ describe("buildPrivateContext", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("publishToMainChat", () => {
-  let createSpy;
+  let createSpy, savedUser;
   beforeEach(() => {
     // "u1" is a player whose bound PC is Kira — the Private Channel speaks
     // only as the player's own PC (issue #321 U23).
@@ -665,8 +668,11 @@ describe("publishToMainChat", () => {
       character: { id: "pc-kira", type: "character", name: "Kira" } });
     getActiveCharacter.mockReset().mockReturnValue({ name: "Kira" });
     createSpy = vi.spyOn(global.ChatMessage, "create").mockResolvedValue({ id: "msg-1" });
+    // This client is the canonical GM, which posts a published reflection (issue #362 D13).
+    savedUser = global.game.user;
+    global.game.user = _users.get("gm-1");
   });
-  afterEach(() => createSpy.mockRestore());
+  afterEach(() => { createSpy.mockRestore(); global.game.user = savedUser; });
 
   it("posts a card attributed to the character with the published-reflection flag", async () => {
     await publishToMainChat({ userId: "u1", content: "I think I trust Vance now." });

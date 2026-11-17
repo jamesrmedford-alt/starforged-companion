@@ -27,7 +27,7 @@
  * (`_lastPass`) did so only until a reload.
  */
 
-import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getPlayerActors, isPlayerCharacterActor, writeSheetSupply } from "../character/actorBridge.js";
 import { isCanonicalGM } from "./gmGate.js";
 
 const MODULE_ID = "starforged-companion";
@@ -35,6 +35,7 @@ const MODULE_ID = "starforged-companion";
 // The canonical GM marks its sibling writes with this update option, so the
 // hook can tell its own mirror writes from independent changes.
 const MIRROR_OPTION = "sharedSupplyMirror";
+const mirrorOptions = () => ({ [MODULE_ID]: { [MIRROR_OPTION]: true } });
 
 // A sync pass is writing siblings; `next` is the newest independent change
 // still to propagate — its actor and the value that change set. A change that
@@ -238,7 +239,8 @@ export function registerSharedSupplyHook() {
       if (!held.length || own === null) return;
       const crew = mostHeld(held, held[0]);
       if (crew === own) return;
-      Promise.resolve(actor.update({ "system.supply.value": crew }, { [MODULE_ID]: { [MIRROR_OPTION]: true } }))
+      // Through the bridge's marked write: the system's note is not the PC speaking (issue #362 AC77).
+      writeSheetSupply(actor, crew, mirrorOptions())
         .catch(err => console.warn(`${MODULE_ID} | shared-supply sync: ${actor.name ?? actor.id}'s supply was not set to the crew's ${crew}:`, err?.message ?? err));
     } catch (err) {
       console.warn(`${MODULE_ID} | shared-supply sync: a new character's supply was not set:`, err?.message ?? err);
@@ -275,9 +277,11 @@ export function registerSharedSupplyHook() {
             // Each PC's write stands alone, as the legacy mirror's does: a
             // refused write is named and the pass goes on. It threw out of the
             // loop, so every PC after it kept the old value and a change
-            // queued meanwhile was never run (issue #331 X52).
+            // queued meanwhile was never run (issue #331 X52). Through the
+            // bridge's marked write: the system's change note for it was
+            // posted as that PC speaking (issue #362 AC77).
             try {
-              await u.actor.update({ "system.supply.value": u.value }, { [MODULE_ID]: { [MIRROR_OPTION]: true } });
+              await writeSheetSupply(u.actor, u.value, mirrorOptions());
             } catch (err) {
               const name = u.actor?.name ?? u.actor?.id;
               console.warn(`${MODULE_ID} | shared-supply sync: ${name}'s supply was not set to ${u.value}:`, err?.message ?? err);

@@ -244,6 +244,19 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //       loreRecap                   truths/generator.js generateLoreRecap (`!lore`) —
 //                                   the pipeline never writes it, so its working copy
 //                                   only ever holds the recap from before the move
+//       crewSupply                  multiplayer/sharedSupply.js persistCrewSupply — each
+//                                   shared-supply sync pass, a move's own Pay the Price's
+//                                   among them (SUPPLY-TWO-PC-TIE)
+//       deletedChatMessages         narrator.js persistDeletedRecord (a card deleted);
+//                                   cleared by the session mint
+//       unsummarisedSession         set by the session mint, cleared by narrator.js
+//                                   catchUpUnsummarisedSession — which runs after every
+//                                   narrator card, i.e. inside the pipeline (issue #347 AB15)
+//       sessionPerspective          session/lifecycle.js beginSession (Begin relays);
+//                                   cleared by the mint (issue #348 PT03)
+//     The last four were left off the list, so a move's record put back the
+//     value they had when the move began — the crew's supply its own Pay the
+//     Price had just stored among them (issue #362 AC55).
 //
 //   ENTITY_ID_LISTS (entities/registry.js) — both sides append (the
 //     narrator's auto-created connections land on the working copy and the
@@ -269,6 +282,16 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //     semantics cannot be merged without a baseline).
 //   Every other field keeps the working copy — the pipeline writes it there
 //   (currentLocationId/Type on arrival, sectors on a site reveal, …).
+//   `sectors` and `currentLocationId/Type` stay off the store-owned list
+//   although other writers set them too (`!sector` and sector generation,
+//   `!at` and the Entities panel): the pipeline itself writes them on its
+//   copy — an expedition's site reveal and an uncharted destination's record
+//   (`sectors`), an arrival (the location) — so taking the store's value
+//   would drop the move's own change, and with no baseline the merge cannot
+//   tell which side changed what. A relay's write to them mid-move is
+//   overwritten: the trade-off decisions.md records ("Long-running pipeline
+//   writes merge relay-owned fields" → "Trade-offs accepted (no baseline)").
+//   A field only other writers write belongs on the list above.
 
 const STORE_OWNED_FIELDS = Object.freeze([
   'xCardActive',
@@ -307,6 +330,10 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'worldTruthsSet',
   'worldTruthsJournalId',
   'loreRecap',
+  'crewSupply',
+  'deletedChatMessages',
+  'unsummarisedSession',
+  'sessionPerspective',
 ]);
 
 /**

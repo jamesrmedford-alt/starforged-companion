@@ -708,6 +708,30 @@ export async function writeSheetLegacy(actor, track, progress, options = {}) {
 }
 
 /**
+ * Write a PC's supply — the crew-shared supply's mirror
+ * (multiplayer/sharedSupply.js), as writeSheetLegacy writes the shared
+ * legacies'. The mirror wrote each other PC with a bare `actor.update`, so
+ * the system's change note "−1 supply (now 2)" was posted as that PC speaking
+ * (issue #362 AC77): marked as the module's write, the note is said by the
+ * system (PT14), and dropped inside withoutSystemNotes (P2-13). A value
+ * already there is not written again.
+ *
+ * @param {Actor} actor
+ * @param {number} value — the crew's supply
+ * @param {Object} [options] — passed to Actor#update (the mirror marks its writes)
+ * @returns {Promise<boolean>} whether a write was made
+ */
+export async function writeSheetSupply(actor, value, options = {}) {
+  const next = Number(value);
+  if (!actor || !Number.isFinite(next)) return false;
+  if (Number(actor.system?.supply?.value) === next) return false;
+  refuseStaleActorWrite('writeSheetSupply');
+  await moduleUpdate(actor, { "system.supply.value": next }, options);
+  invalidateActorCache(actor.id);
+  return true;
+}
+
+/**
  * The XP a PC sheet shows: earned from its legacy tracks (2 a box, 1 a box
  * past the first 40 ticks — vendor legacy-track.vue), less the XP spent.
  *
@@ -1431,7 +1455,12 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
   let deleted = 0;
   for (const { actor, item } of items) {
     refuseStaleActorWrite('deleteUnmarkedBondItems');
-    await item.delete();
+    // The system's change log posted "Deleted <name>" as the PC speaking —
+    // the NPC the X-Card took back named again, in the PC's voice (issue #362
+    // AC76). Its preDeleteItem reads `suppressLog` from the delete's options,
+    // so the note is not posted; marked as the module's write too, a note
+    // posted all the same is said by the system (reattributeSystemNote).
+    await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
     invalidateActorCache(actor.id);
     deleted++;
   }

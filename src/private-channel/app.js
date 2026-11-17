@@ -18,8 +18,7 @@ import {
   scheduleDebouncedWrite,
   flushNow,
   renderTurnsHtml,
-  parseTurnsHtml,
-  loadCurrentSessionTranscript,
+  loadSessionTurns,
   isTranscriptUnsaved,
   onTranscriptUnsavedChange,
 } from "./transcript.js";
@@ -123,7 +122,10 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
    * CHANGE), dropping the previous session's turns, which its page keeps.
    * Re-reading on every render — whenever the first read was empty — loaded
    * this window's own turns back from the page once the debounced save
-   * landed, and showed them twice.
+   * landed, and showed them twice. The read is the page and the turns still
+   * kept in this browser for it (loadSessionTurns): a window reopened before
+   * its journal could be written opened empty, and its narrator was sent none
+   * of the exchange (issue #362 AC79).
    */
   async #syncSession() {
     const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
@@ -131,8 +133,13 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const kept = this.loaded ? [] : this.turns;
     this.loaded    = true;
     this.sessionId = sessionId;
-    const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
-    this.turns = [...parseTurnsHtml(saved), ...kept];
+    let held = [];
+    try {
+      held = await loadSessionTurns(this.userId, sessionId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | private channel: the session's conversation could not be read:`, err?.message ?? err);
+    }
+    this.turns = [...held, ...kept];
   }
 
   async _prepareContext(_options) {
@@ -228,11 +235,15 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.initialMessage = "";
     this.errorBanner    = "";
 
-    // Show the player's turn immediately + buffer it.
+    // Show the player's turn at once; it is kept — buffered for the page —
+    // once the narrator has answered it. Filed before the call, a line whose
+    // call failed stayed in the transcript while the box was left empty, so
+    // "try again" meant retyping it, and the narrator was then sent it twice
+    // (issue #362 AC80).
     const playerTurn = { who: "player", name: characterName, text: message };
     this.turns.push(playerTurn);
-    appendToBuffer(this.userId, playerTurn);
     this.busy = true;
+    let answered = false;
     try {
       await this.render();
 
@@ -248,8 +259,10 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       if (result.ok) {
         const narratorTurn = { who: "narrator", name: "Narrator", text: result.text };
         this.turns.push(narratorTurn);
+        appendToBuffer(this.userId, playerTurn);
         appendToBuffer(this.userId, narratorTurn);
         scheduleDebouncedWrite(this.userId);
+        answered = true;
       } else {
         this.errorBanner = {
           "x-card":       "The X-Card is in play — the narrator is paused until a GM resumes the scene.",
@@ -266,8 +279,24 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       // send hits `if (this.busy) return` and silently no-ops. Same
       // guard-not-released-on-throw class as the move pipeline pendingMove lock.
       this.busy = false;
+      if (!answered) this.#handBack(playerTurn, message);
     }
     await this.render();
+  }
+
+  /**
+   * A line the narrator did not answer goes back in the box it was typed in
+   * — as the banner says ("Your message is preserved; try again"), and as an
+   * unacted line does elsewhere (PT11, MOVE-BUSY-NOTICE) — and is no turn of
+   * the conversation (issue #362 AC80). The box is disabled while the call is
+   * out; anything in it is left alone.
+   */
+  #handBack(turn, text) {
+    const at = this.turns.lastIndexOf(turn);
+    if (at >= 0) this.turns.splice(at, 1);
+    const box = this.element?.querySelector?.("[data-pc-input]");
+    if (box && !String(box.value ?? "").trim()) box.value = text;
+    if (!this.initialMessage) this.initialMessage = text;
   }
 
   static async #onPublish(_event, _target) {

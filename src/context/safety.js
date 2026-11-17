@@ -703,3 +703,24 @@ function resolvePrivateLines(campaignState, currentUserId) {
 function deduplicate(arr) {
   return [...new Set(arr)];
 }
+
+/**
+ * The table's Private Lines as the GM-side copy holds them
+ * (campaignState.safety.privateLines, kept by the `safety.syncPrivateLines`
+ * relay), deduplicated — every player's, or every player's but `except`'s.
+ * For the canonical GM's check of a published Private Channel reflection
+ * (private-channel/publish.js, issue #362 D13); never shown or sent to a
+ * player.
+ *
+ * @param {Object} campaignState
+ * @param {{ except?: string|null }} [opts]
+ * @returns {string[]}
+ */
+export function privateLinesOfTable(campaignState, { except = null } = {}) {
+  const entries = Array.isArray(campaignState?.safety?.privateLines) ? campaignState.safety.privateLines : [];
+  return deduplicate(entries
+    .filter(entry => !except || entry?.playerId !== except)
+    .flatMap(entry => (Array.isArray(entry?.lines) ? entry.lines : []))
+    .filter(line => typeof line === "string" && line.trim())
+    .map(line => line.trim()));
+}

@@ -60,7 +60,7 @@ summarised here. References to the Reference Guide use `RG p.NNN`.
   - *Burdens*: doomed, tormented, indebted
   - *Current vehicle*: battered, cursed
 - **Background vow** field on the sheet.
-- **Wounded** caps health at 4; **shaken** caps spirit at 3 (rulebook).
+- **Wounded** caps health at 4; **shaken** caps spirit at 3 — a house rule of this module, not the rulebook's (neither the play kit nor the vendored move texts set a cap; decisions.md → "Issue #362 D9").
 
 ### 1.3 Move catalogue (51 moves)
 
@@ -225,7 +225,7 @@ missing.
 | Rule | Status | Pathway |
 |---|---|---|
 | 5 stats read from actor | ✅ | `src/character/actorBridge.js:70-75` |
-| 3 condition meters read/written | ✅ | `src/character/actorBridge.js:78-202`; wounded caps health to 4, shaken caps spirit to 3 (lines 180–181) |
+| 3 condition meters read/written | ✅ | `src/character/actorBridge.js:78-202`; wounded caps health to 4, shaken caps spirit to 3 (`applyMeterChanges`) — a house rule, not the rulebook's (decisions.md → "Issue #362 D9") |
 | Momentum read/clamped to reset/max | ✅ | `src/character/actorBridge.js:206-209` |
 | Action roll, strong/weak/miss | ✅ | `src/moves/resolver.js:61-76` |
 | Match detection (both challenge dice equal) | ✅ | `src/moves/resolver.js:65` |

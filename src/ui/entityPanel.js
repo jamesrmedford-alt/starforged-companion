@@ -17,7 +17,7 @@
 //
 // Output path (Foundry): modules/starforged-companion/src/ui/entityPanel.js
 
-import { generatePortrait, regeneratePortrait } from '../art/generator.js';
+import { generatePortrait, regeneratePortrait, regenerationSpent } from '../art/generator.js';
 import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
 import { requestGmAction }                      from '../multiplayer/gmRelay.js';
@@ -545,7 +545,9 @@ export class EntityPanelApp extends ApplicationV2 {
       const lockBadge = entity.art.locked
         ? '<div class="portrait-lock-badge">🔒 Portrait locked</div>'
         : '';
-      const regenBtn = (paintsPortraits && !entity.art.locked && !entity.art.regenerationUsed && !isGenerating)
+      // A regeneration claim a reload left does not spend it (issue #362 AC56).
+      const regenBtn = (paintsPortraits && !entity.art.locked
+          && !regenerationSpent(entity.art, entity.typeKey, entity.journalId) && !isGenerating)
         ? `<button class="entity-btn btn-regen" data-action="regeneratePortrait"
                    data-journal-id="${entity.journalId}">
              Regenerate portrait
