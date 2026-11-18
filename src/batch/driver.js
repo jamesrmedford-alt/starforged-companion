@@ -725,6 +725,9 @@ async function advanceOnce() {
     case ROUND_PHASE.ROLLING:
       return rollRound(null);
     case ROUND_PHASE.UPGRADING:
+      // An upgrade the round did not save decides its entry from its receipt
+      // (issue #344 A01).
+      if (await applyUpgradeReceipts()) return true;
       await keepUndecidable(round);
       if (!upgradesSettled(getStoredRound())) return false;
       // The X-Card stops a round resolving: decided, it waits for a GM to
@@ -1360,7 +1363,13 @@ async function closeCardUpgrades(round, userIds = null) {
  * @param {string[]|null} userIds
  */
 async function keepUpgrades(userIds) {
+  // An upgrade the round did not save is decided from its receipt first, and
+  // is never kept as the result it replaced — refused again, it waits for the
+  // next pass (issue #344 A01).
+  await applyUpgradeReceipts();
   const before = getStoredRound();
+  const receipted = new Set(undecidedUpgrades(before).filter(id => upgradeReceiptOf(before, id)));
+  if (receipted.size) userIds = (userIds ?? undecidedUpgrades(before)).filter(id => !receipted.has(id));
   // The upgrades in flight whose handler is still applying them — on this
   // page, or on another GM's page that is still connected (the GM its card's
   // claim names): waited for longer than the grace for one that died with
@@ -1462,12 +1471,102 @@ export async function acceptRoundUpgrade(upgradeOf, resolution, kind) {
   if (round.phase === ROUND_PHASE.NARRATING) return true;
   const relevance = round.entries[userId].rolled?.narrationInput?.relevance ?? null;
   const narrationInput = { ...narrationInputFrom(resolution, null), relevance, resolutionId: upgradeOf };
+  const decision = kind === "improve" ? "improve" : "burn";
   try {
-    await queueRoundWrite(r => decideUpgrade(r, { userId, decision: kind === "improve" ? "improve" : "burn", narrationInput, now: nowIso() }));
+    await queueRoundWrite(r => decideUpgrade(r, { userId, decision, narrationInput, now: nowIso() }));
   } catch (err) {
     console.warn(`${MODULE_ID} | Batch Mode: the upgrade could not be saved on the round:`, err?.message ?? err);
+    // The upgrade itself is committed — its momentum spent, its card upgraded
+    // — so the round must still tell it: a receipt the next pass and Send now
+    // decide the entry from. It sat undecided, its card "in flight", and Send
+    // now kept the result the burn replaced (issue #344 A01).
+    await keepUpgradeReceipt(round, userId, decision, narrationInput);
   }
   advanceRound("upgrade");
+  return true;
+}
+
+/**
+ * Upgrades the round did not save, by result card id: the in-memory copy of
+ * the card's receipt, for a card whose own write was refused as well. A
+ * reload loses it; the card's copy outlives one.
+ */
+const _upgradeReceipts = new Map();
+
+/**
+ * A committed Burn / Improve whose round write was refused (issue #344 A01):
+ * its decision and upgraded narration input are kept on the entry's result
+ * card (`roundUpgradeReceipt` — the narration input is narrationInputFrom's,
+ * without hidden rolls) and on this page, and the GMs are told. The round
+ * decides the entry from it (applyUpgradeReceipts) — never Keep on the result
+ * the upgrade replaced. Never throws.
+ *
+ * @param {Object} round — the stored round the upgrade was for
+ * @param {string} userId — the roller's user
+ * @param {"burn"|"improve"} decision
+ * @param {Object} narrationInput — the upgraded result's
+ */
+async function keepUpgradeReceipt(round, userId, decision, narrationInput) {
+  const entry = round?.entries?.[userId];
+  const cardId = entry?.rolled?.cardId ?? null;
+  if (!cardId) return;
+  const receipt = { roundId: round.id, userId, decision, narrationInput, at: nowIso() };
+  _upgradeReceipts.set(cardId, receipt);
+  await Promise.resolve(game.messages?.get?.(cardId)?.update?.({ [`flags.${MODULE_ID}.roundUpgradeReceipt`]: receipt }))
+    .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the upgrade's receipt could not be kept on its card:`, err?.message ?? err));
+  const what = decision === "improve" ? "Improve Result" : "Burn Momentum";
+  await tellGms(`Batch Mode — ${what} not saved on the round`,
+    `${escapeHtml(entry.actorName ?? "A character")}'s ${what} was applied, but the world did not save it on the round. `
+      + "The round still narrates the upgraded result; if it does not go on, press Send now in the Round window.",
+    { batchUpgradeUnsavedNotice: true });
+}
+
+/**
+ * The receipt of an entry's upgrade the round did not save — this page's
+ * copy, else its result card's — or null. Only for an undecided entry of
+ * this round whose card the upgrade consumed.
+ *
+ * @param {Object} round
+ * @param {string} userId
+ * @returns {{ decision: "burn"|"improve", narrationInput: Object }|null}
+ */
+function upgradeReceiptOf(round, userId) {
+  const entry = round?.entries?.[userId];
+  const cardId = entry?.rolled?.cardId ?? null;
+  if (!cardId || !entry.upgrade || entry.upgrade.decided) return null;
+  const f = game.messages?.get?.(cardId)?.flags?.[MODULE_ID];
+  if (!f || !(f.burn?.consumed || f.improve?.consumed)) return null;
+  const receipt = _upgradeReceipts.get(cardId) ?? f.roundUpgradeReceipt ?? null;
+  if (!receipt || receipt.roundId !== round.id || receipt.userId !== userId) return null;
+  if (!["burn", "improve"].includes(receipt.decision) || !receipt.narrationInput) return null;
+  return receipt;
+}
+
+/**
+ * Decide the round's entries from the receipts of upgrades it did not save
+ * (issue #344 A01) — on the upgrade step's pass, and before Send now keeps
+ * anyone. True when one was decided. Never throws: a write refused again
+ * leaves the receipt for the next pass.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function applyUpgradeReceipts() {
+  const round = getStoredRound();
+  if (round?.phase !== ROUND_PHASE.UPGRADING) return false;
+  const owed = undecidedUpgrades(round).filter(userId => upgradeReceiptOf(round, userId));
+  if (!owed.length) return false;
+  try {
+    await queueRoundWrite(r => owed.reduce((acc, userId) => {
+      const receipt = upgradeReceiptOf(acc, userId);
+      return receipt
+        ? decideUpgrade(acc, { userId, decision: receipt.decision, narrationInput: receipt.narrationInput, now: nowIso() })
+        : acc;
+    }, r));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: an unsaved upgrade could not be put on the round yet:`, err?.message ?? err);
+    return false;
+  }
+  for (const userId of owed) _upgradeReceipts.delete(round.entries[userId]?.rolled?.cardId);
   return true;
 }
 
