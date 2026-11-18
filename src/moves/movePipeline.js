@@ -39,7 +39,7 @@ import { buildMischiefAside } from "./mischief.js";
 import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
 import { buildImproveState } from "./improveResult.js";
-import { closeUpgradesForLaterMove } from "./resultUpgrade.js";
+import { closeUpgradesForLaterMove, openRecordedUpgrades, reportUnopenedUpgrades } from "./resultUpgrade.js";
 import { keepHeldResultsOf } from "./heldResult.js";
 import { scanForApplicableAbilities, getCommandVehicleActor } from "./abilityScanner.js";
 import {
@@ -1934,9 +1934,16 @@ export function narrationInputFrom(resolution, relevance = null) {
  * close. Canonical GM, under the move lock. Free-flow records after the
  * narration; a round records before it narrates.
  *
+ * The stamp that opens Burn / Improve is tried again once when the world
+ * refuses it; refused again, the GMs' card says so, with a Retry, and the
+ * kinds it did not open are returned — a Batch Mode round keeps them on its
+ * entry and waits for the roller's decision all the same (issue #344 A02: the
+ * refusal was a console warning, and the round read the card as offering no
+ * upgrade and closed it).
+ *
  * @param {Object} rolled — rollMove's result
  * @param {Object} campaignState — the working copy
- * @returns {Promise<void>}
+ * @returns {Promise<{ unopened: Array<"burn"|"improve"> }>}
  */
 export async function recordMove(rolled, campaignState) {
   const { reportUnsavedMoveRecord } = pipelineHost();
@@ -1971,19 +1978,26 @@ export async function recordMove(rolled, campaignState) {
   // applied the upgraded outcome, then this persist added the original
   // on top of it (issue #300 F02). The click handlers diff the upgraded
   // outcome against the recorded original.
-  const recorded = {
-    ...(burnState    ? { [`flags.${MODULE_ID}.burn.originalApplied`]:    true } : {}),
-    ...(improveState ? { [`flags.${MODULE_ID}.improve.originalApplied`]: true } : {}),
-  };
-  if (moveResultMessage && Object.keys(recorded).length) {
-    await moveResultMessage.update(recorded).catch(err =>
-      console.warn(`${MODULE_ID} | burn / improve metadata update failed:`, err));
+  const kinds = [...(burnState ? ["burn"] : []), ...(improveState ? ["improve"] : [])];
+  let unopened = [];
+  if (moveResultMessage && kinds.length) {
+    // Once more on a refusal; refused again, the GMs are told, with a Retry,
+    // and the caller learns which stayed shut (issue #344 A02).
+    let opened = await openRecordedUpgrades(moveResultMessage, kinds);
+    if (!opened.ok) opened = await openRecordedUpgrades(moveResultMessage, kinds);
+    if (!opened.ok) {
+      unopened = kinds;
+      await reportUnopenedUpgrades(moveResultMessage, kinds, {
+        actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null, error: opened.error ?? "",
+      });
+    }
   }
   // This roller's earlier move cards: their Burn / Improve belonged to
   // the moves being made then — closed now this one has resolved (issue
   // #326 D4). Canonical GM: the pipeline runs there.
   await closeUpgradesForLaterMove(rollerActor?.id ?? null, resolution._id ?? null).catch(err =>
     console.warn(`${MODULE_ID} | closing earlier move cards' upgrades failed:`, err?.message ?? err));
+  return { unopened };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

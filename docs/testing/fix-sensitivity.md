@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347 and #362
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362 and #344
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -28,7 +28,8 @@ applied to `2339bb8`), and for its open items — fixed at the maintainer's
 request the same day — on 2026-11-12 (the two AB19-STALE-CACHE-WRITES patches
 applied to `4d31c73`), and for issue #362 — the fourteenth audit's
 eighty-three findings and fourteen decisions — on 2026-11-17 (the AC79
-follow-up `0a4c445` shown by hand).
+follow-up `0a4c445` shown by hand), and for issue #344 — the audit at
+`22bdbeb`'s four findings — on 2026-11-18.
 To reproduce:
 
 ```bash
@@ -293,6 +294,11 @@ node scripts/fix-sensitivity.mjs \
   b1fee45 be596d1 8244bcb 3d6ea74 459638e f4c2a17 60de9f6 68cf15c 8792303 \
   3a6bb9a e1f01b5 a6eda3b 6f5a60b 08e8fb2 6de679b b33de2d 5797730 c729681 \
   de5a239 6db1001 5fedd61 f0cf9b7 6d6a606 53ab489 15737be cfe1b63 \
+  --md details.md
+
+# issue #344 — the audit at 22bdbeb
+node scripts/fix-sensitivity.mjs \
+  d867194 002bf1f 5e97eac 47aed47 \
   --md details.md
 ```
 
@@ -1469,6 +1475,15 @@ end-of-run docs commit is not listed.
 | D14 SESSION-OVER-PLAY-CONTINUES | 0bceac9 | revert | 2 — `narratorDetailPersistence.test.js`, `sessionOverGateNotBegun.test.js`; 4 more fail only on a missing export |
 | D14 SESSION-OVER-PLAY-CONTINUES | 1447e81 | revert | 3 — `batchRoundSessionOverNotBegun.test.js` (3) |
 
+### Issue #344 — the audit at 22bdbeb
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| A01 ROUND-UPGRADE-SAVE-REFUSED | 002bf1f | revert | 2 — `roundUpgradeUnsavedReceipt.test.js` (2) |
+| A02 UPGRADE-OPEN-STAMP-REFUSED | 5e97eac | revert | 4 — `upgradeOpenStampRefused.test.js` (4); 2 more fail only on a missing export |
+| A03 ROUND-CARD-CLOSURE-REFUSED | 47aed47 | revert | 3 — `roundCardLateUpgradeRefused.test.js` (3); 3 more fail only on a missing export |
+| A04 RIDER-CHOICE-GROUP-COLLIDES | d867194 | revert | 2 — `riderChoiceGroupsPerAbility.test.js` (2) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -1714,6 +1729,11 @@ price's routes were carried, the setting switched off, two people who share a
 title, a GM who is not the canonical one, an answered mystery or another
 scene's, a burned card that shows the burn, the same standing rules with and
 without a snapshot.
+
+*Issue #344:* 7 new tests pass both ways, all named `control: …` (a burn the
+round saves; the round waiting on an opened card; a press on a card no round
+entry recorded; a late Burn after an ordinary Keep; a Burn while the round
+still asks; two group ids that differ; two groups inside one ability).
 
 ## Details
 
@@ -16030,3 +16050,74 @@ Test files: `tests/unit/planExistenceOffTableScreens.test.js`. Source restored: 
 | Fails without the fix | First failure line |
 | --- | --- |
 | tests/unit/planExistenceOffTableScreens.test.js › issue #362 D3 — the world setting marks the snapshot out of date, and names nothing a plan made, decided and an enemy revealed leave one opaque mark in the setting — on every client | AssertionError: the mark standing covers the events after it: expected [ { kind: 'setting', …(3) }, …(2) ] to have a length of 1 but got 3 |
+
+### d8671943 — fix: two assets whose "choose one" shares a group id are offered as two choices (issue #344 A04)
+
+Test files: `tests/unit/riderChoiceGroupsPerAbility.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/riderChoiceGroupsPerAbility.test.js › issue #344 A04 — each ability keeps its own "choose one" two abilities that both call their choice "1" are two choices, each with its own two options | AssertionError: expected [ { group: '1', options: [ …(4) ] } ] to have a length of 2 but got 1 |
+| (new) tests/unit/riderChoiceGroupsPerAbility.test.js › issue #344 A04 — each ability keeps its own "choose one" …and the prompt applies one effect from each ability | AssertionError: expected [ { resource: 'health', key: 'a:0' } ] to deeply equal [ …(2) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/riderChoiceGroupsPerAbility.test.js › issue #344 A04 — each ability keeps its own "choose one" control: different group ids are two choices
+- New test passing with and without the fix (a control?): tests/unit/riderChoiceGroupsPerAbility.test.js › issue #344 A04 — each ability keeps its own "choose one" control: two groups inside one ability stay two, and one group stays one
+
+### 002bf1fd — fix: a Batch Mode burn or improvement the round could not save is still narrated as the upgraded result (issue #344 A01)
+
+Test files: `tests/unit/roundUpgradeUnsavedReceipt.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundUpgradeUnsavedReceipt.test.js › issue #344 A01 — a burn the round did not save is still the round's the round's save of the burn refused once: the round narrates the strong hit, momentum spent once, the GMs told | AssertionError: expected 1 to be 2 // Object.is equality |
+| (new) tests/unit/roundUpgradeUnsavedReceipt.test.js › issue #344 A01 — a burn the round did not save is still the round's while the world keeps refusing it, Send now never keeps the weak hit; once it lets the save through, the round narrates the strong hit | AssertionError: expected { id: '68vcKjCB7UxgmWBa', …(12) } to match object { id: 'rGDD33PnRWxJDC5l', …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/roundUpgradeUnsavedReceipt.test.js › issue #344 A01 — a burn the round did not save is still the round's control: a burn the round saves narrates the upgraded outcome once
+
+### 5e97eac9 — fix: a recorded result whose Burn the world would not open is still the roller's to decide (issue #344 A02)
+
+Test files: `tests/unit/upgradeOpenStampRefused.test.js`. Source restored: 7 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 6 failed (6 new; 2 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — a Batch Mode round waits for a Burn whose card the world would not open the stamp refused once: it is tried again, the round waits, and Kira's Burn is narrated | AssertionError: expected { id: 'zkYzvwF9bn8odAeI', …(12) } to match object { number: 1, phase: 'upgrading' } |
+| (new) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — a Batch Mode round waits for a Burn whose card the world would not open refused at the record and again: the GMs are told, with a Retry, and the round opens the card before it asks | AssertionError: expected 1 to be 2 // Object.is equality |
+| (new) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — a Batch Mode round waits for a Burn whose card the world would not open while the world keeps refusing it, the round still waits for Kira; once it lets the stamp through, her Burn opens the card and is narrated | AssertionError: expected { id: 'lNHPHOizqP5Vudiq', …(12) } to match object { number: 1, phase: 'upgrading' } |
+| (new) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — free-flow: a card the world would not open goes to the GMs, with a Retry the stamp refused: the GMs are told; their Retry opens the card, and Kira can burn | AssertionError: the GMs are told, with a Retry: expected [] to have a length of 1 but got +0 |
+| (new) (API) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — the round's record stands in for the stamp only while the decision is owed owed while the round rolls or asks, for the kind it owes and the card it recorded | TypeError: upgradeStampOwed is not a function |
+| (new) (API) tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — the round's record stands in for the stamp only while the decision is owed not once the entry is decided, the round narrating, or the entry not recorded | TypeError: upgradeStampOwed is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — a Batch Mode round waits for a Burn whose card the world would not open control: the round waits for Kira's decision on an opened card
+- New test passing with and without the fix (a control?): tests/unit/upgradeOpenStampRefused.test.js › issue #344 A02 — a Batch Mode round waits for a Burn whose card the world would not open control: a press on a card the round did not record is still refused while its original is pending
+
+### 47aed473 — fix: a round result's Burn / Improve stays closed after the round decided it, its card's closure refused (issue #344 A03)
+
+Test files: `tests/unit/roundCardLateUpgradeRefused.test.js`. Source restored: 5 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 6 failed (6 new; 3 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — a round result cannot be upgraded after the round told it the card's closures refused: a late Burn is still refused — no momentum spent, no second narration | AssertionError: expected true not to be true // Object.is equality |
+| (new) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — a round result cannot be upgraded after the round told it …and once the world takes writes again, the refused press closes the card, so it shows closed | AssertionError: expected true not to be true // Object.is equality |
+| (new) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — a round result cannot be upgraded after the round told it Improve Result shares the gate: a late improvement of a told round result is refused | AssertionError: expected true not to be true // Object.is equality |
+| (new) (API) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — the round's own record of a card's upgrades open while its round rolls or asks and its roller has not decided | TypeError: upgradeClosedByRound is not a function |
+| (new) (API) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — the round's own record of a card's upgrades closed once decided, narrating, closed, or another round is the stored one | TypeError: upgradeClosedByRound is not a function |
+| (new) (API) tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — the round's own record of a card's upgrades a card no round posted is not its business | TypeError: upgradeClosedByRound is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — a round result cannot be upgraded after the round told it control: after a Keep and the narration, a late Burn is refused
+- New test passing with and without the fix (a control?): tests/unit/roundCardLateUpgradeRefused.test.js › issue #344 A03 — a round result cannot be upgraded after the round told it control: while the round still asks, the card's Burn is taken

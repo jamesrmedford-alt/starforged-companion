@@ -49,11 +49,11 @@ import { moveDisplayName }               from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
+  openOwedUpgrade,
+  closeRoundCard,
   applyUpgradeStep,
   reportUpgradeFailures,
   reconcileChoices,
-  consequenceChosen,
-  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -68,7 +68,8 @@ import {
   requesterOwnsActor,
   claimResultUpgrade,
   releaseResultUpgrade,
-  resultUpgradeBlocker,
+  upgradeBlockerOf,
+  pressBlocker,
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
   UPGRADE_LATER_MOVE_TITLE,
@@ -210,7 +211,7 @@ export function registerImproveResultHook({ narrate, applyEffects } = {}) {
       btn.textContent = "✦ Improved to Strong Hit";
       return;
     }
-    const blocker = resultUpgradeBlocker(improve, flags.burn);
+    const blocker = upgradeBlockerOf(message, "improve");
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — momentum was already burned";
@@ -303,9 +304,13 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | improveResult: card ${messageId} already improved — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(improve, flags.burn)
-    ?? (laterMoveFollows(message) ? "later-move" : null)
-    ?? (consequenceChosen(improve.resolutionId) ? "choice-made" : null);
+  let blocker = pressBlocker(message, "improve");
+  // A round card whose stamp the world refused, its original recorded by the
+  // round: opened now from the round's record, then judged (issue #344 A02).
+  if (blocker === "original-pending" && await openOwedUpgrade(message, "improve")) blocker = pressBlocker(message, "improve");
+  // Its round decided it, the card's closure refused: written again, so the
+  // card shows closed (issue #344 A03).
+  if (blocker === "round-closed") await closeRoundCard(message);
   if (blocker) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);
     return { applied: false, reason: blocker };
