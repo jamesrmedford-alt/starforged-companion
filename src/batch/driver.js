@@ -63,7 +63,7 @@ import {
   narrationInputFrom,
 } from "../moves/movePipeline.js";
 import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
-import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
+import { consequenceChosen, laterMoveFollows, openRecordedUpgrades } from "../moves/resultUpgrade.js";
 import { keepHeldResultsOf, keepEveryHeldResult } from "../moves/heldResult.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
@@ -104,6 +104,7 @@ import {
   markRecorded,
   markRefused,
   allSettled,
+  upgradeStampOwed,
   beginUpgrades,
   decideUpgrade,
   keepUndecidedUpgrades,
@@ -1064,6 +1065,7 @@ async function rollRound(claim) {
 
     round = getStoredRound();
     if (!allSettled(round)) return false;
+    await openOwedStamps(round);
     await queueRoundWrite(r => beginUpgrades(r, { offers: upgradeOffers(r) }));
     return true;
   } finally {
@@ -1208,22 +1210,48 @@ async function rollEntry(round, entry) {
   // (issue #342 Z18).
   await queueRoundWrite(r => markRolled(r, { userId, rolled: rolledInfo })).catch(err =>
     console.warn(`${MODULE_ID} | Batch Mode: ${entry.actorName}'s roll was not saved on the round — recording the move all the same:`, err?.message ?? err));
-  await recordMove(rolled, campaignState);
+  const { unopened = [] } = (await recordMove(rolled, campaignState)) ?? {};
+  // Its card's Burn / Improve the world would not open, its original recorded:
+  // the round keeps the stamp it owes, and offers the upgrade all the same
+  // (upgradeStampOwed — issue #344 A02). Kept on the roll here too, for a
+  // recovery that re-marks it (rolledInfoFrom).
+  if (unopened.length) rolled.stampOwed = unopened;
   _recordedHere.add(userId);
-  await queueRoundWrite(r => markRecorded(markRolled(r, { userId, rolled: rolledInfo }), { userId, recordedAt: nowIso() }));
+  const recordedInfo = unopened.length ? { ...rolledInfo, stampOwed: [...unopened] } : rolledInfo;
+  await queueRoundWrite(r => markRecorded(markRolled(r, { userId, rolled: recordedInfo }), { userId, recordedAt: nowIso() }));
 }
 
 /**
  * What the round keeps of a rolled move (markRolled): its card, outcome and
  * narration input. (The match rides the narration input: a copy beside it was
- * read by nothing — issue #342 Z37.)
+ * read by nothing — issue #342 Z37.) And, once recorded, the card's upgrades
+ * whose opening the world refused (`stampOwed` — issue #344 A02).
  */
-function rolledInfoFrom({ resolution, relevance, moveResultMessage }) {
+function rolledInfoFrom({ resolution, relevance, moveResultMessage, stampOwed = null }) {
   return {
     resolutionId: resolution?._id ?? null, cardId: moveResultMessage?.id ?? null,
     moveId: resolution?.moveId ?? null, outcome: resolution?.outcome ?? null,
     narrationInput: narrationInputFrom(resolution, relevance),
+    ...(Array.isArray(stampOwed) && stampOwed.length ? { stampOwed: [...stampOwed] } : {}),
   };
+}
+
+/**
+ * Open, before the upgrade step, the result cards whose stamp the world
+ * refused when the round recorded them (rollEntry, `stampOwed` — issue #344
+ * A02): their Burn / Improve buttons go live. Refused again, the round offers
+ * the upgrade from its own record, and the handler opens the card when it is
+ * pressed (resultUpgrade.js openOwedUpgrade). Never throws.
+ *
+ * @param {Object} round — every acting entry settled
+ */
+async function openOwedStamps(round) {
+  for (const userId of round?.acting ?? []) {
+    const rolled = round.entries?.[userId]?.rolled;
+    const owed = (Array.isArray(rolled?.stampOwed) ? rolled.stampOwed : []).filter(kind => upgradeStampOwed(round, rolled.cardId, kind));
+    const card = owed.length ? (game.messages?.get?.(rolled.cardId) ?? null) : null;
+    if (card) await openRecordedUpgrades(card, owed);
+  }
 }
 
 /**
@@ -1290,8 +1318,8 @@ function upgradeOffers(round) {
       offers[userId] = inFlightOffer(e.rolled.cardId, f.burn?.consumed ? "burn" : "improve");
       continue;
     }
-    const burn = upgradeOpen(card, "burn") ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
-    const improve = upgradeOpen(card, "improve") ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
+    const burn = upgradeOpen(card, "burn", round) ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
+    const improve = upgradeOpen(card, "improve", round) ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
     if (burn || improve) offers[userId] = { burn, improve, cardId: e.rolled.cardId };
   }
   return offers;
@@ -1317,17 +1345,22 @@ function inFlightOffer(cardId, kind) {
  * applyBurnFromRelay, improveResult.js applyImproveFromRelay): offered, not
  * used, not closed (resultUpgradeBlocker: a chosen consequence, a later move,
  * the round's own close), no later move of the roller's, no choice made on
- * the outcome's choice card.
+ * the outcome's choice card. A card the round recorded whose stamp the world
+ * refused is open on the round's record (round.js upgradeStampOwed): the
+ * handler opens the card when it is pressed. Read as no upgrade, the round
+ * closed it — a legal Burn lost though nobody chose Keep (issue #344 A02).
  *
  * @param {ChatMessage|null} card
  * @param {"burn"|"improve"} kind
+ * @param {Object|null} [round] — the round the card's entry is in
  * @returns {boolean}
  */
-function upgradeOpen(card, kind) {
+function upgradeOpen(card, kind, round = null) {
   const f = card?.flags?.[MODULE_ID];
   const state = f?.[kind];
   if (!(kind === "burn" ? state?.canBurn : state?.canImprove) || state.consumed) return false;
-  if (resultUpgradeBlocker(state, f[kind === "burn" ? "improve" : "burn"])) return false;
+  const recorded = state.originalApplied === true || upgradeStampOwed(round, card.id, kind);
+  if (resultUpgradeBlocker({ ...state, originalApplied: recorded }, f[kind === "burn" ? "improve" : "burn"])) return false;
   if (laterMoveFollows(card)) return false;
   return !consequenceChosen(state.resolutionId ?? f.resolutionId ?? null);
 }
@@ -1424,17 +1457,17 @@ async function keepUndecidable(round) {
   // An upgrade in flight decides itself — its GM handler is applying it,
   // whoever is connected (issue #347 AB13).
   const moot = undecidedUpgrades(round).filter(id => !round.entries[id]?.upgrade?.inFlight
-    && (!connected.has(id) || !offerAnswerable(round.entries[id])));
+    && (!connected.has(id) || !offerAnswerable(round, round.entries[id])));
   if (moot.length) await keepUpgrades(moot);
 }
 
 /** Whether an undecided offer can still be decided on its card: an upgrade still open, or one landing now. */
-function offerAnswerable(entry) {
+function offerAnswerable(round, entry) {
   const card = game.messages?.get?.(entry?.upgrade?.cardId ?? entry?.rolled?.cardId) ?? null;
   const f = card?.flags?.[MODULE_ID];
   if (!f) return false;
   if (f.burn?.consumed || f.improve?.consumed) return true;
-  return (!!entry.upgrade.burn && upgradeOpen(card, "burn")) || (!!entry.upgrade.improve && upgradeOpen(card, "improve"));
+  return (!!entry.upgrade.burn && upgradeOpen(card, "burn", round)) || (!!entry.upgrade.improve && upgradeOpen(card, "improve", round));
 }
 
 /**

@@ -55,6 +55,7 @@ import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDe
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { upgradeStampOwed } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -90,6 +91,92 @@ export async function claimUpgradeCard(message, kind) {
     console.warn(`${MODULE_ID} | ${kind}: card ${message?.id ?? "?"} could not be claimed — nothing applied:`, err?.message ?? err);
     return false;
   }
+}
+
+/**
+ * Open a move card's Burn Momentum / Improve Result now its original outcome
+ * is recorded: `<kind>.originalApplied`, which the GM handlers wait for
+ * (burnMomentum.js resultUpgradeBlocker, "original-pending"). Only after the
+ * record — movePipeline.js recordMove, the GMs' Retry of a refused one
+ * (index.js runPayoffStep "upgradeOpen"), or a Batch Mode round's own record
+ * of it (openOwedUpgrade). A kind already open is left; never throws.
+ *
+ * @param {ChatMessage} message — the move card
+ * @param {Array<"burn"|"improve">} kinds
+ * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ */
+export async function openRecordedUpgrades(message, kinds) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const update = {};
+  for (const kind of Array.isArray(kinds) ? kinds : []) {
+    if ((kind === "burn" || kind === "improve") && f[kind] && f[kind].originalApplied !== true) {
+      update[`flags.${MODULE_ID}.${kind}.originalApplied`] = true;
+    }
+  }
+  if (!Object.keys(update).length) return { ok: true };
+  try {
+    await message.update(update);
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | card ${message?.id ?? "?"}: its Burn / Improve could not be opened:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+  }
+}
+
+/**
+ * A press on a Batch Mode round card whose Burn / Improve is still waiting
+ * for its stamp: the round recorded the card's original outcome, and the
+ * world refused the stamp (round.js upgradeStampOwed — issue #344 A02). The
+ * stamp is written now, from the round's record of it, before the press is
+ * judged: the gate stands, and opens on a record — never on the press alone.
+ * Canonical GM (the handlers).
+ *
+ * @param {ChatMessage} message — the move card
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<boolean>} whether the card is open now
+ */
+export async function openOwedUpgrade(message, kind) {
+  let round = null;
+  try {
+    round = globalThis.game?.settings?.get?.(MODULE_ID, "batchMode.round") ?? null;
+  } catch {
+    round = null;
+  }
+  if (!upgradeStampOwed(round, message?.id ?? null, kind)) return false;
+  return (await openRecordedUpgrades(message, [kind])).ok;
+}
+
+/**
+ * The world refused the stamp opening a recorded move card's Burn / Improve
+ * (openRecordedUpgrades, retried): the GMs' payoff failure card says so, with
+ * a Retry that opens it (index.js runPayoffStep "upgradeOpen") — the original
+ * outcome is on the sheet, and the roller's decision is still owed. It was
+ * only a console warning: the card's buttons stayed "available once the
+ * result is recorded", and a Batch Mode round read it as no upgrade and closed
+ * it (issue #344 A02). Never throws.
+ *
+ * @param {ChatMessage} message — the move card
+ * @param {Array<"burn"|"improve">} kinds
+ * @param {{ actorId?: string|null, moveName?: string|null, error?: string }} [ctx]
+ * @returns {Promise<void>}
+ */
+export async function reportUnopenedUpgrades(message, kinds, { actorId = null, moveName = null, error = "" } = {}) {
+  try {
+    const actor = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+    globalThis.ui?.notifications?.warn?.(`Starforged Companion: the world did not open ${upgradeButtonNames(kinds)} on ${actor?.name ?? "the roller"}'s ${moveName ?? "move"} card — the result is recorded. The GMs have a Retry.`);
+    const { postPayoffFailureCard } = await import("../index.js");
+    await postPayoffFailureCard({ source: "persist", actorId, failures: [{
+      step: "upgradeOpen", messageId: message?.id ?? null, kinds: [...kinds], moveName, reason: "refused", error,
+    }] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the unopened Burn / Improve could not be reported:`, err?.message ?? err);
+  }
+}
+
+/** "Burn Momentum", "Improve Result", or both — the buttons a stamp opens. */
+export function upgradeButtonNames(kinds) {
+  const names = (Array.isArray(kinds) ? kinds : []).map(k => (k === "burn" ? "Burn Momentum" : k === "improve" ? "Improve Result" : null)).filter(Boolean);
+  return names.length ? names.join(" and ") : "the result's upgrade";
 }
 
 /**

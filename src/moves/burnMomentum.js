@@ -79,6 +79,7 @@ import { moveDisplayName }     from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
+  openOwedUpgrade,
   applyUpgradeStep,
   reportUpgradeFailures,
   reconcileChoices,
@@ -205,6 +206,25 @@ export const UPGRADE_REFUSALS = {
   "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
+
+/**
+ * Why a GM handler refuses a press on a card's `kind` upgrade right now, or
+ * null: the card's own flags (resultUpgradeBlocker), then a later move of the
+ * roller's and a consequence chosen on the outcome's choice card. Read from
+ * the live card, so a stamp written meanwhile counts. Shared with
+ * improveResult.js applyImproveFromRelay.
+ *
+ * @param {ChatMessage} message — the move card
+ * @param {"burn"|"improve"} kind
+ * @returns {string|null}
+ */
+export function pressBlocker(message, kind) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const state = f[kind];
+  return resultUpgradeBlocker(state, f[kind === "burn" ? "improve" : "burn"])
+    ?? (laterMoveFollows(message) ? "later-move" : null)
+    ?? (consequenceChosen(state?.resolutionId) ? "choice-made" : null);
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -581,9 +601,10 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | burnMomentum: card ${messageId} already burned — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(burn, flags.improve)
-    ?? (laterMoveFollows(message) ? "later-move" : null)
-    ?? (consequenceChosen(burn.resolutionId) ? "choice-made" : null);
+  let blocker = pressBlocker(message, "burn");
+  // A round card whose stamp the world refused, its original recorded by the
+  // round: opened now from the round's record, then judged (issue #344 A02).
+  if (blocker === "original-pending" && await openOwedUpgrade(message, "burn")) blocker = pressBlocker(message, "burn");
   if (blocker) {
     console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);
     return { applied: false, reason: blocker };

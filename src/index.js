@@ -6684,6 +6684,7 @@ const PAYOFF_REASONS = {
   "no-vow":    "no open vow by that name",
   "no-pc":     "no player character to receive it",
   "superseded": "the move's result was upgraded since, and its new outcome stands",
+  "card-gone": "the move card is no longer in chat",
 };
 
 const PAYOFF_TITLES = {
@@ -6749,6 +6750,8 @@ function payoffStepRecord(f) {
     case "choiceCard":  return { step: "choiceCard", pcId: f.pcId ?? null, moveId: f.moveId ?? null, moveName: f.moveName ?? null,
       sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {}, resolutionId: f.resolutionId ?? null };
     case "upgrade":     return upgradeStepRecord(f);
+    case "upgradeOpen": return { step: "upgradeOpen", messageId: f.messageId ?? null, moveName: f.moveName ?? null,
+      kinds: (Array.isArray(f.kinds) ? f.kinds : []).filter(k => k === "burn" || k === "improve") };
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
       clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
@@ -6801,6 +6804,18 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       case "upgrade":
         // A burn's or an improvement's write after its claim (issue #311 P06).
         return describeUpgradeStep(f, why);
+      case "upgradeOpen": {
+        // The stamp opening a recorded move card's Burn / Improve (issue #344 A02).
+        const { upgradeButtonNames } = await import("./moves/resultUpgrade.js");
+        const pc   = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        const card = f.messageId ? (game.messages?.get?.(f.messageId) ?? null) : null;
+        const cf   = card?.flags?.[MODULE_ID] ?? {};
+        const open = (f.kinds ?? []).every(k => cf[k]?.originalApplied === true);
+        const now  = !card ? " The card is no longer in chat."
+          : open ? " It is open now."
+          : " Its buttons wait until this lands; the result is recorded, and its roller has not decided.";
+        return `${escapeChatHtml(upgradeButtonNames(f.kinds))} on ${escapeChatHtml(pc?.name ?? "the roller")}'s ${escapeChatHtml(f.moveName ?? "move")} card, opened once its result was recorded — ${why}.${now}`;
+      }
       case "momentum": {
         // A PC's Begin / End a Session momentum (issue #311 P08).
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
@@ -6953,6 +6968,15 @@ async function runPayoffStep(s, card, copies) {
     case "upgrade":
       // A burn's or an improvement's write refused after its claim (issue #311 P06).
       return retryUpgradeStep(s);
+    case "upgradeOpen": {
+      // The stamp opening a recorded move card's Burn / Improve (issue #344
+      // A02): its original outcome is on the sheet, so the card opens — what
+      // has closed it since (a Keep, a later move, a round's close) still does.
+      const { openRecordedUpgrades } = await import("./moves/resultUpgrade.js");
+      const card = typeof s.messageId === "string" ? (game.messages?.get?.(s.messageId) ?? null) : null;
+      if (!card) return { ok: false, reason: "card-gone" };
+      return openRecordedUpgrades(card, s.kinds);
+    }
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).
       return retryRiderStep(s, card?.actorId ?? null);

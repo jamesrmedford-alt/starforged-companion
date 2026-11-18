@@ -950,6 +950,29 @@ export function allSettled(round) {
 }
 
 /**
+ * Whether the round recorded `cardId`'s original outcome while the world
+ * refused the card's stamp opening its `kind` upgrade (`<kind>.originalApplied`
+ * — issue #344 A02): an acting entry, recorded with the stamp owed
+ * (`rolled.stampOwed`, driver.js rollEntry), its upgrade undecided, in a round
+ * still rolling or deciding upgrades. The round's record stands in for the
+ * stamp until it lands — never once the entry is decided or the round is
+ * narrating, so it opens nothing the round has closed.
+ *
+ * @param {Object|null} round
+ * @param {string|null} cardId
+ * @param {"burn"|"improve"} kind
+ * @returns {boolean}
+ */
+export function upgradeStampOwed(round, cardId, kind) {
+  if (!cardId || (round?.phase !== ROUND_PHASE.ROLLING && round?.phase !== ROUND_PHASE.UPGRADING)) return false;
+  return (Array.isArray(round.acting) ? round.acting : []).some(id => {
+    const e = round.entries?.[id];
+    return e?.status === ENTRY_STATUS.RECORDED && e.rolled?.cardId === cardId && !e.upgrade?.decided
+      && Array.isArray(e.rolled.stampOwed) && e.rolled.stampOwed.includes(kind);
+  });
+}
+
+/**
  * Rolling → upgrading, for the rollers whose result card offers Burn Momentum
  * or Improve Result (`offers`), or straight to narrating when none does.
  *

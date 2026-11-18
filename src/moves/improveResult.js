@@ -49,11 +49,10 @@ import { moveDisplayName }               from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
+  openOwedUpgrade,
   applyUpgradeStep,
   reportUpgradeFailures,
   reconcileChoices,
-  consequenceChosen,
-  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -69,6 +68,7 @@ import {
   claimResultUpgrade,
   releaseResultUpgrade,
   resultUpgradeBlocker,
+  pressBlocker,
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
   UPGRADE_LATER_MOVE_TITLE,
@@ -303,9 +303,10 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | improveResult: card ${messageId} already improved — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(improve, flags.burn)
-    ?? (laterMoveFollows(message) ? "later-move" : null)
-    ?? (consequenceChosen(improve.resolutionId) ? "choice-made" : null);
+  let blocker = pressBlocker(message, "improve");
+  // A round card whose stamp the world refused, its original recorded by the
+  // round: opened now from the round's record, then judged (issue #344 A02).
+  if (blocker === "original-pending" && await openOwedUpgrade(message, "improve")) blocker = pressBlocker(message, "improve");
   if (blocker) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);
     return { applied: false, reason: blocker };

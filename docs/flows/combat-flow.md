@@ -61,7 +61,13 @@ Two cross-cutting facts to hold onto:
   the world setting `holdResultForUpgrade` off.
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
-  disabled and the GM handler refuses — issue #300 F02); each swaps that
+  disabled and the GM handler refuses — issue #300 F02). A stamp the world
+  refuses is tried again once, then goes to the GMs' payoff card as an
+  `upgradeOpen` step whose Retry opens the card; a Batch Mode round keeps the
+  stamp it owes on the entry (`rolled.stampOwed`), offers the upgrade all the
+  same, and a press opens the card from that record (`resultUpgrade.js`
+  `openOwedUpgrade`) — the refusal was a warning, and the round closed a
+  legal Burn nobody declined (issue #344 A02). Each swaps that
   recorded original for the upgraded outcome, burns the momentum the PC held
   before the move's effects — the live value less the recorded outcome's own
   momentum change (`outcomeMomentum`, as it landed), plus what its Pay the
