@@ -25,6 +25,11 @@ const MODULE_ID = "starforged-companion";
  * was offered beside its alternatives, so choosing one of those applied both
  * (issue #315 S02).
  *
+ * A group id is the extractor's, local to its ability: two abilities that
+ * each call their "choose one" "1" are two choices, keyed by the ability
+ * (the rider's `key`) as well as the id. They were one radio set, so only one
+ * ability's effect could be taken (issue #344 A04).
+ *
  * Exported for unit testing the grouping without a live dialog.
  *
  * @param {Array} prompted
@@ -37,14 +42,15 @@ export function groupPromptedRiders(prompted) {
 
   for (const r of prompted ?? []) {
     if (r.choiceGroup) {
-      if (!choiceMap.has(r.choiceGroup)) choiceMap.set(r.choiceGroup, []);
-      choiceMap.get(r.choiceGroup).push(r);
+      const id = `${r.key ?? ""}\u0000${r.choiceGroup}`;
+      if (!choiceMap.has(id)) choiceMap.set(id, { group: r.choiceGroup, options: [] });
+      choiceMap.get(id).options.push(r);
       continue;
     }
     if (r.resource === "progress") { progress.push(r); continue; }
     optionals.push(r);            // optional standalone
   }
-  const choices = [...choiceMap.entries()].map(([group, options]) => ({ group, options }));
+  const choices = [...choiceMap.values()];
   return { optionals, choices, progress };
 }
 
