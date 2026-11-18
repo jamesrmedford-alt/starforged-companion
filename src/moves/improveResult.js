@@ -50,6 +50,7 @@ import {
   revertPayThePrice,
   claimUpgradeCard,
   openOwedUpgrade,
+  closeRoundCard,
   applyUpgradeStep,
   reportUpgradeFailures,
   reconcileChoices,
@@ -67,7 +68,7 @@ import {
   requesterOwnsActor,
   claimResultUpgrade,
   releaseResultUpgrade,
-  resultUpgradeBlocker,
+  upgradeBlockerOf,
   pressBlocker,
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
@@ -210,7 +211,7 @@ export function registerImproveResultHook({ narrate, applyEffects } = {}) {
       btn.textContent = "✦ Improved to Strong Hit";
       return;
     }
-    const blocker = resultUpgradeBlocker(improve, flags.burn);
+    const blocker = upgradeBlockerOf(message, "improve");
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — momentum was already burned";
@@ -307,6 +308,9 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
   // A round card whose stamp the world refused, its original recorded by the
   // round: opened now from the round's record, then judged (issue #344 A02).
   if (blocker === "original-pending" && await openOwedUpgrade(message, "improve")) blocker = pressBlocker(message, "improve");
+  // Its round decided it, the card's closure refused: written again, so the
+  // card shows closed (issue #344 A03).
+  if (blocker === "round-closed") await closeRoundCard(message);
   if (blocker) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);
     return { applied: false, reason: blocker };

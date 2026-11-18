@@ -80,6 +80,8 @@ import {
   revertPayThePrice,
   claimUpgradeCard,
   openOwedUpgrade,
+  closedByRound,
+  closeRoundCard,
   applyUpgradeStep,
   reportUpgradeFailures,
   reconcileChoices,
@@ -208,20 +210,39 @@ export const UPGRADE_REFUSALS = {
 };
 
 /**
+ * Why a card's `kind` upgrade is closed, or null: the card's own flags
+ * (resultUpgradeBlocker) — and, for a Batch Mode round's card, its round's own
+ * record ("round-closed": the round decided it, or told it — resultUpgrade.js
+ * closedByRound). The card's `roundClosed` only mirrors that; refused, a Burn
+ * pressed after the round was narrated spent momentum and was narrated a
+ * second time (issue #344 A03). The buttons render from it and the GM
+ * handlers judge by it (pressBlocker); shared with improveResult.js.
+ *
+ * @param {ChatMessage} message — the move card
+ * @param {"burn"|"improve"} kind
+ * @returns {string|null}
+ */
+export function upgradeBlockerOf(message, kind) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const own = resultUpgradeBlocker(f[kind], f[kind === "burn" ? "improve" : "burn"]);
+  if (own && own !== "original-pending") return own;
+  return closedByRound(message) ? "round-closed" : own;
+}
+
+/**
  * Why a GM handler refuses a press on a card's `kind` upgrade right now, or
- * null: the card's own flags (resultUpgradeBlocker), then a later move of the
- * roller's and a consequence chosen on the outcome's choice card. Read from
- * the live card, so a stamp written meanwhile counts. Shared with
- * improveResult.js applyImproveFromRelay.
+ * null: what closes it (upgradeBlockerOf), then a later move of the roller's
+ * and a consequence chosen on the outcome's choice card. Read from the live
+ * card, so a stamp written meanwhile counts. Shared with improveResult.js
+ * applyImproveFromRelay.
  *
  * @param {ChatMessage} message — the move card
  * @param {"burn"|"improve"} kind
  * @returns {string|null}
  */
 export function pressBlocker(message, kind) {
-  const f = message?.flags?.[MODULE_ID] ?? {};
-  const state = f[kind];
-  return resultUpgradeBlocker(state, f[kind === "burn" ? "improve" : "burn"])
+  const state = message?.flags?.[MODULE_ID]?.[kind];
+  return upgradeBlockerOf(message, kind)
     ?? (laterMoveFollows(message) ? "later-move" : null)
     ?? (consequenceChosen(state?.resolutionId) ? "choice-made" : null);
 }
@@ -440,7 +461,7 @@ export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
       btn.textContent = `🔥 Burned (${labelForOutcome(burn.previewOutcome)})`;
       return;
     }
-    const blocker = resultUpgradeBlocker(burn, flags.improve);
+    const blocker = upgradeBlockerOf(message, "burn");
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
@@ -605,6 +626,9 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
   // A round card whose stamp the world refused, its original recorded by the
   // round: opened now from the round's record, then judged (issue #344 A02).
   if (blocker === "original-pending" && await openOwedUpgrade(message, "burn")) blocker = pressBlocker(message, "burn");
+  // Its round decided it, the card's closure refused: written again, so the
+  // card shows closed (issue #344 A03).
+  if (blocker === "round-closed") await closeRoundCard(message);
   if (blocker) {
     console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);
     return { applied: false, reason: blocker };

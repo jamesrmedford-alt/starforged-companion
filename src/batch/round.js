@@ -950,6 +950,29 @@ export function allSettled(round) {
 }
 
 /**
+ * Whether a round's result card has had its Burn / Improve decided by its
+ * round (issue #344 A03): its round is no longer the stored round (narrated,
+ * or closed — a round resolving is never discarded, only finished), or is no
+ * longer rolling or asking, or its roller's entry has decided. The round's
+ * record is the canonical one; the card's `roundClosed` mirrors it
+ * (driver.js closeCardUpgrades), and a mirror write the world refused let a
+ * Burn in after the round was narrated. A card no round posted (no
+ * `roundId`) is not judged here.
+ *
+ * @param {Object|null} round — the stored round
+ * @param {Object|null} cardFlags — the card's module flags (`roundId`, `roundUserId`)
+ * @returns {boolean}
+ */
+export function upgradeClosedByRound(round, cardFlags) {
+  const roundId = cardFlags?.roundId;
+  if (!roundId) return false;
+  if (round?.id !== roundId) return true;
+  if (round.phase !== ROUND_PHASE.ROLLING && round.phase !== ROUND_PHASE.UPGRADING) return true;
+  const entry = round.entries?.[cardFlags.roundUserId];
+  return !entry || !!entry.upgrade?.decided;
+}
+
+/**
  * Whether the round recorded `cardId`'s original outcome while the world
  * refused the card's stamp opening its `kind` upgrade (`<kind>.originalApplied`
  * — issue #344 A02): an acting entry, recorded with the stamp owed

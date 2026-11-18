@@ -63,7 +63,7 @@ import {
   narrationInputFrom,
 } from "../moves/movePipeline.js";
 import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
-import { consequenceChosen, laterMoveFollows, openRecordedUpgrades } from "../moves/resultUpgrade.js";
+import { consequenceChosen, laterMoveFollows, openRecordedUpgrades, closeRoundCard } from "../moves/resultUpgrade.js";
 import { keepHeldResultsOf, keepEveryHeldResult } from "../moves/heldResult.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
@@ -1368,7 +1368,11 @@ function upgradeOpen(card, kind, round = null) {
 /**
  * Close the Burn Momentum / Improve Result on round result cards — decided
  * before the round was narrated (`roundClosed`; burnMomentum.js
- * resultUpgradeBlocker). For the users named, or every acting entry.
+ * resultUpgradeBlocker). For the users named, or every acting entry. The
+ * card's flag mirrors the round's own record, which the GM handlers judge by
+ * as well (resultUpgrade.js closedByRound): a refused write is tried again
+ * once, and a press the round refuses writes it again — it was a warning, and
+ * the card took a Burn after the round was narrated (issue #344 A03).
  *
  * @param {Object} round
  * @param {string[]|null} userIds
@@ -1377,15 +1381,8 @@ async function closeCardUpgrades(round, userIds = null) {
   for (const userId of round?.acting ?? []) {
     if (userIds && !userIds.includes(userId)) continue;
     const card = round.entries[userId]?.rolled?.cardId ? game.messages?.get?.(round.entries[userId].rolled.cardId) : null;
-    const f = card?.flags?.[MODULE_ID];
-    if (!f) continue;
-    const update = {};
-    for (const kind of ["burn", "improve"]) {
-      if (f[kind] && !f[kind].consumed && !f[kind].roundClosed) update[`flags.${MODULE_ID}.${kind}.roundClosed`] = true;
-    }
-    if (!Object.keys(update).length) continue;
-    await card.update(update).catch(err =>
-      console.warn(`${MODULE_ID} | Batch Mode: closing card ${card.id}'s upgrades failed:`, err?.message ?? err));
+    if (!card?.flags?.[MODULE_ID]) continue;
+    if (!(await closeRoundCard(card)).ok) await closeRoundCard(card);
   }
 }
 

@@ -67,7 +67,12 @@ Two cross-cutting facts to hold onto:
   stamp it owes on the entry (`rolled.stampOwed`), offers the upgrade all the
   same, and a press opens the card from that record (`resultUpgrade.js`
   `openOwedUpgrade`) — the refusal was a warning, and the round closed a
-  legal Burn nobody declined (issue #344 A02). Each swaps that
+  legal Burn nobody declined (issue #344 A02). A round's result card closes
+  by its round's own record — its round still the stored one, still rolling
+  or asking, its roller undecided (`round.js` `upgradeClosedByRound`) — which
+  the card's `roundClosed` only mirrors: a refused mirror write let a Burn in
+  after the round was narrated, and a press refused now writes it again
+  (issue #344 A03). Each swaps that
   recorded original for the upgraded outcome, burns the momentum the PC held
   before the move's effects — the live value less the recorded outcome's own
   momentum change (`outcomeMomentum`, as it landed), plus what its Pay the

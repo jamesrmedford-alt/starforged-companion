@@ -55,7 +55,7 @@ import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDe
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { upgradeStampOwed } from "../batch/round.js";
+import { upgradeStampOwed, upgradeClosedByRound } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -136,14 +136,57 @@ export async function openRecordedUpgrades(message, kinds) {
  * @returns {Promise<boolean>} whether the card is open now
  */
 export async function openOwedUpgrade(message, kind) {
-  let round = null;
-  try {
-    round = globalThis.game?.settings?.get?.(MODULE_ID, "batchMode.round") ?? null;
-  } catch {
-    round = null;
-  }
-  if (!upgradeStampOwed(round, message?.id ?? null, kind)) return false;
+  if (!upgradeStampOwed(storedRound(), message?.id ?? null, kind)) return false;
   return (await openRecordedUpgrades(message, [kind])).ok;
+}
+
+/** The stored Batch Mode round (the world setting), or null — none, or unreadable. */
+function storedRound() {
+  try {
+    return globalThis.game?.settings?.get?.(MODULE_ID, "batchMode.round") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a Batch Mode round's result card has had its Burn / Improve decided
+ * by its round — the round's own record (round.js upgradeClosedByRound), not
+ * only the card's `roundClosed` mirror of it (issue #344 A03). False for a
+ * card no round posted.
+ *
+ * @param {ChatMessage|null} message — the move card
+ * @returns {boolean}
+ */
+export function closedByRound(message) {
+  const f = message?.flags?.[MODULE_ID];
+  return !!f?.roundId && upgradeClosedByRound(storedRound(), f);
+}
+
+/**
+ * Close a round result card's Burn / Improve: `<kind>.roundClosed`, the
+ * mirror of its round's decision (closedByRound) — by the round as it
+ * decides (driver.js closeCardUpgrades), and again by a press its round
+ * refused, so a card whose closure the world refused shows closed (issue #344
+ * A03). A kind used or closed already is left; never throws.
+ *
+ * @param {ChatMessage} message — the move card
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function closeRoundCard(message) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const update = {};
+  for (const kind of ["burn", "improve"]) {
+    if (f[kind] && !f[kind].consumed && !f[kind].roundClosed) update[`flags.${MODULE_ID}.${kind}.roundClosed`] = true;
+  }
+  if (!Object.keys(update).length) return { ok: true };
+  try {
+    await message.update(update);
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: closing card ${message?.id ?? "?"}'s upgrades failed:`, err?.message ?? err);
+    return { ok: false, error: String(err?.message ?? err) };
+  }
 }
 
 /**
