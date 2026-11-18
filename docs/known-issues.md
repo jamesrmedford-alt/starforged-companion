@@ -11,6 +11,44 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit at 22bdbeb (issue #344) — all four fixed in the v1.8.2 cycle
+
+Found by a bug audit of `22bdbeb` (2026-11-06, the merge of PR #343) — a
+source-and-harness audit of Batch Mode, the move pipeline and the result
+upgrades: four findings, A01–A04 (three P2, one P3), each reproduced by a
+probe in the issue's appendices (`tests/unit/audit-current-batch.test.js`,
+`audit-current-rider-groups.test.js`). The maintainer asked for issue #344 to
+be fixed on 2026-11-18. One commit per row; each carries regression tests
+converted from the probes, which fail with the fix taken out
+(`docs/testing/fix-sensitivity.md`).
+
+Run against this branch, the probes pass 8 of their 9 tests. The ninth is the
+audit's fifth failure, which it left out of its count as already tracked: a
+card move held for the next round is lost when the canonical GM leaves
+(FORCED-MOVE-HOLD-RELOAD, deferred below).
+
+None has been checked in a live Foundry world yet. The ones to try first: a
+Burn pressed in the Round window with the world refusing the round's save
+(A01: one round narration, of the burned result, and the GMs' "not saved on
+the round" notice); a move card whose Burn stays greyed out after its result
+is recorded (A02: the GMs' "Move not fully saved" card and its Retry, and a
+round still asking); and an old round card's Burn pressed after its round was
+narrated (A03: nothing changes, and the card shows closed).
+
+| ID | Kind | Status |
+|---|---|---|
+| A01 ROUND-UPGRADE-SAVE-REFUSED | Batch Mode | fixed — a burn or improvement applied while the world refused the round's save of the decision: the round waited for the upgrade, and Send now narrated the result the burn replaced. `acceptRoundUpgrade` leaves a receipt (`roundUpgradeReceipt` on the result card, and the canonical GM's page), the GMs are told, and the round decides the entry from it on its next pass or at Send now — never Keep on the original. |
+| A02 UPGRADE-OPEN-STAMP-REFUSED | result upgrades | fixed — the `originalApplied` stamp that opens a recorded card's Burn / Improve was refused with a warning: a Batch Mode round read the card as offering nothing and closed it, a legal Burn lost; free-flow's buttons stayed waiting. Tried again once; refused again, it is on the GMs' payoff card (`upgradeOpen`, whose Retry opens the card). A round keeps the stamp it owes on the entry (`rolled.stampOwed`), tries it again before its upgrade step, waits for the decision, and a press opens the card from the round's record — the original-pending gate stands. |
+| A03 ROUND-CARD-CLOSURE-REFUSED | Batch Mode | fixed — both `roundClosed` writes refused, a Burn pressed after the round was narrated spent momentum and was narrated a second time. The handlers and the buttons judge a round's card by the round's own record as well (`round.js` `upgradeClosedByRound`); the closure is tried again once, and a press the round refuses writes it again. Improve Result shares the gate. A card whose closure was refused still shows its buttons open until it re-renders or is pressed (a reload re-renders it closed). |
+| A04 RIDER-CHOICE-GROUP-COLLIDES | asset effects | fixed — two abilities whose "choose one" the extractor gave the same group id were one radio set, so only one ability's effect could be taken. Grouped by ability and id. |
+
+Left open by these fixes (none filed as an issue yet):
+
+| ID | Kind | Status |
+|---|---|---|
+| ROUND-RECEIPTS-PAGE-ONLY | Batch Mode (A01, A02) | open — two recoveries rest on the canonical GM's page when the world refuses more than one write: A01's receipt is kept on the result card and the page, and A02's owed stamp on the round entry and the page. When the card's (or the entry's) write is refused too and that page reloads — or another GM takes the round over — before the round has decided, the round reads the result as kept (A01; the GMs were told it was not saved on the round) or the card as offering nothing (A02; the GMs' Retry card was posted). Proposed: hand the receipt to the GM taking over, or keep both on a GM-only world setting. |
+| HELD-RESULT-UNOPENED-CARD | held result (A02) | open — a free-flow held result whose card could not be opened is kept only by its Keep button, or once the GMs' Retry opens it: the automatic keeps (the roller's next line, End a Session, Batch Mode switched on) skip a card its pipeline has not opened (`heldResult.js` keepCards — they cannot tell it from one still being recorded). Proposed: let them take a card reported on an `upgradeOpen` step. |
+
 ### Fourteenth bug audit (issue #362) — all eighty-three fixed and the fourteen decisions built in the v1.8.2 cycle
 
 Found by the fourteenth bug audit (2026-11-16) of `cf250fb` (the merge of PR

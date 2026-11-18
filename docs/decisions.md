@@ -6,6 +6,33 @@ rejected.
 
 ---
 
+## Issue #344: a round's own record decides its result cards' upgrades; the card flags mirror it (2026-11)
+
+**Decision:** ([#344](https://github.com/jamesrmedford-alt/starforged-companion/issues/344) A02, A03 — fixed at the maintainer's request, 2026-11-18)
+
+- **Closed by the round.** A Batch Mode round's result card has its Burn
+  Momentum / Improve Result closed by the round's record — the canonical
+  store: the card's round is no longer the stored round, is no longer rolling
+  or asking, or its roller has decided (`round.js` `upgradeClosedByRound`).
+  The card's `roundClosed` mirrors it: the round writes it as it decides
+  (tried again once — `driver.js` `closeCardUpgrades`), and a press the round
+  refuses writes it again (`resultUpgrade.js` `closeRoundCard`). The buttons
+  render from both, and the GM handlers judge by both (`burnMomentum.js`
+  `upgradeBlockerOf` / `pressBlocker`).
+- **The recorded-original gate stands** (issue #300 F02). No upgrade applies
+  before `originalApplied` is on the card. When the world refuses that stamp,
+  a round's record of the original — the entry's `rolled.stampOwed`, written
+  only after `recordMove` ran — stands in for it while the roller's decision
+  is owed: the round offers the upgrade, and a press writes the stamp from
+  that record before it is judged (`openOwedUpgrade`). Free-flow keeps no
+  such record: the GMs' payoff card (`upgradeOpen`) has the Retry.
+- **Rejected:** `roundClosed` as the only store (a refused write reopened a
+  result the round had told — A03); a press let through on the round's word
+  without the stamp written (every reader checks the stamp); a stamp written
+  before the original is recorded (F02's double apply).
+
+---
+
 ## Issue #362 D6: a one-word name counts only when capitalised as typed, or in address position (2026-11)
 
 **Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D6 NAME-AS-ORDINARY-WORD; the maintainer's answer A of 2026-11-17 — "a one-word name counts only when capitalised as typed (or in address position) — fellow-PC rule and the relevance resolver".) Two rules read a player's typed line for names, and both matched a name's single word in any case — while the module's own name oracles give ordinary words (Will, Ash, Echo, Hope, Sage; callsigns Ghost, Shadow, Static).
