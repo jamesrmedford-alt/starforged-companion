@@ -186,6 +186,23 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **A "New vow recorded" card posted before you named the vow now shows its name, rank and stakes once you do, and offers rewards for that vow** (issue #364).
 - Fixed: **Deleting an NPC's card clears the link from vows sworn for them** (issue #364), so a won fight no longer offers to deepen that bond and fulfilling the vow lists no step that cannot be applied. The GMs are told which vows.
 - Changed: **The X-Card on a Make a Connection with someone the crew already knew also takes back the bond that roll added** (issue #364). The NPC and any earlier bond stay; a bond that has been marked since is kept, and the GMs are told.
+- Fixed: **A Sojourn miss is no longer narrated as if its price were already paid** (issue #364 follow-up). The narration shows the price on offer until you choose, delivers it once you pick "No relief", and shows no price at all when you take on the community's need with a vow.
+- Added: **The Confirm Move dialog and the Round window say which vehicle or companion a stated miss would hit** (issue #364 follow-up), for example "Withstand Damage −1 · Hoverbike". Nothing is named when the cost could land elsewhere.
+- Fixed: **A hidden plan's escalation that is taken back is owed again even when something else was written to that plan since** (issue #364 follow-up). After a burn or the X-Card removed the escalation scene, the step stayed marked as played if, say, a clue had been shown in between.
+- Fixed: **The X-Card on a hidden plan's escalation scene, after another price was paid, puts the plan's clock back one step short of full** (issue #364 follow-up), so the removed escalation is owed on the next price instead of several prices away.
+- Fixed: **Burning momentum on a miss whose price set off a hidden plan's escalation strikes that scene even when the same clock has triggered again since** (issue #364 follow-up). The later escalation stands.
+- Fixed: **A move resolved while the X-Card is in play still records the hidden plan it owes** (issue #364 follow-up) — a new enemy its price revealed, an expedition it began — so the next narration can pick it up.
+- Fixed: **A Batch Mode round left waiting on a player's Burn, Improve or Keep when the table went quiet is kept and narrated when the GM's game next loads** (issue #364 follow-up), instead of being closed without its narration.
+- Fixed: **When a won fight's extra milestone from a burned or improved result could not be recorded, the GMs get a card with a Retry** (issue #364 follow-up), instead of the milestone being lost.
+- Fixed: **A move card improved to a strong hit strikes through the original result (for example "Miss") and says what the strong hit brings**, as a burned card does (issue #364 follow-up).
+- Fixed: **An ordinary word in a player's line ("an echo on the scanner") no longer names an NPC whose whole name is that one word when Make a Connection decides who the connection is with** (issue #364 follow-up). Write the name with its capital, or address them.
+- Fixed: **Setting a course for a renamed place by its old working label takes the ship to that place** even when a settlement's name is one of the words in the label (issue #364 follow-up).
+- Fixed: **After a GM deletes an NPC's card, victory cards already in chat no longer offer "Deepen your bond" with them** (issue #364 follow-up). The button is switched off and says why, instead of reporting "not found" to the GMs when pressed.
+- Fixed: **When the X-Card removes a Make a Connection that had confirmed a waiting New Entities row for an NPC who already had a card, the row goes back to waiting for your review** (issue #364 follow-up), along with the bond being taken back.
+- Changed: **Un-ticking Cursed on the starship sheet itself stands** (issue #364 follow-up). It is the way to correct a mistaken tick, and the ship is no longer described as cursed in its portrait prompt or the Companion's own record afterwards. Un-ticking Cursed on the STARSHIP asset card still ticks it again.
+- Fixed: **Two beats narrated at the same moment are no longer written to the same pattern** (issue #364 follow-up).
+- Fixed: **A vow you name on its sheet while the GM is away (for instance mid-reload) shows its name, rank and stakes on its "New vow recorded" card, with rewards for that vow, once the GM is back** (issue #364 follow-up).
+- Fixed: **If a reward card's options change at the moment you choose one, nothing is promised and you are asked to choose again** (issue #364 follow-up), instead of being given a different reward.
 
 ## [1.8.1] — 2026-11-12
 
