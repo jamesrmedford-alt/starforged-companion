@@ -84,7 +84,9 @@ record and pin for it).
   Actor (the token drag) is to a charted place and stays; so is one named by
   the working label a charted destination's record keeps, its location
   renamed since — its `moveTargetId` the site's location Actor, which the
-  arrival docks at by id (issue #362 AC50).
+  arrival docks at by id (issue #362 AC50; the GM's `!at` by that label finds
+  the site the same way — issue #364 AT-COMMAND-OLD-LABEL, § Location
+  tracking).
 
 ## 1. Setting out
 
@@ -299,7 +301,15 @@ record and pin for it).
   (known-issues AT-PARTIAL-NAME-SHIP) — its pick is the exact name, a name
   it begins ("Bleak"), then one name inside the other as whole words, either
   way (W30's rule: the raw substring rung found "home" inside "Rockhome", and
-  a Set a Course or `!at` "home" docked the ship there — issue #345 AA23) —
+  a Set a Course or `!at` "home" docked the ship there — issue #345 AA23).
+  `!at` alone asks one more exact rung, after the exact name and before the
+  looser ones (`resolveCurrentLocationName`'s `siteRecordNames`): the name a
+  site's discovery record keeps — a charted destination's old working label,
+  its location renamed since — resolved to the site's location by its id
+  (`precursorSites.siteNamedExactly`); `!at ‹old working label›` found
+  nothing while a Set a Course by it arrived (issue #364
+  AT-COMMAND-OLD-LABEL; the course takes that step in
+  `rerouteUnchartedCourse`, issue #362 AC50) —
   and every resolver by name
   (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
   narrator's ship / position too; and since issue #345 AA06 the narrator's

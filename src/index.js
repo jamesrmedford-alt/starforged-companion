@@ -103,6 +103,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
 import { courseReroutedText } from "./moves/travel.js";
+import { siteNamedExactly } from "./sectors/precursorSites.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -8188,11 +8189,22 @@ function escapeChatHtml(s) {
  * current location, the ship and its token on the wrong map (issue #342 Z15;
  * the site ladder's rule, issue #321 U48).
  *
+ * `siteRecordNames` (the GM's `!at`) adds one exact rung, after the exact
+ * name and before the looser ones: the name a site's discovery record keeps —
+ * an uncharted destination's working label, its location renamed since, as
+ * its Site Discovered card invites — resolved to the site's location by its
+ * id (precursorSites.siteNamedExactly; the active sector's first). The
+ * location is known here by its new name only, so `!at ‹old working label›`
+ * found nothing while a Set a Course by that label arrived (issue #364
+ * AT-COMMAND-OLD-LABEL; the course takes the same step in travel.js
+ * rerouteUnchartedCourse, issue #362 AC50).
+ *
  * @param {string} name
  * @param {Object} campaignState
+ * @param {{ siteRecordNames?: boolean }} [opts]
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
-export function resolveCurrentLocationName(name, campaignState) {
+export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false } = {}) {
   const target = name?.trim().toLowerCase();
   if (!target) return null;
 
@@ -8226,7 +8238,14 @@ export function resolveCurrentLocationName(name, campaignState) {
     const hits = candidates.filter(fits);
     return (activeSectorId && hits.find(c => c.entity?.sectorId === activeSectorId)) || hits[0] || null;
   };
+  // The site whose discovery record keeps this name, as its listed location.
+  const byRecordName = () => {
+    const actorId = siteNamedExactly(Array.isArray(campaignState?.sectors) ? campaignState.sectors : [], name,
+      { activeSectorId })?.site?.actorId;
+    return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
+  };
   return pick(c => c.lc === target)
+      ?? (siteRecordNames ? byRecordName() : null)
       ?? pick(c => c.lc.startsWith(target))
       ?? pick(c => wholeWordsFit(c.lc, target))
       ?? null;
@@ -8284,7 +8303,10 @@ async function handleAtCommand(message) {
     return;
   }
 
-  const match = resolveCurrentLocationName(arg, campaignState);
+  // A site is found by the name its discovery record keeps too — the working
+  // label the table still uses after the GM renamed its location (issue #364
+  // AT-COMMAND-OLD-LABEL).
+  const match = resolveCurrentLocationName(arg, campaignState, { siteRecordNames: true });
   if (!match) {
     ui.notifications.warn(`No settlement, location, or planet named "${arg}" found.`);
     return;
