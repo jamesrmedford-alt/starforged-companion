@@ -103,7 +103,17 @@ recorded under its name promoted to it; its bond is §2's.
   the card said "Connection made" and nothing was made, and a later Confirm
   bonded the old narration's PC); an active listed NPC card — a crewmate's
   contact — gets the roller's bond Item, no second card ("give focus to an
-  existing relationship"); a connection row the GM dismissed is taken off
+  existing relationship"; the Item this creates carries the narration's id,
+  `bondedByNarrationId` — `registerConnectionOnActiveCharacter`'s
+  `narrationId` → `actorBridge.createCharacterBondItem` — as does the bond a
+  confirmed row adds to an NPC who exists already: an X-Card on that
+  narration takes that bond back, `safety.js` →
+  `actorBridge.retractNarrationBondItems`, found by the stamp and never by
+  name — the NPC's card stays, a bond the PC held before the hit carries no
+  stamp and is not touched, and one the table has marked since stays with
+  the GMs whispered whose, `postKeptBondsNotice`; the hit made no card, so the
+  X-Card removed the narration and left its bond on the sheet — issue #364
+  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling); a connection row the GM dismissed is taken off
   `dismissedEntities` and confirmed as the roller's, as a pending row is
   (issue #345 AA19 — the detection pass leaves an established or dismissed
   name out). Which one is the player's line's to say (`lineText`; a Batch

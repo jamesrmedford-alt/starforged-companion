@@ -1408,17 +1408,26 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * Idempotent: if an Item flagged with this connection's id already exists
  * on the actor, returns it without creating a duplicate.
  *
+ * `narrationId` — the narration whose Make a Connection hit puts this bond
+ * on an NPC the table already knew: stamped on the Item it creates
+ * (`bondedByNarrationId`), so an X-Card on that narration takes that bond
+ * back and no other (retractNarrationBondItems; issue #364
+ * DELETED-NPC-NAME-REFERENCES). An Item that exists already is returned as it
+ * is, unstamped: a bond from before the hit is not the hit's.
+ *
  * @param {Actor} actor
- * @param {{ name: string, rank?: string, connectionId?: string }} data
+ * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterBondItem(actor, data) {
+  const narrationId = typeof data?.narrationId === "string" && data.narrationId ? data.narrationId : null;
   return createCharacterProgressItem(actor, {
     subtype:    "bond",
     name:       data?.name || "Unknown Connection",
     rank:       data?.rank,
     flagKey:    "connectionId",
     flagValue:  data?.connectionId ?? null,
+    ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId } } : {}),
   });
 }
 
@@ -1560,6 +1569,53 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
     deleted++;
   }
   return { marked: false, deleted };
+}
+
+/**
+ * Take back the bonds an X-carded narration's Make a Connection hit put on
+ * NPCs the table already knew (issue #364 DELETED-NPC-NAME-REFERENCES; the
+ * maintainer's ruling: the X-Card takes the bond back). The hit made no NPC —
+ * the card was there before it — so the X-Card's removal of the connections
+ * a narration created (connection.retractNarrationConnections) left the bond
+ * Item on the roller's sheet: CHARACTER STATE and the Connections tab went on
+ * listing a connection made by a beat the table removed. The bond Item is
+ * found by the narration's id stamped on it when the hit created it
+ * (`bondedByNarrationId` — createCharacterBondItem), never by name: a bond
+ * the PC held before the hit carries no stamp and is not touched, and the NPC
+ * card stays. One the table has marked since — a tick, a forged bond, a loss
+ * — is kept, as a used connection is (issue #338 D6(ii)), and returned for
+ * the GMs' notice. The delete is the module's write, with `suppressLog`
+ * (issue #362 AC76). Canonical GM (the X-Card's finish). Never throws.
+ *
+ * @param {string[]} narrationIds — the removed narrations
+ * @returns {Promise<{ deleted: number, kept: Array<{ actorName: string, name: string }> }>}
+ */
+export async function retractNarrationBondItems(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  const out = { deleted: 0, kept: [] };
+  if (!removed.size) return out;
+  for (const actor of getPlayerActors()) {
+    const items = (actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []))
+      .filter(item => item?.type === "progress" && item.system?.subtype === "bond"
+        && removed.has(item.flags?.[MODULE_ID]?.bondedByNarrationId));
+    for (const item of items) {
+      const marked = Number(item.system?.current ?? 0) > 0 || item.system?.completed === true
+        || item.flags?.[MODULE_ID]?.lost === true;
+      if (marked) {
+        out.kept.push({ actorName: String(actor.name ?? ""), name: String(item.name ?? "") });
+        continue;
+      }
+      try {
+        refuseStaleActorWrite('retractNarrationBondItems');
+        await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
+        out.deleted++;
+      } catch (err) {
+        console.warn(`actorBridge | retractNarrationBondItems: ${item?.name ?? 'a bond'} on ${actor?.name ?? actor?.id} was not removed:`, err?.message ?? err);
+      }
+      invalidateActorCache(actor.id);
+    }
+  }
+  return out;
 }
 
 /**

@@ -2898,6 +2898,10 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     if (existing) {
       await registerConnectionOnActiveCharacter(existing, {
         ...draftBondHolder(message, opts),
+        // A Make a Connection confirming the row of an NPC who exists already
+        // adds a bond to a known NPC: stamped, for an X-Card on its narration
+        // (issue #364 DELETED-NPC-NAME-REFERENCES). A GM's Confirm passes none.
+        narrationId: opts.narrationId ?? null,
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
@@ -3277,7 +3281,9 @@ async function connectChosenFigure(pick, slot, dismissed, narrationId) {
       console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
   }
   if (pick.kind === "listed") {
-    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId });
+    // The NPC was known before this hit: the bond it adds carries the
+    // narration's id, for an X-Card on it (issue #364 DELETED-NPC-NAME-REFERENCES).
+    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId, narrationId });
     return { entity: { type: "connection", name: pick.record.name }, record: pick.record };
   }
   const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
@@ -4064,11 +4070,19 @@ function escapeHtml(s) {
  * With no PC to hold it, this is a no-op. Idempotent per actor and
  * connection (createCharacterBondItem).
  *
+ * `narrationId` — a Make a Connection hit bonding an NPC the table already
+ * knew (a listed card; a draft row whose NPC exists): the bond Item this call
+ * creates carries it, so an X-Card on that narration takes the bond back
+ * (actorBridge.retractNarrationBondItems — issue #364
+ * DELETED-NPC-NAME-REFERENCES). Never passed for an NPC the narration itself
+ * made: that card carries the stamp, and its bonds go or stay with it
+ * (connection.retractNarrationConnections).
+ *
  * @param {Object} record — the connection record (`_id`, `name`, `rank`)
- * @param {{ actorId?: string|null, actors?: Actor[]|null }} [target]
+ * @param {{ actorId?: string|null, actors?: Actor[]|null, narrationId?: string|null }} [target]
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null } = {}) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null } = {}) {
   if (!record?._id) return;
   const holders = Array.isArray(actors)
     ? actors.filter(isPlayerCharacterActor)
@@ -4078,6 +4092,7 @@ export async function registerConnectionOnActiveCharacter(record, { actorId = nu
       name:         record.name,
       rank:         record.rank,
       connectionId: record._id,
+      narrationId,
     });
   }
 }

@@ -189,7 +189,11 @@ layers. This file is the never-break list.
    it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
    connection it auto-creates or confirms from a pending draft row, deleted
    while unused (the row back to pending), else named to the GMs (D6(ii);
-   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
+   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) — and the bond Item a Make a
+   Connection hit puts on an NPC the table already knew
+   (`bondedByNarrationId`), taken back while unmarked, the NPC's card and any
+   earlier bond left alone (issue #364 DELETED-NPC-NAME-REFERENCES)
+   (issue #329 X01 — a new capture writer takes the id from its
    caller, and checks the stored `xCardedNarrationIds` right before it
    writes — `isNarrationXCarded`, after any Claude call — so a capture still
    running when the card is played writes nothing more: XCARD-LATE-CAPTURE;
