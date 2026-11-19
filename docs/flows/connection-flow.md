@@ -117,7 +117,14 @@ recorded under its name promoted to it; its bond is §2's.
   stamp and is not touched, and one the table has marked since stays with
   the GMs whispered whose, `postKeptBondsNotice`; the hit made no card, so the
   X-Card removed the narration and left its bond on the sheet — issue #364
-  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling); a connection row the GM dismissed is taken off
+  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling; the bond a confirmed
+  row adds carries that row too, `bondedFromDraft` — the card's id and the
+  row's index, `confirmDraft`'s link — and the X-Card that takes the bond
+  back reopens the row, `retractNarrationBondItems`'s `reopen` →
+  `entityExtractor.reopenConfirmedDraftRow`, pending again or as a removed
+  NPC's row goes; a kept bond's row stays confirmed — issue #364
+  XCARD-BOND-DRAFT-ROW-CONFIRMED: the row stayed confirmed by a beat the
+  table removed); a connection row the GM dismissed is taken off
   `dismissedEntities` and confirmed as the roller's, as a pending row is
   (issue #345 AA19 — the detection pass leaves an established or dismissed
   name out). Which one is the player's line's to say (`lineText`; a Batch

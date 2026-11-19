@@ -2886,6 +2886,10 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   }
 
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+  // The row, for what a Make a Connection's narration makes of it: the X-Card
+  // on that narration puts it back as it was (reopenConfirmedDraftRow). A row
+  // the GM had dismissed goes back to dismissed (XCARD-KEEPS-UNDISMISS).
+  const rowLink = { messageId: message?.id ?? null, index: draftIndex, ...(draft.status === "dismissed" ? { status: "dismissed" } : {}) };
 
   // Already created — by a Confirm whose card write was lost, or another GM's:
   // mark the row, create nothing twice (issue #321 U25). A connection's bond
@@ -2900,8 +2904,12 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         ...draftBondHolder(message, opts),
         // A Make a Connection confirming the row of an NPC who exists already
         // adds a bond to a known NPC: stamped, for an X-Card on its narration
-        // (issue #364 DELETED-NPC-NAME-REFERENCES). A GM's Confirm passes none.
+        // (issue #364 DELETED-NPC-NAME-REFERENCES) — and with the row it
+        // confirms, which that X-Card reopens with the bond (issue #364
+        // XCARD-BOND-DRAFT-ROW-CONFIRMED: the row stayed confirmed by a beat
+        // the table removed). A GM's Confirm passes none.
         narrationId: opts.narrationId ?? null,
+        draftRow:    opts.narrationId ? rowLink : null,
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
@@ -2957,8 +2965,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         // A Make a Connection's narration made it (confirmNamedPendingConnection).
         ...(opts.narrationId ? {
           createdFromNarrationId: opts.narrationId,
-          // A row the GM had dismissed goes back to dismissed (XCARD-KEEPS-UNDISMISS).
-          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex, ...(draft.status === "dismissed" ? { status: "dismissed" } : {}) },
+          createdFromDraft:       rowLink,
         } : {}),
       }, campaignState);
       // An X-Card on that narration meanwhile takes the stamped card back:
@@ -3790,7 +3797,14 @@ export async function withdrawNarrationDrafts(narrationIds) {
  * `status`, XCARD-KEEPS-UNDISMISS). A row no longer confirmed is left as it
  * is. Canonical GM (the X-Card's finish).
  *
- * @param {{ messageId?: string|null, index?: number, status?: "dismissed" }} link — the connection's `createdFromDraft`
+ * The same for a row the hit confirmed for an NPC who existed already: it
+ * made no card, so the link rides the bond Item it put on the roller's sheet
+ * (`bondedFromDraft`), and the row reopens when the X-Card takes that bond
+ * back (actorBridge.retractNarrationBondItems → safety.js finishXCardRemoval;
+ * issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED).
+ *
+ * @param {{ messageId?: string|null, index?: number, status?: "dismissed" }} link — the connection's
+ *   `createdFromDraft`, or a bond Item's `bondedFromDraft`
  * @returns {Promise<string|null>} the row's new status, or null when nothing changed
  */
 export async function reopenConfirmedDraftRow(link) {
@@ -4103,13 +4117,17 @@ function escapeHtml(s) {
  * (actorBridge.retractNarrationBondItems — issue #364
  * DELETED-NPC-NAME-REFERENCES). Never passed for an NPC the narration itself
  * made: that card carries the stamp, and its bonds go or stay with it
- * (connection.retractNarrationConnections).
+ * (connection.retractNarrationConnections). `draftRow` — the draft row that
+ * hit confirmed for the known NPC (confirmDraft's link: the card's id and the
+ * row's index), stamped beside it so the X-Card reopens the row with the bond
+ * (issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED).
  *
  * @param {Object} record — the connection record (`_id`, `name`, `rank`)
- * @param {{ actorId?: string|null, actors?: Actor[]|null, narrationId?: string|null }} [target]
+ * @param {{ actorId?: string|null, actors?: Actor[]|null, narrationId?: string|null,
+ *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null }} [target]
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null } = {}) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null, draftRow = null } = {}) {
   if (!record?._id) return;
   const holders = Array.isArray(actors)
     ? actors.filter(isPlayerCharacterActor)
@@ -4120,6 +4138,7 @@ export async function registerConnectionOnActiveCharacter(record, { actorId = nu
       rank:         record.rank,
       connectionId: record._id,
       narrationId,
+      draftRow,
     });
   }
 }

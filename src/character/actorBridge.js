@@ -1413,21 +1413,27 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * (`bondedByNarrationId`), so an X-Card on that narration takes that bond
  * back and no other (retractNarrationBondItems; issue #364
  * DELETED-NPC-NAME-REFERENCES). An Item that exists already is returned as it
- * is, unstamped: a bond from before the hit is not the hit's.
+ * is, unstamped: a bond from before the hit is not the hit's. `draftRow` —
+ * the New Entities row that hit confirmed for the NPC (the card's id and the
+ * row's index), stamped beside it (`bondedFromDraft`): taking the bond back
+ * hands the row back too, for the X-Card to reopen (issue #364
+ * XCARD-BOND-DRAFT-ROW-CONFIRMED). Only with a `narrationId`.
  *
  * @param {Actor} actor
- * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null }} data
+ * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null,
+ *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterBondItem(actor, data) {
   const narrationId = typeof data?.narrationId === "string" && data.narrationId ? data.narrationId : null;
+  const draftRow = narrationId && data?.draftRow && typeof data.draftRow === "object" ? data.draftRow : null;
   return createCharacterProgressItem(actor, {
     subtype:    "bond",
     name:       data?.name || "Unknown Connection",
     rank:       data?.rank,
     flagKey:    "connectionId",
     flagValue:  data?.connectionId ?? null,
-    ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId } } : {}),
+    ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId, ...(draftRow ? { bondedFromDraft: draftRow } : {}) } } : {}),
   });
 }
 
@@ -1587,12 +1593,21 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
  * the GMs' notice. The delete is the module's write, with `suppressLog`
  * (issue #362 AC76). Canonical GM (the X-Card's finish). Never throws.
  *
+ * `reopen` — the New Entities rows the removed bonds had confirmed (each
+ * Item's `bondedFromDraft`: a card's id and a row's index): the hit confirmed
+ * a pending row for an NPC who existed already, and with its bond gone the
+ * row is the X-Card's to reopen (safety.js finishXCardRemoval →
+ * entityExtractor.reopenConfirmedDraftRow; issue #364
+ * XCARD-BOND-DRAFT-ROW-CONFIRMED — it stayed "confirmed"). A kept bond's row
+ * stays confirmed.
+ *
  * @param {string[]} narrationIds — the removed narrations
- * @returns {Promise<{ deleted: number, kept: Array<{ actorName: string, name: string }> }>}
+ * @returns {Promise<{ deleted: number, kept: Array<{ actorName: string, name: string }>,
+ *   reopen: Array<{ messageId: string|null, index: number, status?: "dismissed" }> }>}
  */
 export async function retractNarrationBondItems(narrationIds) {
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
-  const out = { deleted: 0, kept: [] };
+  const out = { deleted: 0, kept: [], reopen: [] };
   if (!removed.size) return out;
   for (const actor of getPlayerActors()) {
     const items = (actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []))
@@ -1605,10 +1620,12 @@ export async function retractNarrationBondItems(narrationIds) {
         out.kept.push({ actorName: String(actor.name ?? ""), name: String(item.name ?? "") });
         continue;
       }
+      const row = item.flags?.[MODULE_ID]?.bondedFromDraft ?? null;
       try {
         refuseStaleActorWrite('retractNarrationBondItems');
         await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
         out.deleted++;
+        if (row && typeof row === "object") out.reopen.push(row);
       } catch (err) {
         console.warn(`actorBridge | retractNarrationBondItems: ${item?.name ?? 'a bond'} on ${actor?.name ?? actor?.id} was not removed:`, err?.message ?? err);
       }
