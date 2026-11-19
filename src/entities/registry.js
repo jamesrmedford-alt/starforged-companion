@@ -20,6 +20,7 @@
 
 import { readSheetPronouns, readCommandVehicleIntegrity, unreconciledRecordIntegrity } from '../character/actorBridge.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { reportSnapshotEvent } from '../narration/snapshotEvents.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -208,6 +209,88 @@ export function withSheetNotes(typeKey, document, data) {
     sheet.integrityMax = integrity.max;
   }
   return Object.keys(sheet).length ? { ...data, ...sheet } : data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEXT TAKEN OFF A NOTES TAB (issue #364 SNAPSHOT-NOTES-TAB-DELETE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The update option an edit that takes text off an NPC card's or ship's Notes tab is stamped with (registerSheetNotesRemovalHook). */
+const NOTES_LOST_OPTION = 'sheetNotesLostText';
+
+/** A Notes tab's HTML as its blocks of plain text — a paragraph, a list item, a heading, a line — each with its whitespace collapsed. */
+function notesBlocks(html) {
+  return String(html ?? '')
+    .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6]|\/blockquote|\/tr|\/section)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .split('\n')
+    .map(block => block.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether a Notes tab edited from `before` to `after` lost text: a block of
+ * the old notes — a paragraph, a list item, a heading — that the new ones no
+ * longer hold, deleted or reworded. Text added, moved or reformatted, and a
+ * portrait or other markup changed, lose nothing. Pure.
+ *
+ * @param {string} before — the notes' HTML as they were
+ * @param {string} after — as they are written
+ * @returns {boolean}
+ */
+export function sheetNotesLoseText(before, after) {
+  const now = notesBlocks(after).join('\n');
+  return notesBlocks(before).some(block => !now.includes(block));
+}
+
+/**
+ * Take a new world snapshot once text leaves an NPC card's or a ship's Notes
+ * tab (issue #364 SNAPSHOT-NOTES-TAB-DELETE). The Notes tab is those
+ * entities' notes (withSheetNotes, issue #329 X12), so the cached snapshot
+ * states them on the entity's card — and went on stating a line a GM deleted
+ * on the sheet: the record still stands (no `record_removed`), the edited
+ * card rides under CHANGED SINCE THE SNAPSHOT only missing the line, and one
+ * card is far below `changes_large`. rules/narrator-memory.md 7c: a path that
+ * rewrites a record to take content back reports an event of its own — the
+ * Entities panel's Remove does (`entity_detail_removed`, issue #362 AC65), and
+ * a sheet edit is the same removal made by hand.
+ *
+ * The notes as they were are readable only where the edit is requested, so
+ * every client compares them there (preUpdateActor) and stamps the update's
+ * options; the canonical GM — the single emitter — reports the event when the
+ * stamped update lands (updateActor), whoever made the edit. Idempotent;
+ * register once at ready, on every client.
+ */
+export function registerSheetNotesRemovalHook() {
+  if (registerSheetNotesRemovalHook._installed) return;
+  if (typeof globalThis.Hooks?.on !== 'function') return;
+  registerSheetNotesRemovalHook._installed = true;
+  const notesChange = (change) => {
+    const expanded = change?.system?.notes;
+    return expanded !== undefined ? expanded : change?.['system.notes'];
+  };
+  globalThis.Hooks.on('preUpdateActor', (actor, change, options) => {
+    try {
+      if (!options || typeof options !== 'object') return;
+      if (!hasSheetNotes(actor?.flags?.[MODULE_ID]?.entityType)) return;
+      const next = notesChange(change);
+      if (typeof next !== 'string') return;
+      if (!sheetNotesLoseText(actor?.system?.notes, next)) return;
+      options[MODULE_ID] = { ...(options[MODULE_ID] ?? {}), [NOTES_LOST_OPTION]: true };
+    } catch (err) {
+      console.warn(`${MODULE_ID} | registry: a Notes tab edit could not be compared with the notes before it:`, err?.message ?? err);
+    }
+  });
+  globalThis.Hooks.on('updateActor', (actor, _change, options) => {
+    try {
+      if (options?.[MODULE_ID]?.[NOTES_LOST_OPTION] !== true) return;
+      if (!isCanonicalGM()) return;
+      reportSnapshotEvent('entity_detail_removed');
+    } catch (err) {
+      console.warn(`${MODULE_ID} | registry: text taken off ${actor?.name ?? 'a card'}'s Notes tab was not reported to the world snapshot:`, err?.message ?? err);
+    }
+  });
 }
 
 /**

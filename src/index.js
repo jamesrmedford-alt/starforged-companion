@@ -231,7 +231,7 @@ import {
   DEFAULT_NPC_VOICE_ID,
   DEFAULT_NPC_FEMININE_VOICE_ID,
 } from "./audio/elevenlabs.js";
-import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
+import { getEntityDocument, readEntityFlag, registerSheetNotesRemovalHook } from "./entities/registry.js";
 import { resolveSpeakerActorId, messageAuthorId } from "./multiplayer/speaker.js";
 import { RUN_ON, dispatchChatCommand } from "./multiplayer/commandRouting.js";
 import {
@@ -9502,6 +9502,7 @@ Hooks.once("ready", () => {
     void renamePlanClocksBySubject();
   }
   registerEntityRenameSyncHook();
+  registerSheetNotesRemovalHook();         // #364: text taken off an NPC card's or ship's Notes tab takes a new world snapshot
   registerConnectionDeleteHook();          // #362 D10: a GM's delete of an NPC card tears its connection down
   registerStarshipSeedHook();
   registerCommandVehicleHook();
