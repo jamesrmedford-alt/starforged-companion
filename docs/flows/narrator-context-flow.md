@@ -1054,7 +1054,12 @@ short of full and its vignette struck by that id, issue #362 AC33 — the price'
 receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
 advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that
 narration did even after a later price turned the emptied clock on, and never
-takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE);
+takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE;
+when the clock triggered again before the first price is burned its stamp is
+the later trigger's, so the burned price's own vignette — a live card under the
+id its receipt names, `clocksWithVignetteWritten` — is struck by that id and the
+clock left as the later trigger and the prices after it left it, no segment
+given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its

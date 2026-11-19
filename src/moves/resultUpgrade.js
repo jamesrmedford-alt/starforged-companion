@@ -280,11 +280,16 @@ async function runUpgradeStep(step) {
       // trigger vignette the price's receipt names, wherever later prices
       // have turned the clock since (issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE).
       const filled = step.clocks.filter(c => c.triggered === true);
+      const vignettes = Object.fromEntries(filled
+        .filter(c => typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId)
+        .map(c => [c._id, c.vignetteNarrationId]));
       const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id), {
         triggered: filled.map(c => c._id),
-        vignettes: Object.fromEntries(filled
-          .filter(c => typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId)
-          .map(c => [c._id, c.vignetteNarrationId])),
+        vignettes,
+        // The ones whose vignette stands on the table: struck by that id even
+        // when the clock has triggered again since and carries the later
+        // trigger's stamp (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
+        narrated: clocksWithVignetteWritten(vignettes),
       });
       return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
@@ -984,6 +989,30 @@ async function undoSupersededPlans(ids, label) {
   }
 }
 
+/**
+ * The clocks whose trigger vignette, named on a price's receipt
+ * (`vignetteNarrationId`), stands written on the table: a live trigger
+ * vignette card of that clock under that narration id — not X-carded, not
+ * already struck. The burn's clock rewind takes them from here (clocks.js
+ * revertTensionClocksForBurn `narrated`): a clock that triggered again since
+ * carries the later trigger's stamp, and says nothing of this one (issue #364
+ * PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
+ *
+ * @param {Object<string, string>} vignettes — narration id by clock id
+ * @returns {string[]} clock ids
+ */
+function clocksWithVignetteWritten(vignettes) {
+  const named = Object.entries(vignettes ?? {});
+  if (!named.length) return [];
+  const live = new Set();
+  for (const m of allMessages()) {
+    const f = m?.flags?.[MODULE_ID];
+    if (f?.clockVignetteCard === true && f.narratorCard === true && f.xCarded !== true && f.burnSuperseded !== true
+      && typeof f.clockId === "string" && typeof f.narrationId === "string") live.add(`${f.clockId}\n${f.narrationId}`);
+  }
+  return named.filter(([clockId, narrationId]) => live.has(`${clockId}\n${narrationId}`)).map(([clockId]) => clockId);
+}
+
 /** Whether the scene ledgers hold anything the given narrations wrote and that still stands. */
 function ledgersHold(cs, ids) {
   const theirs = (e) => !!e && typeof e === "object" && ids.has(e.narrationId);
@@ -1065,7 +1094,10 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     // A hidden plan's clock whose trigger vignette paced it is undone by that
     // vignette, by its narration (`pacedBy`, clocks.js revertTensionClocksForBurn):
     // the clock may have triggered before in the session, and the newest of
-    // its vignettes need not be this price's (issue #362 AC33).
+    // its vignettes need not be this price's (issue #362 AC33) — nor, once
+    // the clock has triggered again, the one its stamp names: the rewind then
+    // reports the price's own vignette under the same key, from its receipt
+    // (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
     const paced = new Map();
     for (const c of clocks) {
       const id = vignetteClockId(c);

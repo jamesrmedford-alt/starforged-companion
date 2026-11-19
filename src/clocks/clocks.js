@@ -602,13 +602,26 @@ export async function rearmClock(clockId) {
  * receipt from before the id was kept (`vignettes` without the clock) falls
  * back to the standing stamp.
  *
+ * A clock that triggered again since carries the later trigger's stamp, and
+ * the burned price's own vignette — written, live on the table (`narrated`,
+ * read from the chat by the caller) — was found by nothing: it stayed live
+ * fiction beside the reversal (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
+ * It is reported by the id the receipt names (`pacedBy`), for the upgrade to
+ * strike, and the clock is left exactly as it stands: the later trigger
+ * happened, its pacing — and every segment a price turned after it — is the
+ * clock's present state, and the burned price's own segment went into the
+ * trigger now taken back. No segment is given back, no stamp removed (a burn
+ * of the later price still finds its own).
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
- * @param {{ triggered?: string[], vignettes?: Object<string, string> }} [opts] — the clocks the
- *   reverted price filled, and the narration of each one's trigger vignette, by clock id
+ * @param {{ triggered?: string[], vignettes?: Object<string, string>, narrated?: string[] }} [opts] —
+ *   the clocks the reverted price filled; the narration of each one's trigger vignette, by clock
+ *   id; and those of them whose vignette stands written on the table
  * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
- *   the clocks taken out of their triggered state (empty when none, or nothing was written)
+ *   the clocks taken out of their triggered state, and those whose own trigger vignette is to be
+ *   struck by its id (`pacedBy`) with the clock left as it is (empty when none)
  */
-export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null } = {}) {
+export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null, narrated = [] } = {}) {
   return serialiseClockWrite(async () => {
     if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
@@ -616,18 +629,26 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
     const untriggered = [];
     const now = new Date().toISOString();
     const filledByPrice = new Set(Array.isArray(triggered) ? triggered : []);
+    const written = new Set(Array.isArray(narrated) ? narrated : []);
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
       if (c?.planId && filledByPrice.has(id)) {
         const wasFull = (c.filled ?? 0) >= c.segments;
         const target  = Math.max(0, c.segments - 1);
-        const pacedBy = pacingOfTrigger(c, vignettes?.[id]);
+        const named   = typeof vignettes?.[id] === "string" && vignettes[id] ? vignettes[id] : null;
+        const pacedBy = pacingOfTrigger(c, named);
         if (pacedBy) {
           c.active    = true;
           c.filled    = target;
           c.updatedAt = now;
           delete c.pacedBy;
           delete c.pacedFrom;
+        } else if (named && written.has(id)) {
+          // Its vignette was written and its pacing has been replaced since —
+          // the clock triggered again: the vignette goes by its id, the clock
+          // stands as the later trigger left it.
+          untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy: named });
+          continue;
         } else if ((c.filled ?? 0) > target) {
           c.filled = target;
           c.updatedAt = now;
