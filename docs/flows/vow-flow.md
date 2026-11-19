@@ -370,7 +370,13 @@ scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
 `sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
 Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
 `vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
-`narrationInputFrom` carries to the narration. The plan closes with its vow
+`narrationInputFrom` carries to the narration — and so does a hit rolled on
+the character sheet: the roll card's narration names the roller's own vow of
+that exact name, by its `vowId` (`registerNativeProgressRollHook` →
+`sheetRolledVowIds`, `resolveVowItemCopies`' `ownOnly`; it named none, so a
+vow reworded since its plan was filed, or one already closed on the sheet,
+was fulfilled with its plan left out — issue #364
+NATIVE-FULFIL-NO-ENDING-TRACK). The plan closes with its vow
 (issue #362 D4): a copy completed — fulfilled, forsaken, closed on the sheet —
 resolves it once no copy of the vow is open, its last copy deleted retires it
 (the canonical GM's `updateItem` / `deleteItem` hooks,
@@ -473,6 +479,11 @@ key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
 `RUN_ON.CLAUDE` ladder decided on every client from shared data): the keyed
 canonical GM when a keyed GM is connected, else the roller's own client with
 its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
+A Fulfill Your Vow hit carries the vow it ends (`endingTrackIds`, the roller's
+own vow's `vowId` — `sheetRolledVowIds`), so its hidden plan is in play to
+reveal its end, as a typed fulfilment's is (§3; issue #364
+NATIVE-FULFIL-NO-ENDING-TRACK) — on a GM's client: a player's own key reads no
+plan (issue #362 D1).
 Narrating only on the roller's client gave a keyless player "Narration
 unavailable" at a table whose GM holds the key (issue #321 U11). While Batch
 Mode is on, a participant's roll is narrated with the round instead (issue

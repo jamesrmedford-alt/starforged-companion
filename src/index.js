@@ -3464,6 +3464,31 @@ function rolledByPlayerCharacter(message) {
 }
 
 /**
+ * The stable id of the vow a sheet roll scored — every copy's `vowId`, the
+ * subject its hidden plan is filed under (issue #353 Phase 4) — for the
+ * narration of its fulfilment (`endingTrackIds`; issue #364
+ * NATIVE-FULFIL-NO-ENDING-TRACK). The roll card names the vow Item as the
+ * roller's sheet does, so it is the roller's own vow of that exact name or
+ * none (resolveVowItemCopies' `ownOnly`): never another vow by a looser name,
+ * whose plan would be revealed in its place. None for a vow with no id (one
+ * the module never recorded has no plan filed under it).
+ *
+ * @param {string} source — the roll card's source: the vow Item's name
+ * @param {string|null} actorId — the roller's PC
+ * @returns {string[]}
+ */
+function sheetRolledVowIds(source, actorId) {
+  if (!actorId) return [];
+  try {
+    const { copies } = resolveVowItemCopies(source, { actorId, ownOnly: true });
+    return [...new Set(copies.map(({ item }) => item?.flags?.[MODULE_ID]?.vowId).filter(id => typeof id === "string" && id))];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | native-roll: the vow "${source}" could not be read for its plan — narrated without it:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -3569,6 +3594,18 @@ function registerNativeProgressRollHook() {
         // alone (issue #325 W20).
         resolution.consequences = mapConsequences(moveId, parsed.outcome, isMatch);
         resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "progress" });
+        // A hit ends the vow, and this is the narration that tells it: the
+        // vow's hidden plan — resolved in code as the vow is completed (issue
+        // #362 D4) — is in play to reveal its end, by the vow's stable id, as
+        // a typed Fulfill Your Vow's is (movePipeline.js). The sheet roll's
+        // narration named no ending vow, so the plan was left out and what
+        // was really behind the vow never came out (issue #364
+        // NATIVE-FULFIL-NO-ENDING-TRACK). With the round too, in Batch Mode.
+        if (moveId === "fulfill_your_vow" && resolution.consequences?.fulfillVow) {
+          // The sheet's speaker rolled it, as the payoff hook reads the roller.
+          const vowIds = sheetRolledVowIds(parsed.source, typeof message?.speaker?.actor === "string" ? message.speaker.actor : null);
+          if (vowIds.length) resolution.endingTrackIds = vowIds;
+        }
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome — with the round, in Batch Mode.
         if (toRound && await takeSheetRoll(message, resolution)) return null;
