@@ -7,7 +7,9 @@
  * shared state (no author / canonical-GM gate), and campaignState fields with
  * a writer but no reader (or the reverse). tests/unit/hookGates.test.js and
  * tests/unit/campaignStateFields.test.js turn those greps into checks; this
- * file is their shared lexer.
+ * file is their shared lexer — and holds the campaignState field scan itself
+ * (campaignStateFields), which campaignStateKeyClassification.test.js reads
+ * too: every field found must say who writes it (issue #364).
  *
  * Production source only: src/ minus src/integration/ (Quench is test code —
  * the same corpus split as scripts/deadscan.mjs).
@@ -16,6 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { stripComments } from "../../scripts/deadscan.mjs";
+import { CampaignStateSchema } from "../../src/schemas.js";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const SRC = path.join(ROOT, "src");
@@ -234,4 +237,102 @@ export function resolveFunctionSource(source, name) {
     }
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// campaignState fields — who touches which (issue #282 item 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Names that never hold anything but campaignState — fields seen on them join the field list. */
+const STRICT_NAMES = ['campaignState', 'cs', 'latestState', 'freshState', 'prevState', 'preState'];
+/** Conventional names that usually hold campaignState — counted, but never used to discover fields. */
+const LOOSE_NAMES = ['state', 'latest', 'fresh', 'stored', 'working'];
+
+const BIND = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;]{0,80}?settings\??\.get\??\.?\(\s*MODULE_ID\s*,\s*["']campaignState["']\s*\)(?!\s*\??\.)/g;
+
+const WRITE_AFTER = [
+  /^\s*(?:=(?!=)|\?\?=|\|\|=|&&=|\+=|-=|\+\+|--)/,                          // cs.f = … / cs.f += … / cs.f++
+  /^\??\.(?:push|unshift|splice|pop|shift|sort|reverse|fill)\s*\(/,          // cs.f.push(…)
+  /^(?:\??\.[A-Za-z_$][\w$]*|\[[^\]\n]*\])+\s*(?:=(?!=)|\?\?=|\|\|=|&&=)/,  // cs.f.g = … / cs.f[k] = …
+];
+
+/** End of the block enclosing `index` (the file's end at top level). */
+function enclosingBlockEnd(mask, index) {
+  let depth = 0;
+  for (let k = index; k >= 0; k--) {
+    if (mask[k] === '}') depth++;
+    else if (mask[k] === '{') {
+      if (depth === 0) return matchBracket(mask, k);
+      depth--;
+    }
+  }
+  return mask.length;
+}
+
+/** Every `<receiver>.<field>` access in one file, on the strict and loose names. */
+function accesses(src) {
+  // A variable bound from game.settings.get(…, "campaignState") is strict for
+  // the rest of its block only — the same name may hold a DOM node elsewhere.
+  const bound = [...src.code.matchAll(BIND)].map(m => ({
+    name: m[1], from: m.index, to: enclosingBlockEnd(src.mask, m.index),
+  }));
+  const isStrict = (receiver, at) =>
+    STRICT_NAMES.includes(receiver) || bound.some(b => b.name === receiver && at > b.from && at < b.to);
+  const names = [...new Set([...STRICT_NAMES, ...LOOSE_NAMES, ...bound.map(b => b.name)])];
+  const access = new RegExp(`(\\bdelete\\s+)?(?<![\\w$.])(${names.join('|')})\\??\\.([A-Za-z_$][\\w$]*)\\b(?!\\s*\\()`, 'g');
+  const out = [];
+  for (const m of src.mask.matchAll(access)) {
+    const [whole, del, receiver, name] = m;
+    const strict = isStrict(receiver, m.index);
+    if (!strict && !LOOSE_NAMES.includes(receiver)) continue;   // a bound name outside its block
+    const after = src.mask.slice(m.index + whole.length, m.index + whole.length + 60);
+    out.push({
+      name,
+      strict,
+      write: !!del || WRITE_AFTER.some(re => re.test(after)),
+      loc:   `${src.file}:${lineOf(src.text, m.index)}`,
+    });
+  }
+  return out;
+}
+
+let _fields = null;
+
+/**
+ * Every campaignState field production code knows — the keys of
+ * CampaignStateSchema, plus every field written or read on a name that only
+ * ever holds campaignState — with where each is written and read. Memoised.
+ *
+ * @returns {Map<string, { writes: string[], reads: string[] }>}
+ */
+export function campaignStateFields() {
+  if (_fields) return _fields;
+  const all = productionSources().flatMap(accesses);
+  // Pass 1 — the field list: schema keys, and anything seen on a strict name.
+  const fields = new Map();   // name → { writes: [loc], reads: [loc] }
+  for (const name of Object.keys(CampaignStateSchema)) fields.set(name, { writes: [], reads: [] });
+  for (const a of all) if (a.strict && !fields.has(a.name)) fields.set(a.name, { writes: [], reads: [] });
+  // Pass 2 — count every access to a listed field, loose names included.
+  for (const a of all) {
+    const f = fields.get(a.name);
+    if (f) (a.write ? f.writes : f.reads).push(a.loc);
+  }
+  _fields = fields;
+  return fields;
+}
+
+/**
+ * The names a field-list constant holds — `const NAME = Object.freeze([ '…', … ])`
+ * in a production file (the merge policies' lists).
+ *
+ * @param {string} file — repo-relative
+ * @param {string} constName
+ * @returns {string[]}
+ */
+export function listedNames(file, constName) {
+  const src = productionSources().find(s => s.file === file);
+  if (!src) throw new Error(`${file} not found`);
+  const m = new RegExp(`const\\s+${constName}\\s*=\\s*(?:Object\\.freeze\\(\\s*)?\\[([^\\]]*)\\]`).exec(src.code);
+  if (!m) throw new Error(`${constName} not found in ${file}`);
+  return [...m[1].matchAll(/["']([^"']+)["']/g)].map(x => x[1]);
 }

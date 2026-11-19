@@ -354,7 +354,7 @@ matched in the text with its strings intact. It reports:
   production entry point (`module.json` `esmodules`, minus the Quench entry).
 
 `--strict` exits 1 on any DEAD export or setting, and CI runs it that way
-after lint (issue #282 item 5). Three unit tests sweep for what the scan
+after lint (issue #282 item 5). Four unit tests sweep for what the scan
 can't see:
 
 - `tests/unit/campaignStateFields.test.js`: every campaignState field (the
@@ -382,6 +382,18 @@ can't see:
   helper that only such a call reaches — unless listed off it with a reason
   (none today). Its first run listed the 27 writers CAMPSTATE-CHAIN-REST put
   on the chain.
+- `tests/unit/campaignStateKeyClassification.test.js`: every campaignState
+  field (the same list as `campaignStateFields.test.js`) says who writes it —
+  store-owned, an id list, a scene ledger, merged by a rule of its own,
+  pipeline-written (naming the pipeline module that assigns it) or unwritten
+  — and the classification is checked against `STORE_OWNED_FIELDS`,
+  `ENTITY_ID_LISTS` and `SCENE_FIELDS` and against what a move's record
+  (`persistResolution`) really writes when the store and the working copy
+  differ on every field (§9). The record keeps the working copy for any field
+  no list names, so a field only its own writer writes was put back to its
+  move-start value by the next move — `crewSupply` and three session fields,
+  issue #362 AC55; a new field now fails here until it is classified (issue
+  #364 CAMPAIGNSTATE-KEY-CLASSIFICATION).
 
 Known blind spot: a *live*
 same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid
