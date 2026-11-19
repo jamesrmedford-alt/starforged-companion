@@ -305,6 +305,14 @@ Hooks.on("quenchReady", (quench) => {
   // confirmed in the Round window, read and narrated through a stubbed
   // endpoint, one round card; the window in the compact layout.
   registerBatchModeTests(quench);
+  // Document hook assumptions (issue #364 QUENCH-364-COVERAGE) — three issue
+  // #364 fixes rest on what Foundry hands a document hook, which the unit
+  // harness only models: a deleted journal page (or a journal deleted whole)
+  // with its flags still readable, an option stamped in preUpdateActor still
+  // on the options updateActor receives, and a deleted Item gone from its
+  // parent with its own system data still readable. Each is run on real
+  // documents, through the hook index.js registers.
+  registerDocumentHookAssumptionTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13207,5 +13215,370 @@ function registerBatchModeTests(quench) {
       });
     },
     { displayName: "STARFORGED: Batch Mode", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT HOOK ASSUMPTIONS (issue #364 QUENCH-364-COVERAGE) — three issue #364
+// fixes act from a document hook and rest on what Foundry hands that hook. The
+// unit suite models it (tests/helpers/multiClient.js fires the hook by hand,
+// with the document the test still holds); here each runs on real documents,
+// through the hooks index.js registers at ready:
+//   - PLAN-PAGE-DELETE-LEAVES-CLOCK — secrets.js registerPlanSubjectHooks:
+//     `deleteJournalEntryPage` hands the deleted page with its flags readable;
+//     `deleteJournalEntry` hands the journal with its pages still on it.
+//   - SNAPSHOT-NOTES-TAB-DELETE — registry.js registerSheetNotesRemovalHook:
+//     an option stamped on the update in `preUpdateActor` is on the options
+//     `updateActor` receives.
+//   - STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK — index.js
+//     registerCommandVehicleHook: `deleteItem` hands the removed Item, gone
+//     from its parent's items, its parent and `system.track` still readable.
+// The hooks act on the canonical GM alone, so the batch runs there (the CI
+// client is the only GM). No case calls Claude: none needs a key.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerDocumentHookAssumptionTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.documentHookAssumptions",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = MODULE_ID;
+
+      // Pinned for the batch (rules/ci-e2e.md → "Quench batch coupling"): a new
+      // card's or ship's creation hook writes nothing to the Notes tab or the
+      // ship's record while a case edits them, and reportSnapshotEvent marks
+      // nothing with the world snapshot switched off.
+      const PINNED = { autoSeedConnection: false, autoSeedStarship: false, worldSnapshot: true };
+      // What the cases' own production writes may change besides campaignState:
+      // the world snapshot's out-of-date mark (snapshotEvents.js — a plan made,
+      // an entity recorded, a detail removed) and the table's view of the plans
+      // (secrets.js TABLE_VIEW_SETTING). Put back as they stood.
+      const KEPT = ["worldSnapshotEvents", "narrativeSkeletonsTableView"];
+
+      const clone = (value) => (value !== null && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value);
+      const storedState = () => game.settings.get(MODULE, "campaignState") ?? {};
+      const clocksWithId = (state, id) => (state?.clocks ?? []).filter(c => c?._id === id);
+      const warnCleanup = (what) => (err) =>
+        console.warn(`${MODULE} | quench documentHookAssumptions: cleanup — ${what} failed:`, err?.message ?? err);
+
+      let ready = false;
+      let stateAtStart = null;
+      const settingsAtStart = {};
+
+      before(async function () {
+        this.timeout(30000);
+        const { isCanonicalGM } = await import(`${MODULE_PATH}/multiplayer/gmGate.js`);
+        // Skipped off the canonical GM: each hook under test returns at once on
+        // any other client (single emitter), so nothing here would run.
+        if (!game.user.isGM || !isCanonicalGM()) { this.skip(); return; }
+        stateAtStart = clone(storedState());
+        for (const key of KEPT) settingsAtStart[key] = clone(game.settings.get(MODULE, key));
+        for (const [key, value] of Object.entries(PINNED)) {
+          settingsAtStart[key] = game.settings.get(MODULE, key);
+          await game.settings.set(MODULE, key, value);
+        }
+        ready = true;
+      });
+
+      after(async function () {
+        this.timeout(30000);
+        if (stateAtStart) {
+          // On this client's campaignState write chain, so it lands after any
+          // write a hook under test still has queued (a clock's retire, a
+          // deleted card's id taken off connectionIds) rather than under it.
+          const restore = () => game.settings.set(MODULE, "campaignState", stateAtStart);
+          const { serialiseCampaignStateWrite } = await import(`${MODULE_PATH}/multiplayer/campaignStateChain.js`);
+          await serialiseCampaignStateWrite(restore, "quench documentHookAssumptions: restore")
+            .catch(() => restore().catch(warnCleanup("restoring campaignState")));
+        }
+        for (const [key, value] of Object.entries(settingsAtStart)) {
+          if (JSON.stringify(game.settings.get(MODULE, key)) === JSON.stringify(value)) continue;
+          await game.settings.set(MODULE, key, value).catch(warnCleanup(`restoring the ${key} setting`));
+        }
+      });
+
+      describe("a hidden plan's page deleted in the journal (PLAN-PAGE-DELETE-LEAVES-CLOCK)", function () {
+        it("deleteJournalEntryPage hands the hook the page with its plan flag readable: the plan's clock is retired, and kept on the list", async function () {
+          this.timeout(30000);
+          if (!ready) { this.skip(); return; }
+          const { createSkeleton, updateSkeleton, getSkeleton } = await import(`${MODULE_PATH}/world/secrets.js`);
+          const { createClock, removeClock } = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const { findWorldJournal, FLAG_KEYS } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+
+          const subject = `QUENCH 364 escort ${foundry.utils.randomID(6)}`;
+          const planPage = (id) => (findWorldJournal("secrets")?.pages?.contents ?? [])
+            .find(p => p.flags?.[MODULE]?.[FLAG_KEYS.secrets]?.id === id) ?? null;
+          const planIdAtHook = [];
+          let probe = null;
+          let plan = null;
+          let clock = null;
+          try {
+            // Filed as a narration files a decided threat and its escalation
+            // clock: secrets.js createSkeleton, then ensureThreatClock's two
+            // writes (the clock stamped with the plan, the plan linking it).
+            plan = await createSkeleton({
+              kind:       "threat",
+              subject:    { type: "name", name: subject },
+              truth:      "QUENCH: what the escort really is.",
+              escalation: ["It asks again, closer", "It seals the corridor"],
+            }, { byGm: true });
+            assert.isOk(plan?.id, "setup: the plan is filed in the Secrets journal");
+            clock = await createClock({ name: subject, type: "tension", segments: 4, planId: plan.id });
+            await updateSkeleton(plan.id, r => ({ ...r, clockId: clock._id }), { byGm: true });
+            const page = planPage(plan.id);
+            assert.isOk(page, "setup: the plan's page is in the Secrets journal");
+            assert.equal(getSkeleton(plan.id)?.clockId, clock._id, "setup: the plan links its clock");
+            assert.deepInclude(clocksWithId(storedState(), clock._id)[0] ?? {}, { active: true, planId: plan.id },
+              "setup: the plan's clock runs");
+
+            // What Foundry hands a deleteJournalEntryPage hook, read as the
+            // module's own hook reads it (secrets.js entryOf).
+            probe = Hooks.on("deleteJournalEntryPage", (doc) => {
+              if (doc?.id === page.id) planIdAtHook.push(doc.flags?.[MODULE]?.[FLAG_KEYS.secrets]?.id ?? null);
+            });
+            await page.delete();
+            // The hook's work is async: a dynamic import, then a queued campaignState write.
+            const state = await waitForCampaignState(s => clocksWithId(s, clock._id)[0]?.active === false, 10000);
+
+            assert.deepEqual(planIdAtHook, [plan.id],
+              "deleteJournalEntryPage fires once for the deleted page, and the page it hands over still carries its plan flag");
+            assert.isNull(getSkeleton(plan.id), "the plan left the store with its page");
+            const listed = clocksWithId(state, clock._id);
+            assert.lengthOf(listed, 1, "the clock is kept on the list — once — for the record");
+            assert.isFalse(listed[0].active, "the deleted plan's clock is retired: no Pay the Price turns it");
+            assert.equal(listed[0].planId, plan.id, "…and still names its plan");
+          } finally {
+            if (probe !== null) Hooks.off("deleteJournalEntryPage", probe);
+            const left = plan?.id ? planPage(plan.id) : null;
+            if (left) await left.delete().catch(warnCleanup("deleting the test plan's page"));
+            if (clock?._id) await removeClock(clock._id).catch(warnCleanup("removing the test plan's clock"));
+          }
+        });
+
+        it("a journal deleted whole: deleteJournalEntry hands the hook the journal with its pages and their plan flags, and each plan's clock is retired", async function () {
+          this.timeout(30000);
+          if (!ready) { this.skip(); return; }
+          const { normaliseSkeleton } = await import(`${MODULE_PATH}/world/skeletons.js`);
+          const { createClock, removeClock } = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const { FLAG_KEYS } = await import(`${MODULE_PATH}/world/worldJournal.js`);
+
+          const tag = foundry.utils.randomID(6);
+          const planIdsAtHook = [];
+          let pageHooks = 0;
+          let journalProbe = null;
+          let pageProbe = null;
+          let journal = null;
+          const clocks = [];
+          try {
+            // A throwaway journal, never the world's Secrets journal: the hook
+            // takes a plan from each page's flag (secrets.js entryOf), whichever
+            // journal held the page, and retires its clocks unless a page of
+            // the Secrets journal still holds that plan — none holds these.
+            // One clock is the plan's by its stamp (`planId`), the other only
+            // by the plan's link (`clockId`): the two ways a clock is a plan's.
+            const stamped = await createClock({ name: `QUENCH 364 warden ${tag}`, type: "tension", segments: 4, planId: `sk-quench364a-${tag}` });
+            clocks.push(stamped);
+            const linked = await createClock({ name: `QUENCH 364 count ${tag}`, type: "tension", segments: 4 });
+            clocks.push(linked);
+            const records = [
+              normaliseSkeleton({
+                id: `sk-quench364a-${tag}`, kind: "threat", subject: { type: "name", name: `QUENCH 364 warden ${tag}` },
+                truth: "QUENCH: what the warden wants.", escalation: ["It seals the corridor"], clockId: stamped._id,
+              }),
+              normaliseSkeleton({
+                id: `sk-quench364b-${tag}`, kind: "threat", subject: { type: "name", name: `QUENCH 364 count ${tag}` },
+                truth: "QUENCH: what the count ends in.", escalation: ["It runs out"], clockId: linked._id,
+              }),
+            ];
+            assert.isOk(records[0] && records[1], "setup: the plan records are ones the store would keep");
+
+            journal = await JournalEntry.create({ name: `QUENCH 364 throwaway journal ${tag}` });
+            const pages = await journal.createEmbeddedDocuments("JournalEntryPage", records.map(record => ({
+              name:  `Threat: ${record.subject.name}`,
+              type:  "text",
+              text:  { format: 1, content: "" },
+              flags: { [MODULE]: { [FLAG_KEYS.secrets]: record } },
+            })));
+            const pageIds = new Set(pages.map(p => p.id));
+            assert.equal(pageIds.size, 2, "setup: both plan pages are on the journal");
+
+            const journalId = journal.id;
+            journalProbe = Hooks.on("deleteJournalEntry", (doc) => {
+              if (doc?.id !== journalId) return;
+              planIdsAtHook.push((doc.pages?.contents ?? []).map(p => p.flags?.[MODULE]?.[FLAG_KEYS.secrets]?.id ?? null));
+            });
+            pageProbe = Hooks.on("deleteJournalEntryPage", (doc) => { if (pageIds.has(doc?.id)) pageHooks += 1; });
+
+            await journal.delete();
+            const ids = clocks.map(c => c._id);
+            const state = await waitForCampaignState(s => ids.every(id => clocksWithId(s, id)[0]?.active === false), 10000);
+
+            assert.lengthOf(planIdsAtHook, 1, "deleteJournalEntry fires once for the deleted journal");
+            assert.sameMembers(planIdsAtHook[0], records.map(r => r.id),
+              "the journal the hook is handed still holds its pages, their plan flags readable");
+            // Whether the page hook fires as well is Foundry's to say: the
+            // outcome is the same either way (retireClock leaves a retired
+            // clock as it is). Logged for the record, not asserted.
+            console.log(`${MODULE} | quench documentHookAssumptions: a journal deleted whole fired deleteJournalEntryPage ${pageHooks} time(s) for its ${pageIds.size} pages`);
+            for (const clock of clocks) {
+              const listed = clocksWithId(state, clock._id);
+              assert.lengthOf(listed, 1, `"${clock.name}" is kept on the list — once`);
+              assert.isFalse(listed[0].active, `"${clock.name}" is retired with its plan's page`);
+            }
+          } finally {
+            if (journalProbe !== null) Hooks.off("deleteJournalEntry", journalProbe);
+            if (pageProbe !== null) Hooks.off("deleteJournalEntryPage", pageProbe);
+            if (journal && game.journal.get(journal.id)) await journal.delete().catch(warnCleanup("deleting the throwaway journal"));
+            for (const clock of clocks) await removeClock(clock._id).catch(warnCleanup("removing a test clock"));
+          }
+        });
+      });
+
+      describe("text taken off an NPC card's Notes tab (SNAPSHOT-NOTES-TAB-DELETE)", function () {
+        // One client: the stamp is read on the client that made the edit. That
+        // it also reaches another client's updateActor (a co-GM's edit, the
+        // canonical GM reporting) is not covered here.
+        it("the stamp preUpdateActor puts on the update's options is on the options updateActor receives, and the removal is reported; an edit that only adds text reports none", async function () {
+          this.timeout(30000);
+          if (!ready) { this.skip(); return; }
+          const { createConnection } = await import(`${MODULE_PATH}/entities/connection.js`);
+          const { namedSnapshotCauses, pendingSnapshotEvents } = await import(`${MODULE_PATH}/narration/snapshotEvents.js`);
+
+          const name  = `QUENCH 364 Broker ${foundry.utils.randomID(6)}`;
+          const HELD  = "Keeps a berth at Bleakhold.";
+          const LINE  = "SENTINEL-NOTE: owes the Iron League a blood debt.";
+          const ADDED = "ADDED-NOTE: limps since the riots.";
+          const findCard = () => game.actors.find(a => a.name === name && a.flags?.[MODULE]?.entityType === "connection") ?? null;
+          const stamps = [];
+          let probe = null;
+          try {
+            // An NPC card as the module makes one: a `character` Actor flagged a connection.
+            await createConnection({ name, role: "Broker" }, foundry.utils.deepClone(storedState()));
+            const actor = findCard();
+            assert.isOk(actor, "setup: the NPC card is made");
+            await actor.update({ "system.notes": `<p>${HELD}</p><p>${LINE}</p>` });
+            assert.include(actor.system.notes ?? "", LINE, "setup: the Notes tab holds the line");
+
+            // The module's stamp (registry.js NOTES_LOST_OPTION) as each
+            // updateActor of the card received it on this client.
+            probe = Hooks.on("updateActor", (doc, _change, options) => {
+              if (doc?.id === actor.id) stamps.push(options?.[MODULE]?.sheetNotesLostText === true);
+            });
+            // The events this client reported are read back by time
+            // (snapshotEvents.js namedSnapshotCauses): start strictly after any
+            // reported so far — the card's own `entity_recorded` among them.
+            const started = Date.now();
+            while (Date.now() <= started) await new Promise(resolve => setTimeout(resolve, 1));
+            const since = Date.now();
+            const removalReported = () => namedSnapshotCauses([], { sinceMs: since }).includes("entity_detail_removed");
+
+            await actor.update({ "system.notes": `<p>${HELD}</p><p>${LINE}</p><p>${ADDED}</p>` });
+            assert.include(actor.system.notes ?? "", ADDED, "the added line is on the Notes tab");
+            assert.isAtLeast(stamps.length, 1, "updateActor fired for the edit that adds a line");
+            assert.notInclude(stamps, true, "an edit that only adds text is not stamped");
+            assert.isFalse(removalReported(), "…and reports no detail removed");
+
+            stamps.length = 0;
+            await actor.update({ "system.notes": `<p>${HELD}</p><p>${ADDED}</p>` });
+            assert.notInclude(actor.system.notes ?? "", LINE, "the line is off the Notes tab");
+            assert.include(stamps, true,
+              "the option stamped in preUpdateActor is still on the options the updateActor hook receives");
+            assert.isTrue(removalReported(), "the canonical GM reports entity_detail_removed for the line taken off");
+            assert.isAbove(pendingSnapshotEvents().length, 0, "the world snapshot is marked out of date: the next narration takes a new one");
+          } finally {
+            if (probe !== null) Hooks.off("updateActor", probe);
+            const card = findCard();
+            if (card) {
+              const cardId = card.id;
+              await card.delete().catch(warnCleanup("deleting the test NPC card"));
+              // The delete hook's teardown takes the card's id off
+              // connectionIds (connection.js onConnectionActorDeleted): let it
+              // land before the batch puts campaignState back.
+              await waitForCampaignState(s => !(s.connectionIds ?? []).includes(cardId), 5000);
+            }
+          }
+        });
+      });
+
+      describe("the STARSHIP asset removed from a tracked starship (STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK)", function () {
+        it("deleteItem hands the hook the removed asset — gone from the starship's items, its Integrity track readable — and the ship's record keeps the integrity marked on it by hand", async function () {
+          this.timeout(30000);
+          if (!ready) { this.skip(); return; }
+          const { createShip, getShip } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const { readCommandVehicleAssetTrack } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+
+          const name = `QUENCH 364 Wayfarer ${foundry.utils.randomID(6)}`;
+          const findShip = () => game.actors.find(a => a.type === "starship" && a.name === name) ?? null;
+          const record = () => findShip()?.flags?.[MODULE]?.ship ?? null;
+          const atHook = [];
+          let probe = null;
+          try {
+            await createShip({ name }, foundry.utils.deepClone(storedState()));
+            const actor = findShip();
+            assert.isOk(actor, "setup: the starship is made");
+            assert.isOk(record(), "setup: the module holds a record of it");
+
+            // The vendor's STARSHIP asset, built by hand as
+            // commandVehicleRegistration builds it, with the Integrity track
+            // the compendium's carries (actorBridge.readCommandVehicleIntegrity).
+            const [asset] = await actor.createEmbeddedDocuments("Item", [{
+              name:   "STARSHIP",
+              type:   "asset",
+              system: {
+                category:  "Command Vehicle",
+                abilities: [],
+                track:     { enabled: true, name: "Integrity", value: 5, min: 0, max: 5 },
+              },
+            }]);
+            assert.deepEqual(readCommandVehicleAssetTrack(asset), { value: 5, min: 0, max: 5 },
+              "setup: the asset Item keeps the hand-built Integrity track (the vendor's asset schema)");
+            // The createItem hook's sync flags the record the command vehicle
+            // and reconciles it with the track.
+            await waitForBatch(() => record()?.isCommandVehicle === true && record().integritySheetReconciled === true,
+              "the STARSHIP asset's arrival to reach the ship's record");
+            assert.equal(Number(record().integrity), 5, "setup: the record mirrors the track");
+
+            // Ticked on the sheet: no module write follows, so the record
+            // keeps the value of the module's last write.
+            await asset.update({ "system.track.value": 2 });
+            assert.equal(Number(asset.system.track.value), 2, "setup: the track is marked by hand");
+            assert.equal(Number(record().integrity), 5, "setup: the record still holds the module's last write, not the hand mark");
+
+            // What Foundry hands a deleteItem hook, read as the module's own
+            // hook and its sync read it (index.js onAssetChange; ship.js
+            // removedTrackIntegrity).
+            const assetId = asset.id;
+            probe = Hooks.on("deleteItem", (doc) => {
+              if (doc?.id !== assetId) return;
+              atHook.push({
+                parentId:  doc.parent?.id ?? null,
+                stillHeld: !!doc.parent?.items?.get?.(doc.id),
+                track:     readCommandVehicleAssetTrack(doc),
+              });
+            });
+            await asset.delete();
+
+            assert.lengthOf(atHook, 1, "deleteItem fires once for the removed asset");
+            assert.equal(atHook[0].parentId, actor.id, "the removed Item still names the starship it was on");
+            assert.isFalse(atHook[0].stillHeld, "…and is already gone from that starship's items when the hook runs");
+            assert.deepEqual(atHook[0].track, { value: 2, min: 0, max: 5 },
+              "…its Integrity track still readable, at the value marked by hand");
+
+            // The hook's sync is async: one write clears the flag and the
+            // stamp and takes the integrity the track last showed.
+            await waitForBatch(() => record()?.isCommandVehicle === false, "the asset's removal to reach the ship's record");
+            assert.deepInclude(record(), { isCommandVehicle: false, integrity: 2, integrityMax: 5, integritySheetReconciled: false },
+              "the ship's record keeps the hand-marked integrity and is the integrity's store again");
+            assert.equal(getShip(actor.id)?.integrity, 2, "what every reader of the ship is given");
+          } finally {
+            if (probe !== null) Hooks.off("deleteItem", probe);
+            const ship = findShip();
+            // Its id on shipIds goes with the batch's campaignState restore.
+            if (ship) await ship.delete().catch(warnCleanup("deleting the test starship"));
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Document Hook Assumptions (issue #364)", timeout: 60000 },
   );
 }

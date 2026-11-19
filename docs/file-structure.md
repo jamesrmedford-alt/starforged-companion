@@ -140,7 +140,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `quench.js` | Live-Foundry Quench integration tests, registered on `quenchReady`. `starforged-companion.promptContracts` (issue #290 part 1) runs every narrator mode against a stubbed Anthropic endpoint and checks each section of the captured request, present and absent. |
+| `quench.js` | Live-Foundry Quench integration tests, registered on `quenchReady`. `starforged-companion.promptContracts` (issue #290 part 1) runs every narrator mode against a stubbed Anthropic endpoint and checks each section of the captured request, present and absent. `starforged-companion.documentHookAssumptions` (issue #364 QUENCH-364-COVERAGE) runs three issue #364 fixes on real documents, through the hooks `index.js` registers, for what Foundry hands each hook: a hidden plan's page deleted from the Secrets journal — and a throwaway journal of plan pages deleted whole — retires the plan's clock (`deleteJournalEntryPage` / `deleteJournalEntry`, the page flags still readable); a line taken off an NPC card's Notes tab reports `entity_detail_removed` (the option stamped in `preUpdateActor` still on the options `updateActor` receives, on the editing client — the hop to another client is not covered); and the STARSHIP asset deleted from a tracked starship leaves the hand-marked integrity on the ship's record (`deleteItem`: the Item gone from its parent, its `system.track` still readable). No case needs a Claude key; the batch skips off the canonical GM. |
 
 ### `logging/` — persistent logs
 
