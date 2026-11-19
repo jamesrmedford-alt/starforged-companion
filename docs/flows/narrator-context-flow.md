@@ -955,7 +955,12 @@ unreadable or missing (the requests alone make the apply run), and, unstamped,
 when the narration is never written — an empty reply, a failed call — from the
 exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 (`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
-the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
+the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
+switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
+narration with prose still files its requests with their rolls alone, stamped
+with its id, and still marks the step it was made to play
+(`applyOwedPlanSideData`; the relay handler applies only those two then; issue
+#364 PLAN-REQUESTS-FACT-CONTINUITY-OFF) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting

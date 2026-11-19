@@ -5888,20 +5888,71 @@ async function ensureSceneStarted(campaignState, reason) {
   await startScene(campaignState, { reason });
 }
 
+/** Whether fact continuity is switched on — on when the setting cannot be read (unit tests, very early init). */
+function factContinuityEnabled() {
+  try {
+    return (game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true) !== false;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | factContinuity: setting lookup failed; defaulting to enabled:`, err);
+    return true;
+  }
+}
+
+/**
+ * What the code owes a narration written with fact continuity off (issue #364
+ * PLAN-REQUESTS-FACT-CONTINUITY-OFF). No fact block is read then, and none of
+ * the scene's ledgers is written — but two things a narration carries are the
+ * code's, not its fact block's, and were dropped with the block:
+ *   - the plans it was asked to decide (`ctx.planRequests` — a price's new
+ *     enemy, an expedition begun, a vow sworn): the narrator is shown no
+ *     DECIDE NOW without the sidecar, so each is filed with its oracle rolls
+ *     alone, which exist nowhere else (issue #362 AC07's rule);
+ *   - the step it was made to play (`ctx.reveals` — a plan clock's trigger
+ *     vignette, a chosen complication): unmarked, the plan's clock stayed
+ *     full for good with its vignette written (issue #362 AC08's shape).
+ * Stamped with the narration's id, as its side-data is. Only for a reply with
+ * prose: every caller files the requests of a narration it did not post
+ * (fileUnansweredPlanRequests, fileRequestedPlan), and one filed here too
+ * would be planned twice. On the canonical GM, else relayed to it.
+ * Fire-and-forget; never throws.
+ *
+ * @param {string} rawText — the narrator's reply
+ * @param {Object|null} campaignState
+ * @param {Object} ctx — applyNarratorSidecar's
+ */
+function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
+  if (!campaignState || typeof rawText !== 'string' || !rawText.trim()) return;
+  const forced = normaliseReveals(ctx.reveals);
+  const planRequests = Array.isArray(ctx.planRequests) ? ctx.planRequests : [];
+  if (!forced.length && !planRequests.length) return;
+  try {
+    const sidecar = { ...normaliseSidecar({}), reveals: forced };
+    if (isCanonicalGM()) {
+      void applyPlanSideData(sidecar, {
+        campaignState,
+        narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
+        moveId:           ctx.moveId ?? null,
+        planRequests,
+        endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
+      });
+    } else {
+      relayNarratorSidecar(sidecar, campaignState, ctx);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the plans this narration was asked to decide, and the step it played, were not recorded:`, err?.message ?? err);
+  }
+}
+
 export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // Master gate — when fact-continuity is disabled, return the raw text
   // unchanged. The sidecar instruction is also suppressed at the prompt
   // layer so well-behaved narrators won't emit a fence in this state, but
-  // skip the parse just in case to avoid mutating ledgers silently.
-  let enabled = true;
-  try {
-    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
-  } catch (err) {
-    // Setting not registered (unit tests, very early init). Default to on.
-    console.debug?.(`${MODULE_ID} | factContinuity: setting lookup failed; defaulting to enabled:`, err);
-  }
-  if (!enabled) {
+  // skip the parse just in case to avoid mutating ledgers silently. What the
+  // code owes the narration — its plan requests, the step it was made to
+  // play — is not the fact block's, and is still recorded.
+  if (!factContinuityEnabled()) {
     recordNarratorFactBlock(rawText, { skipped: 'fact continuity is off' });
+    applyOwedPlanSideData(rawText, campaignState, ctx);
     return rawText;
   }
 
@@ -6111,6 +6162,18 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   }
   if (narrationId && (campaignState.xCardedNarrationIds ?? []).includes(narrationId)) {
     console.debug?.(`${MODULE_ID} | factContinuity: relayed narrator side-data belongs to a narration the X-Card removed — dropped.`);
+    return;
+  }
+  // With fact continuity off no fact block was read on the client that
+  // narrated, and none is applied here: only what the code owes the narration
+  // — its plan requests, filed with their rolls alone, and the step it was
+  // made to play, as this GM would force it (applyOwedPlanSideData; issue
+  // #364 PLAN-REQUESTS-FACT-CONTINUITY-OFF). No ledger is written.
+  if (!factContinuityEnabled()) {
+    const reveals = await standingForcedReveals(payload.forced, campaignState);
+    await applyPlanSideData({ ...normaliseSidecar({}), reveals }, {
+      campaignState, narrationId, moveId: payload.moveId ?? null, planRequests,
+    });
     return;
   }
   await ensureSceneStarted(campaignState, 'relayed_narration');
