@@ -44,7 +44,7 @@ import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
-import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
+import { HONORIFIC_PREFIXES, wholeWordPattern, namesOneWordName } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
 import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
@@ -3329,10 +3329,16 @@ function chooseConnectionFigure(slot, figures, lineText) {
  * The figures a text names (issue #362 AC18): each whose whole name it holds
  * as whole words, and each it calls by their first or last name alone — the
  * person rule's "part" (nameMatch.personNameMatch; "Archer" for Vuldar
- * Archer, the name the narration keeps using) — as a whole word written with
- * its capital, as prose names someone. A word of the name of a figure the
- * text names in full is that figure's: "Vuldar Archer … Archer nods" does not
- * name Mara Archer as well. A middle name is no name to be called by.
+ * Archer, the name the narration keeps using) — as a one-word name is named
+ * anywhere a typed line is read (relevanceResolver.namesOneWordName, issue
+ * #362 D6): a whole word written with its capital, or in address position —
+ * its line's first word, a vocative set off by a comma. The capital check
+ * this kept of its own had no address position, so "archer, keep a berth for
+ * me" brought Vuldar Archer into the narrator's context and made no
+ * connection (issue #364 PART-NAME-CAPITAL-RULE-TWINS). A word of the name of
+ * a figure the text names in full is that figure's: "Vuldar Archer … Archer
+ * nods" does not name Mara Archer as well. A middle name is no name to be
+ * called by.
  *
  * @param {string} text
  * @param {Array<{ name: string }>} figures
@@ -3344,11 +3350,10 @@ function figuresNamedIn(text, figures) {
   const wordsOf = (figure) => nameWords(normalizeEntityName(figure?.name));
   const full = new Set(figures.filter(f => String(f?.name ?? "").trim() && wholeWordPattern(String(f.name).trim()).test(t)));
   const taken = new Set([...full].flatMap(wordsOf));
-  const capitalisedIn = (word) => [...t.matchAll(new RegExp(wholeWordPattern(word).source, "giu"))].some(m => /^\p{Lu}/u.test(m[0]));
   const byPart = (figure) => {
     const words = wordsOf(figure);
     const ends = words.length > 1 ? [words[0], words[words.length - 1]] : words;
-    return ends.some(w => !taken.has(w) && capitalisedIn(w));
+    return ends.some(w => !taken.has(w) && namesOneWordName(t, w));
   };
   return figures.filter(f => full.has(f) || byPart(f));
 }

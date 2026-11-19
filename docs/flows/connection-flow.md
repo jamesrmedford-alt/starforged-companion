@@ -88,11 +88,15 @@ recorded under its name promoted to it; its bond is §2's.
   hit made a second card with a second bond (issue #347 AB09).
   When it creates none, an NPC the move names (`namingText`: the player's
   line and the narration — by their whole name, or by their first or last
-  name alone as a whole word written with its capital, a word of a name the
-  text names in full being that figure's: "Archer" for Vuldar Archer, never
-  Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`, issue #362 AC18:
-  the whole name only, so a hit with a known NPC called by a short name said
-  "Connection made" and made nothing; and, in a round, a
+  name alone as a one-word name is named in any typed line
+  (`relevanceResolver.namesOneWordName`: a whole word written with its
+  capital, or in address position — issue #364 PART-NAME-CAPITAL-RULE-TWINS:
+  the capital check kept here had no address position, so "archer, keep a
+  berth for me" named him for relevance and not for the connection), a word
+  of a name the text names in full being that figure's: "Archer" for Vuldar
+  Archer, never Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`,
+  issue #362 AC18: the whole name only, so a hit with a known NPC called by a
+  short name said "Connection made" and made nothing; and, in a round, a
   figure its own roller met) whom the detection pass leaves out becomes the
   roller's connection (`connectNamedFigure`): a pending draft row is
   confirmed (`confirmDraft` with the roller's `actorId`; issue #325 W23 —
