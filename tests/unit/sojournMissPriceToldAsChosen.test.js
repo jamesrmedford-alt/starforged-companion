@@ -4,10 +4,12 @@
  *
  * Issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE.
  *
- * Sojourn: "On a miss, choose one. The community needs help, or makes a
- * costly demand in exchange for safe harbor. If you do it, or Swear an Iron
- * Vow to see it done, resolve this move as a strong hit. / You find no relief
- * and the situation worsens. Pay the Price." The price is one of two choices,
+ * Sojourn's miss, as the module's own reading has it (resolver.js
+ * CONSEQUENCE_MAP `sojourn`; docs/rules-reference/playkit-rules-and-coverage.md:
+ * "miss: community demand or Pay the Price"): the community needs help — do
+ * it, or Swear an Iron Vow, and the move resolves as a strong hit — or there
+ * is no relief and the situation worsens (Pay the Price). The rule is
+ * paraphrased here, not quoted. The price is one of two choices,
  * made on a card ("Community needs help (Swear an Iron Vow)" or "No relief —
  * Pay the Price"), and the option carries the price the narration is seeded
  * with (rollChoicePrice).
