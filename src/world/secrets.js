@@ -197,7 +197,9 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
  * plans it brings into play (plansInPlayFor); the client that asked takes the
  * answer carrying its ask's id. The answer is a socket message, which reaches
  * every connected client (Foundry's module socket cannot address one); only
- * the asker takes it.
+ * the asker takes it. Accepted as console-level exposure, like the shared
+ * world data (the maintainer's answer, issue #364 PLANS-RELAY-BROADCAST;
+ * decisions.md → "Issue #364").
  */
 export function registerPlansInPlaySocket() {
   if (_plansSocketInstalled) return;
