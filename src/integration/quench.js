@@ -1188,10 +1188,7 @@ function registerSectorCreatorTests(quench) {
           createdSettlementIds = Object.values(entityData.settlements)
             .filter(Boolean).map(j => j.id);
           createdConnectionId = entityData.connectionJournalId ?? null;
-          await storeSector(sector, {
-            settlements:         entityData.settlements,
-            connectionJournalId: entityData.connectionJournalId,
-          }, state);
+          await storeSector(sector, { settlements: entityData.settlements }, state);
           const journal = game.journal.getName("Starforged Sectors");
           assert.isNotNull(journal, "Starforged Sectors journal should exist");
         });
@@ -1226,9 +1223,13 @@ function registerSectorCreatorTests(quench) {
         it("creates connection entity journal", async function () {
           const state = game.settings.get("starforged-companion", "campaignState");
           if (!createdSectorId) { this.skip(); return; }
-          const sector = (state.sectors ?? []).find(s => s.id === createdSectorId);
-          assert.isString(sector?.connectionId, "connectionId should be a string");
-          assert.isNotEmpty(sector.connectionId, "connectionId should not be empty");
+          // The sector record names no connection (its `connectionId` is
+          // retired — issue #364 SECTOR-CONNECTION-ID-UNREAD); the card's id
+          // is listed in campaignState.connectionIds.
+          assert.isString(createdConnectionId, "the sector's connection should have been created");
+          assert.include(state.connectionIds ?? [], createdConnectionId,
+            "the connection's id should be listed in campaignState.connectionIds");
+          assert.isOk(game.actors?.get(createdConnectionId), "the connection's NPC card should exist");
         });
       });
 
@@ -1242,7 +1243,7 @@ function registerSectorCreatorTests(quench) {
           const state = game.settings.get("starforged-companion", "campaignState");
           const sector = generateSector("expanse");
           seededSectorId = sector.id;
-          await storeSector(sector, { settlements: {}, connectionJournalId: null }, state);
+          await storeSector(sector, { settlements: {} }, state);
         });
 
         after(async function () {

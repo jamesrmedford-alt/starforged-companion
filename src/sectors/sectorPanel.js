@@ -436,7 +436,6 @@ async function buildAndStoreSector(sector, campaignState) {
 
   const stored = await storeSector(sector, {
     settlements:         entityData.settlements,
-    connectionJournalId: entityData.connectionJournalId,
     sites:               entityData.sites,
     backgroundPath,
     sceneId:             scene?.id     ?? null,

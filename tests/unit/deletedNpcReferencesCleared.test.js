@@ -5,18 +5,20 @@
  *
  * Issue #364 DELETED-NPC-NAME-REFERENCES, the delete teardown's half (issue
  * #362 D10 (3) took down a deleted NPC card's id, facts, bond Items, plan and
- * portraits). Two references to the NPC outlived the card:
+ * portraits). A reference to the NPC outlived the card: a vow linked to them
+ * — the link is the connection's name (`linkedConnectionName`), so the next
+ * fight won for the vow still offered "🤝 Deepen your bond with Sable", and
+ * fulfilling the vow listed a deepen that could never land, with a Retry that
+ * failed again.
  *
- *   - a vow linked to them — the link is the connection's name
- *     (`linkedConnectionName`), so the next fight won for the vow still
- *     offered "🤝 Deepen your bond with Sable", and fulfilling the vow listed
- *     a deepen that could never land, with a Retry that failed again;
- *   - the sector record whose local connection they were kept the deleted
- *     card's id (`sectors[].connectionId`).
- *
- * A GM's delete of the card now clears both — unless another card of that
+ * A GM's delete of the card now clears the link — unless another card of that
  * name is left, which a name-based link then means — and tells the GMs which
  * vows no longer serve a connection.
+ *
+ * The sector record's own reference to its local connection is retired (issue
+ * #364 SECTOR-CONNECTION-ID-UNREAD — written at creation, read by nothing), so
+ * the delete leaves the sector records as they are: an older world's record
+ * that still carries the field is not rewritten.
  *
  * On a booted GM / player table: the real deleteActor hook as index.js
  * registers it, then the real won-fight card and the sheet fulfilment's
@@ -66,8 +68,9 @@ beforeEach(async () => {
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 2,
       connectionIds: ['conn-sable', 'conn-dace'], legacyTracks: { quests: { ticks: 0, cleared: false } },
       sectors: [
+        // sec-1 is an older world's record: it still carries the retired field.
         { id: 'sec-1', name: 'Devil\'s Maw', connectionId: 'conn-sable', settlementIds: [] },
-        { id: 'sec-2', name: 'Ashen Reach', connectionId: 'conn-dace', settlementIds: [] },
+        { id: 'sec-2', name: 'Ashen Reach', settlementIds: [] },
       ] },
   } } });
   kira = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [
@@ -108,7 +111,7 @@ async function fulfilOnSheet() {
   await table.settle(); await table.drain();
 }
 
-describe('issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC\'s vow links and sector reference go with the card', () => {
+describe('issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC\'s vow links go with the card', () => {
   it('control: before the delete, the vow\'s won fight offers to deepen the bond', async () => {
     const card = await postVictoryCard();
     expect(card.flags[MODULE_ID].connectionName).toBe('Sable');
@@ -151,10 +154,14 @@ describe('issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC\'s vow links 
     expect(notice.content).not.toContain('Repay Dace');
   }, 30_000);
 
-  it('the sector whose local connection they were names no one; another sector\'s is untouched', async () => {
+  it('the card\'s id leaves connectionIds; the sector records are left as they are (SECTOR-CONNECTION-ID-UNREAD)', async () => {
+    const before = stored().sectors;
     await gmDeletes(sable);
-    expect(stored().sectors.map(s => [s.id, s.connectionId])).toEqual([['sec-1', null], ['sec-2', 'conn-dace']]);
     expect(stored().connectionIds).toEqual(['conn-dace']);
+    // The retired field is neither read nor written: an older record keeps
+    // what it had, and a record without it gains nothing.
+    expect(stored().sectors).toEqual(before);
+    expect(Object.hasOwn(stored().sectors[1], 'connectionId')).toBe(false);
   }, 30_000);
 
   it('a namesake is left: the name still means someone, so the vows keep their link', async () => {
@@ -176,6 +183,6 @@ describe('issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC\'s vow links 
     await gmDeletes(dace);
     expect(notices()).toEqual([]);
     expect(linkOf(kira.items.contents[0])).toBe('Sable');
-    expect(stored().sectors.map(s => s.connectionId)).toEqual(['conn-sable', null]);
+    expect(stored().connectionIds).toEqual(['conn-sable']);
   }, 30_000);
 });

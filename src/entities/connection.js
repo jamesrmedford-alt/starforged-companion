@@ -491,8 +491,7 @@ export function registerConnectionDeleteHook() {
  * (secrets.retireSkeleton). Each step is a no-op once done.
  *
  * And the references that name it (issue #364 DELETED-NPC-NAME-REFERENCES):
- * the sector record whose local connection it was (unregisterDeletedConnection),
- * and the vows linked to it — a vow's link is the connection's name, so a won
+ * the vows linked to it — a vow's link is the connection's name, so a won
  * fight still offered to deepen the bond with the deleted NPC and the vow's
  * fulfilment listed a deepen no Retry could land. The links are cleared
  * (actorBridge.clearVowLinksToConnection) unless another card of that name is
@@ -622,9 +621,7 @@ function sheetWrittenByTable(document, record) {
 }
 
 /**
- * Take a deleted NPC card's id out of the latest stored `connectionIds` — and
- * off the sector record that names it as its local connection
- * (`sectors[].connectionId`) — and
+ * Take a deleted NPC card's id out of the latest stored `connectionIds`, and
  * hand the scene-ledger facts keyed to it back to its name (ledgers.js
  * demoteEntitySubject — a kept narration's facts about the NPC, promoted to
  * the card when it was made). One write of a copy; no await between the read
@@ -644,14 +641,10 @@ async function unregisterDeletedConnection(actorId, name) {
       const target = { ...latest };
       const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
       if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
-      // A sector that names the card as its local connection names no one now
-      // (issue #364 DELETED-NPC-NAME-REFERENCES — the record kept the id of a
-      // card no Actor answers).
-      const sectors = Array.isArray(latest.sectors) ? latest.sectors : [];
-      const local = sectors.some(s => s?.connectionId === actorId);
-      if (local) target.sectors = sectors.map(s => (s?.connectionId === actorId ? { ...s, connectionId: null } : s));
+      // The sector records are not touched: a record names no connection (its
+      // `connectionId` is retired — issue #364 SECTOR-CONNECTION-ID-UNREAD).
       const demoted = demoteEntitySubject(actorId, name, target) > 0;
-      if (!listed && !demoted && !local) return;
+      if (!listed && !demoted) return;
       await game.settings.set(MODULE_ID, "campaignState", target);
     }, "deleted connection");
   } catch (err) {

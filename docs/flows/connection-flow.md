@@ -282,9 +282,7 @@ a forged bond) is kept and marked lost instead, as a severed one is
 (`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
 (`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
 (`secrets.retireSkeleton`). What named the NPC goes too (issue #364
-DELETED-NPC-NAME-REFERENCES): the sector record whose local connection it
-was names no one (`sectors[].connectionId` set to null, in
-`unregisterDeletedConnection`'s one write), and the vows linked to them lose
+DELETED-NPC-NAME-REFERENCES): the vows linked to them lose
 the link — a vow's link is the connection's **name**
 (`linkedConnectionName`), so a fight won for the vow still offered
 "🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no

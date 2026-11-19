@@ -78,7 +78,7 @@ describe("issue #329 X11 — a refused sector write leaves the GM's cache as it 
     vi.spyOn(game.settings, "set").mockRejectedValueOnce(new Error("Setting [campaignState] could not be saved: the server refused the write"));
     expectConsoleError(/storing the sector failed/);
 
-    await expect(storeSector(sector, { settlements: {}, connectionJournalId: null, sites: {} }, cached)).rejects.toThrow(/refused/);
+    await expect(storeSector(sector, { settlements: {}, sites: {} }, cached)).rejects.toThrow(/refused/);
 
     // The cache equals the world, which took nothing (it held the full record
     // with mapData, and the active sector).
@@ -127,7 +127,7 @@ describe("issue #329 X11 — a refused sector write leaves the GM's cache as it 
     const cached = freshState();
     seedWorld(cached);
     const sector = minimalSector("sector-ok");
-    await storeSector(sector, { settlements: {}, connectionJournalId: null, sites: {} }, cached);
+    await storeSector(sector, { settlements: {}, sites: {} }, cached);
     const world = game.settings._store.get(KEY);
     expect(world.sectors.find(s => s.id === sector.id)?.mapData).toBeTruthy();
     expect(world.activeSectorId).toBe(sector.id);
