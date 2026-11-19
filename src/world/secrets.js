@@ -1127,6 +1127,44 @@ async function retirePlanClock(record) {
 }
 
 /**
+ * Plans whose pages are gone from the Secrets journal take their clocks with
+ * them (issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK): a GM who deletes a plan's
+ * page in the journal sidebar — not the panel's Retire, which retires the
+ * clock (issue #362 AC10) — left the clock running on the list: it turned on
+ * every Pay the Price and, full, fired a trigger vignette with no plan behind
+ * it. Each clock of such a plan — stamped with it (`planId`), or the one its
+ * record links — is retired as Retire retires it: kept on the list, turned by
+ * no price, and left to an open scene challenge that holds it
+ * (heldBySceneChallenge). A plan another page of the store still holds — a
+ * GM's copy of the page deleted, not the plan — keeps its clock; the deleted
+ * pages themselves are not counted, whether or not the store still lists
+ * them when the hook runs. Canonical GM (registerPlanSubjectHooks). Never
+ * throws.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ */
+async function retireClocksOfDeletedPlans(pages) {
+  try {
+    const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
+    const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
+    const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
+    for (const page of gone) {
+      const record = normaliseSkeleton(entryOf(page));
+      if (!record || kept.has(record.id)) continue;
+      const clocks = storedClocks().filter(c => c && c.active !== false
+        && (c.planId === record.id || (c._id === record.clockId && !c.planId)));
+      for (const clock of clocks) {
+        if (await heldBySceneChallenge(clock._id)) continue;
+        const { retireClock } = await import("../clocks/clocks.js");
+        await retireClock(clock._id);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the clock of a plan whose page was deleted was not retired:`, err?.message ?? err);
+  }
+}
+
+/**
  * A decided threat plan's escalation is paced by a clock (issue #353 "Threat
  * ↔ clock"): when it fills, the narrator plays the next step (narrator.js
  * narrateClockAdvancement). A threat the fiction just revealed is a scene's —
@@ -1583,8 +1621,11 @@ async function closeVowPlanIfEnded(item, status) {
 /**
  * Wire the vow Items' ends to their plans (issue #362 D4): a vow completed or
  * deleted — by a move, on the sheet, in the sidebar — closes its plan
- * (closeVowPlanIfEnded). Document hooks fire on every client: the canonical
- * GM closes it, once. Register once, at ready.
+ * (closeVowPlanIfEnded). And a plan's own end to its clock: its page deleted
+ * from the Secrets journal, or the journal itself deleted, retires the clocks
+ * it held (retireClocksOfDeletedPlans, issue #364
+ * PLAN-PAGE-DELETE-LEAVES-CLOCK). Document hooks fire on every client: the
+ * canonical GM closes it, once. Register once, at ready.
  */
 export function registerPlanSubjectHooks() {
   if (registerPlanSubjectHooks._installed) return;
@@ -1597,6 +1638,16 @@ export function registerPlanSubjectHooks() {
   Hooks.on("deleteItem", (item) => {
     if (!isCanonicalGM() || !isVow(item)) return;
     void closeVowPlanIfEnded(item, "retired");
+  });
+  Hooks.on("deleteJournalEntryPage", (page) => {
+    if (!isCanonicalGM() || !entryOf(page)) return;
+    void retireClocksOfDeletedPlans([page]);
+  });
+  // A journal deleted whole fires no page hook for the pages it held.
+  Hooks.on("deleteJournalEntry", (journal) => {
+    if (!isCanonicalGM()) return;
+    const pages = (journal?.pages?.contents ?? []).filter(p => entryOf(p));
+    if (pages.length) void retireClocksOfDeletedPlans(pages);
   });
 }
 

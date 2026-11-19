@@ -967,7 +967,10 @@ issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
-`retirePlanClock`, issue #362 AC10), a `countdown` becomes a clock
+`retirePlanClock`, issue #362 AC10 — and so does a plan whose page a GM deletes
+in the journal sidebar, or whose journal is deleted: the canonical GM's
+`deleteJournalEntryPage` / `deleteJournalEntry` hooks retire its clocks,
+`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK), a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge —
 once a challenge holds it as its tension clock it is the challenge's, and the
 plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue

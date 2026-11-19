@@ -86,7 +86,8 @@ describe('issue #362 AC10 — a plan that leaves play takes its clock out of pla
     for (const name of ['the escort', 'the warden', 'the broker', 'the pilot']) {
       expect((await decidedThreat(name))?.clockId, `${name}'s clock`).toBeTruthy();
     }
-    // The GM deletes one plan's page in the journal: its clock is left on the list, running.
+    // One plan's page goes with no page hook run (the hook that retires its clock is issue #364's,
+    // planPageDeleteRetiresClock.test.js): its clock is left on the list, running.
     const journal = gmOf(table).run(() => game.journal.find(j => j.flags?.[MODULE_ID]?.worldJournalCategory === 'secrets'));
     const page = journal.pages.contents.find(p => p.flags?.[MODULE_ID]?.secretEntry?.subject?.name === 'the broker');
     const brokerClockId = page.flags[MODULE_ID].secretEntry.clockId;
