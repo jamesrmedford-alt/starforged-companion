@@ -886,6 +886,29 @@ export function readCommandVehicleIntegrity(shipActor) {
 }
 
 /**
+ * The Integrity track of a STARSHIP (Command Vehicle) asset as the Item
+ * itself holds it — `{ value, min, max }`, as readCommandVehicleIntegrity
+ * gives it — or null for any other Item, or one whose track is not an enabled
+ * Integrity track. For the asset just removed from its starship (the
+ * deleteItem hook's document): the starship no longer carries it, so
+ * readCommandVehicleIntegrity finds none, and the value last marked on the
+ * track — by hand, since the module's last write — went with it (issue #364
+ * STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK; entities/ship.js
+ * syncCommandVehicleFlag keeps it on the record).
+ *
+ * @param {Item|null} item
+ * @returns {{ value: number, min: number, max: number }|null}
+ */
+export function readCommandVehicleAssetTrack(item) {
+  if (item?.type !== 'asset' || !/command vehicle/i.test(String(item.system?.category ?? ''))) return null;
+  const track = item.system?.track;
+  if (!track || track.enabled === false || String(track.name ?? '').trim().toLowerCase() !== 'integrity') return null;
+  const value = Number(track.value ?? 0);
+  if (!Number.isFinite(value)) return null;
+  return { value, min: Number(track.min ?? 0), max: Number(track.max ?? 5) };
+}
+
+/**
  * What a ship record not reconciled with its STARSHIP asset's track — one
  * from before that track became canonical (issue #347 AB08), or one kept
  * while the ship had no STARSHIP asset, the asset added since (issue #362

@@ -3706,7 +3706,10 @@ function registerStarshipSeedHook() {
  *
  * Triggers:
  *  - createItem / deleteItem — when a Command Vehicle asset is added to or
- *    removed from a starship Actor, recompute that ship's flag.
+ *    removed from a starship Actor, recompute that ship's flag. The asset
+ *    is handed to the sync: of one removed, the integrity its track last
+ *    showed is kept on the ship's record (issue #364
+ *    STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK).
  *  - world load — reconcile ships created before asset-detection shipped,
  *    so an existing command vehicle (like one made via the sidebar) gets
  *    flagged without the user having to re-add the asset. This runs from
@@ -3732,7 +3735,7 @@ function registerCommandVehicleHook() {
 
       import("./entities/ship.js").then(async (mod) => {
         const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+        await mod.syncCommandVehicleFlag(actor, state, { changedAsset: item }).catch(err =>
           console.warn(`${MODULE_ID} | command-vehicle sync failed for ${actor.id}:`, err));
       }).catch(err =>
         console.warn(`${MODULE_ID} | command-vehicle sync: dynamic import failed:`, err));

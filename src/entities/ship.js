@@ -51,7 +51,7 @@ import {
   warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
-import { readCommandVehicleIntegrity, setCommandVehicleIntegrity, unreconciledRecordIntegrity, readCommandVehicleConditions, setCommandVehicleConditions } from "../character/actorBridge.js";
+import { readCommandVehicleIntegrity, readCommandVehicleAssetTrack, setCommandVehicleIntegrity, unreconciledRecordIntegrity, readCommandVehicleConditions, setCommandVehicleConditions } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
@@ -298,11 +298,20 @@ export function actorHasCommandVehicleAsset(actor) {
  * GM's world load does (migrator.reconcileCommandVehicleIntegrity), and this
  * scan runs beside it.
  *
+ * `changedAsset` — the STARSHIP asset the createItem / deleteItem hook saw
+ * added or removed. Of one removed — the starship carrying no track now — the
+ * record is the integrity's store again, and takes what that track last
+ * showed in the same write that clears the stamp (removedTrackIntegrity): the
+ * record mirrors the track only on a module write, so a value marked on the
+ * track by hand since was lost with the asset (issue #364
+ * STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK).
+ *
  * @param {Actor} actor
  * @param {Object} campaignState
+ * @param {{ changedAsset?: Item|null }} [opts]
  * @returns {Promise<Object|null>} the updated ship payload, or null on no-op
  */
-export async function syncCommandVehicleFlag(actor, campaignState) {
+export async function syncCommandVehicleFlag(actor, campaignState, { changedAsset = null } = {}) {
   if (!actor || actor.type !== "starship") return null;
   const isCV     = actorHasCommandVehicleAsset(actor);
   const existing = actor.flags?.[MODULE_ID]?.ship ?? null;
@@ -339,8 +348,32 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
 
   const flagChanged = !!existing.isCommandVehicle !== isCV;
   const stampStale  = existing.integritySheetReconciled === true && readCommandVehicleIntegrity(actor) === null;
-  if (!flagChanged && !stampStale) return null;   // no change
-  return updateShip(actor.id, flagChanged ? { isCommandVehicle: isCV } : {});
+  const lastMarked  = removedTrackIntegrity(actor, existing, changedAsset);
+  if (!flagChanged && !stampStale && !lastMarked) return null;   // no change
+  return updateShip(actor.id, { ...(flagChanged ? { isCommandVehicle: isCV } : {}), ...(lastMarked ?? {}) });
+}
+
+/**
+ * What a ship record takes from the STARSHIP asset just removed from its
+ * starship — the integrity its track last showed, which was canonical while
+ * the ship carried it — or null when there is nothing to take: no asset
+ * given, the starship carrying a track (the asset was added, or another
+ * STARSHIP asset remains), or the record already holding that value. A record
+ * never reconciled with that track takes the lower of the two, as every
+ * reader of it did (unreconciledRecordIntegrity; issue #347 AB08, #362 AC25).
+ *
+ * @param {Actor} actor — the starship (a removed asset is already gone from it)
+ * @param {Object} existing — its ship record as stored
+ * @param {Item|null} asset — the createItem / deleteItem hook's document
+ * @returns {{ integrity: number, integrityMax: number }|null}
+ */
+function removedTrackIntegrity(actor, existing, asset) {
+  const track = asset ? readCommandVehicleAssetTrack(asset) : null;
+  if (!track || readCommandVehicleIntegrity(actor) !== null) return null;
+  const integrity = unreconciledRecordIntegrity(existing, track) ?? Math.max(track.min, Math.min(track.max, track.value));
+  return integrity === Number(existing.integrity) && track.max === Number(existing.integrityMax)
+    ? null
+    : { integrity, integrityMax: track.max };
 }
 
 /**
