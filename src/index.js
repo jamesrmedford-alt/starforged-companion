@@ -7993,16 +7993,45 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
 
   // companion_takes_a_hit needs an item id. If the PC has a companion
   // asset, surface it — the one the route names (a stated price's: the
-  // companion its move was made for, issue #362 D11), else the first;
+  // companion its move was made for, issue #362 D11), else the only one;
   // otherwise fall back to Endure Harm (the "you are, if alone" branch in the
-  // entry text). A stated Withstand Damage names the support vehicle its move
-  // was rolled for; with none, the executor takes the command vehicle.
+  // entry text). Several companions and none named: the player is asked
+  // which — the first in the list took the hit, whoever the fiction put in
+  // harm's way (issue #364 ANY-SUFFER-SUPPORT-VEHICLE, as a suffer card's
+  // pick asks since issue #362 AC28). A stated Withstand Damage names the
+  // support vehicle its move was rolled for; with none, the command vehicle
+  // takes it (a null target is the starship — issue #345 AA14) — and with no
+  // command vehicle, the PC's support vehicle: the only one, or the one the
+  // player picks. It found "no vehicle to take it".
+  const amount = route.amount ?? 1;
   let move = route.move;
   let itemId = null;
+  /** Ask which companion / vehicle on a choice card bound to the price, as its other cards are. Nothing lands here. */
+  const askWhich = async (sufferPrompt) => {
+    const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
+    const executorOpts = { isMiss: true, ...(resolutionId ? { resolutionId, priceCard: true } : {}),
+      ...(upgradeOffered ? { upgradeOffered: true } : {}) };
+    const prompt = upgradeOffered
+      ? { ...sufferPrompt, hint: "Burn momentum or improve the result first — choosing here pays the price, and closes them." }
+      : sufferPrompt;
+    const card = await postSufferChoiceCard({ sufferPrompt: prompt, actor, executorOpts, moveId: move, resolutionId });
+    if (!card) {
+      console.error(`${MODULE_ID} | the world did not save ${actor.name ?? "the roller"}'s Pay the Price picker (${STATED_SUFFER_MOVES[move] ?? move} -${amount}).`);
+      await postPayoffFailureCard({ source: "suffer", actorId: actor.id, failures: [{
+        step: "choiceCard", pcId: actor.id, moveId: move, moveName: "Pay the Price",
+        sufferPrompt: prompt, executorOpts, resolutionId: resolutionId ?? null, reason: "refused",
+      }] }).catch(err => console.warn(`${MODULE_ID} | the refused picker's failure card failed:`, err?.message ?? err));
+    }
+  };
   if (move === "companion_takes_a_hit") {
     const isCompanion = (i) => i?.system?.category?.toLowerCase?.() === "companion";
     const named = typeof route.companionItemId === "string" && route.companionItemId
       ? actor.items?.find?.(i => i?.id === route.companionItemId && isCompanion(i)) : null;
+    if (!named) {
+      const { whichCompanionPrompt } = await import("./moves/sufferCard.js");
+      const which = whichCompanionPrompt(actor, amount);
+      if (which.options.length > 1) return askWhich(which);
+    }
     const companion = named ?? actor.items?.find?.(isCompanion);
     if (companion) {
       itemId = companion.id;
@@ -8011,9 +8040,15 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     }
   } else if (move === "withstand_damage" && typeof route.vehicleItemId === "string" && route.vehicleItemId) {
     itemId = route.vehicleItemId;
+  } else if (move === "withstand_damage") {
+    const { vehicleChoicesOf, whichVehiclePrompt } = await import("./moves/sufferCard.js");
+    const { vehicleChoices } = vehicleChoicesOf(actor, {});
+    if (vehicleChoices.length && vehicleChoices.every(v => v.itemId)) {
+      if (vehicleChoices.length > 1) return askWhich(whichVehiclePrompt(vehicleChoices, amount));
+      itemId = vehicleChoices[0].itemId;
+    }
   }
 
-  const amount = route.amount ?? 1;
   let landed;
   try {
     landed = await executeSuffer(move, actor, {

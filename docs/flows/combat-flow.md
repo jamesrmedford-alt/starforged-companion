@@ -39,6 +39,16 @@ Two cross-cutting facts to hold onto:
   support vehicles and companions, never the miss line, never a guess), and
   the route takes it when the move has no target of its own; it landed on
   the command starship (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+  A price's route that names no companion asks which when the PC has several
+  (`index.js` `dispatchPayThePriceSufferRoute` → a choice card of
+  `sufferCard.whichCompanionPrompt`, bound to the move as the price's other
+  cards are) — the first in the list took the hit; a vehicle route that
+  names none is the command vehicle's, and with no command vehicle the PC's
+  support vehicle's: the only one, or the one picked on a
+  `whichVehiclePrompt` card. A "make a suffer move" card's Withstand Damage
+  counts the same vehicles (`sufferCard.vehicleChoicesOf`): open with a
+  support vehicle and no starship, and asking which when several could take
+  it (issue #364 ANY-SUFFER-SUPPORT-VEHICLE).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
