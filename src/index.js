@@ -2967,7 +2967,11 @@ function wonFightMarks(track, outcome) {
  *     press — one press pays them; once pressed, the marks it lacks are
  *     marked now, once (the vow's payoff ledger, `milestone:<card>:upgrade`).
  *   - The promised reward, granted at the weak hit's scale (its `grantedAt`):
- *     the strong hit's (upgradeLinkedVowReward).
+ *     the strong hit's (upgradeLinkedVowReward). A claim or a give the world
+ *     refused goes to the GMs' payoff card, with a Retry — the claim as a
+ *     `rewardUpgrade` step that runs the upgrade again (issue #364
+ *     WON-FIGHT-REWARD-UPGRADE-NO-RETRY: it was a line under "Not applied"
+ *     on the move card, and nothing could give the difference after).
  * What landed and what did not, in words, for the upgraded move card.
  *
  * @param {Object} track — the fight, as stored
@@ -3005,16 +3009,22 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
   }
   const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
-    return { ok: false, step: "reward", reason: "refused" };
+    return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
   });
   if (reward?.ok && !reward.skipped) applied.push(reward.applied);
-  else if (reward && !reward.ok && reward.step === "rewardGrant") {
-    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? null, actorId: rollerActor?.id ?? null,
+  else if (reward && !reward.ok) {
+    // The give refused after its claim (`rewardGrant`), or the claim itself
+    // (`rewardUpgrade`): each a step of the GMs' card, whose Retry runs it.
+    let told = true;
+    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? vowId ?? null, actorId: rollerActor?.id ?? null,
       outcome: "strong_hit", failures: [reward] })
-      .catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
-    notApplied.push("the reward's strong-hit difference — the GMs have a Retry");
-  } else if (reward && !reward.ok) {
-    notApplied.push("the reward's strong-hit difference — the world refused it");
+      .catch(err => {
+        told = false;
+        console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err);
+      });
+    notApplied.push(told
+      ? "the reward's strong-hit difference — the GMs have a Retry"
+      : "the reward's strong-hit difference — the world refused it");
   }
   return { applied, notApplied };
 }
@@ -6205,7 +6215,10 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
 // without the string the weak hit tied to it. Claimed before it is given, as
 // the grant is: `grantedAt` is raised on every copy first, so nothing pays the
 // difference twice. A reward granted before `grantedAt` was recorded, one not
-// granted, and a lower outcome are left as they stand (`skipped`).
+// granted, and a lower outcome are left as they stand (`skipped`). A refused
+// claim is step "rewardUpgrade" — nothing was given, and the GMs' Retry runs
+// this again (runPayoffStep; issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a
+// refused give after the claim is step "rewardGrant", carrying what to give.
 //
 // @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, step?: string,
 //   reason?: string, vowId?: string|null }>}
@@ -6225,7 +6238,7 @@ async function upgradeLinkedVowReward(vowName, outcome, { actorId = null, copies
   const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
   const pc = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
   if (vowId && !(await setSharedVowReward(vowId, { ...reward, grantedAt: outcome })).ok) {
-    return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
+    return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, rewardDescription: reward.description ?? null };
   }
   const plan = { status: "granted", form: reward.form, description: reward.description, ...(more > 0 ? { amount: more } : {}) };
   if (more > 0) {
@@ -6744,6 +6757,7 @@ function payoffStepRecord(f) {
     case "legacy":      return { step: "legacy", track: f.track ?? null, ticks: f.ticks ?? 0 };
     case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1 };
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
+    case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
@@ -6767,7 +6781,7 @@ function payoffStepRecord(f) {
 }
 
 // One failed step, as a line of the GM card: what, why, and its value now.
-async function describePayoffFailure(f, { vowName, actorId }) {
+async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
   const why = escapeChatHtml(PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
     + (f.error ? ` <span class="sf-card-hint">(${escapeChatHtml(f.error)})</span>` : "");
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -6880,6 +6894,19 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const meter = (form === "supply" || form === "momentum") ? readCharacterSnapshot(pc)?.meters?.[form] : undefined;
         const now  = meter !== undefined ? ` ${who}'s ${form} stands at ${meter} now; this adds ${f.plan?.amount ?? 1}.` : "";
         return `The promised reward “${escapeChatHtml(f.reward?.description ?? "your reward")}” — recorded as earned, but not given to ${who}: ${why}.${now}`;
+      }
+      case "rewardUpgrade": {
+        // A weak-hit win's reward raised to the strong hit's, its claim
+        // refused (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): how the
+        // reward is recorded now — a claim that landed unconfirmed leaves
+        // the Retry nothing to give.
+        const rewards = payoffVowCopies({ vowId, vowName, actorId }).map(({ item }) => item?.flags?.[MODULE_ID]?.reward).filter(Boolean);
+        const now = rewards.some(r => r.status === "granted" && r.grantedAt === "weak_hit")
+          ? " It is recorded as granted on the weak hit now, and nothing more was given."
+          : rewards.some(r => r.status === "granted" && r.grantedAt === "strong_hit")
+            ? " It is recorded as the strong hit's now, though nothing more was given: a Retry gives nothing — hand over the difference yourself."
+            : "";
+        return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
         return `The promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""} — ${why}; nothing was given.`;
@@ -7041,6 +7068,12 @@ async function runPayoffStep(s, card, copies) {
       const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
+    case "rewardUpgrade":
+      // A weak-hit win's reward raised to the strong hit's, its claim refused
+      // (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): the upgrade again —
+      // claim first, so a reward already raised gives nothing more.
+      if (!copies.length) return { ok: false, reason: "no-vow" };
+      return upgradeLinkedVowReward(card.vowName ?? null, "strong_hit", { actorId: card.actorId ?? null, copies });
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       const given = await giveReward(pc, s.reward, s.plan);

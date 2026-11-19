@@ -134,7 +134,11 @@ Two cross-cutting facts to hold onto:
   difference — the victory card's ⚑ raised to the strong hit's marks (or the
   marks it lacks marked once, when ⚑ was pressed) and the promised reward
   granted at the weak hit's scale raised to the strong hit's
-  (`payWonFightDifference`, issue #362 D7); a weak hit
+  (`payWonFightDifference`, issue #362 D7; a claim of that reward difference
+  the world refuses — the `grantedAt` raise — goes to the GMs' payoff card as
+  a `rewardUpgrade` step whose Retry runs `upgradeLinkedVowReward` again, as
+  a refused give after the claim goes as `rewardGrant`, issue #364
+  WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
