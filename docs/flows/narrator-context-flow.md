@@ -1063,7 +1063,14 @@ id its receipt names, `clocksWithVignetteWritten` — is struck by that id and t
 clock left as the later trigger and the prices after it left it, no segment
 given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN);
 each write stamped with the narration's id, which the X-Card's
-`undoNarrationEntries` takes back — a plan keeps one version a narration,
+`undoNarrationEntries` takes back — and a step a narration played carries that
+narration on the step itself (`playedBy`, `applyRevealToSkeleton`), so taking
+the narration back un-plays the step in every version of the plan that stays,
+also under a version another narration or a GM wrote since (a clue shown
+between a trigger vignette and the burn of its price left the step played with
+its vignette struck and its clock re-armed); a clock a later trigger retired
+after the plan's last step then runs again, empty (`rerunRetiredPlanClock`;
+issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
 capture's link), so the version before it is never pushed off the three-deep
 history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,

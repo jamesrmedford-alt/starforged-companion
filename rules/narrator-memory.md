@@ -37,7 +37,10 @@ layers. This file is the never-break list.
    vignette, `vignetteNarrationId`, so a price paid in between does not hide
    it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — and it is struck by
    that id when the clock has triggered again since and carries the later
-   trigger's stamp, the later trigger left standing, PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN) —
+   trigger's stamp, the later trigger left standing, PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN;
+   the plan step a narration played carries that narration, `playedBy`, and
+   goes back unplayed with it whatever was written to the plan since,
+   PLAN-STEP-REWRITTEN-BEFORE-BURN) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

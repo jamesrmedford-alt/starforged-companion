@@ -529,6 +529,34 @@ export async function restoreClocksPacedBy(narrationIds) {
 }
 
 /**
+ * Run a hidden plan's clock again that a pacing retired — the narration that
+ * paced it played what was then the plan's last step — now that a step of the
+ * plan is owed again: an earlier narration's step, taken back from under that
+ * one's version (resultUpgrade.js undoSupersededPlans, by the clock the plan
+ * links; issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN). Running, empty — as that pacing leaves a
+ * clock with a step to come — and still stamped with it, so taking that
+ * narration back as well re-arms the clock (unpacedClock). Decided inside the
+ * clock write queue: a clock that is running, gone, no plan's, or retired by
+ * something other than a pacing (no stamp) is left as it is. Written on a
+ * copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored, or null when nothing was written
+ */
+export async function rerunRetiredPlanClock(clockId) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active !== false || !clock.planId || typeof clock.pacedBy !== "string" || !clock.pacedBy) return null;
+    clock.active    = true;
+    clock.filled    = 0;
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
+  });
+}
+
+/**
  * The narration whose pacing of a hidden plan's clock a reverted price's
  * trigger did, or null when the clock carries none of its. With the price's
  * own trigger vignette named (`vignette`), the clock's stamp is that

@@ -972,18 +972,28 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
  * @param {string} label — for the log
  */
 async function undoSupersededPlans(ids, label) {
+  // The plans a step of theirs was taken back from under a later narration's
+  // version (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN).
+  let owed = [];
   try {
     const { undoNarrationEntries } = await import("../world/worldJournal.js");
-    await undoNarrationEntries(ids, { categories: ["secrets"] });
+    const undone = await undoNarrationEntries(ids, { categories: ["secrets"] });
+    owed = Array.isArray(undone?.stepsTakenBack) ? undone.stepsTakenBack : [];
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
   try {
-    const { removeClocksMadeBy, restoreClocksPacedBy } = await import("../clocks/clocks.js");
+    const { removeClocksMadeBy, restoreClocksPacedBy, rerunRetiredPlanClock } = await import("../clocks/clocks.js");
     await removeClocksMadeBy(ids);
     // A plan clock it paced goes back one short of full, the step it played
     // put back unplayed above (issue #362 AC33).
     await restoreClocksPacedBy(ids);
+    // A clock a later narration retired after what was then the plan's last
+    // step runs again for the step now owed — the first of two triggers
+    // burned after the second played the plan out.
+    for (const plan of owed) {
+      if (typeof plan?.clockId === "string" && plan.clockId) await rerunRetiredPlanClock(plan.clockId);
+    }
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's countdown clocks could not be removed:`, err?.message ?? err);
   }

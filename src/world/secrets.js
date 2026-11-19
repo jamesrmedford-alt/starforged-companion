@@ -1031,7 +1031,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       if (!before || !planInPlay(before, ending)) continue;
       const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
       const after = await updateSkeleton(reveal.id,
-        r => ({ ...applyRevealToSkeleton(r, reveal), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
+        r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
       if (!after) continue;
       out.revealed += 1;
       // What the narrator's world snapshot makes of it (issue #357): a truth
@@ -1759,10 +1759,14 @@ export async function retireSkeleton(id) {
  * @returns {Promise<Object|null>}
  */
 export async function editSkeleton(id, fields = {}) {
-  // An item kept word for word keeps whether it was played or shown.
-  const relist = (lines, old, prefix, flag) => lines.map((t, i) => ({
-    id: `${prefix}${i + 1}`, text: t, [flag]: old.some(o => o.text === t && o[flag] === true),
-  }));
+  // An item kept word for word keeps whether it was played or shown — a
+  // played step with the narration that played it (`playedBy`), so taking
+  // that narration back still un-plays it (issue #364
+  // PLAN-STEP-REWRITTEN-BEFORE-BURN).
+  const relist = (lines, old, prefix, flag) => lines.map((t, i) => {
+    const kept = old.find(o => o.text === t && o[flag] === true) ?? null;
+    return { id: `${prefix}${i + 1}`, text: t, [flag]: !!kept, ...(typeof kept?.playedBy === "string" ? { playedBy: kept.playedBy } : {}) };
+  });
   const edited = await updateSkeleton(id, (r) => {
     const next = { ...r, subject: { ...r.subject } };
     if (typeof fields.subject === "string" && fields.subject.trim()) next.subject.name = fields.subject;
