@@ -64,6 +64,7 @@ import {
 import {
   supersedeOriginalNarration,
   struckMatchLine,
+  struckEffectLine,
   relayCardButtonClick,
   requesterOwnsActor,
   claimResultUpgrade,
@@ -478,7 +479,9 @@ async function advanceAbilityClock(actor, improve) {
  * note on the strong hit's other effects (`effectsNote`, HTML from
  * effectsNoteHtml). A match the result kept reads as the strong hit's: the
  * miss's line is struck and the strong hit's is in the banner (issue #362
- * AC31).
+ * AC31). The first outcome's consequence line — a miss's "… Pay the Price." —
+ * is struck too, as the burned card strikes it (issue #364
+ * UPGRADED-CARD-FIRST-EFFECT-UNSTRUCK).
  */
 function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null) {
   // The cost names the asset — text, as the button's label is (issue #362 AC83).
@@ -486,7 +489,7 @@ function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", 
   const match = improve?.isMatch ? `<div class="sf-move-match">${matchLine(improve.improveTo ?? "strong_hit")}</div>` : "";
   const banner =
     `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effectsNote}</div>`;
-  return `${struckMatchLine(originalContent)}${banner}`;
+  return `${struckEffectLine(struckMatchLine(originalContent))}${banner}`;
 }
 
 /**

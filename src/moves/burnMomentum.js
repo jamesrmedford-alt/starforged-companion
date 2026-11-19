@@ -962,13 +962,16 @@ export function burnedMomentumLine(before, after, reset) {
 /**
  * Rewrite the existing move-result card's HTML to reflect the burned
  * outcome. Strikes through the original outcome label — and the match line
- * that read it (struckMatchLine) — and appends the burned outcome, what its
+ * that read it (struckMatchLine) and the consequence line it brought
+ * (struckEffectLine) — and appends the burned outcome, what its
  * match adds, the momentum the burn spent (`momentumNote`,
  * burnedMomentumLine) + new consequence text, and the note on its other
  * effects (`effectsNote`, HTML from effectsNoteHtml).
  */
 function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "", momentumNote = "") {
-  const html = struckMatchLine(originalContent);
+  // The first outcome's lines are struck before the burned block — which
+  // carries a consequence line of its own — is put in.
+  const html = struckEffectLine(struckMatchLine(originalContent));
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
   const burnNote = (
     `<div class="sf-move-burn-result">` +
@@ -1012,6 +1015,26 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
 export function struckMatchLine(content) {
   return String(content ?? "").replace(/<div class="sf-move-match">([\s\S]*?)<\/div>/,
     (_full, inner) => `<div class="sf-move-match sf-move-match--struck"><s>${inner}</s></div>`);
+}
+
+/**
+ * A move card with the consequence line its first outcome rendered (index.js
+ * formatMoveResult — the resolution's `otherEffect`: a miss's "… Pay the
+ * Price.") struck through, as that outcome is: the upgrade replaced the
+ * outcome, and its consequence stood unstruck below "Burned → Strong Hit" —
+ * on a held result, a price that was never paid (issue #364
+ * UPGRADED-CARD-FIRST-EFFECT-UNSTRUCK). The card's one line of exactly this
+ * class: the course-reroute line and an upgrade's own notes carry a second
+ * class and are left. Applied to the card as rolled, before an upgraded
+ * block with a consequence line of its own is added; Improve Result strikes
+ * it the same way. A card with no consequence line is returned as it is.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+export function struckEffectLine(content) {
+  return String(content ?? "").replace(/<div class="sf-move-effect">([\s\S]*?)<\/div>/,
+    (_full, inner) => `<div class="sf-move-effect sf-move-effect--struck"><s>${inner}</s></div>`);
 }
 
 
