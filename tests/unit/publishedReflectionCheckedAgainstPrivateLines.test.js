@@ -57,7 +57,11 @@ async function reset({ privateLines = [{ playerId: 'pl-2', lines: [RENS_LINE] }]
 
 const checks      = () => table.claude.calls.filter(c => c.userText?.includes('LIMITS:'));
 const reflections = () => table.cards(f => f.publishedReflection);
-const refusals    = () => table.cards(f => f.publishRefusedNotice);
+/** What Pat was told about a reflection that was not published (with no window open, a notification —
+ *  the GM answers the publish; issue #364 PRIVATE-REFLECTION-REFUSAL-IN-CHAT, it was a whisper in chat). */
+const refusals    = () => table.client('pl-1').notifications.filter(n => /not published|could not be published/i.test(n.message));
+/** Chat messages whispered to anyone about it: none. */
+const whispers    = () => table.cards(() => true).filter(m => (m.whisper ?? []).length);
 
 /** Pat publishes from his Private Channel. */
 async function patPublishes(content = REFLECTION) {
@@ -91,10 +95,12 @@ describe('issue #362 D13 — a published reflection is checked against the other
     expect(reflections()).toEqual([]);
     const notice = refusals().at(-1);
     expect(notice, 'Pat is told').toBeTruthy();
-    expect(notice.whisper).toEqual(['pl-1']);
-    expect(notice.content).toMatch(/not published/i);
-    expect(notice.content).not.toContain(RENS_LINE);
-    expect(notice.content).not.toMatch(/\bRen\b/);
+    expect(notice.message).toMatch(/not published/i);
+    expect(notice.message).not.toContain(RENS_LINE);
+    expect(notice.message).not.toMatch(/\bRen\b/);
+    // Pat alone is told, and not in the main chat.
+    expect(table.client('pl-2').notifications).toEqual([]);
+    expect(whispers()).toEqual([]);
   }, 30_000);
 
   it('a check that cannot run — the call fails — refuses: "can\'t be checked right now"', async () => {
@@ -102,7 +108,7 @@ describe('issue #362 D13 — a published reflection is checked against the other
     await patPublishes();
 
     expect(reflections()).toEqual([]);
-    expect(refusals().at(-1)?.content).toMatch(/can(?:'|&#39;)t be checked/);
+    expect(refusals().at(-1)?.message).toMatch(/can't be checked/);
   }, 30_000);
 
   it('a reply that names neither answer is not taken as clear', async () => {
@@ -118,7 +124,7 @@ describe('issue #362 D13 — a published reflection is checked against the other
 
     expect(checks()).toEqual([]);
     expect(reflections()).toEqual([]);
-    expect(refusals().at(-1)?.content).toMatch(/can(?:'|&#39;)t be checked/);
+    expect(refusals().at(-1)?.message).toMatch(/can't be checked/);
   }, 30_000);
 
   it('control: only the publisher\'s own Private Lines — nothing is checked, and the reflection is posted', async () => {

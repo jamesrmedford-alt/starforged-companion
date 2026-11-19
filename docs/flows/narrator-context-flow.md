@@ -229,7 +229,10 @@ the Private Channel's narrator (`requestPrivateNarration`: on entry and when
 its reply returns, a reply written meanwhile discarded unshown) and its
 Publish (`publishToMainChat` refuses and tells the player — a published
 reflection is canon; the canonical GM, which posts it, checks the live flag
-again, before and after its Private Lines check — issue #362 D13) — against the caller's
+again, before and after its Private Lines check — issue #362 D13 — and
+answers the publisher's client, which says a refusal in the Private Channel
+window's banner, never as a whisper in the main chat — issue #364
+PRIVATE-REFLECTION-REFUSAL-IN-CHAT) — against the caller's
 campaignState **and** the live stored setting (`isXCardActive`,
 `narrator.js`, exported with `watchXCard` for the Private Channel; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played

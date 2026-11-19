@@ -9,7 +9,7 @@
  */
 
 import { requestPrivateNarration } from "./narrate.js";
-import { publishToMainChat, XCARD_PUBLISH_REFUSED, STALE_PAGE_REFUSED } from "./publish.js";
+import { publishToMainChat, XCARD_PUBLISH_REFUSED, STALE_PAGE_REFUSED, PUBLISH_UNANSWERED } from "./publish.js";
 import { isXCardActive } from "../narration/narrator.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
@@ -69,6 +69,8 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.sessionId      = null;
     this.errorBanner    = "";
     this.busy           = false;
+    // A publish is out with the GM's game: its button waits for the answer.
+    this.publishing     = false;
   }
 
   /**
@@ -151,6 +153,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       // A flush found no journal to save to (issue #337 Y41): said while it lasts.
       unsaved:        isTranscriptUnsaved(this.userId),
       busy:           this.busy,
+      publishing:     this.publishing,
     };
   }
 
@@ -165,7 +168,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
         <textarea class="pc-input" name="pc-input" data-pc-input rows="3" placeholder="Speak to the narrator privately… (Enter to send, Shift+Enter for a newline)"${context.busy ? " disabled" : ""}>${escapeHtml(context.initialMessage)}</textarea>
         <div class="pc-actions">
           <button type="button" class="pc-send" data-action="send"${context.busy ? " disabled" : ""}>Send</button>
-          <button type="button" class="pc-publish" data-action="publish">Publish…</button>
+          <button type="button" class="pc-publish" data-action="publish"${context.publishing ? " disabled" : ""}>${context.publishing ? "Publishing…" : "Publish…"}</button>
         </div>
       </div>`;
     // Enter-to-send (Shift+Enter keeps the textarea's newline default).
@@ -299,7 +302,27 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     if (!this.initialMessage) this.initialMessage = text;
   }
 
+  /**
+   * What the publisher is told about a reflection that was not published —
+   * in this window's banner (issue #364 PRIVATE-REFLECTION-REFUSAL-IN-CHAT:
+   * the GM's refusal was a whisper in the main chat). "" clears the "not
+   * answered yet" line once a late answer says it is published. The answer
+   * may come after the publish's wait is over, with the window re-rendered
+   * since — or closed, when it is said as a notification instead.
+   */
+  #publishNotice(text) {
+    if (PrivateChannelApp.#instances.get(this.userId) !== this) {
+      if (text) globalThis.ui?.notifications?.warn?.(text);
+      return;
+    }
+    if (!text && this.errorBanner !== PUBLISH_UNANSWERED) return;
+    this.errorBanner = text;
+    Promise.resolve(this.render()).catch(err =>
+      console.warn(`${MODULE_ID} | private channel: could not show why the reflection was not published:`, err?.message ?? err));
+  }
+
   static async #onPublish(_event, _target) {
+    if (this.publishing) return;
     // Publish the most recent narrator turn (v1 — a selection UI is a §17 follow-on).
     const lastNarrator = [...this.turns].reverse().find(t => t.who === "narrator");
     if (!lastNarrator) {
@@ -321,8 +344,23 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
                     <blockquote>${escapeHtml(lastNarrator.text)}</blockquote>`,
         })
       : true;
-    if (!confirmed) return;
-    await publishToMainChat({ userId: this.userId, content: lastNarrator.text });
+    if (!confirmed || this.publishing) return;
+    // The canonical GM publishes it, and answers: the button waits for that
+    // (bounded — publishToMainChat settles when the answer does not come).
+    // Released in a finally: a throw must not leave Publish dead.
+    this.publishing  = true;
+    this.errorBanner = "";
+    try {
+      await this.render();
+      await publishToMainChat({
+        userId:   this.userId,
+        content:  lastNarrator.text,
+        onNotice: (text) => this.#publishNotice(text),
+      });
+    } finally {
+      this.publishing = false;
+    }
+    await this.render();
   }
 
   /**
