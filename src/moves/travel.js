@@ -71,6 +71,12 @@ function chartedSiteByRecordName(destination, campaignState) {
   return site?.discovered === true && typeof site.actorId === "string" && listed.includes(site.actorId) ? site : null;
 }
 
+/** Whether the name resolver's pick is its exact-name rung's: the place is called just what the destination says. */
+function namedExactly(place, destination) {
+  const name = String(place?.entity?.name ?? "").trim().toLowerCase();
+  return !!name && name === String(destination ?? "").trim().toLowerCase();
+}
+
 /** A location still undiscovered: its record unexplored, or its site not yet charted. */
 function isUnchartedSite(place, campaignState) {
   if (String(place?.entity?.status ?? "").toLowerCase() === "unexplored") return true;
@@ -153,6 +159,16 @@ export async function readForcedTravelDestination(interpretation, { interpret } 
  * stays: nothing says where it goes (the caller first tries the scene's
  * destination, sceneDestination).
  *
+ * The rungs, in `!at`'s order (index.js resolveCurrentLocationName's
+ * `siteRecordNames`): a place called exactly what the destination says; then
+ * the charted site whose record keeps exactly that name; only then the name
+ * resolver's looser rungs — a name the destination begins, one name inside
+ * the other as whole words. The looser rungs ran first and the record was
+ * asked only when they found nothing, so with a settlement "Archer" on the
+ * map a course for the renamed site's "Archer's rendezvous — the gap" was a
+ * course to Archer: it carried no `moveTargetId`, and the arrival docked the
+ * ship at the settlement (issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST).
+ *
  * @param {Object} interpretation — mutated
  * @param {Object} campaignState
  * @param {{ resolvePlace: Function }} deps
@@ -163,12 +179,14 @@ export function rerouteUnchartedCourse(interpretation, campaignState, { resolveP
   if (interpretation.moveTargetId) return null;
   const destination = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget.trim() : "";
   if (!destination) return null;
-  if (chartedPlaceFor(destination, campaignState, resolvePlace)) return null;
+  const place = chartedPlaceFor(destination, campaignState, resolvePlace);
+  if (place && namedExactly(place, destination)) return null;
   const charted = chartedSiteByRecordName(destination, campaignState);
   if (charted) {
     interpretation.moveTargetId = charted.actorId;
     return null;
   }
+  if (place) return null;   // the resolver's looser rungs
 
   const to = "undertake_an_expedition";
   const reroute = { from: "set_a_course", destination };

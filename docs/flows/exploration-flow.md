@@ -86,7 +86,15 @@ record and pin for it).
   renamed since — its `moveTargetId` the site's location Actor, which the
   arrival docks at by id (issue #362 AC50; the GM's `!at` by that label finds
   the site the same way — issue #364 AT-COMMAND-OLD-LABEL, § Location
-  tracking).
+  tracking). The course asks in `!at`'s order: a place called exactly what
+  the destination says, then the charted site whose record keeps exactly that
+  name, only then the resolver's looser rungs (a name it begins, one name
+  inside the other as whole words) — they ran first, so with a settlement
+  "Archer" on the map a course for the renamed site's "Archer's rendezvous —
+  the gap" carried no `moveTargetId` and arrived at Archer (issue #364
+  COURSE-OLD-LABEL-LOOSER-RUNG-FIRST). The same label while the site is still
+  uncharted is the expedition either way: its location Actor carries the
+  label, so the resolver's exact rung finds the unexplored site.
 
 ## 1. Setting out
 
@@ -339,7 +347,8 @@ record and pin for it).
   (`precursorSites.siteNamedExactly`); `!at ‹old working label›` found
   nothing while a Set a Course by it arrived (issue #364
   AT-COMMAND-OLD-LABEL; the course takes that step in
-  `rerouteUnchartedCourse`, issue #362 AC50) —
+  `rerouteUnchartedCourse`, issue #362 AC50 — in the same place on the
+  ladder, issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST) —
   and every resolver by name
   (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
   narrator's ship / position too; and since issue #345 AA06 the narrator's
