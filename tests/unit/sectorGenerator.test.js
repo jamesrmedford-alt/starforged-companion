@@ -800,7 +800,7 @@ describe("createEntityJournals — F4 sector-folder pre-registration", () => {
     expect(stub.trouble).toBeUndefined();
 
     // Step 2: storeSector lands the full record and replaces the stub
-    await storeSector(sector, { settlements: {}, connectionJournalId: null }, campaignState);
+    await storeSector(sector, { settlements: {} }, campaignState);
     expect(campaignState.sectors).toHaveLength(1);
     const stored = campaignState.sectors[0];
     expect(stored.id).toBe("sector-test-003");

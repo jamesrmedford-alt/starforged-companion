@@ -988,16 +988,31 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
   // after it. It was inserted before the card's FIRST `</div>` — the
   // move-name header's — so the burned outcome rendered inside the bold
   // title (issue #326 W57). A card with no outcome div takes it at its end.
-  let struck = false;
-  const out = html.replace(
-    /<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
-    (_full, inner) => {
-      struck = true;
-      return `<div class="sf-move-outcome sf-move-outcome--burned"><s>${inner}</s></div>${burnNote}`;
-    },
-  );
-  if (struck) return out;
+  const out = struckOutcomeLine(html, { after: burnNote, modifier: "burned" });
+  if (out !== html) return out;
   return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, `${burnNote}</div>`) : html + burnNote;
+}
+
+
+/**
+ * A move card with the outcome label its roll rendered (index.js
+ * formatMoveResult — "Miss", "Weak Hit ✦ Match") struck through, and `after`
+ * put right behind it. The burn's rewriter struck it; Improve Result struck
+ * the label's match and consequence lines and left the label itself standing
+ * — a live "Miss" over "Result improved to a strong hit" (issue #364
+ * IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK). Both strike it here. Only the card's
+ * label as rolled: an upgraded block's own label carries a second class. A
+ * card with no outcome label (a move that rolled nothing) is returned as it
+ * is, `after` not added — the caller places it.
+ *
+ * @param {string} content
+ * @param {{ after?: string, modifier?: string }} [opts] — `after`: HTML put
+ *   behind the struck label; `modifier`: the struck label's class suffix
+ * @returns {string}
+ */
+export function struckOutcomeLine(content, { after = "", modifier = "struck" } = {}) {
+  return String(content ?? "").replace(/<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
+    (_full, inner) => `<div class="sf-move-outcome sf-move-outcome--${modifier}"><s>${inner}</s></div>${after}`);
 }
 
 

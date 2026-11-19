@@ -199,7 +199,7 @@ import {
 } from "./system/encounterSpawn.js";
 import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
 import { registerConnectionDeleteHook } from "./entities/connection.js";
-import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook, reconcileUnswornVowCards } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -2973,7 +2973,10 @@ function wonFightMarks(track, outcome) {
  *     `rewardUpgrade` step that runs the upgrade again (issue #364
  *     WON-FIGHT-REWARD-UPGRADE-NO-RETRY: it was a line under "Not applied"
  *     on the move card, and nothing could give the difference after).
- * What landed and what did not, in words, for the upgraded move card.
+ * A raise of the victory card's count or a mark the world refused goes on the
+ * same card, as a `milestoneUpgrade` step (upgradeFightVowMilestone; issue
+ * #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — each was a "Not applied" line
+ * too). What landed and what did not, in words, for the upgraded move card.
  *
  * @param {Object} track — the fight, as stored
  * @param {Actor|null} rollerActor
@@ -2983,51 +2986,108 @@ function wonFightMarks(track, outcome) {
 async function payWonFightDifference(track, rollerActor, resolutionId) {
   const applied = [];
   const notApplied = [];
+  // What the world refused: the steps of the GMs' payoff card, whose Retry
+  // runs them, and each one's words for the upgraded move card.
+  const failures = [];
+  const owed = [];
   const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
-  const label = vowName ?? "the vow";
-  const now = wonFightMarks(track, "strong_hit");
   const card = resolutionId ? (game.messages?.contents ?? []).find(m =>
     m?.flags?.[MODULE_ID]?.fightVowCard === true && m.flags[MODULE_ID].resolutionId === resolutionId) : null;
-  const f = card?.flags?.[MODULE_ID] ?? null;
-  const more = f ? now - Number(f.marks ?? now) : 0;
-  if (more > 0 && !f.resolvedActions?.markMilestone) {
-    try {
-      await card.update({
-        [`flags.${MODULE_ID}.marks`]: now,
-        content: String(card.content ?? "").replace(/⚑ Mark milestone \(×\d+\)/, `⚑ Mark milestone (×${now})`),
-      });
-      applied.push(`the victory card's milestone toward ${label} raised to ×${now}`);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | won fight: the victory card's milestone could not be raised:`, err?.message ?? err);
-      notApplied.push(`the strong hit's milestone ×${now} on the victory card — the world refused it`);
-    }
-  } else if (more > 0) {
-    const res = await markFightVowMilestoneOnce({ cardId: `${card.id}:upgrade`, vowName: f.vowName ?? vowName,
-      vowId: typeof f.vowId === "string" ? f.vowId : vowId, actorId: f.actorId ?? rollerActor?.id ?? null, marks: more })
-      .catch(err => ({ ok: false, error: err?.message ?? String(err) }));
-    if (res?.ok) applied.push(`${more} more milestone mark${more === 1 ? "" : "s"} toward ${label}`);
-    else notApplied.push(`${more} more milestone mark${more === 1 ? "" : "s"} toward ${label} (${res?.reason ?? "refused"})`);
-  }
+  // No victory card of this win in chat: no milestone of it to raise.
+  const milestone = card
+    ? await upgradeFightVowMilestone({ cardId: card.id, marks: wonFightMarks(track, "strong_hit"),
+      vowName, vowId, actorId: rollerActor?.id ?? null })
+    : null;
+  if (milestone?.ok && milestone.applied) applied.push(milestone.applied);
+  else if (milestone && !milestone.ok && milestone.step) { failures.push(milestone); owed.push(milestone.what); }
+  // The vow is fulfilled, or on no sheet: nothing a Retry could mark.
+  else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} (${milestone.reason ?? "refused"})`);
   const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
     return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
   });
   if (reward?.ok && !reward.skipped) applied.push(reward.applied);
-  else if (reward && !reward.ok) {
-    // The give refused after its claim (`rewardGrant`), or the claim itself
-    // (`rewardUpgrade`): each a step of the GMs' card, whose Retry runs it.
+  // The give refused after its claim (`rewardGrant`), or the claim itself
+  // (`rewardUpgrade`).
+  else if (reward && !reward.ok) { failures.push(reward); owed.push("the reward's strong-hit difference"); }
+  if (failures.length) {
+    // Each a step of the GMs' card, whose Retry runs it.
     let told = true;
-    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? vowId ?? null, actorId: rollerActor?.id ?? null,
-      outcome: "strong_hit", failures: [reward] })
+    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward?.vowId ?? milestone?.vowId ?? vowId ?? null,
+      actorId: rollerActor?.id ?? null, outcome: "strong_hit", failures })
       .catch(err => {
         told = false;
-        console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err);
+        console.warn(`${MODULE_ID} | fight payoff failure card failed:`, err?.message ?? err);
       });
-    notApplied.push(told
-      ? "the reward's strong-hit difference — the GMs have a Retry"
-      : "the reward's strong-hit difference — the world refused it");
+    notApplied.push(...owed.map(what => `${what} — ${told ? "the GMs have a Retry" : "the world refused it"}`));
   }
   return { applied, notApplied };
+}
+
+/**
+ * The milestone a weak-hit win upgraded to a strong hit adds (issue #362 D7),
+ * by the victory card as it stands now — the first payment
+ * (payWonFightDifference) and the GMs' Retry of a refused one (runPayoffStep
+ * "milestoneUpgrade") run the same decision, so a ⚑ pressed between the two
+ * is paid as pressed:
+ *   - ⚑ still to press: the card's count is raised to `marks` — one press
+ *     pays them. A card already showing them (a raise that reached the world
+ *     with its confirmation lost) is left.
+ *   - ⚑ pressed: the marks its press lacked are marked now, once — the vow's
+ *     payoff ledger, `milestone:<card>:upgrade` (markFightVowMilestoneOnce),
+ *     is read before the mark and written by it, so a second run marks
+ *     nothing.
+ * A refused raise or mark is a `milestoneUpgrade` step for the GMs' payoff
+ * card (issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — each was a "Not
+ * applied" line on the upgraded move card, with no Retry: the burn was spent
+ * and the milestone lost). A vow fulfilled or gone since has nothing to mark
+ * and is no step. `lacking`: the marks owed once ⚑ was pressed, kept on the
+ * step so its Retry still marks them when the victory card is gone from chat.
+ *
+ * @param {{ cardId: string|null, marks: number, lacking?: number|null, vowName?: string|null,
+ *   vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, what?: string, step?: string,
+ *   cardId?: string, marks?: number, lacking?: number|null, vowId?: string|null, reason?: string, error?: string }>}
+ */
+async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = null, vowName = null, vowId = null, actorId = null } = {}) {
+  const card = cardId ? (game.messages?.get?.(cardId) ?? null) : null;
+  const f = card?.flags?.[MODULE_ID]?.fightVowCard === true ? card.flags[MODULE_ID] : null;
+  const vow = {
+    vowName: f?.vowName ?? vowName, vowId: typeof f?.vowId === "string" ? f.vowId : vowId,
+    actorId: (typeof f?.actorId === "string" && f.actorId) ? f.actorId : actorId,
+  };
+  const label = vow.vowName ?? "the vow";
+  const refused = (what, more, res) => ({
+    ok: false, step: "milestoneUpgrade", cardId, marks, lacking: more, vowId: vow.vowId ?? null, what,
+    reason: res?.reason ?? "refused", ...(res?.error ? { error: res.error } : {}),
+  });
+  const more = f ? marks - Number(f.marks ?? marks) : Math.max(0, Math.floor(Number(lacking)) || 0);
+  if (!f && !more) {
+    // Its ⚑ was never pressed and the card is gone: nothing to raise, and no
+    // mark of this win on the vow to add to.
+    return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" });
+  }
+  if (more <= 0) return { ok: true, skipped: true };
+  if (f && !f.resolvedActions?.markMilestone) {
+    const what = `the strong hit's milestone ×${marks} on the victory card`;
+    try {
+      await card.update({
+        [`flags.${MODULE_ID}.marks`]: marks,
+        content: String(card.content ?? "").replace(/⚑ Mark milestone \(×\d+\)/, `⚑ Mark milestone (×${marks})`),
+      });
+      return { ok: true, applied: `the victory card's milestone toward ${label} raised to ×${marks}` };
+    } catch (err) {
+      console.warn(`${MODULE_ID} | won fight: the victory card's milestone could not be raised:`, err?.message ?? err);
+      return refused(what, null, { reason: "refused", error: errText(err) });
+    }
+  }
+  const what = `${more} more milestone mark${more === 1 ? "" : "s"} toward ${label}`;
+  const res = await markFightVowMilestoneOnce({ cardId: `${cardId}:upgrade`, ...vow, marks: more })
+    .catch(err => ({ ok: false, reason: "refused", error: errText(err) }));
+  if (res?.ok) return res.skipped ? { ok: true, skipped: true } : { ok: true, applied: what };
+  // Fulfilled, or on no sheet any more: nothing to mark, and nothing to retry.
+  if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return { ok: false, what, reason: res.reason };
+  return refused(what, more, res);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6739,6 +6799,9 @@ const PAYOFF_REASONS = {
   "no-pc":     "no player character to receive it",
   "superseded": "the move's result was upgraded since, and its new outcome stands",
   "card-gone": "the move card is no longer in chat",
+  "victory-card-gone": "the victory card is no longer in chat, and its ⚑ was never pressed",
+  "vow-completed": "the vow is fulfilled — nothing to mark",
+  "vow-gone":  "the vow is on no character's sheet any more",
 };
 
 const PAYOFF_TITLES = {
@@ -6800,7 +6863,8 @@ function payoffStepRecord(f) {
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
-    case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
+    case "milestoneUpgrade": return { step: "milestoneUpgrade", cardId: f.cardId ?? null, marks: f.marks ?? 1, lacking: f.lacking ?? null };
+    case "xp":       return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "choiceCard":  return { step: "choiceCard", pcId: f.pcId ?? null, moveId: f.moveId ?? null, moveName: f.moveName ?? null,
       sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {}, resolutionId: f.resolutionId ?? null };
@@ -6927,6 +6991,27 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         const vow = readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
         const now = vow ? ` It stands at ${vow.ticks}/40 ticks now.` : "";
         return `⚑ Milestone ×${f.marks ?? 1} on “${escapeChatHtml(vowName ?? "your vow")}” — ${why}.${now}`;
+      }
+      case "milestoneUpgrade": {
+        // A weak-hit win's milestone raised to the strong hit's (issue #364
+        // WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY): the count the victory card
+        // shows now, or — its ⚑ pressed — where the vow stands.
+        const safeVow = escapeChatHtml(vowName ?? "your vow");
+        const victory = typeof f.cardId === "string" ? (game.messages?.get?.(f.cardId)?.flags?.[MODULE_ID] ?? null) : null;
+        if (!(Number(f.lacking) > 0)) {
+          const shown = victory?.fightVowCard === true ? Number(victory.marks) : NaN;
+          const now = !Number.isFinite(shown) ? ""
+            : shown >= Number(f.marks)
+              ? ` The card shows ×${shown} now, though the raise was not confirmed: a Retry changes nothing.`
+              : ` The card shows ×${shown} now.`;
+          return `The victory card's ⚑ milestone on “${safeVow}” raised to ×${f.marks ?? 1}, for a win upgraded from a weak hit — ${why}.${now}`;
+        }
+        const byId = fightCardVow({ vowId, actorId });
+        const vow = byId?.item
+          ? readVows(byId.holder).find(v => v.id === byId.item.id)
+          : readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
+        const now = vow ? ` It stands at ${vow.ticks}/40 ticks now.` : "";
+        return `⚑ ${plural(Number(f.lacking), "more milestone mark")} on “${safeVow}”, for a win upgraded from a weak hit after its ⚑ was pressed — ${why}.${now}`;
       }
       case "rewardGrant": {
         const pc   = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
@@ -7115,6 +7200,17 @@ async function runPayoffStep(s, card, copies) {
       // claim first, so a reward already raised gives nothing more.
       if (!copies.length) return { ok: false, reason: "no-vow" };
       return upgradeLinkedVowReward(card.vowName ?? null, "strong_hit", { actorId: card.actorId ?? null, copies });
+    case "milestoneUpgrade": {
+      // A weak-hit win's milestone raised to the strong hit's, the raise of
+      // the victory card's count or the mark refused (issue #364
+      // WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY): decided again by the victory
+      // card as it stands — a ⚑ pressed since is paid the marks it lacked,
+      // once, on the vow's payoff ledger.
+      const marks = Math.floor(Number(s.marks));
+      if (typeof s.cardId !== "string" || !s.cardId || !(marks >= 1 && marks <= 3)) return { ok: false, reason: "invalid step" };
+      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null,
+        vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null });
+    }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       const given = await giveReward(pc, s.reward, s.plan);
@@ -7177,6 +7273,7 @@ function registerFightVowMilestoneHook() {
  * src/moves/cardActions.js), which applies the card's own values once and
  * stamps `resolvedActions.<action>`; an action already applied renders
  * disabled, and a click that is not delivered (no GM) re-arms its button.
+ * 🤝 on a card whose NPC was deleted since (`deepenRetired`) renders disabled.
  * "🏁 Attempt to Fulfill" relays too ("fulfilVow.attempt" — wireFulfilAttempt):
  * the GM claims the card and posts the roller's Fulfill Your Vow once.
  *
@@ -7202,6 +7299,18 @@ export function wireFightVowButtons(message, root) {
       btn.title = closed === "gone"
         ? "The vow this fight served is no longer on any character's sheet"
         : "The vow this fight served is fulfilled";
+    }
+  }
+
+  // The NPC this card's bond is with had their card deleted since (the delete
+  // teardown's stamp — cardActions.retireFightVowDeepenFor): 🤝 is retired on
+  // every client and render, and says why — pressed, it told the GMs "not
+  // found" (issue #364 WON-FIGHT-CARD-DELETED-NPC).
+  if (f.deepenRetired) {
+    const btn = root?.querySelector?.(`[data-action="sf-deepen-bond"]`);
+    if (btn) {
+      btn.disabled = true;
+      btn.title = `${f.connectionName ?? "This connection"}'s card was deleted — there is no bond to deepen`;
     }
   }
 
@@ -9593,6 +9702,10 @@ Hooks.once("ready", () => {
   // Player-authored vows (#248 B1) — a vow made on the sheet gets the same setup
   // (reward proposal + ⚔ Swear it roll). GM-gated createItem detection.
   registerPlayerVowHook();
+  // A vow named or re-ranked on its sheet while no GM was connected: the
+  // canonical GM brings its unsworn card in step now (issue #364
+  // VOW-CARD-RENAME-NO-GM). Bounded, and never throws.
+  reconcileUnswornVowCards();
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();

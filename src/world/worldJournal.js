@@ -1415,16 +1415,27 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * (XCARD-CAPTURE-TRANSITIONS) — and a faction's stance on its record, the
  * canonical home, is put back too where the record still holds what the
  * narration set (revertFactionStances).
+ * A hidden plan's escalation step one of them played goes back unplayed by
+ * its own mark (`playedBy`, skeletons.js playedMark) in every
+ * version of the plan that stays — also under a version they did not write
+ * (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN: a plan was put back only while
+ * its newest version was a removed narration's, so a clue another narration
+ * showed in between, or a GM's edit, left the removed narration's step
+ * played with its vignette gone and its clock re-armed). What the later
+ * writer wrote stands; the plans in play touched that way are named with
+ * the clock each links (`stepsTakenBack`), for the caller's clocks.
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
  *
  * @param {string[]} narrationIds
  * @param {{ categories?: string[]|null }} [opts] — the categories to undo (default every one, and the Session Log)
- * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number }>}
+ * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number,
+ *   stepsTakenBack: Array<{ id: string, clockId: string|null }> }>}
+ *   `stepsTakenBack`: the active plans a step was un-played in under a version the narrations did not write
  */
 export async function undoNarrationEntries(narrationIds, { categories = null } = {}) {
-  const out = { restored: 0, retracted: 0, deleted: 0, beats: 0 };
+  const out = { restored: 0, retracted: 0, deleted: 0, beats: 0, stepsTakenBack: [] };
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
   if (!removed.size) return out;
   const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
@@ -1441,7 +1452,22 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
     const flagKey = FLAG_KEYS[category];
     for (const page of [...(journal?.pages?.contents ?? [])]) {
       const entry = page?.flags?.[MODULE_ID]?.[flagKey];
-      if (!fromRemoved(entry)) continue;
+      if (!fromRemoved(entry)) {
+        // A plan another narration, or a GM, wrote since: its versions stay,
+        // less the steps the removed narrations played.
+        if (category === "secrets" && entry) {
+          try {
+            const unplayed = withoutStepsPlayedBy(entry, removed);
+            if (unplayed) {
+              await writeEntryPage(page, flagKey, unplayed.entry);
+              if (unplayed.top) noteStepTakenBack(out, unplayed.entry);
+            }
+          } catch (err) {
+            console.warn(`${MODULE_ID} | X-Card: could not take a removed narration's step back from the plan "${page?.name}":`, err?.message ?? err);
+          }
+        }
+        continue;
+      }
       try {
         const versions = Array.isArray(entry.previous) ? entry.previous : [];
         const at = versions.findIndex(v => v && !fromRemoved(v));
@@ -1451,13 +1477,18 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
         }
         if (at >= 0) {
           const older = versions.slice(at + 1);
-          await writeEntryPage(page, flagKey, {
+          const restored = {
             ...versions[at],
             narrationId: versions[at].narrationId ?? null,
             previous:    older.length ? older : null,
             // setFlag merges: a key the restored version lacks keeps the removed one's value
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
-          });
+          };
+          // The version put back may be one written between two removed
+          // narrations: it holds the earlier one's step.
+          const unplayed = category === "secrets" ? withoutStepsPlayedBy(restored, removed) : null;
+          await writeEntryPage(page, flagKey, unplayed?.entry ?? restored);
+          if (unplayed?.top) noteStepTakenBack(out, unplayed.entry);
           out.restored += 1;
         } else if (category === "lore") {
           const now = new Date().toISOString();
@@ -1487,6 +1518,51 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
     if (await persistSessionLogPage(page, { ...flag, beats: kept })) out.beats += beats.length - kept.length;
   }
   return out;
+}
+
+/**
+ * A stored plan entry with the escalation steps the removed narrations played
+ * put back unplayed, in the entry and in each earlier version it keeps
+ * (`previous`) — a later undo may restore one of those. Null when none holds a
+ * step of theirs.
+ *
+ * @param {Object} entry — the stored Secrets entry
+ * @param {Set<string>} removed — the narrations taken back
+ * @returns {{ entry: Object, top: boolean }|null} the entry to write, and whether its own steps changed
+ */
+function withoutStepsPlayedBy(entry, removed) {
+  const top = stepsTakenBackFrom(entry, removed);
+  const versions = Array.isArray(entry?.previous) ? entry.previous : null;
+  const older = versions ? versions.map(v => stepsTakenBackFrom(v, removed) ?? v) : null;
+  const olderChanged = !!older && older.some((v, i) => v !== versions[i]);
+  if (!top && !olderChanged) return null;
+  return { entry: { ...(top ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top };
+}
+
+/**
+ * One version of a plan with the steps the removed narrations played — each
+ * marked `playedBy` one of them — unplayed and unmarked, the rest of the
+ * version as it is; null when it holds none of theirs.
+ */
+function stepsTakenBackFrom(version, removed) {
+  const steps = Array.isArray(version?.escalation) ? version.escalation : null;
+  const theirs = (e) => e?.done === true && typeof e.playedBy === "string" && removed.has(e.playedBy);
+  if (!steps?.some(theirs)) return null;
+  return {
+    ...version,
+    escalation: steps.map((e) => {
+      if (!theirs(e)) return e;
+      const step = { ...e, done: false };
+      delete step.playedBy;
+      return step;
+    }),
+  };
+}
+
+/** Name a plan in play whose step the undo un-played by its mark, with the clock it links (undoNarrationEntries `stepsTakenBack`). */
+function noteStepTakenBack(out, entry) {
+  if (typeof entry?.id !== "string" || (entry.status ?? "active") !== "active") return;
+  out.stepsTakenBack.push({ id: entry.id, clockId: typeof entry.clockId === "string" && entry.clockId ? entry.clockId : null });
 }
 
 /**

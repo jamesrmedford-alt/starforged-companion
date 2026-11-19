@@ -378,11 +378,17 @@ async function finishXCardRemoval(narrator, removal) {
     // the narration's id stamped on it — that bond alone; the NPC and any
     // bond from before the hit stay. One the table has marked since stays,
     // and the GMs are told (issue #364 DELETED-NPC-NAME-REFERENCES; the
-    // maintainer's ruling).
+    // maintainer's ruling). A New Entities row that hit confirmed for the
+    // known NPC is pending again with the bond gone, as a removed NPC's row
+    // is (issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — it stayed confirmed).
     try {
       const { retractNarrationBondItems } = await import("../character/actorBridge.js");
-      const { kept } = await retractNarrationBondItems(ids);
+      const { kept, reopen } = await retractNarrationBondItems(ids);
       if (kept.length) await postKeptBondsNotice(kept);
+      if (reopen.length) {
+        const { reopenConfirmedDraftRow } = await import("../entities/entityExtractor.js");
+        for (const row of reopen) await reopenConfirmedDraftRow(row);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: taking back the bonds the narration's Make a Connection added failed:`, err?.message ?? err);
     }

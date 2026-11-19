@@ -125,7 +125,15 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11). Nor is one fulfilled or forsaken on every copy with no
+(issue #325 W11). A pick of a proposed option carries its index and the
+option's `text` as the clicker's render of the card showed it
+(`registerRewardChoiceHook`): the card's options are replaced in place when
+its vow gets a name (`reproposeVowRewards`), so the canonical GM refuses a
+pick whose text is not the card's option at that index (`option-changed` —
+nothing promised, the card left open, the clicker whispered to choose
+again); the reward promised is always the card's own option, never the
+click's text (issue #364 VOW-CARD-RENAME-NO-GM — an index alone promised
+whatever sat there after the swap). Nor is one fulfilled or forsaken on every copy with no
 reward chosen — nothing would ever grant it: the card is closed
 (`rewardChosen: "vow-fulfilled"` / `"vow-forsaken"`) and the presser and the
 GMs are whispered why (issue #345 AA52 — it was promised on the finished vow,
@@ -167,7 +175,13 @@ gets a name of its own `reproposeVowRewards` proposes its rewards again for
 that name on the same reward-choice card (`rewardOptions` and its buttons
 replaced in place; a reward already chosen, or no proposal coming back,
 leaves the card as it is) — the card and its rewards stayed generic after the
-player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED), a **connection
+player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED; the listener is
+the canonical GM's, so an edit made while no GM was connected is followed at
+the GM's next load instead — `reconcileUnswornVowCards` (index.js `ready`)
+reads the newest 200 chat messages for each vow's open, unsworn card and
+sends one that does not show its vow's name and rank through
+`followVowOnItsCard`; a card in step costs no write and no Claude call —
+issue #364 VOW-CARD-RENAME-NO-GM), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
@@ -234,7 +248,12 @@ All real progress lands on **item ticks** (`system.current`) via
   `fightVow.markMilestone`; the mark is recorded per card on the vow's
   payoff ledger, `fulfilPayoff["milestone:<card id>"]` — `markFightVowMilestoneOnce`
   — so a re-press after a stamp the world refused marks nothing, issue #336
-  Y24). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  Y24). A weak-hit win upgraded to a strong hit after ⚑ was pressed marks
+  the marks the press lacked under its own ledger entry,
+  `fulfilPayoff["milestone:<card id>:upgrade"]` (`upgradeFightVowMilestone`,
+  issue #362 D7): read before the mark and written by it, so the GMs'
+  Retry of a mark the world refused (payoff step `milestoneUpgrade`, issue
+  #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) never marks twice. Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
   PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open

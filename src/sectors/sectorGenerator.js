@@ -520,7 +520,7 @@ export async function createEntityJournals(sector, campaignState) {
   }, campaignState, { persist: false });
   // connectionJournalId now carries the NPC-card Actor id (connections converted
   // to `character` Actors under FOLDER-002); the field name is kept for the
-  // storeSector/sectorPanel call chain that threads this id through.
+  // callers that read it off the result (the Quench suite's cleanup).
   const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
   if (connectionJournalId) {
     // Connections created by the sector wizard are canonical — lock via the
@@ -584,14 +584,13 @@ export async function createEntityJournals(sector, campaignState) {
  * Store a completed sector to campaign state with all enhanced IDs.
  *
  * @param {SectorResult} sector
- * @param {Object} extras — { settlements, connectionJournalId, backgroundPath, sceneId, sectorJournalId, stubs }
+ * @param {Object} extras — { settlements, sites, backgroundPath, sceneId, sectorJournalId, stubs }
  * @param {Object} campaignState
  * @returns {Promise<StoredSector>}
  */
 export async function storeSector(sector, extras, campaignState) {
   const {
     settlements      = {},
-    connectionJournalId = null,
     sites            = {},
     backgroundPath   = null,
     sceneId          = null,
@@ -601,10 +600,13 @@ export async function storeSector(sector, extras, campaignState) {
 
   // Single source of truth: the global lists campaignState.settlementIds and
   // campaignState.connectionIds are authoritative. Each sector record below
-  // holds a *reference subset* of those same JournalEntry IDs — never a copy
-  // or a parallel ID space. createSettlement()/createConnection() are
-  // responsible for pushing IDs to the global lists; we read the same IDs
-  // back here via `settlements`/`connectionJournalId`.
+  // holds a *reference subset* of those same settlement / site Actor IDs —
+  // never a copy or a parallel ID space. createSettlement()/createConnection()
+  // are responsible for pushing IDs to the global lists; the settlements' are
+  // read back here via `settlements`. The record names no connection: the
+  // sector's local connection is found by its own `sectorId`, and the record's
+  // `connectionId` — written here, read by nothing — is retired (issue #364
+  // SECTOR-CONNECTION-ID-UNREAD). An older world's records keep theirs, unread.
   const stored = {
     id:                 sector.id,
     name:               sector.name,
@@ -616,7 +618,6 @@ export async function storeSector(sector, extras, campaignState) {
     mapData:            sector.mapData,
     settlementIds:      Object.values(settlements).map(j => j?.id ?? null).filter(Boolean),
     siteActorIds:       Object.values(sites).map(a => a?.id ?? null).filter(Boolean),
-    connectionId:       connectionJournalId,
     // Enhanced fields
     backgroundPath,
     sceneId,

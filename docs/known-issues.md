@@ -338,7 +338,110 @@ forged bond, a loss — a crewmate's mirrored tick counts) and tells the GMs.
 | VOW-CARD-GENERIC-UNTIL-NAMED | vows (AC23) | fixed — until the vow is sworn from the card, a rename or rank change on the sheet re-renders its "New vow recorded" card with name, rank and stakes (canonical GM, `updateItem`); on the first real name, rewards are proposed again and replace the options on the same open reward card. Nothing changes once a reward is chosen or the card is sworn or closed. |
 | DELETED-NPC-NAME-REFERENCES | entities (D10) | fixed — both halves. (a) The delete teardown clears `linkedConnectionName` on every PC's vow, open or closed (unless another NPC card of that name remains), nulls the sector's `connectionId` in the same write as the id-list removal, and whispers the GMs which vows. (b) DECISION; take it back: the bond Item a Make a Connection hit adds to an already-known NPC is stamped `bondedByNarrationId`, and the X-Card on that narration deletes it (`retractNarrationBondItems`) — found by the stamp, never by name; the NPC and any earlier bond stay; a bond marked since is kept and the GMs told. |
 
-### Found while fixing issue #364 — open
+### Found while fixing issue #364 — all twenty-one settled in the v1.8.2 cycle
+
+Left open by the issue #364 fixes above (PR #366). The maintainer asked for
+them to be fixed on 2026-11-19 ("Please fix the new open items") and answered
+the three that were decisions: a Cursed un-ticked on the starship sheet itself
+stands (STARSHIP-SHEET-CURSED-TOGGLE); a STARSHIP asset removed with no GM
+connected losing a hand mark is accepted (STARSHIP-ASSET-REMOVED-NO-GM); and a
+sector record's unread `connectionId` is deleted (SECTOR-CONNECTION-ID-UNREAD)
+— `decisions.md` → "Issue #364's open items". One commit per row
+(VOW-CARD-RENAME-NO-GM and SIDECAR-DOCBLOCK-MISPLACED are two each), each code
+fix with a regression test that fails with the fix taken out
+(`docs/testing/fix-sensitivity.md`). Three rows have no revert check by their
+nature: STARSHIP-ASSET-REMOVED-NO-GM (accepted; no code),
+ROUND-PRICE-CHOICE-UNTESTED (itself a test: no defect was found in the round
+path) and QUENCH-364-COVERAGE (Quench cases, which run only in a live world —
+in CI on the pull request).
+
+None has been checked in a live Foundry world by hand. The Quench cases added
+here prove three of issue #364's assumptions about Foundry's document hooks
+when CI runs them: a deleted journal page (and a journal deleted whole) is
+handed to its hook with its flags readable; an option stamped in
+`preUpdateActor` is on the options `updateActor` receives (one client — the
+hop to another client's `updateActor` is still not covered); and a deleted
+Item is gone from its parent, its own data readable, when `deleteItem` fires.
+The ones to try by hand first: a Sojourn miss (the narration showing the price
+on offer, then "No relief" paying it or the vow taking it away); a move rolled
+with the X-Card in play whose price reveals a new enemy (the plan waiting for
+the next narration); the X-Card on a hidden plan's escalation vignette after
+another price was paid (the clock one short of full); a Batch Mode round left
+on one player's Keep overnight, then a load (kept and narrated at the load);
+a vow named while the GM reloads (its card in step once the GM is back); and
+"I gun the hoverbike across the gap" (the Confirm Move dialog reading
+"Withstand Damage −1 · Hoverbike").
+
+Choices for the maintainer to confirm:
+PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN leaves the clock exactly as the later
+trigger paced it (no segment given back) and the reversal card still says the
+clock was "rewound" (PLAN-CLOCK-REWOUND-WORDING below);
+PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE puts an un-paced clock at its fill from
+before plus the segments turned since, capped one short of full (a move
+narration that played a step at 1/4 with one price since goes to 2/4);
+PLAN-STEP-REWRITTEN-BEFORE-BURN un-plays a step by its own mark even on a plan
+a GM has edited since (the edit stands), and after the first of two triggers
+is burned the plan reads step 1 unplayed, step 2 played — an existing test's
+expectation changed to that; XCARD-PAUSED-NARRATION-PLAN-REQUESTS treats a
+paused narration as final (nothing resumes it), and with hidden rolls shown a
+plan's rolls card can post during the pause;
+ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD keeps and narrates on a resolver leaving
+as well as on a load, posts the round's narration during the load beside the
+session mint, and an upgrade-step round under the X-Card or on a keyless GM is
+now closed by the pass's own notice rather than silently;
+WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY keeps the card title "Victory reward
+incomplete" for a milestone-only card, and its vow mark is marked then
+recorded, so a mark that landed unconfirmed would be marked again by a Retry
+(the card's "check these values" caveat); IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK
+leaves the improved banner at the end of the card;
+SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE's narrator wording for a Sojourn
+miss (offered, declined) is new, and a choice card closed with no pick
+recorded reads as still pending; STATED-TARGET-NOT-SHOWN's label ("Withstand
+Damage −1 · Hoverbike"; a companion as "Given name (Asset)") also reaches the
+narrator's stakes block, and shows the suffer move alone wherever the move may
+take the price on a target of its own; CONNECTION-WHOLE-NAME-ANY-CASE still
+matches a one-word name with no letter case (a digit, a caseless script) in
+any form; COURSE-OLD-LABEL-LOOSER-RUNG-FIRST asks in `!at`'s order;
+WON-FIGHT-CARD-DELETED-NPC disables the button with a reason rather than
+removing it, for good (a re-made NPC does not revive it);
+XCARD-BOND-DRAFT-ROW-CONFIRMED reopens the row only with the bond (a bond
+marked since is kept, and its row stays confirmed);
+STARSHIP-SHEET-CURSED-TOGGLE reads a ship's battered and cursed from the
+sheet wherever the record is read — Battered too — without writing the
+record; BEAT-SHAPE-SIMULTANEOUS's claim is made by each narrate function
+calling itself once through a helper that releases it in a `finally`;
+VOW-CARD-RENAME-NO-GM reconciles the newest 200 chat messages once, at the
+canonical GM's load, and a reward pick that names no option text (an old
+page) is still taken by its index; SECTOR-CONNECTION-ID-UNREAD also removed
+the `connectionJournalId` argument that fed only that field;
+SIDECAR-DOCBLOCK-MISPLACED lists twenty-three more stacked docblocks as known
+debt in its scan test rather than moving them (DOCBLOCKS-STACKED below).
+
+| ID | Kind | Status |
+|---|---|---|
+| PLAN-STEP-REWRITTEN-BEFORE-BURN | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | fixed — reproduced: with a clue shown between a trigger vignette and the burn of its price, the vignette was struck and the clock re-armed but the step stayed played (the X-Card on a vignette after a GM's edit, and the first of two triggers burned, likewise). A played step now carries the narration that played it (`playedBy`, written by `applyRevealToSkeleton`), and the undo un-plays by that mark every step the removed narrations played — in the plan's newest version and each earlier one — leaving the later writer's own writes. A clock the later trigger had retired on what was then the last step is run again for the step taken back (`rerunRetiredPlanClock`). Steps played before this carry no mark and behave as before. |
+| PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | fixed — the X-Card's pause write and the supersede's `restoreClocksPacedBy` asked `standingPacedBy`, true only while the clock still stood as the pacing left it. Both now match the clock's stamp itself (`pacedByOneOf`), and the clock goes to its fill from before plus the segments turned since, capped one short of full. |
+| PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | fixed — the burn's rewind reads which of the receipt's vignettes are live cards (`clocksWithVignetteWritten`); a plan clock whose stamp is a later trigger's, with the burned price's own vignette written, is reported under the receipt's id, so the supersede strikes that card and retracts its facts. The clock and its stamp are left as the later trigger left them, so burning the later price still takes its own trigger back. A vignette never written strikes nothing. |
+| XCARD-PAUSED-NARRATION-PLAN-REQUESTS | plans (PLAN-REQUESTS-FACT-CONTINUITY-OFF) | fixed — all four X-Card exits (`narrateResolution` and `narrateRound`, each on entry and on the reply) file the narration's plan requests with their rolls alone, unstamped, as the failed-call exit does (`filePausedPlanRequests`; the request build is one helper for the normal and the paused path — `movePlanRequests`, `roundPlanRequests`). A paused narration is final; the next narration is shown the waiting plan and decides it by id. The oracle follow-up's interrupted exit is left: it forgets the interrupted oracle result itself. |
+| ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD | Batch Mode (ROUND-UPGRADE-STEP-AT-SESSION-END) | fixed — `recoverRound`'s close of a resolving round of an over session (on `ready` and `resolver-left`) no longer takes a round at its upgrade step: it resumes, and the advance pass keeps for everyone still deciding and narrates it. A round of an over session that was rolling or narrating is still closed unnarrated, a collecting one still closed, and a load inside a live session still waits for the roller. Left: four idle hours with the GM's page loaded has no trigger of its own (ROUND-UPGRADE-STEP-IDLE-NO-TRIGGER below). |
+| WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY | payoff (WON-FIGHT-REWARD-UPGRADE-NO-RETRY) | fixed — the milestone half of the difference is one function for the first payment and the Retry (`upgradeFightVowMilestone`), deciding by the victory card as it stands: a refusal is a `milestoneUpgrade` step on the GMs' payoff card (with any refused reward step). A raise that landed unconfirmed changes nothing; a ⚑ pressed meanwhile gets the marks it lacked, through the vow's `milestone:<card>:upgrade` ledger entry; the marks owed ride the step, so they land with the victory card deleted. |
+| IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK | cards (UPGRADED-CARD-FIRST-EFFECT-UNSTRUCK) | fixed — both rewriters strike the first outcome's label through one function (`struckOutcomeLine`), and the improved banner carries the strong hit's consequence line — the one the improvement's own handler applied and handed to the re-narration, not a second mapping. |
+| SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE | stakes (EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) | fixed — a price choice's alternative is whatever the prompt's other option does (a `waypointOracle` move, or the move it routes — Sojourn's Swear an Iron Vow), so Sojourn's miss carries a `priceChoice` too. The pick is now recorded on the choice card (`chosenIndex`, cleared when the card is reopened), and `priceChoiceStatus` reads it: the price option is paid, the other declined. The narrator is told the price is on offer, paid, or not paid (the vow taken on instead), in Sojourn's own words; the waypoint's text is unchanged. |
+| ROUND-PRICE-CHOICE-UNTESTED | tests (EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) | fixed — `roundPriceChoiceToldAsItStands.test.js` drives a real round through the relays, with a second player's held weak hit keeping it at its upgrade step while the first picks, and reads the round's narration request: a matched waypoint miss and a Sojourn miss, each pending, paid and declined. No defect was found in the round path. |
+| STATED-TARGET-NOT-SHOWN | stakes (ACTION-STAT-VEHICLE-PRICE-NO-TARGET) | fixed — the reading's target name is resolved before the dialog (`nameStatedSufferTarget`, by the roll's own rule, on a copy; no id is stamped until the roll) and the stakes label shows it ("Withstand Damage −1 · Hoverbike") in the Confirm Move dialog and the Round window. Nothing is shown for a name that matches none of the roller's assets or several, or where the move may take the price on a vehicle or companion of its own. |
+| CONNECTION-WHOLE-NAME-ANY-CASE | names (PART-NAME-CAPITAL-RULE-TWINS) | fixed — reproduced through the pipeline ("an echo on the scanner" made Echo the connection). `figuresNamedIn`'s whole-name check asks `namesOneWordName` for a one-word name; a multi-word name is still matched whole in any case. |
+| COURSE-OLD-LABEL-LOOSER-RUNG-FIRST | travel (AT-COMMAND-OLD-LABEL) | fixed — reproduced through the real Set a Course path (the arrival set the settlement as the current location). `rerouteUnchartedCourse` asks in `!at`'s order: the place named exactly, then the charted site whose record keeps exactly that name, then the looser rungs. A still-uncharted site by that label did not reproduce (its location Actor carries the label); two controls pin that. |
+| STARSHIP-SHEET-CURSED-TOGGLE | ships (STARSHIP-UNTRACKED-CURSED-CLEAR) | settled — DECISION; it stands. A Cursed un-ticked on the starship sheet stays cleared, tracked or not, the asset card's box follows it, and no later write ticks it back (pinned by tests). One contradiction was fixed: the sheet's toggle writes the native field alone, so a tracked ship's record went on calling the ship cursed to `getShip` readers and the portrait prompt — a ship's battered and cursed are now read from the sheet wherever the record is read (`registry.js` `withSheetNotes`); nothing is written. |
+| STARSHIP-ASSET-REMOVED-NO-GM | ships (STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK) | accepted — the maintainer's answer: world writes need a GM, and removing a starship's asset with none connected is rare. No code. |
+| BEAT-SHAPE-SIMULTANEOUS | prose (BEAT-SHAPE-AFTER-DELETED-CARD) | fixed — an in-memory claim on the narrating client: a beat steps past the shapes claimed by narrations of the same session still in flight and claims its own, released in a `finally` (a written card, a fallback, a paused notice or a throw). All three pickers claim (move, round, paced line). Nothing is stored. Two clients narrating at the same moment still read the same last card — closing that needs a shared store, which the decision rules out. |
+| VOW-CARD-RENAME-NO-GM | vows (VOW-CARD-GENERIC-UNTIL-NAMED) | fixed — both halves. (a) At the canonical GM's load, each vow's newest unsworn "New vow recorded" card among the newest 200 chat messages is brought in step with its vow through the rename listener's own path (`reconcileUnswornVowCards`); a card already in step costs no write and no model call. (b) A reward click names its option's text; the GM refuses a pick whose text is not the card's option at that index (nothing promised, the card unclaimed, the clicker and the GMs told) and always takes the reward from the card's own flags. |
+| WON-FIGHT-CARD-DELETED-NPC | entities (DELETED-NPC-NAME-REFERENCES) | fixed — the delete teardown stamps `deepenRetired` on each victory card naming that connection whose deepen has not landed (canonical GM; not when a namesake's card remains): the button renders disabled with its reason, and a press applies nothing and posts no failure card. |
+| XCARD-BOND-DRAFT-ROW-CONFIRMED | entities (DELETED-NPC-NAME-REFERENCES) | fixed — the bond a hit adds through a draft row carries the row's link (`bondedFromDraft`: card id and row index, never a name); the X-Card's bond take-back returns the links of the bonds it deleted, and each row is reopened by the path a removed NPC's row takes. |
+| SECTOR-CONNECTION-ID-UNREAD | entities (DELETED-NPC-NAME-REFERENCES) | fixed — DECISION; deleted. `storeSector` no longer writes a sector's `connectionId` (nor takes the `connectionJournalId` argument that fed only it), the teardown no longer clears it, and the Quench assertion checks the created connection's id in `campaignState.connectionIds`. Old sector records keep a stale value nothing reads. |
+| SIDECAR-DOCBLOCK-MISPLACED | docs | fixed — the docblock is back on `applyNarratorSidecar`, and `docs/file-structure.md`'s `narrator.js` entry says each thing once (three partial copies merged, keeping what each alone carried). `docblockSitsOnItsFunction.test.js` scans for a docblock stacked on another's. |
+| QUENCH-364-COVERAGE | tests | fixed — a Quench batch (`documentHookAssumptions`, four cases) runs the page-delete and journal-delete hooks, the Notes-tab `preUpdateActor` stamp and the STARSHIP asset's `deleteItem` on real documents. |
+
+### Found while fixing issue #364's open items — open
 
 Left open by the fixes above, each with a proposed fix where there is one
 (none filed as an issue yet). None was reproduced in a live Foundry world;
@@ -346,27 +449,22 @@ those marked "read from the code" were not reproduced in a test either.
 
 | ID | Kind | Status |
 |---|---|---|
-| PLAN-STEP-REWRITTEN-BEFORE-BURN | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | open — read from the code: when another narration rewrote the plan between a trigger vignette and the burn of its price (a clue revealed), the vignette is struck and the clock re-armed but the step stays played — the undo restores a plan only while its top version is the removed narration's. The standing-clock case AC33 fixed has the same gap. Proposed: take the step back by its own mark rather than by restoring the version. |
-| PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | open — the X-Card on a trigger vignette, after a later price moved the clock, puts the step back but leaves the clock where it is. Proposed: match the clock's `pacedBy` against the removed narration, as the burn now does. |
-| PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN | plans (PLAN-CLOCK-BURN-AFTER-LATER-PRICE) | open — when the same clock triggers twice before the first price is burned, the first vignette is left unstruck (the stamp is the later trigger's). Proposed: strike the vignette the receipt names whatever the clock's stamp says. |
-| XCARD-PAUSED-NARRATION-PLAN-REQUESTS | plans (PLAN-REQUESTS-FACT-CONTINUITY-OFF) | open — a narration paused by the X-Card (`narrateResolution`, `narrateRound`) files none of its plan requests; their rolls are lost. Proposed: `fileUnansweredPlanRequests` on that exit. |
-| ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD | Batch Mode (ROUND-UPGRADE-STEP-AT-SESSION-END) | open — a round at its upgrade step in an over session is still closed unnarrated by the load's recovery (`recoverRound("ready")`); only a pass that runs while the GM's page is loaded applies the keep. Four idle hours has no trigger of its own either: the keep happens on the next advance pass. Proposed: the recovery keeps and narrates, as the pass does. |
-| WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY | payoff (WON-FIGHT-REWARD-UPGRADE-NO-RETRY) | open — in the same payment, a refused raise of the victory card's milestone count and a refused milestone mark are still "Not applied" lines with no Retry. Proposed: payoff steps for both. |
-| IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK | cards (UPGRADED-CARD-FIRST-EFFECT-UNSTRUCK) | open — an improved card strikes the consequence and match lines but not the original outcome label ("Miss"), which only the burn's rewriter strikes; and its banner shows no consequence text for the strong hit, as the burned block does (pre-existing). Proposed: both, as the burned card. |
-| SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE | stakes (EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) | open — Sojourn's miss has the shape the waypoint's had: its narration is seeded with the price and told "it is what this miss costs" before the player chooses between the vow and the price. Proposed: the waypoint's `priceChoice` for Sojourn. |
-| ROUND-PRICE-CHOICE-UNTESTED | tests (EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) | open — a Batch Mode round goes through the same price-choice code, but only its prompt builder is unit-tested, not a full round with a matched waypoint miss. Proposed: a round test on the simulated table. |
-| STATED-TARGET-NOT-SHOWN | stakes (ACTION-STAT-VEHICLE-PRICE-NO-TARGET) | open — the Confirm Move dialog still shows "Withstand Damage −1" without saying which vehicle or companion the stated miss names. Proposed: show the resolved target's name. |
-| CONNECTION-WHOLE-NAME-ANY-CASE | names (PART-NAME-CAPITAL-RULE-TWINS) | open — `figuresNamedIn`'s whole-name check still matches a one-word name in any case: "an echo on the scanner" would name an NPC called Echo for a connection. Proposed: D6's rule (`namesOneWordName`) there too. |
-| COURSE-OLD-LABEL-LOOSER-RUNG-FIRST | travel (AT-COMMAND-OLD-LABEL) | open — a Set a Course by a renamed site's old working label still tries the looser rungs first (`chartedPlaceFor` before `chartedSiteByRecordName`), so a settlement "Archer" can take "Archer's rendezvous — the gap". Shown on the resolver, not driven through the pipeline. Proposed: the exact record-name rung before the looser ones, as `!at` has it. |
-| STARSHIP-SHEET-CURSED-TOGGLE | ships (STARSHIP-UNTRACKED-CURSED-CLEAR) | open, needs a decision — read from the code, untested: the starship sheet's own Cursed toggle (the `updateActor` branch) clears the impact, tracked or not. The native sheet field is canonical, so a GM's hand un-tick may be meant to stand. Options: leave it (a GM's edit), or re-tick as the asset card's box now is. |
-| STARSHIP-ASSET-REMOVED-NO-GM | ships (STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK) | open — a STARSHIP asset removed with no canonical GM connected still loses a hand-marked integrity: the load's scan has no asset left to read. Proposed: accept (the hook needs a GM), or have the removing client relay the last value. |
-| BEAT-SHAPE-SIMULTANEOUS | prose (BEAT-SHAPE-AFTER-DELETED-CARD) | open — two beats narrated at the same moment read the same last shape (pre-existing). Proposed: claim the shape when the narration starts. |
-| VOW-CARD-RENAME-NO-GM | vows (VOW-CARD-GENERIC-UNTIL-NAMED) | open — a rename made with no GM connected is not followed (the card stays generic until the next rename), and a reward click landing in the instant the options are swapped promises the new option at that index. Proposed: reconcile unsworn vow cards at load; carry the option's text in the click. |
-| WON-FIGHT-CARD-DELETED-NPC | entities (DELETED-NPC-NAME-REFERENCES) | open — won-fight cards already in chat keep their `connectionName` after the NPC is deleted; a press on one reports "not found". Proposed: retire the button from the teardown. |
-| XCARD-BOND-DRAFT-ROW-CONFIRMED | entities (DELETED-NPC-NAME-REFERENCES) | open — a New Entities row that a Make a Connection hit confirmed for an already-known NPC stays "confirmed" after the X-Card took the bond back. Proposed: reopen the row with the bond. |
-| SECTOR-CONNECTION-ID-UNREAD | entities (DELETED-NPC-NAME-REFERENCES) | open — no production code reads a sector record's `connectionId` (only the Quench suite asserts it at creation); the teardown now clears it so the record is truthful. Proposed: delete the field and its writes (`rules/reachability.md` §1), or wire a reader. |
-| SIDECAR-DOCBLOCK-MISPLACED | docs | open — `applyNarratorSidecar`'s docblock sits above `ensureSceneStarted`, not its own function (issue #362 AC71's shape), and `docs/file-structure.md`'s `narrator.js` entry repeats stretches of its own text three times. Proposed: move the docblock; de-duplicate the entry. |
-| QUENCH-364-COVERAGE | tests | open — none of the issue #364 fixes added Quench coverage; each is covered by unit tests on the simulated table only. Proposed: Quench cases for the hooks that rest on Foundry's own behaviour (the page-delete hook, the Notes-tab `preUpdateActor` stamp, the STARSHIP asset's `deleteItem`). |
+| KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE | plans (XCARD-PAUSED-NARRATION-PLAN-REQUESTS) | open — read from the code: a Battle or Clash burned or improved to a weak hit keeps its price; when that price is "A new enemy is revealed" and the move's first narration was never written (failed, empty, or now paused), the first exit files the enemy's plan unstamped and the re-narration asks for it again from the seed, which carries no subject id to match. Proposed: the resolution's id on the filed plan's provenance. |
+| REVERTED-PRICE-PLAN-STAYS-WAITING | plans (XCARD-PAUSED-NARRATION-PLAN-REQUESTS) | open — read from the code: a plan filed with its rolls alone by a no-narration exit, for a price a later burn reverts entirely, stays as a waiting plan — it is unstamped, so the supersede cannot take it back. Proposed: the same provenance. |
+| PLAN-CLUE-TRUTH-NO-MARK | plans (PLAN-STEP-REWRITTEN-BEFORE-BURN) | open — only escalation steps carry the narration that played them: a clue shown or a truth revealed by a taken-back narration, under a later writer's version of the plan, still stands. Proposed: the same mark on clues and the truth's reveal. |
+| PLAN-CLOCK-REWOUND-WORDING | plans (PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN) | open — the reversal card says "‹clock› clock rewound" when a plan clock is deliberately left as a later trigger paced it. Proposed: say the trigger's vignette was taken back. |
+| RETIRED-PLAN-CLOCK-XCARD-REACTIVATES | plans (PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE) | open — read from the code, pre-existing: a stale pacing stamp on a clock retired because its plan left play is still matched by the X-Card's un-pacing, which could reactivate it. Proposed: skip a clock whose plan is gone or closed. |
+| ROUND-UPGRADE-STEP-IDLE-NO-TRIGGER | Batch Mode (ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD) | open — four idle hours with the GM's page left loaded has no trigger of its own: the keep happens at the next advance pass or the next load. And, read from the code: an upgrade in flight (a Burn being applied when the page died) less than a minute before a load into an over session is not kept by that load's pass; the round waits for the next one. Proposed: a timer on the session's four-hour mark — new machinery. |
+| FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE | payoff (WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) | open — read from the code, pre-existing in the issue #362 D7 code: "⚑ pressed" is read only from the victory card's stamp. If a ⚑ mark landed but its stamp was refused (ledger set, stamp missing), the upgrade treats the card as unpressed and raises it; the next press finds the ledger entry and marks nothing, so the strong hit's extra mark is lost. Proposed: read the ledger as well as the stamp. |
+| SOJOURN-VOW-OPTION-REMINDER-ONLY | stakes (SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE) | open — read from the code: picking "Community needs help (Swear an Iron Vow)" on a Sojourn miss posts only a reminder card; nothing resolves the Sojourn as the strong hit the rule gives. Proposed: offer the swear and, once it is sworn, the strong hit's recover moves. |
+| ROUND-CONFRONT-CHAOS-HELD-AT-SESSION-END | Batch Mode (ROUND-PRICE-CHOICE-UNTESTED) | open — not verified: Confront Chaos pressed mid-round retires the price at once, but its forced move is held for the next round; what becomes of that held move when the session ends first was not checked. |
+| ONE-WORD-NAME-NO-CAPITAL-FORM | names (CONNECTION-WHOLE-NAME-ANY-CASE) | open — `namesOneWordName` requires a capital letter, so a one-word name or name part with no capital form (a digit, a caseless script) can be named only in address position — for the fellow-PC rule, relevance and part-names (the connection's whole-name check has its own guard). Proposed: match such a name whole in any form inside the shared function. |
+| COURSE-NEW-LABEL-CONTAINS-SETTLEMENT | travel (COURSE-OLD-LABEL-LOOSER-RUNG-FIRST) | open — a course to a destination with no site record at all, whose label holds a settlement's name as a whole word (the first "Archer's rendezvous — the gap" with Archer already on the map), is read as a course to that settlement by the whole-word rung. Proposed: the whole-word rung only when the label is no longer than the name by more than a title word; or ask. |
+| XCARD-NPC-DELETE-SKIPS-TEARDOWN | entities (WON-FIGHT-CARD-DELETED-NPC) | open — the X-Card's own delete of an NPC its narration created skips the delete teardown, so it clears neither vow links nor victory cards' Deepen buttons for that NPC. Proposed: run the teardown's reference clearing there too. |
+| PAYOFF-CARD-DEEPEN-DELETED-NPC | entities (WON-FIGHT-CARD-DELETED-NPC) | open — a payoff-failure card already in chat with a deepen step for a deleted NPC keeps a Retry that fails again, and a bond-recommit offer card for the deleted NPC keeps its offer. Proposed: retire those steps and offers from the teardown, as the Deepen button is. |
+| SHEET-IMPACT-NO-GM-ASSET-STALE | ships (STARSHIP-SHEET-CURSED-TOGGLE) | open — read from the code: an impact toggled on the starship sheet while no GM is connected is not mirrored onto the STARSHIP asset card; the next edit of that card's conditions then reads the stale box as a fresh tick and writes it back, which could re-tick a Cursed (or Battered) cleared on the sheet. Proposed: reconcile the asset's conditions to the native impacts at load. |
+| DOCBLOCKS-STACKED | docs (SIDECAR-DOCBLOCK-MISPLACED) | open — twenty-three more docblocks across `src/` sit stacked on another function's docblock, off their own function (listed in `tests/unit/docblockSitsOnItsFunction.test.js`, which fails on a new one). Proposed: move each back and take it off the list. |
+| QUENCH-CROSS-CLIENT-STAMP | tests (QUENCH-364-COVERAGE) | open — the Notes-tab case runs on CI's one client, so it proves the `preUpdateActor` stamp reaches `updateActor` on the editing client only; a co-GM's edit reaching the canonical GM's `updateActor` with the stamp is still unproven. Proposed: check once at a two-GM table, or a two-client e2e. |
 
 ### The world snapshot (issue #357; open work in issue #360) — built in the v1.8.2 cycle, not yet played or measured
 

@@ -131,7 +131,9 @@ describe('issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — a burned price takes 
 
     await burnThePrice(first);
     expect(flagsOf(secondVignette).burnSuperseded ?? false, 'the later trigger happened: its vignette is not struck').toBe(false);
-    expect(planOf(plan.id).escalation.map(e => e.done), 'and the step it played stands').toEqual([true, true, false]);
+    // The burned price's own step is taken back by its mark, from under the
+    // later vignette's version (PLAN-STEP-REWRITTEN-BEFORE-BURN).
+    expect(planOf(plan.id).escalation.map(e => e.done), 'and the step it played stands').toEqual([false, true, false]);
     expect(clockOf(plan.clockId), 'its pacing left as it is').toMatchObject({ filled: 0, active: true });
   }, 90_000);
 

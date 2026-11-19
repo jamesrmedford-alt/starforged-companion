@@ -76,6 +76,16 @@ function textList(value) {
 const itemId = (prefix, i) => `${prefix}${i + 1}`;
 
 /**
+ * A played escalation step's mark: the narration that played it (`playedBy`),
+ * kept on a step that is played and nowhere else. Taking that narration back
+ * — the X-Card, a Burn Momentum / Improve Result supersede — un-plays the
+ * step by this mark (worldJournal.js undoNarrationEntries), whatever was
+ * written to the plan since (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN).
+ */
+const playedMark = (step) => (step?.done === true && typeof step.playedBy === "string" && ID_RE.test(step.playedBy)
+  ? { playedBy: step.playedBy } : {});
+
+/**
  * A skeleton record as the store keeps it: every field present, bounded and
  * typed. Unknown fields are dropped; a missing id, kind or subject name makes
  * it null (nothing to file).
@@ -90,7 +100,7 @@ export function normaliseSkeleton(raw) {
   const subject = normaliseSubject(raw.subject);
   if (!id || !kind || !subject) return null;
   const escalation = (Array.isArray(raw.escalation) ? raw.escalation : []).slice(0, LIST_MAX)
-    .map((e, i) => ({ id: typeof e?.id === "string" && ID_RE.test(e.id) ? e.id : itemId("e", i), text: text(e?.text ?? e, ITEM_MAX), done: e?.done === true }))
+    .map((e, i) => ({ id: typeof e?.id === "string" && ID_RE.test(e.id) ? e.id : itemId("e", i), text: text(e?.text ?? e, ITEM_MAX), done: e?.done === true, ...playedMark(e) }))
     .filter(e => e.text);
   const clues = (Array.isArray(raw.clues) ? raw.clues : []).slice(0, LIST_MAX)
     .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true }))
@@ -336,20 +346,26 @@ export function normaliseCountdown(countdown) {
  * as revealed once a later narration decided it, and its hidden wants showed
  * on every player's Session panel as a standing demand.
  *
+ * The step it plays is marked with the narration that played it (`playedBy`,
+ * playedMark) — a step already played keeps the mark it has.
+ *
  * @param {Object} record — normaliseSkeleton's
  * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
+ * @param {{ narrationId?: string|null }} [opts] — the narration whose beat showed it
  * @returns {Object} a new record
  */
-export function applyRevealToSkeleton(record, reveal) {
+export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {}) {
   const shown = new Set(reveal.revealed);
+  const by = typeof narrationId === "string" && ID_RE.test(narrationId) ? { playedBy: narrationId } : {};
   return {
     ...record,
     truthRevealed: record.truthRevealed || (shown.has("truth") && !!record.truth),
     clues:         record.clues.map(c => (shown.has(c.id) ? { ...c, revealed: true } : c)),
-    escalation:    record.escalation.map(e => (e.id === reveal.advanced ? { ...e, done: true } : e)),
+    escalation:    record.escalation.map(e => (e.id === reveal.advanced && !e.done ? { ...e, done: true, ...by } : e)),
     status:        reveal.resolved ? "resolved" : record.status,
   };
 }
+
 
 /**
  * A plan the narrator decided, laid onto its record: each field it gave
@@ -375,8 +391,8 @@ export function applyPlanToSkeleton(record, plan) {
   if (plan.subject) next.subject.name = plan.subject;
   for (const field of ["truth", "wants", "knows"]) if (plan[field]) next[field] = plan[field];
   if (plan.escalation.length) {
-    const done = new Set(record.escalation.filter(e => e.done).map(e => e.text));
-    next.escalation = plan.escalation.map((t, i) => ({ id: itemId("e", i), text: t, done: done.has(t) }));
+    const done = new Map(record.escalation.filter(e => e.done).map(e => [e.text, e]));
+    next.escalation = plan.escalation.map((t, i) => ({ id: itemId("e", i), text: t, done: done.has(t), ...playedMark(done.get(t)) }));
   }
   if (plan.clues.length) {
     const shown = new Set(record.clues.filter(c => c.revealed).map(c => c.text));

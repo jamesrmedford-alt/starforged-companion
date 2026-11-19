@@ -39,6 +39,15 @@ Two cross-cutting facts to hold onto:
   support vehicles and companions, never the miss line, never a guess), and
   the route takes it when the move has no target of its own; it landed on
   the command starship (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+  The Confirm dialog and a round's reading name that asset beside the
+  stated cost — "Withstand Damage −1 · Hoverbike" — resolved when the
+  line is read (`readMove` → `statEnrichment.nameStatedSufferTarget` stamps
+  `missSuffer.targetName`; `stakes.sufferRouteLabel` shows it) and re-read
+  at the roll; only when the price is known to land there
+  (`stakes.statedTargetLands`): a name that matches none of the roller's
+  assets, or several, or a move that may be rolled for a vehicle or
+  companion of its own, shows the suffer move alone (issue #364
+  STATED-TARGET-NOT-SHOWN).
   A price's route that names no companion asks which when the PC has several
   (`index.js` `dispatchPayThePriceSufferRoute` → a choice card of
   `sufferCard.whichCompanionPrompt`, bound to the move as the price's other
@@ -158,7 +167,13 @@ Two cross-cutting facts to hold onto:
   the world refuses — the `grantedAt` raise — goes to the GMs' payoff card as
   a `rewardUpgrade` step whose Retry runs `upgradeLinkedVowReward` again, as
   a refused give after the claim goes as `rewardGrant`, issue #364
-  WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a weak hit
+  WON-FIGHT-REWARD-UPGRADE-NO-RETRY; a raise of the victory card's count or
+  a mark of the marks it lacks that the world refuses goes on the same card
+  as a `milestoneUpgrade` step, whose Retry runs `upgradeFightVowMilestone`
+  again — by the victory card as it stands then, so a ⚑ pressed since is
+  paid the marks it lacked, once, on the vow's payoff ledger
+  `milestone:<card id>:upgrade`; a vow fulfilled or gone since is no step —
+  issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
@@ -460,7 +475,17 @@ kept on the option — and its pick pays that price as rolled
 (`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
 the narration depicted, never two rolled again (issue #362 AC30). With a miss
 stated before the roll, that price is the stated miss — the seed and the
-pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). The card
+pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). A price
+that is a choice is narrated as it stands when the narration is written
+(`resolution.priceChoice` — `resolver.priceChoiceOf`, for Sojourn's miss as
+for Explore a Waypoint's with a match; `resultUpgrade.priceChoiceStatus` →
+`resolver.settlePriceChoice`): a free-flow Sojourn miss is narrated before
+its card is picked — the price is offered, never "what this miss costs";
+a held result's or a Batch Mode round's after it — "No relief" picked: the
+price is delivered; "Community needs help" picked (the card's
+`chosenIndex`): the price's seed lines go and the narrator is told none is
+paid (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — it was seeded
+and told as paid in all three). The card
 records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts
@@ -548,6 +573,14 @@ unstamped after `RELAY_RECOVERY_MS` (15 s), re-arms the button. (They used to
 emit raw `vow.markMilestone` / `connection.deepen` socket messages with no
 resolved stamp, so a second click — or a re-render on another client —
 applied the milestone twice, and with no GM the click silently did nothing.)
+A victory card whose connection's NPC card a GM deletes afterwards has its 🤝
+retired: the delete teardown stamps `flags.deepenRetired` on each such card
+already in chat (`cardActions.retireFightVowDeepenFor`, canonical GM, unless
+a namesake card is left), the update re-renders it everywhere with the
+button disabled and a title saying why, and the relay handler deepens
+nothing for it — a press used to whisper the GMs "not found" (issue #364
+WON-FIGHT-CARD-DELETED-NPC; `connection-flow.md`, "Deleting an NPC card").
+A card that stamp did not reach reports "not found" as before.
 
 Fulfilling the vow (via the move or the native sheet) completes it everywhere
 it lives — journal track *and* actor items (`completeVowItemByName` /

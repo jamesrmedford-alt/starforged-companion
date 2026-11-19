@@ -490,7 +490,11 @@ function syncUpdateFor(item, target) {
  * relayed to the canonical GM ("vow.reward" → applyRewardPickFromRelay), which
  * claims the card once (`rewardChosen`) — the disable was the clicker's DOM
  * only, so another client or a re-render re-armed the buttons — and never
- * re-promises a reward already granted or lost (issue #325 W11).
+ * re-promises a reward already granted or lost (issue #325 W11). A pick of a
+ * proposed option carries, beside its index, the option's text as this render
+ * of the card showed it: the card's options can be replaced while it is open
+ * (reproposeVowRewards), and the GM refuses a click made on the options as
+ * they were (issue #364 VOW-CARD-RENAME-NO-GM).
  */
 export function registerRewardChoiceHook() {
   if (registerRewardChoiceHook._installed) return;
@@ -504,6 +508,10 @@ export function registerRewardChoiceHook() {
       buttons().forEach(b => { b.disabled = true; });
       return;
     }
+    // The options this render shows — the card's own, read now: an update that
+    // replaces them re-renders the card, and a click on this render names what
+    // it showed (issue #364 VOW-CARD-RENAME-NO-GM).
+    const shown = (Array.isArray(f.rewardOptions) ? f.rewardOptions : []).map(o => String(o?.description ?? ""));
     const relay = async (payload) => {
       buttons().forEach(b => { b.disabled = true; });
       await relayCardAction({
@@ -520,7 +528,7 @@ export function registerRewardChoiceHook() {
         e.preventDefault(); e.stopPropagation();
         const idx = Number(fresh.dataset.idx);
         if (!Number.isInteger(idx)) return;
-        await relay({ idx });
+        await relay({ idx, ...(shown[idx] ? { text: shown[idx] } : {}) });
       });
     });
     const ownBtn = root.querySelector('[data-action="sf-reward-own"]');
@@ -573,7 +581,17 @@ function vowHolderActorId(vowId) {
  * nothing would ever grant it (issue #345 AA52). Any user may pick, as the
  * card is the table's.
  *
- * @param {{ messageId?: string, idx?: number, own?: string }} payload
+ * A pick of an option names it twice — its index and its `text`, the option
+ * as the clicker's card showed it. The card's options are replaced in place
+ * when its vow gets a name (reproposeVowRewards), so an index alone promised
+ * whatever sat there once a click made on the old options landed: a `text`
+ * that is not the card's option at that index is refused (`option-changed`),
+ * nothing promised, the card left open and the clicker told to choose again
+ * (issue #364 VOW-CARD-RENAME-NO-GM). The reward promised is always the
+ * card's own option — the click's text is compared, never used. A pick with
+ * no `text` (a page loaded before the click carried it) is taken by its index.
+ *
+ * @param {{ messageId?: string, idx?: number, text?: string, own?: string }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
@@ -591,6 +609,15 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
   const opts = Array.isArray(f.rewardOptions) ? f.rewardOptions : [];
   const own  = typeof payload.own === "string" ? payload.own.trim().slice(0, 120) : "";
   const opt  = Number.isInteger(payload.idx) ? opts[payload.idx] : null;
+  // The option the clicker pressed is not the one the card has at that index
+  // now: its options were replaced as the click was made.
+  if (Number.isInteger(payload.idx) && typeof payload.text === "string" && payload.text !== String(opt?.description ?? "")) {
+    console.warn(`${MODULE_ID} | swearVow: reward card ${messageId}'s options changed as option ${payload.idx} was chosen — nothing promised.`);
+    await postVowWriteRefusedNotice(_ctx,
+      "The rewards offered on this card changed as you chose — nothing was promised. Choose again from the card as it is now.",
+      { title: "Reward not set" });
+    return { applied: false, reason: "option-changed" };
+  }
   const reward = opt?.description ? { description: String(opt.description), form: opt.form ?? "gear" }
     : own ? { description: own, form: "gear" } : null;
   if (!reward) return { applied: false, reason: "not-on-card" };
@@ -900,7 +927,9 @@ export function buildSwearMovePostForName(vowName, linkedConnectionName = null, 
  * the vowSetupOffered flag. Register once on ready. Its card then follows the
  * vow's sheet — a rename, a rank change — until the vow is sworn from it
  * (the updateItem listener, followVowOnItsCard; issue #364
- * VOW-CARD-GENERIC-UNTIL-NAMED).
+ * VOW-CARD-GENERIC-UNTIL-NAMED). An edit made while no GM was connected is
+ * followed at the GM's next load (reconcileUnswornVowCards; issue #364
+ * VOW-CARD-RENAME-NO-GM).
  */
 export function registerPlayerVowHook() {
   if (registerPlayerVowHook._installed) return;
@@ -1048,6 +1077,81 @@ async function reproposeVowRewards(vowId, name) {
   const card = openCard();   // a pick made while the call was out stands
   if (!card) return;
   await card.update({ content: buildRewardChoiceHtml(options), [`flags.${MODULE_ID}.rewardOptions`]: options });
+}
+
+// How many of the newest chat messages the load-time reconcile reads. A vow
+// named while no GM was connected was made moments before — its card is among
+// the last cards posted — so an old card is not looked for, and the whole
+// chat log is never walked.
+const VOW_CARD_RECONCILE_WINDOW = 200;
+
+/**
+ * Whether a named vow's card already shows the vow as its sheet has it: its
+ * name (the card's `vowName`) and its rank, as the card words it.
+ *
+ * @param {ChatMessage} card — a player-vow card
+ * @param {Item} item — its vow
+ * @returns {boolean}
+ */
+function vowCardInStep(card, item) {
+  if (card.flags?.[MODULE_ID]?.vowName !== item.name) return false;
+  const rank = item.system?.rank ?? null;
+  if (rank == null || rank === "") return true;
+  return String(card.content ?? "").includes(`(${escapeHtml(rankName(rank))})`);
+}
+
+/** The vow Item a player-vow card is about — on the card's holder, else on any PC — or null when no character holds it. */
+function vowItemOfCard(f) {
+  const holder = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actors = getPlayerActors();
+  for (const actor of [...actors.filter(a => a?.id === holder), ...actors.filter(a => a?.id !== holder)]) {
+    const item = (actor?.items?.contents ?? []).find(i => isVowCopy(i, f.vowId));
+    if (item) return item;
+  }
+  return null;
+}
+
+/**
+ * Bring the unsworn "🆕 New vow recorded" cards in step with their vows at
+ * load (issue #364 VOW-CARD-RENAME-NO-GM). The card follows its vow's sheet
+ * through the canonical GM's updateItem listener (followVowOnItsCard), so a
+ * vow named or re-ranked while no GM was connected — the GM's page reloading
+ * as the player typed the name — was followed by nobody: the card, and its
+ * rewards, stayed generic until the next edit of the vow.
+ *
+ * Canonical GM, at ready (index.js). Bounded: the newest
+ * VOW_CARD_RECONCILE_WINDOW chat messages, each vow's newest card, open and
+ * unsworn (no `swearRolled`, no `vowGone`), its vow still held by a character
+ * and named. A card that already shows its vow's name and rank is left as it
+ * is — no write, no Claude call; one that does not goes through
+ * followVowOnItsCard, the listener's own path: the card re-rendered, and the
+ * rewards proposed again only when the vow gets its first name here and no
+ * reward was chosen. Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+export async function reconcileUnswornVowCards() {
+  try {
+    if (!isCanonicalGM()) return;
+    const recent = (globalThis.game?.messages?.contents ?? []).slice(-VOW_CARD_RECONCILE_WINDOW);
+    const seen = new Set();
+    for (let i = recent.length - 1; i >= 0; i -= 1) {
+      const card = recent[i];
+      const f = card?.flags?.[MODULE_ID];
+      if (f?.playerVowCard !== true || typeof f.vowId !== "string" || !f.vowId || seen.has(f.vowId)) continue;
+      seen.add(f.vowId);                                  // a vow's newest card is its card (followVowOnItsCard)
+      if (f.swearRolled || f.vowGone) continue;
+      const item = vowItemOfCard(f);
+      if (!item || isPlaceholderVowName(item.name) || vowCardInStep(card, item)) continue;
+      try {
+        await followVowOnItsCard(item);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: the card of "${item.name}" was not brought in line with its sheet at load:`, err?.message ?? err);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: the vow cards were not reconciled at load:`, err?.message ?? err);
+  }
 }
 
 /**

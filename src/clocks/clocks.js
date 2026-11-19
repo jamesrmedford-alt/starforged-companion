@@ -31,7 +31,7 @@ import { clockStillTriggered } from "./payThePriceClocks.js";
 import { proseToHtml } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { standingPacedBy, unpacedClock } from "./planClockPacing.js";
+import { standingPacedBy, pacedByOneOf, unpacedClock } from "./planClockPacing.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -506,7 +506,11 @@ export async function pacePlanClock(clockId, { retire = false, pacedBy = null } 
  * Burn Momentum or Improve Result superseded — a move narration that played a
  * plan's step, a trigger vignette its price's rewind struck — took the step
  * back with it (resultUpgrade.js undoSupersededPlans), and the clock went on
- * pacing the step after. One write, on a copy.
+ * pacing the step after. A clock is theirs by its stamp, wherever later
+ * prices have turned it since (pacedByOneOf — issue #364
+ * PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE: matched only while it stood as paced,
+ * a turned clock kept its fill with the step back unplayed). One write, on a
+ * copy.
  *
  * @param {string[]} narrationIds
  * @returns {Promise<string[]>} the ids of the clocks re-armed
@@ -516,11 +520,39 @@ export async function restoreClocksPacedBy(narrationIds) {
   if (!ids.size) return [];
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());
-    const paced = (state.clocks ?? []).filter(c => ids.has(standingPacedBy(c)));
+    const paced = (state.clocks ?? []).filter(c => pacedByOneOf(c, ids));
     if (!paced.length) return [];
-    state.clocks = state.clocks.map(c => (ids.has(standingPacedBy(c)) ? unpacedClock(c) : c));
+    state.clocks = state.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
     await writeState(state);
     return paced.map(c => c._id);
+  });
+}
+
+/**
+ * Run a hidden plan's clock again that a pacing retired — the narration that
+ * paced it played what was then the plan's last step — now that a step of the
+ * plan is owed again: an earlier narration's step, taken back from under that
+ * one's version (resultUpgrade.js undoSupersededPlans, by the clock the plan
+ * links; issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN). Running, empty — as that pacing leaves a
+ * clock with a step to come — and still stamped with it, so taking that
+ * narration back as well re-arms the clock (unpacedClock). Decided inside the
+ * clock write queue: a clock that is running, gone, no plan's, or retired by
+ * something other than a pacing (no stamp) is left as it is. Written on a
+ * copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored, or null when nothing was written
+ */
+export async function rerunRetiredPlanClock(clockId) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active !== false || !clock.planId || typeof clock.pacedBy !== "string" || !clock.pacedBy) return null;
+    clock.active    = true;
+    clock.filled    = 0;
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
   });
 }
 
@@ -602,13 +634,26 @@ export async function rearmClock(clockId) {
  * receipt from before the id was kept (`vignettes` without the clock) falls
  * back to the standing stamp.
  *
+ * A clock that triggered again since carries the later trigger's stamp, and
+ * the burned price's own vignette — written, live on the table (`narrated`,
+ * read from the chat by the caller) — was found by nothing: it stayed live
+ * fiction beside the reversal (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
+ * It is reported by the id the receipt names (`pacedBy`), for the upgrade to
+ * strike, and the clock is left exactly as it stands: the later trigger
+ * happened, its pacing — and every segment a price turned after it — is the
+ * clock's present state, and the burned price's own segment went into the
+ * trigger now taken back. No segment is given back, no stamp removed (a burn
+ * of the later price still finds its own).
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
- * @param {{ triggered?: string[], vignettes?: Object<string, string> }} [opts] — the clocks the
- *   reverted price filled, and the narration of each one's trigger vignette, by clock id
+ * @param {{ triggered?: string[], vignettes?: Object<string, string>, narrated?: string[] }} [opts] —
+ *   the clocks the reverted price filled; the narration of each one's trigger vignette, by clock
+ *   id; and those of them whose vignette stands written on the table
  * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
- *   the clocks taken out of their triggered state (empty when none, or nothing was written)
+ *   the clocks taken out of their triggered state, and those whose own trigger vignette is to be
+ *   struck by its id (`pacedBy`) with the clock left as it is (empty when none)
  */
-export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null } = {}) {
+export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null, narrated = [] } = {}) {
   return serialiseClockWrite(async () => {
     if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
@@ -616,18 +661,26 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
     const untriggered = [];
     const now = new Date().toISOString();
     const filledByPrice = new Set(Array.isArray(triggered) ? triggered : []);
+    const written = new Set(Array.isArray(narrated) ? narrated : []);
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
       if (c?.planId && filledByPrice.has(id)) {
         const wasFull = (c.filled ?? 0) >= c.segments;
         const target  = Math.max(0, c.segments - 1);
-        const pacedBy = pacingOfTrigger(c, vignettes?.[id]);
+        const named   = typeof vignettes?.[id] === "string" && vignettes[id] ? vignettes[id] : null;
+        const pacedBy = pacingOfTrigger(c, named);
         if (pacedBy) {
           c.active    = true;
           c.filled    = target;
           c.updatedAt = now;
           delete c.pacedBy;
           delete c.pacedFrom;
+        } else if (named && written.has(id)) {
+          // Its vignette was written and its pacing has been replaced since —
+          // the clock triggered again: the vignette goes by its id, the clock
+          // stands as the later trigger left it.
+          untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy: named });
+          continue;
         } else if ((c.filled ?? 0) > target) {
           c.filled = target;
           c.updatedAt = now;

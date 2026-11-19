@@ -48,6 +48,7 @@ import {
   enrichBondedDevelop,
   enrichForcedMoveStat,
   resolveStatedSufferTarget,
+  nameStatedSufferTarget,
   resolveHealPatient,
   resolveAidedAlly,
   enrichBondAdds,
@@ -555,6 +556,14 @@ export async function readMove({
     interpretation.applicableAbilities = applicableAbilities.map(a => (withRiders.has(a?.key) ? { ...a, hasRiders: true } : a));
   }
 
+  // The vehicle or companion a stated miss damages is named where the stakes
+  // are shown — the Confirm dialog, a round's reading — when the price is
+  // known to land on it: they showed "Withstand Damage −1" alone, the target
+  // resolved only at the roll (issue #364 STATED-TARGET-NOT-SHOWN). Last: an
+  // ability that may swap the stat for a vehicle's or companion's own track
+  // decides it too.
+  nameStatedSufferTarget(rollerActor, interpretation);
+
   return { interpretation, combatPosition, targetChoice, speakerActor, rollerActor };
 }
 
@@ -970,6 +979,11 @@ export async function rollMove({
   // target of its own for its price to land on (issue #364
   // ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
   resolveStatedSufferTarget(rollerActor, interpretation);
+  // …and its name beside the stated cost, as the dialog showed it, re-read
+  // against the roller's assets as they are now: the stakes the narrator is
+  // given name no asset the price will not land on (issue #364
+  // STATED-TARGET-NOT-SHOWN).
+  nameStatedSufferTarget(rollerActor, interpretation);
 
   // Progress moves score from live module data (combat/expedition journal
   // tracks, actor vow Items, connection records) — the fix for pipeline

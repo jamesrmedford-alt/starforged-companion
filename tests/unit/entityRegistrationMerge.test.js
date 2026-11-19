@@ -94,7 +94,7 @@ describe('storeSector', () => {
       ...RELAYED, sectors: [{ id: 'sec-0', name: 'Old Reach' }], connectionIds: ['conn-store'], activeSectorId: 'sec-0',
     });
 
-    await storeSector(sector, { settlements: {}, connectionJournalId: 'conn-new' }, copy);
+    await storeSector(sector, { settlements: {} }, copy);
 
     expect(stored()).toMatchObject(RELAYED);
     expect(stored().sectors.map(s => s.id)).toEqual(['sec-0', 'sec-1']);

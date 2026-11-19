@@ -22,7 +22,10 @@
  *                                           only. Read it via isShipBattered();
  *                                           the flag copy is a write-through
  *                                           mirror kept by updateShip.
- *   actor.system.debility.cursed          ← ship.cursed (permanent, command vehicle only)
+ *   actor.system.debility.cursed          ← ship.cursed (command vehicle only; permanent to
+ *                                           the module and the asset card — only the
+ *                                           sheet's own toggle clears it). Canonical, as
+ *                                           battered: read via isShipCursed() / getShip.
  *   STARSHIP asset's system.track         ← ship.integrity / integrityMax. The command
  *                                           vehicle's integrity is its STARSHIP asset's
  *                                           Integrity track (canonical — what the sheet
@@ -602,7 +605,8 @@ export async function changeIntegrity(actorId, delta, { restore = false } = {}) 
  * sheet field is canonical"); the asset's Battered / Cursed conditions are
  * their mirror, and both are marked on the sheet:
  *   - the starship sheet's impact toggle (an `updateActor` touching the
- *     debility) → the asset's conditions follow it;
+ *     debility) → the asset's conditions follow it, a Cursed un-ticked there
+ *     too: the sheet's clear stands (issue #364 STARSHIP-SHEET-CURSED-TOGGLE);
  *   - the asset card's condition box (an `updateItem` of a Command Vehicle
  *     asset touching its conditions, not the mirror's own write) → the
  *     native impacts are written through updateShip (cursed only set, never
@@ -620,6 +624,14 @@ export function registerStarshipConditionSync() {
       const flat = Object.keys(change ?? {}).some(k => k.startsWith("system.debility."));
       if (!debility && !flat) return;
       const native = actor.system?.debility ?? {};
+      // The sheet's toggle is followed both ways — Cursed un-ticked there
+      // included, for a starship with a record or without one. That is a GM's
+      // hand edit of the canonical field and the one way to correct a
+      // mistaken tick, so it stands: nothing here or in updateShip ticks it
+      // back (the maintainer's decision, issue #364
+      // STARSHIP-SHEET-CURSED-TOGGLE). Only the asset card's box, below, is
+      // ticked again. The record's own `cursed` is not written here; it is
+      // read from the sheet (registry.js withSheetNotes).
       await setCommandVehicleConditions(actor, { battered: !!native.battered, cursed: !!native.cursed });
     } catch (err) {
       console.warn(`${MODULE_ID} | starship conditions: mirroring ${actor?.name ?? "a starship"}'s impacts onto its STARSHIP asset failed:`, err?.message ?? err);

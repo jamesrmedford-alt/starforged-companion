@@ -6,6 +6,95 @@ rejected.
 
 ---
 
+## Issue #364's open items: a Cursed un-ticked on the starship sheet stands, a played plan step carries its narration, a price that is a choice is told as it stands (2026-11)
+
+**Decision:** (the twenty-one items left open by the issue #364 fixes — `known-issues.md` → "Found while fixing issue #364" — fixed at the maintainer's request on 2026-11-19, with the maintainer's answers to the three that were decisions.)
+
+- **A Cursed un-ticked on the starship sheet stands** (STARSHIP-SHEET-CURSED-TOGGLE;
+  the maintainer's answer). The native sheet field is canonical, and a GM's
+  edit there is the one way to correct a mistaken tick: it is not ticked
+  back. The STARSHIP asset card's box is a different path and is still
+  re-ticked (issue #364 STARSHIP-UNTRACKED-CURSED-CLEAR). A ship's battered
+  and cursed are read from the sheet wherever its record is read
+  (`registry.js` `withSheetNotes`, as its notes and integrity are), so the
+  record's stale copy no longer calls a cleared ship cursed; the record is
+  not written from the hook.
+- **A STARSHIP asset removed with no GM connected is accepted**
+  (STARSHIP-ASSET-REMOVED-NO-GM; the maintainer's answer): an integrity value
+  marked by hand since the module's last write is lost then. World writes
+  need a GM, and the case is rare. No code.
+- **A sector record carries no `connectionId`** (SECTOR-CONNECTION-ID-UNREAD;
+  the maintainer's answer). Nothing in production read it. The connection is
+  found by `campaignState.connectionIds` and its own `sectorId`, as before.
+- **A played plan step carries the narration that played it**
+  (PLAN-STEP-REWRITTEN-BEFORE-BURN). `playedBy` is on the step, and taking a
+  narration back un-plays its steps by that mark in every version of the
+  plan — a later writer's own writes stand, a GM's edit included. A plan
+  clock's pacing is matched by its stamp, whoever turned the clock since: by
+  a burn (issue #364), by the X-Card (PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE),
+  and a burned price strikes the vignette its own receipt names even when a
+  later trigger holds the stamp (PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
+- **A narration the X-Card pauses is final, and files what it owes**
+  (XCARD-PAUSED-NARRATION-PLAN-REQUESTS): its plan requests, with their rolls
+  alone, as a failed or empty reply's are. Nothing from the reply is kept.
+- **A price that is one of a miss's choices is told as it stands, whatever
+  the other choice is** (SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). The
+  matched waypoint miss's `priceChoice` holds for any enumerated miss whose
+  other option does something instead — Sojourn's vow. The pick is recorded
+  on the choice card (`chosenIndex`).
+- **A stated miss names its target before the roll** (STATED-TARGET-NOT-SHOWN):
+  the Confirm Move dialog and the Round window show the vehicle or companion
+  the reading's `missSuffer.target` resolves to, and nothing where the price
+  may land elsewhere.
+- **A round at its upgrade step is kept and narrated whenever its session is
+  found over** (ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD): at End a Session, at
+  the next advance pass, and now at the load's recovery or when its resolver
+  leaves. A round that was rolling or narrating when its page died is still
+  closed unnarrated.
+- **A beat claims its shape while it is written** (BEAT-SHAPE-SIMULTANEOUS):
+  in memory, on the narrating client, released in a `finally`. It is not a
+  store of the last shape — with nothing in flight the cards alone decide.
+- **A reward pick names the option it chose, and an unsworn vow's card is
+  reconciled at load** (VOW-CARD-RENAME-NO-GM). The GM compares the click's
+  text with the card's own option and takes the reward from the card.
+- **A won fight's milestone difference is a payoff step**
+  (WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY), retried from the GMs' card, as its
+  reward difference is.
+- **A deleted NPC's victory cards stop offering to deepen the bond, and the
+  X-Card reopens the draft row whose bond it takes back**
+  (WON-FIGHT-CARD-DELETED-NPC, XCARD-BOND-DRAFT-ROW-CONFIRMED) — the row by
+  its card id and index, stamped on the bond when the hit confirms it.
+- **A one-word whole name follows issue #362 D6 for a connection too**
+  (CONNECTION-WHOLE-NAME-ANY-CASE), and a course asks for the exact site
+  record name before the looser rungs, as `!at` does
+  (COURSE-OLD-LABEL-LOOSER-RUNG-FIRST).
+
+**Reason:** each was a defect or a gap the issue #364 fixes left or exposed;
+five were only "read from the code" and were reproduced in a test first (one,
+a still-uncharted site by an old label, did not reproduce and is pinned).
+
+**Rejected:** *Re-ticking a Cursed cleared on the starship sheet* — nothing in
+the Companion could then undo a mistaken tick. *Writing the ship's record
+from the sheet's `updateActor` hook* — it would race `updateShip`'s
+whole-record write. *Stamping a removed asset's value on the starship for a
+later GM* — more machinery than the case is worth. *Keeping `connectionId`
+marked UNWIRED* — no reader is planned. *Restoring a plan's whole version to
+take a step back* — it discards a later narration's writes, which is why the
+step stayed played. *A timer for a round left idle with the GM's page
+loaded* — new machinery; the next pass or load keeps it. *A shared store for
+beat-shape claims* — the cards are the source (issue #354).
+
+**Amends:** "Issue #364" (the choice card holds for Sojourn's miss too; the
+beat's shape is also claimed in memory while it is written; a session's
+close-out keeps a round at its upgrade step at the load's recovery as well;
+the X-Card's bond take-back reopens the draft row); "Starship battered: the
+native sheet field is canonical" (cursed likewise, and both are read from the
+sheet through the record's readers); the eleventh audit's "a resolving round
+of an ended session finishes unless its resolver is gone" (a round at its
+upgrade step keeps and is narrated even then).
+
+---
+
 ## Issue #364: the fourteenth audit's open items — the plan relay's broadcast is accepted, a matched waypoint miss chooses its price on a card, the X-Card takes back a bond it added (2026-11)
 
 **Decision:** ([#364](https://github.com/jamesrmedford-alt/starforged-companion/issues/364) — the thirty items left open by the issue #362 fixes, addressed at the maintainer's request on 2026-11-19, with the maintainer's answers to its four questions.)
@@ -2085,7 +2174,8 @@ each row; each row's ID in brackets.)
   visible to free-flow (`_moveLockClaimInFlight`); a closed round heard on a
   new canonical GM opens the next; a resolving round of an ended session
   finishes unless its resolver is gone (and one still at its upgrade step
-  keeps for everyone deciding, so it is narrated then — issue #364); the
+  keeps for everyone deciding, so it is narrated then — at End a Session,
+  and at the load's recovery or when its resolver leaves — issue #364); the
   session a load is replacing is
   over at once (no round reads, resolves or opens in it).
 - **A card's suggestion button is its character's** [Z56, D5]: 🤝 Develop
@@ -5560,6 +5650,13 @@ true, so a flag-only read missed every sheet-marked impact: an unclearable
 battered vehicle that still gained integrity, and a panel and narrator that
 said "not battered". rules/reachability.md §5: name the canonical store and
 write through to the mirror.
+
+**Update (issue #364's open items, STARSHIP-SHEET-CURSED-TOGGLE):** the same
+holds for `cursed`, and for every reader of the ship's record: `getShip` and
+its readers are given battered and cursed from the native field
+(`registry.js` `withSheetNotes`). A Cursed un-ticked on the starship sheet
+itself stands — the maintainer's decision; only the STARSHIP asset card's
+un-tick is put back.
 
 **Update (issue #315 S05):** a consequence's or an asset effect's integrity
 change goes through `changeIntegrity` (entities/ship.js), which reads

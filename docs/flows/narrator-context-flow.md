@@ -48,11 +48,14 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
-  issue #362 AC02). A price that is the player's choice beside a move that
-  may replace it (`resolution.priceChoice` — Explore a Waypoint's miss with
-  a match: Pay the Price, or Confront Chaos instead) is settled when the
+  issue #362 AC02). A price that is one of the player's choices
+  (`resolution.priceChoice` — Explore a Waypoint's miss with a match: Pay
+  the Price, or Confront Chaos instead; Sojourn's miss: "No relief — Pay
+  the Price", or the community's need taken on with a vow, issue #364
+  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE) is settled when the
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
-  table's cards → `resolver.settlePriceChoice`): paid, it is delivered as
+  table's cards — the waypoint's claim, and the option the choice card was
+  resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
   above; still open, or declined, the stakes point at a block of its own
   after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
   THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
@@ -779,7 +782,15 @@ beat, or cards from before the stamp — is shaped by the count of its beat
 cards (a move's, a paced line's, a round's — `isSessionBeatCard`), struck,
 X-Carded and unnarrated ones included, never the @scene answers, oracle
 follow-ups or vignettes between them, which brought the cycle round to the
-same shape (issue #362 AC72) — and `extras.usedImages`, the comparisons the last six cards made,
+same shape (issue #362 AC72). A card is posted only once its narration is
+written, so two beats narrated at the same moment read the same last card:
+each of the three narrations that post a beat's card (`narrateResolution`,
+`narrateRound`, `narratePacedInput`) runs under a claim on its shape
+(`narrateWithBeatClaim` → `opts.beatClaim` → `beatVariety`), held in memory
+on the narrating client while it is written and released in a `finally`,
+and `beatVariety` steps past the shapes claimed at that moment
+(`shapeNotBeingWritten`). No store: with no narration in flight the shape is
+read from the cards alone (issue #364 BEAT-SHAPE-SIMULTANEOUS) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and
@@ -987,6 +998,10 @@ unreadable or missing (the requests alone make the apply run), and, unstamped,
 when the narration is never written — an empty reply, a failed call — from the
 exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 (`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
+so do a move's and a round's narration the X-Card pauses, on entry or once the
+reply is in — the move stands, a paused narration is never narrated again, and
+its paused notice closes a round: `filePausedPlanRequests`, issue #364
+XCARD-PAUSED-NARRATION-PLAN-REQUESTS;
 the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
 switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
 narration with prose still files its requests with their rolls alone, stamped
@@ -1037,15 +1052,29 @@ improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`) — and a plan clock it paced: the pacing
 is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
 the narration back — a supersede, or the X-Card's pause write — runs the clock
-again at its fill from before, at most one short of full, the step it played
-owed again (`planClockPacing.js`; a burned price's plan clock is put back one
+again at its fill from before plus the segments turned since, at most one short
+of full, the step it played owed again (`planClockPacing.js`: the clock is that
+narration's by its stamp, `pacedByOneOf`, wherever a later price has turned it —
+issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; a burned price's plan clock is put back one
 short of full and its vignette struck by that id, issue #362 AC33 — the price's
 receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
 advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that
 narration did even after a later price turned the emptied clock on, and never
-takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE);
+takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE;
+when the clock triggered again before the first price is burned its stamp is
+the later trigger's, so the burned price's own vignette — a live card under the
+id its receipt names, `clocksWithVignetteWritten` — is struck by that id and the
+clock left as the later trigger and the prices after it left it, no segment
+given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN);
 each write stamped with the narration's id, which the X-Card's
-`undoNarrationEntries` takes back — a plan keeps one version a narration,
+`undoNarrationEntries` takes back — and a step a narration played carries that
+narration on the step itself (`playedBy`, `applyRevealToSkeleton`), so taking
+the narration back un-plays the step in every version of the plan that stays,
+also under a version another narration or a GM wrote since (a clue shown
+between a trigger vignette and the burn of its price left the step played with
+its vignette struck and its clock re-armed); a clock a later trigger retired
+after the plan's last step then runs again, empty (`rerunRetiredPlanClock`;
+issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
 capture's link), so the version before it is never pushed off the three-deep
 history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,

@@ -2361,6 +2361,18 @@ async function runHeldFreeFlowMoves() {
 // an ended session is closed; on any other (a user joining, a GM entering a
 // key) it finishes first, as End a Session lets it — those closed it, its
 // narration and riders never run (issue #342 Z23).
+//
+// Not a round at its upgrade step: nothing of it was under way on the page
+// that is gone — its moves are rolled and recorded, and it waits only for a
+// roller's Burn / Improve / Keep. It goes on instead, as on any other
+// recovery: the advance pass keeps for everyone still deciding once the
+// session is over and narrates it (advanceOnce — or closes it behind the
+// X-Card's paused notice or the "narration unavailable" card, the GMs told,
+// where narrateTheRound closes one unnarrated). Closed here, a round the GM
+// left waiting on a player overnight was gone at the next load with its moves
+// never narrated and nobody told: four idle hours run no pass of their own,
+// so the load was the first thing to act on it (issue #364
+// ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD).
 const CLOSES_RESOLVING_ROUND = new Set(["ready", "resolver-left"]);
 
 /**
@@ -2368,6 +2380,8 @@ const CLOSES_RESOLVING_ROUND = new Set(["ready", "resolver-left"]);
  * left; a GM left while the round collects), when a user joins and when a
  * keyed GM joins: a collecting round from an ended session is closed, and a
  * resolving one too on `ready` or when its GM left (CLOSES_RESOLVING_ROUND) —
+ * unless it is at its upgrade step, which keeps and is narrated (issue #364
+ * ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD) —
  * otherwise it finishes first; one left resolving whose GM is gone is
  * resumed; a collecting one has its lost readings started again and gains
  * the participants who joined. Then a round opens when one is due.
@@ -2383,7 +2397,7 @@ export async function recoverRound(reason = "recovery") {
     const sessionOver = roundSessionOver(round, cs);
     if (sessionOver && !isResolving(round)) {
       await closeCollectingRound("session-ended");
-    } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason)) {
+    } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason) && round.phase !== ROUND_PHASE.UPGRADING) {
       await queueRoundWrite(r => (r?.id === round.id ? closeRound(r, { reason: "session-ended", now: nowIso() }) : r))
         .catch(err => console.warn(`${MODULE_ID} | Batch Mode: an ended session's round could not be closed:`, err?.message ?? err));
     } else if (isResolving(round)) {

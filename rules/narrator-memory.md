@@ -31,9 +31,16 @@ layers. This file is the never-break list.
    narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST; a hidden plan's
    clock, which its vignette paced, by the vignette's own id — `pacedBy` —
    and a removed or superseded narration's pacing of a plan clock is taken
-   back with its step, issue #362 AC33; the burned price's receipt names that
+   back with its step, issue #362 AC33 — matched by the stamp alone, so also
+   after a later price turned the clock, issue #364
+   PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; the burned price's receipt names that
    vignette, `vignetteNarrationId`, so a price paid in between does not hide
-   it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE) —
+   it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — and it is struck by
+   that id when the clock has triggered again since and carries the later
+   trigger's stamp, the later trigger left standing, PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN;
+   the plan step a narration played carries that narration, `playedBy`, and
+   goes back unplayed with it whatever was written to the plan since,
+   PLAN-STEP-REWRITTEN-BEFORE-BURN) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

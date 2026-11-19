@@ -330,13 +330,16 @@ describe("the price a miss offers as a choice — the pieces (issue #364)", () =
     }
   });
 
-  it("the priced option names its price; the resolution's price choice names what may replace it — Sojourn's has none", () => {
+  it("the priced option names its price; the resolution's price choice names what may replace it — Sojourn's, the vow", () => {
     const prompt = priced();
     expect(prompt.options[0].label).toBe(`Pay the Price: ${WASTE}`);
     expect(priceChoiceOf(prompt, { roll: 71, result: WASTE })).toEqual({ price: WASTE, stated: false, instead: "confront_chaos" });
+    // Sojourn's price is a choice too (SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE:
+    // it carried none, and was narrated as paid before it was chosen) — its
+    // label is its own, and what replaces it is the vow its other option routes.
     const sojourn = withChoicePrice(mapConsequences("sojourn", "miss", false).sufferPrompt, { roll: 71, result: WASTE, sufferRoutes: [] }, "Sojourn");
     expect(sojourn.options.find(o => o.route === "pay_the_price").label).toBe("No relief — Pay the Price");
-    expect(priceChoiceOf(sojourn, { roll: 71, result: WASTE })).toBeNull();
+    expect(priceChoiceOf(sojourn, { roll: 71, result: WASTE })).toEqual({ price: WASTE, stated: false, instead: "swear_an_iron_vow" });
   });
 
   const input = () => ({

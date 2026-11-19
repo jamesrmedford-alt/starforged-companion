@@ -564,7 +564,6 @@ describe("the overview of a sector the creator stored (real generate → store c
     const journal    = await createSectorJournal(sector, { sector: "A grim stretch of frontier.", settlements: {} }, entityData.settlements);
     await storeSector(sector, {
       settlements:         entityData.settlements,
-      connectionJournalId: entityData.connectionJournalId,
       sites:               entityData.sites,
       sceneId:             null,
       sectorJournalId:     journal?.id ?? null,

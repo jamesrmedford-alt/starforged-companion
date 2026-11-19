@@ -1430,9 +1430,10 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   const stated = statedPrice(interpretation.stakes, interpretation);
   const choicePrice = rollChoicePrice(moveId, outcome, consequences, { stated });
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
-  // A price the result's choice may replace with another move (Explore a
-  // Waypoint's miss with a match — Confront Chaos instead): the narration is
-  // told whether it stands when it is written (settlePriceChoice).
+  // A price that is one of the result's choices (Explore a Waypoint's miss
+  // with a match — Confront Chaos instead; Sojourn's miss — the community's
+  // need, taken on with a vow, instead): the narration is told whether it
+  // stands when it is written (settlePriceChoice).
   const priceChoice = choicePrice ? priceChoiceOf(consequences.sufferPrompt, choicePrice) : null;
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
     { rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
@@ -1905,13 +1906,31 @@ export function withChoicePrice(prompt, price, moveName = null) {
 }
 
 /**
- * The price a result offers beside a move that may replace it (issue #364
- * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY): a choice prompt holding a priced
- * `pay_the_price` option and an Explore a Waypoint match's alternative
- * (`waypointOracle` — Confront Chaos). The resolution carries it
- * (`priceChoice`), so its narration can be told, when it is written, whether
- * that price stands (settlePriceChoice). Null for any other prompt —
- * Sojourn's, whose other option is a vow, not a move made instead.
+ * What a choice's option does instead of paying the price, as a move id: an
+ * Explore a Waypoint match's alternative (`waypointOracle` — Confront Chaos),
+ * or the move it routes to (`route` — Sojourn's "Community needs help":
+ * Swear an Iron Vow). Null for the price's own option, and for an option
+ * that is neither.
+ */
+function priceAlternativeOf(option) {
+  if (typeof option?.waypointOracle === "string" && option.waypointOracle) return option.waypointOracle;
+  return typeof option?.route === "string" && option.route && option.route !== "pay_the_price" ? option.route : null;
+}
+
+/**
+ * The price a result offers as one of its choices, and what the other choice
+ * does instead (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY,
+ * SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE): a choice prompt holding a
+ * priced `pay_the_price` option beside an alternative (priceAlternativeOf) —
+ * Explore a Waypoint's miss with a match (Confront Chaos instead), Sojourn's
+ * miss (the community's need, taken on with a vow, instead). The resolution
+ * carries it (`priceChoice`), so its narration can be told, when it is
+ * written, whether that price stands (settlePriceChoice). Null for any other
+ * prompt.
+ *
+ * Sojourn's carried none — only a `waypointOracle` option counted — so its
+ * narration was seeded with the price and told "it is what this miss costs"
+ * before the player had chosen, and after they had chosen the vow.
  *
  * @param {Object|null} prompt — the result's sufferPrompt (withChoicePrice's)
  * @param {{ result: string, stated?: true }|null} price — rollChoicePrice's
@@ -1919,7 +1938,7 @@ export function withChoicePrice(prompt, price, moveName = null) {
  */
 export function priceChoiceOf(prompt, price) {
   const options = prompt?.kind === "enumerated" && Array.isArray(prompt.options) ? prompt.options : [];
-  const instead = options.find(o => typeof o?.waypointOracle === "string" && o.waypointOracle)?.waypointOracle ?? null;
+  const instead = options.map(priceAlternativeOf).find(Boolean) ?? null;
   const text = typeof price?.result === "string" ? price.result.trim() : "";
   if (!instead || !text || !options.some(o => o?.route === "pay_the_price" && o.price)) return null;
   return { price: text, stated: price.stated === true, instead };
@@ -2032,8 +2051,8 @@ const PRICE_SEED_LINE = /^Pay the Price: /;
 /**
  * Where a price that is the player's choice stands when its move is narrated
  * (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY): not yet chosen, paid
- * (the choice card's price option was picked), or declined (the move that
- * replaces it — Confront Chaos — was taken instead).
+ * (the choice card's price option was picked), or declined (what replaces it
+ * was taken instead — Confront Chaos, or Sojourn's vow).
  */
 const PRICE_CHOICE = Object.freeze({ PENDING: "pending", PAID: "paid", DECLINED: "declined" });
 

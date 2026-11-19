@@ -28,10 +28,10 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
-import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
+import { unpacedClock, pacedByOneOf } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { recentImages, pickBeatShape, beatShapeAfter, IMAGE_SOURCE_CARDS } from './proseVariety.js';
+import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
@@ -360,6 +360,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     planRequests    = [],
     endingTrackIds  = [],
     planIds         = [],
+    beatClaim       = null,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -398,8 +399,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // P2-27): the comparisons the session's last narrations made — listed as
   // images not to reuse — and a shape for this beat, by its place in the
   // session, so two in a row are never built the same way. The beat modes
-  // only; rendered as [8d] THIS BEAT'S PROSE.
-  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null));
+  // only; rendered as [8d] THIS BEAT'S PROSE. A narration that posts the
+  // beat's card hands its `beatClaim` (narrateWithBeatClaim): the shape is
+  // its own while it is being written (issue #364 BEAT-SHAPE-SIMULTANEOUS).
+  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null, beatClaim));
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
   // regenerated after a narrator card posts (registerRollingSummaryRefreshHook),
@@ -760,6 +763,59 @@ function lastBeatShapeId(sessionId) {
   return null;
 }
 
+// ── The shapes being written right now (issue #364 BEAT-SHAPE-SIMULTANEOUS) ──
+// A beat's shape is read off the newest written beat's card, and a card is
+// posted only once its narration is written — so two beats narrated at the
+// same moment (two players' lines, a move beside a paced line, a round
+// beside either) both read the same last card and were given the same shape.
+// A beat's narration claims its shape when it picks it, for as long as it is
+// being written, and a beat picked meanwhile steps past the claimed ones.
+//
+// In memory, this client's own narrations only, and never a second store of
+// "the last shape" (decisions.md → "Issue #364", the beat-shape bullet): a
+// claim says a shape is being written now, and is gone when its narration
+// ends — written, failed or thrown (narrateWithBeatClaim's `finally`). With
+// nothing being written the set is empty and the next shape is read from the
+// cards alone. A reload ends every narration and every claim with it.
+const liveBeatClaims = new Set();   // of { sessionId, shapeId }
+
+/**
+ * Run one beat's narration with a claim on its shape, released when the
+ * narration ends however it ends. The three narrations that post a beat's
+ * card (narrateResolution, narrateRound, narratePacedInput) call themselves
+ * through this once: each makes its own Claude call — the playthrough
+ * harness names a call by the function that makes it — so its body cannot
+ * move into a helper that would hold the `finally`.
+ *
+ * @template T
+ * @param {(claim: { sessionId: string|null, shapeId: string|null }) => Promise<T>} narrate
+ * @returns {Promise<T>}
+ */
+async function narrateWithBeatClaim(narrate) {
+  const claim = { sessionId: null, shapeId: null };
+  try {
+    return await narrate(claim);
+  } finally {
+    liveBeatClaims.delete(claim);
+  }
+}
+
+/**
+ * `shape`, or the first shape after it in the cycle that no narration of the
+ * session is being written in right now. With every shape claimed — five
+ * narrations at once — `shape` itself.
+ *
+ * @param {{ id: string, hint: string }} shape
+ * @param {string|null} sessionId
+ * @returns {{ id: string, hint: string }}
+ */
+function shapeNotBeingWritten(shape, sessionId) {
+  const claimed = new Set([...liveBeatClaims].filter(c => c.sessionId === sessionId).map(c => c.shapeId));
+  let free = shape;
+  for (let step = 1; step < BEAT_SHAPES.length && free && claimed.has(free.id); step += 1) free = beatShapeAfter(free.id);
+  return free && !claimed.has(free.id) ? free : shape;
+}
+
 /**
  * The images the session's last narrations used and the shape for the beat
  * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
@@ -774,27 +830,39 @@ function lastBeatShapeId(sessionId) {
  * over all its narrator cards, four @scene answers, oracle follow-ups or
  * vignettes between two beats brought the five-shape cycle back round to the
  * same shape, and a card a Burn / Improve struck took the count back one
- * (issue #362 AC72). Fail-open: an unreadable chat log gives no list and the
- * first shape.
+ * (issue #362 AC72). A shape another narration of the session is being
+ * written in at this moment is stepped past, and the shape picked is claimed
+ * for `claim`'s narration (issue #364 BEAT-SHAPE-SIMULTANEOUS; liveBeatClaims).
+ * Fail-open: an unreadable chat log gives no list and the first shape.
  *
  * @param {string|null} sessionId
+ * @param {{ sessionId: string|null, shapeId: string|null }|null} [claim] — the
+ *   narration's claim (narrateWithBeatClaim); none claims nothing
  * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
  */
-function beatVariety(sessionId) {
+function beatVariety(sessionId, claim = null) {
+  let variety;
   try {
     const cards = sessionNarratorCards(sessionId);
     const prose = cards.slice(-IMAGE_SOURCE_CARDS)
       .map(m => m?.flags?.[MODULE_ID]?.narrationText)
       .filter(t => typeof t === 'string' && t.trim());
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
-    return {
+    variety = {
       usedImages: recentImages(prose),
       beatShape:  beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
-    return { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
+    variety = { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
   }
+  variety.beatShape = shapeNotBeingWritten(variety.beatShape, sessionId);
+  if (claim) {
+    claim.sessionId = sessionId;
+    claim.shapeId   = variety.beatShape.id;
+    liveBeatClaims.add(claim);
+  }
+  return variety;
 }
 
 /** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
@@ -1156,9 +1224,14 @@ function reportNarratedOracle(kind, rolledLine) {
  *   is called internally.
  * @param {string|null} [options.moveTarget] — the interpreter's target for the
  *   move, for its capture (runPostNarrationPasses — KNOWN-NPC-CONNECTION-NO-TARGET)
+ * @param {Object|null} [beatClaim] — internal: this narration's claim on its
+ *   beat's shape (narrateWithBeatClaim). Callers pass none.
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
-export async function narrateResolution(resolution, campaignState, options = {}) {
+export async function narrateResolution(resolution, campaignState, options = {}, beatClaim = null) {
+  // The beat's shape is claimed while this narration is written (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS): run once more under a claim, released however it ends.
+  if (!beatClaim) return narrateWithBeatClaim(claim => narrateResolution(resolution, campaignState, options, claim));
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
 
@@ -1167,6 +1240,13 @@ export async function narrateResolution(resolution, campaignState, options = {})
   // retired context assembler (ASSEMBLER-003) and was lost with it.
   if (isXCardActive(campaignState)) {
     console.debug(`${MODULE_ID} | narrateResolution: X-Card active — narration paused.`);
+    // The move stands, and so does what it owes the hidden plans — a price's
+    // new enemy, an expedition begun: filed with their rolls alone, as every
+    // exit that writes no narration files them (issue #364
+    // XCARD-PAUSED-NARRATION-PLAN-REQUESTS). Nothing narrates this move
+    // again once a GM resumes; the next narration decides them.
+    filePausedPlanRequests(() => movePlanRequests(resolution, campaignState, newNarrationId()).planRequests,
+      campaignState, { moveId: resolution?.moveId ?? null });
     await postNarrationPausedCard(resolution, campaignState);
     return null;
   }
@@ -1220,26 +1300,12 @@ export async function narrateResolution(resolution, campaignState, options = {})
     );
   }
 
-  // A miss's price that is the player's choice beside a move that may replace
-  // it (Explore a Waypoint's match — Confront Chaos instead) is told as it
-  // stands now: the choice card posts after a free-flow narration and before
-  // a held result's, so the pick may not be made yet, or may have declined
-  // the price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY). Before the
-  // hidden rolls: a declined price's new enemy is rolled for no one.
-  if (resolution?.priceChoice) resolution = settlePriceChoice(resolution, priceChoiceStatus(resolution._id ?? null));
-
-  // The hidden rolls behind a plan this narration decides, which a store
-  // every client holds kept none of — a held result's card, an upgrade's card
-  // state — are rolled here, on the GM that narrates it (issue #362 AC15). A
-  // player's own key rolls none: plans are a GM's.
-  if (globalThis.game?.user?.isGM === true) resolution = withHiddenRolls(resolution, campaignState);
-
-  // A price that revealed a new enemy asks this narration to decide what it
-  // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
-  // So does an expedition the move began (its track — Phase 3).
-  const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...unplannedRequests(normalisePlanRequests(resolution.skeletonRequests))]
-    : [];
+  // The move as it is narrated — its price as the player's choice stands, its
+  // hidden rolls made — and the plans it asks this narration to decide
+  // (movePlanRequests).
+  const owed = movePlanRequests(resolution, campaignState, narrationId);
+  resolution = owed.resolution;
+  const planRequests = owed.planRequests;
   // The tracks and vows this move ends: their plans are in play to reveal
   // their end, resolved or not (issue #362 D4).
   const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
@@ -1250,6 +1316,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
     endingTrackIds,
+    beatClaim,
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1290,6 +1357,9 @@ export async function narrateResolution(resolution, campaignState, options = {})
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
     if (xCard.interrupted('narrateResolution')) {
+      // The reply is discarded; the plans the move asked for are still owed
+      // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS).
+      filePausedPlanRequests(() => extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
       await postNarrationPausedCard(resolution, campaignState);
       return null;
     }
@@ -1337,6 +1407,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
         if (xCard.interrupted('narrateResolution')) {
+          filePausedPlanRequests(() => extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
           await postNarrationPausedCard(resolution, campaignState);
           return null;
         }
@@ -1377,6 +1448,84 @@ export async function narrateResolution(resolution, campaignState, options = {})
   }
 }
 
+
+/**
+ * A move as its narration takes it, and the plans it asks that narration to
+ * decide — narrateResolution's, and the same for a move whose narration the
+ * X-Card pauses before it is asked for (issue #364
+ * XCARD-PAUSED-NARRATION-PLAN-REQUESTS):
+ *  - a miss's price that is one of the player's choices (Explore a
+ *    Waypoint's match — Confront Chaos instead; Sojourn's — the community's
+ *    need, taken on with a vow, instead) is told as it stands now: the choice
+ *    card posts after a free-flow narration and before a held result's, so
+ *    the pick may not be made yet, or may have declined the price (issue #364
+ *    EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY,
+ *    SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Before the hidden rolls: a
+ *    declined price's new enemy is rolled for no one;
+ *  - the hidden rolls behind a plan this narration decides, which a store
+ *    every client holds kept none of — a held result's card, an upgrade's
+ *    card state — are rolled here, on the GM that narrates it (issue #362
+ *    AC15). A player's own key rolls none: plans are a GM's;
+ *  - a price that revealed a new enemy asks the narration to decide what it
+ *    is (issue #353 Phase 1) — from its seeds, the one record of the roll. So
+ *    does an expedition the move began (its track — Phase 3).
+ *
+ * @param {Object} resolution
+ * @param {Object|null} campaignState
+ * @param {string} refBase — unique to the narration (its id)
+ * @returns {{ resolution: Object, planRequests: Object[] }}
+ */
+function movePlanRequests(resolution, campaignState, refBase) {
+  let move = resolution;
+  if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
+  if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
+  const planRequests = skeletonsEnabled()
+    ? [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]
+    : [];
+  return { resolution: move, planRequests };
+}
+
+/**
+ * The plans a round's entries ask its narration to decide: each entry's
+ * price that revealed a new enemy, each expedition one began.
+ *
+ * @param {Object[]} entries — roundNarrationEntries', their hidden rolls made
+ * @param {string} refBase — unique to the narration (its id)
+ * @returns {Object[]}
+ */
+function roundPlanRequests(entries, refBase) {
+  if (!skeletonsEnabled()) return [];
+  return entries.flatMap((e, i) => [
+    ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${refBase}-${i + 1}`),
+    ...normalisePlanRequests(e.input?.skeletonRequests),
+  ]);
+}
+
+/**
+ * The plan requests of a narration the X-Card paused — active when the move
+ * or round came to be narrated, or played while the reply was on its way —
+ * filed with their rolls alone (fileUnansweredPlanRequests; issue #364
+ * XCARD-PAUSED-NARRATION-PLAN-REQUESTS). The exit posted its paused notice
+ * and filed nothing: the move's result stands, so the enemy its price
+ * revealed had no plan and the rolls behind it existed nowhere. A paused
+ * narration is final — its notice offers no retry, a paused round's notice
+ * closes the round (batch/driver.js roundNarrationPosted), and a GM's resume
+ * picks play up at the next move — so this is the one filing; a Burn Momentum
+ * or Improve Result re-narration asks again only for subjects still unplanned
+ * (unplannedRequests). Never throws: the paused notice posts whatever
+ * happens here.
+ *
+ * @param {() => Object[]} requests — builds the narration's plan requests
+ * @param {Object|null} campaignState
+ * @param {{ moveId?: string|null }} [opts]
+ */
+function filePausedPlanRequests(requests, campaignState, opts = {}) {
+  try {
+    fileUnansweredPlanRequests(requests(), campaignState, opts);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the plans a paused narration was asked to decide were not filed:`, err?.message ?? err);
+  }
+}
 
 /**
  * A narration's plan requests about a known subject (an expedition's track),
@@ -1489,9 +1638,13 @@ export function roundNarrationEntries(round) {
  * #347 AB17: the first GM's late reply posted a second card).
  *
  * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
+ *   (`beatClaim` is internal — this narration's claim on its shape, narrateWithBeatClaim; callers pass none)
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null, beatClaim = null }) {
+  // The round's shape is claimed while it is narrated (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS; narrateResolution's rule).
+  if (!beatClaim) return narrateWithBeatClaim(claim => narrateRound({ round, campaignState, stillNarrating, noKeyReason, beatClaim: claim }));
   // The hidden rolls behind the plans its entries ask for, which the round —
   // a world setting every client holds — keeps none of, are rolled here, on
   // the GM that narrates it (issue #362 AC15).
@@ -1509,6 +1662,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
 
   if (isXCardActive(campaignState)) {
     console.debug(`${MODULE_ID} | narrateRound: X-Card active — narration paused.`);
+    // Its entries' moves stand, and what they owe the hidden plans with them
+    // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS; narrateResolution's rule).
+    filePausedPlanRequests(() => roundPlanRequests(entries, newNarrationId()), campaignState);
     return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
   }
   const xCard = watchXCard(campaignState);
@@ -1553,12 +1709,10 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     actingActorIds:  entries.map(e => e.actorId),
     // Each entry's price that revealed a new enemy asks for its plan (issue #353).
     planRequests:    skeletonsEnabled()
-      ? entries.flatMap((e, i) => [
-        ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${narrationId}-${i + 1}`),
-        ...normalisePlanRequests(e.input?.skeletonRequests),
-      ])
+      ? roundPlanRequests(entries, narrationId)
       : [],
     endingTrackIds,
+    beatClaim,
   });
   extras.roundCharacters = characters;
 
@@ -1598,6 +1752,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       });
       if (superseded()) return { posted: null, superseded: true };
       if (xCard.interrupted('narrateRound')) {
+        filePausedPlanRequests(() => extras.planRequests, campaignState);
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
@@ -2719,9 +2874,12 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // when its beat played the step — is re-armed one short of full: the undo
   // puts the step back unplayed (undoNarrationEntries), and the next price
   // plays it (issue #362 AC33; the clock stayed empty or retired, and a last
-  // step was never paced again).
-  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(standingPacedBy(c)))) {
-    cs.clocks = cs.clocks.map(c => (ids.includes(standingPacedBy(c)) ? unpacedClock(c) : c));
+  // step was never paced again). Theirs by its stamp, wherever a later price
+  // has turned it since: asked whether it still stood as paced, a price paid
+  // between a trigger vignette and this card left the clock where it was with
+  // the step back unplayed (issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE).
+  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => pacedByOneOf(c, ids))) {
+    cs.clocks = cs.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;
@@ -4730,9 +4888,16 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * (issue #347 AB21). A reply the X-Card discards posts the paused notice
  * (PACED-DISCARD-UNDER-XCARD-SILENT).
  *
+ * `beatClaim` is internal — this narration's claim on its beat's shape
+ * (narrateWithBeatClaim); callers pass none.
+ *
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
-export async function narratePacedInput(playerText, campaignState, options = {}) {
+export async function narratePacedInput(playerText, campaignState, options = {}, beatClaim = null) {
+  // The line's shape is claimed while it is narrated (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS; narrateResolution's rule) — the call below still
+  // has narratePacedInput as its caller.
+  if (!beatClaim) return narrateWithBeatClaim(claim => narratePacedInput(playerText, campaignState, options, claim));
   options = options ?? {};
   // One function, its failure caught inline: the paced narration's Claude
   // call keeps narratePacedInput as its caller (PACED-ROUTER-THROW's guard
@@ -4787,6 +4952,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       extras = await buildNarratorExtras('paced_narrative', campaignState, {
         playerNarration: playerText,
         character,
+        beatClaim,
       });
 
       systemPrompt = buildNarratorSystemPrompt(
@@ -5915,24 +6081,6 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
 }
 
 /**
- * Process a raw narrator API response: strip the fenced JSON sidecar from
- * the prose, apply it to the active-scene ledgers in campaignState, and
- * persist campaignState in the background. Returns the prose with the
- * sidecar removed. See issue #227 (Fact Continuity) §7–8.
- *
- * Failures (missing block, JSON parse error, persistence write rejected)
- * never block the narrator: the prose is always returned, only ledger
- * updates are skipped.
- *
- * @param {string} rawText
- * @param {Object} campaignState
- * @param {Object} [ctx]
- * @param {string|null} [ctx.moveId]
- * @param {string|null} [ctx.narrationId] — the narration's id (its card
- *   carries it too), stamped on what the sidecar writes (issue #321 U07)
- * @returns {string} prose with the sidecar block removed
- */
-/**
  * Ensure an active fact-continuity scene exists before a narrator call.
  * If `currentSceneId` is null, assigns one by calling startScene with the
  * given reason — on the canonical GM only (a world write); elsewhere it
@@ -6017,6 +6165,24 @@ function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
   }
 }
 
+/**
+ * Process a raw narrator API response: strip the fenced JSON sidecar from
+ * the prose, apply it to the active-scene ledgers in campaignState, and
+ * persist campaignState in the background. Returns the prose with the
+ * sidecar removed. See issue #227 (Fact Continuity) §7–8.
+ *
+ * Failures (missing block, JSON parse error, persistence write rejected)
+ * never block the narrator: the prose is always returned, only ledger
+ * updates are skipped.
+ *
+ * @param {string} rawText
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @param {string|null} [ctx.moveId]
+ * @param {string|null} [ctx.narrationId] — the narration's id (its card
+ *   carries it too), stamped on what the sidecar writes (issue #321 U07)
+ * @returns {string} prose with the sidecar block removed
+ */
 export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // Master gate — when fact-continuity is disabled, return the raw text
   // unchanged. The sidecar instruction is also suppressed at the prompt

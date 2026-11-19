@@ -54,6 +54,7 @@ import { selectVowTrack } from "./vow.js";
 import { selectFulfilVow } from "./milestone.js";
 import { selectConnection, bondedDevelopRoll } from "./developRelationship.js";
 import { wholeWordPattern } from "../context/relevanceResolver.js";
+import { statedTargetLands } from "./stakes.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -423,6 +424,61 @@ export function resolveStatedSufferTarget(actor, interpretation) {
   if (!resolved) return null;
   interpretation.stakes = { ...stakes, missSuffer: { ...suffer, ...resolved } };
   return resolved;
+}
+
+/** A vehicle's or companion's name as its cards show it: the asset's, a companion's given name before it ("Ember (Glowcat)"). */
+function assetShownName(asset, given = null) {
+  const name  = String(asset?.name ?? "").trim();
+  const known = String(given ?? "").trim();
+  return known && known !== name ? `${known} (${name})` : name;
+}
+
+/**
+ * The vehicle or companion a stated miss's suffer move will land on, named
+ * where the stakes are shown before the roll (issue #364
+ * STATED-TARGET-NOT-SHOWN). The Confirm dialog and a Batch Mode round's
+ * reading showed "Withstand Damage −1" alone: the interpreter's target was
+ * resolved to the roller's asset only at the roll (resolveStatedSufferTarget
+ * in rollMove), after both.
+ *
+ * The name is stamped on a new stakes object (`missSuffer.targetName` —
+ * stakes.js sufferRouteLabel shows it: "Withstand Damage −1 · Hoverbike")
+ * only when the price is known to land on that asset: the target resolves, by
+ * resolveStatedSufferTarget's own rule — a name that matches none of the
+ * roller's assets, or several, names nothing, and the price lands on the
+ * command vehicle or the first companion as it did — and the move has no
+ * vehicle or companion of its own to take the price first (stakes.js
+ * statedTargetLands). Otherwise any name the stakes carried is removed: only
+ * this writes it.
+ *
+ * The asset's id is not stamped here — the roll resolves it, against the
+ * roller's assets as they are then — and neither is anything else changed.
+ * Called when the line is read (movePipeline.js readMove, before the dialog
+ * and the round's reading) and again at the roll (rollMove), so the stakes
+ * the narrator is given say what the roll's routing does.
+ *
+ * @param {Actor|null} actor — the roller
+ * @param {Object} interpretation — its `stakes` replaced when the name changes
+ * @returns {string|null} the name shown, or null
+ */
+export function nameStatedSufferTarget(actor, interpretation) {
+  const stakes = interpretation?.stakes;
+  const suffer = stakes?.missSuffer;
+  if (!suffer || typeof suffer !== "object") return null;
+  // Resolved on a copy: what it stamps (the asset's id) is the roll's to write.
+  const probe = { ...interpretation, stakes };
+  const resolved = resolveStatedSufferTarget(actor, probe);
+  let shown = null;
+  if (resolved && statedTargetLands(probe.stakes, interpretation)) {
+    const vehicle   = resolved.vehicleItemId ? listSupportVehicleAssets(actor).find(v => v.id === resolved.vehicleItemId) : null;
+    const companion = resolved.companionItemId ? listCompanionAssets(actor).find(c => c.id === resolved.companionItemId) : null;
+    shown = (vehicle ? assetShownName(vehicle) : companion ? assetShownName(companion, companionGivenName(companion)) : "") || null;
+  }
+  if ((suffer.targetName ?? null) === shown) return shown;
+  const named = { ...suffer };
+  if (shown) named.targetName = shown; else delete named.targetName;
+  interpretation.stakes = { ...stakes, missSuffer: named };
+  return shown;
 }
 
 /**

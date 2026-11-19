@@ -92,7 +92,11 @@ recorded under its name promoted to it; its bond is §2's.
   (`relevanceResolver.namesOneWordName`: a whole word written with its
   capital, or in address position — issue #364 PART-NAME-CAPITAL-RULE-TWINS:
   the capital check kept here had no address position, so "archer, keep a
-  berth for me" named him for relevance and not for the connection), a word
+  berth for me" named him for relevance and not for the connection; a whole
+  name of one word is named the same way — `namesWholeName`, issue #364
+  CONNECTION-WHOLE-NAME-ANY-CASE: matched in any case, "an echo on the
+  scanner" named an NPC called Echo — while a name of several words is still
+  matched whole in any case), a word
   of a name the text names in full being that figure's: "Archer" for Vuldar
   Archer, never Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`,
   issue #362 AC18: the whole name only, so a hit with a known NPC called by a
@@ -113,7 +117,14 @@ recorded under its name promoted to it; its bond is §2's.
   stamp and is not touched, and one the table has marked since stays with
   the GMs whispered whose, `postKeptBondsNotice`; the hit made no card, so the
   X-Card removed the narration and left its bond on the sheet — issue #364
-  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling); a connection row the GM dismissed is taken off
+  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling; the bond a confirmed
+  row adds carries that row too, `bondedFromDraft` — the card's id and the
+  row's index, `confirmDraft`'s link — and the X-Card that takes the bond
+  back reopens the row, `retractNarrationBondItems`'s `reopen` →
+  `entityExtractor.reopenConfirmedDraftRow`, pending again or as a removed
+  NPC's row goes; a kept bond's row stays confirmed — issue #364
+  XCARD-BOND-DRAFT-ROW-CONFIRMED: the row stayed confirmed by a beat the
+  table removed); a connection row the GM dismissed is taken off
   `dismissedEntities` and confirmed as the roller's, as a pending row is
   (issue #345 AA19 — the detection pass leaves an established or dismissed
   name out). Which one is the player's line's to say (`lineText`; a Batch
@@ -282,9 +293,7 @@ a forged bond) is kept and marked lost instead, as a severed one is
 (`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
 (`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
 (`secrets.retireSkeleton`). What named the NPC goes too (issue #364
-DELETED-NPC-NAME-REFERENCES): the sector record whose local connection it
-was names no one (`sectors[].connectionId` set to null, in
-`unregisterDeletedConnection`'s one write), and the vows linked to them lose
+DELETED-NPC-NAME-REFERENCES): the vows linked to them lose
 the link — a vow's link is the connection's **name**
 (`linkedConnectionName`), so a fight won for the vow still offered
 "🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no
@@ -292,7 +301,12 @@ Retry could land: `actorBridge.clearVowLinksToConnection(name)` clears it on
 every PC's copy, open or closed, unless another NPC card of that name is
 left (`connectionNamedRemains` — the name then means them), and the GMs are
 whispered once which vows no longer serve a connection
-(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). The X-Card's own delete of a narration's NPC passes
+(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). Under the same
+test the victory cards already in chat that offer "🤝 Deepen your bond with
+…" for that name are stamped `deepenRetired`
+(`cardActions.retireFightVowDeepenFor`): the button renders disabled on every
+client and says the card was deleted — pressed, it reported "not found"
+(issue #364 WON-FIGHT-CARD-DELETED-NPC). The X-Card's own delete of a narration's NPC passes
 `{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,
