@@ -88,7 +88,7 @@ import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths, dismissSetupCards } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -9299,7 +9299,8 @@ Hooks.once("ready", () => {
       // this client's GM alone, so a second GM never saw it (issue #331 X54).
       // One card at a time: the card an earlier load posted is replaced, not
       // stacked — every load before the truths were saved added one, and the
-      // save took one away (issue #362 AC58).
+      // save took one away (issue #362 AC58). Every write that establishes
+      // the truths dismisses the cards itself (truths/generator.js).
       if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
         await dismissSetupCards();
         ChatMessage.create({
@@ -10317,7 +10318,10 @@ Hooks.on("createJournalEntryPage", async (page) => {
   // The saved truths become the campaign's — parsed into worldTruths, which
   // the narrator reads, as well as linked for !lore (issue #322 V34). Owned
   // fields onto the latest store; a refused write leaves the cached setting
-  // as it was, and claims nothing.
+  // as it was, and claims nothing. The write dismisses the setup notification
+  // card — every one still in chat (truths/generator.js dismissSetupCards:
+  // the truths store's own, so the Playtest Quickstart's truths dismiss it
+  // too — issue #364 QUICKSTART-SETUP-CARD).
   try {
     await recordSystemTruths(entry.id, content);
   } catch (err) {
@@ -10325,26 +10329,8 @@ Hooks.on("createJournalEntryPage", async (page) => {
     return;
   }
 
-  // Dismiss the setup notification card — every one still in chat.
-  await dismissSetupCards();
-
   ui?.notifications?.info("Starforged Companion: World Truths recorded.");
 });
-
-/**
- * Delete every "◈ Campaign Setup" card in chat (`setupCard`): before `ready`
- * posts the next, and once the World Truths are saved. It found and deleted
- * one — every load before the save had posted its own, so the rest kept
- * saying no World Truths were established, their button live (issue #362
- * AC58). Canonical GM (its callers); a refused delete is logged.
- */
-async function dismissSetupCards() {
-  const cards = (game.messages?.contents ?? []).filter(m => m?.flags?.[MODULE_ID]?.setupCard);
-  for (const card of cards) {
-    await card.delete().catch(err =>
-      console.warn(`${MODULE_ID} | the Campaign Setup card could not be removed:`, err?.message ?? err));
-  }
-}
 
 /**
  * updateJournalEntryPage — an edit of the campaign's saved "Setting Truths"
