@@ -189,7 +189,13 @@ export function hasSheetNotes(typeKey) {
  * #345 AA20; actorBridge readCommandVehicleIntegrity) — except that a record
  * from before that, not yet reconciled, reads the lower of its own and the
  * track's: the damage the module recorded there never reached the sheet
- * (issue #347 AB08; actorBridge unreconciledRecordIntegrity).
+ * (issue #347 AB08; actorBridge unreconciledRecordIntegrity). A starship's
+ * impacts — battered, cursed — are its sheet's native `system.debility`
+ * fields, canonical (decisions.md → "Starship battered: the native sheet
+ * field is canonical"): the sheet's own toggle writes those alone, so the
+ * record's copy went on calling a ship cursed after a GM un-ticked it there
+ * (issue #364 STARSHIP-SHEET-CURSED-TOGGLE). A host with no native field
+ * keeps the record's.
  *
  * @param {string} typeKey
  * @param {ClientDocument|null} document
@@ -207,6 +213,11 @@ export function withSheetNotes(typeKey, document, data) {
   if (integrity) {
     sheet.integrity    = unreconciledRecordIntegrity(data, integrity) ?? integrity.value;
     sheet.integrityMax = integrity.max;
+  }
+  if (typeKey === 'ship') {
+    const debility = document?.system?.debility;
+    if (typeof debility?.battered === 'boolean') sheet.battered = debility.battered;
+    if (typeof debility?.cursed === 'boolean')   sheet.cursed   = debility.cursed;
   }
   return Object.keys(sheet).length ? { ...data, ...sheet } : data;
 }
