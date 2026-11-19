@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344 and #364
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344, #364 and the open items found while fixing #364
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -30,7 +30,9 @@ applied to `4d31c73`), and for issue #362 — the fourteenth audit's
 eighty-three findings and fourteen decisions — on 2026-11-17 (the AC79
 follow-up `0a4c445` shown by hand), and for issue #344 — the audit at
 `22bdbeb`'s four findings — on 2026-11-18, and for issue #364 — the open
-items left by the issue #362 fixes — on 2026-11-19.
+items left by the issue #362 fixes — on 2026-11-19, and for the open items
+found while fixing issue #364 — fixed at the maintainer's request the same
+day — on 2026-11-19.
 To reproduce:
 
 ```bash
@@ -307,6 +309,13 @@ node scripts/fix-sensitivity.mjs \
   5f1aeda f621597 860a5b4 7915180 81f39a5 66ee11c d8e6059 2cf8546 3ff4107 \
   3334cd7 e2f3e96 f52c4f2 ee3b207 c85a314 ea536fd ddcc07a 2f417d6 d869e5f \
   175d230 c690bbb 850b35c f9482c2 0f696e9 e72d6a4 cf7bdf9 3b747c3 068fdfd \
+  --md details.md
+
+# the open items found while fixing issue #364
+node scripts/fix-sensitivity.mjs \
+  dd68113 60bf858 c3c3caa 63f7f28 d185504 32baba0 2cfbb4d 5ece6d1 bc770db \
+  29d8ae7 2eda470 7b47005 63d7d29 5bce48d 1be1003 8df457f 204a74a 9553d26 \
+  77c36e2 \
   --md details.md
 ```
 
@@ -1537,6 +1546,40 @@ source change; shown by hand: a key added to `CampaignStateSchema`, or a new
 and `crewSupply` taken off `STORE_OWNED_FIELDS` fails both the list check and
 the check against what `persistResolution` writes.
 
+### The open items found while fixing issue #364
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK | dd68113 | revert | 4 — `improvedCardOutcomeLabelStruck.test.js` (4); 2 more fail only on a missing export |
+| WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY | 60bf858 | revert | 8 — `wonFightMilestoneUpgradeRetry.test.js` (8) |
+| ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD | c3c3caa | revert | 4 — `batchRoundUpgradeStepKeptAtLoad.test.js` (4) |
+| SECTOR-CONNECTION-ID-UNREAD | 63f7f28 | revert | 2 — `deletedNpcReferencesCleared.test.js`, `sectorRecordNamesNoConnection.test.js` |
+| CONNECTION-WHOLE-NAME-ANY-CASE | d185504 | revert | 2 — `makeConnectionOneWordNameAsWritten.test.js` (2) |
+| COURSE-OLD-LABEL-LOOSER-RUNG-FIRST | 32baba0 | revert | 1 — `courseOldLabelBeforeLooserRungs.test.js` (1) |
+| WON-FIGHT-CARD-DELETED-NPC | 2cfbb4d | revert | 3 — `wonFightCardDeepenRetiredOnNpcDelete.test.js` (3) |
+| XCARD-BOND-DRAFT-ROW-CONFIRMED | 5ece6d1 | revert | 4 — `xcardReopensRowConfirmedForKnownNpc.test.js` (4) |
+| STARSHIP-SHEET-CURSED-TOGGLE | bc770db | revert | 3 — `starshipSheetCursedClearStands.test.js` (3) |
+| BEAT-SHAPE-SIMULTANEOUS | 29d8ae7 | revert | 4 — `beatShapeClaimedWhileNarrating.test.js` (4) |
+| VOW-CARD-RENAME-NO-GM | 2eda470 | revert | 4 — `vowCardReconciledAtLoad.test.js` (4) |
+| VOW-CARD-RENAME-NO-GM | 7b47005 | revert | 6 — `rewardPickAfterOptionsSwapped.test.js` (6) |
+| SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE | 63d7d29 | revert | 10 — `sojournMissPriceToldAsChosen.test.js` (8), `sojournStatedMissPrice.test.js`, `waypointMissMatchPriceChoice.test.js` |
+| STATED-TARGET-NOT-SHOWN | 5bce48d | revert | 5 — `statedMissNamesItsTarget.test.js` (5); 5 more fail only on a missing export |
+| SIDECAR-DOCBLOCK-MISPLACED | 1be1003 | revert | 2 — `docblockSitsOnItsFunction.test.js` (2) |
+| PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN | 8df457f | revert | 4 — `planClockFirstOfTwoTriggersBurned.test.js` (4) |
+| PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE | 204a74a | revert | 4 — `planClockXCardAfterLaterPrice.test.js` (4); 1 more fail only on a missing export |
+| PLAN-STEP-REWRITTEN-BEFORE-BURN | 9553d26 | revert | 11 — `planClockBurnAfterLaterPrice.test.js`, `planStepTakenBackUnderLaterRewrite.test.js` (10) |
+| XCARD-PAUSED-NARRATION-PLAN-REQUESTS | 77c36e2 | revert | 8 — `planRequestsFiledWhenXCardPausesNarration.test.js` (8) |
+
+Three of the twenty-one rows have no revert check, by their nature.
+STARSHIP-ASSET-REMOVED-NO-GM is accepted (no code). ROUND-PRICE-CHOICE-UNTESTED
+(`bb18b34`) is itself a test — no defect was found in the round path, so it
+changes no source; shown by hand: with the round's settle step taken out of
+`narrateRound`, 5 of its 7 tests fail. QUENCH-364-COVERAGE (`50d7f96`) adds
+Quench cases, which run only in a live world (the pull request's e2e check).
+STARSHIP-SHEET-CURSED-TOGGLE (`bc770db`) is mostly a decision's pins — eight of
+its tests pass both ways by design — beside the three that fail without the
+read of a ship's impacts from its sheet.
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -1800,6 +1843,22 @@ left after the delete; the NPC's card and an earlier bond staying after the
 X-Card; the rolls of 1–10 that do destroy a vehicle, and the rows that never
 spoke of destruction; a stated target that names none of the roller's own
 vehicles.
+
+*The open items found while fixing issue #364:* 70 new tests pass both ways —
+27 are named `control: …`, and the other 43 keep a rule the fix must not
+break or pin a decision: the burned card unchanged beside the improved one; a
+deleted NPC's vow links, the GMs' notice and a namesake, and a sector's
+connection still listed, with the unread field gone; a victory card's other
+buttons, a namesake's card and the unstamped fallback; a bond marked since
+the hit, and a PC who already held it; a Cursed cleared on the starship sheet
+standing on a tracked and an untracked ship (the decision's pins); a beat's
+claim released however its narration ends, and nothing stored; the load's
+reconcile writing nothing for a card in step, a vow unnamed, sworn or gone,
+and its bound; a reward pick whose text matches; "No relief" picked first; a
+stated target that names none of the roller's assets, or several; every known
+stacked docblock still listed; the later trigger standing, and a vignette
+never written; a clock another narration paced, and a retired one; a move
+that owes no plan.
 
 ## Details
 
@@ -16722,3 +16781,397 @@ Test files: `tests/unit/anySufferVehicleAndCompanionChoice.test.js`, `tests/unit
 - New test passing with and without the fix (a control?): tests/unit/anySufferVehicleAndCompanionChoice.test.js › a suffer card's Withstand Damage counts every vehicle that could take it (issue #364 ANY-SUFFER-SUPPORT-VEHICLE) control: the command vehicle alone takes it at once; with no vehicle at all the pick stays closed
 - New test passing with and without the fix (a control?): tests/unit/anySufferVehicleAndCompanionChoice.test.js › a Pay the Price route asks which companion or vehicle when several could take it (issue #364 ANY-SUFFER-SUPPORT-VEHICLE) control: one companion takes the hit at once; a named one takes it among several; none falls back to Endure Harm
 - New test passing with and without the fix (a control?): tests/unit/anySufferVehicleAndCompanionChoice.test.js › a Pay the Price route asks which companion or vehicle when several could take it (issue #364 ANY-SUFFER-SUPPORT-VEHICLE) control: with a command vehicle the route is the starship's, whatever support vehicle the PC owns (issue #345 AA14)
+
+### dd68113a — fix: an improved move card strikes the first outcome's label and states the strong hit's consequence, as a burned card does (issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK)
+
+Test files: `tests/unit/improvedCardOutcomeLabelStruck.test.js`. Source restored: 2 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 6 failed (6 new; 2 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does a miss improved to a strong hit: the "Miss" label is struck with its lines | AssertionError: no outcome label reads as live: expected '&lt;div class="sf-move-result sf-miss">\…' not to match /&lt;div class="sf-move-outcome">/ |
+| (new) tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does a miss improved to a strong hit: the banner states the strong hit's own consequence | AssertionError: expected '&lt;div class="sf-move-result sf-miss">\…' to contain 'Path or action to make progress is cl…' |
+| (new) tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does a weak hit improved to a strong hit: "Weak Hit" is struck and the strong hit's consequence stands | AssertionError: expected '&lt;div class="sf-move-result sf-weak-hi…' not to match /&lt;div class="sf-move-outcome">/ |
+| (new) tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does a matched miss improved: the label is struck with its match, and the banner's lines keep their order | AssertionError: expected '&lt;div class="sf-move-result sf-miss">\…' not to match /&lt;div class="sf-move-outcome">/ |
+| (new) (API) tests/unit/improvedCardOutcomeLabelStruck.test.js › struckOutcomeLine — only the label the roll rendered strikes the label and puts what follows it right behind | TypeError: struckOutcomeLine is not a function |
+| (new) (API) tests/unit/improvedCardOutcomeLabelStruck.test.js › struckOutcomeLine — only the label the roll rendered leaves an upgraded block's own label, a card with no label, and a label already struck | TypeError: struckOutcomeLine is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does control: a miss's card states its outcome label, unstruck
+- New test passing with and without the fix (a control?): tests/unit/improvedCardOutcomeLabelStruck.test.js › issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK — an improved card reads as the burned card does the burned card is unchanged: its label struck, the burned block right behind it
+
+### 60bf858b — fix: a won fight's milestone difference the world would not record goes to the GMs with a Retry (issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY)
+
+Test files: `tests/unit/wonFightMilestoneUpgradeRetry.test.js`. Source restored: 1 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused raise of the victory card's milestone has a Retry the raise refused: the card stays ×1, and the GMs get a payoff card with a milestoneUpgrade step and a Retry | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused raise of the victory card's milestone has a Retry the GMs' Retry raises the card: ⚑ then marks both, and a second Retry changes nothing | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused raise of the victory card's milestone has a Retry ⚑ pressed at ×1 before the Retry: the Retry marks the one it lacked — once, however often its steps run | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry the mark refused: the vow keeps the weak hit's mark, and the GMs' card carries the marks it lacks | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry the GMs' Retry marks it once: a second press, and its steps run again, mark nothing more | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry a mark refused again on the Retry goes on a fresh card, whose Retry still marks it once | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry the victory card deleted before the Retry: the marks it lacked are still marked, once | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry the mark and the reward's claim both refused: one card, two steps, one Retry pays both | AssertionError: expected [ { step: 'rewardUpgrade', …(1) } ] to match object [ …(2) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused raise of the victory card's milestone has a Retry control: the raise lands — the victory card shows ×2, and no payoff card is posted
+- New test passing with and without the fix (a control?): tests/unit/wonFightMilestoneUpgradeRetry.test.js › issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark after ⚑ was pressed has a Retry control: a vow fulfilled since has nothing to mark — a line on the move card, and no step to retry
+
+### c3c3caa0 — fix: a Batch Mode round left waiting on a player's Burn / Improve / Keep is kept and narrated when the GM's game next loads, not closed unnarrated (issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD)
+
+Test files: `tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js`. Source restored: 1 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM's game loads with a round still at its upgrade step, its session over keeps the result for everyone still deciding and narrates the round once — it was closed unnarrated | AssertionError: expected { id: 'bQm4AvSUraEbWhad', …(13) } to match object { id: 'bQm4AvSUraEbWhad', …(2) } |
+| (new) tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM's game loads with a round still at its upgrade step, its session over a Keep pressed afterwards, and a second load, narrate nothing more | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM's game loads with a round still at its upgrade step, its session over under the X-Card it is closed as the pass closes one: its results listed, nothing narrated, the GMs told | AssertionError: expected { burn: { momentum: 9, …(1) }, …(3) } to match object { decided: 'keep' } |
+| (new) tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM resolving it leaves, its session over the GM who becomes canonical keeps for Kira and narrates the round | AssertionError: expected { id: 'Q2R5x6ckclSasyXS', …(13) } to match object { id: 'Q2R5x6ckclSasyXS', …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM's game loads with a round still at its upgrade step, its session over control: a load inside the session leaves the round waiting for Kira
+- New test passing with and without the fix (a control?): tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM's game loads with a round still at its upgrade step, its session over control: a round whose resolving page died while it was narrated is still closed unnarrated at the load
+- New test passing with and without the fix (a control?): tests/unit/batchRoundUpgradeStepKeptAtLoad.test.js › issue #364 ROUND-UPGRADE-STEP-RECOVERED-AT-LOAD — the GM resolving it leaves, its session over control: while the session lasts, the GM who takes over goes on waiting for Kira
+
+### 63f7f28d — fix: a sector record no longer carries a connection id nothing reads (issue #364 SECTOR-CONNECTION-ID-UNREAD)
+
+Test files: `tests/unit/deletedNpcReferencesCleared.test.js`, `tests/unit/entityRegistrationMerge.test.js`, `tests/unit/sectorGenerator.test.js`, `tests/unit/sectorOverview.test.js`, `tests/unit/sectorRecordNamesNoConnection.test.js`, `tests/unit/sectorStoreCachedMutation.test.js`. Source restored: 4 file(s).
+
+- With the fix: 134 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 132 still pass (9 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 9 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card the card's id leaves connectionIds; the sector records are left as they are (SECTOR-CONNECTION-ID-UNREAD) | AssertionError: expected [ { id: 'sec-1', …(3) }, …(1) ] to deeply equal [ { id: 'sec-1', …(3) }, …(1) ] |
+| (new) tests/unit/sectorRecordNamesNoConnection.test.js › a generated sector record names no connection (issue #364 SECTOR-CONNECTION-ID-UNREAD) the record storeSector returns and the one the world stores carry no connectionId | AssertionError: expected true to be false // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card control: before the delete, the vow's won fight offers to deepen the bond
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card every vow linked to the deleted NPC loses its link — each PC's copy, open or closed, whatever the name's case
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card the next fight won for the vow offers no bond to deepen
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card fulfilling the vow lists no deepen that cannot land
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card the GMs are told which vows no longer serve a connection — once, naming each PC's vow
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card a namesake is left: the name still means someone, so the vows keep their link
+- New test passing with and without the fix (a control?): tests/unit/deletedNpcReferencesCleared.test.js › issue #364 DELETED-NPC-NAME-REFERENCES — a deleted NPC's vow links go with the card control: deleting an NPC no vow is linked to tells the GMs nothing and clears nothing
+- New test passing with and without the fix (a control?): tests/unit/sectorRecordNamesNoConnection.test.js › a generated sector record names no connection (issue #364 SECTOR-CONNECTION-ID-UNREAD) the sector's connection is still created, listed in connectionIds, and knows its sector
+- New test passing with and without the fix (a control?): tests/unit/sectorRecordNamesNoConnection.test.js › a generated sector record names no connection (issue #364 SECTOR-CONNECTION-ID-UNREAD) the settlements the record does list are the ones created
+
+### d1855044 — fix: an ordinary word in a line no longer names a one-word-named NPC for Make a Connection (issue #364 CONNECTION-WHOLE-NAME-ANY-CASE)
+
+Test files: `tests/unit/makeConnectionOneWordNameAsWritten.test.js`. Source restored: 1 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 5 still pass (5 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written "an echo on the scanner" does not make the NPC called Echo the roller's connection | AssertionError: Ren's connections: expected [ 'Echo' ] to deeply equal [] |
+| (new) tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written the ordinary word beside the NPC the line names does not make it "several": Mara Voss is the connection | AssertionError: the one the line names: expected [] to deeply equal [ 'Mara Voss' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written control: written with its capital, Echo is named — "I ask Echo to keep a channel open for me."
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written control: in address position any case names her — "echo, keep a channel open for me."
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written control: the narration's "Echo" names her when the line names no one
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written control: a name of several words is still matched whole in any case — "i hail mara voss"
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionOneWordNameAsWritten.test.js › issue #364 CONNECTION-WHOLE-NAME-ANY-CASE — a one-word whole name is named for Make a Connection only as a name is written control: a one-word name with no capital to write (it starts with a digit) is matched whole, as before
+
+### 32baba06 — fix: a course by a renamed site's old working label arrives at the site, not at a settlement whose name is a word of the label (issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST)
+
+Test files: `tests/unit/courseOldLabelBeforeLooserRungs.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 5 still pass (5 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds a renamed site's old working label with a settlement "Archer" on the map: the course arrives at the site, not at Archer | AssertionError: the crew is at the renamed site, not at Archer: expected 'actor-archer' to be 'sact000000000003' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds control: the same label while the site is still uncharted is an expedition for that site — not a Set a Course to Archer
+- New test passing with and without the fix (a control?): tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds control: "please set a course" for the scene's uncharted destination is that expedition too, with Archer on the map
+- New test passing with and without the fix (a control?): tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds control: a place called exactly what the course says is that place — the exact name first
+- New test passing with and without the fix (a control?): tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds control: a label no site record keeps still takes the looser rungs — "Archer's dock" is a course to Archer
+- New test passing with and without the fix (a control?): tests/unit/courseOldLabelBeforeLooserRungs.test.js › issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site's record name goes to that site, whatever place a looser rung finds control: without a namesake settlement the renamed site's old label arrives at the site, as since issue #362 AC50
+
+### 2cfbb4d8 — fix: a victory card already in chat stops offering to deepen a bond with an NPC whose card was deleted (issue #364 WON-FIGHT-CARD-DELETED-NPC)
+
+Test files: `tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js`. Source restored: 3 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 5 still pass (5 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC after the GM deletes the NPC, the card's 🤝 is retired on every client and says why | AssertionError: the canonical GM stamped the card: expected undefined to be true // Object.is equality |
+| (new) tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC a press on the retired button does nothing: no "not found" card for the GMs | AssertionError: expected [ { …(7) }, { …(7) } ] to deeply equal [] |
+| (new) tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC …nor does a request that reaches the GM anyway (a window that had not re-rendered) | AssertionError: expected { applied: false, reason: 'not-found' } to match object { applied: false, …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC control: before the delete the card offers the bond, and a press deepens it
+- New test passing with and without the fix (a control?): tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC the card's other buttons are the vow's and stay live
+- New test passing with and without the fix (a control?): tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC only that NPC's cards: another NPC's victory card, and one whose bond already deepened, are left as they are
+- New test passing with and without the fix (a control?): tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC a namesake is left: the name still means someone, so the button stays and deepens their bond
+- New test passing with and without the fix (a control?): tests/unit/wonFightCardDeepenRetiredOnNpcDelete.test.js › issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in chat stops offering a bond with a deleted NPC fallback: a card the teardown did not reach still reports "not found" to the GMs when pressed
+
+### 5ece6d15 — fix: the X-Card reopens the New Entities row a removed Make a Connection had confirmed for an already-known NPC (issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED)
+
+Test files: `tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js`. Source restored: 3 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC control: the hit confirms the pending row for the NPC who exists — no second card, Ren's bond stamped with the narration and the row | AssertionError: expected undefined to deeply equal { messageId: 'tmsg000000000002', …(1) } |
+| (new) tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC the X-Card on the hit's narration takes the bond back and puts the row back to pending — Confirm and Dismiss on the card again | AssertionError: expected 'confirmed' to be 'pending' // Object.is equality |
+| (new) tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC the row is found by its id: renamed since the hit, the NPC's bond still reopens the row it confirmed | AssertionError: the row still reads "Vex": expected 'confirmed' to be 'pending' // Object.is equality |
+| (new) tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC a later Confirm of the reopened row bonds the card's own PC with her, and the row is confirmed again | TypeError: Cannot read properties of null (reading 'click') |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC a bond the table has marked since stays, and so does its row
+- New test passing with and without the fix (a control?): tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC a hit by a PC who already holds the bond adds none: the X-Card takes none back and the row stays confirmed
+- New test passing with and without the fix (a control?): tests/unit/xcardReopensRowConfirmedForKnownNpc.test.js › issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the draft row a removed hit confirmed for a known NPC control: an X-Card on a later, other narration leaves the bond and the row
+
+### bc770dbe — fix: a Cursed un-ticked on the starship sheet stands everywhere the ship is read, its record included (issue #364 STARSHIP-SHEET-CURSED-TOGGLE)
+
+Test files: `tests/unit/starshipSheetCursedClearStands.test.js`. Source restored: 2 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 8 still pass (8 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 8 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — the ship's record says what the sheet says after the sheet's clear the record read by the module no longer calls the ship cursed | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — the ship's record says what the sheet says the ship's next portrait is not drawn "bearing signs of permanent corruption" | AssertionError: expected 'dark science fiction concept art, pai…' not to contain 'permanent corruption' |
+| (new) tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — the ship's record says what the sheet says an impact ticked on the sheet reaches the record's readers too: cursed and battered | AssertionError: expected { _id: 'ship-guid', …(9) } to match object { cursed: true, battered: true } |
+
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship with no module record) the impact stays cleared, the asset card's Cursed box follows it, and nothing ticks it back
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship with no module record) a later Battered tick on the asset card writes battered and leaves the cleared Cursed alone
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship with no module record) control: the asset card's own Cursed box is the other path — un-ticked there, it is ticked again
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship the module tracks) the impact stays cleared and the asset card's Cursed box follows it
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship the module tracks) no later write of the module's own puts it back: a position, the load-time reconcile, a battered mark, the asset card's Battered box
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship the module tracks) a player's client (not the canonical GM) mirrors nothing, and ticks nothing back
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — Cursed un-ticked on the starship sheet stands (a starship the module tracks) it can be marked again afterwards — and the asset card's box is still ticked again when un-ticked there
+- New test passing with and without the fix (a control?): tests/unit/starshipSheetCursedClearStands.test.js › issue #364 STARSHIP-SHEET-CURSED-TOGGLE — the ship's record says what the sheet says control: a host with no native impact field keeps the record's say
+
+### 29d8ae70 — fix: two beats narrated at the same moment are no longer built the same way (issue #364 BEAT-SHAPE-SIMULTANEOUS)
+
+Test files: `tests/unit/beatShapeClaimedWhileNarrating.test.js`. Source restored: 1 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 7 still pass (7 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 7 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape two paced lines at once: two shapes, and neither is the last written beat's | AssertionError: the second line read the same last card as the first: expected 'action' not to be 'action' // Object.is equality |
+| (new) tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape a move beside a paced line, and a round beside a move: every caller that picks a shape claims it | AssertionError: expected 'detail' not to be 'detail' // Object.is equality |
+| (new) tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape three at once: three shapes | AssertionError: expected 1 to be 3 // Object.is equality |
+| (new) tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape a beat begun while another is still being written, after a third has posted: it shares a shape with neither | AssertionError: expected 'detail' not to be 'detail' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends control: beats narrated one after another follow the cycle, as before
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends after two beats written together, the next follows the newest card
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a narration that fails beside one that is written leaves nothing claimed: the next beat follows the written one
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a narration that throws before its call leaves nothing claimed
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a round whose narration fails leaves nothing claimed
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a paced line whose narration fails leaves nothing claimed
+- New test passing with and without the fix (a control?): tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends nothing is stored: no shape reaches campaignState
+
+### 2eda4705 — fix: a vow named on its sheet while no GM was connected is shown on its "New vow recorded" card once the GM loads (issue #364 VOW-CARD-RENAME-NO-GM)
+
+Test files: `tests/unit/vowCardReconciledAtLoad.test.js`. Source restored: 2 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 6 still pass (6 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 6 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a vow named while no GM was connected is followed when the GM loads the GM loads: the card names the vow, with its rank and that rank's stakes | AssertionError: expected '&lt;div class="sf-card sf-player-vow">&lt;d…' to contain '"Recover the stolen reactor core"' |
+| (new) tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a vow named while no GM was connected is followed when the GM loads its rewards are proposed again for the name, on the same reward card | AssertionError: expected [ { client: 'gm-1', …(7) } ] to have a length of 2 but got 1 |
+| (new) tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a vow named while no GM was connected is followed when the GM loads a rank set with no GM connected is shown when the GM loads — and asks for no rewards | AssertionError: expected '&lt;div class="sf-card sf-player-vow">&lt;d…' to contain '(extreme)' |
+| (new) tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a vow named while no GM was connected is followed when the GM loads a reward already chosen from the generic card stands: the card is named, the reward card left alone | AssertionError: expected '&lt;div class="sf-card sf-player-vow">&lt;d…' to contain '"Recover the stolen reactor core"' |
+
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a vow named while no GM was connected is followed when the GM loads control: with no GM connected, the rename is followed by nobody — the card stays generic
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the load-time reconcile is bounded and costs nothing when nothing changed a card already in step: the GM loads, and nothing is written and nothing is asked of Claude
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the load-time reconcile is bounded and costs nothing when nothing changed a vow still to be named: its card is left worded as it is
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the load-time reconcile is bounded and costs nothing when nothing changed a vow already sworn from its card is not followed: the swear took it as its sheet had it
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the load-time reconcile is bounded and costs nothing when nothing changed a vow whose Item is gone: its card is left alone
+- New test passing with and without the fix (a control?): tests/unit/vowCardReconciledAtLoad.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the load-time reconcile is bounded and costs nothing when nothing changed only the newest cards are read: a vow card buried under 200 later messages is not looked for
+
+### 7b47005d — fix: a reward chosen as its card's options change is not swapped for another: nothing is promised and the player is asked to choose again (issue #364 VOW-CARD-RENAME-NO-GM)
+
+Test files: `tests/unit/rewardPickAfterOptionsSwapped.test.js`. Source restored: 1 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 4 still pass (4 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a reward click that lands after the card's options were swapped promises nothing: not the option pressed, and not the one now at its index | AssertionError: it was promised "The name of who stole it": expected { status: 'promised', …(2) } to be undefined |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a reward click that lands after the card's options were swapped tells the clicker — whispered — to choose again from the card as it is now | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a reward click that lands after the card's options were swapped the card as it is now can still be picked from: that reward is promised | AssertionError: only the refused click's notice: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the canonical GM checks the click against the card's own options a text that is not the card's option at that index is refused, and is never promised as the reward | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the canonical GM checks the click against the card's own options the text of the other option is refused too: the index and the text must name the same option | AssertionError: expected undefined to be 'option-changed' // Object.is equality |
+| (new) tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the canonical GM checks the click against the card's own options an index the card no longer has is refused the same way, with the notice | AssertionError: expected 'not-on-card' to be 'option-changed' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a reward click that lands after the card's options were swapped control: a click on a card whose options did not change promises the option pressed
+- New test passing with and without the fix (a control?): tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — a reward click that lands after the card's options were swapped control: write-your-own is the clicker's own words and is not checked against the options
+- New test passing with and without the fix (a control?): tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the canonical GM checks the click against the card's own options the matching text is accepted — and the reward promised is the card's option, form and all
+- New test passing with and without the fix (a control?): tests/unit/rewardPickAfterOptionsSwapped.test.js › issue #364 VOW-CARD-RENAME-NO-GM — the canonical GM checks the click against the card's own options control: a pick with no text (a page from before the click carried it) is taken by its index, as before
+
+### 63d7d29c — fix: a Sojourn miss is narrated with its price as offered, paid or declined — whichever the player has chosen (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE)
+
+Test files: `tests/unit/sojournMissPriceToldAsChosen.test.js`, `tests/unit/sojournStatedMissPrice.test.js`, `tests/unit/waypointMissMatchPriceChoice.test.js`. Source restored: 5 file(s).
+
+- With the fix: 30 passed, 0 failed.
+- Without it: 10 failed (9 new; 0 only for a missing export); 20 still pass (2 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a miss narrated before its choice is told the price is offered, not paid (issue #364) a stated miss: the narration, written before the pick, is never told it is what the miss costs | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Sojourn +he…' not to contain 'it is what this miss costs' |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a miss narrated before its choice is told the price is offered, not paid (issue #364) no miss stated: the table's price is seeded as the price on offer, not one already paid | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Sojourn +he…' to contain '## THE PRICE IS THE PLAYER\'S CHOICE' |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a held miss is narrated after its choice (issue #364) the vow picked first: the miss is narrated with no price — none seeded, none delivered | AssertionError: expected [ Array(1) ] to deeply equal [] |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a held miss is narrated after its choice (issue #364) Keep pressed first: the narration is told the price is still the player's choice | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Sojourn +he…' to contain '## THE PRICE IS THE PLAYER\'S CHOICE' |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a held miss is narrated after its choice (issue #364) a card closed with no pick recorded — its character gone — is not told as the price paid | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Sojourn +he…' not to contain 'it is what this miss costs' |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a held miss is narrated after its choice (issue #364) a pick that re-opens its card is a choice not made: the option it was resolved by is forgotten | AssertionError: expected { sufferCard: true, …(7) } to match object { resolved: true, chosenIndex: +0 } |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn's price choice — the pieces (issue #364) the resolution's price choice names what may replace the price: the vow its other option routes | AssertionError: expected null to deeply equal { price: 'You waste resources', …(2) } |
+| (new) tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn's price choice — the pieces (issue #364) the narrator's blocks: a paid price is delivered as stated; an open or declined one never is | AssertionError: pending: expected '## MOVE OUTCOME\n\n[MOVE: Sojourn +he…' not to match /with a match\|Confront Chaos/ |
+| tests/unit/sojournStatedMissPrice.test.js › issue #362 AC03 — Sojourn's miss with a miss stated before the roll the narration is given the stated miss as the price — not a table roll beside it | AssertionError: the narrator is told the stated miss is the price on offer (setup): expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to contain 'The price it o |
+| (new) tests/unit/waypointMissMatchPriceChoice.test.js › the price a miss offers as a choice — the pieces (issue #364) the priced option names its price; the resolution's price choice names what may replace it — Sojourn's, the vow | AssertionError: expected null to deeply equal { price: 'You waste resources', …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn — a held miss is narrated after its choice (issue #364) "No relief" picked first: the narration delivers the stated miss as what the miss costs
+- New test passing with and without the fix (a control?): tests/unit/sojournMissPriceToldAsChosen.test.js › Sojourn's price choice — the pieces (issue #364) a Batch Mode round's entry carries the choice, and its block is told the same
+
+### 5bce48de — fix: the Confirm Move dialog and a round's reading say which vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN)
+
+Test files: `tests/unit/statedMissNamesItsTarget.test.js`. Source restored: 3 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 10 failed (10 new; 5 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/statedMissNamesItsTarget.test.js › the Confirm Move dialog names the vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN) Face Danger +edge on the hoverbike: the dialog says the Hoverbike takes it — and on the miss it does | AssertionError: expected { kind: 'miss', …(2) } to match object { …(2) } |
+| (new) tests/unit/statedMissNamesItsTarget.test.js › the Confirm Move dialog names the vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN) a companion is named as its cards name it — the name its player gave it, then its kind | AssertionError: expected 'Companion Takes a Hit −1' to be 'Companion Takes a Hit −1 · Ember (Glo…' // Object.is equality |
+| (new) tests/unit/statedMissNamesItsTarget.test.js › the Confirm Move dialog names the vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN) a Batch Mode round's reading names it too | AssertionError: expected { kind: 'miss', …(2) } to match object { …(2) } |
+| (new) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) the label names the target of a vehicle's or companion's suffer move, and of no other | AssertionError: expected 'Withstand Damage −1' to be 'Withstand Damage −1 · Hoverbike' // Object.is equality |
+| (new) (API) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) nameStatedSufferTarget names the roller's own asset — and stamps no id: that is the roll's to resolve | TypeError: nameStatedSufferTarget is not a function |
+| (new) (API) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) never a guess: no target, an unknown name, several named, or the wrong kind names nothing | TypeError: nameStatedSufferTarget is not a function |
+| (new) (API) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) a name stamped earlier goes when the asset no longer resolves — the roll re-reads it | TypeError: nameStatedSufferTarget is not a function |
+| (new) (API) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) a move that may be rolled for a vehicle or companion of its own names nothing: that one takes the price first (issue #362 D11) | TypeError: nameStatedSufferTarget is not a function |
+| (new) (API) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) statedTargetLands: only a resolved target the price's route goes to | TypeError: statedTargetLands is not a function |
+| (new) tests/unit/statedMissNamesItsTarget.test.js › naming a stated miss's target — the pieces (issue #364 STATED-TARGET-NOT-SHOWN) the dialog's block escapes the name it shows | AssertionError: expected '&lt;div class="confirm-stakes">&lt;span cla…' to contain '(Withstand Damage −1 · R&amp;D &lt;Sk…' |
+
+- New test passing with and without the fix (a control?): tests/unit/statedMissNamesItsTarget.test.js › the Confirm Move dialog names the vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN) a name that matches none of the roller's assets shows nothing: the dialog does not promise the hoverbike
+- New test passing with and without the fix (a control?): tests/unit/statedMissNamesItsTarget.test.js › the Confirm Move dialog names the vehicle or companion a stated miss damages (issue #364 STATED-TARGET-NOT-SHOWN) a name that matches two of them shows nothing either
+
+### 1be10032 — fix: applyNarratorSidecar's docblock sits on its function again (issue #364 SIDECAR-DOCBLOCK-MISPLACED)
+
+Test files: `tests/unit/docblockSitsOnItsFunction.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/docblockSitsOnItsFunction.test.js › issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the function it documents applyNarratorSidecar's docblock is its own, not stacked on ensureSceneStarted's | AssertionError: expected '// src/narration/narrator.js\n// Core…' to match /…/\nexport function applyNarratorSidecar\( |
+| (new) tests/unit/docblockSitsOnItsFunction.test.js › issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the function it documents no docblock is stacked on another's, beyond the ones already known | AssertionError: a docblock directly followed by another docblock: the first has drifted off its function — move it back: expected [ Array(1) ] to deeply equal [ |
+
+- New test passing with and without the fix (a control?): tests/unit/docblockSitsOnItsFunction.test.js › issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the function it documents every known instance is still there (delete a line from KNOWN once its docblock is moved back)
+
+### 8df457f5 — fix: a burned price strikes its own trigger vignette after the plan clock triggered again (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN)
+
+Test files: `tests/unit/planClockFirstOfTwoTriggersBurned.test.js`. Source restored: 2 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned the first price's vignette is struck by the id its receipt names, and its facts leave the ledger | AssertionError: the burned price's trigger did not happen: its vignette is struck: expected undefined to be true // Object.is equality |
+| (new) tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned a price paid after the second trigger: the clock keeps the segment it turned | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned the GMs' Retry of that rewind strikes the same vignette | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned burning the later price afterwards still takes its own trigger back | AssertionError: expected undefined to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned the later trigger stands: its vignette, its facts, its step — and the clock is left as it paced it
+- New test passing with and without the fix (a control?): tests/unit/planClockFirstOfTwoTriggersBurned.test.js › issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — the first of two triggers of one plan clock is burned a receipt naming a vignette that was never written strikes nothing
+
+### 204a74a0 — fix: the X-Card on a plan clock's trigger vignette re-arms the clock after a later price turned it (issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE)
+
+Test files: `tests/unit/planClockXCardAfterLaterPrice.test.js`. Source restored: 3 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 5 failed (5 new; 1 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/planClockXCardAfterLaterPrice.test.js › issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE — the X-Card re-arms a plan clock a later price has turned the X-Card on a trigger vignette, after another price turned the emptied clock: the step is back and the clock one short of full | AssertionError: and the clock with it: the next price plays the step: expected { _id: '8OUC9DW42t9a8Plg', …(14) } to match object { filled: 3, active: true } |
+| (new) tests/unit/planClockXCardAfterLaterPrice.test.js › issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE — the X-Card re-arms a plan clock a later price has turned the X-Card on a move narration that played a step: the clock goes back to its fill from before, plus the segment a later price turned | AssertionError: one segment before the narration, one turned since: expected { _id: 'AX1yws0b2qcf63a3', …(14) } to match object { filled: 2, active: true } |
+| (new) tests/unit/planClockXCardAfterLaterPrice.test.js › issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE — the X-Card re-arms a plan clock a later price has turned a superseded move narration that played a step, after a later price turned the clock: the same | AssertionError: expected { _id: 'WCEd7L7ZTmOll2bC', …(14) } to match object { filled: 2, active: true } |
+| (new) (API) tests/unit/planClockXCardAfterLaterPrice.test.js › planClockPacing — the pacing a removed narration did, undone wherever the clock stands pacedByOneOf matches the stamp whatever the clock's fill | TypeError: (0 , pacedByOneOf) is not a function |
+| (new) tests/unit/planClockXCardAfterLaterPrice.test.js › planClockPacing — the pacing a removed narration did, undone wherever the clock stands unpacedClock: a clock emptied part-way keeps the segments turned since, at most one short of full | AssertionError: expected { _id: 'c1', segments: 4, …(3) } to match object { filled: 2 } |
+
+- New test passing with and without the fix (a control?): tests/unit/planClockXCardAfterLaterPrice.test.js › issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE — the X-Card re-arms a plan clock a later price has turned a clock another narration paced is left as it is
+- New test passing with and without the fix (a control?): tests/unit/planClockXCardAfterLaterPrice.test.js › planClockPacing — the pacing a removed narration did, undone wherever the clock stands unpacedClock: a trigger vignette's clock goes one short of full however far it was turned
+- New test passing with and without the fix (a control?): tests/unit/planClockXCardAfterLaterPrice.test.js › planClockPacing — the pacing a removed narration did, undone wherever the clock stands unpacedClock: a clock retired after a last step kept its fill — nothing is added to it
+
+### 9553d267 — fix: a taken-back narration's plan step is owed again even when the plan was written since (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN)
+
+Test files: `tests/unit/planClockBurnAfterLaterPrice.test.js`, `tests/unit/planStepTakenBackUnderLaterRewrite.test.js`. Source restored: 5 file(s).
+
+- With the fix: 15 passed, 0 failed.
+- Without it: 11 failed (10 new; 0 only for a missing export); 4 still pass (0 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/planClockBurnAfterLaterPrice.test.js › issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — a burned price takes its plan step back after a later price turned the clock a later trigger of the same clock is not taken for the burned price's: its vignette and its step stand | AssertionError: and the step it played stands: expected [ true, true, false ] to deeply equal [ false, true, false ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since a played step carries the narration that played it | AssertionError: expected { id: 'e1', …(2) } to match object { done: true, …(1) } |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since a clue shown between a trigger vignette and the burn of its price: the step is taken back, the clue stays shown | AssertionError: and the step it played is owed again: expected [ true, false, false ] to deeply equal [ false, false, false ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since the X-Card on that later narration afterwards does not bring the step back played | AssertionError: expected [ true, false, false ] to deeply equal [ false, false, false ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since the first of two triggers burned: its step is taken back from under the later vignette's version, the later step stands | AssertionError: expected [ true, true, false ] to deeply equal [ false, true, false ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since the later trigger played the last step and retired the clock: with a step owed again the clock runs again, empty | AssertionError: expected [ true, true ] to deeply equal [ false, true ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN — a step is taken back with the narration that played it, whatever was written since the X-Card on a trigger vignette after a GM edited the plan: the step is back, the GM's edit stands | AssertionError: the removed vignette's step is owed again: expected [ true, false, false ] to deeply equal [ false, false, false ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › skeletons — the mark on a played step applyRevealToSkeleton marks the step it plays with the narration, and leaves an earlier mark alone | AssertionError: expected { id: 'e1', text: 'It asks', …(1) } to deeply equal { id: 'e1', text: 'It asks', …(2) } |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › skeletons — the mark on a played step normaliseSkeleton keeps the mark on a played step only | AssertionError: expected [ { id: 'e1', …(2) }, …(2) ] to deeply equal [ { id: 'e1', …(3) }, …(2) ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › skeletons — the mark on a played step applyPlanToSkeleton keeps the mark of a step repeated word for word | AssertionError: expected [ { id: 'e1', …(2) }, …(1) ] to deeply equal [ { id: 'e1', …(2) }, …(1) ] |
+| (new) tests/unit/planStepTakenBackUnderLaterRewrite.test.js › skeletons — the mark on a played step the undo names the plan a step was taken back from under another version, with its clock | AssertionError: nothing of theirs: nothing written: expected undefined to deeply equal [] |
+
+### 77c36e2a — fix: a move the X-Card pauses still files the hidden plans it owes, with their rolls (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS)
+
+Test files: `tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js`. Source restored: 1 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests the X-Card is active when the move resolves: no narration is asked for, and the price's new enemy is filed with its rolls | AssertionError: expected [] to deeply equal [ 'threat' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests an expedition the paused move began is filed about its track | AssertionError: expected [] to deeply equal [ 'expedition' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests the X-Card is played while the reply is on its way: the reply is discarded, and the request it carried is filed | AssertionError: expected [] to deeply equal [ 'threat' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests the X-Card lifted: the next narration is shown the waiting plan and decides it — it is not asked for again | AssertionError: expected [] to deeply equal [ 'threat' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests a later re-narration of the paused move (Burn Momentum, Improve Result) files no second plan for its expedition | AssertionError: expected [] to deeply equal [ 'expedition' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a round the X-Card paused files its entries' plan requests the X-Card is active when the round is narrated: the paused notice posts, and all three requests are filed | AssertionError: expected [] to deeply equal [ 'expedition', 'threat', 'threat' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a round the X-Card paused files its entries' plan requests the X-Card is played while the round's reply is on its way: the same | AssertionError: expected [] to deeply equal [ 'expedition', 'threat', 'threat' ] |
+| (new) tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a round the X-Card paused files its entries' plan requests the paused notice closes the round: it carries what the driver reads as "narrated", so no second narration files again | AssertionError: expected [] to have a length of 3 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/planRequestsFiledWhenXCardPausesNarration.test.js › issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS — a move narration the X-Card paused files its plan requests a move that owes no plan files none
