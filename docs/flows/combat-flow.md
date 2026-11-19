@@ -158,7 +158,13 @@ Two cross-cutting facts to hold onto:
   the world refuses — the `grantedAt` raise — goes to the GMs' payoff card as
   a `rewardUpgrade` step whose Retry runs `upgradeLinkedVowReward` again, as
   a refused give after the claim goes as `rewardGrant`, issue #364
-  WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a weak hit
+  WON-FIGHT-REWARD-UPGRADE-NO-RETRY; a raise of the victory card's count or
+  a mark of the marks it lacks that the world refuses goes on the same card
+  as a `milestoneUpgrade` step, whose Retry runs `upgradeFightVowMilestone`
+  again — by the victory card as it stands then, so a ⚑ pressed since is
+  paid the marks it lacked, once, on the vow's payoff ledger
+  `milestone:<card id>:upgrade`; a vow fulfilled or gone since is no step —
+  issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
