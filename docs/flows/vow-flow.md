@@ -153,7 +153,16 @@ sheet's **+ Vow** creates the Item as "Vow" and only then opens it to be
 named, so a swear built from the card's `vowName` was "Swear an iron vow:
 Vow.", issue #362 AC23 / AC14; a card posted for an Item still named "Vow" is
 worded for a vow still to be named — no name, no rank's stakes — and its
-rewards are proposed for no name), a **connection
+rewards are proposed for no name; the hook's `updateItem` listener then
+follows the vow's sheet until the vow is sworn from the card —
+`followVowOnItsCard`, canonical GM, the card found by the vow's id: a rename
+or a rank change re-renders the card with the vow's name, rank and that
+rank's stakes, and writes the card's `vowName`, and the first time the vow
+gets a name of its own `reproposeVowRewards` proposes its rewards again for
+that name on the same reward-choice card (`rewardOptions` and its buttons
+replaced in place; a reward already chosen, or no proposal coming back,
+leaves the card as it is) — the card and its rewards stayed generic after the
+player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
