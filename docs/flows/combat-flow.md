@@ -39,6 +39,15 @@ Two cross-cutting facts to hold onto:
   support vehicles and companions, never the miss line, never a guess), and
   the route takes it when the move has no target of its own; it landed on
   the command starship (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+  The Confirm dialog and a round's reading name that asset beside the
+  stated cost — "Withstand Damage −1 · Hoverbike" — resolved when the
+  line is read (`readMove` → `statEnrichment.nameStatedSufferTarget` stamps
+  `missSuffer.targetName`; `stakes.sufferRouteLabel` shows it) and re-read
+  at the roll; only when the price is known to land there
+  (`stakes.statedTargetLands`): a name that matches none of the roller's
+  assets, or several, or a move that may be rolled for a vehicle or
+  companion of its own, shows the suffer move alone (issue #364
+  STATED-TARGET-NOT-SHOWN).
   A price's route that names no companion asks which when the PC has several
   (`index.js` `dispatchPayThePriceSufferRoute` → a choice card of
   `sufferCard.whichCompanionPrompt`, bound to the move as the price's other

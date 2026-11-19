@@ -180,10 +180,66 @@ function routeTarget(move, targets, stated = null) {
   return {};
 }
 
-/** "Endure Harm −1" — a stated suffer move as the dialog and the narrator show it. */
+/**
+ * "Endure Harm −1" — a stated suffer move as the dialog and the narrator show
+ * it. A Withstand Damage or Companion Takes a Hit names the vehicle or
+ * companion it will land on when that is known before the roll — "Withstand
+ * Damage −1 · Hoverbike" (`targetName`, statEnrichment.js
+ * nameStatedSufferTarget; issue #364 STATED-TARGET-NOT-SHOWN). The dialog
+ * showed the suffer move alone: with a starship in orbit and a hoverbike
+ * under them, the player could not tell which a miss would damage. Never the
+ * interpreter's own word for it (`target`), which may name nothing the
+ * roller has.
+ *
+ * @param {{ move?: string, amount?: number, targetName?: string }|null} route — the stakes' missSuffer
+ * @returns {string}
+ */
 export function sufferRouteLabel(route) {
   const name = STATED_SUFFER_MOVES[route?.move];
-  return name ? `${name} −${route.amount ?? 1}` : "";
+  if (!name) return "";
+  const target = TARGETED_SUFFER_MOVES.has(route.move) ? sufferTargetName(route.targetName) : null;
+  return `${name} −${route.amount ?? 1}${target ? ` · ${target}` : ""}`;
+}
+
+/** The roll's stat that is a vehicle's or a companion's own track, by the suffer move that damages it. */
+const TARGET_TRACK_STATS = Object.freeze({ withstand_damage: "integrity", companion_takes_a_hit: "companion_health" });
+
+/**
+ * Whether a stated miss's Withstand Damage or Companion Takes a Hit is known,
+ * before the roll, to land on the vehicle or companion it names — the one
+ * resolved for it (`missSuffer.vehicleItemId` / `companionItemId`,
+ * statEnrichment.js resolveStatedSufferTarget). Only then do the stakes name
+ * it (issue #364 STATED-TARGET-NOT-SHOWN): what the dialog shows is what the
+ * miss does.
+ *
+ * The move's own vehicle or companion takes the price first (statedPrice,
+ * issue #362 D11), so a target is not known to take it when the move:
+ *   - already has another of its own (`routeTarget`, as the price is routed);
+ *   - is rolled on that kind of asset's own track (+integrity, +a companion's
+ *     health), or an ability the dialog offers may swap its stat for one —
+ *     the roll's vehicle or companion is resolved at the roll, after the
+ *     dialog (statEnrichment.js enrichInterpretationStatValue);
+ *   - is a Heal, whose patient may be a companion (resolveHealPatient, at the
+ *     roll) — for a companion's hit.
+ * Pure.
+ *
+ * @param {Object|null} stakes — the interpretation's, its missSuffer resolved
+ * @param {{ moveId?: string, statUsed?: string|null, applicableAbilities?: Array<Object>, vehicleItemId?: string|null,
+ *   companionItemId?: string|null, patientCompanionItemId?: string|null }|null} [move] — the interpretation
+ * @returns {boolean}
+ */
+export function statedTargetLands(stakes, move = null) {
+  const s = stakes?.missSuffer;
+  if (!s || !TARGETED_SUFFER_MOVES.has(s.move)) return false;
+  const named = s.move === "withstand_damage" ? s.vehicleItemId : s.companionItemId;
+  if (typeof named !== "string" || !named) return false;
+  const lands = routeTarget(s.move, move, s);
+  if ((lands.vehicleItemId ?? lands.companionItemId ?? null) !== named) return false;
+  const track = TARGET_TRACK_STATS[s.move];
+  if (move?.statUsed === track) return false;
+  const abilities = Array.isArray(move?.applicableAbilities) ? move.applicableAbilities : [];
+  if (abilities.some(a => a?.statReplacement === track)) return false;
+  return !(s.move === "companion_takes_a_hit" && move?.moveId === "heal");
 }
 
 /** The lines a dialog shows: the hit, and the miss when it is the price. Empty for no stakes. */
