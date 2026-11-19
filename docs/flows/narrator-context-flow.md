@@ -439,7 +439,9 @@ is a variant of it — `resolveThreatName`; a Sector Trouble two sectors share i
 the active sector's, issue #362 AC43 — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
 page: issue #354 P2-15; an escalation never leaves it less urgent — issue
-#362 AC42; a GM's **Merge duplicates** folds earlier ones,
+#362 AC42 — nor does the capture listing a recorded threat again as
+"escalating" or "rising" (`recordThreat`, issue #364
+THREAT-REDETECTED-ESCALATING); a GM's **Merge duplicates** folds earlier ones,
 `mergeDuplicateThreats`, and a later detection naming a folded page lands on
 the page it was merged into — issue #362 AC21), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
