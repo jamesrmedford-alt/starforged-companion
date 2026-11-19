@@ -779,7 +779,15 @@ beat, or cards from before the stamp — is shaped by the count of its beat
 cards (a move's, a paced line's, a round's — `isSessionBeatCard`), struck,
 X-Carded and unnarrated ones included, never the @scene answers, oracle
 follow-ups or vignettes between them, which brought the cycle round to the
-same shape (issue #362 AC72) — and `extras.usedImages`, the comparisons the last six cards made,
+same shape (issue #362 AC72). A card is posted only once its narration is
+written, so two beats narrated at the same moment read the same last card:
+each of the three narrations that post a beat's card (`narrateResolution`,
+`narrateRound`, `narratePacedInput`) runs under a claim on its shape
+(`narrateWithBeatClaim` → `opts.beatClaim` → `beatVariety`), held in memory
+on the narrating client while it is written and released in a `finally`,
+and `beatVariety` steps past the shapes claimed at that moment
+(`shapeNotBeingWritten`). No store: with no narration in flight the shape is
+read from the cards alone (issue #364 BEAT-SHAPE-SIMULTANEOUS) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and

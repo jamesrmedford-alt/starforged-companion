@@ -31,7 +31,7 @@ import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { recentImages, pickBeatShape, beatShapeAfter, IMAGE_SOURCE_CARDS } from './proseVariety.js';
+import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
@@ -360,6 +360,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     planRequests    = [],
     endingTrackIds  = [],
     planIds         = [],
+    beatClaim       = null,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -398,8 +399,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // P2-27): the comparisons the session's last narrations made — listed as
   // images not to reuse — and a shape for this beat, by its place in the
   // session, so two in a row are never built the same way. The beat modes
-  // only; rendered as [8d] THIS BEAT'S PROSE.
-  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null));
+  // only; rendered as [8d] THIS BEAT'S PROSE. A narration that posts the
+  // beat's card hands its `beatClaim` (narrateWithBeatClaim): the shape is
+  // its own while it is being written (issue #364 BEAT-SHAPE-SIMULTANEOUS).
+  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null, beatClaim));
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
   // regenerated after a narrator card posts (registerRollingSummaryRefreshHook),
@@ -760,6 +763,59 @@ function lastBeatShapeId(sessionId) {
   return null;
 }
 
+// ── The shapes being written right now (issue #364 BEAT-SHAPE-SIMULTANEOUS) ──
+// A beat's shape is read off the newest written beat's card, and a card is
+// posted only once its narration is written — so two beats narrated at the
+// same moment (two players' lines, a move beside a paced line, a round
+// beside either) both read the same last card and were given the same shape.
+// A beat's narration claims its shape when it picks it, for as long as it is
+// being written, and a beat picked meanwhile steps past the claimed ones.
+//
+// In memory, this client's own narrations only, and never a second store of
+// "the last shape" (decisions.md → "Issue #364", the beat-shape bullet): a
+// claim says a shape is being written now, and is gone when its narration
+// ends — written, failed or thrown (narrateWithBeatClaim's `finally`). With
+// nothing being written the set is empty and the next shape is read from the
+// cards alone. A reload ends every narration and every claim with it.
+const liveBeatClaims = new Set();   // of { sessionId, shapeId }
+
+/**
+ * Run one beat's narration with a claim on its shape, released when the
+ * narration ends however it ends. The three narrations that post a beat's
+ * card (narrateResolution, narrateRound, narratePacedInput) call themselves
+ * through this once: each makes its own Claude call — the playthrough
+ * harness names a call by the function that makes it — so its body cannot
+ * move into a helper that would hold the `finally`.
+ *
+ * @template T
+ * @param {(claim: { sessionId: string|null, shapeId: string|null }) => Promise<T>} narrate
+ * @returns {Promise<T>}
+ */
+async function narrateWithBeatClaim(narrate) {
+  const claim = { sessionId: null, shapeId: null };
+  try {
+    return await narrate(claim);
+  } finally {
+    liveBeatClaims.delete(claim);
+  }
+}
+
+/**
+ * `shape`, or the first shape after it in the cycle that no narration of the
+ * session is being written in right now. With every shape claimed — five
+ * narrations at once — `shape` itself.
+ *
+ * @param {{ id: string, hint: string }} shape
+ * @param {string|null} sessionId
+ * @returns {{ id: string, hint: string }}
+ */
+function shapeNotBeingWritten(shape, sessionId) {
+  const claimed = new Set([...liveBeatClaims].filter(c => c.sessionId === sessionId).map(c => c.shapeId));
+  let free = shape;
+  for (let step = 1; step < BEAT_SHAPES.length && free && claimed.has(free.id); step += 1) free = beatShapeAfter(free.id);
+  return free && !claimed.has(free.id) ? free : shape;
+}
+
 /**
  * The images the session's last narrations used and the shape for the beat
  * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
@@ -774,27 +830,39 @@ function lastBeatShapeId(sessionId) {
  * over all its narrator cards, four @scene answers, oracle follow-ups or
  * vignettes between two beats brought the five-shape cycle back round to the
  * same shape, and a card a Burn / Improve struck took the count back one
- * (issue #362 AC72). Fail-open: an unreadable chat log gives no list and the
- * first shape.
+ * (issue #362 AC72). A shape another narration of the session is being
+ * written in at this moment is stepped past, and the shape picked is claimed
+ * for `claim`'s narration (issue #364 BEAT-SHAPE-SIMULTANEOUS; liveBeatClaims).
+ * Fail-open: an unreadable chat log gives no list and the first shape.
  *
  * @param {string|null} sessionId
+ * @param {{ sessionId: string|null, shapeId: string|null }|null} [claim] — the
+ *   narration's claim (narrateWithBeatClaim); none claims nothing
  * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
  */
-function beatVariety(sessionId) {
+function beatVariety(sessionId, claim = null) {
+  let variety;
   try {
     const cards = sessionNarratorCards(sessionId);
     const prose = cards.slice(-IMAGE_SOURCE_CARDS)
       .map(m => m?.flags?.[MODULE_ID]?.narrationText)
       .filter(t => typeof t === 'string' && t.trim());
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
-    return {
+    variety = {
       usedImages: recentImages(prose),
       beatShape:  beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
-    return { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
+    variety = { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
   }
+  variety.beatShape = shapeNotBeingWritten(variety.beatShape, sessionId);
+  if (claim) {
+    claim.sessionId = sessionId;
+    claim.shapeId   = variety.beatShape.id;
+    liveBeatClaims.add(claim);
+  }
+  return variety;
 }
 
 /** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
@@ -1156,9 +1224,14 @@ function reportNarratedOracle(kind, rolledLine) {
  *   is called internally.
  * @param {string|null} [options.moveTarget] — the interpreter's target for the
  *   move, for its capture (runPostNarrationPasses — KNOWN-NPC-CONNECTION-NO-TARGET)
+ * @param {Object|null} [beatClaim] — internal: this narration's claim on its
+ *   beat's shape (narrateWithBeatClaim). Callers pass none.
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
-export async function narrateResolution(resolution, campaignState, options = {}) {
+export async function narrateResolution(resolution, campaignState, options = {}, beatClaim = null) {
+  // The beat's shape is claimed while this narration is written (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS): run once more under a claim, released however it ends.
+  if (!beatClaim) return narrateWithBeatClaim(claim => narrateResolution(resolution, campaignState, options, claim));
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
 
@@ -1250,6 +1323,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
     endingTrackIds,
+    beatClaim,
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1489,9 +1563,13 @@ export function roundNarrationEntries(round) {
  * #347 AB17: the first GM's late reply posted a second card).
  *
  * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
+ *   (`beatClaim` is internal — this narration's claim on its shape, narrateWithBeatClaim; callers pass none)
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null, beatClaim = null }) {
+  // The round's shape is claimed while it is narrated (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS; narrateResolution's rule).
+  if (!beatClaim) return narrateWithBeatClaim(claim => narrateRound({ round, campaignState, stillNarrating, noKeyReason, beatClaim: claim }));
   // The hidden rolls behind the plans its entries ask for, which the round —
   // a world setting every client holds — keeps none of, are rolled here, on
   // the GM that narrates it (issue #362 AC15).
@@ -1559,6 +1637,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       ])
       : [],
     endingTrackIds,
+    beatClaim,
   });
   extras.roundCharacters = characters;
 
@@ -4730,9 +4809,16 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * (issue #347 AB21). A reply the X-Card discards posts the paused notice
  * (PACED-DISCARD-UNDER-XCARD-SILENT).
  *
+ * `beatClaim` is internal — this narration's claim on its beat's shape
+ * (narrateWithBeatClaim); callers pass none.
+ *
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
-export async function narratePacedInput(playerText, campaignState, options = {}) {
+export async function narratePacedInput(playerText, campaignState, options = {}, beatClaim = null) {
+  // The line's shape is claimed while it is narrated (issue #364
+  // BEAT-SHAPE-SIMULTANEOUS; narrateResolution's rule) — the call below still
+  // has narratePacedInput as its caller.
+  if (!beatClaim) return narrateWithBeatClaim(claim => narratePacedInput(playerText, campaignState, options, claim));
   options = options ?? {};
   // One function, its failure caught inline: the paced narration's Claude
   // call keeps narratePacedInput as its caller (PACED-ROUTER-THROW's guard
@@ -4787,6 +4873,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       extras = await buildNarratorExtras('paced_narrative', campaignState, {
         playerNarration: playerText,
         character,
+        beatClaim,
       });
 
       systemPrompt = buildNarratorSystemPrompt(

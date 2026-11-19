@@ -135,6 +135,12 @@ id): the next beat takes the shape after the newest written beat's
 (`beatVariety` → `lastBeatShapeId`, read from the chat as it was, so a card a
 GM deleted or a Clear Chat Log took still counts — issue #364
 BEAT-SHAPE-AFTER-DELETED-CARD). A fallback card carries none.
+While a beat is being written its shape is claimed in memory on the
+narrating client (`narrateWithBeatClaim`, released when the narration ends
+however it ends), and a beat picked meanwhile steps past the claimed shapes —
+two beats narrated at the same moment had both read the same last card
+(issue #364 BEAT-SHAPE-SIMULTANEOUS). The claim is no store of the last
+shape: with nothing being written the cards alone decide.
 The move narration's "narration unavailable" card (`postFallbackCard`) keeps
 the family so the session recap counts the move, and is marked
 `narrationFallback`, which every memory read leaves out (issue #321 U35 — it
