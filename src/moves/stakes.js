@@ -45,6 +45,23 @@ export const STATED_SUFFER_MOVES = Object.freeze({
   companion_takes_a_hit: "Companion Takes a Hit",
 });
 
+/**
+ * The stated suffer moves that land on one of the roller's vehicles or
+ * companions, which the interpreter may name (`missSuffer.target`, issue #364
+ * ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+ */
+const TARGETED_SUFFER_MOVES = new Set(["withstand_damage", "companion_takes_a_hit"]);
+
+/** The longest vehicle or companion name kept as a stated suffer move's target. */
+const SUFFER_TARGET_MAX = 60;
+
+/** A stated suffer move's target as the interpreter named it: a trimmed, single-line name, or null. */
+function sufferTargetName(value) {
+  if (typeof value !== "string") return null;
+  const s = value.replace(/\s+/g, " ").trim();
+  return s && s.length <= SUFFER_TARGET_MAX ? s : null;
+}
+
 /** One stakes line: a trimmed, single-line string within STAKES_LINE_MAX, or null. */
 function stakesLine(value) {
   if (typeof value !== "string") return null;
@@ -56,10 +73,14 @@ function stakesLine(value) {
 /**
  * The interpreter's `stakes` as the module keeps them: a hit line, a miss
  * line, and the miss's suffer move — a known one, 1–3 — only beside a miss
- * line. Null when it gave neither line. Pure.
+ * line. A Withstand Damage or Companion Takes a Hit keeps the vehicle or
+ * companion the interpreter named for it (`target`, a name — resolved to the
+ * roller's own asset before the roll, statEnrichment.js
+ * resolveStatedSufferTarget; issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+ * Null when it gave neither line. Pure.
  *
  * @param {*} raw
- * @returns {{ hit: string|null, miss: string|null, missSuffer: { move: string, amount: number }|null }|null}
+ * @returns {{ hit: string|null, miss: string|null, missSuffer: { move: string, amount: number, target?: string }|null }|null}
  */
 export function normaliseStakes(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -70,7 +91,8 @@ export function normaliseStakes(raw) {
   const s = raw.missSuffer;
   if (miss && s && typeof s === "object" && typeof s.move === "string" && Object.hasOwn(STATED_SUFFER_MOVES, s.move)) {
     const n = Number(s.amount ?? 1);
-    missSuffer = { move: s.move, amount: Number.isInteger(n) ? Math.min(3, Math.max(1, n)) : 1 };
+    const target = TARGETED_SUFFER_MOVES.has(s.move) ? sufferTargetName(s.target) : null;
+    missSuffer = { move: s.move, amount: Number.isInteger(n) ? Math.min(3, Math.max(1, n)) : 1, ...(target ? { target } : {}) };
   }
   return { hit, miss, missSuffer };
 }
@@ -115,7 +137,14 @@ export function withPriceSource(stakes, missPays = false) {
  * to the price): the support vehicle it was rolled for (`vehicleItemId`), the
  * companion it was rolled for or tends (`companionItemId`,
  * `patientCompanionItemId`). They landed on the command vehicle and the first
- * companion whatever the line named. With none, those defaults stand.
+ * companion whatever the line named. A move rolled on an action stat has no
+ * such target — "I gun the hoverbike across the gap", Face Danger +edge — so
+ * its stated damage still went to the starship: with none of its own, the
+ * price lands on the vehicle or companion the interpreter named for it
+ * (`missSuffer.target`), resolved to the roller's asset before the roll
+ * (`missSuffer.vehicleItemId` / `companionItemId`, statEnrichment.js
+ * resolveStatedSufferTarget — issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+ * With neither, those defaults stand.
  *
  * @param {Object|null} stakes — the interpretation's (withPriceSource)
  * @param {{ vehicleItemId?: string|null, companionItemId?: string|null, patientCompanionItemId?: string|null }|null} [targets]
@@ -128,20 +157,24 @@ export function statedPrice(stakes, targets = null) {
   const s = stakes.missSuffer;
   const route = s && Object.hasOwn(STATED_SUFFER_MOVES, s.move)
     ? { move: s.move, amount: s.amount, ...(s.move === "companion_takes_a_hit" ? { soloFallback: "endure_harm" } : {}),
-      ...routeTarget(s.move, targets) }
+      ...routeTarget(s.move, targets, s) }
     : null;
   return { price: stakes.miss, sufferRoutes: route ? [route] : [] };
 }
 
-/** A stated route's vehicle or companion, from the move's targets — `{}` for none, or for another suffer move. */
-function routeTarget(move, targets) {
+/**
+ * A stated route's vehicle or companion: the move's own (its targets), else
+ * the one the stated suffer move names (`stated` — the stakes' missSuffer,
+ * resolved) — `{}` for none, or for another suffer move.
+ */
+function routeTarget(move, targets, stated = null) {
   const id = (v) => (typeof v === "string" && v ? v : null);
   if (move === "withstand_damage") {
-    const vehicle = id(targets?.vehicleItemId);
+    const vehicle = id(targets?.vehicleItemId) ?? id(stated?.vehicleItemId);
     return vehicle ? { vehicleItemId: vehicle } : {};
   }
   if (move === "companion_takes_a_hit") {
-    const companion = id(targets?.companionItemId) ?? id(targets?.patientCompanionItemId);
+    const companion = id(targets?.companionItemId) ?? id(targets?.patientCompanionItemId) ?? id(stated?.companionItemId);
     return companion ? { companionItemId: companion } : {};
   }
   return {};

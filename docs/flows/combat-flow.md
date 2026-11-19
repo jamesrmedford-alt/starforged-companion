@@ -30,7 +30,15 @@ Two cross-cutting facts to hold onto:
   its stat reading gives (`statEnrichment.enrichForcedMoveStat`; a one-stat
   move is read for them alone), and a stated Withstand Damage / Companion
   Takes a Hit lands on the support vehicle or companion the move was made
-  against (`stakes.statedPrice`'s route targets — issue #362 D11).
+  against (`stakes.statedPrice`'s route targets — issue #362 D11). A move
+  rolled on an action stat has none ("I gun the hoverbike across the gap",
+  Face Danger +edge): the interpreter names the vehicle or companion beside
+  the suffer move (`stakes.missSuffer.target`), `rollMove` resolves that name
+  to the roller's own asset before the dice
+  (`statEnrichment.resolveStatedSufferTarget` — whole words against their
+  support vehicles and companions, never the miss line, never a guess), and
+  the route takes it when the move has no target of its own; it landed on
+  the command starship (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
