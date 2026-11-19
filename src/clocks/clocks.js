@@ -525,6 +525,24 @@ export async function restoreClocksPacedBy(narrationIds) {
 }
 
 /**
+ * The narration whose pacing of a hidden plan's clock a reverted price's
+ * trigger did, or null when the clock carries none of its. With the price's
+ * own trigger vignette named (`vignette`), the clock's stamp is that
+ * narration's or it is another trigger's — an earlier one whose stamp a
+ * re-arm left on the clock, a later one's — however far later prices have
+ * turned the clock since. Without it (a receipt from before issue #364), the
+ * stamp is trusted only while the clock stands as the pacing left it.
+ *
+ * @param {object} clock — a campaignState.clocks entry
+ * @param {string|null|undefined} vignette — the reverted price's trigger vignette, by narration id
+ * @returns {string|null}
+ */
+function pacingOfTrigger(clock, vignette) {
+  if (typeof vignette !== "string" || !vignette) return standingPacedBy(clock);
+  return clock?.pacedBy === vignette ? vignette : null;
+}
+
+/**
  * Put a full clock back one segment short of full: the trigger it reached is
  * owed again, and the next advance fills it and fires it once more — a
  * hidden plan's clock whose trigger vignette was not written (issue #362
@@ -572,12 +590,25 @@ export async function rearmClock(clockId) {
  * narration that paced it (`pacedBy`), whose vignette the upgrade supersedes
  * by that id — its plan step taken back with it.
  *
+ * Whose pacing it is: the price's receipt names its own trigger vignette
+ * (`vignettes` — payThePriceClocks.js `vignetteNarrationId`), and the clock's
+ * stamp is that narration's or it is not this price's. The clock alone could
+ * not say (issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE): it was trusted only
+ * while it stood as the pacing left it (standingPacedBy), so a price paid
+ * between the trigger and the burn — the emptied clock turned one segment on —
+ * left the burn nothing to find: the vignette stayed live, the step played.
+ * The stamp stays on a clock later prices turn, so a clock paced by this
+ * price's vignette is put back one short of full wherever it stands now. A
+ * receipt from before the id was kept (`vignettes` without the clock) falls
+ * back to the standing stamp.
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
- * @param {{ triggered?: string[] }} [opts] — the clocks the reverted price filled
+ * @param {{ triggered?: string[], vignettes?: Object<string, string> }} [opts] — the clocks the
+ *   reverted price filled, and the narration of each one's trigger vignette, by clock id
  * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
  *   the clocks taken out of their triggered state (empty when none, or nothing was written)
  */
-export async function revertTensionClocksForBurn(ids, { triggered = [] } = {}) {
+export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null } = {}) {
   return serialiseClockWrite(async () => {
     if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
@@ -590,7 +621,7 @@ export async function revertTensionClocksForBurn(ids, { triggered = [] } = {}) {
       if (c?.planId && filledByPrice.has(id)) {
         const wasFull = (c.filled ?? 0) >= c.segments;
         const target  = Math.max(0, c.segments - 1);
-        const pacedBy = standingPacedBy(c);
+        const pacedBy = pacingOfTrigger(c, vignettes?.[id]);
         if (pacedBy) {
           c.active    = true;
           c.filled    = target;

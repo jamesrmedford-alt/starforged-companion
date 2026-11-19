@@ -999,7 +999,11 @@ is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
 the narration back — a supersede, or the X-Card's pause write — runs the clock
 again at its fill from before, at most one short of full, the step it played
 owed again (`planClockPacing.js`; a burned price's plan clock is put back one
-short of full and its vignette struck by that id, issue #362 AC33);
+short of full and its vignette struck by that id, issue #362 AC33 — the price's
+receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
+advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that
+narration did even after a later price turned the emptied clock on, and never
+takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its

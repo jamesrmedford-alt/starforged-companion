@@ -116,7 +116,9 @@ async function strikeIfRewoundWhilePosting(card, entry, clockId) {
  * advances, in lockstep, but the card lists it once and it fires one trigger
  * vignette (issue #321 U55 — three PCs gave three lines, three Claude calls and
  * three TRIGGERED cards). The returned list keeps every copy, for the Burn
- * Momentum reversal to rewind each.
+ * Momentum reversal to rewind each. A tension clock this price filled carries
+ * the narration its trigger vignette is written under
+ * (`vignetteNarrationId`), for that reversal to take the trigger back by.
  *
  * `skipClockIds`: tension clocks this price leaves alone — the scene
  * challenge's clock a scene-challenge move's miss filled itself (issue #338
@@ -171,6 +173,16 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
   // Tracked until it is done: `!ptp`'s oracle follow-up narrates after it
   // (triggerVignettesSettled, issue #335 Y05).
   const justTriggered = clocks.filter(a => a.triggered);
+  // A tension clock's trigger is named on the price's own receipt: the
+  // narration its vignette will be, minted with the advance
+  // (`vignetteNarrationId`). A hidden plan's clock is paced by that vignette
+  // and then turned by the prices after it, so the clock alone no longer says
+  // whose trigger paced it — a burn of this price finds its vignette, and the
+  // plan step it played, by this id (issue #364
+  // PLAN-CLOCK-BURN-AFTER-LATER-PRICE; clocks.js revertTensionClocksForBurn).
+  for (const cd of justTriggered) {
+    if (cd.type === "tension") cd.vignetteNarrationId = newNarrationId();
+  }
   if (justTriggered.length) {
     const run = new Promise(resolve => setTimeout(async () => {
       try {
@@ -178,7 +190,7 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
         // A working copy — each vignette applies its sidecar on it (issue #329 X09).
         const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
         for (const cd of justTriggered) {
-          const narrationId = newNarrationId();
+          const narrationId = cd.vignetteNarrationId ?? newNarrationId();
           // Narrated only while the clock is still full when the reply comes
           // in: a burn or improvement that rewound it meanwhile (issue #338
           // D8) found no card to strike, and the late vignette landed live
