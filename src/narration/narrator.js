@@ -31,7 +31,7 @@ import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { recentImages, pickBeatShape, IMAGE_SOURCE_CARDS } from './proseVariety.js';
+import { recentImages, pickBeatShape, beatShapeAfter, IMAGE_SOURCE_CARDS } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
@@ -732,15 +732,47 @@ function isSessionBeatCard(m, sessionId) {
   return f.narrationCard === true || f.pacedNarrative === true || (typeof f.roundId === 'string' && f.roundId !== '');
 }
 
+/** A beat card's `beatShape` flag — the id of the shape its narration was written in — or nothing when none was picked. */
+function beatShapeFlag(shapeId) {
+  return typeof shapeId === 'string' && shapeId ? { beatShape: shapeId } : {};
+}
+
+/**
+ * The shape the session's newest written beat was given — its card's
+ * `beatShape` stamp (postNarrationCard, postRoundNarrationCard,
+ * postPacedNarrativeCard) — or null when no card of the session carries one.
+ * Read from the chat as it was (chatAsItWas): a beat whose card a GM deleted,
+ * or a Clear Chat Log took, is still the beat before the next one. A struck
+ * or X-Carded narration was written in its shape and counts; a "narration
+ * unavailable" card carries no stamp — nothing was written in the shape
+ * picked for it.
+ *
+ * @param {string|null} sessionId
+ * @returns {string|null} a BEAT_SHAPES id
+ */
+function lastBeatShapeId(sessionId) {
+  const chat = chatAsItWas();
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    const f = chat[i]?.flags?.[MODULE_ID];
+    if (f?.narratorCard && f.sessionId === sessionId && typeof f.beatShape === 'string' && f.beatShape) return f.beatShape;
+  }
+  return null;
+}
+
 /**
  * The images the session's last narrations used and the shape for the beat
  * about to be written (issue #354 P2-22, P2-27; proseVariety.js) — read from
- * the session's narrator cards, the ring's own source. Nothing is stored: the
- * shape follows from how many beats the session holds — every beat card it
- * posted, a struck, X-Carded or unnarrated one included (they stay in chat).
- * Counted over all its narrator cards, four @scene answers, oracle follow-ups
- * or vignettes between two beats brought the five-shape cycle back round to
- * the same shape, and a card a Burn / Improve struck took the count back one
+ * the session's narrator cards, the ring's own source. The shape is the one
+ * after the newest written beat's, which its card carries (`beatShape`,
+ * lastBeatShapeId): the count of the session's beat cards alone gave the next
+ * beat the shape of the one before it once a GM deleted an earlier beat's
+ * card, and could after a Clear Chat Log (issue #364
+ * BEAT-SHAPE-AFTER-DELETED-CARD). A session with no stamped card — its first
+ * beat, or beats written before the cards carried one — is shaped by how many
+ * beat cards it holds, a struck, X-Carded or unnarrated one included: counted
+ * over all its narrator cards, four @scene answers, oracle follow-ups or
+ * vignettes between two beats brought the five-shape cycle back round to the
+ * same shape, and a card a Burn / Improve struck took the count back one
  * (issue #362 AC72). Fail-open: an unreadable chat log gives no list and the
  * first shape.
  *
@@ -756,7 +788,7 @@ function beatVariety(sessionId) {
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     return {
       usedImages: recentImages(prose),
-      beatShape:  pickBeatShape({ beatIndex: beats, seed: sessionId }),
+      beatShape:  beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
@@ -1232,6 +1264,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     playerText:       isPlayerWrittenInput(resolution) ? (resolution.playerNarration ?? '') : '',
     playerName:       character?.name ?? null,
     narrationId,
+    beatShape:        extras.beatShape?.id ?? null,
   };
   // Whether this narration's side-data was applied, the plans it was asked
   // to decide with it: an exit that wrote none files them with their rolls
@@ -1562,7 +1595,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       sideDataApplied = true;
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
-        matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+        matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, beatShape: extras.beatShape?.id ?? null,
       });
       for (const e of entries) reportNarratedMove(e.input?.moveId ?? null, e.input?.oracleSeeds ?? null);
       await runRoundNarrationPasses(narration, entries, campaignState, {
@@ -1815,7 +1848,7 @@ function roundEntriesFlag(entries) {
  * @param {Object} round
  * @param {Array<Object>} entries — roundNarrationEntries
  * @param {Object} campaignState
- * @param {{ matchedEntityIds?: string[], narrationId?: string|null }} [options]
+ * @param {{ matchedEntityIds?: string[], narrationId?: string|null, beatShape?: string|null }} [options]
  * @returns {Promise<ChatMessage>}
  */
 export async function postRoundNarrationCard(narrationText, round, entries, campaignState, options = {}) {
@@ -1854,6 +1887,7 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
         roundId:          round?.id ?? null,
         roundNumber:      round?.number ?? null,
         roundEntries:     roundEntriesFlag(entries),
+        ...beatShapeFlag(options.beatShape),   // the shape the round was written in (beatVariety)
         timestamp:        new Date().toISOString(),
       },
     },
@@ -2147,6 +2181,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         // Links the card to the ledger entries its sidecar wrote, which an
         // X-Card on it retracts (issue #321 U07).
         narrationId,
+        // The shape this beat was written in: the next beat takes the one
+        // after it (beatVariety — issue #364 BEAT-SHAPE-AFTER-DELETED-CARD).
+        ...beatShapeFlag(options.beatShape),
         // A Burn Momentum / Improve Result re-narration: the resolution it
         // upgraded, whose struck narrations an X-Card on this card takes too
         // (issue #347 D2; xCardedNarrationCards).
@@ -2341,13 +2378,15 @@ const _deletedMessages = [];
 /** Deleted chat messages kept on campaignState, newest last. */
 const STORED_DELETED_CAP = 20;
 
-// The module flags the X-Card's pick and removal read off a card — all a
-// stored record keeps (narrator memory never reads a deleted card's text).
+// The module flags the X-Card's pick and removal read off a card, and the
+// shape a beat's card was written in, which the next beat follows (`beatShape`
+// — beatVariety, issue #364 BEAT-SHAPE-AFTER-DELETED-CARD) — all a stored
+// record keeps (narrator memory never reads a deleted card's text).
 const DELETED_RECORD_FLAGS = [
   'narratorCard', 'sessionId', 'narrationId', 'resolutionId', 'roundId', 'oracleCardId', 'upgradeOf',
   'supersededFor', 'burnSuperseded', 'xCarded', 'narrationFallback', 'worldJournalContradiction',
   'worldJournalCard', 'recapCard', 'draftEntityCard', 'bypassPacing', 'forcedMoveId', 'xcardCard',
-  'xcardClearedCard', 'timestamp',
+  'xcardClearedCard', 'beatShape', 'timestamp',
 ];
 
 /**
@@ -4775,7 +4814,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       }
 
       const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
       scheduleChronicleEntry({
@@ -4806,7 +4845,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           });
           if (text?.trim()) {
             const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
             scheduleChronicleEntry({
@@ -5001,7 +5040,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState, { nar
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null) {
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
@@ -5047,6 +5086,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         // (issue #322 V22).
         matchedEntityIds: Array.isArray(matchedEntityIds) ? [...matchedEntityIds] : [],
         narrationId:      narrationId ?? null,   // for the X-Card (issue #321 U07)
+        ...beatShapeFlag(beatShape),             // the shape this beat was written in (beatVariety)
         timestamp:        new Date().toISOString(),
       },
     },

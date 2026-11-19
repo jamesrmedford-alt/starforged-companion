@@ -129,6 +129,12 @@ Every card above also carries its narration's `narrationId` — the id its
 sidecar stamps on the ledger entries it writes (§3; issue #321 U07) and its
 capture on what it records (issue #329 X01); a published reflection, which
 has no sidecar, carries one for its capture (issue #335 Y03).
+A beat's card — a move's, a paced line's, a round's — also carries the shape
+its narration was written in (`beatShape`, a `proseVariety.js` `BEAT_SHAPES`
+id): the next beat takes the shape after the newest written beat's
+(`beatVariety` → `lastBeatShapeId`, read from the chat as it was, so a card a
+GM deleted or a Clear Chat Log took still counts — issue #364
+BEAT-SHAPE-AFTER-DELETED-CARD). A fallback card carries none.
 The move narration's "narration unavailable" card (`postFallbackCard`) keeps
 the family so the session recap counts the move, and is marked
 `narrationFallback`, which every memory read leaves out (issue #321 U35 — it

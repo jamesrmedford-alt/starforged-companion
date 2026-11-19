@@ -755,12 +755,20 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
-picked by its place among the session's beats so two in a row never share
-one, nothing stored: the count is of the beat cards (a move's, a paced
-line's, a round's — `isSessionBeatCard`), struck, X-Carded and unnarrated
-ones included, never the @scene answers, oracle follow-ups or vignettes
-between them, which brought the cycle round to the same shape (issue #362
-AC72) — and `extras.usedImages`, the comparisons the last six cards made,
+the one after the newest written beat's so two in a row never share one.
+Each beat's card carries the shape it was written in (`beatShape`, stamped by
+`postNarrationCard` / `postRoundNarrationCard` / `postPacedNarrativeCard`),
+and `lastBeatShapeId` reads it from the chat as it was (`chatAsItWas` — a
+beat card a GM deleted, or a Clear Chat Log took, is still the beat before;
+the canonical GM's stored record of a deleted card keeps the stamp across a
+reload): the count of beat cards alone gave the next beat the last one's
+shape once an earlier card was deleted (issue #364
+BEAT-SHAPE-AFTER-DELETED-CARD). A session with no stamped card — its first
+beat, or cards from before the stamp — is shaped by the count of its beat
+cards (a move's, a paced line's, a round's — `isSessionBeatCard`), struck,
+X-Carded and unnarrated ones included, never the @scene answers, oracle
+follow-ups or vignettes between them, which brought the cycle round to the
+same shape (issue #362 AC72) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and
