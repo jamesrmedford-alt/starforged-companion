@@ -730,6 +730,13 @@ async function advanceOnce() {
       // (issue #344 A01).
       if (await applyUpgradeReceipts()) return true;
       await keepUndecidable(round);
+      // Once its session is over the round waits for no roller: Keep for
+      // everyone still deciding, as a GM's Send now applies it — an upgrade
+      // in flight still decides its own entry (keepUpgrades). It kept
+      // waiting through End a Session, and was narrated whenever its roller
+      // came back to the card — after the session, into the next one's chat
+      // (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END).
+      if (!upgradesSettled(getStoredRound()) && roundSessionOver(getStoredRound())) await keepUpgrades(null);
       if (!upgradesSettled(getStoredRound())) return false;
       // The X-Card stops a round resolving: decided, it waits for a GM to
       // resume (the lift runs this pass again), as a collecting round does —
@@ -2444,8 +2451,13 @@ function onCampaignStateChanged(setting) {
       // the X-Card holds it too (issue #345 AA43): the session ending closes
       // it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
       // ROUND-CLOSED-UNNARRATED-WORDING; the upgrade step, issue #362 AC57).
+      // And a round at its upgrade step that waits for a roller's Burn /
+      // Improve / Keep: the session ending keeps for everyone still deciding
+      // (advanceOnce), and the round goes on to its narration now — it
+      // waited, and was narrated after the session whenever the roller came
+      // back (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END).
       const heldNarrating = round?.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard);
-      const heldUpgrading = round?.phase === ROUND_PHASE.UPGRADING && xCard;
+      const heldUpgrading = round?.phase === ROUND_PHASE.UPGRADING;
       if (roundIsOpen(round) && (heldNarrating || heldUpgrading) && roundSessionOver(round, cs)) {
         await advanceRound("session-ended");
       }
