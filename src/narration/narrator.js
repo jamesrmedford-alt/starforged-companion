@@ -1344,6 +1344,17 @@ export async function narrateResolution(resolution, campaignState, options = {})
  * fallback filed unstamped (a failed call — issue #362 AC07) stays, and was
  * planned a second time. Fail-open: an unreadable journal asks for them all.
  *
+ * It reads the plans, which only a GM's client does (issue #362 D1) — and
+ * only a GM's client is ever handed such a request: the move pipeline, a burn
+ * or an improvement, a held result, a round and the vow scene all run on the
+ * canonical GM, and the one move narration on a player's own key (a sheet
+ * roll with no keyed GM connected) carries none. So no answer about which
+ * subjects are planned crosses the relay (issue #364
+ * PLAYER-KEY-PLAN-REQUESTS-UNFILTERED: checked, nothing takes that path —
+ * playerKeyNarrationPlanRequests.test.js pins it). Were one to arrive there
+ * it would be asked again, and the canonical GM joins its relayed answer to
+ * the plan the subject has, whose truth stands (applyPlanSideData, AC14).
+ *
  * @param {Object[]} requests — normalisePlanRequests'
  * @returns {Object[]}
  */
