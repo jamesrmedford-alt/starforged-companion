@@ -846,6 +846,11 @@ from the GM's cache while a relayed X-Card's, flag's or End a Session's write
 was still in flight, it carried the old campaignState back over it (issue #342
 Z01). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
+every result still held for Burn / Improve / Keep is kept first — paid and
+narrated under the closing session's id, as End a Session does, which a
+session over by idleness never got (`keepEveryHeldResult`; the mint's working
+copy then takes the store's value for each field the keep changed — issue
+#364 HELD-RESULT-IDLE-SESSION) —
 the closing session's summary is brought up to date
 (`finalizeSessionSummary`, no call when it covers every card) — an ended
 one's too: End a Session refreshes its own, but that refresh can fail or

@@ -451,9 +451,58 @@ export function mintSession(campaignState, now = Date.now()) {
   return campaignState;
 }
 
+/** The stored campaignState as this client has it, or null. */
+function storedCampaignState() {
+  try {
+    return globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Keep every result still held at the table before its session is closed out
+ * (rollSessionIfDue — HELD-RESULT-IDLE-SESSION), as End a Session does
+ * (heldResult.js keepEveryHeldResult, "session-end": the canonical GM's; a
+ * no-op with nothing held). A keep pays its price and narrates it, which
+ * write the store — the scene's ledgers, its ring, the rolling summary — so
+ * when one landed, `campaignState` (the mint's working copy, read before the
+ * keep) takes the store's value for every field the keep changed: the scene
+ * close that follows closes the scene the kept narration opened, migrates what
+ * it recorded, and writes none of it back as it was before. A field the
+ * caller had changed on the copy — the world load's stale-lock reset —
+ * stands. Never throws.
+ *
+ * @param {Object} campaignState — the mint's working copy (mutated)
+ * @returns {Promise<number>} how many were kept
+ */
+async function keepHeldResultsOfClosingSession(campaignState) {
+  const before = storedCampaignState();
+  let kept = 0;
+  try {
+    const { keepEveryHeldResult } = await import("../moves/heldResult.js");
+    kept = await keepEveryHeldResult("session-end");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | session roll: the held results could not be kept first:`, err?.message ?? err);
+  }
+  const after = kept > 0 ? storedCampaignState() : null;
+  if (!after || typeof after !== "object") return kept;
+  for (const key of new Set([...Object.keys(after), ...Object.keys(campaignState)])) {
+    if (!sameValue(campaignState[key], before?.[key])) continue;      // the caller's own change
+    if (sameValue(after[key], before?.[key])) continue;               // the keep left it alone
+    if (after[key] === undefined) delete campaignState[key];
+    else campaignState[key] = JSON.parse(JSON.stringify(after[key]));
+  }
+  return kept;
+}
+
 /**
  * At world load and Begin a Session, on the canonical GM: when the session is
- * over (sessionNeedsMint), close it out and mint the next one. The closing
+ * over (sessionNeedsMint), close it out and mint the next one. A result still
+ * held for Burn / Improve / Keep is kept first (keepHeldResultsOfClosingSession).
+ * The closing
  * session first gets its rolling summary brought up to date
  * (finalizeSessionSummary, no call when it covers every card), so the summary
  * carried forward covers all of it — an ended session's too. End a Session
@@ -483,6 +532,16 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   // BEGIN-MINT-LINE-WINDOW). The note clears itself once the minted session is
   // stored (sessionBeingReplaced).
   noteSessionBeingReplaced(campaignState, now);
+  // A result still held for its roller's Burn / Improve / Keep is kept — paid
+  // and narrated — before its session is closed out (HELD-RESULT-IDLE-SESSION).
+  // End a Session keeps them (issue #362 D5), but a session that ends by four
+  // idle hours (D14) never gets one: its held results stayed held, and each
+  // roller's first line of the next session paid last session's price and
+  // narrated last session's roll into the new session's story. Kept here, on
+  // every mint — a result held after End a Session too — before the summary
+  // is finalised and the scene closed, so its narration is in the session it
+  // was rolled in. What the keep stored is then read back.
+  if (campaignState.currentSessionId) await keepHeldResultsOfClosingSession(campaignState);
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
   // Whether the closing session's summary covers it now. The finalise is

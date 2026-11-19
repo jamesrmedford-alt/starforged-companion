@@ -51,7 +51,9 @@ Two cross-cutting facts to hold onto:
   for them (`movePipeline.rollMove` keeps it before the dice), their sheet
   roll, `!ptp` or `!oracle` (kept before that narration), or a consequence
   chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`); End a
-  Session and Batch Mode switched on keep every held result
+  Session, the mint that closes out a session (`rollSessionIfDue` — one over
+  by four idle hours never gets End a Session; issue #364
+  HELD-RESULT-IDLE-SESSION) and Batch Mode switched on keep every held result
   (`keepEveryHeldResult`), and a round keeps an acting player's before it
   rolls (`batch/driver.js` rollRound — issue #362 AC32). A kept
   result's upgrades close (`kept`), and its card says what kept it where the
