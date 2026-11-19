@@ -902,10 +902,13 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
  *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[],
- *           endingSubjectIds?: string[] }} ctx
+ *           endingSubjectIds?: string[], relayed?: boolean }} ctx — `relayed`: the side-data crossed the
+ *   relay from another client (narrator.js applyRelayedNarratorSidecar, which has already dropped its
+ *   `reveals` and the `plans` it may not write — issue #362 D2): its `countdown` names no plan by id
+ *   (applyCountdown, issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID)
  * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
-export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [] } = {}) {
+export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [], relayed = false } = {}) {
   const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
   const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
@@ -1048,8 +1051,9 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       }
     }
 
-    // A countdown the prose started becomes a real clock (Phase 3).
-    await applyCountdown(countdown, { campaignState, narrationId, moveId });
+    // A countdown the prose started becomes a real clock (Phase 3) — a
+    // relayed one about what its `about` names, never the plan of that id.
+    await applyCountdown(countdown, { campaignState, narrationId, moveId, byId: !relayed });
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a narration's plans were not applied:`, err?.message ?? err);
   }
@@ -1268,15 +1272,24 @@ async function paceAfterReveal(before, after, narrationId = null) {
  * narration. One clock a plan, none for a countdown already running. The GMs
  * are offered to play it as a scene challenge (sceneChallengeOffer.js).
  * Stamped with the narration. Never throws.
+ *
+ * `byId: false` — a countdown from a relayed fact block (issue #364
+ * RELAYED-COUNTDOWN-ABOUT-BY-ID): its `about` is read as a name only. A
+ * narration on a player's own key is shown no plan, so it names what a
+ * countdown concerns as the fiction does; an `about` that is a plan's id is
+ * hand-made, and plan ids are public (a clock's `planId`, a rolls card's
+ * `skeletonId`) — by id it hung a new clock on a plan that had none (issue
+ * #362 D2's rule for a relay's `plans` and `reveals`). Such an `about` is no
+ * name: the countdown is about nothing planned, and gets its own mystery.
  */
-async function applyCountdown(countdown, { campaignState, narrationId = null, moveId = null }) {
+async function applyCountdown(countdown, { campaignState, narrationId = null, moveId = null, byId = true }) {
   if (!countdown) return null;
   try {
     if (storedClocks().some(c => c?.active !== false && sameSubjectName(c.name, countdown.label))) return null;
     const sceneId = campaignState?.currentSceneId ?? null;
     const active = listSkeletons();
-    const about = countdown.about;
-    let plan = active.find(r => r.id === about)
+    const about = byId || !getSkeleton(countdown.about) ? countdown.about : "";
+    let plan = (byId ? active.find(r => r.id === about) : null)
       ?? (about ? active.find(r => planIsAbout(r, about) || nameMentioned(r.subject.name, about)) : null)
       ?? null;
     if (plan && planClock(plan)) return null;

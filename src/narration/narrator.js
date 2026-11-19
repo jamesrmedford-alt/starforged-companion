@@ -6146,7 +6146,10 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * the ledger, Lore and a table card, or rewrite or end a plan. Its `reveals`
  * are dropped, and its `plans` but the answers to its own plan requests (by
  * their refs, `sameAs` taken off: a plan by id is no relay's to name); its
- * `openQuestions`, `newThreats` and `countdown` stand. The step a clock
+ * `openQuestions`, `newThreats` and `countdown` stand — the countdown about
+ * what its `about` names, never the plan of that id (`relayed`, secrets.js
+ * applyCountdown; issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID: by id it hung a
+ * new clock on a plan that had none). The step a clock
  * vignette or a chosen complication was made to play rides apart (`forced`)
  * and stands only as this GM would force it for the same cause
  * (standingForcedReveals) — dropping it would leave the plan's clock full
@@ -6198,7 +6201,7 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   await ensureSceneStarted(campaignState, 'relayed_narration');
   sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
-    moveId: payload.moveId ?? null, narrationId, planRequests,
+    moveId: payload.moveId ?? null, narrationId, planRequests, relayed: true,
   });
 }
 
@@ -6364,6 +6367,8 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       moveId:       ctx.moveId ?? null,
       planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
       endingSubjectIds,
+      // A relayed block names no plan by id (applyRelayedNarratorSidecar).
+      relayed:      ctx.relayed === true,
     });
   }
   return persisted;

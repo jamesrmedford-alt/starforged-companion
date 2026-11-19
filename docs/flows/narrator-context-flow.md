@@ -1043,7 +1043,11 @@ no plan write by id from it (issue #362 D2, the maintainer's answer A — plan
 ids are public, so a hand-made relay could reveal or rewrite a plan): its
 `reveals`, and its `plans` but the answers to its own plan requests (their
 `sameAs` taken off), are dropped; `openQuestions`, `newThreats` and
-`countdown` stand; the step a clock vignette or a chosen complication was made
+`countdown` stand — the countdown about what its `about` names, never the plan
+of that id (`applyPlanSideData`'s `relayed` → `applyCountdown`'s `byId: false`;
+an `about` that is a plan's id is no name, and the countdown gets its own
+mystery — issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID: by id it hung a new clock
+on a plan that had none); the step a clock vignette or a chosen complication was made
 to play rides apart (`forced`, with its `clockId` or complication scope) and
 stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the
