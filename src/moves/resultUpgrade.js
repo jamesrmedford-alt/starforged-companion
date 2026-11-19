@@ -235,7 +235,7 @@ export function upgradeButtonNames(kinds) {
  * writes read them (issue #342 Z46).
  *
  * @param {{ effect: "meters", pcId: string, changes: Object }
- *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
+ *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string, triggered?: true, vignetteNarrationId?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
  *   | { effect: "unprepared", pcIds: string[], momentumBack?: Object<string, number> }
  *   | { effect: "assetTrack", track: "integrity"|"health", amount: number, pcId: string|null, vehicleActorId?: string, itemId?: string, name?: string|null }
@@ -276,9 +276,16 @@ async function runUpgradeStep(step) {
     case "tensionClocks": {
       const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
       // The clocks the reverted price filled: a hidden plan's goes back to one
-      // short of full, its trigger undone (issue #362 AC33).
-      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id),
-        { triggered: step.clocks.filter(c => c.triggered === true).map(c => c._id) });
+      // short of full, its trigger undone (issue #362 AC33) — found by the
+      // trigger vignette the price's receipt names, wherever later prices
+      // have turned the clock since (issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE).
+      const filled = step.clocks.filter(c => c.triggered === true);
+      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id), {
+        triggered: filled.map(c => c._id),
+        vignettes: Object.fromEntries(filled
+          .filter(c => typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId)
+          .map(c => [c._id, c.vignetteNarrationId])),
+      });
       return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
     case "vowClocks": {
@@ -395,7 +402,10 @@ export async function retryUpgradeStep(s) {
       break;
     }
     case "tensionClocks":
-      if (!Array.isArray(s.clocks) || !s.clocks.every(c => typeof c?._id === "string")) return { ok: false, reason: "invalid step" };
+      if (!Array.isArray(s.clocks) || !s.clocks.every(c => typeof c?._id === "string"
+        && (c.vignetteNarrationId == null || typeof c.vignetteNarrationId === "string"))) {
+        return { ok: false, reason: "invalid step" };
+      }
       break;
     case "vowClocks":
       if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
@@ -633,9 +643,15 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
 
   // 1. Rewind clock advances
   // Each with whether this price filled it: a hidden plan's clock it filled
-  // is put back one short of full, its trigger undone (issue #362 AC33).
+  // is put back one short of full, its trigger undone (issue #362 AC33) — and
+  // with the narration of the trigger vignette that fill fired, which the
+  // receipt names: the pacing to take back is that vignette's, whatever later
+  // prices did to the clock (issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE).
   const tension = advanced.filter(c => c.type === "tension" && c._id)
-    .map(c => ({ _id: c._id, name: c.name ?? null, ...(c.triggered === true ? { triggered: true } : {}) }));
+    .map(c => ({ _id: c._id, name: c.name ?? null,
+      ...(c.triggered === true ? { triggered: true } : {}),
+      ...(c.triggered === true && typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId
+        ? { vignetteNarrationId: c.vignetteNarrationId } : {}) }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
     .map(c => ({ actorId: c.actorId, itemId: c.itemId, vowId: c.vowId ?? null, name: c.name ?? null }));
   // The clocks whose landed rewind takes them out of their triggered state:
@@ -1144,7 +1160,7 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
 const allMessages = () => globalThis.game?.messages?.contents ?? [];
 
 /** A resolution's move card — the one carrying its Burn / Improve. */
-function moveCardFor(resolutionId) {
+export function moveCardFor(resolutionId) {
   if (!resolutionId) return null;
   return allMessages().find(m => {
     const f = m?.flags?.[MODULE_ID];
@@ -1174,6 +1190,49 @@ const chosen = (f) => f.resolved === true || (Array.isArray(f.pickedIndices) && 
  */
 export function consequenceChosen(resolutionId) {
   return outcomeChoiceCards(resolutionId).some(m => chosen(m.flags[MODULE_ID]));
+}
+
+// What an Explore a Waypoint match's alternative retires the outcome's own
+// choice as (retireChoiceCard's kinds), by the move card's `waypointOracleCard`.
+const WAYPOINT_ALTERNATIVE_KINDS = Object.freeze({ make_a_discovery: "discovery", confront_chaos: "chaos" });
+
+/**
+ * Whether an Explore a Waypoint match's alternative — Make a Discovery,
+ * Confront Chaos — was taken for a resolution (its move card's
+ * `waypointRewardClaimed: "alternative"`, cardActions.js
+ * applyWaypointOraclePick), as the kind that retires the outcome's own choice
+ * card ("discovery" | "chaos"), or null. The alternative is *instead* of the
+ * outcome's own choice: a choice card posted after the press — the button is
+ * on the move card before the move is narrated and recorded — is retired as
+ * the press retires a pending one (persistResolution.js), and a miss's price
+ * the alternative replaced is narrated as not paid (priceChoiceStatus).
+ *
+ * @param {string|null} resolutionId
+ * @returns {"discovery"|"chaos"|null}
+ */
+export function waypointAlternativeTaken(resolutionId) {
+  const f = moveCardFor(resolutionId)?.flags?.[MODULE_ID];
+  if (f?.waypointRewardClaimed !== "alternative") return null;
+  return WAYPOINT_ALTERNATIVE_KINDS[f.waypointOracleCard] ?? null;
+}
+
+/**
+ * Where a miss's price that is the player's choice stands (issue #364
+ * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — Explore a Waypoint's miss with a
+ * match: Pay the Price, or Confront Chaos instead), read from the table's
+ * cards when the move is narrated (resolver.js settlePriceChoice): "declined"
+ * once the alternative is taken (waypointAlternativeTaken), "paid" once the
+ * outcome's choice is made (consequenceChosen — the price option's pick; the
+ * other option is the alternative's press, which retires the card instead),
+ * else "pending". Any client may ask: the cards are the table's.
+ *
+ * @param {string|null} resolutionId
+ * @returns {"pending"|"paid"|"declined"}
+ */
+export function priceChoiceStatus(resolutionId) {
+  if (!resolutionId) return "pending";
+  if (waypointAlternativeTaken(resolutionId)) return "declined";
+  return consequenceChosen(resolutionId) ? "paid" : "pending";
 }
 
 /**

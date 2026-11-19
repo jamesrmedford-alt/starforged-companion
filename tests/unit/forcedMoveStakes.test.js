@@ -229,11 +229,21 @@ describe('issue #362 D11 — a stated vehicle or companion price lands on what t
     expect(table.cards(f => f.sufferCard && f.suffer === 'withstand_damage').at(-1).content).toContain('Hoverbike: 3 → 2');
   }, 30_000);
 
-  it('control: with no target, a stated Companion Takes a Hit lands on the first companion, as the table\'s route does', async () => {
+  // With several companions and none named the route asks which, as the
+  // table's does: the first in the list took the hit unasked (issue #364
+  // ANY-SUFFER-SUPPORT-VEHICLE — anySufferVehicleAndCompanionChoice.test.js).
+  it('control: with no target, a stated Companion Takes a Hit asks which of several companions, as the table\'s route does', async () => {
     const rock = asset('c-rockhorn', 'Rockhorn', 'Companion', 'Health', 4);
     const glow = asset('c-glowcat', 'Glowcat', 'Companion', 'Health', 3);
     kira = table.addActor({ id: 'pc-kira-4', name: 'Kira', ownership: { 'pl-1': 3 }, system: { wits: 2 }, items: { contents: [rock, glow] } });
     await typedMiss({ missSuffer: { move: 'companion_takes_a_hit', amount: 1 }, targets: {} });
+    expect({ rock: rock.system.track.value, glow: glow.system.track.value }).toEqual({ rock: 4, glow: 3 });
+    const which = table.cards(f => f.sufferCard && f.sufferPrompt?.kind === 'enumerated').at(-1);
+    expect(which.flags[MODULE_ID].sufferPrompt.options.map(o => o.itemId)).toEqual(['c-rockhorn', 'c-glowcat']);
+    // The card is the price's: bound to the move that paid it.
+    expect(which.flags[MODULE_ID]).toMatchObject({ priceCard: true, resolutionId: table.cards(f => f.moveResolution).at(-1).flags[MODULE_ID].resolutionId });
+    table.client('pl-1').click(which._id, '[data-action="sf-suffer-pick"][data-option-index="0"]');
+    await table.settle(); await table.drain();
     expect({ rock: rock.system.track.value, glow: glow.system.track.value }).toEqual({ rock: 3, glow: 3 });
   }, 30_000);
 });

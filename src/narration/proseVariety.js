@@ -182,8 +182,9 @@ function hashOf(seed) {
  * The shape for a beat: by its place in the session (`beatIndex`, the beats
  * before it — narrator.js beatVariety counts the session's beat cards, never
  * its other narrator cards, issue #362 AC72), so two beats in a row never
- * share one and nothing need be stored; the session (`seed`) decides where
- * the cycle starts.
+ * share one; the session (`seed`) decides where the cycle starts. A session
+ * with a beat already written follows that beat's shape instead
+ * (beatShapeAfter), whatever cards have left chat since.
  *
  * @param {{ beatIndex?: number, seed?: string|null }} [at]
  * @returns {{ id: string, hint: string }}
@@ -191,4 +192,19 @@ function hashOf(seed) {
 export function pickBeatShape({ beatIndex = 0, seed = null } = {}) {
   const n = Math.max(0, Math.floor(Number(beatIndex)) || 0);
   return BEAT_SHAPES[(hashOf(seed) + n * SHAPE_STEP) % BEAT_SHAPES.length];
+}
+
+/**
+ * The shape that follows `shapeId` in the cycle — the next beat's, given the
+ * shape the beat before it was written in (its card's `beatShape` stamp;
+ * narrator.js beatVariety). The same step pickBeatShape takes, so a session
+ * whose cards are all in chat is shaped as it was by their count. Null for
+ * anything that is no shape's id.
+ *
+ * @param {string|null} shapeId
+ * @returns {{ id: string, hint: string }|null}
+ */
+export function beatShapeAfter(shapeId) {
+  const at = BEAT_SHAPES.findIndex(s => s.id === shapeId);
+  return at < 0 ? null : BEAT_SHAPES[(at + SHAPE_STEP) % BEAT_SHAPES.length];
 }

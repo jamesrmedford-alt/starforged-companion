@@ -65,7 +65,7 @@ describe("a suffer move's miss seeds no at-0 table (issue #336 Y21)", () => {
 
   it("control: a matched waypoint strong hit seeds no discovery (W47); a routed miss seeds no price (U03)", () => {
     expect(results(buildOracleSeeds("explore_a_waypoint", "strong_hit", true))).not.toMatch(/Make a Discovery:/);
-    expect(results(buildOracleSeeds("face_danger", "miss", false, null, { routesPayThePrice: true }))).not.toMatch(/Pay the Price:/);
+    expect(results(buildOracleSeeds("face_danger", "miss", false))).not.toMatch(/Pay the Price:/);
   });
 });
 

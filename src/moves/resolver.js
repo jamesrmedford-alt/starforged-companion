@@ -685,13 +685,25 @@ const CONSEQUENCE_MAP = {
       // A miss pays the price, routed like every other "Pay the Price" miss —
       // the card, its suffer route, the tension clocks (issue #321 U17,
       // WAYPOINT-MISS-NO-PTP: it said so and routed nothing). With a match the
-      // player may instead Confront Chaos (the card's button), so the price
-      // is theirs to choose, not routed — as Finish an Expedition's miss
-      // offers its recommit.
-      case "miss": return { ...emptyConsequences(), routePayThePrice: !isMatch,
-        otherEffect: isMatch
-          ? "Miss with a match — may Confront Chaos instead. Otherwise: immediate hardship or threat. Pay the Price."
-          : "Immediate hardship or threat. Pay the Price." };
+      // player may instead Confront Chaos, so the price is theirs to choose,
+      // not routed: a choice between the two (issue #364
+      // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY, decided — the choice card). The
+      // price option carries the price the narration is seeded with
+      // (rollChoicePrice — the stated miss, else the one table roll), as
+      // Sojourn's "No relief" does, and its pick pays that one; the other
+      // option is the move card's 🌀 Confront Chaos (`waypointOracle`), which
+      // replaces the price. The narration was seeded "Pay the Price: …" and
+      // told "it is what this miss costs" while nothing charged it short of a
+      // typed `!ptp`, which rolled another.
+      case "miss": return isMatch
+        ? { ...emptyConsequences(),
+          sufferPrompt: { kind: "enumerated", options: [
+            { label: "Pay the Price", route: "pay_the_price", priceInLabel: true },
+            { label: "Confront Chaos instead", waypointOracle: "confront_chaos" },
+          ]},
+          otherEffect: "Miss with a match — an immediate hardship or threat. Choose: Pay the Price, or Confront Chaos instead." }
+        : { ...emptyConsequences(), routePayThePrice: true,
+          otherEffect: "Immediate hardship or threat. Pay the Price." };
     }
   },
 
@@ -1418,11 +1430,13 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   const stated = statedPrice(interpretation.stakes, interpretation);
   const choicePrice = rollChoicePrice(moveId, outcome, consequences, { stated });
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
+  // A price the result's choice may replace with another move (Explore a
+  // Waypoint's miss with a match — Confront Chaos instead): the narration is
+  // told whether it stands when it is written (settlePriceChoice).
+  const priceChoice = choicePrice ? priceChoiceOf(consequences.sufferPrompt, choicePrice) : null;
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
-    { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice,
-      rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
-      region: activeSectorRegion(campaignState),
-      statedPriceText: stated?.price ?? null });
+    { rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
+      region: activeSectorRegion(campaignState) });
   const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
@@ -1461,6 +1475,9 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     loremasterContext,
     // The asset whose taken add counts a weak hit as a miss (the burn reads it).
     ...(weakHitAsMiss ? { weakHitAsMiss } : {}),
+    // The price this miss offers beside the move that may replace it (issue
+    // #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) — absent for every other result.
+    ...(priceChoice ? { priceChoice } : {}),
     sessionId: campaignState.currentSessionId ?? "",
   };
 }
@@ -1512,15 +1529,20 @@ function weakHitAsMissSource(interpretation) {
  *
  * Returns null for moves that don't seed.
  *
+ * A miss's Pay the Price is never rolled here: a routed price
+ * (`routePayThePrice` — Face Defeat's, on any outcome, too) is the pipeline's
+ * card roll, which it seeds the narration with (issue #321 U03); a price that
+ * is one of the miss's choices is resolveMove's one roll, which its option
+ * carries (rollChoicePrice — Sojourn's, and Explore a Waypoint's with a
+ * match). An "advisory" price was rolled here for a miss that did neither —
+ * the waypoint's match alone — so its narration was told a price nothing
+ * charged (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+ *
  * @param {string} moveId
  * @param {string} outcome
  * @param {boolean} isMatch
  * @param {Object|null} [currentSite]
  * @param {Object} [opts]
- * @param {boolean} [opts.routesPayThePrice] — the result's consequences route
- *   Pay the Price (`routePayThePrice`): the pipeline rolls the price for its
- *   card and seeds the narration with that one, so none is rolled here
- *   (issue #321 U03)
  * @param {boolean} [opts.rollsDecisiveActionCost] — the result's consequences
  *   roll Take Decisive Action's weak-hit cost (`rollDecisiveActionCost`): the
  *   pipeline's cost card rolls it and seeds the narration with that one, so
@@ -1528,18 +1550,14 @@ function weakHitAsMissSource(interpretation) {
  * @param {string|null} [opts.region] — the active sector's region
  *   ("terminus" | "outlands" | "expanse"): an expedition's waypoint is that
  *   region's Space Sighting; Terminus with none (activeSectorRegion)
- * @param {string|null} [opts.statedPriceText] — the miss stated before the
- *   roll (stakes.js statedPrice): an unrouted miss's price is that one, not a
- *   table roll (issue #353 R1)
  * @returns {Object|null}
  */
-// Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
-// pipeline routes (routePayThePrice) is seeded with its card's price by the
-// pipeline; a miss whose price is one of its choices (Sojourn's) is seeded by
-// resolveMove with the price its option carries (rollChoicePrice —
-// SOJOURN-PTP-ADVISORY); only a miss that routes none and offers none (Explore
-// a Waypoint's match, which may Confront Chaos instead) gets an advisory roll
-// here.
+// Moves whose miss outcome says "Pay the Price" per the play kit. Each such
+// miss either routes its price (routePayThePrice — the pipeline's card, which
+// seeds the narration) or offers it as one of its choices (choiceOffersPrice
+// — Sojourn's "No relief", Explore a Waypoint's with a match), seeded by
+// resolveMove with the price the option carries (rollChoicePrice —
+// SOJOURN-PTP-ADVISORY). None is left to be told a price nothing charges.
 const PAY_THE_PRICE_ON_MISS = new Set([
   "face_danger", "secure_an_advantage", "aid_your_ally", "gather_information", "compel",
   "check_your_gear", "set_a_course", "gain_ground", "react_under_fire",
@@ -1548,7 +1566,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false, region = null, statedPriceText = null } = {}) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { rollsDecisiveActionCost = false, region = null } = {}) {
   try {
     const results = [];
     const names   = [];
@@ -1731,18 +1749,6 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
       // the issue #321 U03 / #326 W47 shape).
     }
 
-    // ── PAY THE PRICE ON MISS — advisory, for a miss whose text says so but
-    // that routes none. A routed price (routePayThePrice — Face Defeat's, on
-    // any outcome, too) is the pipeline's card roll, which it seeds the
-    // narration with: rolling one here too gave the narration one price and
-    // the table another (issue #321 U03).
-    if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId) && !routesPayThePrice) {
-      // The miss stated before the roll is its price (issue #353 R1); the
-      // table only when none was stated.
-      const ptp = statedPriceText || safeRoll("pay_the_price");
-      if (ptp) results.push(...priceSeedLines(ptp));
-    }
-
     if (!results.length && !names.length && !connectionSeed) return null;
 
     return {
@@ -1781,7 +1787,6 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
  */
 export function upgradedOracleSeeds({ moveId, outcome, isMatch, consequences, campaignState = null, currentSite = null, price = null }) {
   const seeds = buildOracleSeeds(moveId, outcome, !!isMatch, currentSite, {
-    routesPayThePrice:       consequences?.routePayThePrice === true,
     rollsDecisiveActionCost: consequences?.rollDecisiveActionCost === true,
     region:                  activeSectorRegion(campaignState),
   });
@@ -1876,8 +1881,10 @@ export function rollChoicePrice(moveId, outcome, consequences, { stated = null }
 /**
  * A choice prompt whose `pay_the_price` option carries the rolled price — its
  * text and routes (and the move that owes it), for the pick to pay
- * (sufferDialog's "route" → index.js payChosenPrice). A new prompt; `prompt`
- * is not changed.
+ * (sufferDialog's "route" → index.js payChosenPrice). An option that names
+ * its price on its button (`priceInLabel` — Explore a Waypoint's miss with a
+ * match: "Pay the Price: ‹the price›", issue #364) gets it in its label. A new
+ * prompt; `prompt` is not changed.
  *
  * @param {Object} prompt — an enumerated sufferPrompt
  * @param {{ roll: number|null, result: string, sufferRoutes?: Array<Object>, stated?: true }} price
@@ -1888,11 +1895,34 @@ export function withChoicePrice(prompt, price, moveName = null) {
   return {
     ...prompt,
     options: (prompt.options ?? []).map(o => (o?.route === "pay_the_price"
-      ? { ...o, price: { roll: price.roll ?? null, result: price.result,
-        sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [],
-        ...(price.stated === true ? { stated: true } : {}), ...(moveName ? { moveName } : {}) } }
+      ? { ...o,
+        ...(o.priceInLabel === true ? { label: `${o.label}: ${price.result}` } : {}),
+        price: { roll: price.roll ?? null, result: price.result,
+          sufferRoutes: Array.isArray(price.sufferRoutes) ? price.sufferRoutes : [],
+          ...(price.stated === true ? { stated: true } : {}), ...(moveName ? { moveName } : {}) } }
       : o)),
   };
+}
+
+/**
+ * The price a result offers beside a move that may replace it (issue #364
+ * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY): a choice prompt holding a priced
+ * `pay_the_price` option and an Explore a Waypoint match's alternative
+ * (`waypointOracle` — Confront Chaos). The resolution carries it
+ * (`priceChoice`), so its narration can be told, when it is written, whether
+ * that price stands (settlePriceChoice). Null for any other prompt —
+ * Sojourn's, whose other option is a vow, not a move made instead.
+ *
+ * @param {Object|null} prompt — the result's sufferPrompt (withChoicePrice's)
+ * @param {{ result: string, stated?: true }|null} price — rollChoicePrice's
+ * @returns {{ price: string, stated: boolean, instead: string }|null}
+ */
+export function priceChoiceOf(prompt, price) {
+  const options = prompt?.kind === "enumerated" && Array.isArray(prompt.options) ? prompt.options : [];
+  const instead = options.find(o => typeof o?.waypointOracle === "string" && o.waypointOracle)?.waypointOracle ?? null;
+  const text = typeof price?.result === "string" ? price.result.trim() : "";
+  if (!instead || !text || !options.some(o => o?.route === "pay_the_price" && o.price)) return null;
+  return { price: text, stated: price.stated === true, instead };
 }
 
 export function withPayThePriceSeed(seeds, moveId, price) {
@@ -1998,6 +2028,55 @@ const NEW_ENEMY_SEED_LINE = /^The new enemy — /;
 
 /** A price's own seed line (priceSeedLines). */
 const PRICE_SEED_LINE = /^Pay the Price: /;
+
+/**
+ * Where a price that is the player's choice stands when its move is narrated
+ * (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY): not yet chosen, paid
+ * (the choice card's price option was picked), or declined (the move that
+ * replaces it — Confront Chaos — was taken instead).
+ */
+const PRICE_CHOICE = Object.freeze({ PENDING: "pending", PAID: "paid", DECLINED: "declined" });
+
+/**
+ * A narration's input with the price its result offers as a choice
+ * (`priceChoice` — priceChoiceOf) told as it stands now (issue #364
+ * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY). The choice card posts after a
+ * free-flow narration and before a held result's or a Batch Mode round's, so
+ * the narration may be written before the pick or after it; told only "Pay
+ * the Price: …" and "it is what this miss costs", it narrated as paid a price
+ * the player then declined, or had not yet chosen.
+ *
+ *   - paid: the input as it is — the price is the seed, and a stated miss is
+ *     delivered as what the miss costs.
+ *   - pending: the seed stays (the price it may come to, and the plan a new
+ *     enemy asks for), and the input says the price is offered, not paid
+ *     (`priceChoice.status` — the narrator's blocks read it: stakes.js
+ *     formatStakesBlock / formatPriceChoiceBlock).
+ *   - declined: the price's seed lines go — the price, a new enemy's rolls,
+ *     the momentum note — and the input says no price is paid.
+ *
+ * An input with no such choice, or one that is not a miss (an upgrade's
+ * resolution is built anew and carries none), is returned as it is; else a
+ * new object. Pure.
+ *
+ * @param {Object|null} input — a resolution, or a narration input (narrationInputFrom)
+ * @param {"pending"|"paid"|"declined"} status — resultUpgrade.js priceChoiceStatus
+ * @returns {Object|null}
+ */
+export function settlePriceChoice(input, status) {
+  if (!input || typeof input !== "object" || !input.priceChoice || input.outcome !== "miss") return input ?? null;
+  const settled = Object.values(PRICE_CHOICE).includes(status) ? status : PRICE_CHOICE.PENDING;
+  const out = { ...input, priceChoice: { ...input.priceChoice, status: settled } };
+  if (settled === PRICE_CHOICE.DECLINED && Array.isArray(input.oracleSeeds?.results)) {
+    const kept = input.oracleSeeds.results.filter(l => !(typeof l === "string"
+      && (PRICE_SEED_LINE.test(l) || NEW_ENEMY_SEED_LINE.test(l) || l === DELAYED_PRICE_SEED)));
+    const names = Array.isArray(input.oracleSeeds.names) ? input.oracleSeeds.names : [];
+    out.oracleSeeds = kept.length || names.length || input.oracleSeeds.connectionSeed
+      ? { ...input.oracleSeeds, results: kept }
+      : null;
+  }
+  return out;
+}
 
 /** Whether a plan request is an expedition's whose hidden rolls a store dropped (withoutHiddenRolls). */
 const owesExpeditionSeeds = (r) => r?.kind === "expedition" && !(Array.isArray(r.oracleSeeds) && r.oracleSeeds.length);

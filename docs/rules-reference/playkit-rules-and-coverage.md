@@ -248,7 +248,7 @@ to find each move's resolver branch.
 | Adventure (6) | `src/moves/resolver.js:242-311` | all 6 mechanically resolved |
 | Quest (4) | `src/moves/resolver.js:317-349` | all 4; Fulfill Your Vow is a progress move |
 | Connection (4) | `src/moves/resolver.js:354-391` | all 4; Make a Connection seeds role/goal/first-look/given-name oracles (`src/moves/resolver.js:856-875`) |
-| Exploration (6) | `src/moves/resolver.js:397-455` | all 6; explore_a_waypoint dispatches to Make a Discovery on strong+match and Confront Chaos on miss+match (`src/moves/resolver.js:408-455`); a miss without a match routes Pay the Price (issue #321 U17) |
+| Exploration (6) | `src/moves/resolver.js:397-455` | all 6; explore_a_waypoint dispatches to Make a Discovery on strong+match and Confront Chaos on miss+match (`src/moves/resolver.js:408-455`); a miss without a match routes Pay the Price (issue #321 U17), and a miss with a match offers it on a choice card beside "Confront Chaos instead" (issue #364) |
 | Combat (8) | `src/moves/resolver.js:460-541` | all 8; each move's position is written to its fight (`setCombatTrackPosition` / `applyCombatPositionToTrack` — §3.3.3) |
 | Suffer (6) | `src/moves/resolver.js:547-601` | all 6 |
 | Recover (5) | `src/moves/resolver.js:606-658` | all 5; Repair's points are spent through `!repair` (`applyRepairSpends`, `src/moves/repair.js` — +1 integrity, clear battered and the supply trade applied; the module / companion / device spends recorded on the card — §3.3.6) |

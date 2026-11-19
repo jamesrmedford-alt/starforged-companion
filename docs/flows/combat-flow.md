@@ -30,7 +30,25 @@ Two cross-cutting facts to hold onto:
   its stat reading gives (`statEnrichment.enrichForcedMoveStat`; a one-stat
   move is read for them alone), and a stated Withstand Damage / Companion
   Takes a Hit lands on the support vehicle or companion the move was made
-  against (`stakes.statedPrice`'s route targets — issue #362 D11).
+  against (`stakes.statedPrice`'s route targets — issue #362 D11). A move
+  rolled on an action stat has none ("I gun the hoverbike across the gap",
+  Face Danger +edge): the interpreter names the vehicle or companion beside
+  the suffer move (`stakes.missSuffer.target`), `rollMove` resolves that name
+  to the roller's own asset before the dice
+  (`statEnrichment.resolveStatedSufferTarget` — whole words against their
+  support vehicles and companions, never the miss line, never a guess), and
+  the route takes it when the move has no target of its own; it landed on
+  the command starship (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+  A price's route that names no companion asks which when the PC has several
+  (`index.js` `dispatchPayThePriceSufferRoute` → a choice card of
+  `sufferCard.whichCompanionPrompt`, bound to the move as the price's other
+  cards are) — the first in the list took the hit; a vehicle route that
+  names none is the command vehicle's, and with no command vehicle the PC's
+  support vehicle's: the only one, or the one picked on a
+  `whichVehiclePrompt` card. A "make a suffer move" card's Withstand Damage
+  counts the same vehicles (`sufferCard.vehicleChoicesOf`): open with a
+  support vehicle and no starship, and asking which when several could take
+  it (issue #364 ANY-SUFFER-SUPPORT-VEHICLE).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
@@ -51,7 +69,9 @@ Two cross-cutting facts to hold onto:
   for them (`movePipeline.rollMove` keeps it before the dice), their sheet
   roll, `!ptp` or `!oracle` (kept before that narration), or a consequence
   chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`); End a
-  Session and Batch Mode switched on keep every held result
+  Session, the mint that closes out a session (`rollSessionIfDue` — one over
+  by four idle hours never gets End a Session; issue #364
+  HELD-RESULT-IDLE-SESSION) and Batch Mode switched on keep every held result
   (`keepEveryHeldResult`), and a round keeps an acting player's before it
   rolls (`batch/driver.js` rollRound — issue #362 AC32). A kept
   result's upgrades close (`kept`), and its card says what kept it where the
@@ -134,7 +154,11 @@ Two cross-cutting facts to hold onto:
   difference — the victory card's ⚑ raised to the strong hit's marks (or the
   marks it lacks marked once, when ⚑ was pressed) and the promised reward
   granted at the weak hit's scale raised to the strong hit's
-  (`payWonFightDifference`, issue #362 D7); a weak hit
+  (`payWonFightDifference`, issue #362 D7; a claim of that reward difference
+  the world refuses — the `grantedAt` raise — goes to the GMs' payoff card as
+  a `rewardUpgrade` step whose Retry runs `upgradeLinkedVowReward` again, as
+  a refused give after the claim goes as `rewardGrant`, issue #364
+  WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect
@@ -423,7 +447,8 @@ Defeat on every outcome, the misses above) is rolled once, for its card
 (`postMovePayThePriceCard`, which every routed price posts through), and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
-advisory price for a result that routes one (`routesPayThePrice`). The
+price at all (its "advisory" roll for a miss that neither routed nor offered
+one — Explore a Waypoint's with a match — is retired, issue #364). The
 narration used to depict one price while the card showed — and the table
 paid — another (issue #321 U03). A card the world refuses does not drop the
 price: its routes, the clocks and the seed are paid all the same, and the GM

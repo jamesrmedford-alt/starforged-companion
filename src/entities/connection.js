@@ -490,20 +490,83 @@ export function registerConnectionDeleteHook() {
  * (deleteEntityArtAssets); its hidden plan retired, as a GM's Retire does
  * (secrets.retireSkeleton). Each step is a no-op once done.
  *
+ * And the references that name it (issue #364 DELETED-NPC-NAME-REFERENCES):
+ * the sector record whose local connection it was (unregisterDeletedConnection),
+ * and the vows linked to it — a vow's link is the connection's name, so a won
+ * fight still offered to deepen the bond with the deleted NPC and the vow's
+ * fulfilment listed a deepen no Retry could land. The links are cleared
+ * (actorBridge.clearVowLinksToConnection) unless another card of that name is
+ * left, which the name then means; the GMs are told which vows no longer
+ * serve a connection.
+ *
  * @param {Actor} actor
  * @returns {Promise<void>}
  */
 async function tearDownDeletedConnection(actor) {
   const record   = actor?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
   const recordId = typeof record._id === "string" && record._id ? record._id : null;
-  await unregisterDeletedConnection(actor.id, String(record.name || actor.name || ""));
+  const name     = String(record.name || actor.name || "").trim();
+  await unregisterDeletedConnection(actor.id, name);
   // Dynamic imports, as the X-Card's: actorBridge and the Secrets journal import entity modules.
-  const { retireDeletedConnectionBondItems } = await import("../character/actorBridge.js");
+  const { retireDeletedConnectionBondItems, clearVowLinksToConnection } = await import("../character/actorBridge.js");
   await retireDeletedConnectionBondItems({ connectionId: recordId });
+  if (name && !connectionNamedRemains(name, actor.id)) {
+    const { cleared } = await clearVowLinksToConnection(name);
+    if (cleared.length) await postVowLinksClearedNotice(name, cleared);
+  }
   await deleteEntityArtAssets(FLAG_KEY, recordId, { portraitId: record.portraitId ?? null });
   const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
   for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === actor.id)) {
     await retireSkeleton(plan.id);
+  }
+}
+
+/**
+ * Whether another NPC card still goes by `name` once the card `deletedId` is
+ * gone — a namesake, which a name-based reference (a vow's link) then means.
+ * Read from the latest stored `connectionIds`. Fail-open: an unreadable store
+ * says one remains, so nothing is cleared on a guess.
+ *
+ * @param {string} name
+ * @param {string} deletedId — the deleted card's Actor id
+ * @returns {boolean}
+ */
+function connectionNamedRemains(name, deletedId) {
+  const wanted = String(name ?? "").trim().toLowerCase();
+  try {
+    const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    return (latest.connectionIds ?? [])
+      .filter(id => id !== deletedId)
+      .some(id => String(getConnection(id)?.name ?? "").trim().toLowerCase() === wanted);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deleted NPC card ${name}: the remaining connections could not be read — its vow links are kept:`, err?.message ?? err);
+    return true;
+  }
+}
+
+/**
+ * Whisper the GMs the vows a deleted NPC's link was cleared from (issue #364
+ * DELETED-NPC-NAME-REFERENCES): a vow's card promised that fulfilling it
+ * deepens that bond, and it no longer will. Never throws.
+ *
+ * @param {string} name — the deleted connection
+ * @param {Array<{ actorName: string, vowName: string }>} cleared
+ * @returns {Promise<void>}
+ */
+async function postVowLinksClearedNotice(name, cleared) {
+  const whisper = Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  const vows = cleared.map(({ actorName, vowName }) =>
+    `<li>${escapeHtmlConn(actorName || "A character")} — &ldquo;${escapeHtmlConn(vowName || "a vow")}&rdquo;</li>`).join("");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Vow link cleared</strong>`
+        + `<p>${escapeHtmlConn(name)}&rsquo;s card was deleted, so ${cleared.length === 1 ? "this vow no longer serves" : "these vows no longer serve"} a connection: `
+        + `fulfilling ${cleared.length === 1 ? "it" : "them"} deepens no bond.</p><ul>${vows}</ul></div>`,
+      whisper,
+      flags: { [MODULE_ID]: { vowLinkClearedNotice: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deleted NPC card ${name}: the GMs could not be told its vow links were cleared:`, err?.message ?? err);
   }
 }
 
@@ -559,7 +622,9 @@ function sheetWrittenByTable(document, record) {
 }
 
 /**
- * Take a deleted NPC card's id out of the latest stored `connectionIds`, and
+ * Take a deleted NPC card's id out of the latest stored `connectionIds` — and
+ * off the sector record that names it as its local connection
+ * (`sectors[].connectionId`) — and
  * hand the scene-ledger facts keyed to it back to its name (ledgers.js
  * demoteEntitySubject — a kept narration's facts about the NPC, promoted to
  * the card when it was made). One write of a copy; no await between the read
@@ -579,8 +644,14 @@ async function unregisterDeletedConnection(actorId, name) {
       const target = { ...latest };
       const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
       if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
+      // A sector that names the card as its local connection names no one now
+      // (issue #364 DELETED-NPC-NAME-REFERENCES — the record kept the id of a
+      // card no Actor answers).
+      const sectors = Array.isArray(latest.sectors) ? latest.sectors : [];
+      const local = sectors.some(s => s?.connectionId === actorId);
+      if (local) target.sectors = sectors.map(s => (s?.connectionId === actorId ? { ...s, connectionId: null } : s));
       const demoted = demoteEntitySubject(actorId, name, target) > 0;
-      if (!listed && !demoted) return;
+      if (!listed && !demoted && !local) return;
       await game.settings.set(MODULE_ID, "campaignState", target);
     }, "deleted connection");
   } catch (err) {

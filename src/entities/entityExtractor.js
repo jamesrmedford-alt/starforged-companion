@@ -44,7 +44,7 @@ import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
-import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
+import { HONORIFIC_PREFIXES, wholeWordPattern, namesOneWordName } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
 import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
@@ -2898,6 +2898,10 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     if (existing) {
       await registerConnectionOnActiveCharacter(existing, {
         ...draftBondHolder(message, opts),
+        // A Make a Connection confirming the row of an NPC who exists already
+        // adds a bond to a known NPC: stamped, for an X-Card on its narration
+        // (issue #364 DELETED-NPC-NAME-REFERENCES). A GM's Confirm passes none.
+        narrationId: opts.narrationId ?? null,
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
@@ -3277,7 +3281,9 @@ async function connectChosenFigure(pick, slot, dismissed, narrationId) {
       console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
   }
   if (pick.kind === "listed") {
-    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId });
+    // The NPC was known before this hit: the bond it adds carries the
+    // narration's id, for an X-Card on it (issue #364 DELETED-NPC-NAME-REFERENCES).
+    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId, narrationId });
     return { entity: { type: "connection", name: pick.record.name }, record: pick.record };
   }
   const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
@@ -3329,10 +3335,16 @@ function chooseConnectionFigure(slot, figures, lineText) {
  * The figures a text names (issue #362 AC18): each whose whole name it holds
  * as whole words, and each it calls by their first or last name alone — the
  * person rule's "part" (nameMatch.personNameMatch; "Archer" for Vuldar
- * Archer, the name the narration keeps using) — as a whole word written with
- * its capital, as prose names someone. A word of the name of a figure the
- * text names in full is that figure's: "Vuldar Archer … Archer nods" does not
- * name Mara Archer as well. A middle name is no name to be called by.
+ * Archer, the name the narration keeps using) — as a one-word name is named
+ * anywhere a typed line is read (relevanceResolver.namesOneWordName, issue
+ * #362 D6): a whole word written with its capital, or in address position —
+ * its line's first word, a vocative set off by a comma. The capital check
+ * this kept of its own had no address position, so "archer, keep a berth for
+ * me" brought Vuldar Archer into the narrator's context and made no
+ * connection (issue #364 PART-NAME-CAPITAL-RULE-TWINS). A word of the name of
+ * a figure the text names in full is that figure's: "Vuldar Archer … Archer
+ * nods" does not name Mara Archer as well. A middle name is no name to be
+ * called by.
  *
  * @param {string} text
  * @param {Array<{ name: string }>} figures
@@ -3344,11 +3356,10 @@ function figuresNamedIn(text, figures) {
   const wordsOf = (figure) => nameWords(normalizeEntityName(figure?.name));
   const full = new Set(figures.filter(f => String(f?.name ?? "").trim() && wholeWordPattern(String(f.name).trim()).test(t)));
   const taken = new Set([...full].flatMap(wordsOf));
-  const capitalisedIn = (word) => [...t.matchAll(new RegExp(wholeWordPattern(word).source, "giu"))].some(m => /^\p{Lu}/u.test(m[0]));
   const byPart = (figure) => {
     const words = wordsOf(figure);
     const ends = words.length > 1 ? [words[0], words[words.length - 1]] : words;
-    return ends.some(w => !taken.has(w) && capitalisedIn(w));
+    return ends.some(w => !taken.has(w) && namesOneWordName(t, w));
   };
   return figures.filter(f => full.has(f) || byPart(f));
 }
@@ -4059,11 +4070,19 @@ function escapeHtml(s) {
  * With no PC to hold it, this is a no-op. Idempotent per actor and
  * connection (createCharacterBondItem).
  *
+ * `narrationId` — a Make a Connection hit bonding an NPC the table already
+ * knew (a listed card; a draft row whose NPC exists): the bond Item this call
+ * creates carries it, so an X-Card on that narration takes the bond back
+ * (actorBridge.retractNarrationBondItems — issue #364
+ * DELETED-NPC-NAME-REFERENCES). Never passed for an NPC the narration itself
+ * made: that card carries the stamp, and its bonds go or stay with it
+ * (connection.retractNarrationConnections).
+ *
  * @param {Object} record — the connection record (`_id`, `name`, `rank`)
- * @param {{ actorId?: string|null, actors?: Actor[]|null }} [target]
+ * @param {{ actorId?: string|null, actors?: Actor[]|null, narrationId?: string|null }} [target]
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null } = {}) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null } = {}) {
   if (!record?._id) return;
   const holders = Array.isArray(actors)
     ? actors.filter(isPlayerCharacterActor)
@@ -4073,6 +4092,7 @@ export async function registerConnectionOnActiveCharacter(record, { actorId = nu
       name:         record.name,
       rank:         record.rank,
       connectionId: record._id,
+      narrationId,
     });
   }
 }

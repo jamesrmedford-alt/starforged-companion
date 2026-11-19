@@ -6,6 +6,121 @@ rejected.
 
 ---
 
+## Issue #364: the fourteenth audit's open items — the plan relay's broadcast is accepted, a matched waypoint miss chooses its price on a card, the X-Card takes back a bond it added (2026-11)
+
+**Decision:** ([#364](https://github.com/jamesrmedford-alt/starforged-companion/issues/364) — the thirty items left open by the issue #362 fixes, addressed at the maintainer's request on 2026-11-19, with the maintainer's answers to its four questions.)
+
+- **The plan relay's broadcast is accepted** (PLANS-RELAY-BROADCAST; the
+  maintainer's answer). The canonical GM's answer to a player's Private
+  Channel plan request stays a module-socket message, which Foundry delivers
+  to every connected client; only the asker uses it. That is console-level
+  exposure, as the shared world data is: whether Foundry delivers an
+  ownership-NONE journal to a player's client was never checked live (D1), so
+  the Secrets journal may be in every browser's memory already. No code
+  changed. The Private Channel's publish answer (below) rides the same socket
+  under the same ruling, and carries one outcome word.
+- **Explore a Waypoint's miss with a match: the price is a choice card**
+  (EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; the maintainer's answer). The miss
+  offers "Pay the Price: ‹price›" or "Confront Chaos instead". The price is
+  the stated miss, else one table roll made at the roll (`rollChoicePrice`,
+  Sojourn's mechanism); its pick pays exactly that. Confront Chaos is one
+  claim on the move card (`waypointRewardClaimed`); whichever is taken
+  retires the other. The narrator is told where the choice stands when it
+  writes (`priceChoice` — pending, paid or declined: `resolver.js`
+  `settlePriceChoice`, `stakes.js` `formatPriceChoiceBlock`) and is never told
+  a price is "what this miss costs" before it is paid. After a narration
+  written while the choice was pending, picking the price posts its card and
+  suffer move with no second narration (Sojourn's rule). No miss is seeded a
+  price that is neither routed nor offered: `buildOracleSeeds` rolls none.
+- **The X-Card takes back a bond its narration added to a known NPC**
+  (DELETED-NPC-NAME-REFERENCES; the maintainer's answer). A Make a Connection
+  hit with an NPC the table already knows adds only the roller's bond Item.
+  That Item carries the narration's id (`bondedByNarrationId`), and an X-Card
+  on the narration deletes it — found by the stamp, never by name
+  (`actorBridge.js` `retractNarrationBondItems`). The NPC card, and any bond
+  a PC held before the hit, stay. A bond the table has marked since (a tick,
+  a forged bond, a loss) stays and the GMs are told, as a used connection
+  does (issue #338 D6(ii)). Bonds made before this change carry no stamp and
+  are not taken back.
+- **A deleted NPC's name references are cleared, not marked.** The delete
+  teardown (issue #362 D10) clears `linkedConnectionName` on every PC's vow
+  unless another NPC card of that name remains, nulls the sector record's
+  `connectionId`, and whispers the GMs which vows. A re-made NPC is not
+  re-linked.
+- **A price's receipt names the trigger it fired** (PLAN-CLOCK-BURN-AFTER-LATER-PRICE).
+  The narration id of a tension clock's trigger vignette is minted with the
+  advance and kept on the price's receipt (`vignetteNarrationId`); a burn's
+  rewind matches it against the clock's `pacedBy`, which stays while later
+  prices turn the clock. A later trigger of the same clock is not taken for
+  the earlier price's.
+- **A session's close-out keeps what was waiting on a roller.** Every held
+  result is kept before a session is closed out and the next minted
+  (`rollSessionIfDue` — a session over after four idle hours gets no End a
+  Session; HELD-RESULT-IDLE-SESSION), and a Batch Mode round at its upgrade
+  step keeps for everyone still deciding once its session is over, so it is
+  narrated then (ROUND-UPGRADE-STEP-AT-SESSION-END).
+- **What the code owes a narration does not depend on its fact block.** With
+  fact continuity off, a narration's plan requests are still filed with
+  their rolls and the step it was made to play is still recorded; a
+  narration carries every plan request its entries bring (up to
+  `PLAN_REQUESTS_PER_NARRATION`, 24), is asked to decide the first four, and
+  has the rest filed with their rolls alone. A relayed countdown names its
+  plan by what the fiction calls it, never by id (D2's rule).
+- **A stated suffer move's target is named by the reading**
+  (ACTION-STAT-VEHICLE-PRICE-NO-TARGET): `missSuffer.target`, matched as
+  whole words against the roller's own support vehicles or companions, used
+  only when the move has no target of its own. An "any" suffer card asks
+  which vehicle when several could take the damage; a price's vehicle route
+  with a command vehicle present still goes to the starship (issue #345
+  AA14).
+- **A beat's shape is on its card** (BEAT-SHAPE-AFTER-DELETED-CARD). Each
+  written beat's card carries `beatShape`, and the next beat follows the
+  newest stamped card — still the narrator cards, the ring's own source. The
+  canonical GM keeps the flag with the others it already keeps of a deleted
+  card (`campaignState.deletedChatMessages`); no separate "last shape" field
+  is stored.
+- **A Notes-tab edit that loses text reports `entity_detail_removed`**
+  (SNAPSHOT-NOTES-TAB-DELETE). The editing client compares the old and new
+  notes in `preUpdateActor` and stamps the update's options; the canonical GM
+  reports the event when the stamped update lands (`sharedSupply.js`'s
+  pattern).
+- **A refused publish is answered, not whispered**
+  (PRIVATE-REFLECTION-REFUSAL-IN-CHAT). The canonical GM answers a relayed
+  publish on the module socket with the ask's id and one outcome word; the
+  publisher's client words it in the Private Channel window.
+
+**Reason:** issue #364. Each item was a defect the issue #362 fixes left
+standing or exposed; the three answers above settle the ones that were the
+maintainer's to decide.
+
+**Rejected:** *A GM-whispered answer for the plan relay* — private only if
+Foundry's server withholds a whisper from the other clients, never checked
+live. *v13's addressed user query (`User#query`)* — not verifiable here, and
+the module's minimum is v12. *A relay answer naming which requested subjects
+are planned* (PLAYER-KEY-PLAN-REQUESTS-UNFILTERED's proposal) — no narration
+on a player's own key carries a request about a known subject, so it would be
+surface with no producer, and would put which subjects are planned on the
+socket; a test pins the path instead. *Stamping the trigger on the plan's
+step alone* — the burn still has to know which trigger is its own price's.
+*Seeding nothing for the matched waypoint miss* (the issue's other option).
+*Reading a stated price's target off the miss line* (issue #345 AA14).
+*Marking, rather than clearing, a deleted NPC's vow link* — the payoff reads
+the link's presence.
+
+**Amends:** "Issue #362 D1" (its "Not solved" socket answer is accepted);
+"Issue #362 D5" (a held result is also kept when its session is closed out
+at the mint); "Issue #362 D10" (the teardown clears vow links and the
+sector's id; the X-Card takes back a known NPC's new bond); "Issue #362 D11"
+(a stated price's target may come from `missSuffer.target`); "Issue #362
+D13" (a refusal is the relay's answer, shown in the window, not a whisper);
+"Issue #354" (the beat's shape is a card flag, kept with a deleted card's
+flags — not "the last shape in campaign state" it rejected); the eleventh
+audit's "a resolving round of an ended session finishes unless its resolver
+is gone" (a round at its upgrade step keeps for everyone still deciding);
+"The world snapshot" (`entity_detail_removed` has a second reporter).
+
+---
+
 ## Issue #344: a round's own record decides its result cards' upgrades; the card flags mirror it (2026-11)
 
 **Decision:** ([#344](https://github.com/jamesrmedford-alt/starforged-companion/issues/344) A02, A03 — fixed at the maintainer's request, 2026-11-18)
@@ -144,7 +259,8 @@ the Private Channel* — the turn is given only the decided plans it brings
 into play. Not solved: a socket answer reaches every connected client
 (Foundry's module socket cannot address one), so the asker's few plans pass
 through the other players' browsers, unread; and a forged ask can name any
-subject, within the relay's trust model.
+subject, within the relay's trust model. The broadcast was accepted as
+console-level exposure by issue #364 (PLANS-RELAY-BROADCAST).
 
 **Amends:** "Issue #353 R3 and R4" ("a player's list is the GM's (the store
 is read alike on every client)" — the list is the canonical GM's view, read
@@ -493,7 +609,7 @@ completed — the vow is open in every other reader until then too.
   | `xcard_played` | yes | `suppressScene` |
   | `fact_retracted` — a strike or a correction, and its copies | yes | `propagateRetraction` |
   | `plan_edited` / `plan_retired` — a GM's edit or Retire; a plan whose subject is gone, or an ended scene's unanswered mystery (issue #362 D4) | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout`, `retireSceneMysteries` |
-  | `entity_detail_removed` — a narrator-added detail is taken off a recorded entity's card (issue #362 AC65) | yes | `entityPanel.js` `applyEntityEditFromRelay` (the Entities panel's Remove) |
+  | `entity_detail_removed` — a narrator-added detail is taken off a recorded entity's card (issue #362 AC65) | yes | `entityPanel.js` `applyEntityEditFromRelay` (the Entities panel's Remove); `registry.js` `registerSheetNotesRemovalHook` (text deleted or reworded on a sheet's Notes tab — issue #364) |
   | `record_removed` — a record the snapshot holds is gone or no longer stands | yes | the store, at the call |
   | `changes_large` — the changes since have grown large | yes | the store, at the call |
   | `cache_expired` — no narrator call for an hour | yes | the store, at the call |
@@ -546,7 +662,7 @@ What the fixes established:
 - **A threat's severity is one of four words (P2-15).** `immediate | active | looming | resolved`. Anything else given as a severity is read as the one it means ("high" → immediate) or, when it is a sentence, kept as the threat's summary and a history line. The detector is shown names and severities apart, and names a threat by its name alone.
 - **A contradiction's card shows the fact, not a pointer to it (P2-19)**: the recorded value read from the ledger the audit was given, and the narration's own words.
 - **Narration length is a word budget (P2-20).** The Length setting keeps its 1–6 range and its meaning as "about that many sentences of ordinary length", but the narrator is given words: 22 a step, never more than 28, in at most 1.5 sentences a step, none over about 30 words (18 with audio narration on). At the default 3 that is about 65 words, at most 85, in at most 5 sentences — roughly half what the playtest's beats ran to. The constants are in `narration/proseVariety.js`; they are the tuning point.
-- **The narrator writes plainly, and the module varies the beat (P2-21, P2-22, P2-27).** "Vivid, atmospheric prose" is gone from every role; a standing PROSE rule allows at most one comparison a narration. What a rule cannot hold — not repeating an image, not building every beat the same way — the module does: it lists the comparisons the session's last six narrations made (a regex over the cards, nothing stored) and picks one of five shapes for each beat by its place in the session, so two in a row never share one. Levity's permission is restated with the beat, where the miss is. Not accepted: storing used images or the last shape in campaign state — both follow from the narrator cards, the ring's own source, so there is no second store to drift.
+- **The narrator writes plainly, and the module varies the beat (P2-21, P2-22, P2-27).** "Vivid, atmospheric prose" is gone from every role; a standing PROSE rule allows at most one comparison a narration. What a rule cannot hold — not repeating an image, not building every beat the same way — the module does: it lists the comparisons the session's last six narrations made (a regex over the cards, nothing stored) and picks one of five shapes for each beat by its place in the session, so two in a row never share one. Levity's permission is restated with the beat, where the miss is. Not accepted: storing used images or the last shape in campaign state — both follow from the narrator cards, the ring's own source, so there is no second store to drift. (Issue #364: the shape is now stamped on the beat's own card, `beatShape`, so a deleted card no longer shifts the count; it is still read from the cards.)
 - **The narrator's system prompt is ordered by how often each part changes, and cached in parts (P2-23).** `standing` (voice rules, safety, truths, premise, the sidecar format, NPC markup — the same for every prose mode), `mode` (role, perspective, length, permission class) and `beat` (everything else); the request caches the first two, each on its own breakpoint, for one hour — a table's beats are often more than five minutes apart, and a read restarts the hour. This **reverses "the sidecar instruction is appended last so it is the most recent guidance the model sees"**: the instruction is now in the cached standing block and the context closes on RESPOND NOW, a pointer to it that names no key. The issue's lower-risk variant (role first, one cached block per mode, no reordering) was not taken: the two modes that alternate all session would share nothing. `rules/narrator-memory.md` invariant 7b holds the layout; `narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached block. **Not verified against the live API** — neither that reads now happen nor that the sidecar is still returned on every reply; the Narrator Usage page's Cache read column and the sidecar-missing warnings are the checks, on the next played session. If compliance drops, the fallback is the variant above, not moving the instruction back into an uncached block.
 - **"Delayed or put at a disadvantage" is a routed price (P2-12).** The Pay the Price table leaves purely fictional results unrouted on purpose; this row is not one — it names Lose Momentum's own trigger. It costs −1, as the table's other routes do.
 - **A change the module reports on its own card is not also posted as the system's note (P2-13).** Issue #348 PT14 re-spoke the ironsworn system's change notes as Gamemaster notes; where a suffer card (or a burn's move card) already says the change, the note's create is cancelled instead (`actorBridge.withoutSystemNotes`). Every other module write keeps its note — a move's own momentum, a session focus — because no card of the module's says it. The Resist button the issue's first draft asked for was withdrawn there: the optional resist above 0 stays a typed move (#330 D3).
@@ -1968,7 +2084,9 @@ each row; each row's ID in brackets.)
   release is retried once, then told; the round's in-flight lock claim is
   visible to free-flow (`_moveLockClaimInFlight`); a closed round heard on a
   new canonical GM opens the next; a resolving round of an ended session
-  finishes unless its resolver is gone; the session a load is replacing is
+  finishes unless its resolver is gone (and one still at its upgrade step
+  keeps for everyone deciding, so it is narrated then — issue #364); the
+  session a load is replacing is
   over at once (no round reads, resolves or opens in it).
 - **A card's suggestion button is its character's** [Z56, D5]: 🤝 Develop
   Relationship / 🔗 Forge a Bond on a move card speak as the card's roller

@@ -110,7 +110,12 @@ alone; only for a **person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
-— issue #326 W70) — posts the sworn-confirmation card (rank→milestone/legacy
+— issue #326 W70; the link is the connection's name, and a GM deleting that
+NPC's card clears it from every copy unless a namesake card is left —
+`connection.tearDownDeletedConnection` → `actorBridge.clearVowLinksToConnection`,
+the GMs whispered which vows: the won-fight card kept offering 🤝 Deepen with
+the deleted NPC and the fulfilment listed a deepen that could not land,
+issue #364 DELETED-NPC-NAME-REFERENCES) — posts the sworn-confirmation card (rank→milestone/legacy
 stakes lines), narrates the vow-swearing scene for the PC who rolled the
 swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete
@@ -153,7 +158,16 @@ sheet's **+ Vow** creates the Item as "Vow" and only then opens it to be
 named, so a swear built from the card's `vowName` was "Swear an iron vow:
 Vow.", issue #362 AC23 / AC14; a card posted for an Item still named "Vow" is
 worded for a vow still to be named — no name, no rank's stakes — and its
-rewards are proposed for no name), a **connection
+rewards are proposed for no name; the hook's `updateItem` listener then
+follows the vow's sheet until the vow is sworn from the card —
+`followVowOnItsCard`, canonical GM, the card found by the vow's id: a rename
+or a rank change re-renders the card with the vow's name, rank and that
+rank's stakes, and writes the card's `vowName`, and the first time the vow
+gets a name of its own `reproposeVowRewards` proposes its rewards again for
+that name on the same reward-choice card (`rewardOptions` and its buttons
+replaced in place; a reward already chosen, or no proposal coming back,
+leaves the card as it is) — the card and its rewards stayed generic after the
+player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
@@ -370,7 +384,13 @@ scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
 `sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
 Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
 `vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
-`narrationInputFrom` carries to the narration. The plan closes with its vow
+`narrationInputFrom` carries to the narration — and so does a hit rolled on
+the character sheet: the roll card's narration names the roller's own vow of
+that exact name, by its `vowId` (`registerNativeProgressRollHook` →
+`sheetRolledVowIds`, `resolveVowItemCopies`' `ownOnly`; it named none, so a
+vow reworded since its plan was filed, or one already closed on the sheet,
+was fulfilled with its plan left out — issue #364
+NATIVE-FULFIL-NO-ENDING-TRACK). The plan closes with its vow
 (issue #362 D4): a copy completed — fulfilled, forsaken, closed on the sheet —
 resolves it once no copy of the vow is open, its last copy deleted retires it
 (the canonical GM's `updateItem` / `deleteItem` hooks,
@@ -421,7 +441,9 @@ promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`; the
 outcome it was granted at kept as `reward.grantedAt`, so a weak-hit win burned
 or improved to a strong hit is paid the difference once —
-`upgradeLinkedVowReward`, issue #362 D7).
+`upgradeLinkedVowReward`, issue #362 D7; its claim refused, it is a
+`rewardUpgrade` step on the GMs' payoff card, whose Retry runs it again —
+issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**
@@ -471,6 +493,11 @@ key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
 `RUN_ON.CLAUDE` ladder decided on every client from shared data): the keyed
 canonical GM when a keyed GM is connected, else the roller's own client with
 its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
+A Fulfill Your Vow hit carries the vow it ends (`endingTrackIds`, the roller's
+own vow's `vowId` — `sheetRolledVowIds`), so its hidden plan is in play to
+reveal its end, as a typed fulfilment's is (§3; issue #364
+NATIVE-FULFIL-NO-ENDING-TRACK) — on a GM's client: a player's own key reads no
+plan (issue #362 D1).
 Narrating only on the roller's client gave a keyless player "Narration
 unavailable" at a table whose GM holds the key (issue #321 U11). While Batch
 Mode is on, a participant's roll is narrated with the round instead (issue

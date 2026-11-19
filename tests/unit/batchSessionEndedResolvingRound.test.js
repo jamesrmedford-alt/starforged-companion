@@ -17,6 +17,13 @@
  * resolving GM leaves, closing it is issue #340's own Recovery rule ("A round
  * from an ended session is closed"); on a user joining or a GM entering a key
  * the round now finishes first.
+ *
+ * Since issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END the session ending is
+ * Keep for a roller still deciding, so the round no longer waits at its
+ * upgrade step through End a Session: it goes on to its narration at once
+ * (tests/unit/batchRoundUpgradeStepKeptAtSessionEnd.test.js). The round still
+ * resolving when a recovery runs is the one whose narration is being written
+ * — held here at the Claude call — and Z23's rule is the same.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -61,7 +68,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'Kira slips through the vent, scraped and late.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
-let table;
+let table, claude;
 const world = () => table.world.campaignState();
 const round = () => table.world.getSetting('batchMode.round');
 const roundNarrations = () => table.cards(f => f.roundId && (f.narratorCard || f.narrationPaused));
@@ -83,7 +90,7 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, items: { contents: [] } });
   table.actors.get('pc-kira').system.momentum.value = 9;
-  scriptClaude(table, { fallback: () => REPLY });
+  claude = scriptClaude(table, { fallback: () => REPLY });
   silenceConsoleErrors();
   await table.client('gm-1').setSetting('batchMode.enabled', true);
   await table.settle();
@@ -112,53 +119,69 @@ async function endTheSession() {
   await table.settle();
 }
 
-async function kiraKeeps() {
-  await relay('pl-1', 'batch.keep', { roundId: round().id });
-  await table.drain();
+/**
+ * End a Session with the round at its upgrade step: Keep for Kira, and the
+ * round goes on to its narration (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END)
+ * — held at its Claude call, so the round is still resolving.
+ * @returns {Promise<{ release: Function }>} the held narration call
+ */
+async function endTheSessionMidNarration() {
+  const held = claude.hold(c => c.model === NARRATION_MODEL);
+  await endTheSession();
+  await held.arrived;
+  await table.settle();
+  expect(round(), 'setup: the round is being narrated').toMatchObject({ number: 1, phase: 'narrating' });
+  expect(round().entries['pl-1'].upgrade, 'setup: the session ending kept for Kira').toMatchObject({ decided: 'keep' });
+  return held;
 }
 
-describe('Z23 — End a Session while the round waits on an upgrade, then a recovery runs', () => {
-  it('control: no recovery in between — the round finishes on Kira\'s Keep and is narrated', async () => {
+describe('Z23 — End a Session while the round is resolving, then a recovery runs', () => {
+  it('control: no recovery in between — the session ending keeps for Kira, and the round finishes and is narrated', async () => {
     await weakHitWaitingForKira();
     await endTheSession();
-    expect(round()).toMatchObject({ number: 1, phase: 'upgrading' });    // "a round already resolving finishes first"
-    await kiraKeeps();
+    await table.drain();
     expect(narrationCalls()).toHaveLength(1);
     expect(roundNarrations()).toHaveLength(1);
+    expect(round()).toMatchObject({ number: 1, phase: 'closed', closeReason: 'resolved' });   // "a round already resolving finishes first"
   }, 30_000);
 
-  it('a player reconnects first: the round still finishes on Kira\'s Keep and is narrated', async () => {
+  it('a player reconnects first: the round still finishes and is narrated', async () => {
     await weakHitWaitingForKira();
-    await endTheSession();
+    const held = await endTheSessionMidNarration();
     await table.leave('pl-2');
     await table.join('pl-2');                                           // recoverRound("user-joined")
     await table.settle();
-    expect(round()).toMatchObject({ number: 1, phase: 'upgrading' });
-    await kiraKeeps();
+    expect(round()).toMatchObject({ number: 1, phase: 'narrating' });
+    held.release();
+    await table.settle(); await table.drain();
     expect(roundNarrations(), `round now: ${round()?.phase} (${round()?.closeReason ?? '-'})`).toHaveLength(1);
     expect(round()).toMatchObject({ number: 1, phase: 'closed', closeReason: 'resolved' });
   }, 30_000);
 
-  it('a GM enters a Claude key first: the round still finishes on Kira\'s Keep and is narrated', async () => {
+  it('a GM enters a Claude key first: the round still finishes and is narrated', async () => {
     await weakHitWaitingForKira();
-    await endTheSession();
+    const held = await endTheSessionMidNarration();
     await table.setClaudeKey('gm-2', 'sk-ant-gus');                     // recoverRound("keyed-gm") on Gina
-    expect(round()).toMatchObject({ number: 1, phase: 'upgrading' });
-    await kiraKeeps();
+    expect(round()).toMatchObject({ number: 1, phase: 'narrating' });
+    held.release();
+    await table.settle(); await table.drain();
     expect(roundNarrations()).toHaveLength(1);
+    expect(round()).toMatchObject({ number: 1, phase: 'closed', closeReason: 'resolved' });
   }, 30_000);
 
   it('control: the GM resolving it leaves — issue #340\'s rule: a round from an ended session is closed', async () => {
     await weakHitWaitingForKira();
-    await endTheSession();
+    const held = await endTheSessionMidNarration();
     try {
       await table.leave('gm-1');                                        // recoverRound("resolver-left") on Gus
       await table.settle();
-      await table.drain();
       expect(round()).toMatchObject({ number: 1, phase: 'closed', closeReason: 'session-ended' });
       expect(roundNarrations()).toHaveLength(0);
     } finally {
+      held.release();
+      await table.settle();
       await table.join('gm-1');
+      await table.settle(); await table.drain();
     }
   }, 30_000);
 });

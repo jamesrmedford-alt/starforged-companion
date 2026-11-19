@@ -373,6 +373,19 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
     }
+    // A Make a Connection hit with an NPC the table already knew made no
+    // card to remove: the bond it put on the roller's sheet is taken back by
+    // the narration's id stamped on it — that bond alone; the NPC and any
+    // bond from before the hit stay. One the table has marked since stays,
+    // and the GMs are told (issue #364 DELETED-NPC-NAME-REFERENCES; the
+    // maintainer's ruling).
+    try {
+      const { retractNarrationBondItems } = await import("../character/actorBridge.js");
+      const { kept } = await retractNarrationBondItems(ids);
+      if (kept.length) await postKeptBondsNotice(kept);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: taking back the bonds the narration's Make a Connection added failed:`, err?.message ?? err);
+    }
     // A name it took off the Dismissed list — a Make a Connection on a
     // dismissed NPC, an identity reveal onto a dismissed name — is dismissed
     // again, once the connection and the rename are settled above
@@ -432,6 +445,38 @@ async function postKeptConnectionsNotice(kept) {
     `.trim(),
     whisper,
     flags: { [MODULE_ID]: { xcardConnectionNotice: true } },
+  });
+}
+
+/**
+ * Whisper the GMs, once per X-Card, the bonds the removed narration's Make a
+ * Connection added to NPCs the table already knew that stay because the
+ * table has marked them since (issue #364 DELETED-NPC-NAME-REFERENCES — the
+ * kept-connection notice's rule, issue #338 D6(ii)). What to do is the
+ * table's call.
+ *
+ * @param {Array<{ actorName: string, name: string }>} kept
+ * @returns {Promise<Object|null>} the created ChatMessage
+ */
+async function postKeptBondsNotice(kept) {
+  const whisper = (game.users?.filter?.(u => u.isGM) ?? []).map(u => u.id);
+  const lines = kept.map(({ actorName, name }) => {
+    const who  = escapeHtml(name || "a connection");
+    const whose = escapeHtml(actorName || "A character");
+    return `<li>${whose}&rsquo;s bond with <strong>${who}</strong>, which the removed narration&rsquo;s Make a Connection added, remains: it has been marked since. `
+      + `If the table wants it gone, delete it on the character sheet.</li>`;
+  }).join("");
+  return ChatMessage.create({
+    content: `
+      <div class="starforged-move-card xcard-card xcard-connection-notice">
+        <div class="move-header">
+          <span class="move-type">X-Card</span>
+        </div>
+        <div class="move-body"><ul>${lines}</ul></div>
+      </div>
+    `.trim(),
+    whisper,
+    flags: { [MODULE_ID]: { xcardConnectionNotice: true, xcardBondNotice: true } },
   });
 }
 

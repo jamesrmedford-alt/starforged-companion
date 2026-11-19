@@ -34,7 +34,7 @@ import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
   normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
-  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS,
+  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION,
 } from "./skeletons.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
@@ -197,7 +197,9 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
  * plans it brings into play (plansInPlayFor); the client that asked takes the
  * answer carrying its ask's id. The answer is a socket message, which reaches
  * every connected client (Foundry's module socket cannot address one); only
- * the asker takes it.
+ * the asker takes it. Accepted as console-level exposure, like the shared
+ * world data (the maintainer's answer, issue #364 PLANS-RELAY-BROADCAST;
+ * decisions.md → "Issue #364").
  */
 export function registerPlansInPlaySocket() {
   if (_plansSocketInstalled) return;
@@ -879,6 +881,9 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
  *     that revealed a new enemy) is filed: as the narrator decided it, or —
  *     its sidecar gave none — with its oracle rolls alone, its truth left for
  *     the next narration to decide ("keep the raw rolls as the skeleton");
+ *     a request past the PLANS_PER_SIDECAR the narration was shown (a Batch
+ *     Mode round's fifth onward, up to PLAN_REQUESTS_PER_NARRATION) has no
+ *     answer, and is filed the same way (issue #364 ROUND-PLAN-REQUEST-CAP);
  *  2. each other `plans` entry decides or corrects the plan of its id;
  *  3. each `openQuestions` entry not already a mystery of this scene becomes
  *     one, its hidden answer rolled now and decided by a later narration;
@@ -899,17 +904,26 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
  *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[],
- *           endingSubjectIds?: string[] }} ctx
+ *           endingSubjectIds?: string[], relayed?: boolean }} ctx — `relayed`: the side-data crossed the
+ *   relay from another client (narrator.js applyRelayedNarratorSidecar, which has already dropped its
+ *   `reveals` and the `plans` it may not write — issue #362 D2): its `countdown` names no plan by id
+ *   (applyCountdown, issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID)
  * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
-export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [] } = {}) {
+export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [], relayed = false } = {}) {
   const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
   const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
   try {
     const plans     = normalisePlans(sidecar?.plans);
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
-    const requests  = normalisePlanRequests(planRequests);
+    // Every request the narration carried, not only the PLANS_PER_SIDECAR it
+    // was asked to decide (DECIDE NOW shows no more): the rest have no answer
+    // in its sidecar, and are filed below with their rolls alone — a Batch
+    // Mode round whose entries brought five or more dropped the fifth onward
+    // (issue #364 ROUND-PLAN-REQUEST-CAP). A relay's are bounded where they
+    // arrive (narrator.js applyRelayedNarratorSidecar).
+    const requests  = normalisePlanRequests(planRequests, { max: PLAN_REQUESTS_PER_NARRATION });
     const reveals   = normaliseReveals(sidecar?.reveals);
     const countdown = normaliseCountdown(sidecar?.countdown);
     const newThreats = normaliseNewThreats(sidecar?.newThreats);
@@ -1039,8 +1053,9 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       }
     }
 
-    // A countdown the prose started becomes a real clock (Phase 3).
-    await applyCountdown(countdown, { campaignState, narrationId, moveId });
+    // A countdown the prose started becomes a real clock (Phase 3) — a
+    // relayed one about what its `about` names, never the plan of that id.
+    await applyCountdown(countdown, { campaignState, narrationId, moveId, byId: !relayed });
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a narration's plans were not applied:`, err?.message ?? err);
   }
@@ -1123,6 +1138,44 @@ async function retirePlanClock(record) {
     await retireClock(clock._id);
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the clock of "${record?.subject?.name ?? "a plan"}" was not retired with it:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Plans whose pages are gone from the Secrets journal take their clocks with
+ * them (issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK): a GM who deletes a plan's
+ * page in the journal sidebar — not the panel's Retire, which retires the
+ * clock (issue #362 AC10) — left the clock running on the list: it turned on
+ * every Pay the Price and, full, fired a trigger vignette with no plan behind
+ * it. Each clock of such a plan — stamped with it (`planId`), or the one its
+ * record links — is retired as Retire retires it: kept on the list, turned by
+ * no price, and left to an open scene challenge that holds it
+ * (heldBySceneChallenge). A plan another page of the store still holds — a
+ * GM's copy of the page deleted, not the plan — keeps its clock; the deleted
+ * pages themselves are not counted, whether or not the store still lists
+ * them when the hook runs. Canonical GM (registerPlanSubjectHooks). Never
+ * throws.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ */
+async function retireClocksOfDeletedPlans(pages) {
+  try {
+    const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
+    const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
+    const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
+    for (const page of gone) {
+      const record = normaliseSkeleton(entryOf(page));
+      if (!record || kept.has(record.id)) continue;
+      const clocks = storedClocks().filter(c => c && c.active !== false
+        && (c.planId === record.id || (c._id === record.clockId && !c.planId)));
+      for (const clock of clocks) {
+        if (await heldBySceneChallenge(clock._id)) continue;
+        const { retireClock } = await import("../clocks/clocks.js");
+        await retireClock(clock._id);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the clock of a plan whose page was deleted was not retired:`, err?.message ?? err);
   }
 }
 
@@ -1221,15 +1274,24 @@ async function paceAfterReveal(before, after, narrationId = null) {
  * narration. One clock a plan, none for a countdown already running. The GMs
  * are offered to play it as a scene challenge (sceneChallengeOffer.js).
  * Stamped with the narration. Never throws.
+ *
+ * `byId: false` — a countdown from a relayed fact block (issue #364
+ * RELAYED-COUNTDOWN-ABOUT-BY-ID): its `about` is read as a name only. A
+ * narration on a player's own key is shown no plan, so it names what a
+ * countdown concerns as the fiction does; an `about` that is a plan's id is
+ * hand-made, and plan ids are public (a clock's `planId`, a rolls card's
+ * `skeletonId`) — by id it hung a new clock on a plan that had none (issue
+ * #362 D2's rule for a relay's `plans` and `reveals`). Such an `about` is no
+ * name: the countdown is about nothing planned, and gets its own mystery.
  */
-async function applyCountdown(countdown, { campaignState, narrationId = null, moveId = null }) {
+async function applyCountdown(countdown, { campaignState, narrationId = null, moveId = null, byId = true }) {
   if (!countdown) return null;
   try {
     if (storedClocks().some(c => c?.active !== false && sameSubjectName(c.name, countdown.label))) return null;
     const sceneId = campaignState?.currentSceneId ?? null;
     const active = listSkeletons();
-    const about = countdown.about;
-    let plan = active.find(r => r.id === about)
+    const about = byId || !getSkeleton(countdown.about) ? countdown.about : "";
+    let plan = (byId ? active.find(r => r.id === about) : null)
       ?? (about ? active.find(r => planIsAbout(r, about) || nameMentioned(r.subject.name, about)) : null)
       ?? null;
     if (plan && planClock(plan)) return null;
@@ -1583,8 +1645,11 @@ async function closeVowPlanIfEnded(item, status) {
 /**
  * Wire the vow Items' ends to their plans (issue #362 D4): a vow completed or
  * deleted — by a move, on the sheet, in the sidebar — closes its plan
- * (closeVowPlanIfEnded). Document hooks fire on every client: the canonical
- * GM closes it, once. Register once, at ready.
+ * (closeVowPlanIfEnded). And a plan's own end to its clock: its page deleted
+ * from the Secrets journal, or the journal itself deleted, retires the clocks
+ * it held (retireClocksOfDeletedPlans, issue #364
+ * PLAN-PAGE-DELETE-LEAVES-CLOCK). Document hooks fire on every client: the
+ * canonical GM closes it, once. Register once, at ready.
  */
 export function registerPlanSubjectHooks() {
   if (registerPlanSubjectHooks._installed) return;
@@ -1597,6 +1662,16 @@ export function registerPlanSubjectHooks() {
   Hooks.on("deleteItem", (item) => {
     if (!isCanonicalGM() || !isVow(item)) return;
     void closeVowPlanIfEnded(item, "retired");
+  });
+  Hooks.on("deleteJournalEntryPage", (page) => {
+    if (!isCanonicalGM() || !entryOf(page)) return;
+    void retireClocksOfDeletedPlans([page]);
+  });
+  // A journal deleted whole fires no page hook for the pages it held.
+  Hooks.on("deleteJournalEntry", (journal) => {
+    if (!isCanonicalGM()) return;
+    const pages = (journal?.pages?.contents ?? []).filter(p => entryOf(p));
+    if (pages.length) void retireClocksOfDeletedPlans(pages);
   });
 }
 

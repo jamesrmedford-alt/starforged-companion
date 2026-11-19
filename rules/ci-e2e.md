@@ -54,6 +54,8 @@ landmines:
 
 **Apple bash 3.2 quirk:** `"${arr[@]}"` under `set -u` errors as "unbound variable" when the array is empty (pre-bash-4.4 bug). Use `${arr[@]+"${arr[@]}"}` for safe empty-array expansion.
 
+**Release lookups are authenticated in CI:** `install-deps.sh`'s `github_release_zip_url` asks `api.github.com` for the foundry-ironsworn and Quench release assets and sends `GITHUB_TOKEN` as a Bearer header when it is set. The workflow's e2e step passes `GITHUB_TOKEN: ${{ github.token }}`; without it the lookups share the runners' unauthenticated rate limit and can 403 before Foundry starts (issue #364 E2E-INSTALL-UNAUTHENTICATED-API — one of PR #363's runs did). Locally the token is optional.
+
 ## GitHub Actions (`.github/workflows/e2e.yml`)
 
 **Triggers:** `pull_request: [opened, synchronize, reopened]`. *Not* `push` — per-PR cadence, not per-commit. `concurrency.cancel-in-progress: true` supersedes older runs.

@@ -886,6 +886,29 @@ export function readCommandVehicleIntegrity(shipActor) {
 }
 
 /**
+ * The Integrity track of a STARSHIP (Command Vehicle) asset as the Item
+ * itself holds it — `{ value, min, max }`, as readCommandVehicleIntegrity
+ * gives it — or null for any other Item, or one whose track is not an enabled
+ * Integrity track. For the asset just removed from its starship (the
+ * deleteItem hook's document): the starship no longer carries it, so
+ * readCommandVehicleIntegrity finds none, and the value last marked on the
+ * track — by hand, since the module's last write — went with it (issue #364
+ * STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK; entities/ship.js
+ * syncCommandVehicleFlag keeps it on the record).
+ *
+ * @param {Item|null} item
+ * @returns {{ value: number, min: number, max: number }|null}
+ */
+export function readCommandVehicleAssetTrack(item) {
+  if (item?.type !== 'asset' || !/command vehicle/i.test(String(item.system?.category ?? ''))) return null;
+  const track = item.system?.track;
+  if (!track || track.enabled === false || String(track.name ?? '').trim().toLowerCase() !== 'integrity') return null;
+  const value = Number(track.value ?? 0);
+  if (!Number.isFinite(value)) return null;
+  return { value, min: Number(track.min ?? 0), max: Number(track.max ?? 5) };
+}
+
+/**
  * What a ship record not reconciled with its STARSHIP asset's track — one
  * from before that track became canonical (issue #347 AB08), or one kept
  * while the ship had no STARSHIP asset, the asset added since (issue #362
@@ -1296,6 +1319,45 @@ export async function setVowLinkedConnection(vowId, connectionName) {
 }
 
 /**
+ * Take the link to a connection that no longer exists off every player
+ * character's vow (issue #364 DELETED-NPC-NAME-REFERENCES). A vow's link is
+ * the connection's name (`linkedConnectionName` — setVowLinkedConnection, the
+ * inciting vow's target), so the vow of an NPC whose card a GM deleted went
+ * on naming them: a won fight's card still offered "🤝 Deepen your bond with
+ * …", and the vow's fulfilment listed a deepen that could never land, with a
+ * Retry. Cleared, the vow serves no connection. Every copy that names them,
+ * open or closed. The caller decides the connection is gone (no card of that
+ * name is left — connection.tearDownDeletedConnection). GM-side (Item flag
+ * writes); never throws — a refused write is logged and counted.
+ *
+ * @param {string} connectionName — the deleted connection's name
+ * @returns {Promise<{ cleared: Array<{ actorName: string, vowName: string }>, refused: number }>}
+ *   the vows whose link was cleared, each once per PC
+ */
+export async function clearVowLinksToConnection(connectionName) {
+  const out = { cleared: [], refused: 0 };
+  const wanted = String(connectionName ?? "").trim().toLowerCase();
+  if (!wanted) return out;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || typeof item.setFlag !== "function") continue;
+      const linked = item.flags?.[MODULE_ID]?.linkedConnectionName;
+      if (typeof linked !== "string" || linked.trim().toLowerCase() !== wanted) continue;
+      try {
+        await staleChecked('clearVowLinksToConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", null));
+        out.cleared.push({ actorName: String(actor.name ?? ""), vowName: String(item.name ?? "") });
+      } catch (err) {
+        out.refused++;
+        console.warn(`${MODULE_ID} | clearVowLinksToConnection: "${item.name ?? item.id}" on ${actor.name ?? actor.id} kept its link to ${connectionName}:`, err?.message ?? err);
+      }
+      invalidateActorCache(actor.id);
+    }
+  }
+  return out;
+}
+
+/**
  * Record a granted concrete reward on the actor (#241 Phase 2) for the non-meter
  * forms (gear / asset / contact / knowledge) — appends to a module flag list so
  * the grant is tracked on the sheet. Meter forms (supply / momentum) use
@@ -1346,17 +1408,26 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * Idempotent: if an Item flagged with this connection's id already exists
  * on the actor, returns it without creating a duplicate.
  *
+ * `narrationId` — the narration whose Make a Connection hit puts this bond
+ * on an NPC the table already knew: stamped on the Item it creates
+ * (`bondedByNarrationId`), so an X-Card on that narration takes that bond
+ * back and no other (retractNarrationBondItems; issue #364
+ * DELETED-NPC-NAME-REFERENCES). An Item that exists already is returned as it
+ * is, unstamped: a bond from before the hit is not the hit's.
+ *
  * @param {Actor} actor
- * @param {{ name: string, rank?: string, connectionId?: string }} data
+ * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterBondItem(actor, data) {
+  const narrationId = typeof data?.narrationId === "string" && data.narrationId ? data.narrationId : null;
   return createCharacterProgressItem(actor, {
     subtype:    "bond",
     name:       data?.name || "Unknown Connection",
     rank:       data?.rank,
     flagKey:    "connectionId",
     flagValue:  data?.connectionId ?? null,
+    ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId } } : {}),
   });
 }
 
@@ -1498,6 +1569,53 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
     deleted++;
   }
   return { marked: false, deleted };
+}
+
+/**
+ * Take back the bonds an X-carded narration's Make a Connection hit put on
+ * NPCs the table already knew (issue #364 DELETED-NPC-NAME-REFERENCES; the
+ * maintainer's ruling: the X-Card takes the bond back). The hit made no NPC —
+ * the card was there before it — so the X-Card's removal of the connections
+ * a narration created (connection.retractNarrationConnections) left the bond
+ * Item on the roller's sheet: CHARACTER STATE and the Connections tab went on
+ * listing a connection made by a beat the table removed. The bond Item is
+ * found by the narration's id stamped on it when the hit created it
+ * (`bondedByNarrationId` — createCharacterBondItem), never by name: a bond
+ * the PC held before the hit carries no stamp and is not touched, and the NPC
+ * card stays. One the table has marked since — a tick, a forged bond, a loss
+ * — is kept, as a used connection is (issue #338 D6(ii)), and returned for
+ * the GMs' notice. The delete is the module's write, with `suppressLog`
+ * (issue #362 AC76). Canonical GM (the X-Card's finish). Never throws.
+ *
+ * @param {string[]} narrationIds — the removed narrations
+ * @returns {Promise<{ deleted: number, kept: Array<{ actorName: string, name: string }> }>}
+ */
+export async function retractNarrationBondItems(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  const out = { deleted: 0, kept: [] };
+  if (!removed.size) return out;
+  for (const actor of getPlayerActors()) {
+    const items = (actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []))
+      .filter(item => item?.type === "progress" && item.system?.subtype === "bond"
+        && removed.has(item.flags?.[MODULE_ID]?.bondedByNarrationId));
+    for (const item of items) {
+      const marked = Number(item.system?.current ?? 0) > 0 || item.system?.completed === true
+        || item.flags?.[MODULE_ID]?.lost === true;
+      if (marked) {
+        out.kept.push({ actorName: String(actor.name ?? ""), name: String(item.name ?? "") });
+        continue;
+      }
+      try {
+        refuseStaleActorWrite('retractNarrationBondItems');
+        await moduleWriteOn(actor, () => item.delete({ suppressLog: true }));
+        out.deleted++;
+      } catch (err) {
+        console.warn(`actorBridge | retractNarrationBondItems: ${item?.name ?? 'a bond'} on ${actor?.name ?? actor?.id} was not removed:`, err?.message ?? err);
+      }
+      invalidateActorCache(actor.id);
+    }
+  }
+  return out;
 }
 
 /**

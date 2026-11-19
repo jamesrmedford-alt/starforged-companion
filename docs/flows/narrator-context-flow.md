@@ -48,7 +48,15 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
-  issue #362 AC02).
+  issue #362 AC02). A price that is the player's choice beside a move that
+  may replace it (`resolution.priceChoice` — Explore a Waypoint's miss with
+  a match: Pay the Price, or Confront Chaos instead) is settled when the
+  narration is written (`resultUpgrade.priceChoiceStatus`, read from the
+  table's cards → `resolver.settlePriceChoice`): paid, it is delivered as
+  above; still open, or declined, the stakes point at a block of its own
+  after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
+  THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
+  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -229,7 +237,10 @@ the Private Channel's narrator (`requestPrivateNarration`: on entry and when
 its reply returns, a reply written meanwhile discarded unshown) and its
 Publish (`publishToMainChat` refuses and tells the player — a published
 reflection is canon; the canonical GM, which posts it, checks the live flag
-again, before and after its Private Lines check — issue #362 D13) — against the caller's
+again, before and after its Private Lines check — issue #362 D13 — and
+answers the publisher's client, which says a refusal in the Private Channel
+window's banner, never as a whisper in the main chat — issue #364
+PRIVATE-REFLECTION-REFUSAL-IN-CHAT) — against the caller's
 campaignState **and** the live stored setting (`isXCardActive`,
 `narrator.js`, exported with `watchXCard` for the Private Channel; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played
@@ -439,7 +450,9 @@ is a variant of it — `resolveThreatName`; a Sector Trouble two sectors share i
 the active sector's, issue #362 AC43 — and its severity one of four
 words, a sentence given for one kept as the summary, so one threat is one
 page: issue #354 P2-15; an escalation never leaves it less urgent — issue
-#362 AC42; a GM's **Merge duplicates** folds earlier ones,
+#362 AC42 — nor does the capture listing a recorded threat again as
+"escalating" or "rising" (`recordThreat`, issue #364
+THREAT-REDETECTED-ESCALATING); a GM's **Merge duplicates** folds earlier ones,
 `mergeDuplicateThreats`, and a later detection naming a folded page lands on
 the page it was merged into — issue #362 AC21), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
@@ -627,7 +640,7 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   | `threat_recorded` | yes | `routeWorldJournalResults` (significant salience or above) |
   | `xcard_played`, `fact_retracted` | yes | `suppressScene`, `propagateRetraction` |
   | `plan_edited`, `plan_retired` | yes | `editSkeleton`, `retireSkeleton`; `closePlansAbout` (a track removed, a vow deleted), `retireSceneMysteries` (an ended scene's unanswered mysteries) — issue #362 D4 |
-  | `entity_detail_removed` | yes | `entityPanel.js` `applyEntityEditFromRelay` — the Entities panel's Remove of a narrator-added detail, a rewrite that takes content back (issue #362 AC65) |
+  | `entity_detail_removed` | yes | `entityPanel.js` `applyEntityEditFromRelay` — the Entities panel's Remove of a narrator-added detail, a rewrite that takes content back (issue #362 AC65); `registry.js` `registerSheetNotesRemovalHook` — a paragraph deleted or reworded on an NPC card's or ship's Notes tab (their notes, X12): every client compares the notes with its own edit in `preUpdateActor` and stamps the update's options, and the canonical GM reports when the stamped `updateActor` lands (issue #364 SNAPSHOT-NOTES-TAB-DELETE) |
   | `record_removed`, `changes_large`, `cache_expired` | yes | the store, at the call |
   | `oracle_seed_envisioned`, `oracle_yes_no`, `oracle_table_rolled`, `price_paid`, `plan_progressed`, `sector_switched` | no | their sites — rows, so one can be switched on |
 
@@ -730,9 +743,15 @@ at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
 the plans this narration's seeds ask it to decide: a price that revealed a
 new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
 a vow's swearing scene (Phase 4) — each with its one re-roll (`reroll`, for
-a result that contradicts the story; decisions.md "one re-roll"). Decided plans read
+a result that contradicts the story; decisions.md "one re-roll"). Every
+request rides with the narration (up to `PLAN_REQUESTS_PER_NARRATION`); it is
+asked to decide the first four, all one sidecar answers
+(`extras.decideNowRequests`), and the rest — a Batch Mode round's entries can
+bring more — are filed with their rolls alone by the same apply
+(`applyPlanSideData`), for the next narration they are in play for (issue #364
+ROUND-PLAN-REQUEST-CAP: the fifth onward was dropped, unfiled). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
-requests list under DECIDE NOW with their oracle rolls, only when the sidecar
+asked requests list under DECIDE NOW with their oracle rolls, only when the sidecar
 is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
 the prompt, the plans are read by one player-facing surface: the Session
 panel's What's open — a mystery's question while its truth is hidden, a
@@ -747,12 +766,20 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
-picked by its place among the session's beats so two in a row never share
-one, nothing stored: the count is of the beat cards (a move's, a paced
-line's, a round's — `isSessionBeatCard`), struck, X-Carded and unnarrated
-ones included, never the @scene answers, oracle follow-ups or vignettes
-between them, which brought the cycle round to the same shape (issue #362
-AC72) — and `extras.usedImages`, the comparisons the last six cards made,
+the one after the newest written beat's so two in a row never share one.
+Each beat's card carries the shape it was written in (`beatShape`, stamped by
+`postNarrationCard` / `postRoundNarrationCard` / `postPacedNarrativeCard`),
+and `lastBeatShapeId` reads it from the chat as it was (`chatAsItWas` — a
+beat card a GM deleted, or a Clear Chat Log took, is still the beat before;
+the canonical GM's stored record of a deleted card keeps the stamp across a
+reload): the count of beat cards alone gave the next beat the last one's
+shape once an earlier card was deleted (issue #364
+BEAT-SHAPE-AFTER-DELETED-CARD). A session with no stamped card — its first
+beat, or cards from before the stamp — is shaped by the count of its beat
+cards (a move's, a paced line's, a round's — `isSessionBeatCard`), struck,
+X-Carded and unnarrated ones included, never the @scene answers, oracle
+follow-ups or vignettes between them, which brought the cycle round to the
+same shape (issue #362 AC72) — and `extras.usedImages`, the comparisons the last six cards made,
 listed as images not to reuse; with them the levity permission, said again
 where the outcome is. `proseVariety.js`, `formatBeatProseBlock`) · [9] sidecar
 instruction (in `standing`; includes the record-anchors-once and
@@ -838,6 +865,11 @@ from the GM's cache while a relayed X-Card's, flag's or End a Session's write
 was still in flight, it carried the old campaignState back over it (issue #342
 Z01). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
+every result still held for Burn / Improve / Keep is kept first — paid and
+narrated under the closing session's id, as End a Session does, which a
+session over by idleness never got (`keepEveryHeldResult`; the mint's working
+copy then takes the store's value for each field the keep changed — issue
+#364 HELD-RESULT-IDLE-SESSION) —
 the closing session's summary is brought up to date
 (`finalizeSessionSummary`, no call when it covers every card) — an ended
 one's too: End a Session refreshes its own, but that refresh can fail or
@@ -955,7 +987,12 @@ unreadable or missing (the requests alone make the apply run), and, unstamped,
 when the narration is never written — an empty reply, a failed call — from the
 exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 (`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
-the vow scene's own fallback is `fileRequestedPlan`) — decides or corrects the plans it was
+the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
+switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
+narration with prose still files its requests with their rolls alone, stamped
+with its id, and still marks the step it was made to play
+(`applyOwedPlanSideData`; the relay handler applies only those two then; issue
+#364 PLAN-REQUESTS-FACT-CONTINUITY-OFF) — decides or corrects the plans it was
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
@@ -967,7 +1004,10 @@ issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
-`retirePlanClock`, issue #362 AC10), a `countdown` becomes a clock
+`retirePlanClock`, issue #362 AC10 — and so does a plan whose page a GM deletes
+in the journal sidebar, or whose journal is deleted: the canonical GM's
+`deleteJournalEntryPage` / `deleteJournalEntry` hooks retire its clocks,
+`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK), a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge —
 once a challenge holds it as its tension clock it is the challenge's, and the
 plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
@@ -999,7 +1039,11 @@ is stamped with the narration (`pacedBy`, `clocks.pacePlanClock`), and taking
 the narration back — a supersede, or the X-Card's pause write — runs the clock
 again at its fill from before, at most one short of full, the step it played
 owed again (`planClockPacing.js`; a burned price's plan clock is put back one
-short of full and its vignette struck by that id, issue #362 AC33);
+short of full and its vignette struck by that id, issue #362 AC33 — the price's
+receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
+advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that
+narration did even after a later price turned the emptied clock on, and never
+takes a later trigger's for its own, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
@@ -1025,7 +1069,11 @@ no plan write by id from it (issue #362 D2, the maintainer's answer A — plan
 ids are public, so a hand-made relay could reveal or rewrite a plan): its
 `reveals`, and its `plans` but the answers to its own plan requests (their
 `sameAs` taken off), are dropped; `openQuestions`, `newThreats` and
-`countdown` stand; the step a clock vignette or a chosen complication was made
+`countdown` stand — the countdown about what its `about` names, never the plan
+of that id (`applyPlanSideData`'s `relayed` → `applyCountdown`'s `byId: false`;
+an `about` that is a plan's id is no name, and the countdown gets its own
+mystery — issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID: by id it hung a new clock
+on a plan that had none); the step a clock vignette or a chosen complication was made
 to play rides apart (`forced`, with its `clockId` or complication scope) and
 stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the

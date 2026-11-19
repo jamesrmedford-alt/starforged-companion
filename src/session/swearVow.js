@@ -897,7 +897,10 @@ export function buildSwearMovePostForName(vowName, linkedConnectionName = null, 
  * same setup as a sworn vow: a reward proposal + a ⚔ Swear it (roll) button
  * (#248 Theme B1). Single-emitter on the canonical GM (it writes Item flags +
  * proposes rewards). Skipped pre-`ready` (world load / import). Idempotent via
- * the vowSetupOffered flag. Register once on ready.
+ * the vowSetupOffered flag. Register once on ready. Its card then follows the
+ * vow's sheet — a rename, a rank change — until the vow is sworn from it
+ * (the updateItem listener, followVowOnItsCard; issue #364
+ * VOW-CARD-GENERIC-UNTIL-NAMED).
  */
 export function registerPlayerVowHook() {
   if (registerPlayerVowHook._installed) return;
@@ -922,16 +925,7 @@ export function registerPlayerVowHook() {
       // D5). ⚔ Swear it swears the vow as the sheet has it then.
       const unnamed = isPlaceholderVowName(item.name);
       // Enumerate existing connections for the link picker (#248 B-link).
-      let connections = [];
-      try {
-        const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
-        const { getConnection } = await import("../entities/connection.js");
-        connections = (cs.connectionIds ?? [])
-          .map(hostId => getConnection(hostId)?.name)
-          .filter(Boolean);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | playerVow: connection enumeration failed:`, err?.message ?? err);
-      }
+      const connections = await connectionNamesForVowCard();
       // actorId: the vow's holder — ⚔ Swear it posts as them (issue #329 X05).
       await ChatMessage.create({
         content: buildPlayerVowSetupHtml({ name, rank, connections, unnamed }),
@@ -951,6 +945,109 @@ export function registerPlayerVowHook() {
       console.warn(`${MODULE_ID} | playerVow: createItem hook failed:`, err?.message ?? err);
     }
   });
+  // The vow named, or re-ranked, on its sheet: its card follows it (issue
+  // #364 VOW-CARD-GENERIC-UNTIL-NAMED). Single emitter, as the card's post.
+  Hooks.on("updateItem", async (item, change) => {
+    try {
+      if (!globalThis.game?.ready) return;
+      if (!isCanonicalGM()) return;
+      const renamed  = typeof change?.name === "string";
+      const reranked = change?.system?.rank !== undefined || change?.["system.rank"] !== undefined;
+      if (!renamed && !reranked) return;
+      if (item?.type !== "progress" || String(item?.system?.subtype ?? "") !== "vow") return;
+      if (!isPlayerCharacterActor(item?.parent ?? null)) return;
+      await followVowOnItsCard(item);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | playerVow: the vow's card was not brought in line with its sheet:`, err?.message ?? err);
+    }
+  });
+}
+
+/** The connections the world has, by name — the player-vow card's link picker (#248 B-link). Fail-open: none. */
+async function connectionNamesForVowCard() {
+  try {
+    const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    const { getConnection } = await import("../entities/connection.js");
+    return (cs.connectionIds ?? [])
+      .map(hostId => getConnection(hostId)?.name)
+      .filter(Boolean);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: connection enumeration failed:`, err?.message ?? err);
+    return [];
+  }
+}
+
+// Vow ids whose card is being given its vow's first name — one reward
+// re-proposal for it, however many sheet edits land while its call is out.
+const _vowCardsBeingNamed = new Set();
+
+/**
+ * Bring a sheet-made vow's "🆕 New vow recorded" card in line with the vow as
+ * its sheet now has it (issue #364 VOW-CARD-GENERIC-UNTIL-NAMED). The sheet's
+ * + Vow posts the card while the Item is still "Vow", worded for a vow still
+ * to be named (issue #362 AC23), and nothing updated it: the card stayed
+ * generic, and its rewards — proposed for no name — stayed generic, after the
+ * player named the vow. Until the vow is sworn from the card, a rename or a
+ * rank change on the sheet re-renders the card with the vow's name, rank and
+ * that rank's stakes; and the first time the vow gets a name of its own, the
+ * rewards on its reward-choice card are proposed again for that name
+ * (reproposeVowRewards). The card is found by the vow's id, never its name.
+ * Canonical GM (registerPlayerVowHook's updateItem hook).
+ *
+ * @param {Item} item — the vow, as updated
+ * @returns {Promise<void>}
+ */
+async function followVowOnItsCard(item) {
+  if (isPlaceholderVowName(item.name)) return;            // still to be named: its card says so
+  const card = (globalThis.game?.messages?.contents ?? [])
+    .filter(m => m?.flags?.[MODULE_ID]?.playerVowCard === true && isVowCopy(item, m.flags[MODULE_ID].vowId))
+    .at(-1) ?? null;
+  if (!card) return;
+  const f = card.flags[MODULE_ID];
+  const vowId = f.vowId;
+  // Sworn: the swear took the vow as its sheet had it. Closed: no vow to show.
+  if (f.swearRolled || f.vowGone) return;
+  const naming = isPlaceholderVowName(f.vowName) && !_vowCardsBeingNamed.has(vowId);
+  if (naming) _vowCardsBeingNamed.add(vowId);
+  try {
+    const content = buildPlayerVowSetupHtml({
+      name: item.name, rank: item.system?.rank ?? null, connections: await connectionNamesForVowCard(), unnamed: false,
+    });
+    if (content !== card.content || f.vowName !== item.name) {
+      await card.update({ content, [`flags.${MODULE_ID}.vowName`]: item.name });
+    }
+    if (naming) await reproposeVowRewards(vowId, item.name);
+  } finally {
+    if (naming) _vowCardsBeingNamed.delete(vowId);
+  }
+}
+
+/**
+ * Propose a vow's rewards again, for the name it now has, on its open
+ * reward-choice card — the card's options and buttons replaced in place, so
+ * one vow keeps one reward card. Nothing changes when a reward was already
+ * chosen (before or while the proposal was out), or when no proposal comes
+ * back (no Claude key, a failed call): the card's own options, and its
+ * write-your-own field, stand. Canonical GM.
+ *
+ * @param {string} vowId
+ * @param {string} name — the vow's name
+ * @returns {Promise<void>}
+ */
+async function reproposeVowRewards(vowId, name) {
+  const openCard = () => (globalThis.game?.messages?.contents ?? [])
+    .filter(m => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.rewardChoiceCard === true && f.vowId === vowId && !f.rewardChosen;
+    })
+    .at(-1) ?? null;
+  if (!openCard()) return;
+  const apiKey  = globalThis.game?.settings?.get?.(MODULE_ID, "claudeApiKey") ?? "";
+  const options = await proposeRewards({ kind: "vow", target: name, apiKey });
+  if (!options.length) return;
+  const card = openCard();   // a pick made while the call was out stands
+  if (!card) return;
+  await card.update({ content: buildRewardChoiceHtml(options), [`flags.${MODULE_ID}.rewardOptions`]: options });
 }
 
 /**

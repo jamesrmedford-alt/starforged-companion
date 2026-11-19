@@ -383,6 +383,49 @@ function namedOnce(docs, text, namesOf = (d) => [d?.name]) {
 const companionNames = (c) => [c?.name, companionGivenName(c)];
 
 /**
+ * The vehicle or companion a stated miss's suffer move lands on, resolved
+ * before the dice (issue #364 ACTION-STAT-VEHICLE-PRICE-NO-TARGET). The
+ * interpreter names it beside the suffer move (`stakes.missSuffer.target` —
+ * a Withstand Damage's vehicle, a Companion Takes a Hit's companion), as it
+ * names a move's own target: a move rolled on an action stat ("I gun the
+ * hoverbike across the gap", Face Danger +edge) has no vehicle or companion
+ * of its own, so its stated damage went to the command starship in orbit.
+ *
+ * The name is matched, as whole words, against the roller's own support
+ * vehicles (their asset names) or companions (asset and given names) —
+ * `namedOnce`, the rule a move's target is read by. Never the miss line, and
+ * never a guess: a name that matches none, or several, resolves nothing, and
+ * the price lands where it did (the command vehicle; the move's or the only
+ * companion). Reading it off the prose is how a starship's hit was taken by
+ * any vehicle the line mentioned (issue #345 AA14).
+ *
+ * The asset's id is stamped beside the name (`missSuffer.vehicleItemId` /
+ * `companionItemId`) on a new stakes object; stakes.js statedPrice puts it on
+ * the price's route when the move has no target of its own.
+ *
+ * @param {Actor|null} actor — the roller
+ * @param {Object} interpretation — its `stakes` replaced when a target resolves
+ * @returns {{ vehicleItemId?: string, companionItemId?: string }|null} what resolved, or null
+ */
+export function resolveStatedSufferTarget(actor, interpretation) {
+  const stakes = interpretation?.stakes;
+  const suffer = stakes?.missSuffer;
+  const name   = typeof suffer?.target === "string" ? suffer.target.trim() : "";
+  if (!actor || !name) return null;
+  let resolved = null;
+  if (suffer.move === "withstand_damage") {
+    const vehicle = namedOnce(listSupportVehicleAssets(actor), name);
+    if (vehicle?.id) resolved = { vehicleItemId: vehicle.id };
+  } else if (suffer.move === "companion_takes_a_hit") {
+    const companion = namedOnce(listCompanionAssets(actor), name, companionNames);
+    if (companion?.id) resolved = { companionItemId: companion.id };
+  }
+  if (!resolved) return null;
+  interpretation.stakes = { ...stakes, missSuffer: { ...suffer, ...resolved } };
+  return resolved;
+}
+
+/**
  * A forced move's stat, read from its narration (issue #321 U04). A move a
  * card or button forces — the pacing "Roll ⟨move⟩" button, the way-out and
  * Battle buttons — skips the interpreter, and rolled the move's first listed

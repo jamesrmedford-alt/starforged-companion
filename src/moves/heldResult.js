@@ -26,7 +26,9 @@
  *     card's upgrades, issue #326 D4, so it is kept first), the roller's sheet
  *     roll, `!ptp` or `!oracle` (index.js, oracleFollowup.js), a consequence
  *     chosen on the outcome's choice card; and every held result is kept when
- *     the session ends (End a Session) and when Batch Mode is switched on
+ *     the session ends — End a Session, or the mint that closes out a session
+ *     nobody ended (four idle hours; lifecycle.js rollSessionIfDue,
+ *     HELD-RESULT-IDLE-SESSION) — and when Batch Mode is switched on
  *     (keepEveryHeldResult) — a round's line is table talk, which kept none.
  *   - **Burn / Improve**: the upgrade's own handler applies it; where it
  *     re-narrates (index.js narrateUpgradedResolution) this module narrates
@@ -63,7 +65,8 @@ export function holdForUpgradeEnabled() {
 // How a held result was settled, as its card records it
 // (`awaitingUpgrade.resolvedBy`): "keep" (the button), "later" (the roller's
 // next line or move), "choice" (a consequence chosen), "session-end" (End a
-// Session), "batch-mode" (Batch Mode switched on — issue #362 D5), "burn",
+// Session, or the mint closing out a session nobody ended —
+// HELD-RESULT-IDLE-SESSION), "batch-mode" (Batch Mode switched on — issue #362 D5), "burn",
 // "improve". The settled card says what kept it (index.js
 // wireKeepResultButton — issue #362 AC82: the stamp had no reader).
 
@@ -233,7 +236,10 @@ export async function keepHeldResultsOf(actorId, { except = null } = {}) {
 /**
  * Keep every held result at the table, whoever rolled it: the session is
  * ending (End a Session — a result held across it was paid and narrated by
- * its roller's first line of the next session, into that session's story),
+ * its roller's first line of the next session, into that session's story;
+ * and the mint that closes out a session nobody ended, which went idle for
+ * four hours and so never got End a Session — lifecycle.js rollSessionIfDue,
+ * HELD-RESULT-IDLE-SESSION),
  * or Batch Mode is switched on (a round's line is table talk, so nothing kept
  * a result held before it, and the round told the next beat with the miss
  * unpaid) — issue #362 D5, decided A (AC32). Each is paid and narrated, in

@@ -15,6 +15,9 @@
  * The round's card carries the ended session's id, so it is that session's
  * narration: its last round of play. A typed move whose narration lands while
  * End runs is the same (X41 closed the gate for new lines only).
+ * (Since issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END the session ending is
+ * Keep for a roller still deciding, so the round does not wait for them; its
+ * narration is written while End runs, and still lands after End's refresh.)
  *
  * The next session's mint (rollSessionIfDue) brought an ENDED session's
  * summary up to date only when it had no text, on the premise that an End
@@ -30,8 +33,9 @@
  *   1. Two narrations this session ([A1], [A2]).
  *   2. Round 1: Kira's Face Danger is a weak hit she may burn (momentum 9);
  *      Ren passes. The round waits on Kira's Burn / Keep (upgrading).
- *   3. The GM ends the session: summary refreshed ("[A1] [A2]"), gate shut.
- *   4. Kira keeps. The round is narrated ([R1]) into the ended session.
+ *   3. The GM ends the session: summary refreshed ("[A1] [A2]"), gate shut —
+ *      and the result is kept for Kira, the round's narration begun.
+ *   4. The round is narrated ([R1]) into the ended session, after End's refresh.
  *   5. Begin a Session: the mint keeps LAST SESSION — it tells [R1].
  */
 
@@ -189,12 +193,22 @@ describe('issue #345 AA21 — End a Session while a Batch round waits on a Burn 
     await narrate('A2', 'Kira trades the coolant for passage codes.');
     await kiraWeakHitWaitingOnBurn();
 
-    await endSession();                                     // the round is resolving: it finishes first
+    // The round is resolving: it finishes first. The session ending keeps for
+    // Kira (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END) and the round's
+    // narration is written while End runs — held here, so it lands after End.
+    const held = claude.hold(c => !isSummaryCall(c) && String(c?.userText ?? '').includes('slip through the vent'));
+    const gm = table.client('gm-1');
+    const gmRelay = await gm.import('../../src/multiplayer/gmRelay.js');
+    await gm.run(() => gmRelay.requestGmAction('session.end', { questFocus: '', connectionFocus: '' }));
+    await table.settle();
+    await held.arrived;
     expect(world().sessionEndedId).toBe(S1);
-    expect(round()).toMatchObject({ number: 1, phase: 'upgrading' });
+    expect(round()).toMatchObject({ number: 1, phase: 'narrating' });
+    expect(round().entries['pl-1'].upgrade).toMatchObject({ decided: 'keep' });
     expect(world().sessionSummary.text).not.toMatch(/\[R1\]/);   // End's refresh landed, before the round
 
-    await kiraKeeps();                                      // the round is narrated now, after End
+    held.release();                                         // the round is narrated now, after End
+    await table.settle(); await table.drain();
     expect(roundCards()).toHaveLength(1);
     expect(roundCards()[0].flags[MODULE_ID].sessionId, 'the round card is the ended session\'s').toBe(S1);
 

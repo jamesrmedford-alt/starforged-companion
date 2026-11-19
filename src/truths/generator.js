@@ -131,7 +131,8 @@ const WORLD_TRUTHS_FIELDS = Object.freeze(["worldTruths", "worldTruthsSet", "wor
  *
  * Only WORLD_TRUTHS_FIELDS are written, merged onto the latest stored
  * campaignState after the journal awaits; the caller's copy takes them once
- * the write has landed.
+ * the write has landed — and the Campaign Setup card a world load posted is
+ * dismissed (dismissSetupCards).
  *
  * @param {Object} truthSet
  * @param {Object} campaignState  — mutated in place (WORLD_TRUTHS_FIELDS)
@@ -148,7 +149,34 @@ export async function storeWorldTruths(truthSet, campaignState) {
   campaignState.worldTruths          = truthSet;
   campaignState.worldTruthsSet       = true;
   campaignState.worldTruthsJournalId = journalId;
+  await dismissSetupCards();
   return journal;
+}
+
+/**
+ * Delete every "◈ Campaign Setup" card in chat (`setupCard` — index.js posts
+ * one at `ready` while no World Truths are established): the truths are
+ * established now. Run by every write that records them — storeWorldTruths
+ * (the Playtest Quickstart's) and writeTruthsLink (each save or edit of the
+ * system dialog's page, and the world load's reconcile) — and by `ready`
+ * before it posts the next card. Only the dialog's save hook dismissed it, so
+ * a Quickstart left the card saying "No World Truths have been established",
+ * its button live, beside the truths it had just rolled (issue #364
+ * QUICKSTART-SETUP-CARD); every one still in chat goes, not the first found
+ * (issue #362 AC58). A GM's client (its callers: a GM may delete another
+ * GM's card); a refused delete is logged, never thrown.
+ *
+ * @returns {Promise<void>}
+ */
+export async function dismissSetupCards() {
+  const cards = (globalThis.game?.messages?.contents ?? []).filter(m => m?.flags?.[MODULE_ID]?.setupCard);
+  for (const card of cards) {
+    try {
+      await card.delete();
+    } catch (err) {
+      console.warn(`${MODULE_ID} | the Campaign Setup card could not be removed:`, err?.message ?? err);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -430,12 +458,15 @@ export async function reconcileSystemTruths() {
  * no truth that reads keeps the stored ones (the dialog's empty save).
  * WORLD_TRUTHS_FIELDS only, onto the latest store at this write's turn on the
  * client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL); rejects when
- * refused.
+ * refused. Once it has landed the Campaign Setup cards are dismissed
+ * (dismissSetupCards).
  */
 async function writeTruthsLink(journalId, truths) {
   const fields = { worldTruthsSet: true, worldTruthsJournalId: journalId };
   if (truths && Object.keys(truths).length) fields.worldTruths = truths;
   await writeOwnedFields(fields, WORLD_TRUTHS_FIELDS, "world truths");
+  // The truths are established: the Campaign Setup card that asked for them goes.
+  await dismissSetupCards();
 }
 
 const H2_RE     = /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi;

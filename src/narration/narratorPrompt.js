@@ -5,7 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock } from '../moves/stakes.js';
+import { formatStakesBlock, formatPriceChoiceBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -1795,6 +1795,7 @@ export function buildNarratorSystemBlocks(
     pinnedChronicle      = null,
     unrevealed           = [],
     planRequests         = [],
+    decideNowRequests    = null,
     plannedSubjects      = [],
     usedImages           = [],
     beatShape            = null,
@@ -2114,8 +2115,13 @@ export function buildNarratorSystemBlocks(
   if (!isMetaMode) {
     //       With a world snapshot the plans themselves are in it: the
     //       block names the ones in play and keeps its rules and DECIDE NOW.
+    //       DECIDE NOW lists the requests this narration is asked to decide
+    //       (`decideNowRequests` — as many as one sidecar answers); the rest
+    //       of what it carries (`planRequests` — a Batch Mode round can bring
+    //       more) are filed with their rolls alone, never shown (issue #364
+    //       ROUND-PLAN-REQUEST-CAP). Extras that name no asked list ask them all.
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
-      planRequests,
+      planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
       sidecar: factContinuityEnabled,
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
@@ -2354,7 +2360,9 @@ export function formatSnapshotPlan(r) {
  * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
  * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
  * the plans this narration must decide: a price that revealed a new enemy
- * (`planRequests`, by ref), a posed question whose answer was rolled but not
+ * (`planRequests`, by ref — the ones this narration is asked to decide,
+ * `extras.decideNowRequests`: as many as one sidecar can answer), a posed
+ * question whose answer was rolled but not
  * yet decided (a plan with no truth, by id). The plans are trimmed from the
  * end to UNREVEALED_MAX_TOKENS; DECIDE NOW is not. Without the sidecar (the
  * Private Channel) only decided plans, and no instruction to write. Exported
@@ -2976,9 +2984,15 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   }
 
   // What the player was shown before the roll, and which of it this outcome
-  // delivers (issue #353 R1).
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null);
+  // delivers (issue #353 R1). A miss's price that is still the player's
+  // choice, or was declined for the move that replaces it (Explore a
+  // Waypoint's match), is told as it stands (issue #364
+  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
+  const priceChoice = resolution?.priceChoice ?? null;
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice });
   if (stakes) parts.push(stakes);
+  const priceBlock = formatPriceChoiceBlock(priceChoice);
+  if (priceBlock) parts.push(priceBlock);
 
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
@@ -3080,9 +3094,12 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
-      // The stakes shown before this entry's roll (issue #353 R1).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null);
+      // The stakes shown before this entry's roll (issue #353 R1), and where
+      // a price that is its player's choice stands (issue #364).
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null, { priceChoice: input.priceChoice ?? null });
       if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
+      const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
+      if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
     } else if (input.kind === 'refused') {

@@ -88,7 +88,7 @@ import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths, dismissSetupCards } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -103,6 +103,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
 import { courseReroutedText } from "./moves/travel.js";
+import { siteNamedExactly } from "./sectors/precursorSites.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -230,7 +231,7 @@ import {
   DEFAULT_NPC_VOICE_ID,
   DEFAULT_NPC_FEMININE_VOICE_ID,
 } from "./audio/elevenlabs.js";
-import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
+import { getEntityDocument, readEntityFlag, registerSheetNotesRemovalHook } from "./entities/registry.js";
 import { resolveSpeakerActorId, messageAuthorId } from "./multiplayer/speaker.js";
 import { RUN_ON, dispatchChatCommand } from "./multiplayer/commandRouting.js";
 import {
@@ -2967,7 +2968,11 @@ function wonFightMarks(track, outcome) {
  *     press — one press pays them; once pressed, the marks it lacks are
  *     marked now, once (the vow's payoff ledger, `milestone:<card>:upgrade`).
  *   - The promised reward, granted at the weak hit's scale (its `grantedAt`):
- *     the strong hit's (upgradeLinkedVowReward).
+ *     the strong hit's (upgradeLinkedVowReward). A claim or a give the world
+ *     refused goes to the GMs' payoff card, with a Retry — the claim as a
+ *     `rewardUpgrade` step that runs the upgrade again (issue #364
+ *     WON-FIGHT-REWARD-UPGRADE-NO-RETRY: it was a line under "Not applied"
+ *     on the move card, and nothing could give the difference after).
  * What landed and what did not, in words, for the upgraded move card.
  *
  * @param {Object} track — the fight, as stored
@@ -3005,16 +3010,22 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
   }
   const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
-    return { ok: false, step: "reward", reason: "refused" };
+    return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
   });
   if (reward?.ok && !reward.skipped) applied.push(reward.applied);
-  else if (reward && !reward.ok && reward.step === "rewardGrant") {
-    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? null, actorId: rollerActor?.id ?? null,
+  else if (reward && !reward.ok) {
+    // The give refused after its claim (`rewardGrant`), or the claim itself
+    // (`rewardUpgrade`): each a step of the GMs' card, whose Retry runs it.
+    let told = true;
+    await postPayoffFailureCard({ source: "fight", vowName, vowId: reward.vowId ?? vowId ?? null, actorId: rollerActor?.id ?? null,
       outcome: "strong_hit", failures: [reward] })
-      .catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
-    notApplied.push("the reward's strong-hit difference — the GMs have a Retry");
-  } else if (reward && !reward.ok) {
-    notApplied.push("the reward's strong-hit difference — the world refused it");
+      .catch(err => {
+        told = false;
+        console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err);
+      });
+    notApplied.push(told
+      ? "the reward's strong-hit difference — the GMs have a Retry"
+      : "the reward's strong-hit difference — the world refused it");
   }
   return { applied, notApplied };
 }
@@ -3454,6 +3465,31 @@ function rolledByPlayerCharacter(message) {
 }
 
 /**
+ * The stable id of the vow a sheet roll scored — every copy's `vowId`, the
+ * subject its hidden plan is filed under (issue #353 Phase 4) — for the
+ * narration of its fulfilment (`endingTrackIds`; issue #364
+ * NATIVE-FULFIL-NO-ENDING-TRACK). The roll card names the vow Item as the
+ * roller's sheet does, so it is the roller's own vow of that exact name or
+ * none (resolveVowItemCopies' `ownOnly`): never another vow by a looser name,
+ * whose plan would be revealed in its place. None for a vow with no id (one
+ * the module never recorded has no plan filed under it).
+ *
+ * @param {string} source — the roll card's source: the vow Item's name
+ * @param {string|null} actorId — the roller's PC
+ * @returns {string[]}
+ */
+function sheetRolledVowIds(source, actorId) {
+  if (!actorId) return [];
+  try {
+    const { copies } = resolveVowItemCopies(source, { actorId, ownOnly: true });
+    return [...new Set(copies.map(({ item }) => item?.flags?.[MODULE_ID]?.vowId).filter(id => typeof id === "string" && id))];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | native-roll: the vow "${source}" could not be read for its plan — narrated without it:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -3559,6 +3595,18 @@ function registerNativeProgressRollHook() {
         // alone (issue #325 W20).
         resolution.consequences = mapConsequences(moveId, parsed.outcome, isMatch);
         resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "progress" });
+        // A hit ends the vow, and this is the narration that tells it: the
+        // vow's hidden plan — resolved in code as the vow is completed (issue
+        // #362 D4) — is in play to reveal its end, by the vow's stable id, as
+        // a typed Fulfill Your Vow's is (movePipeline.js). The sheet roll's
+        // narration named no ending vow, so the plan was left out and what
+        // was really behind the vow never came out (issue #364
+        // NATIVE-FULFIL-NO-ENDING-TRACK). With the round too, in Batch Mode.
+        if (moveId === "fulfill_your_vow" && resolution.consequences?.fulfillVow) {
+          // The sheet's speaker rolled it, as the payoff hook reads the roller.
+          const vowIds = sheetRolledVowIds(parsed.source, typeof message?.speaker?.actor === "string" ? message.speaker.actor : null);
+          if (vowIds.length) resolution.endingTrackIds = vowIds;
+        }
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome — with the round, in Batch Mode.
         if (toRound && await takeSheetRoll(message, resolution)) return null;
@@ -3658,7 +3706,10 @@ function registerStarshipSeedHook() {
  *
  * Triggers:
  *  - createItem / deleteItem — when a Command Vehicle asset is added to or
- *    removed from a starship Actor, recompute that ship's flag.
+ *    removed from a starship Actor, recompute that ship's flag. The asset
+ *    is handed to the sync: of one removed, the integrity its track last
+ *    showed is kept on the ship's record (issue #364
+ *    STARSHIP-ASSET-REMOVED-LOSES-HAND-MARK).
  *  - world load — reconcile ships created before asset-detection shipped,
  *    so an existing command vehicle (like one made via the sidebar) gets
  *    flagged without the user having to re-add the asset. This runs from
@@ -3684,7 +3735,7 @@ function registerCommandVehicleHook() {
 
       import("./entities/ship.js").then(async (mod) => {
         const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+        await mod.syncCommandVehicleFlag(actor, state, { changedAsset: item }).catch(err =>
           console.warn(`${MODULE_ID} | command-vehicle sync failed for ${actor.id}:`, err));
       }).catch(err =>
         console.warn(`${MODULE_ID} | command-vehicle sync: dynamic import failed:`, err));
@@ -4632,10 +4683,10 @@ async function handleOracleTableCommand(message, tableId, question) {
  *   !ptp [question?]
  *
  * The question text is optional context — the table itself just produces a
- * d100 + consequence string. The fate-move (`pay_the_price`) flow in the
- * resolver already surfaces this same table as an advisory seed on every
- * eligible move's miss card; this command lets the player or GM invoke it
- * directly without going through a move pipeline.
+ * d100 + consequence string. A move's miss pays its price through its own
+ * card or choice (never an advisory seed — issue #364); this command lets the
+ * player or GM invoke the table directly without going through a move
+ * pipeline.
  */
 async function handlePayThePriceCommand(message) {
   const text = message.content?.trim() ?? "";
@@ -6205,7 +6256,10 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
 // without the string the weak hit tied to it. Claimed before it is given, as
 // the grant is: `grantedAt` is raised on every copy first, so nothing pays the
 // difference twice. A reward granted before `grantedAt` was recorded, one not
-// granted, and a lower outcome are left as they stand (`skipped`).
+// granted, and a lower outcome are left as they stand (`skipped`). A refused
+// claim is step "rewardUpgrade" — nothing was given, and the GMs' Retry runs
+// this again (runPayoffStep; issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY); a
+// refused give after the claim is step "rewardGrant", carrying what to give.
 //
 // @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, step?: string,
 //   reason?: string, vowId?: string|null }>}
@@ -6225,7 +6279,7 @@ async function upgradeLinkedVowReward(vowName, outcome, { actorId = null, copies
   const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
   const pc = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
   if (vowId && !(await setSharedVowReward(vowId, { ...reward, grantedAt: outcome })).ok) {
-    return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
+    return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, rewardDescription: reward.description ?? null };
   }
   const plan = { status: "granted", form: reward.form, description: reward.description, ...(more > 0 ? { amount: more } : {}) };
   if (more > 0) {
@@ -6744,6 +6798,7 @@ function payoffStepRecord(f) {
     case "legacy":      return { step: "legacy", track: f.track ?? null, ticks: f.ticks ?? 0 };
     case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1 };
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
+    case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
@@ -6767,7 +6822,7 @@ function payoffStepRecord(f) {
 }
 
 // One failed step, as a line of the GM card: what, why, and its value now.
-async function describePayoffFailure(f, { vowName, actorId }) {
+async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
   const why = escapeChatHtml(PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
     + (f.error ? ` <span class="sf-card-hint">(${escapeChatHtml(f.error)})</span>` : "");
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -6880,6 +6935,19 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const meter = (form === "supply" || form === "momentum") ? readCharacterSnapshot(pc)?.meters?.[form] : undefined;
         const now  = meter !== undefined ? ` ${who}'s ${form} stands at ${meter} now; this adds ${f.plan?.amount ?? 1}.` : "";
         return `The promised reward “${escapeChatHtml(f.reward?.description ?? "your reward")}” — recorded as earned, but not given to ${who}: ${why}.${now}`;
+      }
+      case "rewardUpgrade": {
+        // A weak-hit win's reward raised to the strong hit's, its claim
+        // refused (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): how the
+        // reward is recorded now — a claim that landed unconfirmed leaves
+        // the Retry nothing to give.
+        const rewards = payoffVowCopies({ vowId, vowName, actorId }).map(({ item }) => item?.flags?.[MODULE_ID]?.reward).filter(Boolean);
+        const now = rewards.some(r => r.status === "granted" && r.grantedAt === "weak_hit")
+          ? " It is recorded as granted on the weak hit now, and nothing more was given."
+          : rewards.some(r => r.status === "granted" && r.grantedAt === "strong_hit")
+            ? " It is recorded as the strong hit's now, though nothing more was given: a Retry gives nothing — hand over the difference yourself."
+            : "";
+        return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
         return `The promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""} — ${why}; nothing was given.`;
@@ -7041,6 +7109,12 @@ async function runPayoffStep(s, card, copies) {
       const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
+    case "rewardUpgrade":
+      // A weak-hit win's reward raised to the strong hit's, its claim refused
+      // (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): the upgrade again —
+      // claim first, so a reward already raised gives nothing more.
+      if (!copies.length) return { ok: false, reason: "no-vow" };
+      return upgradeLinkedVowReward(card.vowName ?? null, "strong_hit", { actorId: card.actorId ?? null, copies });
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       const given = await giveReward(pc, s.reward, s.plan);
@@ -7919,16 +7993,45 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
 
   // companion_takes_a_hit needs an item id. If the PC has a companion
   // asset, surface it — the one the route names (a stated price's: the
-  // companion its move was made for, issue #362 D11), else the first;
+  // companion its move was made for, issue #362 D11), else the only one;
   // otherwise fall back to Endure Harm (the "you are, if alone" branch in the
-  // entry text). A stated Withstand Damage names the support vehicle its move
-  // was rolled for; with none, the executor takes the command vehicle.
+  // entry text). Several companions and none named: the player is asked
+  // which — the first in the list took the hit, whoever the fiction put in
+  // harm's way (issue #364 ANY-SUFFER-SUPPORT-VEHICLE, as a suffer card's
+  // pick asks since issue #362 AC28). A stated Withstand Damage names the
+  // support vehicle its move was rolled for; with none, the command vehicle
+  // takes it (a null target is the starship — issue #345 AA14) — and with no
+  // command vehicle, the PC's support vehicle: the only one, or the one the
+  // player picks. It found "no vehicle to take it".
+  const amount = route.amount ?? 1;
   let move = route.move;
   let itemId = null;
+  /** Ask which companion / vehicle on a choice card bound to the price, as its other cards are. Nothing lands here. */
+  const askWhich = async (sufferPrompt) => {
+    const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
+    const executorOpts = { isMiss: true, ...(resolutionId ? { resolutionId, priceCard: true } : {}),
+      ...(upgradeOffered ? { upgradeOffered: true } : {}) };
+    const prompt = upgradeOffered
+      ? { ...sufferPrompt, hint: "Burn momentum or improve the result first — choosing here pays the price, and closes them." }
+      : sufferPrompt;
+    const card = await postSufferChoiceCard({ sufferPrompt: prompt, actor, executorOpts, moveId: move, resolutionId });
+    if (!card) {
+      console.error(`${MODULE_ID} | the world did not save ${actor.name ?? "the roller"}'s Pay the Price picker (${STATED_SUFFER_MOVES[move] ?? move} -${amount}).`);
+      await postPayoffFailureCard({ source: "suffer", actorId: actor.id, failures: [{
+        step: "choiceCard", pcId: actor.id, moveId: move, moveName: "Pay the Price",
+        sufferPrompt: prompt, executorOpts, resolutionId: resolutionId ?? null, reason: "refused",
+      }] }).catch(err => console.warn(`${MODULE_ID} | the refused picker's failure card failed:`, err?.message ?? err));
+    }
+  };
   if (move === "companion_takes_a_hit") {
     const isCompanion = (i) => i?.system?.category?.toLowerCase?.() === "companion";
     const named = typeof route.companionItemId === "string" && route.companionItemId
       ? actor.items?.find?.(i => i?.id === route.companionItemId && isCompanion(i)) : null;
+    if (!named) {
+      const { whichCompanionPrompt } = await import("./moves/sufferCard.js");
+      const which = whichCompanionPrompt(actor, amount);
+      if (which.options.length > 1) return askWhich(which);
+    }
     const companion = named ?? actor.items?.find?.(isCompanion);
     if (companion) {
       itemId = companion.id;
@@ -7937,9 +8040,15 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     }
   } else if (move === "withstand_damage" && typeof route.vehicleItemId === "string" && route.vehicleItemId) {
     itemId = route.vehicleItemId;
+  } else if (move === "withstand_damage") {
+    const { vehicleChoicesOf, whichVehiclePrompt } = await import("./moves/sufferCard.js");
+    const { vehicleChoices } = vehicleChoicesOf(actor, {});
+    if (vehicleChoices.length && vehicleChoices.every(v => v.itemId)) {
+      if (vehicleChoices.length > 1) return askWhich(whichVehiclePrompt(vehicleChoices, amount));
+      itemId = vehicleChoices[0].itemId;
+    }
   }
 
-  const amount = route.amount ?? 1;
   let landed;
   try {
     landed = await executeSuffer(move, actor, {
@@ -8118,11 +8227,22 @@ function escapeChatHtml(s) {
  * current location, the ship and its token on the wrong map (issue #342 Z15;
  * the site ladder's rule, issue #321 U48).
  *
+ * `siteRecordNames` (the GM's `!at`) adds one exact rung, after the exact
+ * name and before the looser ones: the name a site's discovery record keeps —
+ * an uncharted destination's working label, its location renamed since, as
+ * its Site Discovered card invites — resolved to the site's location by its
+ * id (precursorSites.siteNamedExactly; the active sector's first). The
+ * location is known here by its new name only, so `!at ‹old working label›`
+ * found nothing while a Set a Course by that label arrived (issue #364
+ * AT-COMMAND-OLD-LABEL; the course takes the same step in travel.js
+ * rerouteUnchartedCourse, issue #362 AC50).
+ *
  * @param {string} name
  * @param {Object} campaignState
+ * @param {{ siteRecordNames?: boolean }} [opts]
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
-export function resolveCurrentLocationName(name, campaignState) {
+export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false } = {}) {
   const target = name?.trim().toLowerCase();
   if (!target) return null;
 
@@ -8156,7 +8276,14 @@ export function resolveCurrentLocationName(name, campaignState) {
     const hits = candidates.filter(fits);
     return (activeSectorId && hits.find(c => c.entity?.sectorId === activeSectorId)) || hits[0] || null;
   };
+  // The site whose discovery record keeps this name, as its listed location.
+  const byRecordName = () => {
+    const actorId = siteNamedExactly(Array.isArray(campaignState?.sectors) ? campaignState.sectors : [], name,
+      { activeSectorId })?.site?.actorId;
+    return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
+  };
   return pick(c => c.lc === target)
+      ?? (siteRecordNames ? byRecordName() : null)
       ?? pick(c => c.lc.startsWith(target))
       ?? pick(c => wholeWordsFit(c.lc, target))
       ?? null;
@@ -8214,7 +8341,10 @@ async function handleAtCommand(message) {
     return;
   }
 
-  const match = resolveCurrentLocationName(arg, campaignState);
+  // A site is found by the name its discovery record keeps too — the working
+  // label the table still uses after the GM renamed its location (issue #364
+  // AT-COMMAND-OLD-LABEL).
+  const match = resolveCurrentLocationName(arg, campaignState, { siteRecordNames: true });
   if (!match) {
     ui.notifications.warn(`No settlement, location, or planet named "${arg}" found.`);
     return;
@@ -8872,6 +9002,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
  * card: strong hit + match reveals something wondrous (Make a Discovery), miss
  * + match exposes something dire (Confront Chaos). These were advisory prose
  * seeds only until the 2026-07 soft-spot cleanup gave them one-click buttons.
+ * Each is *instead* of the result's own choice card — a strong hit's reward,
+ * a miss's price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY), whose card
+ * offers the miss's "Confront Chaos instead" too (sufferCard.js).
  *
  * @param {{ moveId?: string, outcome?: string, isMatch?: boolean }} resolution
  * @returns {"make_a_discovery"|"confront_chaos"|null}
@@ -8904,8 +9037,12 @@ export function wireWaypointOracleButton(message, root) {
   const claimed = liveCardFlags(message)?.waypointRewardClaimed;
   if (claimed) {
     btn.disabled = true;
+    // A miss's ordinary result is its price, paid on its choice card (issue
+    // #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
     btn.title = claimed === "ordinary"
-      ? "The ordinary reward was taken — the match's alternative no longer applies"
+      ? (oracleMove === "confront_chaos"
+        ? "The price was paid — the match's alternative no longer applies"
+        : "The ordinary reward was taken — the match's alternative no longer applies")
       : claimed === "burn" || claimed === "improve"
         ? "The result changed — the match's alternative no longer applies"
         : "Taken";
@@ -9204,7 +9341,8 @@ Hooks.once("ready", () => {
       // this client's GM alone, so a second GM never saw it (issue #331 X54).
       // One card at a time: the card an earlier load posted is replaced, not
       // stacked — every load before the truths were saved added one, and the
-      // save took one away (issue #362 AC58).
+      // save took one away (issue #362 AC58). Every write that establishes
+      // the truths dismisses the cards itself (truths/generator.js).
       if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
         await dismissSetupCards();
         ChatMessage.create({
@@ -9406,6 +9544,7 @@ Hooks.once("ready", () => {
     void renamePlanClocksBySubject();
   }
   registerEntityRenameSyncHook();
+  registerSheetNotesRemovalHook();         // #364: text taken off an NPC card's or ship's Notes tab takes a new world snapshot
   registerConnectionDeleteHook();          // #362 D10: a GM's delete of an NPC card tears its connection down
   registerStarshipSeedHook();
   registerCommandVehicleHook();
@@ -10222,7 +10361,10 @@ Hooks.on("createJournalEntryPage", async (page) => {
   // The saved truths become the campaign's — parsed into worldTruths, which
   // the narrator reads, as well as linked for !lore (issue #322 V34). Owned
   // fields onto the latest store; a refused write leaves the cached setting
-  // as it was, and claims nothing.
+  // as it was, and claims nothing. The write dismisses the setup notification
+  // card — every one still in chat (truths/generator.js dismissSetupCards:
+  // the truths store's own, so the Playtest Quickstart's truths dismiss it
+  // too — issue #364 QUICKSTART-SETUP-CARD).
   try {
     await recordSystemTruths(entry.id, content);
   } catch (err) {
@@ -10230,26 +10372,8 @@ Hooks.on("createJournalEntryPage", async (page) => {
     return;
   }
 
-  // Dismiss the setup notification card — every one still in chat.
-  await dismissSetupCards();
-
   ui?.notifications?.info("Starforged Companion: World Truths recorded.");
 });
-
-/**
- * Delete every "◈ Campaign Setup" card in chat (`setupCard`): before `ready`
- * posts the next, and once the World Truths are saved. It found and deleted
- * one — every load before the save had posted its own, so the rest kept
- * saying no World Truths were established, their button live (issue #362
- * AC58). Canonical GM (its callers); a refused delete is logged.
- */
-async function dismissSetupCards() {
-  const cards = (game.messages?.contents ?? []).filter(m => m?.flags?.[MODULE_ID]?.setupCard);
-  for (const card of cards) {
-    await card.delete().catch(err =>
-      console.warn(`${MODULE_ID} | the Campaign Setup card could not be removed:`, err?.message ?? err));
-  }
-}
 
 /**
  * updateJournalEntryPage — an edit of the campaign's saved "Setting Truths"

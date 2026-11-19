@@ -182,7 +182,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "stakes": {
     "hit": "You thread the debris and come out ahead of the patrol.",
     "miss": "A shard tears through the hull plating as you clear the field.",
-    "missSuffer": { "move": "withstand_damage", "amount": 1 }
+    "missSuffer": { "move": "withstand_damage", "amount": 1, "target": null }
   },
   "mischiefApplied": false,
   "confidence": "high"
@@ -197,7 +197,7 @@ expeditionRank: only for undertake_an_expedition. When the narration implies the
 healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.
 stakes: what this roll is for, shown to the player before they roll — only for a move that rolls a stat (statUsed is not null); null otherwise. One short line each, in the second person, drawn from the RECENT SCENE and the player's narration: "hit" — what the attempt gets the character; "miss" — its most obvious negative outcome (Pay the Price's first choice, "make the most obvious negative outcome happen"): concrete, and about what was attempted, never a vague setback. "miss" is null when no outcome follows obviously from the attempt — the Pay the Price table is rolled then. Never state what the move's own rules decide (progress marked, a combat position) — only what happens in the fiction.
-missSuffer: when that miss plainly costs the character one of these, name it and its amount (1, or 2 for a serious blow): "endure_harm" (an injury), "endure_stress" (fear, shock or despair), "lose_momentum" (a delay, a lost edge), "sacrifice_resources" (supplies spent or lost), "withstand_damage" (their vehicle is damaged), "companion_takes_a_hit" (their companion is harmed). null when the miss costs something else — a position, an opportunity, someone's trust.`;
+missSuffer: when that miss plainly costs the character one of these, name it and its amount (1, or 2 for a serious blow): "endure_harm" (an injury), "endure_stress" (fear, shock or despair), "lose_momentum" (a delay, a lost edge), "sacrifice_resources" (supplies spent or lost), "withstand_damage" (their vehicle is damaged), "companion_takes_a_hit" (their companion is harmed). null when the miss costs something else — a position, an opportunity, someone's trust. For "withstand_damage" and "companion_takes_a_hit" also give "target": the vehicle or companion that takes it, by its name as the context lists it ("Hoverbike", "Glowcat") — whatever stat the move rolls ("I gun the hoverbike across the gap" rolls +edge, and its miss damages the "Hoverbike"); null for the command starship, and when the context lists no such vehicle or companion.`;
 }
 
 

@@ -15,7 +15,7 @@
  *   collecting ──(every connected participant ready or passed; Send now)──► rolling
  *   collecting ──(End a Session, Discard, the mode off)──────────────────► closed
  *   rolling ──(every acting entry rolled and recorded)──► upgrading, or narrating when nothing offers an upgrade
- *   upgrading ──(each offered roller chose; Send now = Keep; the roller left = Keep)──► narrating
+ *   upgrading ──(each offered roller chose; Send now = Keep; the roller left = Keep; its session over = Keep)──► narrating
  *   narrating ──(the round card, its fallback or the X-Card's paused notice posted)──► closed
  *
  * A round is narrated on a Claude key: a GM with none, at a table whose

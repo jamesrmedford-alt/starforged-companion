@@ -16,7 +16,11 @@
  * The narration a plan's clock still stands paced by (`pacedBy`) — emptied, or
  * retired after a last step, and not moved since — else null. A clock a later
  * price advanced, or re-armed (clocks.js rearmClock), is no longer as that
- * pacing left it: taking the narration back leaves it be.
+ * pacing left it: taking the narration back leaves it be. (A burn of the
+ * price whose trigger paced it does not ask this: its receipt names the
+ * vignette, and the stamp — kept while later prices turn the clock — is that
+ * narration's or not; clocks.js revertTensionClocksForBurn, issue #364
+ * PLAN-CLOCK-BURN-AFTER-LATER-PRICE.)
  *
  * @param {object|null} clock — a campaignState.clocks entry
  * @returns {string|null}

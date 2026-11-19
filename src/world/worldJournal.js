@@ -117,16 +117,25 @@ export function normalizeThreatSeverity(value) {
   return severityNamedBy(value);
 }
 
+/** A severity value's words — none for a value that is no severity phrase (not text, or longer than SEVERITY_MAX_WORDS). */
+function severityWordsOf(value) {
+  if (typeof value !== "string") return [];
+  const words = value.toLowerCase().replace(/[^a-z\s-]+/g, " ").split(/[\s-]+/).filter(Boolean);
+  return words.length <= SEVERITY_MAX_WORDS ? words : [];
+}
+
 /** normalizeThreatSeverity, leaving out the words in `ignored` (a Set). */
 function severityNamedBy(value, ignored = null) {
-  if (typeof value !== "string") return null;
-  const words = value.toLowerCase().replace(/[^a-z\s-]+/g, " ").split(/[\s-]+/).filter(Boolean);
-  if (!words.length || words.length > SEVERITY_MAX_WORDS) return null;
-  for (const w of words) {
+  for (const w of severityWordsOf(value)) {
     const severity = ignored?.has(w) ? null : SEVERITY_BY_WORD.get(w);
     if (severity) return severity;
   }
   return null;
+}
+
+/** Whether a severity value says the threat grew — a word of ESCALATION_WORDS ("escalating", "rising to immediate"). */
+function saysThreatGrew(value) {
+  return severityWordsOf(value).some(w => ESCALATION_WORDS.has(w));
 }
 
 /** A value given as a severity that is none, when it reads as a note worth keeping (more than a word or two). */
@@ -166,16 +175,30 @@ function escalationSeverity(value, was) {
  * @returns {{ name: string, severity: string|null }}
  */
 export function splitThreatName(raw) {
+  const { name, severity } = splitThreatTail(raw);
+  return { name, severity };
+}
+
+/**
+ * splitThreatName, with the tacked-on severity as it was written (`said`:
+ * "Raiders: escalating" → "escalating") — recordThreat reads whether those
+ * words name a level or only say the threat grew (THREAT-REDETECTED-ESCALATING).
+ *
+ * @param {string} raw
+ * @returns {{ name: string, severity: string|null, said: string|null }}
+ */
+function splitThreatTail(raw) {
   let name = String(raw ?? "").replace(/\s+/g, " ").trim();
   let severity = null;
+  let said = null;
   for (;;) {
     const m = /^(.*\S)\s*(?:[:—–]\s*|\s-\s+)([^:—–()]+)$/.exec(name) ?? /^(.*\S)\s*\(([^()]+)\)$/.exec(name);
     const tail = m ? normalizeThreatSeverity(m[2]) : null;
     if (!m || !tail) break;
-    severity = severity ?? tail;
+    if (!severity) { severity = tail; said = m[2].trim(); }
     name = m[1].trim();
   }
-  return { name, severity };
+  return { name, severity, said };
 }
 
 /**
@@ -284,23 +307,26 @@ function mergedThreatPage(journal, page) {
  * Trouble two sectors share is the active sector's (`campaignState`, issue
  * #362 AC43).
  *
+ * `said` is the severity the detector tacked onto the name, as written
+ * ("Raiders: escalating" → "escalating"; null when it tacked none on).
+ *
  * @param {string} raw
  * @param {Object|null} [campaignState] — its `sectors` and `activeSectorId`
- * @returns {{ name: string, severity: string|null, known: boolean }}
+ * @returns {{ name: string, severity: string|null, said: string|null, known: boolean }}
  */
 export function resolveThreatName(raw, campaignState = null) {
   const journal = findJournal(JOURNAL_NAMES.threats);
-  const whole = splitThreatName(raw);
+  const whole = splitThreatTail(raw);
   const named = (split) => {
     const page = split.name ? findThreatPageVariant(journal, split.name, campaignState) : null;
     const name = page ? (entryTitle(page) ?? page.name) : null;
-    return name ? { name, severity: split.severity, known: true } : null;
+    return name ? { name, severity: split.severity, said: split.said, known: true } : null;
   };
   const hit = named(whole);
   if (hit) return hit;
   if (String(raw ?? "").includes(";")) {
     for (const part of String(raw).split(";")) {
-      const partHit = named(splitThreatName(part));
+      const partHit = named(splitThreatTail(part));
       if (partHit) return partHit;
     }
   }
@@ -715,6 +741,15 @@ export async function archiveSceneTruth(truth, campaignState, options = {}) {
  * threat the detector names "<name>: high" updates "<name>" and starts no
  * second page. A GM's `!journal threat` names a page exactly, as it always has.
  *
+ * A recorded threat the capture lists again with a severity that says it grew
+ * ("escalating", "rising") is never made less urgent — the "escalated"
+ * transition's rule (escalationSeverity, issue #362 AC42), on the list path
+ * too: the level those words come with when it is at least as urgent as the
+ * threat was ("escalating to immediate"), else one step more urgent. Read as
+ * "active", the word lowered an immediate threat on the beat that pressed it
+ * (issue #364 THREAT-REDETECTED-ESCALATING). On a threat's first record the
+ * word still reads as active, unless a level comes with it.
+ *
  * @param {string} name
  * @param {Object} entry
  * @param {Object} campaignState
@@ -730,12 +765,19 @@ export async function recordThreat(name, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
-  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed, campaignState) : { name: typed, severity: null };
+  const detected  = entry?.fromDetection === true;
+  const resolved  = detected ? resolveThreatName(typed, campaignState) : { name: typed, severity: null, said: null };
   const cleanName = resolved.name || typed;
   const existing  = findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
   const now       = new Date().toISOString();
   const was       = existing ? (normalizeThreatSeverity(existing.severity) ?? "active") : null;
-  const severity  = normalizeThreatSeverity(entry?.severity) ?? resolved.severity ?? was ?? "looming";
+  // What this write says of the severity: the entry's when it reads as one,
+  // else the one the detector tacked onto the name.
+  const said      = normalizeThreatSeverity(entry?.severity) ? entry.severity : resolved.said;
+  const grew      = detected && saysThreatGrew(said);
+  const severity  = grew && was
+    ? escalationSeverity(said, was)
+    : (grew ? severityNamedBy(said, ESCALATION_WORDS) : null) ?? normalizeThreatSeverity(said) ?? was ?? "looming";
   const sessionId = entry?.sessionId ?? campaignState?.currentSessionId ?? "";
   const given     = typeof entry?.summary === "string" && entry.summary.trim() ? entry.summary.trim() : strayThreatNote(entry?.severity);
   const summary   = given || existing?.summary || "";
@@ -2103,6 +2145,12 @@ async function stampJournalCategory(journal, name) {
  * every write to it is (a GM-only category is made with no player
  * permission). Null on a player's client when it does not exist.
  *
+ * One made here — mid-session, by the first write to a category whose journal
+ * is gone — is made in the module's journal folder, as the load makes them
+ * (companionJournalFolderId, issue #362 AC48): it was made outside any
+ * folder, loose in the sidebar beside the folder its siblings sit in (issue
+ * #364 WJ-LAZY-JOURNAL-NO-FOLDER).
+ *
  * @param {string} category — a JOURNAL_NAMES key
  * @returns {Promise<JournalEntry|null>}
  */
@@ -2119,7 +2167,14 @@ async function getOrCreateJournal(name) {
   }
   if (!game.user?.isGM) return null;
   try {
-    journal = await JournalEntry.create(journalCreateData(name));
+    // The folder is found — or made, stamped — as initWorldJournals does for
+    // a journal it is about to make; none found or made, the journal is made
+    // outside any folder (companionJournalFolderId never throws).
+    const folderId = await companionJournalFolderId({ create: true });
+    // The lookup awaited: another write may have made the journal meanwhile.
+    journal = findJournal(name);
+    if (journal) return journal;
+    journal = await JournalEntry.create(journalCreateData(name, folderId ?? undefined));
     return journal ?? null;
   } catch (err) {
     console.error(`${MODULE_ID} | worldJournal: getOrCreateJournal(${name}) failed:`, err);

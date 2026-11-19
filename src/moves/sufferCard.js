@@ -28,14 +28,14 @@ import {
   isRetryableSufferCall,
 } from "./sufferDialog.js";
 import { isUnprepared } from "./sufferExecutor.js";
-import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName } from "../character/actorBridge.js";
+import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName, listSupportVehicleAssets } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
-import { relayCardAction } from "./cardActions.js";
+import { relayCardAction, applyWaypointOraclePick } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
+import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice, moveCardFor } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -118,7 +118,7 @@ export function sufferMultiCap(prompt) {
  *   companionCount: number, companionTarget: Item|null }}
  */
 function optionContext(actor, executorOpts = {}) {
-  const companions = companionsOf(actor, executorOpts);
+  const companions = { ...companionsOf(actor, executorOpts), ...vehicleChoicesOf(actor, executorOpts) };
   const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
   // Heal's patient: the "wounded" options read their impacts (issue #325 W04).
   const patientId = typeof executorOpts?.patientActorId === "string" && executorOpts.patientActorId
@@ -164,6 +164,42 @@ function companionsOf(actor, executorOpts = {}) {
 }
 
 /**
+ * The vehicles a Withstand Damage pick on this card could damage (issue #364
+ * ANY-SUFFER-SUPPORT-VEHICLE). A card that names its vehicle has that one:
+ * the support vehicle the move was rolled for (`executorOpts.vehicleItemId`;
+ * none once it is gone) or the vehicle it was rolled against
+ * (`vehicleActorId`). A card that names none — a "make a suffer move" picker
+ * — could damage the command vehicle or any of the PC's support vehicles
+ * (`vehicleChoices`, the command vehicle first, `itemId: null`): only the
+ * command vehicle was counted, so a PC with a Hoverbike and no starship found
+ * Withstand Damage greyed out, and one with both could never choose the bike.
+ * One choice is taken; several are asked about (whichVehiclePrompt).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} [executorOpts] — the card's
+ * @returns {{ vehicleCount: number, vehicleChoices: Array<{ name: string, itemId: string|null }> }}
+ */
+export function vehicleChoicesOf(actor, executorOpts = {}) {
+  const id = (v) => (typeof v === "string" && v ? v : null);
+  const support = listSupportVehicleAssets(actor);
+  const namedItem = id(executorOpts?.vehicleItemId);
+  if (namedItem) return { vehicleCount: support.some(i => i?.id === namedItem) ? 1 : 0, vehicleChoices: [] };
+  const namedActor = id(executorOpts?.vehicleActorId);
+  let command = null;
+  try {
+    const shipId = namedActor ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
+    const ship = shipId ? getShip(shipId) : null;
+    if (ship) command = { name: String(ship.name ?? "").trim() || "The ship", itemId: null };
+  } catch (err) {
+    console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
+  }
+  if (namedActor) return { vehicleCount: command ? 1 : 0, vehicleChoices: [] };
+  const vehicleChoices = [...(command ? [command] : []),
+    ...support.filter(i => i?.id).map(i => ({ name: String(i.name ?? "").trim() || "A vehicle", itemId: i.id }))];
+  return { vehicleCount: vehicleChoices.length, vehicleChoices };
+}
+
+/**
  * True when an "any" card cannot take this suffer move: one the prompt
  * excludes (a redirected loss — sufferExecutor.sacrificeResources),
  * Sacrifice Resources while the PC is unprepared, at any supply, whose loss
@@ -184,7 +220,10 @@ function anySufferBlocked(prompt, sufferId, ctx) {
   // Improve closed — with "Not applied: … no companion to change" (issue
   // #362 AC28). Several companions, none named, ask which (handleSufferPick).
   if (sufferId === "companion_takes_a_hit") return !(ctx?.companionCount > 0);
-  if (sufferId === "withstand_damage") return ctx?.vehicleBattered === null || ctx?.vehicleBattered === undefined;
+  // …a vehicle: the one the card names, else the command vehicle or one of
+  // the PC's support vehicles (issue #364 ANY-SUFFER-SUPPORT-VEHICLE — only
+  // the command vehicle counted). Several, none named, ask which.
+  if (sufferId === "withstand_damage") return !(ctx?.vehicleCount > 0);
   return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
 }
 
@@ -336,7 +375,7 @@ const NO_TARGET = new Set(["no-companion", "no-vehicle"]);
  * @param {number} amount
  * @returns {Object} an enumerated sufferPrompt
  */
-function whichCompanionPrompt(actor, amount) {
+export function whichCompanionPrompt(actor, amount) {
   return {
     kind: "enumerated",
     options: listCompanionAssets(actor).map(c => {
@@ -344,6 +383,25 @@ function whichCompanionPrompt(actor, amount) {
       const name  = given && given !== c.name ? `${given} (${c.name})` : (c.name ?? "A companion");
       return { label: `${name} takes the hit (-${amount})`, suffer: "companion_takes_a_hit", amount, itemId: c.id };
     }),
+  };
+}
+
+/**
+ * The follow-up card for a Withstand Damage picked with several vehicles that
+ * could take it and none named (issue #364 ANY-SUFFER-SUPPORT-VEHICLE — the
+ * command vehicle took it unasked): one pick per vehicle, each the move
+ * against that one — a support vehicle by its asset's id, the command vehicle
+ * by none (the executor's default).
+ *
+ * @param {Array<{ name: string, itemId: string|null }>} choices — vehicleChoicesOf's
+ * @param {number} amount
+ * @returns {Object} an enumerated sufferPrompt
+ */
+export function whichVehiclePrompt(choices, amount) {
+  return {
+    kind: "enumerated",
+    options: (choices ?? []).map(v => ({ label: `${v.name} takes the damage (-${amount})`, suffer: "withstand_damage", amount,
+      ...(v.itemId ? { itemId: v.itemId } : {}) })),
   };
 }
 
@@ -583,10 +641,49 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   }
   _picksInFlight.add(messageId);
   try {
+    const alternative = waypointAlternativeOption(f, pick);
+    if (alternative) return await takeWaypointAlternative(message, ctx);
     return await handleSufferPick(message, pick);
   } finally {
     _picksInFlight.delete(messageId);
   }
+}
+
+/**
+ * The picked option when it is an Explore a Waypoint match's alternative —
+ * "Confront Chaos instead" on a miss's price choice (`waypointOracle`,
+ * resolver.js; issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) — else null.
+ */
+function waypointAlternativeOption(flags, pick) {
+  if (pick?.pickKind !== "enum") return null;
+  const option = flags?.sufferPrompt?.options?.[Number(pick.optionIndex)] ?? null;
+  return typeof option?.waypointOracle === "string" && option.waypointOracle ? option : null;
+}
+
+/**
+ * A choice card's "Confront Chaos instead": the move card's 🌀 button, pressed
+ * from here (cardActions.js applyWaypointOraclePick, on this — the canonical
+ * GM's — client) — one claim on the move card, the forced follow-up posted as
+ * the roller, and this card retired by it, as a press of the button retires
+ * it: "instead", never as well. Nothing is claimed on this card first — a
+ * resolved choice card is the outcome's choice made, which refuses the
+ * alternative — so a press the move card refuses (already claimed, the
+ * result upgraded, the card gone) leaves it as it was, its price still to
+ * pay, and an alternative that is then not rolled brings it back live.
+ *
+ * @param {ChatMessage} message — the choice card
+ * @param {Object} ctx — the relay's (the requester)
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+async function takeWaypointAlternative(message, ctx) {
+  const resolutionId = message?.flags?.[MODULE_ID]?.resolutionId ?? null;
+  const moveCard = moveCardFor(resolutionId);
+  if (!moveCard) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${message?.id ?? "?"} — its move card is gone; the match's alternative cannot be taken from here.`);
+    return { applied: false, reason: "no-move-card" };
+  }
+  const taken = await applyWaypointOraclePick({ messageId: moveCard.id }, ctx);
+  return taken?.posted ? { applied: true } : { applied: false, reason: taken?.reason ?? "not-taken" };
 }
 
 /** A suffer card's PC — the one it names (`actorId`), never another: null when it names none or that Actor is gone. */
@@ -657,7 +754,11 @@ async function handleSufferPick(message, dataset) {
   if (dataset.pickKind === "clear") {
     selection = { clearTrackId: dataset.trackId };
   } else if (dataset.pickKind === "any") {
-    selection = { anyChoice: dataset.sufferId };
+    // Withstand Damage with one vehicle that could take it, a support
+    // vehicle (no command vehicle): that one, by its id — the executor's
+    // default is the command vehicle (issue #364 ANY-SUFFER-SUPPORT-VEHICLE).
+    const vehicles = dataset.sufferId === "withstand_damage" ? vehicleChoicesOf(actor, executorOpts).vehicleChoices : [];
+    selection = { anyChoice: dataset.sufferId, ...(vehicles.length === 1 && vehicles[0].itemId ? { itemId: vehicles[0].itemId } : {}) };
   } else {
     idx = Number(dataset.optionIndex);
     selection = { optionIndices: [idx], anyChoice: null };
@@ -677,9 +778,13 @@ async function handleSufferPick(message, dataset) {
   const whichCompanion = dataset.pickKind === "any" && dataset.sufferId === "companion_takes_a_hit"
     && !pickCtx.companionTarget && pickCtx.companionCount > 1
     ? whichCompanionPrompt(actor, prompt.amount ?? 1) : null;
+  // Withstand Damage with several vehicles that could take it and none named
+  // on the card asks which (issue #364 ANY-SUFFER-SUPPORT-VEHICLE).
+  const whichVehicle = dataset.pickKind === "any" && dataset.sufferId === "withstand_damage" && pickCtx.vehicleChoices.length > 1
+    ? whichVehiclePrompt(pickCtx.vehicleChoices, prompt.amount ?? 1) : null;
   const followUpPrompt = needsAny
     ? { kind: "any", amount: needsAny.amount, count: needsAny.count }
-    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : whichCompanion);
+    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : (whichCompanion ?? whichVehicle));
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
   // An "any" prompt of `count` > 1 takes one suffer move per pick (issue
@@ -695,6 +800,7 @@ async function handleSufferPick(message, dataset) {
   const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
     : needsAmount ? `${labelForSuffer(needsAmount.sufferId)} chosen — choose how much on the follow-up card.`
     : whichCompanion ? "Companion Takes a Hit chosen — choose which companion on the follow-up card."
+    : whichVehicle ? "Withstand Damage chosen — choose which vehicle on the follow-up card."
     : multi ? "Applied your selections."
     : `Applied: ${summarizeSufferCalls(calls)}`;
 

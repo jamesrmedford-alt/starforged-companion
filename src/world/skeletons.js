@@ -561,17 +561,33 @@ const DISCOVERY_MOVES = Object.freeze({
 });
 
 /**
- * Plan requests as they cross the relay from a client: known kinds, bounded
- * refs and seeds, at most PLANS_PER_SIDECAR.
+ * How many plan requests one narration may carry (issue #364
+ * ROUND-PLAN-REQUEST-CAP). A narration is *asked* to decide the first
+ * PLANS_PER_SIDECAR of them (DECIDE NOW — its sidecar holds no more plans);
+ * the rest are filed with their rolls alone, for the next narration they are
+ * in play for. A move brings three at most (a price's new enemy, a find, an
+ * expedition); a Batch Mode round brings each acting entry's, and the fifth
+ * onward was dropped with no plan filed. Eight entries' worth.
+ */
+export const PLAN_REQUESTS_PER_NARRATION = 24;
+
+/**
+ * Plan requests, bounded: known kinds, bounded refs and seeds, at most `max`.
+ * The default — PLANS_PER_SIDECAR — is the bound on what crosses the relay
+ * from a client; a narration on this client carries up to
+ * PLAN_REQUESTS_PER_NARRATION (narrator.js buildNarratorExtras, secrets.js
+ * applyPlanSideData).
  *
  * @param {*} requests
+ * @param {{ max?: number }} [opts]
  * @returns {Array<{ ref: string, kind: string, trigger: string, label: string, oracleSeeds: string[] }>}
  */
-export function normalisePlanRequests(requests) {
+export function normalisePlanRequests(requests, { max = PLANS_PER_SIDECAR } = {}) {
   if (!Array.isArray(requests)) return [];
+  const most = Number.isInteger(max) && max >= 0 ? max : PLANS_PER_SIDECAR;
   return requests
     .filter(r => r && typeof r.ref === "string" && ID_RE.test(r.ref) && SKELETON_KINDS.includes(r.kind))
-    .slice(0, PLANS_PER_SIDECAR)
+    .slice(0, most)
     .map(r => ({
       ref:         r.ref,
       kind:        r.kind,

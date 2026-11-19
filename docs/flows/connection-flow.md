@@ -88,18 +88,32 @@ recorded under its name promoted to it; its bond is §2's.
   hit made a second card with a second bond (issue #347 AB09).
   When it creates none, an NPC the move names (`namingText`: the player's
   line and the narration — by their whole name, or by their first or last
-  name alone as a whole word written with its capital, a word of a name the
-  text names in full being that figure's: "Archer" for Vuldar Archer, never
-  Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`, issue #362 AC18:
-  the whole name only, so a hit with a known NPC called by a short name said
-  "Connection made" and made nothing; and, in a round, a
+  name alone as a one-word name is named in any typed line
+  (`relevanceResolver.namesOneWordName`: a whole word written with its
+  capital, or in address position — issue #364 PART-NAME-CAPITAL-RULE-TWINS:
+  the capital check kept here had no address position, so "archer, keep a
+  berth for me" named him for relevance and not for the connection), a word
+  of a name the text names in full being that figure's: "Archer" for Vuldar
+  Archer, never Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`,
+  issue #362 AC18: the whole name only, so a hit with a known NPC called by a
+  short name said "Connection made" and made nothing; and, in a round, a
   figure its own roller met) whom the detection pass leaves out becomes the
   roller's connection (`connectNamedFigure`): a pending draft row is
   confirmed (`confirmDraft` with the roller's `actorId`; issue #325 W23 —
   the card said "Connection made" and nothing was made, and a later Confirm
   bonded the old narration's PC); an active listed NPC card — a crewmate's
   contact — gets the roller's bond Item, no second card ("give focus to an
-  existing relationship"); a connection row the GM dismissed is taken off
+  existing relationship"; the Item this creates carries the narration's id,
+  `bondedByNarrationId` — `registerConnectionOnActiveCharacter`'s
+  `narrationId` → `actorBridge.createCharacterBondItem` — as does the bond a
+  confirmed row adds to an NPC who exists already: an X-Card on that
+  narration takes that bond back, `safety.js` →
+  `actorBridge.retractNarrationBondItems`, found by the stamp and never by
+  name — the NPC's card stays, a bond the PC held before the hit carries no
+  stamp and is not touched, and one the table has marked since stays with
+  the GMs whispered whose, `postKeptBondsNotice`; the hit made no card, so the
+  X-Card removed the narration and left its bond on the sheet — issue #364
+  DELETED-NPC-NAME-REFERENCES, the maintainer's ruling); a connection row the GM dismissed is taken off
   `dismissedEntities` and confirmed as the roller's, as a pending row is
   (issue #345 AA19 — the detection pass leaves an established or dismissed
   name out). Which one is the player's line's to say (`lineText`; a Batch
@@ -267,7 +281,18 @@ the PCs' bond Items keyed to it are deleted — a bond a player marked (a tick,
 a forged bond) is kept and marked lost instead, as a severed one is
 (`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
 (`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
-(`secrets.retireSkeleton`). The X-Card's own delete of a narration's NPC passes
+(`secrets.retireSkeleton`). What named the NPC goes too (issue #364
+DELETED-NPC-NAME-REFERENCES): the sector record whose local connection it
+was names no one (`sectors[].connectionId` set to null, in
+`unregisterDeletedConnection`'s one write), and the vows linked to them lose
+the link — a vow's link is the connection's **name**
+(`linkedConnectionName`), so a fight won for the vow still offered
+"🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no
+Retry could land: `actorBridge.clearVowLinksToConnection(name)` clears it on
+every PC's copy, open or closed, unless another NPC card of that name is
+left (`connectionNamedRemains` — the name then means them), and the GMs are
+whispered once which vows no longer serve a connection
+(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). The X-Card's own delete of a narration's NPC passes
 `{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,

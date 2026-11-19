@@ -31,7 +31,9 @@ layers. This file is the never-break list.
    narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST; a hidden plan's
    clock, which its vignette paced, by the vignette's own id — `pacedBy` —
    and a removed or superseded narration's pacing of a plan clock is taken
-   back with its step, issue #362 AC33) —
+   back with its step, issue #362 AC33; the burned price's receipt names that
+   vignette, `vignetteNarrationId`, so a price paid in between does not hide
+   it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
@@ -187,7 +189,11 @@ layers. This file is the never-break list.
    it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
    connection it auto-creates or confirms from a pending draft row, deleted
    while unused (the row back to pending), else named to the GMs (D6(ii);
-   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
+   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) — and the bond Item a Make a
+   Connection hit puts on an NPC the table already knew
+   (`bondedByNarrationId`), taken back while unmarked, the NPC's card and any
+   earlier bond left alone (issue #364 DELETED-NPC-NAME-REFERENCES)
+   (issue #329 X01 — a new capture writer takes the id from its
    caller, and checks the stored `xCardedNarrationIds` right before it
    writes — `isNarrationXCarded`, after any Claude call — so a capture still
    running when the card is played writes nothing more: XCARD-LATE-CAPTURE;
@@ -278,7 +284,10 @@ layers. This file is the never-break list.
      path that *rewrites* one to take content back must report an event of
      its own — a changed record otherwise rides as a change while the
      snapshot still states the old one (the Entities panel's Remove of a
-     narrator-added detail reports `entity_detail_removed`, issue #362 AC65).
+     narrator-added detail reports `entity_detail_removed`, issue #362 AC65;
+     so does text deleted or reworded on an NPC card's or ship's Notes tab,
+     `registry.js` `registerSheetNotesRemovalHook` — issue #364
+     SNAPSHOT-NOTES-TAB-DELETE).
    - **It holds every active hidden plan**, so it is the GMs' alone: stored
      in the Secrets journal, read only by `narrator.js`
      (`secretsStayHidden.test.js`), never by a card builder, a panel or a

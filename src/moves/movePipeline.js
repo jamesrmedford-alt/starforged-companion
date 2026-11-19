@@ -47,6 +47,7 @@ import {
   enrichProgressTicks,
   enrichBondedDevelop,
   enrichForcedMoveStat,
+  resolveStatedSufferTarget,
   resolveHealPatient,
   resolveAidedAlly,
   enrichBondAdds,
@@ -964,6 +965,11 @@ export async function rollMove({
   // action move resolved as actionDie + 0 + adds — players saw
   // "+iron (0)" and "Action: 6 + 0 = 6" on every chat card.
   enrichInterpretationStatValue(rollerActor, interpretation, campaignState);
+  // The vehicle or companion the stated miss's suffer move names — the
+  // roller's own asset, by its name: a move rolled on an action stat has no
+  // target of its own for its price to land on (issue #364
+  // ACTION-STAT-VEHICLE-PRICE-NO-TARGET).
+  resolveStatedSufferTarget(rollerActor, interpretation);
 
   // Progress moves score from live module data (combat/expedition journal
   // tracks, actor vow Items, connection records) — the fix for pipeline
@@ -1910,6 +1916,10 @@ export function narrationInputFrom(resolution, relevance = null) {
     // What the roll was for, as shown before it (issue #353 R1): the round
     // delivers the one its outcome calls for.
     stakes:            resolution?.stakes ?? null,
+    // The price a miss offers beside the move that may replace it (Explore a
+    // Waypoint's match): the round's narration is told where the choice
+    // stands (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+    ...(resolution?.priceChoice ? { priceChoice: resolution.priceChoice } : {}),
     // The plans its narration is asked to decide (an expedition it began) and
     // the track it finished (issue #353 Phase 3) — the round narrates them.
     skeletonRequests:  Array.isArray(resolution?.skeletonRequests) ? resolution.skeletonRequests : [],

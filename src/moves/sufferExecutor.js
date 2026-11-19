@@ -697,7 +697,7 @@ export async function rollImpactTable(tableId, opts = {}) {
   await postSufferCard({
     opts,
     title: t.title,
-    body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>${tableId === "vehicle_damage" ? vehicleDestructionLine(rolled.result, opts) : ""}`,
+    body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>${tableId === "vehicle_damage" ? vehicleDestructionLine(rolled.roll, opts) : ""}`,
     flags: {
       suffer: "impact_table", table: tableId, ...rolled,
       ...(rolled.result ? { oracleMemory: { name: t.title, question: who, answer: rolled.result } } : {}),
@@ -713,12 +713,20 @@ export async function rollImpactTable(tableId, opts = {}) {
  * vehicle is destroyed, discard the asset"). Issue #362 D8 moved the roll to
  * the at-0 cost's choice (rollImpactTable).
  *
- * @param {string|null} result
+ * Only the table's first row destroys the vehicle (1–10, "Immediate
+ * catastrophic destruction"). The prompt was matched on the row's wording, so
+ * it also fired on 11–25 ("Destruction is imminent and unavoidable…") and on
+ * 26–40 ("Destruction is imminent, but can be averted if you Repair…"): a
+ * vehicle the row says can still be saved was announced as destroyed (issue
+ * #364 OVERCOME-DESTRUCTION-ROWS). Those rows say what they ask themselves.
+ *
+ * @param {number|null} roll — the d100 rolled on VEHICLE_DAMAGE
  * @param {{ vehicleItemId?: string|null }} opts — the cost card's (a support vehicle's names it)
  * @returns {string} HTML ("" for a row that destroys nothing)
  */
-function vehicleDestructionLine(result, opts = {}) {
-  if (!/catastrophic|destruction/i.test(String(result ?? ""))) return "";
+function vehicleDestructionLine(roll, opts = {}) {
+  const destroyed = VEHICLE_DAMAGE[0];
+  if (!Number.isInteger(roll) || roll < destroyed.min || roll > destroyed.max) return "";
   return opts.vehicleItemId
     ? `<br/><strong>If the vehicle is destroyed, discard the asset</strong> on the character sheet.`
     : `<br/><strong>Command vehicle destruction.</strong> Trigger Overcome Destruction when ready.`;
