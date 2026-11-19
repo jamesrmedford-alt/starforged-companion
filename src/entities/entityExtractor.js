@@ -3333,7 +3333,9 @@ function chooseConnectionFigure(slot, figures, lineText) {
 
 /**
  * The figures a text names (issue #362 AC18): each whose whole name it holds
- * as whole words, and each it calls by their first or last name alone — the
+ * as whole words (namesWholeName — a name of one word as a one-word name is
+ * named, issue #364 CONNECTION-WHOLE-NAME-ANY-CASE), and each it calls by
+ * their first or last name alone — the
  * person rule's "part" (nameMatch.personNameMatch; "Archer" for Vuldar
  * Archer, the name the narration keeps using) — as a one-word name is named
  * anywhere a typed line is read (relevanceResolver.namesOneWordName, issue
@@ -3354,7 +3356,7 @@ function figuresNamedIn(text, figures) {
   const t = String(text ?? "");
   if (!t.trim()) return [];
   const wordsOf = (figure) => nameWords(normalizeEntityName(figure?.name));
-  const full = new Set(figures.filter(f => String(f?.name ?? "").trim() && wholeWordPattern(String(f.name).trim()).test(t)));
+  const full = new Set(figures.filter(f => namesWholeName(t, f?.name)));
   const taken = new Set([...full].flatMap(wordsOf));
   const byPart = (figure) => {
     const words = wordsOf(figure);
@@ -3362,6 +3364,31 @@ function figuresNamedIn(text, figures) {
     return ends.some(w => !taken.has(w) && namesOneWordName(t, w));
   };
   return figures.filter(f => full.has(f) || byPart(f));
+}
+
+/**
+ * Whether a text holds a figure's whole name (figuresNamedIn's first test).
+ * A name of more than one word is matched whole, in any case ("i hail mara
+ * voss"). A name of one word is named as a one-word name is anywhere a typed
+ * line is read (relevanceResolver.namesOneWordName, issue #362 D6): with its
+ * capital as typed, or in address position. Matched in any case, "an echo on
+ * the scanner" named an NPC called Echo — one of the names the module's own
+ * oracles give — for a Make a Connection: she was made the roller's
+ * connection, or stood beside the NPC the line did name so that none was
+ * (issue #364 CONNECTION-WHOLE-NAME-ANY-CASE; the part-name test beside it
+ * already asked the rule). A one-word name with no capital to write — it
+ * starts with a digit, or in a script without case — has no lowercase form
+ * to mistake for an ordinary word and is matched whole, as before.
+ *
+ * @param {string} text
+ * @param {string} name — the figure's name as recorded
+ * @returns {boolean}
+ */
+function namesWholeName(text, name) {
+  const n = String(name ?? "").trim();
+  if (!n) return false;
+  const oneCasedWord = !/\s/u.test(n) && /^[\p{Lu}\p{Ll}\p{Lt}]/u.test(n);
+  return oneCasedWord ? namesOneWordName(text, n) : wholeWordPattern(n).test(text);
 }
 
 /**

@@ -92,7 +92,11 @@ recorded under its name promoted to it; its bond is §2's.
   (`relevanceResolver.namesOneWordName`: a whole word written with its
   capital, or in address position — issue #364 PART-NAME-CAPITAL-RULE-TWINS:
   the capital check kept here had no address position, so "archer, keep a
-  berth for me" named him for relevance and not for the connection), a word
+  berth for me" named him for relevance and not for the connection; a whole
+  name of one word is named the same way — `namesWholeName`, issue #364
+  CONNECTION-WHOLE-NAME-ANY-CASE: matched in any case, "an echo on the
+  scanner" named an NPC called Echo — while a name of several words is still
+  matched whole in any case), a word
   of a name the text names in full being that figure's: "Archer" for Vuldar
   Archer, never Mara Archer beside a "Vuldar Archer" — `figuresNamedIn`,
   issue #362 AC18: the whole name only, so a hit with a known NPC called by a
