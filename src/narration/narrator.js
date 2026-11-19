@@ -6004,24 +6004,6 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
 }
 
 /**
- * Process a raw narrator API response: strip the fenced JSON sidecar from
- * the prose, apply it to the active-scene ledgers in campaignState, and
- * persist campaignState in the background. Returns the prose with the
- * sidecar removed. See issue #227 (Fact Continuity) §7–8.
- *
- * Failures (missing block, JSON parse error, persistence write rejected)
- * never block the narrator: the prose is always returned, only ledger
- * updates are skipped.
- *
- * @param {string} rawText
- * @param {Object} campaignState
- * @param {Object} [ctx]
- * @param {string|null} [ctx.moveId]
- * @param {string|null} [ctx.narrationId] — the narration's id (its card
- *   carries it too), stamped on what the sidecar writes (issue #321 U07)
- * @returns {string} prose with the sidecar block removed
- */
-/**
  * Ensure an active fact-continuity scene exists before a narrator call.
  * If `currentSceneId` is null, assigns one by calling startScene with the
  * given reason — on the canonical GM only (a world write); elsewhere it
@@ -6106,6 +6088,24 @@ function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
   }
 }
 
+/**
+ * Process a raw narrator API response: strip the fenced JSON sidecar from
+ * the prose, apply it to the active-scene ledgers in campaignState, and
+ * persist campaignState in the background. Returns the prose with the
+ * sidecar removed. See issue #227 (Fact Continuity) §7–8.
+ *
+ * Failures (missing block, JSON parse error, persistence write rejected)
+ * never block the narrator: the prose is always returned, only ledger
+ * updates are skipped.
+ *
+ * @param {string} rawText
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @param {string|null} [ctx.moveId]
+ * @param {string|null} [ctx.narrationId] — the narration's id (its card
+ *   carries it too), stamped on what the sidecar writes (issue #321 U07)
+ * @returns {string} prose with the sidecar block removed
+ */
 export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // Master gate — when fact-continuity is disabled, return the raw text
   // unchanged. The sidecar instruction is also suppressed at the prompt
