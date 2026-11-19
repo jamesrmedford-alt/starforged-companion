@@ -74,7 +74,7 @@ import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls } from '../moves/resolver.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
@@ -560,6 +560,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // the plans its own rolls ask it to decide (DECIDE NOW, relayed).
   extras.unrevealed   = [];
   extras.planRequests = [];
+  extras.decideNowRequests = [];
   extras.plannedSubjects = [];
   if (mode !== 'campaign_recap' && skeletonsEnabled()) {
     try {
@@ -595,8 +596,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     }
     // Each plan this narration must decide gets its one re-roll (issue
     // #353 "one re-roll"): offered under DECIDE NOW, kept with the request.
-    extras.planRequests = await Promise.all(normalisePlanRequests(planRequests)
+    // Every request rides with the narration (`planRequests` — what its
+    // side-data files): it is asked to decide the first PLANS_PER_SIDECAR,
+    // all one sidecar answers (`decideNowRequests` — what DECIDE NOW lists),
+    // and the rest — a Batch Mode round's entries can bring more — are filed
+    // with their rolls alone by the same apply (issue #364
+    // ROUND-PLAN-REQUEST-CAP: the fifth onward was dropped here, unfiled).
+    extras.planRequests = await Promise.all(normalisePlanRequests(planRequests, { max: PLAN_REQUESTS_PER_NARRATION })
       .map(async q => (q.reroll ? q : { ...q, reroll: await rollReroll() })));
+    extras.decideNowRequests = extras.planRequests.slice(0, PLANS_PER_SIDECAR);
   }
 
   // Established lore, picked for what this turn is about (issue #286 C2):

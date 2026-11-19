@@ -1795,6 +1795,7 @@ export function buildNarratorSystemBlocks(
     pinnedChronicle      = null,
     unrevealed           = [],
     planRequests         = [],
+    decideNowRequests    = null,
     plannedSubjects      = [],
     usedImages           = [],
     beatShape            = null,
@@ -2114,8 +2115,13 @@ export function buildNarratorSystemBlocks(
   if (!isMetaMode) {
     //       With a world snapshot the plans themselves are in it: the
     //       block names the ones in play and keeps its rules and DECIDE NOW.
+    //       DECIDE NOW lists the requests this narration is asked to decide
+    //       (`decideNowRequests` — as many as one sidecar answers); the rest
+    //       of what it carries (`planRequests` — a Batch Mode round can bring
+    //       more) are filed with their rolls alone, never shown (issue #364
+    //       ROUND-PLAN-REQUEST-CAP). Extras that name no asked list ask them all.
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
-      planRequests,
+      planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
       sidecar: factContinuityEnabled,
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
@@ -2354,7 +2360,9 @@ export function formatSnapshotPlan(r) {
  * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
  * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
  * the plans this narration must decide: a price that revealed a new enemy
- * (`planRequests`, by ref), a posed question whose answer was rolled but not
+ * (`planRequests`, by ref — the ones this narration is asked to decide,
+ * `extras.decideNowRequests`: as many as one sidecar can answer), a posed
+ * question whose answer was rolled but not
  * yet decided (a plan with no truth, by id). The plans are trimmed from the
  * end to UNREVEALED_MAX_TOKENS; DECIDE NOW is not. Without the sidecar (the
  * Private Channel) only decided plans, and no instruction to write. Exported

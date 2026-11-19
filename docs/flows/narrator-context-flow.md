@@ -730,9 +730,15 @@ at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
 the plans this narration's seeds ask it to decide: a price that revealed a
 new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
 a vow's swearing scene (Phase 4) — each with its one re-roll (`reroll`, for
-a result that contradicts the story; decisions.md "one re-roll"). Decided plans read
+a result that contradicts the story; decisions.md "one re-roll"). Every
+request rides with the narration (up to `PLAN_REQUESTS_PER_NARRATION`); it is
+asked to decide the first four, all one sidecar answers
+(`extras.decideNowRequests`), and the rest — a Batch Mode round's entries can
+bring more — are filed with their rolls alone by the same apply
+(`applyPlanSideData`), for the next narration they are in play for (issue #364
+ROUND-PLAN-REQUEST-CAP: the fifth onward was dropped, unfiled). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
-requests list under DECIDE NOW with their oracle rolls, only when the sidecar
+asked requests list under DECIDE NOW with their oracle rolls, only when the sidecar
 is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
 the prompt, the plans are read by one player-facing surface: the Session
 panel's What's open — a mystery's question while its truth is hidden, a

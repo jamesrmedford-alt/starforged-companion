@@ -34,7 +34,7 @@ import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
   normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
-  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS,
+  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION,
 } from "./skeletons.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
@@ -879,6 +879,9 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
  *     that revealed a new enemy) is filed: as the narrator decided it, or —
  *     its sidecar gave none — with its oracle rolls alone, its truth left for
  *     the next narration to decide ("keep the raw rolls as the skeleton");
+ *     a request past the PLANS_PER_SIDECAR the narration was shown (a Batch
+ *     Mode round's fifth onward, up to PLAN_REQUESTS_PER_NARRATION) has no
+ *     answer, and is filed the same way (issue #364 ROUND-PLAN-REQUEST-CAP);
  *  2. each other `plans` entry decides or corrects the plan of its id;
  *  3. each `openQuestions` entry not already a mystery of this scene becomes
  *     one, its hidden answer rolled now and decided by a later narration;
@@ -909,7 +912,13 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
   try {
     const plans     = normalisePlans(sidecar?.plans);
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
-    const requests  = normalisePlanRequests(planRequests);
+    // Every request the narration carried, not only the PLANS_PER_SIDECAR it
+    // was asked to decide (DECIDE NOW shows no more): the rest have no answer
+    // in its sidecar, and are filed below with their rolls alone — a Batch
+    // Mode round whose entries brought five or more dropped the fifth onward
+    // (issue #364 ROUND-PLAN-REQUEST-CAP). A relay's are bounded where they
+    // arrive (narrator.js applyRelayedNarratorSidecar).
+    const requests  = normalisePlanRequests(planRequests, { max: PLAN_REQUESTS_PER_NARRATION });
     const reveals   = normaliseReveals(sidecar?.reveals);
     const countdown = normaliseCountdown(sidecar?.countdown);
     const newThreats = normaliseNewThreats(sidecar?.newThreats);
