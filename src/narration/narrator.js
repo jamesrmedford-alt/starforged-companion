@@ -1293,12 +1293,14 @@ export async function narrateResolution(resolution, campaignState, options = {},
     );
   }
 
-  // A miss's price that is the player's choice beside a move that may replace
-  // it (Explore a Waypoint's match — Confront Chaos instead) is told as it
-  // stands now: the choice card posts after a free-flow narration and before
-  // a held result's, so the pick may not be made yet, or may have declined
-  // the price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY). Before the
-  // hidden rolls: a declined price's new enemy is rolled for no one.
+  // A miss's price that is one of the player's choices (Explore a Waypoint's
+  // match — Confront Chaos instead; Sojourn's — the community's need, taken
+  // on with a vow, instead) is told as it stands now: the choice card posts
+  // after a free-flow narration and before a held result's, so the pick may
+  // not be made yet, or may have declined the price (issue #364
+  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY,
+  // SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Before the hidden rolls: a
+  // declined price's new enemy is rolled for no one.
   if (resolution?.priceChoice) resolution = settlePriceChoice(resolution, priceChoiceStatus(resolution._id ?? null));
 
   // The hidden rolls behind a plan this narration decides, which a store

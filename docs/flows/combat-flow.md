@@ -466,7 +466,17 @@ kept on the option — and its pick pays that price as rolled
 (`payChosenPrice`; SOJOURN-PTP-ADVISORY): a "Roll twice" pays the two rows
 the narration depicted, never two rolled again (issue #362 AC30). With a miss
 stated before the roll, that price is the stated miss — the seed and the
-pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). The card
+pick's payment, nothing rolled (issue #362 AC03, the #353 R1 rule). A price
+that is a choice is narrated as it stands when the narration is written
+(`resolution.priceChoice` — `resolver.priceChoiceOf`, for Sojourn's miss as
+for Explore a Waypoint's with a match; `resultUpgrade.priceChoiceStatus` →
+`resolver.settlePriceChoice`): a free-flow Sojourn miss is narrated before
+its card is picked — the price is offered, never "what this miss costs";
+a held result's or a Batch Mode round's after it — "No relief" picked: the
+price is delivered; "Community needs help" picked (the card's
+`chosenIndex`): the price's seed lines go and the narrator is told none is
+paid (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — it was seeded
+and told as paid in all three). The card
 records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts

@@ -1217,14 +1217,39 @@ export function waypointAlternativeTaken(resolutionId) {
 }
 
 /**
- * Where a miss's price that is the player's choice stands (issue #364
+ * How a made choice stands on a card that offers a price, by the option the
+ * card was resolved by (`chosenIndex` — sufferCard.js handleSufferPick):
+ * "paid" for the price's own option, "declined" for another — Sojourn's
+ * "Community needs help", the vow instead of the price. A card resolved with
+ * no pick recorded (retired for a character who is gone, or resolved before
+ * picks were recorded) is "paid" where the price is the only option a pick
+ * resolves the card by — an Explore a Waypoint match's, whose alternative
+ * retires the card instead — and otherwise "pending": a price that may not
+ * have been picked is never told as paid.
+ *
+ * @param {Object} f — a resolved choice card's module flags
+ * @returns {"pending"|"paid"|"declined"}
+ */
+function madePriceChoice(f) {
+  const options = Array.isArray(f.sufferPrompt?.options) ? f.sufferPrompt.options : [];
+  const picked  = Number.isInteger(f.chosenIndex) ? (options[f.chosenIndex] ?? null) : null;
+  if (picked) return picked.route === "pay_the_price" ? "paid" : "declined";
+  return options.some(o => typeof o?.route === "string" && o.route && o.route !== "pay_the_price") ? "pending" : "paid";
+}
+
+/**
+ * Where a miss's price that is one of the player's choices stands (issue #364
  * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — Explore a Waypoint's miss with a
- * match: Pay the Price, or Confront Chaos instead), read from the table's
- * cards when the move is narrated (resolver.js settlePriceChoice): "declined"
- * once the alternative is taken (waypointAlternativeTaken), "paid" once the
- * outcome's choice is made (consequenceChosen — the price option's pick; the
- * other option is the alternative's press, which retires the card instead),
- * else "pending". Any client may ask: the cards are the table's.
+ * match: Pay the Price, or Confront Chaos instead; and
+ * SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — Sojourn's miss: "No relief —
+ * Pay the Price", or the community's need taken on with a vow), read from the
+ * table's cards when the move is narrated (resolver.js settlePriceChoice):
+ * "declined" once what replaces the price is taken — the waypoint's
+ * alternative (waypointAlternativeTaken: its press retires the choice card),
+ * or the choice card's other option picked (madePriceChoice); "paid" once the
+ * card's price option is picked; else "pending". Sojourn's vow pick resolves
+ * the card as its price pick does, and was read as the price paid. Any
+ * client may ask: the cards are the table's.
  *
  * @param {string|null} resolutionId
  * @returns {"pending"|"paid"|"declined"}
@@ -1232,7 +1257,9 @@ export function waypointAlternativeTaken(resolutionId) {
 export function priceChoiceStatus(resolutionId) {
   if (!resolutionId) return "pending";
   if (waypointAlternativeTaken(resolutionId)) return "declined";
-  return consequenceChosen(resolutionId) ? "paid" : "pending";
+  const made = outcomeChoiceCards(resolutionId).map(m => m.flags[MODULE_ID]).filter(chosen).map(madePriceChoice);
+  if (made.includes("declined")) return "declined";
+  return made.includes("paid") ? "paid" : "pending";
 }
 
 /**

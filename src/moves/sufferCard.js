@@ -814,6 +814,13 @@ async function handleSufferPick(message, dataset) {
     : { content: renderSufferCard(prompt, actor, picked ?? [], ctx, notes, madeAny) };
   if (multi && !multiAny) claim[`flags.${MODULE_ID}.pickedIndices`] = picked;
   if (multiAny) claim[`flags.${MODULE_ID}.pickedSuffers`] = madeAny;
+  // The option a single pick resolved the card by. A card that offers a price
+  // beside another way (Sojourn's miss: the vow, or "No relief") is resolved
+  // by either, and a narration written after the pick must be told which: it
+  // was told the price was "what this miss costs" when the vow was picked
+  // (resultUpgrade.js priceChoiceStatus — issue #364
+  // SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Cleared when the card re-opens.
+  if (done && !multi && idx != null) claim[`flags.${MODULE_ID}.chosenIndex`] = idx;
   try {
     await message.update(claim);
   } catch (err) {
@@ -837,6 +844,7 @@ async function handleSufferPick(message, dataset) {
     // re-opens for the pick to be made again.
     await message.update({
       [`flags.${MODULE_ID}.resolved`]: false,
+      [`flags.${MODULE_ID}.chosenIndex`]: null,
       ...(multi ? { [`flags.${MODULE_ID}.pickedIndices`]: f.pickedIndices ?? [] } : {}),
       content: renderSufferCard(prompt, actor, f.pickedIndices ?? [], ctx, notes),
     }).catch(err => console.warn(`${MODULE_ID} | sufferCard: card ${message.id} could not re-open:`, err?.message ?? err));
@@ -928,6 +936,8 @@ export async function reopenSufferCard(messageOrId, { note = null } = {}) {
       [`flags.${MODULE_ID}.resolved`]:   false,
       [`flags.${MODULE_ID}.superseded`]: false,
       [`flags.${MODULE_ID}.retiredBy`]:  null,
+      // The pick that resolved it is undone with it (handleSufferPick).
+      [`flags.${MODULE_ID}.chosenIndex`]: null,
       content: renderSufferCard(shown, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
     });
     return true;

@@ -115,7 +115,11 @@ describe('issue #362 AC03 — Sojourn\'s miss with a miss stated before the roll
   it('the narration is given the stated miss as the price — not a table roll beside it', async () => {
     const prompt = await kiraSojourns(STATED);
     expect(sufferCards().at(-1), 'the miss posted its choice card (setup)').toBeTruthy();
-    expect(prompt, 'the narrator is told the stated miss is what this miss costs (setup)').toContain('it is what this miss costs');
+    // The narration is written before the card is picked: the stated miss is
+    // the price on offer, not yet "what this miss costs" (issue #364
+    // SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — this setup pinned the old line).
+    expect(prompt, 'the narrator is told the stated miss is the price on offer (setup)').toContain(`The price it offers: ${MISS_LINE}`);
+    expect(prompt).not.toContain('it is what this miss costs');
     expect(prompt).toContain(`Pay the Price: ${MISS_LINE}`);
     expect(prompt).not.toContain('Pay the Price: You waste resources');
     // The option carries the stated price: nothing was rolled for it.

@@ -48,11 +48,14 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
-  issue #362 AC02). A price that is the player's choice beside a move that
-  may replace it (`resolution.priceChoice` — Explore a Waypoint's miss with
-  a match: Pay the Price, or Confront Chaos instead) is settled when the
+  issue #362 AC02). A price that is one of the player's choices
+  (`resolution.priceChoice` — Explore a Waypoint's miss with a match: Pay
+  the Price, or Confront Chaos instead; Sojourn's miss: "No relief — Pay
+  the Price", or the community's need taken on with a vow, issue #364
+  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE) is settled when the
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
-  table's cards → `resolver.settlePriceChoice`): paid, it is delivered as
+  table's cards — the waypoint's claim, and the option the choice card was
+  resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
   above; still open, or declined, the stakes point at a block of its own
   after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
   THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
