@@ -125,7 +125,15 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11). Nor is one fulfilled or forsaken on every copy with no
+(issue #325 W11). A pick of a proposed option carries its index and the
+option's `text` as the clicker's render of the card showed it
+(`registerRewardChoiceHook`): the card's options are replaced in place when
+its vow gets a name (`reproposeVowRewards`), so the canonical GM refuses a
+pick whose text is not the card's option at that index (`option-changed` —
+nothing promised, the card left open, the clicker whispered to choose
+again); the reward promised is always the card's own option, never the
+click's text (issue #364 VOW-CARD-RENAME-NO-GM — an index alone promised
+whatever sat there after the swap). Nor is one fulfilled or forsaken on every copy with no
 reward chosen — nothing would ever grant it: the card is closed
 (`rewardChosen: "vow-fulfilled"` / `"vow-forsaken"`) and the presser and the
 GMs are whispered why (issue #345 AA52 — it was promised on the finished vow,

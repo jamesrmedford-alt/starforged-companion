@@ -490,7 +490,11 @@ function syncUpdateFor(item, target) {
  * relayed to the canonical GM ("vow.reward" → applyRewardPickFromRelay), which
  * claims the card once (`rewardChosen`) — the disable was the clicker's DOM
  * only, so another client or a re-render re-armed the buttons — and never
- * re-promises a reward already granted or lost (issue #325 W11).
+ * re-promises a reward already granted or lost (issue #325 W11). A pick of a
+ * proposed option carries, beside its index, the option's text as this render
+ * of the card showed it: the card's options can be replaced while it is open
+ * (reproposeVowRewards), and the GM refuses a click made on the options as
+ * they were (issue #364 VOW-CARD-RENAME-NO-GM).
  */
 export function registerRewardChoiceHook() {
   if (registerRewardChoiceHook._installed) return;
@@ -504,6 +508,10 @@ export function registerRewardChoiceHook() {
       buttons().forEach(b => { b.disabled = true; });
       return;
     }
+    // The options this render shows — the card's own, read now: an update that
+    // replaces them re-renders the card, and a click on this render names what
+    // it showed (issue #364 VOW-CARD-RENAME-NO-GM).
+    const shown = (Array.isArray(f.rewardOptions) ? f.rewardOptions : []).map(o => String(o?.description ?? ""));
     const relay = async (payload) => {
       buttons().forEach(b => { b.disabled = true; });
       await relayCardAction({
@@ -520,7 +528,7 @@ export function registerRewardChoiceHook() {
         e.preventDefault(); e.stopPropagation();
         const idx = Number(fresh.dataset.idx);
         if (!Number.isInteger(idx)) return;
-        await relay({ idx });
+        await relay({ idx, ...(shown[idx] ? { text: shown[idx] } : {}) });
       });
     });
     const ownBtn = root.querySelector('[data-action="sf-reward-own"]');
@@ -573,7 +581,17 @@ function vowHolderActorId(vowId) {
  * nothing would ever grant it (issue #345 AA52). Any user may pick, as the
  * card is the table's.
  *
- * @param {{ messageId?: string, idx?: number, own?: string }} payload
+ * A pick of an option names it twice — its index and its `text`, the option
+ * as the clicker's card showed it. The card's options are replaced in place
+ * when its vow gets a name (reproposeVowRewards), so an index alone promised
+ * whatever sat there once a click made on the old options landed: a `text`
+ * that is not the card's option at that index is refused (`option-changed`),
+ * nothing promised, the card left open and the clicker told to choose again
+ * (issue #364 VOW-CARD-RENAME-NO-GM). The reward promised is always the
+ * card's own option — the click's text is compared, never used. A pick with
+ * no `text` (a page loaded before the click carried it) is taken by its index.
+ *
+ * @param {{ messageId?: string, idx?: number, text?: string, own?: string }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
@@ -591,6 +609,15 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
   const opts = Array.isArray(f.rewardOptions) ? f.rewardOptions : [];
   const own  = typeof payload.own === "string" ? payload.own.trim().slice(0, 120) : "";
   const opt  = Number.isInteger(payload.idx) ? opts[payload.idx] : null;
+  // The option the clicker pressed is not the one the card has at that index
+  // now: its options were replaced as the click was made.
+  if (Number.isInteger(payload.idx) && typeof payload.text === "string" && payload.text !== String(opt?.description ?? "")) {
+    console.warn(`${MODULE_ID} | swearVow: reward card ${messageId}'s options changed as option ${payload.idx} was chosen — nothing promised.`);
+    await postVowWriteRefusedNotice(_ctx,
+      "The rewards offered on this card changed as you chose — nothing was promised. Choose again from the card as it is now.",
+      { title: "Reward not set" });
+    return { applied: false, reason: "option-changed" };
+  }
   const reward = opt?.description ? { description: String(opt.description), form: opt.form ?? "gear" }
     : own ? { description: own, form: "gear" } : null;
   if (!reward) return { applied: false, reason: "not-on-card" };
