@@ -573,7 +573,10 @@ export async function changeIntegrity(actorId, delta, { restore = false } = {}) 
  *   - the asset card's condition box (an `updateItem` of a Command Vehicle
  *     asset touching its conditions, not the mirror's own write) → the
  *     native impacts are written through updateShip (cursed only set, never
- *     cleared), whose write-through puts the asset back in step.
+ *     cleared), whose write-through puts the asset back in step. A starship
+ *     the module holds no record of has its impacts written directly — and
+ *     its cursed is permanent too: the un-tick is not written, and the box is
+ *     ticked again (issue #364 STARSHIP-UNTRACKED-CURSED-CLEAR).
  * Canonical GM only. Never throws.
  */
 export function registerStarshipConditionSync() {
@@ -605,7 +608,20 @@ export function registerStarshipConditionSync() {
       if (getShip(ship.id)) {
         await updateShip(ship.id, updates);
       } else {
-        await ship.update(Object.fromEntries(Object.entries(updates).map(([k, v]) => [`system.debility.${k}`, v])));
+        // A starship the module holds no record of: the impacts are written
+        // straight to its sheet. Cursed is permanent there too (updateShip's
+        // rule): the box's un-tick was written to the impact and cleared it.
+        // It is not written, and the card's box is ticked again (issue #364
+        // STARSHIP-UNTRACKED-CURSED-CLEAR; issue #362 AC54's on the record's path).
+        const clearsCursed = updates.cursed === false;
+        if (clearsCursed) delete updates.cursed;
+        if (Object.keys(updates).length) {
+          await ship.update(Object.fromEntries(Object.entries(updates).map(([k, v]) => [`system.debility.${k}`, v])));
+        }
+        if (clearsCursed) {
+          console.warn(`${MODULE_ID} | Attempted to clear 'cursed' impact on ${ship.name ?? "a starship"} — this is permanent.`);
+          await setCommandVehicleConditions(ship, { cursed: true });
+        }
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | starship conditions: the STARSHIP asset's condition could not be written to ${item?.parent?.name ?? "its starship"}'s impacts:`, err?.message ?? err);
