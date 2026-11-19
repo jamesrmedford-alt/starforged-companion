@@ -998,6 +998,10 @@ unreadable or missing (the requests alone make the apply run), and, unstamped,
 when the narration is never written — an empty reply, a failed call — from the
 exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 (`fileUnansweredPlanRequests`, relayed off the canonical GM; issue #362 AC07;
+so do a move's and a round's narration the X-Card pauses, on entry or once the
+reply is in — the move stands, a paused narration is never narrated again, and
+its paused notice closes a round: `filePausedPlanRequests`, issue #364
+XCARD-PAUSED-NARRATION-PLAN-REQUESTS;
 the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
 switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
 narration with prose still files its requests with their rolls alone, stamped

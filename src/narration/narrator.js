@@ -1240,6 +1240,13 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // retired context assembler (ASSEMBLER-003) and was lost with it.
   if (isXCardActive(campaignState)) {
     console.debug(`${MODULE_ID} | narrateResolution: X-Card active — narration paused.`);
+    // The move stands, and so does what it owes the hidden plans — a price's
+    // new enemy, an expedition begun: filed with their rolls alone, as every
+    // exit that writes no narration files them (issue #364
+    // XCARD-PAUSED-NARRATION-PLAN-REQUESTS). Nothing narrates this move
+    // again once a GM resumes; the next narration decides them.
+    filePausedPlanRequests(() => movePlanRequests(resolution, campaignState, newNarrationId()).planRequests,
+      campaignState, { moveId: resolution?.moveId ?? null });
     await postNarrationPausedCard(resolution, campaignState);
     return null;
   }
@@ -1293,28 +1300,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
     );
   }
 
-  // A miss's price that is one of the player's choices (Explore a Waypoint's
-  // match — Confront Chaos instead; Sojourn's — the community's need, taken
-  // on with a vow, instead) is told as it stands now: the choice card posts
-  // after a free-flow narration and before a held result's, so the pick may
-  // not be made yet, or may have declined the price (issue #364
-  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY,
-  // SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Before the hidden rolls: a
-  // declined price's new enemy is rolled for no one.
-  if (resolution?.priceChoice) resolution = settlePriceChoice(resolution, priceChoiceStatus(resolution._id ?? null));
-
-  // The hidden rolls behind a plan this narration decides, which a store
-  // every client holds kept none of — a held result's card, an upgrade's card
-  // state — are rolled here, on the GM that narrates it (issue #362 AC15). A
-  // player's own key rolls none: plans are a GM's.
-  if (globalThis.game?.user?.isGM === true) resolution = withHiddenRolls(resolution, campaignState);
-
-  // A price that revealed a new enemy asks this narration to decide what it
-  // is (issue #353 Phase 1) — from its seeds, the one record of the roll.
-  // So does an expedition the move began (its track — Phase 3).
-  const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(resolution.oracleSeeds, narrationId), ...unplannedRequests(normalisePlanRequests(resolution.skeletonRequests))]
-    : [];
+  // The move as it is narrated — its price as the player's choice stands, its
+  // hidden rolls made — and the plans it asks this narration to decide
+  // (movePlanRequests).
+  const owed = movePlanRequests(resolution, campaignState, narrationId);
+  resolution = owed.resolution;
+  const planRequests = owed.planRequests;
   // The tracks and vows this move ends: their plans are in play to reveal
   // their end, resolved or not (issue #362 D4).
   const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
@@ -1366,6 +1357,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
     if (xCard.interrupted('narrateResolution')) {
+      // The reply is discarded; the plans the move asked for are still owed
+      // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS).
+      filePausedPlanRequests(() => extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
       await postNarrationPausedCard(resolution, campaignState);
       return null;
     }
@@ -1413,6 +1407,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
         if (xCard.interrupted('narrateResolution')) {
+          filePausedPlanRequests(() => extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
           await postNarrationPausedCard(resolution, campaignState);
           return null;
         }
@@ -1453,6 +1448,84 @@ export async function narrateResolution(resolution, campaignState, options = {},
   }
 }
 
+
+/**
+ * A move as its narration takes it, and the plans it asks that narration to
+ * decide — narrateResolution's, and the same for a move whose narration the
+ * X-Card pauses before it is asked for (issue #364
+ * XCARD-PAUSED-NARRATION-PLAN-REQUESTS):
+ *  - a miss's price that is one of the player's choices (Explore a
+ *    Waypoint's match — Confront Chaos instead; Sojourn's — the community's
+ *    need, taken on with a vow, instead) is told as it stands now: the choice
+ *    card posts after a free-flow narration and before a held result's, so
+ *    the pick may not be made yet, or may have declined the price (issue #364
+ *    EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY,
+ *    SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Before the hidden rolls: a
+ *    declined price's new enemy is rolled for no one;
+ *  - the hidden rolls behind a plan this narration decides, which a store
+ *    every client holds kept none of — a held result's card, an upgrade's
+ *    card state — are rolled here, on the GM that narrates it (issue #362
+ *    AC15). A player's own key rolls none: plans are a GM's;
+ *  - a price that revealed a new enemy asks the narration to decide what it
+ *    is (issue #353 Phase 1) — from its seeds, the one record of the roll. So
+ *    does an expedition the move began (its track — Phase 3).
+ *
+ * @param {Object} resolution
+ * @param {Object|null} campaignState
+ * @param {string} refBase — unique to the narration (its id)
+ * @returns {{ resolution: Object, planRequests: Object[] }}
+ */
+function movePlanRequests(resolution, campaignState, refBase) {
+  let move = resolution;
+  if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
+  if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
+  const planRequests = skeletonsEnabled()
+    ? [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]
+    : [];
+  return { resolution: move, planRequests };
+}
+
+/**
+ * The plans a round's entries ask its narration to decide: each entry's
+ * price that revealed a new enemy, each expedition one began.
+ *
+ * @param {Object[]} entries — roundNarrationEntries', their hidden rolls made
+ * @param {string} refBase — unique to the narration (its id)
+ * @returns {Object[]}
+ */
+function roundPlanRequests(entries, refBase) {
+  if (!skeletonsEnabled()) return [];
+  return entries.flatMap((e, i) => [
+    ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${refBase}-${i + 1}`),
+    ...normalisePlanRequests(e.input?.skeletonRequests),
+  ]);
+}
+
+/**
+ * The plan requests of a narration the X-Card paused — active when the move
+ * or round came to be narrated, or played while the reply was on its way —
+ * filed with their rolls alone (fileUnansweredPlanRequests; issue #364
+ * XCARD-PAUSED-NARRATION-PLAN-REQUESTS). The exit posted its paused notice
+ * and filed nothing: the move's result stands, so the enemy its price
+ * revealed had no plan and the rolls behind it existed nowhere. A paused
+ * narration is final — its notice offers no retry, a paused round's notice
+ * closes the round (batch/driver.js roundNarrationPosted), and a GM's resume
+ * picks play up at the next move — so this is the one filing; a Burn Momentum
+ * or Improve Result re-narration asks again only for subjects still unplanned
+ * (unplannedRequests). Never throws: the paused notice posts whatever
+ * happens here.
+ *
+ * @param {() => Object[]} requests — builds the narration's plan requests
+ * @param {Object|null} campaignState
+ * @param {{ moveId?: string|null }} [opts]
+ */
+function filePausedPlanRequests(requests, campaignState, opts = {}) {
+  try {
+    fileUnansweredPlanRequests(requests(), campaignState, opts);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the plans a paused narration was asked to decide were not filed:`, err?.message ?? err);
+  }
+}
 
 /**
  * A narration's plan requests about a known subject (an expedition's track),
@@ -1589,6 +1662,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
 
   if (isXCardActive(campaignState)) {
     console.debug(`${MODULE_ID} | narrateRound: X-Card active — narration paused.`);
+    // Its entries' moves stand, and what they owe the hidden plans with them
+    // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS; narrateResolution's rule).
+    filePausedPlanRequests(() => roundPlanRequests(entries, newNarrationId()), campaignState);
     return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
   }
   const xCard = watchXCard(campaignState);
@@ -1633,10 +1709,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     actingActorIds:  entries.map(e => e.actorId),
     // Each entry's price that revealed a new enemy asks for its plan (issue #353).
     planRequests:    skeletonsEnabled()
-      ? entries.flatMap((e, i) => [
-        ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${narrationId}-${i + 1}`),
-        ...normalisePlanRequests(e.input?.skeletonRequests),
-      ])
+      ? roundPlanRequests(entries, narrationId)
       : [],
     endingTrackIds,
     beatClaim,
@@ -1679,6 +1752,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       });
       if (superseded()) return { posted: null, superseded: true };
       if (xCard.interrupted('narrateRound')) {
+        filePausedPlanRequests(() => extras.planRequests, campaignState);
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
