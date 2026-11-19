@@ -2145,6 +2145,12 @@ async function stampJournalCategory(journal, name) {
  * every write to it is (a GM-only category is made with no player
  * permission). Null on a player's client when it does not exist.
  *
+ * One made here — mid-session, by the first write to a category whose journal
+ * is gone — is made in the module's journal folder, as the load makes them
+ * (companionJournalFolderId, issue #362 AC48): it was made outside any
+ * folder, loose in the sidebar beside the folder its siblings sit in (issue
+ * #364 WJ-LAZY-JOURNAL-NO-FOLDER).
+ *
  * @param {string} category — a JOURNAL_NAMES key
  * @returns {Promise<JournalEntry|null>}
  */
@@ -2161,7 +2167,14 @@ async function getOrCreateJournal(name) {
   }
   if (!game.user?.isGM) return null;
   try {
-    journal = await JournalEntry.create(journalCreateData(name));
+    // The folder is found — or made, stamped — as initWorldJournals does for
+    // a journal it is about to make; none found or made, the journal is made
+    // outside any folder (companionJournalFolderId never throws).
+    const folderId = await companionJournalFolderId({ create: true });
+    // The lookup awaited: another write may have made the journal meanwhile.
+    journal = findJournal(name);
+    if (journal) return journal;
+    journal = await JournalEntry.create(journalCreateData(name, folderId ?? undefined));
     return journal ?? null;
   } catch (err) {
     console.error(`${MODULE_ID} | worldJournal: getOrCreateJournal(${name}) failed:`, err);
