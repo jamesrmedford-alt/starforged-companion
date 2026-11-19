@@ -31,7 +31,7 @@ import { clockStillTriggered } from "./payThePriceClocks.js";
 import { proseToHtml } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { standingPacedBy, unpacedClock } from "./planClockPacing.js";
+import { standingPacedBy, pacedByOneOf, unpacedClock } from "./planClockPacing.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -506,7 +506,11 @@ export async function pacePlanClock(clockId, { retire = false, pacedBy = null } 
  * Burn Momentum or Improve Result superseded — a move narration that played a
  * plan's step, a trigger vignette its price's rewind struck — took the step
  * back with it (resultUpgrade.js undoSupersededPlans), and the clock went on
- * pacing the step after. One write, on a copy.
+ * pacing the step after. A clock is theirs by its stamp, wherever later
+ * prices have turned it since (pacedByOneOf — issue #364
+ * PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE: matched only while it stood as paced,
+ * a turned clock kept its fill with the step back unplayed). One write, on a
+ * copy.
  *
  * @param {string[]} narrationIds
  * @returns {Promise<string[]>} the ids of the clocks re-armed
@@ -516,9 +520,9 @@ export async function restoreClocksPacedBy(narrationIds) {
   if (!ids.size) return [];
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());
-    const paced = (state.clocks ?? []).filter(c => ids.has(standingPacedBy(c)));
+    const paced = (state.clocks ?? []).filter(c => pacedByOneOf(c, ids));
     if (!paced.length) return [];
-    state.clocks = state.clocks.map(c => (ids.has(standingPacedBy(c)) ? unpacedClock(c) : c));
+    state.clocks = state.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
     await writeState(state);
     return paced.map(c => c._id);
   });

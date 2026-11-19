@@ -28,7 +28,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
-import { unpacedClock, standingPacedBy } from '../clocks/planClockPacing.js';
+import { unpacedClock, pacedByOneOf } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
@@ -2800,9 +2800,12 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // when its beat played the step — is re-armed one short of full: the undo
   // puts the step back unplayed (undoNarrationEntries), and the next price
   // plays it (issue #362 AC33; the clock stayed empty or retired, and a last
-  // step was never paced again).
-  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => ids.includes(standingPacedBy(c)))) {
-    cs.clocks = cs.clocks.map(c => (ids.includes(standingPacedBy(c)) ? unpacedClock(c) : c));
+  // step was never paced again). Theirs by its stamp, wherever a later price
+  // has turned it since: asked whether it still stood as paced, a price paid
+  // between a trigger vignette and this card left the clock where it was with
+  // the step back unplayed (issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE).
+  if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => pacedByOneOf(c, ids))) {
+    cs.clocks = cs.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;
