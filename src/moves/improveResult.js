@@ -65,6 +65,7 @@ import {
   supersedeOriginalNarration,
   struckMatchLine,
   struckEffectLine,
+  struckOutcomeLine,
   relayCardButtonClick,
   requesterOwnsActor,
   claimResultUpgrade,
@@ -413,7 +414,7 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), improve) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), improve, newConsequences) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -482,14 +483,26 @@ async function advanceAbilityClock(actor, improve) {
  * AC31). The first outcome's consequence line — a miss's "… Pay the Price." —
  * is struck too, as the burned card strikes it (issue #364
  * UPGRADED-CARD-FIRST-EFFECT-UNSTRUCK).
+ *
+ * As the burned card (issue #364 IMPROVED-CARD-OUTCOME-LABEL-UNSTRUCK): the
+ * outcome label the roll rendered ("Miss") is struck with its lines — it
+ * stood live over the banner — and the banner states the strong hit's own
+ * consequence, `newConsequences.otherEffect`: the consequences the click
+ * applied and its re-narration is told (handleImproveClick), not a second
+ * mapping of them.
  */
-function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null) {
+function buildImprovedCardContent(originalContent, clockNote, effectsNote = "", improve = null, newConsequences = null) {
   // The cost names the asset — text, as the button's label is (issue #362 AC83).
   const note = clockNote ? ` ${escapeHtml(clockNote)}` : "";
   const match = improve?.isMatch ? `<div class="sf-move-match">${matchLine(improve.improveTo ?? "strong_hit")}</div>` : "";
+  const effect = newConsequences?.otherEffect
+    ? `<div class="sf-move-effect">${escapeHtml(newConsequences.otherEffect)}</div>`
+    : "";
   const banner =
-    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effectsNote}</div>`;
-  return `${struckEffectLine(struckMatchLine(originalContent))}${banner}`;
+    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${match}${effect}${effectsNote}</div>`;
+  // The first outcome's lines are struck before the banner — which carries a
+  // consequence line of its own — is added.
+  return `${struckOutcomeLine(struckEffectLine(struckMatchLine(originalContent)))}${banner}`;
 }
 
 /**
