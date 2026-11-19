@@ -110,7 +110,12 @@ alone; only for a **person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
-— issue #326 W70) — posts the sworn-confirmation card (rank→milestone/legacy
+— issue #326 W70; the link is the connection's name, and a GM deleting that
+NPC's card clears it from every copy unless a namesake card is left —
+`connection.tearDownDeletedConnection` → `actorBridge.clearVowLinksToConnection`,
+the GMs whispered which vows: the won-fight card kept offering 🤝 Deepen with
+the deleted NPC and the fulfilment listed a deepen that could not land,
+issue #364 DELETED-NPC-NAME-REFERENCES) — posts the sworn-confirmation card (rank→milestone/legacy
 stakes lines), narrates the vow-swearing scene for the PC who rolled the
 swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete

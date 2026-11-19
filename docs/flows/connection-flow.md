@@ -271,7 +271,18 @@ the PCs' bond Items keyed to it are deleted — a bond a player marked (a tick,
 a forged bond) is kept and marked lost instead, as a severed one is
 (`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
 (`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
-(`secrets.retireSkeleton`). The X-Card's own delete of a narration's NPC passes
+(`secrets.retireSkeleton`). What named the NPC goes too (issue #364
+DELETED-NPC-NAME-REFERENCES): the sector record whose local connection it
+was names no one (`sectors[].connectionId` set to null, in
+`unregisterDeletedConnection`'s one write), and the vows linked to them lose
+the link — a vow's link is the connection's **name**
+(`linkedConnectionName`), so a fight won for the vow still offered
+"🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no
+Retry could land: `actorBridge.clearVowLinksToConnection(name)` clears it on
+every PC's copy, open or closed, unless another NPC card of that name is
+left (`connectionNamedRemains` — the name then means them), and the GMs are
+whispered once which vows no longer serve a connection
+(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). The X-Card's own delete of a narration's NPC passes
 `{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,

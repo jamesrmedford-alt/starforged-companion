@@ -1319,6 +1319,45 @@ export async function setVowLinkedConnection(vowId, connectionName) {
 }
 
 /**
+ * Take the link to a connection that no longer exists off every player
+ * character's vow (issue #364 DELETED-NPC-NAME-REFERENCES). A vow's link is
+ * the connection's name (`linkedConnectionName` — setVowLinkedConnection, the
+ * inciting vow's target), so the vow of an NPC whose card a GM deleted went
+ * on naming them: a won fight's card still offered "🤝 Deepen your bond with
+ * …", and the vow's fulfilment listed a deepen that could never land, with a
+ * Retry. Cleared, the vow serves no connection. Every copy that names them,
+ * open or closed. The caller decides the connection is gone (no card of that
+ * name is left — connection.tearDownDeletedConnection). GM-side (Item flag
+ * writes); never throws — a refused write is logged and counted.
+ *
+ * @param {string} connectionName — the deleted connection's name
+ * @returns {Promise<{ cleared: Array<{ actorName: string, vowName: string }>, refused: number }>}
+ *   the vows whose link was cleared, each once per PC
+ */
+export async function clearVowLinksToConnection(connectionName) {
+  const out = { cleared: [], refused: 0 };
+  const wanted = String(connectionName ?? "").trim().toLowerCase();
+  if (!wanted) return out;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || typeof item.setFlag !== "function") continue;
+      const linked = item.flags?.[MODULE_ID]?.linkedConnectionName;
+      if (typeof linked !== "string" || linked.trim().toLowerCase() !== wanted) continue;
+      try {
+        await staleChecked('clearVowLinksToConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", null));
+        out.cleared.push({ actorName: String(actor.name ?? ""), vowName: String(item.name ?? "") });
+      } catch (err) {
+        out.refused++;
+        console.warn(`${MODULE_ID} | clearVowLinksToConnection: "${item.name ?? item.id}" on ${actor.name ?? actor.id} kept its link to ${connectionName}:`, err?.message ?? err);
+      }
+      invalidateActorCache(actor.id);
+    }
+  }
+  return out;
+}
+
+/**
  * Record a granted concrete reward on the actor (#241 Phase 2) for the non-meter
  * forms (gear / asset / contact / knowledge) — appends to a module flag list so
  * the grant is tracked on the sheet. Meter forms (supply / momentum) use
