@@ -294,7 +294,12 @@ Retry could land: `actorBridge.clearVowLinksToConnection(name)` clears it on
 every PC's copy, open or closed, unless another NPC card of that name is
 left (`connectionNamedRemains` — the name then means them), and the GMs are
 whispered once which vows no longer serve a connection
-(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). The X-Card's own delete of a narration's NPC passes
+(`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). Under the same
+test the victory cards already in chat that offer "🤝 Deepen your bond with
+…" for that name are stamped `deepenRetired`
+(`cardActions.retireFightVowDeepenFor`): the button renders disabled on every
+client and says the card was deleted — pressed, it reported "not found"
+(issue #364 WON-FIGHT-CARD-DELETED-NPC). The X-Card's own delete of a narration's NPC passes
 `{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
 
 What the narration established wins over the seed's rolls (decisions.md,

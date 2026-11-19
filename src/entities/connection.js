@@ -496,7 +496,9 @@ export function registerConnectionDeleteHook() {
  * fulfilment listed a deepen no Retry could land. The links are cleared
  * (actorBridge.clearVowLinksToConnection) unless another card of that name is
  * left, which the name then means; the GMs are told which vows no longer
- * serve a connection.
+ * serve a connection. With the links, the won-fight cards already in chat
+ * lose their "🤝 Deepen your bond with …" (cardActions.retireFightVowDeepenFor,
+ * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found").
  *
  * @param {Actor} actor
  * @returns {Promise<void>}
@@ -512,6 +514,9 @@ async function tearDownDeletedConnection(actor) {
   if (name && !connectionNamedRemains(name, actor.id)) {
     const { cleared } = await clearVowLinksToConnection(name);
     if (cleared.length) await postVowLinksClearedNotice(name, cleared);
+    // The victory cards already in chat that offer to deepen that bond.
+    const { retireFightVowDeepenFor } = await import("../moves/cardActions.js");
+    await retireFightVowDeepenFor(name);
   }
   await deleteEntityArtAssets(FLAG_KEY, recordId, { portraitId: record.portraitId ?? null });
   const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");

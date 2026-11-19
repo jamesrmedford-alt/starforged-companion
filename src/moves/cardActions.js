@@ -39,6 +39,7 @@
  */
 
 import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { messageAuthorId } from "../multiplayer/speaker.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
@@ -1818,6 +1819,13 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | fight-vow deepen: card has no linked connection — nothing deepened.`);
       return false;
     }
+    // The NPC's card was deleted and this button retired with it
+    // (retireFightVowDeepenFor): a press from a window that had not
+    // re-rendered deepens nothing and tells the GMs nothing.
+    if (f.deepenRetired) {
+      console.debug(`${MODULE_ID} | fight-vow deepen: ${f.connectionName}'s card was deleted — nothing deepened.`);
+      return false;
+    }
     // Once per vow (issue #326 D1): this press and the vow's fulfilment share
     // one deepen — whichever lands first pays, recorded on the vow.
     const { deepenVowConnectionOnce } = await import("../index.js");
@@ -1829,6 +1837,42 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
     });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });
+}
+
+/**
+ * Retire 🤝 Deepen on the won-fight cards already in chat whose bond is with
+ * an NPC whose card a GM deleted (issue #364 WON-FIGHT-CARD-DELETED-NPC; the
+ * delete teardown's — connection.js tearDownDeletedConnection, on the
+ * canonical GM, when no other card of that name is left). The teardown clears
+ * the vow's link, so the next won fight offers no bond; the cards posted
+ * before it kept their `connectionName` and a live button, and a press
+ * whispered the GMs "not found" for a bond nobody could deepen. Each such
+ * card is stamped `deepenRetired`: the update re-renders it on every client,
+ * where the button is disabled and says why (index.js wireFightVowButtons),
+ * and the relay handler above deepens nothing for it. A card whose deepen
+ * already landed is left as it is. The card names its connection by name
+ * only, as the vow's link does. A refused stamp leaves that card's button
+ * live — pressed, it reports "not found" as before. Never throws.
+ *
+ * @param {string} connectionName — the deleted NPC's name
+ * @returns {Promise<number>} the cards stamped
+ */
+export async function retireFightVowDeepenFor(connectionName) {
+  const wanted = String(connectionName ?? "").trim().toLowerCase();
+  if (!wanted || !isCanonicalGM()) return 0;
+  let retired = 0;
+  for (const message of globalThis.game?.messages?.contents ?? []) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.fightVowCard || f.deepenRetired || f.resolvedActions?.deepenBond) continue;
+    if (String(f.connectionName ?? "").trim().toLowerCase() !== wanted) continue;
+    try {
+      await message.update({ [`flags.${MODULE_ID}.deepenRetired`]: true });
+      retired += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | fight-vow deepen: retiring the button on card ${message?.id ?? "?"} failed:`, err?.message ?? err);
+    }
+  }
+  return retired;
 }
 
 // Apply one won-fight action once per card. `apply` resolves false (nothing to

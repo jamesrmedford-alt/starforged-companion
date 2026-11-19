@@ -7273,6 +7273,7 @@ function registerFightVowMilestoneHook() {
  * src/moves/cardActions.js), which applies the card's own values once and
  * stamps `resolvedActions.<action>`; an action already applied renders
  * disabled, and a click that is not delivered (no GM) re-arms its button.
+ * 🤝 on a card whose NPC was deleted since (`deepenRetired`) renders disabled.
  * "🏁 Attempt to Fulfill" relays too ("fulfilVow.attempt" — wireFulfilAttempt):
  * the GM claims the card and posts the roller's Fulfill Your Vow once.
  *
@@ -7298,6 +7299,18 @@ export function wireFightVowButtons(message, root) {
       btn.title = closed === "gone"
         ? "The vow this fight served is no longer on any character's sheet"
         : "The vow this fight served is fulfilled";
+    }
+  }
+
+  // The NPC this card's bond is with had their card deleted since (the delete
+  // teardown's stamp — cardActions.retireFightVowDeepenFor): 🤝 is retired on
+  // every client and render, and says why — pressed, it told the GMs "not
+  // found" (issue #364 WON-FIGHT-CARD-DELETED-NPC).
+  if (f.deepenRetired) {
+    const btn = root?.querySelector?.(`[data-action="sf-deepen-bond"]`);
+    if (btn) {
+      btn.disabled = true;
+      btn.title = `${f.connectionName ?? "This connection"}'s card was deleted — there is no bond to deepen`;
     }
   }
 

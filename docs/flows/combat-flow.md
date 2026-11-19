@@ -554,6 +554,14 @@ unstamped after `RELAY_RECOVERY_MS` (15 s), re-arms the button. (They used to
 emit raw `vow.markMilestone` / `connection.deepen` socket messages with no
 resolved stamp, so a second click — or a re-render on another client —
 applied the milestone twice, and with no GM the click silently did nothing.)
+A victory card whose connection's NPC card a GM deletes afterwards has its 🤝
+retired: the delete teardown stamps `flags.deepenRetired` on each such card
+already in chat (`cardActions.retireFightVowDeepenFor`, canonical GM, unless
+a namesake card is left), the update re-renders it everywhere with the
+button disabled and a title saying why, and the relay handler deepens
+nothing for it — a press used to whisper the GMs "not found" (issue #364
+WON-FIGHT-CARD-DELETED-NPC; `connection-flow.md`, "Deleting an NPC card").
+A card that stamp did not reach reports "not found" as before.
 
 Fulfilling the vow (via the move or the native sheet) completes it everywhere
 it lives — journal track *and* actor items (`completeVowItemByName` /
