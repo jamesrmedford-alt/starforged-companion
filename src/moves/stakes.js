@@ -168,11 +168,20 @@ export function stakesShown(stakes) {
  * The narrator's STAKES block (issue #353 R1): what the player saw before
  * the roll, and which of it this outcome delivers. '' with nothing shown.
  *
+ * A miss whose price is the player's choice beside a move that may replace it
+ * (Explore a Waypoint's with a match — `priceChoice`, resolver.js
+ * settlePriceChoice) delivers the stated miss only once it is paid: while the
+ * choice is open, or once the price is declined, the block points at the
+ * price-choice block that says so (formatPriceChoiceBlock). It was told "it
+ * is what this miss costs" about a price nothing had charged (issue #364
+ * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+ *
  * @param {Object|null} stakes — the resolution's
  * @param {string|null} outcome — "strong_hit" | "weak_hit" | "miss"
+ * @param {{ priceChoice?: { status?: string }|null }} [opts] — the resolution's price choice, as it stands
  * @returns {string}
  */
-export function formatStakesBlock(stakes, outcome) {
+export function formatStakesBlock(stakes, outcome, { priceChoice = null } = {}) {
   const shown = stakesShown(stakes);
   if (!shown.length) return "";
   const lines = ["## STAKES STATED BEFORE THE ROLL", "", "The player saw these before rolling:"];
@@ -184,8 +193,54 @@ export function formatStakesBlock(stakes, outcome) {
   let deliver = "";
   if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
   else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
+  else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = "This is a miss with a match: the stated miss is the price it offers, not a price paid — the block on the price, below, says where it stands.";
   else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
   else if (outcome === "miss") deliver = "This is a miss: the hit did not come. Its cost is the move outcome's, not a stated one.";
   if (deliver) lines.push("", deliver);
   return lines.join("\n");
+}
+
+/** Whether a price choice is not (yet) paid: still open, or declined for the move that replaces it. */
+function priceChoiceOpen(priceChoice) {
+  return priceChoice?.status === "pending" || priceChoice?.status === "declined";
+}
+
+/** The moves a price's choice may be replaced by, as the narrator is told them. */
+const INSTEAD_MOVES = Object.freeze({ confront_chaos: "Confront Chaos" });
+
+/**
+ * The narrator's block for a miss whose price is the player's choice beside a
+ * move that may replace it (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY
+ * — Explore a Waypoint's miss with a match: Pay the Price, or Confront Chaos
+ * instead), as the choice stands when the narration is written (resolver.js
+ * settlePriceChoice): not yet made — the price is shown arriving, never paid;
+ * declined — no price is paid, and the move taken instead tells what comes.
+ * '' once the price is paid (the seed and the stakes deliver it), and for a
+ * result with no such choice.
+ *
+ * @param {{ price?: string, stated?: boolean, instead?: string, status?: string }|null} priceChoice
+ * @returns {string}
+ */
+export function formatPriceChoiceBlock(priceChoice) {
+  if (!priceChoiceOpen(priceChoice)) return "";
+  const instead = INSTEAD_MOVES[priceChoice.instead] ?? "the move the match offers";
+  const price   = stakesLine(priceChoice.price);
+  if (priceChoice.status === "declined") {
+    return [
+      "## THE PRICE WAS NOT PAID",
+      "",
+      `This miss came with a match, and the player chose to ${instead} instead of paying a price: no price is paid` +
+      `${priceChoice.stated ? ", and the miss stated before the roll does not come to pass" : ""}. ` +
+      "Show the hardship or threat the miss confronts them with and leave it open — " +
+      `what follows is ${instead}'s to tell: its own roll decides it, and its narration comes after this one.`,
+    ].join("\n");
+  }
+  return [
+    "## THE PRICE IS THE PLAYER'S CHOICE",
+    "",
+    `This miss came with a match: the player may Pay the Price or ${instead} instead, and has not chosen yet (a card asks them).` +
+    `${price ? ` The price it offers: ${price}` : ""}`,
+    "Show that price as the hardship or threat the miss confronts them with — arriving, about to cost them — and stop there. " +
+    "Do not show its cost as already paid, and do not resolve it: whether it lands is the player's to choose.",
+  ].join("\n");
 }

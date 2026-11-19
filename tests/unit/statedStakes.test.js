@@ -122,15 +122,18 @@ describe('issue #353 R1 — the stakes the interpreter states', () => {
     expect(formatStakesBlock(null, 'miss')).toBe('');
   });
 
-  it('a miss whose price the pipeline does not route is seeded with the stated one, not a table roll', async () => {
+  // A miss's price is the pipeline's card (routed) or its choice's option
+  // (rollChoicePrice — sojournStatedMissPrice.test.js,
+  // waypointMissMatchPriceChoice.test.js): the oracle seeds roll none and are
+  // given none. The "advisory" seed for a miss that did neither told the
+  // narration a price nothing charged (issue #364
+  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+  it('the oracle seeds roll no price for a miss — its card or its choice carries it', async () => {
     const { buildOracleSeeds } = await import('../../src/moves/resolver.js');
     control.ptpRolls = 0;
-    const seeds = buildOracleSeeds('face_danger', 'miss', false, null, { routesPayThePrice: false, statedPriceText: MISS_LINE });
-    expect(seeds.results).toContain(`Pay the Price: ${MISS_LINE}`);
+    expect(buildOracleSeeds('face_danger', 'miss', false)).toBeNull();
+    expect(buildOracleSeeds('explore_a_waypoint', 'miss', true)).toBeNull();
     expect(control.ptpRolls).toBe(0);
-    const rolled = buildOracleSeeds('face_danger', 'miss', false, null, { routesPayThePrice: false });
-    expect(rolled.results.some(l => /^Pay the Price: /.test(l))).toBe(true);
-    expect(control.ptpRolls).toBe(1);
   });
 
   it('it reaches the move\'s user message, after the outcome', () => {

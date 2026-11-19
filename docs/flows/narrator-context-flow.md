@@ -48,7 +48,15 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
-  issue #362 AC02).
+  issue #362 AC02). A price that is the player's choice beside a move that
+  may replace it (`resolution.priceChoice` — Explore a Waypoint's miss with
+  a match: Pay the Price, or Confront Chaos instead) is settled when the
+  narration is written (`resultUpgrade.priceChoiceStatus`, read from the
+  table's cards → `resolver.settlePriceChoice`): paid, it is delivered as
+  above; still open, or declined, the stakes point at a block of its own
+  after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
+  THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
+  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after

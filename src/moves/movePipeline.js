@@ -1910,6 +1910,10 @@ export function narrationInputFrom(resolution, relevance = null) {
     // What the roll was for, as shown before it (issue #353 R1): the round
     // delivers the one its outcome calls for.
     stakes:            resolution?.stakes ?? null,
+    // The price a miss offers beside the move that may replace it (Explore a
+    // Waypoint's match): the round's narration is told where the choice
+    // stands (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+    ...(resolution?.priceChoice ? { priceChoice: resolution.priceChoice } : {}),
     // The plans its narration is asked to decide (an expedition it began) and
     // the track it finished (issue #353 Phase 3) — the round narrates them.
     skeletonRequests:  Array.isArray(resolution?.skeletonRequests) ? resolution.skeletonRequests : [],

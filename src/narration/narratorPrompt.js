@@ -5,7 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock } from '../moves/stakes.js';
+import { formatStakesBlock, formatPriceChoiceBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -2984,9 +2984,15 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   }
 
   // What the player was shown before the roll, and which of it this outcome
-  // delivers (issue #353 R1).
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null);
+  // delivers (issue #353 R1). A miss's price that is still the player's
+  // choice, or was declined for the move that replaces it (Explore a
+  // Waypoint's match), is told as it stands (issue #364
+  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
+  const priceChoice = resolution?.priceChoice ?? null;
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice });
   if (stakes) parts.push(stakes);
+  const priceBlock = formatPriceChoiceBlock(priceChoice);
+  if (priceBlock) parts.push(priceBlock);
 
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
@@ -3088,9 +3094,12 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
-      // The stakes shown before this entry's roll (issue #353 R1).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null);
+      // The stakes shown before this entry's roll (issue #353 R1), and where
+      // a price that is its player's choice stands (issue #364).
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null, { priceChoice: input.priceChoice ?? null });
       if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
+      const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
+      if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
     } else if (input.kind === 'refused') {

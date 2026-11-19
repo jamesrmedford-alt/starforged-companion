@@ -429,7 +429,8 @@ Defeat on every outcome, the misses above) is rolled once, for its card
 (`postMovePayThePriceCard`, which every routed price posts through), and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
-advisory price for a result that routes one (`routesPayThePrice`). The
+price at all (its "advisory" roll for a miss that neither routed nor offered
+one — Explore a Waypoint's with a match — is retired, issue #364). The
 narration used to depict one price while the card showed — and the table
 paid — another (issue #321 U03). A card the world refuses does not drop the
 price: its routes, the clocks and the seed are paid all the same, and the GM

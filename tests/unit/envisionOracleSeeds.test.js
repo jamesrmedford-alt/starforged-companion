@@ -63,7 +63,7 @@ describe('issue #353 Phase 0 — Gather Information', () => {
 
   it('a miss seeds the unwelcome truth (Story Complication) and no clue; its price is the pipeline\'s card', () => {
     d100s(16);
-    const seeds = buildOracleSeeds('gather_information', 'miss', false, null, { routesPayThePrice: true });
+    const seeds = buildOracleSeeds('gather_information', 'miss', false);
     expect(after(seeds, 'The unwelcome truth — Story Complication: ')).toEqual([rowFor(STORY_COMPLICATION, 16)]);
     expect(lines(seeds).some(l => /Story Clue|Pay the Price/.test(l))).toBe(false);
   });
@@ -79,7 +79,7 @@ describe('issue #353 Phase 0 — Compel', () => {
 
   it('a strong hit and a (routed) miss seed nothing', () => {
     expect(buildOracleSeeds('compel', 'strong_hit', false)).toBeNull();
-    expect(buildOracleSeeds('compel', 'miss', false, null, { routesPayThePrice: true })).toBeNull();
+    expect(buildOracleSeeds('compel', 'miss', false)).toBeNull();
   });
 });
 
@@ -102,7 +102,7 @@ describe('issue #353 Phase 0 — Undertake an Expedition', () => {
   });
 
   it('a miss (waylaid; its price is the pipeline\'s card) seeds no waypoint', () => {
-    expect(buildOracleSeeds('undertake_an_expedition', 'miss', false, null, { routesPayThePrice: true })).toBeNull();
+    expect(buildOracleSeeds('undertake_an_expedition', 'miss', false)).toBeNull();
   });
 
   it('resolveMove rolls the active sector\'s region — the hop from campaignState to the seed', () => {
@@ -155,12 +155,21 @@ describe('issue #353 Phase 0 — a price that reveals a new enemy', () => {
     ]);
   });
 
-  it('the advisory price of a miss that routes none (Sojourn) carries the enemy too', () => {
-    // d100 = 47 → "A new enemy is revealed" (45–50); the next rolls are the character tables.
-    vi.spyOn(Math, 'random').mockReturnValueOnce(0.465);
-    const seeds = buildOracleSeeds('sojourn', 'miss', false);
-    expect(lines(seeds)[0]).toBe('Pay the Price: A new enemy is revealed');
-    expect(enemyLines(seeds).goal).toHaveLength(1);
+  // The price a miss's choice holds (Sojourn's "No relief") is resolveMove's
+  // one roll (rollChoicePrice), seeded as a routed price is: buildOracleSeeds
+  // rolls no price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY retired
+  // its "advisory" roll).
+  it('the price a miss\'s choice holds (Sojourn) carries the enemy too', () => {
+    // challenge 9, 10; action 1 — a miss; d100 = 47 → "A new enemy is revealed"
+    // (45–50); the next rolls are the character tables.
+    const rng = vi.spyOn(Math, 'random');
+    for (const value of [0.85, 0.95, 0.0, 0.465]) rng.mockReturnValueOnce(value);
+    const r = resolveMove({ moveId: 'sojourn', moveName: 'Sojourn', statUsed: 'heart', statValue: 1, adds: 0,
+      playerNarration: 'We put in at the station.', inputMethod: 'chat', rationale: 'test', mischiefApplied: false }, {});
+    expect(r.outcome).toBe('miss');
+    expect(lines(r.oracleSeeds)[0]).toBe('Pay the Price: A new enemy is revealed');
+    expect(enemyLines(r.oracleSeeds).goal).toHaveLength(1);
+    expect(buildOracleSeeds('sojourn', 'miss', false)).toBeNull();
   });
 });
 
@@ -170,6 +179,6 @@ describe('issue #353 Phase 0 — no other outcome seeds', () => {
     expect(buildOracleSeeds('face_danger', 'weak_hit', false)).toBeNull();
     expect(buildOracleSeeds('secure_an_advantage', 'weak_hit', false)).toBeNull();
     expect(buildOracleSeeds('set_a_course', 'strong_hit', false)).toBeNull();
-    expect(buildOracleSeeds('strike', 'miss', true, null, { routesPayThePrice: true })).toBeNull();
+    expect(buildOracleSeeds('strike', 'miss', true)).toBeNull();
   });
 });

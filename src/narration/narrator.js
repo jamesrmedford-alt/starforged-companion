@@ -72,7 +72,8 @@ import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
-import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls } from '../moves/resolver.js';
+import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
+import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
@@ -1219,6 +1220,14 @@ export async function narrateResolution(resolution, campaignState, options = {})
     );
   }
 
+  // A miss's price that is the player's choice beside a move that may replace
+  // it (Explore a Waypoint's match — Confront Chaos instead) is told as it
+  // stands now: the choice card posts after a free-flow narration and before
+  // a held result's, so the pick may not be made yet, or may have declined
+  // the price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY). Before the
+  // hidden rolls: a declined price's new enemy is rolled for no one.
+  if (resolution?.priceChoice) resolution = settlePriceChoice(resolution, priceChoiceStatus(resolution._id ?? null));
+
   // The hidden rolls behind a plan this narration decides, which a store
   // every client holds kept none of — a held result's card, an upgrade's card
   // state — are rolled here, on the GM that narrates it (issue #362 AC15). A
@@ -1486,8 +1495,14 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // The hidden rolls behind the plans its entries ask for, which the round —
   // a world setting every client holds — keeps none of, are rolled here, on
   // the GM that narrates it (issue #362 AC15).
-  const entries = roundNarrationEntries(round).map(e => (globalThis.game?.user?.isGM === true
-    ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
+  // An entry's price that is its player's choice is told as it stands now —
+  // its choice card posted when the entry was recorded, before this narration
+  // (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; narrateResolution's rule).
+  const entries = roundNarrationEntries(round)
+    .map(e => (e.input?.priceChoice
+      ? { ...e, input: settlePriceChoice(e.input, priceChoiceStatus(e.input.resolutionId ?? null)) } : e))
+    .map(e => (globalThis.game?.user?.isGM === true
+      ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return { posted: null };

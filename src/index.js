@@ -4683,10 +4683,10 @@ async function handleOracleTableCommand(message, tableId, question) {
  *   !ptp [question?]
  *
  * The question text is optional context — the table itself just produces a
- * d100 + consequence string. The fate-move (`pay_the_price`) flow in the
- * resolver already surfaces this same table as an advisory seed on every
- * eligible move's miss card; this command lets the player or GM invoke it
- * directly without going through a move pipeline.
+ * d100 + consequence string. A move's miss pays its price through its own
+ * card or choice (never an advisory seed — issue #364); this command lets the
+ * player or GM invoke the table directly without going through a move
+ * pipeline.
  */
 async function handlePayThePriceCommand(message) {
   const text = message.content?.trim() ?? "";
@@ -8967,6 +8967,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
  * card: strong hit + match reveals something wondrous (Make a Discovery), miss
  * + match exposes something dire (Confront Chaos). These were advisory prose
  * seeds only until the 2026-07 soft-spot cleanup gave them one-click buttons.
+ * Each is *instead* of the result's own choice card — a strong hit's reward,
+ * a miss's price (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY), whose card
+ * offers the miss's "Confront Chaos instead" too (sufferCard.js).
  *
  * @param {{ moveId?: string, outcome?: string, isMatch?: boolean }} resolution
  * @returns {"make_a_discovery"|"confront_chaos"|null}
@@ -8999,8 +9002,12 @@ export function wireWaypointOracleButton(message, root) {
   const claimed = liveCardFlags(message)?.waypointRewardClaimed;
   if (claimed) {
     btn.disabled = true;
+    // A miss's ordinary result is its price, paid on its choice card (issue
+    // #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
     btn.title = claimed === "ordinary"
-      ? "The ordinary reward was taken — the match's alternative no longer applies"
+      ? (oracleMove === "confront_chaos"
+        ? "The price was paid — the match's alternative no longer applies"
+        : "The ordinary reward was taken — the match's alternative no longer applies")
       : claimed === "burn" || claimed === "improve"
         ? "The result changed — the match's alternative no longer applies"
         : "Taken";

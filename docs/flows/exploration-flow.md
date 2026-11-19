@@ -249,7 +249,31 @@ record and pin for it).
   (`routePayThePrice` — the card, its suffer route, the tension clocks; it
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the
-  price is their choice and is not routed.
+  price is their choice and is not routed: the miss posts a choice card
+  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY, decided — the choice
+  card), **"Pay the Price: ‹the price›"** or **"Confront Chaos instead"**.
+  The price is the one the narration is seeded with, rolled or read once at
+  the roll (`resolver.rollChoicePrice` — the miss stated before the roll,
+  else the one table roll; Sojourn's mechanism) and carried on the option
+  (`withChoicePrice`, `priceInLabel`), so its pick pays exactly that one
+  (`index.js` `payChosenPrice` — its card, its suffer move on the roller,
+  the clocks). "Confront Chaos instead" is the move card's 🌀 pressed from
+  the choice card (`sufferCard.js` `takeWaypointAlternative` →
+  `cardActions.applyWaypointOraclePick`, nothing claimed on the choice card
+  first). The narration used to be seeded "Pay the Price: …" by an advisory
+  roll in `buildOracleSeeds` and told "it is what this miss costs" while
+  nothing charged it short of a typed `!ptp`, which rolled another; that
+  roll is gone — no miss is seeded a price that is neither routed nor
+  offered. The resolution carries the choice (`priceChoice`: the price, and
+  what may replace it), and its narration is told where it stands **when it
+  is written** (`narrator.js` → `resultUpgrade.priceChoiceStatus` →
+  `resolver.settlePriceChoice`; `stakes.js` `formatPriceChoiceBlock`): a
+  free-flow miss is narrated before its card is picked — *pending*: the
+  price is offered, shown arriving, never "what this miss costs"; a held
+  result's (and a Batch Mode round's) card posts before its narration —
+  *paid* (the price picked: seeded and delivered as before) or *declined*
+  (Confront Chaos taken: the price's seed lines go, and the narrator is
+  told no price is paid).
   Strong-hit-with-match seeds a "notable aspect" prompt into the narrator
   prompt and offers **🔭 Make a Discovery** on the result card;
   miss-with-match offers **🌀 Confront Chaos**. Neither table is rolled for
@@ -266,6 +290,12 @@ record and pin for it).
   not rolled, the card's claim is handed back and the ordinary cards come
   back live — `resultUpgrade.reopenRetiredChoiceCards`, issue #347 AB06) — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
+  The ordinary choice is a strong hit's reward or a miss's price. The
+  button is live as soon as the move card posts — before the move is
+  narrated and recorded — so a choice card posted after the alternative was
+  taken is posted retired (`persistResolution.resolveSufferPrompt` →
+  `resultUpgrade.waypointAlternativeTaken`; issue #364): it was posted live,
+  the reward or the price takeable on top of the alternative.
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,
   which clears at its tenth box (T02).

@@ -1160,7 +1160,7 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
 const allMessages = () => globalThis.game?.messages?.contents ?? [];
 
 /** A resolution's move card — the one carrying its Burn / Improve. */
-function moveCardFor(resolutionId) {
+export function moveCardFor(resolutionId) {
   if (!resolutionId) return null;
   return allMessages().find(m => {
     const f = m?.flags?.[MODULE_ID];
@@ -1190,6 +1190,49 @@ const chosen = (f) => f.resolved === true || (Array.isArray(f.pickedIndices) && 
  */
 export function consequenceChosen(resolutionId) {
   return outcomeChoiceCards(resolutionId).some(m => chosen(m.flags[MODULE_ID]));
+}
+
+// What an Explore a Waypoint match's alternative retires the outcome's own
+// choice as (retireChoiceCard's kinds), by the move card's `waypointOracleCard`.
+const WAYPOINT_ALTERNATIVE_KINDS = Object.freeze({ make_a_discovery: "discovery", confront_chaos: "chaos" });
+
+/**
+ * Whether an Explore a Waypoint match's alternative — Make a Discovery,
+ * Confront Chaos — was taken for a resolution (its move card's
+ * `waypointRewardClaimed: "alternative"`, cardActions.js
+ * applyWaypointOraclePick), as the kind that retires the outcome's own choice
+ * card ("discovery" | "chaos"), or null. The alternative is *instead* of the
+ * outcome's own choice: a choice card posted after the press — the button is
+ * on the move card before the move is narrated and recorded — is retired as
+ * the press retires a pending one (persistResolution.js), and a miss's price
+ * the alternative replaced is narrated as not paid (priceChoiceStatus).
+ *
+ * @param {string|null} resolutionId
+ * @returns {"discovery"|"chaos"|null}
+ */
+export function waypointAlternativeTaken(resolutionId) {
+  const f = moveCardFor(resolutionId)?.flags?.[MODULE_ID];
+  if (f?.waypointRewardClaimed !== "alternative") return null;
+  return WAYPOINT_ALTERNATIVE_KINDS[f.waypointOracleCard] ?? null;
+}
+
+/**
+ * Where a miss's price that is the player's choice stands (issue #364
+ * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — Explore a Waypoint's miss with a
+ * match: Pay the Price, or Confront Chaos instead), read from the table's
+ * cards when the move is narrated (resolver.js settlePriceChoice): "declined"
+ * once the alternative is taken (waypointAlternativeTaken), "paid" once the
+ * outcome's choice is made (consequenceChosen — the price option's pick; the
+ * other option is the alternative's press, which retires the card instead),
+ * else "pending". Any client may ask: the cards are the table's.
+ *
+ * @param {string|null} resolutionId
+ * @returns {"pending"|"paid"|"declined"}
+ */
+export function priceChoiceStatus(resolutionId) {
+  if (!resolutionId) return "pending";
+  if (waypointAlternativeTaken(resolutionId)) return "declined";
+  return consequenceChosen(resolutionId) ? "paid" : "pending";
 }
 
 /**

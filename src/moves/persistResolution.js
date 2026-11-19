@@ -473,7 +473,7 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // closes them — only a price's cards posted before the move card said so
   // (issue #336 Y18; OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT). It comes off once
   // the upgrade closes another way (resultUpgrade dropUpgradeHints).
-  const { upgradeOpenFor } = await import('./resultUpgrade.js');
+  const { upgradeOpenFor, waypointAlternativeTaken, retireChoiceCard } = await import('./resultUpgrade.js');
   const upgradeFirst = resolution._id ? upgradeOpenFor(resolution._id) === true : false;
   const card = await postSufferChoiceCard({
     sufferPrompt: upgradeFirst && !prompt.hint ? { ...prompt, hint: CHOICE_UPGRADE_FIRST } : prompt,
@@ -482,6 +482,16 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
     moveId: resolution.moveId,
     resolutionId: resolution._id ?? null,
   });
+  // An Explore a Waypoint match's alternative (🔭 / 🌀 on the move card) is
+  // *instead* of this choice, and its button is live from the moment the move
+  // card posts — before the move is narrated and recorded. Pressed by then,
+  // it found no choice card to retire, and this one posted live after it: a
+  // miss's price payable on top of the Confront Chaos taken instead of it
+  // (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY). The card is posted and
+  // retired as the press retires a pending one, so an alternative that is
+  // then not rolled brings it back (resultUpgrade.reopenRetiredChoiceCards).
+  const replacedBy = card && resolution._id ? waypointAlternativeTaken(resolution._id) : null;
+  if (replacedBy) await retireChoiceCard(card, replacedBy);
   if (card) return null;
   console.error(`${MODULE_ID} | the world did not save ${actor?.name ?? "the roller"}'s choice card from ${resolution.moveName ?? resolution.moveId ?? "the move"}.`);
   return {

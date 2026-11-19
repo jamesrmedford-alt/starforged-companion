@@ -1131,7 +1131,7 @@ describe("buildOracleSeeds", () => {
       rollOracle.mockImplementation((t) =>
         t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
       );
-      expect(buildOracleSeeds("face_danger", "miss", false, null, { routesPayThePrice: true })).toBeNull();
+      expect(buildOracleSeeds("face_danger", "miss", false)).toBeNull();
       expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
     });
 
@@ -1139,16 +1139,22 @@ describe("buildOracleSeeds", () => {
       rollOracle.mockImplementation((t) =>
         t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
       );
-      expect(buildOracleSeeds("face_defeat", null, false, null, { routesPayThePrice: true })).toBeNull();
+      expect(buildOracleSeeds("face_defeat", null, false)).toBeNull();
       expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
     });
 
-    it("seeds an advisory Pay the Price on a miss that routes none (Sojourn's, one of its choices)", () => {
+    // A miss's price that is one of its choices (Sojourn's "No relief",
+    // Explore a Waypoint's with a match) is resolveMove's roll, which the
+    // option carries (rollChoicePrice): the seeds roll none. The "advisory"
+    // roll here was a price nothing charged (issue #364
+    // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY).
+    it("rolls no advisory Pay the Price on a miss whose price is one of its choices", () => {
       rollOracle.mockImplementation((t) =>
         t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
       );
-      const seeds = buildOracleSeeds("sojourn", "miss", false);
-      expect(seeds.results).toEqual(["Pay the Price: You are harmed"]);
+      expect(buildOracleSeeds("sojourn", "miss", false)).toBeNull();
+      expect(buildOracleSeeds("explore_a_waypoint", "miss", true)).toBeNull();
+      expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
     });
 
     it("does NOT seed Pay the Price on hits", () => {
@@ -1570,10 +1576,13 @@ describe("routePayThePrice on miss/weak outcomes", () => {
     expect(mapConsequences("face_danger", "strong_hit", false).routePayThePrice).toBe(false);
   });
 
-  it("control: explore_a_waypoint:miss with a match offers Confront Chaos instead — the price is not routed", () => {
+  // The price is the player's choice, on a card (issue #364
+  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — waypointMissMatchPriceChoice.test.js).
+  it("control: explore_a_waypoint:miss with a match offers Confront Chaos instead — the price is a choice, not routed", () => {
     const c = mapConsequences("explore_a_waypoint", "miss", true);
     expect(c.routePayThePrice).toBe(false);
-    expect(c.otherEffect).toMatch(/Confront Chaos instead.*Pay the Price/);
+    expect(c.otherEffect).toMatch(/Choose: Pay the Price, or Confront Chaos instead/);
+    expect(c.sufferPrompt.options.map(o => o.route ?? o.waypointOracle)).toEqual(["pay_the_price", "confront_chaos"]);
   });
 });
 

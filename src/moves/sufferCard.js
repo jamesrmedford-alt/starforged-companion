@@ -32,10 +32,10 @@ import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionA
 import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
-import { relayCardAction } from "./cardActions.js";
+import { relayCardAction, applyWaypointOraclePick } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
+import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice, moveCardFor } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -583,10 +583,49 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   }
   _picksInFlight.add(messageId);
   try {
+    const alternative = waypointAlternativeOption(f, pick);
+    if (alternative) return await takeWaypointAlternative(message, ctx);
     return await handleSufferPick(message, pick);
   } finally {
     _picksInFlight.delete(messageId);
   }
+}
+
+/**
+ * The picked option when it is an Explore a Waypoint match's alternative —
+ * "Confront Chaos instead" on a miss's price choice (`waypointOracle`,
+ * resolver.js; issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY) — else null.
+ */
+function waypointAlternativeOption(flags, pick) {
+  if (pick?.pickKind !== "enum") return null;
+  const option = flags?.sufferPrompt?.options?.[Number(pick.optionIndex)] ?? null;
+  return typeof option?.waypointOracle === "string" && option.waypointOracle ? option : null;
+}
+
+/**
+ * A choice card's "Confront Chaos instead": the move card's 🌀 button, pressed
+ * from here (cardActions.js applyWaypointOraclePick, on this — the canonical
+ * GM's — client) — one claim on the move card, the forced follow-up posted as
+ * the roller, and this card retired by it, as a press of the button retires
+ * it: "instead", never as well. Nothing is claimed on this card first — a
+ * resolved choice card is the outcome's choice made, which refuses the
+ * alternative — so a press the move card refuses (already claimed, the
+ * result upgraded, the card gone) leaves it as it was, its price still to
+ * pay, and an alternative that is then not rolled brings it back live.
+ *
+ * @param {ChatMessage} message — the choice card
+ * @param {Object} ctx — the relay's (the requester)
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+async function takeWaypointAlternative(message, ctx) {
+  const resolutionId = message?.flags?.[MODULE_ID]?.resolutionId ?? null;
+  const moveCard = moveCardFor(resolutionId);
+  if (!moveCard) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${message?.id ?? "?"} — its move card is gone; the match's alternative cannot be taken from here.`);
+    return { applied: false, reason: "no-move-card" };
+  }
+  const taken = await applyWaypointOraclePick({ messageId: moveCard.id }, ctx);
+  return taken?.posted ? { applied: true } : { applied: false, reason: taken?.reason ?? "not-taken" };
 }
 
 /** A suffer card's PC — the one it names (`actorId`), never another: null when it names none or that Actor is gone. */
