@@ -167,7 +167,13 @@ gets a name of its own `reproposeVowRewards` proposes its rewards again for
 that name on the same reward-choice card (`rewardOptions` and its buttons
 replaced in place; a reward already chosen, or no proposal coming back,
 leaves the card as it is) — the card and its rewards stayed generic after the
-player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED), a **connection
+player named the vow, issue #364 VOW-CARD-GENERIC-UNTIL-NAMED; the listener is
+the canonical GM's, so an edit made while no GM was connected is followed at
+the GM's next load instead — `reconcileUnswornVowCards` (index.js `ready`)
+reads the newest 200 chat messages for each vow's open, unsworn card and
+sends one that does not show its vow's name and rank through
+`followVowOnItsCard`; a card in step costs no write and no Claude call —
+issue #364 VOW-CARD-RENAME-NO-GM), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the

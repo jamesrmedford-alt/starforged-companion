@@ -900,7 +900,9 @@ export function buildSwearMovePostForName(vowName, linkedConnectionName = null, 
  * the vowSetupOffered flag. Register once on ready. Its card then follows the
  * vow's sheet — a rename, a rank change — until the vow is sworn from it
  * (the updateItem listener, followVowOnItsCard; issue #364
- * VOW-CARD-GENERIC-UNTIL-NAMED).
+ * VOW-CARD-GENERIC-UNTIL-NAMED). An edit made while no GM was connected is
+ * followed at the GM's next load (reconcileUnswornVowCards; issue #364
+ * VOW-CARD-RENAME-NO-GM).
  */
 export function registerPlayerVowHook() {
   if (registerPlayerVowHook._installed) return;
@@ -1048,6 +1050,81 @@ async function reproposeVowRewards(vowId, name) {
   const card = openCard();   // a pick made while the call was out stands
   if (!card) return;
   await card.update({ content: buildRewardChoiceHtml(options), [`flags.${MODULE_ID}.rewardOptions`]: options });
+}
+
+// How many of the newest chat messages the load-time reconcile reads. A vow
+// named while no GM was connected was made moments before — its card is among
+// the last cards posted — so an old card is not looked for, and the whole
+// chat log is never walked.
+const VOW_CARD_RECONCILE_WINDOW = 200;
+
+/**
+ * Whether a named vow's card already shows the vow as its sheet has it: its
+ * name (the card's `vowName`) and its rank, as the card words it.
+ *
+ * @param {ChatMessage} card — a player-vow card
+ * @param {Item} item — its vow
+ * @returns {boolean}
+ */
+function vowCardInStep(card, item) {
+  if (card.flags?.[MODULE_ID]?.vowName !== item.name) return false;
+  const rank = item.system?.rank ?? null;
+  if (rank == null || rank === "") return true;
+  return String(card.content ?? "").includes(`(${escapeHtml(rankName(rank))})`);
+}
+
+/** The vow Item a player-vow card is about — on the card's holder, else on any PC — or null when no character holds it. */
+function vowItemOfCard(f) {
+  const holder = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actors = getPlayerActors();
+  for (const actor of [...actors.filter(a => a?.id === holder), ...actors.filter(a => a?.id !== holder)]) {
+    const item = (actor?.items?.contents ?? []).find(i => isVowCopy(i, f.vowId));
+    if (item) return item;
+  }
+  return null;
+}
+
+/**
+ * Bring the unsworn "🆕 New vow recorded" cards in step with their vows at
+ * load (issue #364 VOW-CARD-RENAME-NO-GM). The card follows its vow's sheet
+ * through the canonical GM's updateItem listener (followVowOnItsCard), so a
+ * vow named or re-ranked while no GM was connected — the GM's page reloading
+ * as the player typed the name — was followed by nobody: the card, and its
+ * rewards, stayed generic until the next edit of the vow.
+ *
+ * Canonical GM, at ready (index.js). Bounded: the newest
+ * VOW_CARD_RECONCILE_WINDOW chat messages, each vow's newest card, open and
+ * unsworn (no `swearRolled`, no `vowGone`), its vow still held by a character
+ * and named. A card that already shows its vow's name and rank is left as it
+ * is — no write, no Claude call; one that does not goes through
+ * followVowOnItsCard, the listener's own path: the card re-rendered, and the
+ * rewards proposed again only when the vow gets its first name here and no
+ * reward was chosen. Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+export async function reconcileUnswornVowCards() {
+  try {
+    if (!isCanonicalGM()) return;
+    const recent = (globalThis.game?.messages?.contents ?? []).slice(-VOW_CARD_RECONCILE_WINDOW);
+    const seen = new Set();
+    for (let i = recent.length - 1; i >= 0; i -= 1) {
+      const card = recent[i];
+      const f = card?.flags?.[MODULE_ID];
+      if (f?.playerVowCard !== true || typeof f.vowId !== "string" || !f.vowId || seen.has(f.vowId)) continue;
+      seen.add(f.vowId);                                  // a vow's newest card is its card (followVowOnItsCard)
+      if (f.swearRolled || f.vowGone) continue;
+      const item = vowItemOfCard(f);
+      if (!item || isPlaceholderVowName(item.name) || vowCardInStep(card, item)) continue;
+      try {
+        await followVowOnItsCard(item);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: the card of "${item.name}" was not brought in line with its sheet at load:`, err?.message ?? err);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: the vow cards were not reconciled at load:`, err?.message ?? err);
+  }
 }
 
 /**

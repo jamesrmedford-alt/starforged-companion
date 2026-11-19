@@ -199,7 +199,7 @@ import {
 } from "./system/encounterSpawn.js";
 import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
 import { registerConnectionDeleteHook } from "./entities/connection.js";
-import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook, reconcileUnswornVowCards } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -9702,6 +9702,10 @@ Hooks.once("ready", () => {
   // Player-authored vows (#248 B1) — a vow made on the sheet gets the same setup
   // (reward proposal + ⚔ Swear it roll). GM-gated createItem detection.
   registerPlayerVowHook();
+  // A vow named or re-ranked on its sheet while no GM was connected: the
+  // canonical GM brings its unsworn card in step now (issue #364
+  // VOW-CARD-RENAME-NO-GM). Bounded, and never throws.
+  reconcileUnswornVowCards();
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
