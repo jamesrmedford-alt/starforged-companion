@@ -162,8 +162,15 @@ jobs:
       # of Cypress (install-deps, Foundry boot, etc.) produce no artifact
       # at all — Cypress's screenshots dir stays empty so the artifact
       # upload silently skips with `if-no-files-found: ignore`.
+      # GITHUB_TOKEN: install-deps.sh's github_release_zip_url asks
+      # api.github.com for the foundry-ironsworn and Quench release assets,
+      # and sends this as a Bearer header when it is set. Without it the
+      # lookups share the runners' unauthenticated rate limit and can 403
+      # before Foundry starts (issue #364 E2E-INSTALL-UNAUTHENTICATED-API).
       - name: Run Quench e2e suite
         if: steps.changes.outputs.code == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p test/ci/cypress/artifacts
           set -o pipefail
