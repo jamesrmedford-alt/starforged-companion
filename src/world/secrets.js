@@ -1498,8 +1498,11 @@ export async function planNpcAgenda(record, { campaignState = null, narrationId 
     const theirs = all.find(r => r.status === "active" && BEING_KINDS.includes(r.kind) && planIsAbout(r, name));
     if (theirs) {
       if (theirs.subject.type !== "name" || !actorId) return null;
-      return await updateSkeleton(theirs.id, r => ({ ...r, subject: { type: "entity", id: actorId, name: r.subject.name } }),
-        { narrationId, keepStamp: !narrationId });
+      // The link carries the narration that made it (`subjectLinkedBy`): a
+      // supersede of it keeps the link while her card stands, the X-Card
+      // takes it back (issue #364 SUPERSEDE-UNLINKS-EARLIER-PLAN).
+      return await updateSkeleton(theirs.id, r => ({ ...r, subject: { type: "entity", id: actorId, name: r.subject.name },
+        subjectLinkedBy: narrationId ?? null }), { narrationId, keepStamp: !narrationId });
     }
     // An agenda of theirs that was resolved or retired is not planned again.
     if (all.some(r => r.kind === "npcAgenda" && planIsAbout(r, name))) return null;
@@ -1599,7 +1602,10 @@ export async function planSignificantThreat(threat, { campaignState = null, narr
     const byName = all.find(r => r.status === "active" && BEING_KINDS.includes(r.kind) && planIsAbout(r, name));
     if (byName) {
       if (byName.subject.type !== "name" || !pageId) return null;
-      return updateSkeleton(byName.id, r => ({ ...r, subject: { type: "threat", id: pageId, name: r.subject.name } }), { narrationId });
+      // The link's mark, as an NPC's agenda carries it (planNpcAgenda; issue
+      // #364 SUPERSEDE-UNLINKS-EARLIER-PLAN).
+      return updateSkeleton(byName.id, r => ({ ...r, subject: { type: "threat", id: pageId, name: r.subject.name },
+        subjectLinkedBy: narrationId ?? null }), { narrationId });
     }
     return createSkeleton({
       kind: "threat", subject: { type: "threat", id: pageId, name },

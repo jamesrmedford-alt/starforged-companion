@@ -1509,7 +1509,7 @@ export async function undoNarrationEntries(narrationIds, { categories = null, ke
         // less the steps the removed narrations played.
         if (category === "secrets" && entry) {
           try {
-            const unplayed = withoutStepsPlayedBy(entry, removed);
+            const unplayed = withoutStepsPlayedBy(entry, removed, keepPlanAbout);
             if (unplayed) {
               const withheld = withholdTruths ? revealTakenBack([entry], unplayed.entry, removed) : null;
               const written = withheld ? { ...unplayed.entry, truthWithheldBy: withheld } : unplayed.entry;
@@ -1540,12 +1540,17 @@ export async function undoNarrationEntries(narrationIds, { categories = null, ke
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
             ...(category === "lore" ? { revealOf: versions[at].revealOf ?? null } : {}),
             ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null,
-              resolvedBy: versions[at].resolvedBy ?? null, truthWithheldBy: versions[at].truthWithheldBy ?? null } : {}),
+              resolvedBy: versions[at].resolvedBy ?? null, truthWithheldBy: versions[at].truthWithheldBy ?? null,
+              subjectLinkedBy: versions[at].subjectLinkedBy ?? null } : {}),
           };
           // The version put back may be one written between two removed
           // narrations: it holds the earlier one's step.
-          const unplayed = category === "secrets" ? withoutStepsPlayedBy(restored, removed) : null;
+          const unplayed = category === "secrets" ? withoutStepsPlayedBy(restored, removed, keepPlanAbout) : null;
           let put = unplayed?.entry ?? restored;
+          // A link their capture made to the card or page made for the
+          // plan's name stays while the caller keeps what it is about (issue
+          // #364 SUPERSEDE-UNLINKS-EARLIER-PLAN).
+          if (category === "secrets") put = linkKept([entry, ...versions.slice(0, at)], put, removed, keepPlanAbout) ?? put;
           // The X-Card withholds a truth their versions revealed; any undo
           // keeps the withholding the plan carries (issue #364
           // XCARD-REVEAL-REREVEAL-NO-LORE).
@@ -1646,6 +1651,55 @@ function withholdingKept(current, put) {
 }
 
 /**
+ * Whether the caller of an undo keeps what a plan's subject names
+ * (`keepPlanAbout` — a supersede's, while the card or Threats page stands);
+ * false with none given (the X-Card), or when it cannot say.
+ *
+ * @param {Object} subject
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout
+ * @returns {boolean}
+ */
+function subjectStays(subject, keepPlanAbout) {
+  if (typeof keepPlanAbout !== "function" || !subject || typeof subject !== "object") return false;
+  try {
+    return keepPlanAbout(subject) === true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: whether a plan's subject still stands could not be read:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * The version an undo puts back, linked as a removed narration's capture
+ * linked it (issue #364 SUPERSEDE-UNLINKS-EARLIER-PLAN): a plan filed about a
+ * name that the capture of a later narration linked to the card or Threats
+ * page it made for that name (secrets.js planNpcAgenda, planSignificantThreat
+ * — a new version, stamped with that narration, marked `subjectLinkedBy`)
+ * went back to its by-name version when a Burn Momentum / Improve Result
+ * superseded the narration, while the card or page stayed; the link was never
+ * made again, so the Entities panel's plan marker and a delete's retiring of
+ * the card's plans no longer reached it. Kept — the card or page as subject,
+ * the name the version put back holds, the link's mark — when the version put
+ * back is about a name and the caller keeps what the link names (the
+ * supersede's `keepPlanAbout`, the reading that keeps a plan filed about a
+ * card). Null otherwise: the X-Card keeps none.
+ *
+ * @param {Object[]} from — the removed narrations' versions, newest first
+ * @param {Object} put — the version put back
+ * @param {Set<string>} removed
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout
+ * @returns {Object|null}
+ */
+function linkKept(from, put, removed, keepPlanAbout) {
+  if (put?.subject?.type !== "name") return null;
+  const link = from.find(v => typeof v?.subjectLinkedBy === "string" && removed.has(v.subjectLinkedBy)
+    && v.subject && v.subject.type !== "name" && typeof v.subject.id === "string" && v.subject.id);
+  if (!link || !subjectStays(link.subject, keepPlanAbout)) return null;
+  return { ...put, subject: { type: link.subject.type, id: link.subject.id, name: put.subject.name ?? link.subject.name },
+    subjectLinkedBy: link.subjectLinkedBy };
+}
+
+/**
  * The version of a plan the removed narrations made that stays when what the
  * plan is about outlives them (issue #364
  * BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA): the one it was filed as — the
@@ -1695,14 +1749,14 @@ function planVersionFiled(entry, keepPlanAbout) {
 function planKeptAsFiled(entry, removed, keepPlanAbout) {
   const filed = planVersionFiled(entry, keepPlanAbout);
   if (!filed) return null;
-  const undone = takenBackFrom(filed, removed);
+  const undone = takenBackFrom(filed, removed, keepPlanAbout);
   if (filed === entry && !undone) return { entry, changed: false, stepTop: false };
   const version = undone?.version ?? filed;
   return {
     // setFlag merges: every key the kept version may lack is written.
     entry: { ...version, narrationId: filed.narrationId ?? null, previous: null,
       truthRevealedBy: version.truthRevealedBy ?? null, rollsShownBy: version.rollsShownBy ?? null, resolvedBy: version.resolvedBy ?? null,
-      truthWithheldBy: version.truthWithheldBy ?? null },
+      truthWithheldBy: version.truthWithheldBy ?? null, subjectLinkedBy: version.subjectLinkedBy ?? null },
     changed: true, stepTop: undone?.step === true,
   };
 }
@@ -1716,13 +1770,14 @@ function planKeptAsFiled(entry, removed, keepPlanAbout) {
  *
  * @param {Object} entry — the stored Secrets entry
  * @param {Set<string>} removed — the narrations taken back
+ * @param {((subject: Object) => boolean)|null} [keepPlanAbout] — the undo's (takenBackFrom: a link kept)
  * @returns {{ entry: Object, top: boolean, stepTop: boolean }|null} the entry to write, whether its own
  *   content changed, and whether a step of its own was un-played (the caller's clocks: a step is owed again)
  */
-function withoutStepsPlayedBy(entry, removed) {
-  const top = takenBackFrom(entry, removed);
+function withoutStepsPlayedBy(entry, removed, keepPlanAbout = null) {
+  const top = takenBackFrom(entry, removed, keepPlanAbout);
   const versions = Array.isArray(entry?.previous) ? entry.previous : null;
-  const older = versions ? versions.map(v => takenBackFrom(v, removed)?.version ?? v) : null;
+  const older = versions ? versions.map(v => takenBackFrom(v, removed, keepPlanAbout)?.version ?? v) : null;
   const olderChanged = !!older && older.some((v, i) => v !== versions[i]);
   if (!top && !olderChanged) return null;
   return { entry: { ...(top?.version ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top, stepTop: top?.step === true };
@@ -1740,15 +1795,22 @@ function withoutStepsPlayedBy(entry, removed) {
  *   - the ending one of them gave the plan's story (`resolvedBy`) undone:
  *     the plan is in play again (issue #364 PLAN-RESOLVED-NO-MARK — under a
  *     GM's edit of the ended plan it stayed resolved, where with the
- *     narration's own version on top it came back).
+ *     narration's own version on top it came back);
+ *   - the link one of them made from the plan's name to a card or Threats
+ *     page (`subjectLinkedBy`) undone — the plan about the name again — unless
+ *     the caller keeps what it links to (`keepPlanAbout`: a supersede, while
+ *     the card or page stands; issue #364 SUPERSEDE-UNLINKS-EARLIER-PLAN — the
+ *     X-Card on the upgraded beat deletes the card, and the earlier plan goes
+ *     back to its name, as without the burn, instead of being retired with it).
  * A record-level mark is cleared with an explicit null: the page flag is
  * merged on write. Null when the version holds nothing of theirs.
  *
  * @param {Object} version — a stored Secrets entry, or one of its `previous`
  * @param {Set<string>} removed — the narrations taken back
+ * @param {((subject: Object) => boolean)|null} [keepPlanAbout] — the undo's
  * @returns {{ version: Object, step: boolean }|null} the version, and whether a step was un-played
  */
-function takenBackFrom(version, removed) {
+function takenBackFrom(version, removed, keepPlanAbout = null) {
   const by = (id) => typeof id === "string" && removed.has(id);
   const steps = Array.isArray(version?.escalation) ? version.escalation : [];
   const clues = Array.isArray(version?.clues) ? version.clues : [];
@@ -1759,7 +1821,8 @@ function takenBackFrom(version, removed) {
   const truth = version?.truthRevealed === true && by(version.truthRevealedBy);
   const rolls = version?.rollsShown === true && by(version.rollsShownBy);
   const ended = version?.status === "resolved" && by(version.resolvedBy);
-  if (!step && !clue && !truth && !rolls && !ended) return null;
+  const linked = by(version?.subjectLinkedBy) && version?.subject?.type !== "name" && !subjectStays(version.subject, keepPlanAbout);
+  if (!step && !clue && !truth && !rolls && !ended && !linked) return null;
   const next = { ...version };
   if (step) {
     next.escalation = steps.map((e) => {
@@ -1780,6 +1843,7 @@ function takenBackFrom(version, removed) {
   if (truth) Object.assign(next, { truthRevealed: false, truthRevealedBy: null });
   if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
   if (ended) Object.assign(next, { status: "active", resolvedBy: null });
+  if (linked) Object.assign(next, { subject: { type: "name", id: null, name: version.subject?.name ?? "" }, subjectLinkedBy: null });
   return { version: next, step };
 }
 

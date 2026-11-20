@@ -1069,7 +1069,12 @@ stamped with that narration, so the X-Card that removes her card takes it:
 #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA — and the plan its capture filed
 for a threat it recorded as significant, about the Threats page, which
 stands with those records (`threatPageStands`): issue #364
-BURN-DROPS-RECORDED-THREAT-PLAN) — its oracle rolls then shown — Phase 2;
+BURN-DROPS-RECORDED-THREAT-PLAN; and a plan filed about a name that its
+capture linked to such a card or page keeps the link while it stands — the
+link's own mark, `subjectLinkedBy`, which an undo that keeps nothing (the
+X-Card on the upgraded beat, deleting the card) undoes, the plan about the
+name again: issue #364 SUPERSEDE-UNLINKS-EARLIER-PLAN) — its oracle rolls
+then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —

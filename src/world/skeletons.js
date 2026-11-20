@@ -162,6 +162,15 @@ export function normaliseSkeleton(raw) {
     // now — kept only while the truth is decided and unrevealed. Null on
     // every other plan, and on one stored before the mark was kept.
     truthWithheldBy: markOf(!!truth && !truthRevealed, raw.truthWithheldBy),
+    // The narration whose capture linked a plan filed about a name to the
+    // card or Threats page made for that name (secrets.js planNpcAgenda,
+    // planSignificantThreat) — the link's own mark, as `playedBy` is a step's:
+    // a Burn / Improve supersede of that narration keeps the link while the
+    // card or page stands, and an undo that takes the narration back without
+    // keeping it (the X-Card) puts the plan back about the name, whatever was
+    // written to it since (worldJournal.js undoNarrationEntries; issue #364
+    // SUPERSEDE-UNLINKS-EARLIER-PLAN). Kept only while the subject is linked.
+    subjectLinkedBy: markOf(subject.type !== "name" && !!subject.id, raw.subjectLinkedBy),
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     // The one re-roll a plan awaiting its decision may use in place of a
