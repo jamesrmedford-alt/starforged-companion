@@ -516,14 +516,6 @@ async function beginSessionOnce(payload) {
 
 
 /**
- * Begin a Session ran again on a session already begun — say what (didn't)
- * happen, and name a session-start clock advance still waiting on the GMs'
- * Retry card, since Begin again is the natural (and wrong) way to try again
- * (issue #316 T04).
- *
- * @param {string|null} sessionId
- */
-/**
  * Begin a Session's start write was refused: nothing began. Posted where the
  * Begin card is, so its promise ("scene set", "+1 momentum") is not the last
  * word (issue #329 X13 — End a Session reports its own write failure).
@@ -538,6 +530,14 @@ async function postSessionNotStartedCard(vignetteRolled) {
   }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the not-started card failed:`, err?.message ?? err));
 }
 
+/**
+ * Begin a Session ran again on a session already begun — say what (didn't)
+ * happen, and name a session-start clock advance still waiting on the GMs'
+ * Retry card, since Begin again is the natural (and wrong) way to try again
+ * (issue #316 T04).
+ *
+ * @param {string|null} sessionId
+ */
 async function postSessionAlreadyBegunCard(sessionId = null) {
   const owed = outstandingSessionClocks(sessionId);
   const owedNote = owed.length

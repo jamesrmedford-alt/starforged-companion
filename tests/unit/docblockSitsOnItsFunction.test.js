@@ -45,7 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/safety/sessionLifecycleDialogs.js — Begin a Session ran again on a session already begun — say what (didn't)",
   "src/sectors/sectorSceneHooks.js — Shared gating for the two token→position handlers.",
   "src/session/lifecycle.js — Start a new session: keep the closing session's rolling summary as",
   "src/system/encounterSpawn.js — Resolve and (optionally) place an encounter Actor.",
