@@ -27,7 +27,9 @@ import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js'
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
-import { lastSessionTextParts, lastSessionTextFrom } from '../session/lifecycle.js';
+import {
+  lastSessionTextParts, lastSessionTextFrom, lastSessionToTell, lastSessionSettled, sessionRoundUnnarrated,
+} from '../session/lifecycle.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
@@ -985,11 +987,14 @@ function auditCampaignState(campaignState) {
  * The summary of the session before this one (mintSession keeps it), as
  * `{ text, sessionNumber, isLast }` — `isLast` false when sessions between
  * them left no summary. Null when there is none, or when the rolling summary
- * is turned off.
+ * is turned off. A mint's record of a session whose summary is still to come
+ * has no text yet: the record it stands in front of is told meanwhile
+ * (lifecycle.js lastSessionToTell — issue #364
+ * LATE-ROUND-NO-LAST-SESSION-RECORD).
  */
 function previousSessionSummaryFor(campaignState) {
   if (!rollingSummaryEnabled()) return null;
-  const prev = campaignState?.previousSessionSummary;
+  const prev = lastSessionToTell(campaignState?.previousSessionSummary);
   if (typeof prev?.text !== 'string' || !prev.text.trim()) return null;
   if (prev.sessionId && prev.sessionId === campaignState?.currentSessionId) return null;
   const number  = Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null;
@@ -3999,7 +4004,12 @@ let _sessionCatchUp = null;
  * (dropLastSessionTelling): the session's own part of the text is made again
  * from its cards, and what a mint folded onto it from a session nobody began
  * is kept (lifecycle.js lastSessionTextParts — issue #364
- * LATE-ROUND-NOT-IN-LAST-SESSION).
+ * LATE-ROUND-NOT-IN-LAST-SESSION). A session the mint recorded with no text,
+ * its Batch Mode round still to be narrated, stays owed while nothing of it is
+ * narrated and the round waits; its text is written from the round's late
+ * narration, the record it displaced riding along, and with nothing to
+ * summarise that record is LAST SESSION again (lifecycle.js
+ * lastSessionSettled — LATE-ROUND-NO-LAST-SESSION-RECORD).
  *
  * @returns {Promise<boolean>} whether LAST SESSION was caught up
  */
@@ -4010,6 +4020,14 @@ export function catchUpUnsummarisedSession() {
   catch { stored = null; }
   const pending = stored?.unsummarisedSession ?? null;
   if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
+  // Nothing of the session narrated yet, and its Batch Mode round still to be
+  // — the mint recorded it with no text: it stays owed, for the round's
+  // narration to make its summary (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
+  // Asked here, not in the call below: a return there before its first await
+  // would run its `finally` before `_sessionCatchUp` is set.
+  if (sessionRoundUnnarrated(pending.sessionId) && sessionNarratorCards(pending.sessionId).length === 0) {
+    return Promise.resolve(false);
+  }
   _sessionCatchUp = (async () => {
     try {
       const xCardPlaysAtStart = xCardPlayCount();
@@ -4030,7 +4048,15 @@ export function catchUpUnsummarisedSession() {
         // What a mint folded onto LAST SESSION from a session nobody began is
         // not made from this session's cards: kept as it is (issue #331 X65).
         const prior  = latest.previousSessionSummary;
-        const folded = prior?.sessionId === pending.sessionId ? lastSessionTextParts(prior.text).between : '';
+        const named  = prior?.sessionId === pending.sessionId;
+        const folded = named ? lastSessionTextParts(prior.text).between : '';
+        // The record a mint put this session in front of rides with it, to be
+        // LAST SESSION again should the X-Card take back all of it; and with
+        // nothing to summarise — the round closed unnarrated, or every card
+        // was removed — it is LAST SESSION again now (lifecycle.js
+        // lastSessionSettled — issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
+        const behind  = named && Object.prototype.hasOwnProperty.call(prior, 'displaced') ? { displaced: prior.displaced } : {};
+        const settled = named && !text?.trim() ? lastSessionSettled(prior) : prior;
         await game.settings.set(MODULE_ID, 'campaignState', {
           ...latest,
           unsummarisedSession: null,
@@ -4039,7 +4065,8 @@ export function catchUpUnsummarisedSession() {
             sessionNumber: pending.sessionNumber ?? null,
             text:          lastSessionTextFrom(text, folded),
             updatedAt:     new Date().toISOString(),
-          } } : {}),
+            ...behind,
+          } } : settled !== prior ? { previousSessionSummary: settled } : {}),
         });
         return true;
       }, 'last session catch-up');

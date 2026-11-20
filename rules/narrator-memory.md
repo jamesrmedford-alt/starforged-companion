@@ -351,7 +351,11 @@ layers. This file is the never-break list.
    a narration drops the session's own text and marks it the same way
    (`dropLastSessionTelling`); and when the mint carried no summary for the
    card's session nothing is made up (issue #364
-   LATE-ROUND-NOT-IN-LAST-SESSION). The mark outlives a later mint while LAST
+   LATE-ROUND-NOT-IN-LAST-SESSION) — a begun session whose Batch Mode round
+   was still to be narrated at the mint is recorded as LAST SESSION's session
+   with no text and marked owed, the record it displaced told meanwhile and
+   LAST SESSION again when nothing comes (`lastSessionToTell` /
+   `lastSessionSettled`, LATE-ROUND-NO-LAST-SESSION-RECORD). The mark outlives a later mint while LAST
    SESSION goes on naming its session (`rollSessionIfDue`,
    LAST-SESSION-OWED-LOST-AT-MINT). Full drop
    priority in `decisions.md` → "Rolling session summary".

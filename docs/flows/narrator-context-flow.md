@@ -911,7 +911,17 @@ mint folded onto it from a session nobody began kept
 (`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
 that text and marks the session the same way, `dropLastSessionTelling`; when
 the mint carried no summary for the card's session, LAST SESSION is left as
-it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION; a later mint keeps the
+it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's
+Batch Mode round was still to be narrated at the mint (`sessionRoundUnnarrated`):
+a begun session with no summary of its own is then recorded as LAST SESSION's
+session with no text, the record LAST SESSION told kept behind it
+(`displaced`) and still what the narrator is told until the session's own
+summary is written (`lastSessionToTell`), and it is marked owed — the
+catch-up leaves the mark while nothing of it is narrated and the round still
+waits, and once nothing more can come (the round closed unnarrated, or the
+X-Card took back all of it) the displaced record is LAST SESSION again, at
+the catch-up or before the next mint (`lastSessionSettled`) —
+LATE-ROUND-NO-LAST-SESSION-RECORD; a later mint keeps the
 mark while LAST SESSION goes on naming that session, so a summary an X-Card
 emptied or a keyless GM closed out short is still made once the next session
 is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
