@@ -262,11 +262,14 @@ function isJourneyWord(word) {
  * beyond Bleakhold" comes back whole. "" when nothing but journey words and
  * articles is left: they name no place.
  *
- * The caller is index.js resolveCurrentLocationName, for an expedition's own
- * label (`journeyWords`): its rungs that compare the label whole — a name it
- * begins, a fragment of a name — compared the journey words too, so "the
- * expedition to Bleak" recorded a new uncharted site though "Bleak" is for
- * Bleakhold (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT). Pure.
+ * The callers, for an expedition's own label (`journeyWords`): index.js
+ * resolveCurrentLocationName — its rungs that compare the label whole, a
+ * name it begins and a fragment of a name, compared the journey words too, so
+ * "the expedition to Bleak" recorded a new uncharted site though "Bleak" is
+ * for Bleakhold (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT) — and
+ * siteDiscovery.selectExpeditionSite, the site a new expedition is linked to
+ * ("the expedition to the Sunken" for "The Sunken Vaults", issue #364
+ * EXPEDITION-JOURNEY-WORDS-SITE-LINK). Pure.
  *
  * @param {string} label
  * @returns {string}

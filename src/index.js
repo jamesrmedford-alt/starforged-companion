@@ -2452,7 +2452,11 @@ async function applyOutcomeEffects({
           try {
             const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
-            let   linked = selectExpeditionSite(campaignState, label);
+            // A typed expedition's label may say it is a journey there: the
+            // site ladder asks it without those words too (issue #364
+            // EXPEDITION-JOURNEY-WORDS-SITE-LINK); a course's asks as the
+            // course did.
+            let   linked = selectExpeditionSite(campaignState, label, { journeyWords: !resolution.courseRerouted });
             // A destination that is no site and no tracked place — the
             // coordinates an NPC gave, "the gap" — becomes an uncharted site of
             // the active sector under the expedition's working label, with its

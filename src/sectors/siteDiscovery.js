@@ -13,7 +13,7 @@
  * the orchestration unit-tests without a live game.
  */
 
-import { generatedName } from "../entities/nameMatch.js";
+import { generatedName, withoutJourneyWords } from "../entities/nameMatch.js";
 import { selectSectorSite, siteNamedExactly, buildSiteLocationData } from "./precursorSites.js";
 import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
@@ -54,12 +54,20 @@ export function siteDisplayName(site) {
  * CURRENT LOCATION stayed on the settlement they left (issue #342 Z14). A
  * read of the given state.
  *
+ * `journeyWords` — the label is an expedition's own, typed as one (index.js,
+ * the start of a new expedition): when the whole label names no site, it is
+ * asked again without the journey words at its edges
+ * (nameMatch.withoutJourneyWords). Compared whole, "the Sunken" named the
+ * unexplored "The Sunken Vaults" and "the expedition to the Sunken" none: the
+ * expedition was linked to no site, and its finish charted nothing (issue
+ * #364 EXPEDITION-JOURNEY-WORDS-SITE-LINK).
+ *
  * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
  * @param {string|null} label — the expedition's label
- * @param {{ siteId?: string|null }} [opts] — the track's link
+ * @param {{ siteId?: string|null, journeyWords?: boolean }} [opts] — the track's link
  * @returns {{ sector: Object, site: Object }|null}
  */
-export function selectExpeditionSite(state, label, { siteId = null } = {}) {
+export function selectExpeditionSite(state, label, { siteId = null, journeyWords = false } = {}) {
   const sectors = Array.isArray(state?.sectors) ? state.sectors : [];
   if (siteId) {
     for (const sector of sectors) {
@@ -67,11 +75,15 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
       if (site) return { sector, site };
     }
   }
-  return selectSectorSite(sectors, label, {
+  const named = (name) => selectSectorSite(sectors, name, {
     requireLabelMatch: true,
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
   });
+  const found = named(label);
+  if (found || !journeyWords || typeof label !== "string") return found;
+  const core = withoutJourneyWords(label);
+  return core && core !== label.trim() ? named(core) : null;
 }
 
 /**

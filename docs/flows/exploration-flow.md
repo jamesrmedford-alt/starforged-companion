@@ -72,7 +72,14 @@ begins, a fragment of a name (`nameMatch.withoutJourneyWords`), after the
 whole label's exact rung: "the expedition to Bleak" is for Bleakhold, as
 "Bleak" is, and "expedition to the gap" for a charted "Archer's Rendezvous —
 The Gap". Compared whole, the first recorded a new uncharted site and the
-second a second one (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT).
+second a second one (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT). The
+unexplored site a typed expedition is linked to is asked the same way
+(`selectExpeditionSite`'s `journeyWords`): when the whole label names no
+site, it is asked again without those words — "the expedition to the
+Sunken" is for the unexplored "The Sunken Vaults", as "the Sunken" is;
+compared whole it linked none, so its finish charted nothing (issue #364
+EXPEDITION-JOURNEY-WORDS-SITE-LINK). The expedition a course is read as asks
+as the course did.
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
