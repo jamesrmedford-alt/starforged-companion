@@ -354,6 +354,13 @@ export async function keepHeldResultForChoice(resolutionId) {
  * there is no earlier narration for it to replace. Returns undefined when the
  * resolution upgraded is not a held one: the caller narrates as before.
  *
+ * A wait the world would not let close (closeWait refused) leaves the card
+ * asking and what it held unpaid, and the upgraded result is narrated as the
+ * caller narrates one that was not held — but here, not handed back: handed
+ * back, a burned or improved swear was told with nothing after it, and the
+ * Sojourn its vow answers was never resolved (finishMove had left the held
+ * swear to this module; issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED).
+ *
  * @param {string|null} upgradeOf — the original resolution's id
  * @param {Object} resolution — the upgraded outcome's (mutated: its line and seeds)
  * @param {Object} campaignState — the upgrade's working copy
@@ -365,24 +372,29 @@ export async function narrateHeldUpgrade(upgradeOf, resolution, campaignState, o
   if (!card) return undefined;
   const held = flagsOf(card).awaitingUpgrade;
   const by = options.kind === "improve" ? "improve" : "burn";
-  if (!(await closeWait(card, by))) return undefined;
-  const actorId = flagsOf(card).actorId ?? held.speakerActorId ?? options.speakerActorId ?? null;
-  // The move's first narration: the line the player wrote, not the marker an
-  // upgrade's re-narration carries in its place.
-  if (typeof held.resolution?.playerNarration === "string" && held.resolution.playerNarration.trim()) {
-    resolution.playerNarration = held.resolution.playerNarration;
-    resolution.inputMethod = held.resolution.inputMethod ?? "chat";
-  }
-  if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
-  const { narrateResolution } = await import("../narration/narrator.js");
-  try {
-    return await narrateResolution(resolution, campaignState, {
+  // The caller's own narration of an upgrade (index.js narrateUpgradedResolution).
+  let narration = { speakerActorId: options.speakerActorId ?? null };
+  if (await closeWait(card, by)) {
+    const actorId = flagsOf(card).actorId ?? held.speakerActorId ?? options.speakerActorId ?? null;
+    // The move's first narration: the line the player wrote, not the marker an
+    // upgrade's re-narration carries in its place.
+    if (typeof held.resolution?.playerNarration === "string" && held.resolution.playerNarration.trim()) {
+      resolution.playerNarration = held.resolution.playerNarration;
+      resolution.inputMethod = held.resolution.inputMethod ?? "chat";
+    }
+    if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
+    narration = {
       speakerActorId: options.speakerActorId ?? held.speakerActorId ?? null,
       moveTarget:     held.moveTarget ?? null,
-    });
+    };
+  }
+  const { narrateResolution } = await import("../narration/narrator.js");
+  try {
+    return await narrateResolution(resolution, campaignState, narration);
   } finally {
-    // A burned or improved swear is told by this narration: the Sojourn its
-    // vow answers follows it, whatever became of the narration's own post.
+    // A burned or improved swear is told by this narration — its wait closed
+    // or not: the Sojourn its vow answers follows it, whatever became of the
+    // narration's own post.
     await resolveNeedsOfToldSwear(held);
   }
 }

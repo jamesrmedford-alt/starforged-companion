@@ -212,7 +212,12 @@ strong hit. A swear held for Burn / Improve / Keep is not narrated at its roll: 
 card keeps the vow (`awaitingUpgrade.swornVowId`) and the Sojourn is
 resolved once the held swear is told — `heldResult.keepHeldResult`, or
 `narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
-SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). That the
+SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath) — also
+when the world refused the write that closes the held card's wait:
+`narrateHeldUpgrade` then narrates the upgraded swear itself, as an upgrade
+of a result that was not held is narrated, and the Sojourn follows it
+(issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED: the narration was handed
+back to `index.js`, which told the swear with nothing after it). That the
 swear has been told is written on the vow (`sojournSwearTold`,
 `actorBridge.markNeedVowSwearTold` — beside its `sojournNeedCard`; the card's
 `resolved` says whether its Sojourn is resolved), so a resolve that cannot be

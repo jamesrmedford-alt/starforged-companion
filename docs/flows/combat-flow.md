@@ -520,7 +520,9 @@ by ✔, or when that vow's Swear an Iron Vow has been rolled and narrated
 side: the cards its `sojournNeedCard` names, `actorBridge.needCardIdsOfVow`;
 the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
 is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
-Sojourn after the held swear's keep, or after its upgrade's narration —
+Sojourn after the held swear's keep, or after its upgrade's narration (told
+by `narrateHeldUpgrade` whether or not the card's wait could be closed —
+issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED) —
 issue #364 SOJOURN-HELD-SWEAR-ORDER; that the swear has been told is written
 on the vow (`sojournSwearTold`, `actorBridge.markNeedVowSwearTold`), and a
 resolve refused then — a Batch Mode round is being resolved — or lost to a
