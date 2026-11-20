@@ -1517,6 +1517,10 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
     }
   }
 
+  // The rolls card a taken-back reveal posted goes with the reveal (issue
+  // #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS).
+  if (only.includes("secrets")) await withdrawRollsCardsOfReveals(removed);
+
   if (Array.isArray(categories) && !categories.includes("sessionLog")) return out;
   const logJournal = findJournal(JOURNAL_NAMES.sessionLog);
   for (const page of logJournal?.pages?.contents ?? []) {
@@ -1603,6 +1607,97 @@ function takenBackFrom(version, removed) {
   if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
   if (ended) Object.assign(next, { status: "active", resolvedBy: null });
   return { version: next, step };
+}
+
+/** The line a withdrawn rolls card carries, by what took it back (withdrawRollsCards). */
+const ROLLS_CARD_NOTES = Object.freeze({
+  // As a draft row the X-Card withdrew reads (entityExtractor.js).
+  xcard:    "Withdrawn — X-Card",
+  planGone: "Withdrawn — the plan behind these rolls is no longer in play.",
+  // A Burn Momentum or Improve Result superseded the narration that revealed it.
+  reveal:   "Superseded — the outcome was upgraded: this was not revealed.",
+});
+
+/** A rolls card's content with its rolls struck and a line saying why (idempotent). */
+function withdrawnRollsCardContent(content, note) {
+  const html = String(content ?? "");
+  if (html.includes("sf-rolls-withdrawn")) return html;
+  const line = `<div class="sf-rolls-withdrawn-note" style="opacity:0.7;font-style:italic;">${note}</div>`;
+  const struck = html.replace('<div class="sf-card-body">',
+    '<div class="sf-card-body sf-rolls-withdrawn" style="opacity:0.55;text-decoration:line-through;">');
+  return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${line}</div>`) : struck + line;
+}
+
+/**
+ * Withdraw the table's cards of a plan's oracle rolls ("The oracle, behind
+ * the scenes" — secrets.js postRollsCard, flagged `secretRollsCard` with the
+ * plan's `skeletonId` and, on a reveal's card, the revealing `narrationId`)
+ * that no longer stand for anything (issue #364
+ * TAKEN-BACK-PLAN-ROLLS-CARD-STAYS: nothing read those flags once the card
+ * was posted, so the card of a plan taken back stayed in chat, and a reveal
+ * taken back and made again left two). A card `reasonFor` names a reason for
+ * is kept in chat, as every card of a taken-back narration is — its rolls
+ * struck, a line saying why (ROLLS_CARD_NOTES), and flagged `rollsWithdrawn`
+ * with the reason, which this reads to pass over a card already withdrawn.
+ * Called for a plan whose page is gone (secrets.js
+ * withdrawRollsCardsOfDeletedPlans, the page hook) and for a reveal taken
+ * back (withdrawRollsCardsOfReveals). A chat write: canonical GM. Fail-open
+ * per card; never throws.
+ *
+ * @param {(flags: Object) => ("xcard"|"planGone"|"reveal"|null)} reasonFor — why a standing rolls card goes, or null to leave it
+ * @returns {Promise<number>} the cards withdrawn
+ */
+export async function withdrawRollsCards(reasonFor) {
+  if (typeof reasonFor !== "function" || !isCanonicalGM()) return 0;
+  let withdrawn = 0;
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])]) {
+    const f = message?.flags?.[MODULE_ID];
+    if (f?.secretRollsCard !== true || f.rollsWithdrawn) continue;
+    try {
+      const reason = reasonFor(f);
+      const note = typeof reason === "string" && Object.hasOwn(ROLLS_CARD_NOTES, reason) ? ROLLS_CARD_NOTES[reason] : null;
+      if (!note) continue;
+      await message.update({
+        [`flags.${MODULE_ID}.rollsWithdrawn`]: reason,
+        content: withdrawnRollsCardContent(message.content, note),
+      });
+      withdrawn += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | secrets: the rolls card ${message?.id} could not be withdrawn:`, err?.message ?? err);
+    }
+  }
+  return withdrawn;
+}
+
+/**
+ * The rolls cards the removed narrations' reveals posted, withdrawn once the
+ * undo has un-shown those rolls (undoNarrationEntries; takenBackFrom's
+ * `rollsShownBy`, or the version before the reveal put back): the next reveal
+ * posts the rolls again, and the first card would stand beside it. A plan
+ * whose rolls are still shown keeps its card — a GM's own Reveal now since is
+ * no narration's to take back. The card of a plan whose page is gone is the
+ * page hook's (secrets.js). The line says the X-Card when it removed the
+ * narration, a superseded outcome otherwise — the undo's two callers. Never
+ * throws.
+ *
+ * @param {Set<string>} removed — the narrations taken back
+ */
+async function withdrawRollsCardsOfReveals(removed) {
+  try {
+    const shown = new Map();
+    for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+      const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+      if (typeof entry?.id === "string") shown.set(entry.id, shown.get(entry.id) === true || entry.rollsShown === true);
+    }
+    const { isNarrationXCarded } = await import("../context/safety.js");
+    await withdrawRollsCards((f) => {
+      if (typeof f.narrationId !== "string" || !removed.has(f.narrationId)) return null;
+      if (shown.get(f.skeletonId) !== false) return null;
+      return isNarrationXCarded(f.narrationId) ? "xcard" : "reveal";
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the rolls card of a reveal taken back could not be withdrawn:`, err?.message ?? err);
+  }
 }
 
 /**

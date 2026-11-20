@@ -28,7 +28,7 @@ import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isNarrationXCarded } from "../context/safety.js";
 import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
-  undoNarrationEntries,
+  undoNarrationEntries, withdrawRollsCards,
 } from "./worldJournal.js";
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
@@ -1156,6 +1156,60 @@ async function retirePlanClock(record) {
 }
 
 /**
+ * The plans that went with the deleted pages: each page's plan, unless
+ * another page of the store still holds it — a GM's copy of the page deleted,
+ * not the plan. The deleted pages themselves are not counted, whether or not
+ * the store still lists them when the hook runs.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ * @returns {Array<{ record: Object, narrationId: string|null }>} each plan, and the narration its newest version was written by
+ */
+function plansGoneWith(pages) {
+  const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
+  const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
+  const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
+  const plans = [];
+  for (const page of gone) {
+    const entry = entryOf(page);
+    const record = normaliseSkeleton(entry);
+    if (!record || kept.has(record.id)) continue;
+    plans.push({ record, narrationId: typeof entry?.narrationId === "string" && entry.narrationId ? entry.narrationId : null });
+  }
+  return plans;
+}
+
+/**
+ * Plans whose pages are gone take the table's cards of their oracle rolls
+ * with them (issue #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS): "The oracle,
+ * behind the scenes" — posted when the plan was made, with "show hidden
+ * rolls" on, or when its truth was revealed — stayed in chat for a plan that
+ * no longer existed. Whatever deleted the page: the X-Card's undo of the
+ * narration that made the plan and a Burn Momentum / Improve Result's
+ * supersede of it (worldJournal.js undoNarrationEntries), a reverted price
+ * (undoPlansFiledFor), or a GM in the journal sidebar. Each standing card of
+ * such a plan is withdrawn (worldJournal.js withdrawRollsCards: struck, a
+ * line saying why) — "Withdrawn — X-Card" when the X-Card removed the
+ * narration the plan was last written by, as its other cards read. A plan
+ * another page still holds keeps its card (plansGoneWith). Canonical GM
+ * (registerPlanSubjectHooks). Never throws.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ */
+async function withdrawRollsCardsOfDeletedPlans(pages) {
+  try {
+    const gone = new Map(plansGoneWith(pages).map(p => [p.record.id, p]));
+    if (!gone.size) return;
+    await withdrawRollsCards((f) => {
+      const plan = gone.get(f.skeletonId);
+      if (!plan) return null;
+      return isNarrationXCarded(plan.narrationId) ? "xcard" : "planGone";
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the rolls card of a plan whose page was deleted was not withdrawn:`, err?.message ?? err);
+  }
+}
+
+/**
  * Plans whose pages are gone from the Secrets journal take their clocks with
  * them (issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK): a GM who deletes a plan's
  * page in the journal sidebar — not the panel's Retire, which retires the
@@ -1174,12 +1228,7 @@ async function retirePlanClock(record) {
  */
 async function retireClocksOfDeletedPlans(pages) {
   try {
-    const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
-    const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
-    const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
-    for (const page of gone) {
-      const record = normaliseSkeleton(entryOf(page));
-      if (!record || kept.has(record.id)) continue;
+    for (const { record } of plansGoneWith(pages)) {
       const clocks = storedClocks().filter(c => c && c.active !== false
         && (c.planId === record.id || (c._id === record.clockId && !c.planId)));
       for (const clock of clocks) {
@@ -1662,7 +1711,9 @@ async function closeVowPlanIfEnded(item, status) {
  * (closeVowPlanIfEnded). And a plan's own end to its clock: its page deleted
  * from the Secrets journal, or the journal itself deleted, retires the clocks
  * it held (retireClocksOfDeletedPlans, issue #364
- * PLAN-PAGE-DELETE-LEAVES-CLOCK). Document hooks fire on every client: the
+ * PLAN-PAGE-DELETE-LEAVES-CLOCK) and withdraws the table's cards of its
+ * oracle rolls (withdrawRollsCardsOfDeletedPlans, issue #364
+ * TAKEN-BACK-PLAN-ROLLS-CARD-STAYS). Document hooks fire on every client: the
  * canonical GM closes it, once. Register once, at ready.
  */
 export function registerPlanSubjectHooks() {
@@ -1680,12 +1731,15 @@ export function registerPlanSubjectHooks() {
   Hooks.on("deleteJournalEntryPage", (page) => {
     if (!isCanonicalGM() || !entryOf(page)) return;
     void retireClocksOfDeletedPlans([page]);
+    void withdrawRollsCardsOfDeletedPlans([page]);
   });
   // A journal deleted whole fires no page hook for the pages it held.
   Hooks.on("deleteJournalEntry", (journal) => {
     if (!isCanonicalGM()) return;
     const pages = (journal?.pages?.contents ?? []).filter(p => entryOf(p));
-    if (pages.length) void retireClocksOfDeletedPlans(pages);
+    if (!pages.length) return;
+    void retireClocksOfDeletedPlans(pages);
+    void withdrawRollsCardsOfDeletedPlans(pages);
   });
 }
 
@@ -1701,7 +1755,10 @@ function rollsLine(record) {
 /**
  * The table's card of a plan's oracle rolls ("the oracle, behind the
  * scenes"): posted when its truth is revealed, or — "show hidden rolls" on —
- * when it is made. Carries the narration that showed it.
+ * when it is made. Carries its plan (`skeletonId`) and, on a reveal's card,
+ * the narration that showed it: the card is withdrawn with the plan
+ * (withdrawRollsCardsOfDeletedPlans) and with the reveal (worldJournal.js
+ * undoNarrationEntries) — issue #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS.
  */
 async function postRollsCard(record, { narrationId = null } = {}) {
   if (!record?.oracleSeeds?.length) return null;

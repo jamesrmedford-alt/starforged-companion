@@ -1032,7 +1032,11 @@ by a GM's Retire or retired as another, takes its clock with it —
 `retirePlanClock`, issue #362 AC10 — and so does a plan whose page a GM deletes
 in the journal sidebar, or whose journal is deleted: the canonical GM's
 `deleteJournalEntryPage` / `deleteJournalEntry` hooks retire its clocks,
-`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK), a `countdown` becomes a clock
+`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK — and the same hooks withdraw the
+table's cards of its oracle rolls, whatever deleted the page (an X-Card's or a
+supersede's undo, a reverted price, a GM): struck, with a line saying why,
+flagged `rollsWithdrawn` — `withdrawRollsCardsOfDeletedPlans`, issue #364
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS), a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge —
 once a challenge holds it as its tension clock it is the challenge's, and the
 plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
@@ -1097,7 +1101,10 @@ truth it revealed carry it the same way (`revealedBy` on the clue,
 `truthRevealedBy` and `rollsShownBy` on the record) and go back unshown with
 it under a later writer's version too, that writer's own writes standing —
 the truth's scene fact and Lore entry go by the narration's stamp, as always
-(issue #364 PLAN-CLUE-TRUTH-NO-MARK); an ending the narration gave the plan's
+(issue #364 PLAN-CLUE-TRUTH-NO-MARK), and the rolls card that reveal posted is
+withdrawn in chat with it (`withdrawRollsCardsOfReveals`), so a reveal made
+again leaves one rolls card standing (issue #364
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS); an ending the narration gave the plan's
 story goes back by its mark too (`resolvedBy`), the plan in play again and its
 clock with it (issue #364 PLAN-RESOLVED-NO-MARK) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
