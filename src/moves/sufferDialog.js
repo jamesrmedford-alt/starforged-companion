@@ -306,7 +306,9 @@ export function isRetryableSufferCall(call) {
  * card on every press (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE). So is a
  * benefit named for a character no longer in the world — Aid Your Ally's
  * ally, a Heal's patient (`sufferCallBeneficiaryId`): "no-pc", nobody's (issue
- * #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
+ * #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER) — and a battered mark on a support
+ * vehicle whose asset has no Battered condition, "no-condition" (issue #364
+ * BATTERED-NO-CONDITION-LOOP).
  *
  * @param {Object} call — the step's call (isRetryableSufferCall's)
  * @param {Object} opts — the step's executor opts
@@ -337,6 +339,11 @@ export function sufferTargetGoneForGood(call, opts, result) {
       return call?.kind === "expedition-progress" && named(opts?.expeditionTrackId);
     case "no-pc":
       return sufferCallBeneficiaryId(call, opts) !== null;
+    // A support vehicle's asset with no Battered condition to mark: nothing
+    // gives an asset one, so no later press marks it either. It went on a
+    // fresh Retry card each time (issue #364 BATTERED-NO-CONDITION-LOOP).
+    case "no-condition":
+      return call?.kind === "mark-vehicle";
     default:
       return false;
   }

@@ -6913,6 +6913,7 @@ const PAYOFF_REASONS = {
   "expedition-over": "its expedition is over",
   "ambiguous":       "more than one is open — mark it in the Progress Tracks panel",
   "battered":        "the vehicle is battered: a Repair must clear that before its integrity can rise",
+  "no-condition":    "the vehicle has no Battered condition to mark",
 };
 
 // Why a `final` outcome is owed nothing any more — its line under "Not
@@ -6926,6 +6927,8 @@ const PAYOFF_FINAL_REASONS = {
   "no-companion": "the companion is no longer on the character's sheet",
   "track-gone": "its progress track is no longer in the world",
   "track-done": "its progress track is finished, so nothing is left to change on it",
+  // A support vehicle's battered mark (issue #364 BATTERED-NO-CONDITION-LOOP).
+  "no-condition": "the vehicle has no Battered condition to mark",
   "fight-gone": "its fight is no longer in the world",
   "fight-over": "its fight is over, so nothing is left to mark on it",
   "expedition-gone": "its expedition is no longer in the world",

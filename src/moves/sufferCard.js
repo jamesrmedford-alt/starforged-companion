@@ -427,6 +427,9 @@ const NOT_APPLIED = {
   // Aid Your Ally's ally or a Heal's patient, deleted since the move: nobody
   // takes it (issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
   "no-pc":        "the character it was for is no longer in the world",
+  // A support vehicle's asset with no Battered condition (issue #364
+  // BATTERED-NO-CONDITION-LOOP — the code was printed).
+  "no-condition": "the vehicle has no Battered condition to mark",
 };
 
 /**
