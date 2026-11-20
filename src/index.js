@@ -173,7 +173,7 @@ import {
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { wholeWordsFit, wholeWordPattern } from "./context/relevanceResolver.js";
-import { placeNameAndLittleElse } from "./entities/nameMatch.js";
+import { placeNameAndLittleElse, withoutJourneyWords } from "./entities/nameMatch.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
@@ -2287,9 +2287,15 @@ async function applyOutcomeEffects({
     // prefix rung — while the ship's position, which takes a full name or a
     // name part only, was the free text "Bleak" and its token stayed where
     // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
+    // A Finish an Expedition's names are an expedition's own — its track's
+    // label, the line's words for it — and lose their journey words before
+    // the rungs that compare a label whole, as at its start: "the expedition
+    // to Bleak", read there as one for Bleakhold, docked nowhere (issue #364
+    // EXPEDITION-JOURNEY-WORDS-FRAGMENT). A Set a Course's are not.
+    const journeyWords = resolution.moveId === "finish_an_expedition";
     const named = currentLocationForEntityId(destinationId)
-      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState) : null)
-      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
+      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState, { journeyWords }) : null)
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState, { journeyWords });
 
     // Whether the ship's position was written, and its token moved — the
     // Set a Course card says so only when it did (issue #348 PT09), and why
@@ -2467,7 +2473,10 @@ async function applyOutcomeEffects({
             // and one for "the wreck beyond Bleakhold" was for Bleakhold —
             // with the journey's own words beside the name little else too:
             // "the expedition to Bleakhold" is for Bleakhold (issue #364
-            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT) — and taken off before
+            // the start and fragment rungs: "the expedition to Bleak" is for
+            // Bleakhold, as "Bleak" is (issue #364
+            // EXPEDITION-JOURNEY-WORDS-FRAGMENT).
             if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
               && !resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords: !resolution.courseRerouted })) {
               linked = siteNamedBy(campaignState, label);
@@ -8574,20 +8583,29 @@ function escapeChatHtml(s) {
  * rendezvous — the gap" was a course to Archer (issue #364
  * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
  *
- * `journeyWords` (with `asDestination`: the start of an expedition typed as
- * one — never a course's question, nor the expedition a course is read as,
- * which asks as the course did) counts the journey's own words as little
- * else too: an expedition's label may say it is one — "the expedition to
- * Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
+ * `journeyWords` — the label is an expedition's own: the start of an
+ * expedition typed as one (with `asDestination`), and the arrival by name at
+ * a Finish an Expedition (its track's label, the line's words for it) — never
+ * a course's question, nor the expedition a course is read as, which asks as
+ * the course did. With `asDestination` it counts the journey's own words as
+ * little else too: an expedition's label may say it is one — "the expedition
+ * to Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
  * wreck beyond Bleakhold" is a new destination. A typed expedition was asked
  * the looser way, so that one was for Bleakhold: no uncharted site was
  * recorded, and its finish docked at the settlement (issue #364
- * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+ * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). Either way the journey words at
+ * the label's edges are taken off before the rungs that compare it whole — a
+ * name it begins, a fragment of a name (nameMatch.withoutJourneyWords) —
+ * after the whole label's exact rung: "the expedition to Bleak" is for
+ * Bleakhold, as "Bleak" is, and "expedition to the gap" for a charted
+ * "Archer's Rendezvous — The Gap". Compared whole, the first recorded a new
+ * uncharted site, the second a second one, and a finish read as one for
+ * Bleakhold docked nowhere (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT).
  *
- * The others pass neither: an arrival with no site or pin to dock at by id
- * reads a place in the words around it (known-issues
- * ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own naming, its card
- * saying where it landed.
+ * The others pass neither: a Set a Course's arrival with no pin to dock at by
+ * id reads a place in the words around it (known-issues
+ * ARRIVAL-LOCATION-PHRASE-SPLIT), as a finish's does, and `!at` is the GM's
+ * own naming, its card saying where it landed.
  *
  * @param {string} name
  * @param {Object} campaignState
@@ -8634,14 +8652,21 @@ export function resolveCurrentLocationName(name, campaignState, { siteRecordName
       { activeSectorId })?.site?.actorId;
     return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
   };
+  // An expedition's own label without the journey words at its edges, for
+  // the rungs that compare the label whole — a name it begins, a fragment of
+  // a name: "the expedition to Bleak" begins no name, "Bleak" begins
+  // Bleakhold. Null when there are none to take off, or nothing else is left.
+  const core = journeyWords ? withoutJourneyWords(target) : "";
+  const bare = core && core !== target ? core : null;
   // One name inside the other, as whole words. For a destination, a place's
   // name inside it is that place only as its name and little else.
-  const within = (c) => wholeWordsFit(c.lc, target)
+  const within = (c) => (wholeWordsFit(c.lc, target)
     && (!asDestination || wholeWordPattern(target).test(c.lc)
-      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords }));
+      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords })))
+    || (!!bare && wholeWordPattern(bare).test(c.lc));
   return pick(c => c.lc === target)
       ?? (siteRecordNames ? byRecordName() : null)
-      ?? pick(c => c.lc.startsWith(target))
+      ?? pick(c => c.lc.startsWith(target) || (!!bare && c.lc.startsWith(bare)))
       ?? pick(within)
       ?? null;
 }

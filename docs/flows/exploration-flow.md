@@ -65,7 +65,14 @@ new uncharted site — a preposition that places the destination beside the
 known place (beyond, near, past, outside, off …) is what makes it another
 place. It was asked the looser way — any label holding the name as whole
 words — so nothing was recorded or linked for those, and the finish docked
-at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The
+journey words at the label's edges, with the article that leads them, are
+also taken off before the rungs that compare a label whole — a name it
+begins, a fragment of a name (`nameMatch.withoutJourneyWords`), after the
+whole label's exact rung: "the expedition to Bleak" is for Bleakhold, as
+"Bleak" is, and "expedition to the gap" for a charted "Archer's Rendezvous —
+The Gap". Compared whole, the first recorded a new uncharted site and the
+second a second one (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -128,10 +135,13 @@ at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
   (`{ asDestination: true, journeyWords: true }`): "the expedition to
   Bleakhold" is for Bleakhold, "the wreck beyond Bleakhold" a new site —
   asked the looser way, it was for Bleakhold (issue #364
-  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The journey's words are not a
-  course's: the course's question, and the expedition it is read as, ask
-  without them. Not narrowed: the arrival by name (a place in the words
-  around it, §3) and the GM's `!at`.
+  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT) — and taken off the label's
+  edges before the start and fragment rungs: "the expedition to Bleak" is for
+  Bleakhold (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT). The journey's
+  words are not a course's: the course's question, and the expedition it is
+  read as, ask without them. Not narrowed: the arrival by name (a place in
+  the words around it, §3 — a finish's names lose their journey words as at
+  the start) and the GM's `!at`.
 
 ## 1. Setting out
 
@@ -453,7 +463,11 @@ settlement they had left (issue #342 Z14). An expedition for no site arrives
 at the place its label names — the label of the expedition the move
 completes, the track ladder's pick (`expeditionArrival`), then the line's own
 words when the label names no tracked place (an expedition begun with no
-destination named, `UNNAMED_EXPEDITION_LABEL`, names none): a typed finish
+destination named, `UNNAMED_EXPEDITION_LABEL`, names none) — both asked as an
+expedition's own label, the journey words at their edges taken off before the
+start and fragment rungs (`{ journeyWords }`): "the expedition to Bleak", read
+at its start as one for Bleakhold, docked nowhere (issue #364
+EXPEDITION-JOURNEY-WORDS-FRAGMENT): a typed finish
 that named no destination, or named it in words of its own, completed the
 expedition and left the ship, its token and `currentLocationId` where the crew
 set out, read from `moveTarget` alone (issue #345 AA22); the Set a Course feedback card ("Course held cleanly (+1
