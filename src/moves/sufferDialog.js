@@ -303,7 +303,10 @@ export function isRetryableSufferCall(call) {
  * is looked up at the press, and one may be there on a later press: not gone
  * for good. The Retry tells a step gone for good once, on a card with no
  * Retry (index.js runPayoffStep): as a plain failure it went on a fresh Retry
- * card on every press (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+ * card on every press (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE). So is a
+ * benefit named for a character no longer in the world — Aid Your Ally's
+ * ally, a Heal's patient (`sufferCallBeneficiaryId`): "no-pc", nobody's (issue
+ * #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
  *
  * @param {Object} call — the step's call (isRetryableSufferCall's)
  * @param {Object} opts — the step's executor opts
@@ -332,9 +335,38 @@ export function sufferTargetGoneForGood(call, opts, result) {
     case "expedition-gone":
     case "expedition-over":
       return call?.kind === "expedition-progress" && named(opts?.expeditionTrackId);
+    case "no-pc":
+      return sufferCallBeneficiaryId(call, opts) !== null;
     default:
       return false;
   }
+}
+
+/**
+ * The player character a suffer call's benefit is named for, by Actor id
+ * (resolved before the dice, never the roller — statEnrichment.js
+ * resolveAidedAlly / resolveHealPatient): Aid Your Ally's ally
+ * (`opts.allyActorId`) for a momentum gain or the +1 on the next roll; a
+ * Heal's patient (`opts.patientActorId`) for the health gained or the wound
+ * cleared. Null when the call names none — the roller's own, or a companion
+ * patient's. The runner gives a named character's benefit to them alone, and
+ * to nobody once they are gone (runSufferCall: it went to the roller, issue
+ * #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER); the GMs' payoff card names them on
+ * the step's line (index.js describePayoffFailure).
+ *
+ * @param {Object} call — a resolveSufferSelection call
+ * @param {Object} opts — the call's executor opts
+ * @returns {string|null}
+ */
+export function sufferCallBeneficiaryId(call, opts) {
+  const named = (key) => (typeof opts?.[key] === "string" && opts[key] ? opts[key] : null);
+  const companionPatient = typeof opts?.patientCompanionItemId === "string" && opts.patientCompanionItemId.length > 0;
+  if (call?.kind === "meter" && call.meterKey === "momentum" && call.delta > 0) return named("allyActorId");
+  if (call?.kind === "next-bonus") return named("allyActorId");
+  if (companionPatient) return null;
+  if (call?.kind === "meter" && call.meterKey === "health" && call.delta > 0) return named("patientActorId");
+  if (call?.kind === "clear-impact" && call.debility === "wounded") return named("patientActorId");
+  return null;
 }
 
 
@@ -399,6 +431,13 @@ export async function runSufferResolution(calls, actor, opts = {}) {
 /** One call of runSufferResolution — its result; a refused write throws. */
 async function runSufferCall(call, actor, opts) {
   const { applyMeterChanges, setDebility } = await import("../character/actorBridge.js");
+  // A benefit named for a character — Aid Your Ally's ally, a Heal's patient —
+  // who is no longer in the world is nobody's: the cases below fell back to
+  // the roller, so a late pick or the GMs' Retry gave it to whoever rolled
+  // (issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER). "no-pc": the card says so,
+  // and the Retry is told once (sufferTargetGoneForGood).
+  const namedFor = sufferCallBeneficiaryId(call, opts);
+  if (namedFor && !(await namedPlayerCharacter(namedFor))) return { kind: call.kind, ok: false, skipped: true, reason: "no-pc" };
   switch (call.kind) {
     case "suffer": {
       const r = await executeSuffer(call.sufferId, actor, {
@@ -776,32 +815,41 @@ async function markVehicleImpact(impact, actor, opts = {}) {
 /**
  * The ally an Aid Your Ally's benefits go to (`opts.allyActorId`, resolved
  * before the dice — statEnrichment.js resolveAidedAlly), or null. Issue #325
- * W17.
+ * W17. A named ally gone since takes nothing, and nor does the roller
+ * (runSufferCall, issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
  *
  * @param {Object} opts — the card's executorOpts
  * @returns {Promise<Actor|null>}
  */
 async function aidedAllyActor(opts) {
-  const id = typeof opts?.allyActorId === "string" && opts.allyActorId ? opts.allyActorId : null;
-  if (!id) return null;
-  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
-  const actor = globalThis.game?.actors?.get?.(id) ?? null;
-  return isPlayerCharacterActor(actor) ? actor : null;
+  return namedPlayerCharacter(opts?.allyActorId);
 }
 
 /**
  * The player character a Heal's care is for (`opts.patientActorId`, resolved
  * before the dice — statEnrichment.js resolveHealPatient), or null when the
- * roller tends their own wounds or the patient is gone. Issue #325 W04.
+ * roller tends their own wounds or the patient is gone. Issue #325 W04. A
+ * named patient gone since is healed of nothing, and nor is the roller
+ * (runSufferCall, issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
  *
  * @param {Object} opts — the card's executorOpts
  * @returns {Promise<Actor|null>}
  */
 async function healPatientActor(opts) {
-  const id = typeof opts?.patientActorId === "string" && opts.patientActorId ? opts.patientActorId : null;
-  if (!id) return null;
-  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
-  const actor = globalThis.game?.actors?.get?.(id) ?? null;
+  return namedPlayerCharacter(opts?.patientActorId);
+}
+
+/**
+ * The player character in the world with Actor id `id` (actorBridge's read),
+ * or null — none named, deleted since, or no longer a player character.
+ *
+ * @param {string|null|undefined} id
+ * @returns {Promise<Actor|null>}
+ */
+async function namedPlayerCharacter(id) {
+  if (typeof id !== "string" || !id) return null;
+  const { getActor, isPlayerCharacterActor } = await import("../character/actorBridge.js");
+  const actor = getActor(id);
   return isPlayerCharacterActor(actor) ? actor : null;
 }
 

@@ -677,7 +677,11 @@ step's unprepared clear once
 none of its characters is left (one still in the world is cleared — one
 deleted made the whole step unreadable, issue #364
 PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE); its line says the character's sheet
-is gone (`PAYOFF_FINAL_REASONS`) — for a `rewardGrant` on a shared
+is gone (`PAYOFF_FINAL_REASONS`; and a `suffer` step whose benefit is named
+for a character deleted since — Aid Your Ally's ally, a Heal's patient
+(`sufferDialog.sufferCallBeneficiaryId`): nobody takes it, never the roller,
+and its line names no one else — issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER)
+— for a `rewardGrant` on a shared
 vow (its copies on other sheets: the crew's inciting vow, or any vow on several
 sheets) the line names the reward and says a GM can give it by hand to another
 of the vow's characters, naming them, with nothing re-granted (decided — issue

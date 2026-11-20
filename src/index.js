@@ -84,7 +84,7 @@ import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDe
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
 import { logPacingDecision } from "./pacing/telemetry.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getActor, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -7031,15 +7031,22 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
       }
       case "suffer": {
         // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
-        // An aided ally's momentum is the ally's, as its Retry applies it
-        // (sufferDialog runSufferResolution; a move's refused meters, issue #336 Y16).
-        const allyId = f.call?.kind === "meter" && f.call.meterKey === "momentum" && f.call.delta > 0 ? f.opts?.allyActorId : null;
-        const pc    = (allyId ? (game.actors?.get?.(allyId) ?? null) : null)
-          ?? (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
+        // A benefit named for an aided ally or a Heal's patient is theirs, as
+        // its Retry applies it (sufferDialog runSufferResolution; a move's
+        // refused meters, issue #336 Y16) — and one gone since is nobody's:
+        // the line named the roller, whose meter it showed (issue #364
+        // AID-ALLY-GONE-BENEFIT-TO-ROLLER).
+        const { sufferCallBeneficiaryId } = await import("./moves/sufferDialog.js");
+        const forId = sufferCallBeneficiaryId(f.call, f.opts ?? {});
+        const pcId  = forId ?? actorId;
+        const pc    = pcId ? getActor(pcId) : null;
+        const roller = forId && !pc && actorId ? getActor(actorId) : null;
+        const who   = pc?.name
+          ?? (forId ? `the character ${roller?.name ?? "the roller"} ${forId === f.opts?.allyActorId ? "aided" : "cared for"}` : "the character");
         const meter = f.call?.kind === "meter" ? f.call.meterKey : SUFFER_METERS[f.call?.sufferId];
         const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
-        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(who)} — ${why}.${now}`;
       }
       case "choiceCard": {
         // A move's suffer-choice card the world refused (ERROR-TEXT-BLAMES-KEY).

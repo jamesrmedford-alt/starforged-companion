@@ -424,6 +424,9 @@ const NOT_APPLIED = {
   "no-table":     "no such table",
   "track-gone":   "its track is gone",
   "track-done":   "its track is finished",
+  // Aid Your Ally's ally or a Heal's patient, deleted since the move: nobody
+  // takes it (issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
+  "no-pc":        "the character it was for is no longer in the world",
 };
 
 /**
