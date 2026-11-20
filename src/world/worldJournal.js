@@ -1468,7 +1468,12 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * maintainer's ruling: the X-Card's exclusion holds — the next narration
  * revealed it again, the plan read revealed while its Lore entry stayed
  * retracted). A supersede withholds nothing: its re-narration may reveal the
- * truth again. Every undo keeps a withholding the plan already carries on
+ * truth again. It names the reveal it took back instead (`truthTakenBackBy`,
+ * on the version it writes), and the X-Card that later removes that
+ * narration with the beat it upgraded (issue #347 D2) — finding the truth
+ * already hidden — withholds it by that mark, as a reveal it took back
+ * itself (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL). Every undo
+ * keeps a withholding, or a supersede's mark, the plan already carries on
  * the version it puts back, while that version holds the same truth.
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
@@ -1510,12 +1515,17 @@ export async function undoNarrationEntries(narrationIds, { categories = null, ke
         if (category === "secrets" && entry) {
           try {
             const unplayed = withoutStepsPlayedBy(entry, removed, keepPlanAbout);
-            if (unplayed) {
-              const withheld = withholdTruths ? revealTakenBack([entry], unplayed.entry, removed) : null;
-              const written = withheld ? { ...unplayed.entry, truthWithheldBy: withheld } : unplayed.entry;
+            const base = unplayed?.entry ?? entry;
+            // The reveal this undo takes back, by its mark; for the X-Card, a
+            // reveal of a narration it removes that a supersede took back
+            // first counts too (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL).
+            const revealer = unplayed ? revealTakenBack([entry], base, removed) : null;
+            const withheld = withholdTruths ? (revealer ?? supersededRevealOf(base, removed)) : null;
+            if (unplayed || withheld) {
+              const written = { ...base, ...truthMarks({ withheld, takenBack: revealer }) };
               await writeEntryPage(page, flagKey, written);
               if (withheld) out.truthsWithheld.push({ id: written.id, name: String(page?.name ?? "") });
-              if (unplayed.stepTop) noteStepTakenBack(out, unplayed.entry);
+              if (unplayed?.stepTop) noteStepTakenBack(out, unplayed.entry);
             }
           } catch (err) {
             console.warn(`${MODULE_ID} | X-Card: could not take a removed narration's step back from the plan "${page?.name}":`, err?.message ?? err);
@@ -1541,7 +1551,7 @@ export async function undoNarrationEntries(narrationIds, { categories = null, ke
             ...(category === "lore" ? { revealOf: versions[at].revealOf ?? null } : {}),
             ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null,
               resolvedBy: versions[at].resolvedBy ?? null, truthWithheldBy: versions[at].truthWithheldBy ?? null,
-              subjectLinkedBy: versions[at].subjectLinkedBy ?? null } : {}),
+              truthTakenBackBy: versions[at].truthTakenBackBy ?? null, subjectLinkedBy: versions[at].subjectLinkedBy ?? null } : {}),
           };
           // The version put back may be one written between two removed
           // narrations: it holds the earlier one's step.
@@ -1553,10 +1563,16 @@ export async function undoNarrationEntries(narrationIds, { categories = null, ke
           if (category === "secrets") put = linkKept([entry, ...versions.slice(0, at)], put, removed, keepPlanAbout) ?? put;
           // The X-Card withholds a truth their versions revealed; any undo
           // keeps the withholding the plan carries (issue #364
-          // XCARD-REVEAL-REREVEAL-NO-LORE).
-          const withheld = category === "secrets" && withholdTruths
-            ? revealTakenBack([entry, ...versions.slice(0, at)], put, removed) : null;
-          if (category === "secrets") put = { ...put, truthWithheldBy: withheld ?? withholdingKept(entry, put) ?? put.truthWithheldBy ?? null };
+          // XCARD-REVEAL-REREVEAL-NO-LORE). A supersede names the reveal it
+          // took back instead, which the X-Card that removes that narration
+          // withholds by (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL).
+          const revealer = category === "secrets" ? revealTakenBack([entry, ...versions.slice(0, at)], put, removed) : null;
+          const withheld = category === "secrets" && withholdTruths ? (revealer ?? supersededRevealOf(put, removed)) : null;
+          if (category === "secrets") {
+            put = { ...put, truthWithheldBy: withheld ?? withholdingKept(entry, put) ?? put.truthWithheldBy ?? null,
+              truthTakenBackBy: withheld ? null
+                : (revealer ?? withholdingKept(entry, put, "truthTakenBackBy") ?? put.truthTakenBackBy ?? null) };
+          }
           await writeEntryPage(page, flagKey, put);
           if (withheld) out.truthsWithheld.push({ id: put.id, name: String(page?.name ?? "") });
           if (unplayed?.stepTop) noteStepTakenBack(out, unplayed.entry);
@@ -1635,17 +1651,55 @@ function revealTakenBack(from, put, removed) {
 }
 
 /**
- * The X-Card's withholding a plan carries (`truthWithheldBy`), kept on the
- * version an undo puts back while that version holds the same truth, hidden:
- * a version from before the withholding lacks it (issue #364
- * XCARD-REVEAL-REREVEAL-NO-LORE). Null otherwise.
+ * The reveal a Burn / Improve supersede took back from a plan
+ * (`truthTakenBackBy`), when the undo removes that narration — the X-Card on
+ * the beat its upgrade wrote, which takes the struck narration with it (issue
+ * #347 D2): the truth it would have taken back is already hidden, and is
+ * withheld by that mark (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL).
+ * Only while the version holds the truth, hidden and not yet withheld. Null
+ * otherwise.
+ *
+ * @param {Object} version — the version written
+ * @param {Set<string>} removed — the narrations taken back
+ * @returns {string|null}
+ */
+function supersededRevealOf(version, removed) {
+  const mark = typeof version?.truthTakenBackBy === "string" && version.truthTakenBackBy ? version.truthTakenBackBy : null;
+  if (!mark || !removed.has(mark) || version.truthRevealed === true || !truthTextOf(version) || version.truthWithheldBy) return null;
+  return mark;
+}
+
+/**
+ * The truth's marks on a plan version an undo rewrites without restoring one
+ * (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL): withheld by the
+ * X-Card, the supersede's mark it withheld by spent; or — a supersede's undo,
+ * which withholds nothing — the reveal it took back named, for an X-Card
+ * that removes that narration later. None when it took back no reveal.
+ *
+ * @param {{ withheld?: string|null, takenBack?: string|null }} marks
+ * @returns {Object}
+ */
+function truthMarks({ withheld = null, takenBack = null } = {}) {
+  if (withheld) return { truthWithheldBy: withheld, truthTakenBackBy: null };
+  if (takenBack) return { truthTakenBackBy: takenBack };
+  return {};
+}
+
+/**
+ * The X-Card's withholding a plan carries (`truthWithheldBy`) — or a
+ * supersede's mark of the reveal it took back (`truthTakenBackBy`, issue #364
+ * XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL) — kept on the version an undo
+ * puts back while that version holds the same truth, hidden: a version from
+ * before the mark lacks it (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE). Null
+ * otherwise.
  *
  * @param {Object} current — the stored entry
  * @param {Object} put — the version written
+ * @param {string} [field] — the mark
  * @returns {string|null}
  */
-function withholdingKept(current, put) {
-  const mark = typeof current?.truthWithheldBy === "string" && current.truthWithheldBy ? current.truthWithheldBy : null;
+function withholdingKept(current, put, field = "truthWithheldBy") {
+  const mark = typeof current?.[field] === "string" && current[field] ? current[field] : null;
   if (!mark || put?.truthRevealed === true || !truthTextOf(put) || truthTextOf(put) !== truthTextOf(current)) return null;
   return mark;
 }
@@ -1756,7 +1810,8 @@ function planKeptAsFiled(entry, removed, keepPlanAbout) {
     // setFlag merges: every key the kept version may lack is written.
     entry: { ...version, narrationId: filed.narrationId ?? null, previous: null,
       truthRevealedBy: version.truthRevealedBy ?? null, rollsShownBy: version.rollsShownBy ?? null, resolvedBy: version.resolvedBy ?? null,
-      truthWithheldBy: version.truthWithheldBy ?? null, subjectLinkedBy: version.subjectLinkedBy ?? null },
+      truthWithheldBy: version.truthWithheldBy ?? null, truthTakenBackBy: version.truthTakenBackBy ?? null,
+      subjectLinkedBy: version.subjectLinkedBy ?? null },
     changed: true, stepTop: undone?.step === true,
   };
 }

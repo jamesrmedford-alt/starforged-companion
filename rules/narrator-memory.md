@@ -50,7 +50,10 @@ layers. This file is the never-break list.
    truth the X-Card takes back that way is withheld from the narrator from
    then on, `truthWithheldBy`: never shown, offered or recorded revealed by a
    narration, lifted only by a GM's edit of it or Reveal now, issue #364
-   XCARD-REVEAL-REREVEAL-NO-LORE) —
+   XCARD-REVEAL-REREVEAL-NO-LORE — as is one a Burn / Improve supersede
+   took back first, by the supersede's mark `truthTakenBackBy`, when the
+   X-Card takes the struck narration with the upgraded beat,
+   XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

@@ -533,6 +533,10 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
     const changed = change(record);
     const next = changed ? normaliseSkeleton({ ...changed, id: record.id, createdAt: record.createdAt, updatedAt: new Date().toISOString() }) : null;
     if (!next) return null;
+    // A supersede's mark names the reveal of the truth the plan held: a write
+    // that changes the truth's text ends it — the new truth was never on
+    // screen in that reveal (issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL).
+    if (next.truthTakenBackBy && next.truth.trim() !== record.truth.trim()) next.truthTakenBackBy = null;
     // One version a narration (issue #362 AC34): a plan is written several
     // times by one narration — its decision, its clock's link, a write per
     // `reveals` entry, its capture's link to a Threats page — and each write

@@ -1159,7 +1159,11 @@ TAKEN-BACK-PLAN-ROLLS-CARD-STAYS) — and the X-Card's take-back of a truth
 withholds it: the plan is marked `truthWithheldBy` (the revealing narration;
 `undoNarrationEntries`' `withholdTruths`, passed by `retractNarrationCapture`
 and `secrets.takenBackForXCard`, never by a supersede, whose re-narration may
-reveal it again), so UNREVEALED and the world snapshot show the plan without
+reveal it again — the supersede names the reveal it took back instead,
+`truthTakenBackBy`, and the X-Card that later removes that narration with
+the beat its upgrade wrote, issue #347 D2, withholds the truth by that mark,
+issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL), so UNREVEALED and the
+world snapshot show the plan without
 its truth, nothing offers it (DECIDE NOW, a countdown's `revealsTruth`, an
 expedition's or vow's ending line, an oracle question's odds, the Private
 Channel's relay), and a narration's reveal of it is not recorded — no plan

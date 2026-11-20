@@ -162,6 +162,17 @@ export function normaliseSkeleton(raw) {
     // now — kept only while the truth is decided and unrevealed. Null on
     // every other plan, and on one stored before the mark was kept.
     truthWithheldBy: markOf(!!truth && !truthRevealed, raw.truthWithheldBy),
+    // The narration whose reveal of the truth a Burn Momentum / Improve
+    // Result supersede took back (worldJournal.js undoNarrationEntries): the
+    // burn hides the truth again and withholds nothing — its re-narration may
+    // reveal it — but an X-Card that later removes that narration with the
+    // beat it upgraded (issue #347 D2) reads the mark as a reveal it took back
+    // itself, and withholds the truth (issue #364
+    // XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL). Kept only while the truth is
+    // decided and unrevealed; ended by a write that changes the truth's text
+    // (secrets.js updateSkeleton — the new truth was never on screen), and
+    // spent when the X-Card withholds by it. Null on every other plan.
+    truthTakenBackBy: markOf(!!truth && !truthRevealed, raw.truthTakenBackBy),
     // The narration whose capture linked a plan filed about a name to the
     // card or Threats page made for that name (secrets.js planNpcAgenda,
     // planSignificantThreat) — the link's own mark, as `playedBy` is a step's:
