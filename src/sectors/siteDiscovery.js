@@ -250,6 +250,13 @@ function newSiteId() {
  *   several unexplored sites whose names the label begins, the one at it is
  *   revealed (selectSectorSite's `placeId`; issue #364
  *   RESOLVER-AMBIGUOUS-PREFIX — the finish docked at one and charted neither)
+ * @param {boolean}  [opts.journeyWords] — the label is an expedition's own (a
+ *   Finish an Expedition's reveal): when it names no site whole, it is asked
+ *   again without the journey words at its edges (nameMatch
+ *   .withoutJourneyWords), as the finish's arrival and the expedition's start
+ *   ask (selectExpeditionSite). Compared whole, a track with no link for "the
+ *   expedition to the Sunken" docked at "The Sunken Vaults" by name and
+ *   charted nothing (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise — the state with the
  *   flag set, a copy; the move pipeline's seam folds its sectors into the
@@ -267,13 +274,18 @@ export async function revealSectorSite(label, opts = {}) {
   const restyle   = opts.restyle   ?? restyleSiteOnScene;
 
   const state = getState();
-  const found = selectSectorSite(state?.sectors, label, {
+  const select = (name) => selectSectorSite(state?.sectors, name, {
     siteId:            opts.siteId ?? null,
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
     requireLabelMatch: opts.requireLabelMatch === true,
     placeId:           opts.placeId ?? null,
   });
+  let found = select(label);
+  if (!found && opts.journeyWords === true && typeof label === "string") {
+    const core = withoutJourneyWords(label);
+    if (core && core !== label.trim()) found = select(core);
+  }
   if (!found) return null;
   const { sector, site: match } = found;
 

@@ -2144,7 +2144,12 @@ function currentLocationForEntityId(id) {
  *     is for the one at the place it names to the resolver, where the
  *     arrival docks by name — the reveal asks the same way (movePipeline):
  *     the site ladder named neither, so a track with no link docked at one
- *     and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX).
+ *     and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX). The label
+ *     is asked without the journey words at its edges too, when it names no
+ *     site whole (`journeyWords`), as the arrival by name and the start read
+ *     it: a track with no link for "the expedition to the Sunken" docked at
+ *     the vault by name and the reveal charted nothing (issue #364
+ *     EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
  *   - `label` — the expedition's label, the place an expedition for no site
  *     is named after; null for one begun with no destination named. A line
  *     that names no destination, or names it in words of its own, still
@@ -2163,7 +2168,8 @@ async function expeditionArrival(interpretation, campaignState) {
     const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
     const asked = track?.label ?? said;
     const place = resolveCurrentLocationName(asked ?? "", campaignState, { journeyWords: true });
-    const found = selectExpeditionSite(campaignState, asked, { siteId: track?.siteId ?? null, placeId: place?.id ?? null });
+    const found = selectExpeditionSite(campaignState, asked,
+      { siteId: track?.siteId ?? null, placeId: place?.id ?? null, journeyWords: true });
     const label = typeof track?.label === "string" ? track.label.trim() : "";
     return {
       siteActorId: found?.site?.actorId ?? null,

@@ -1302,7 +1302,11 @@ export async function rollMove({
         // unexplored sites' names reveals the one at the place it names to
         // the resolver, where the arrival docked (index.js expeditionArrival
         // asks the same way): with no link, the crew docked at one and
-        // neither was charted (issue #364 RESOLVER-AMBIGUOUS-PREFIX).
+        // neither was charted (issue #364 RESOLVER-AMBIGUOUS-PREFIX). The
+        // label is the expedition's own, its journey words taken off when it
+        // names no site whole, as the arrival reads it: "the expedition to
+        // the Sunken" with no link docked at the vault and charted nothing
+        // (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
         try {
           const { revealSectorSite, postSiteDiscoveryCard } = await import("../sectors/siteDiscovery.js");
           const label = fin.track?.label ?? interpretation.moveTarget;
@@ -1312,6 +1316,7 @@ export async function rollMove({
             siteId:   fin.track?.siteId ?? null,
             requireLabelMatch: true,
             placeId:  place?.id ?? null,
+            journeyWords: true,
             getState: () => campaignState,
             setState: (next) => { campaignState.sectors = next.sectors; },
           });

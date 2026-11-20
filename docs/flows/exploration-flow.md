@@ -502,7 +502,12 @@ settlement they had left (issue #342 Z14). A label that begins several
 unexplored sites' names is for the one at the place the resolver reads it as
 (§0; `placeId`), which §4's reveal charts: a track with no link — begun before
 that fix, or in the Progress Tracks panel — docked at one and charted neither
-(issue #364 RESOLVER-AMBIGUOUS-PREFIX). An expedition for no site arrives
+(issue #364 RESOLVER-AMBIGUOUS-PREFIX). The arrival and the reveal ask a label
+that names no site whole again without its journey words (`journeyWords`), as
+the start does and the arrival by name reads it: compared whole, a track with
+no link for "the expedition to the Sunken" docked at "The Sunken Vaults" and
+charted nothing (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE). An
+expedition for no site arrives
 at the place its label names — the label of the expedition the move
 completes, the track ladder's pick (`expeditionArrival`), then the line's own
 words when the label names no tracked place (an expedition begun with no
@@ -538,7 +543,9 @@ an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
 one site it begins, after the whole-word rung, as at the expedition's start —
 §0, issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH; of several, the one at
 the place the resolver reads the label as, where the arrival docked —
-`placeId`, issue #364 RESOLVER-AMBIGUOUS-PREFIX),
+`placeId`, issue #364 RESOLVER-AMBIGUOUS-PREFIX; the finish's reveal asks a
+label that names no site whole again without its journey words, `journeyWords`
+— issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung
