@@ -6871,6 +6871,7 @@ const PAYOFF_REASONS = {
 // longer in chat, a result upgraded since).
 const PAYOFF_FINAL_REASONS = {
   "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
+  "no-vow": "the vow is on no character's sheet any more",
 };
 
 const PAYOFF_TITLES = {
@@ -7129,8 +7130,8 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
  * one, and the pressed card stays resolved. It went on a fresh Retry card
  * like any other, so every press posted another whose Retry could not succeed
  * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). So does a
- * step whose character's sheet is gone (PC_GONE). Every value comes from the
- * GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
+ * step whose character's sheet is gone (PC_GONE), and a reward step whose
+ * vow is on no sheet (VOW_GONE). Every value comes from the GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
  *
  * @param {Object} card — the failure card's module flags
  * @returns {Promise<Array<Object>>} the steps that failed again (a `final` one is not among them)
@@ -7179,6 +7180,14 @@ export async function retryPayoffSteps(card) {
 // PAYOFF-RETRY-CHARACTER-GONE-LOOP).
 const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
 
+// A reward step's vow on no character's sheet any more: no copy by the card's
+// vow id, nor by its exact name — fulfilled copies count as there
+// (payoffVowCopies), so this is a vow deleted from every sheet, as
+// upgradeFightVowMilestone's "vow-gone" is. No reward is left to claim or to
+// raise, on this press or a later one: `final`. As a plain failure it went on
+// a fresh Retry card on every press (issue #364 PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
+const VOW_GONE = Object.freeze({ ok: false, final: true, reason: "no-vow" });
+
 // Run one failed step again. The card is GM-authored, but its values are still
 // checked: a legacy is one of the three tracks, 1–40 ticks.
 async function runPayoffStep(s, card, copies) {
@@ -7191,7 +7200,7 @@ async function runPayoffStep(s, card, copies) {
     case "deepen":
       return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1));
     case "reward":
-      if (!copies.length) return { ok: false, reason: "no-vow" };
+      if (!copies.length) return VOW_GONE;
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
     case "suffer": {
       // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
@@ -7306,7 +7315,7 @@ async function runPayoffStep(s, card, copies) {
       // A weak-hit win's reward raised to the strong hit's, its claim refused
       // (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): the upgrade again —
       // claim first, so a reward already raised gives nothing more.
-      if (!copies.length) return { ok: false, reason: "no-vow" };
+      if (!copies.length) return VOW_GONE;
       return upgradeLinkedVowReward(card.vowName ?? null, "strong_hit", { actorId: card.actorId ?? null, copies });
     case "milestoneUpgrade": {
       // A weak-hit win's milestone raised to the strong hit's, the raise of

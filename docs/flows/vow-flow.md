@@ -640,7 +640,11 @@ whose character's Actor was deleted since — "no-pc" (`PC_GONE`): a
 `upgrade` step's meters or choice card; its line says the character's sheet
 is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
 Retry" note skips a card with no Retry — issue #364
-PAYOFF-RETRY-CHARACTER-GONE-LOOP).
+PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
+whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
+copy by the card's vow id nor its exact name, fulfilled copies counting as
+there, so a vow fulfilled since is still paid — issue #364
+PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
