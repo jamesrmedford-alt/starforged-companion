@@ -179,7 +179,13 @@ recorded under its name promoted to it; its bond is §2's.
   bond Item a mark (`retractNarrationConnections` → actorBridge
   `deleteUnmarkedBondItems`);
   one the table has used stays and the GMs are whispered once, naming it
-  (issue #338 D6(ii)). A pending row this path confirms is stamped the same
+  (issue #338 D6(ii)) — and, with no plan about her, gets a fresh agenda:
+  the X-Card's capture undo, which runs first, deleted the one her creation
+  filed (stamped with the removed narration), and an agenda is filed only
+  where an NPC is created (`planKeptConnectionAgenda` → `secrets.planNpcAgenda`:
+  new oracle rolls, no narration stamp, nothing from the removed narration;
+  a plan about her card a GM or a kept narration wrote since files nothing —
+  issue #364 XCARD-USED-NPC-AGENDA-DELETED). A pending row this path confirms is stamped the same
   way, with the row it confirmed (`confirmDraft`'s `narrationId` →
   `createdFromNarrationId` + `createdFromDraft`): deleted by the X-Card, the
   row goes back to pending (`entityExtractor.reopenConfirmedDraftRow`;
