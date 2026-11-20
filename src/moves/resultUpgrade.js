@@ -232,7 +232,9 @@ export function upgradeButtonNames(kinds) {
  *
  * A clock rewind (`tensionClocks`, `vowClocks`) reports on `report.untriggered`
  * the clocks its landed writes took out of their triggered state, as the
- * writes read them (issue #342 Z46).
+ * writes read them (issue #342 Z46) — and a tension clocks' on `report.fates`
+ * what it did to each clock (clocks.js revertTensionClocksForBurn), which the
+ * reversal card says (tensionClockLine).
  *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string, triggered?: true, vignetteNarrationId?: string }> }
@@ -241,13 +243,14 @@ export function upgradeButtonNames(kinds) {
  *   | { effect: "assetTrack", track: "integrity"|"health", amount: number, pcId: string|null, vehicleActorId?: string, itemId?: string, name?: string|null }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
- * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
+ * @param {{ untriggered?: Array<Object>, fates?: Object<string, Object> }|null} [report] — filled in by a clock rewind
  * @returns {Promise<boolean>} whether it landed
  */
 export async function applyUpgradeStep(step, failures, report = null) {
   try {
     const res = await runUpgradeStep(step);
     if (report && typeof report === "object" && Array.isArray(res.untriggered)) report.untriggered = res.untriggered;
+    if (report && typeof report === "object" && res.fates && typeof res.fates === "object") report.fates = res.fates;
     if (res.ok) return true;
     failures.push({
       ...step,
@@ -283,6 +286,9 @@ async function runUpgradeStep(step) {
       const vignettes = Object.fromEntries(filled
         .filter(c => typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId)
         .map(c => [c._id, c.vignetteNarrationId]));
+      // What the write did to each clock, for the reversal card's lines
+      // (issue #364 PLAN-CLOCK-REWOUND-WORDING).
+      const fates = {};
       const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id), {
         triggered: filled.map(c => c._id),
         vignettes,
@@ -290,8 +296,9 @@ async function runUpgradeStep(step) {
         // when the clock has triggered again since and carries the later
         // trigger's stamp (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
         narrated: clocksWithVignetteWritten(vignettes),
+        fates,
       });
-      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
+      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [], fates };
     }
     case "vowClocks": {
       const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
@@ -615,6 +622,33 @@ function clampsToGiveBack(ptpReversals, clearedIds, skipId) {
   return [...owed];
 }
 
+/**
+ * A tension clock's line on the reversal card: what the rewind did to it
+ * (clocks.js revertTensionClocksForBurn `fates`). Every clock on the price's
+ * receipt was said to be "rewound" — a hidden plan's clock put back up to one
+ * short of full, and one deliberately left as a later trigger paced it, whose
+ * only reversal is the price's own TRIGGERED scene struck (issue #364
+ * PLAN-CLOCK-REWOUND-WORDING). A clock the rewind changed nothing on — gone,
+ * or empty already — has no line: the card lists what was unwound. Never
+ * names what stands behind the clock (issue #362 D3). A clock's name is text:
+ * the narrator's countdown label, a scene challenge's, a GM's `!clock` —
+ * never markup (issue #362 AC83).
+ *
+ * @param {{ name?: string|null }} clock — the receipt's entry
+ * @param {{ fate: "rewound"|"putBack"|"left", filled: number, segments: number, active: boolean }|undefined} fate
+ * @returns {string|null} HTML, or null when nothing was done to the clock
+ */
+function tensionClockLine(clock, fate) {
+  const name = escapeHtml(clock?.name);
+  const at   = fate?.active === false ? "retired" : `${fate?.filled}/${fate?.segments}`;
+  switch (fate?.fate) {
+    case "rewound": return `${name} clock rewound`;
+    case "putBack": return `${name} clock put back to ${at} — its TRIGGERED scene is taken back`;
+    case "left":    return `${name} clock left as it stands (${at}): it triggered again since — only this price's TRIGGERED scene is taken back`;
+    default:        return null;
+  }
+}
+
 const REVERSAL_CARDS = {
   burn:    { title: "⏰ Burn reversal",    lead: "Momentum burned — the Price reverts:", flag: "burnReversal" },
   improve: { title: "⏰ Improve reversal", lead: "Result improved — the Price reverts:", flag: "improveReversal" },
@@ -672,9 +706,12 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // and the resolution upgraded — what the struck vignette is stamped with
   // (issue #347 D2).
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
-    // A clock's name is text: the narrator's countdown label, a scene
-    // challenge's, a GM's `!clock` — never markup (issue #362 AC83).
-    for (const c of tension) reverted.push(`${escapeHtml(c.name)} clock rewound`);
+    // One line per clock the rewind changed, saying what it did to it
+    // (tensionClockLine).
+    for (const c of tension) {
+      const line = tensionClockLine(c, tensionReport.fates?.[c._id]);
+      if (line) reverted.push(line);
+    }
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {

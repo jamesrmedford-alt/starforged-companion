@@ -645,15 +645,27 @@ export async function rearmClock(clockId) {
  * trigger now taken back. No segment is given back, no stamp removed (a burn
  * of the later price still finds its own).
  *
+ * What it did to each clock is the caller's to say on the reversal card, so
+ * it is reported clock by clock (`fates`, filled in by this write): a segment
+ * taken off (`rewound`); a clock its trigger vignette had paced put back one
+ * short of full, the trigger owed again (`putBack`); or left exactly as it
+ * stands, only the price's own vignette to be struck (`left`). A clock it
+ * changed nothing on — gone, already empty, already back one short of full —
+ * has no entry. The card said "clock rewound" of every clock on the receipt,
+ * the one deliberately left as a later trigger paced it included (issue #364
+ * PLAN-CLOCK-REWOUND-WORDING).
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
- * @param {{ triggered?: string[], vignettes?: Object<string, string>, narrated?: string[] }} [opts] —
+ * @param {{ triggered?: string[], vignettes?: Object<string, string>, narrated?: string[],
+ *   fates?: Object<string, { fate: "rewound"|"putBack"|"left", filled: number, segments: number, active: boolean }>|null }} [opts] —
  *   the clocks the reverted price filled; the narration of each one's trigger vignette, by clock
- *   id; and those of them whose vignette stands written on the table
+ *   id; those of them whose vignette stands written on the table; and an object this fills in
+ *   with what was done to each clock, by clock id, with the clock's fill as it now stands
  * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
  *   the clocks taken out of their triggered state, and those whose own trigger vignette is to be
  *   struck by its id (`pacedBy`) with the clock left as it is (empty when none)
  */
-export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null, narrated = [] } = {}) {
+export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null, narrated = [], fates = null } = {}) {
   return serialiseClockWrite(async () => {
     if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
@@ -662,6 +674,8 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
     const now = new Date().toISOString();
     const filledByPrice = new Set(Array.isArray(triggered) ? triggered : []);
     const written = new Set(Array.isArray(narrated) ? narrated : []);
+    const done = {};
+    const say = (c, fate) => { done[c._id] = { fate, filled: c.filled ?? 0, segments: c.segments, active: c.active !== false }; };
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
       if (c?.planId && filledByPrice.has(id)) {
@@ -675,15 +689,18 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
           c.updatedAt = now;
           delete c.pacedBy;
           delete c.pacedFrom;
+          say(c, "putBack");
         } else if (named && written.has(id)) {
           // Its vignette was written and its pacing has been replaced since —
           // the clock triggered again: the vignette goes by its id, the clock
           // stands as the later trigger left it.
           untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy: named });
+          say(c, "left");
           continue;
         } else if ((c.filled ?? 0) > target) {
           c.filled = target;
           c.updatedAt = now;
+          say(c, "rewound");
         } else {
           continue;
         }
@@ -697,9 +714,12 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
       c.filled = Math.max(0, (c.filled ?? 0) - 1);
       c.updatedAt = now;
       dirty = true;
+      say(c, "rewound");
       if (wasFull && c.filled < c.segments) untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension" });
     }
     if (dirty) await writeState(state);
+    // Said once the write has landed: a refused write did none of it.
+    if (fates && typeof fates === "object") Object.assign(fates, done);
     return untriggered;
   });
 }

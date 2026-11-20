@@ -1071,7 +1071,11 @@ when the clock triggered again before the first price is burned its stamp is
 the later trigger's, so the burned price's own vignette — a live card under the
 id its receipt names, `clocksWithVignetteWritten` — is struck by that id and the
 clock left as the later trigger and the prices after it left it, no segment
-given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN);
+given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — and the reversal
+card says of each clock what the rewind did to it, from the `fates` the rewind
+reports: rewound a segment, put back one short of full with its TRIGGERED
+scene taken back, or left as it stands with only this price's scene taken
+back, issue #364 PLAN-CLOCK-REWOUND-WORDING);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — and a step a narration played carries that
 narration on the step itself (`playedBy`, `applyRevealToSkeleton`), so taking
