@@ -166,6 +166,28 @@ async function payHeldPrice(held, resolution, actorId) {
   return ptp;
 }
 
+/**
+ * A held Swear an Iron Vow has been told — kept, or burned / improved and
+ * narrated: the Sojourn its vow was sworn to answer (a miss's "Community
+ * needs help", sojournNeed.js) is resolved as a strong hit now, after the
+ * oath's own narration. The pipeline's finishMove resolves it for a swear
+ * narrated at its roll and leaves a held one to this (issue #364
+ * SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated while the swear still
+ * waited for its roller's choice). The vow is the one the card held
+ * (`awaitingUpgrade.swornVowId`, movePipeline.js rollMove). Never throws.
+ *
+ * @param {Object} held — the card's `awaitingUpgrade`
+ * @returns {Promise<void>}
+ */
+async function resolveNeedsOfToldSwear(held) {
+  if (held?.resolution?.moveId !== "swear_an_iron_vow") return;
+  const vowId = typeof held.swornVowId === "string" && held.swornVowId ? held.swornVowId : null;
+  if (!vowId) return;
+  await import("./sojournNeed.js")
+    .then(({ resolveSojournNeedsForVow }) => resolveSojournNeedsForVow(vowId))
+    .catch(err => console.warn(`${MODULE_ID} | held result: the Sojourn a sworn vow answers could not be resolved:`, err?.message ?? err));
+}
+
 /** A working copy of the stored campaign state: the narration starts a scene and applies its sidecar on it. */
 function workingState() {
   const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
@@ -212,6 +234,8 @@ export async function keepHeldResult(message, by = "keep") {
       console.warn(`${MODULE_ID} | held result: ${resolution.moveName ?? "the move"} was kept, but its narration could not be posted:`, err?.message ?? err);
       globalThis.ui?.notifications?.warn?.("Starforged Companion: the result was kept, but its narration could not be posted to chat.");
     }
+    // A kept swear is told now: the Sojourn its vow answers follows it.
+    await resolveNeedsOfToldSwear(held);
     return { applied: true };
   } finally {
     releaseResultUpgrade(id);
@@ -351,10 +375,16 @@ export async function narrateHeldUpgrade(upgradeOf, resolution, campaignState, o
   }
   if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
   const { narrateResolution } = await import("../narration/narrator.js");
-  return narrateResolution(resolution, campaignState, {
-    speakerActorId: options.speakerActorId ?? held.speakerActorId ?? null,
-    moveTarget:     held.moveTarget ?? null,
-  });
+  try {
+    return await narrateResolution(resolution, campaignState, {
+      speakerActorId: options.speakerActorId ?? held.speakerActorId ?? null,
+      moveTarget:     held.moveTarget ?? null,
+    });
+  } finally {
+    // A burned or improved swear is told by this narration: the Sojourn its
+    // vow answers follows it, whatever became of the narration's own post.
+    await resolveNeedsOfToldSwear(held);
+  }
 }
 
 /**

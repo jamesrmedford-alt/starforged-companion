@@ -202,7 +202,11 @@ releases the claim and the presser is told. The need card keeps the Item's
 id (`vowId`), and when a Swear an Iron Vow for that vow has been rolled and
 narrated (`movePipeline.finishMove` — `swornVowId` →
 `resolveSojournNeedsForVow`) the Sojourn it answers is resolved as a strong
-hit. Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
+hit. A swear held for Burn / Improve / Keep is not narrated at its roll: its
+card keeps the vow (`awaitingUpgrade.swornVowId`) and the Sojourn is
+resolved once the held swear is told — `heldResult.keepHeldResult`, or
+`narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
+SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done
 resolves the Sojourn instead.
 

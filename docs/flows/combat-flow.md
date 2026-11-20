@@ -509,7 +509,10 @@ roller's sheet (`actorBridge.createCharacterVowItem`, claimed first:
 resolved once (`resolveSojournNeed`, the card's `resolved` claimed first) —
 by ✔, or when that vow's Swear an Iron Vow has been rolled and narrated
 (`movePipeline.finishMove` → `resolveSojournNeedsForVow`, by the vow's id;
-the vow is sworn whatever its roll): the move card reads as an improved
+the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
+is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
+Sojourn after the held swear's keep, or after its upgrade's narration —
+issue #364 SOJOURN-HELD-SWEAR-ORDER): the move card reads as an improved
 result's does (`buildResolvedCardContent` — "Miss" and its lines struck,
 "✦ Resolved as a strong hit", the strong hit's text), and the strong hit is
 narrated as a **second beat** (`narrateResolution`, a resolution with

@@ -1720,6 +1720,11 @@ export async function rollMove({
     } : null,
     speakerActorId: speakerActorId ?? null,
     moveTarget:     interpretation.moveTarget ?? null,
+    // A held Swear an Iron Vow names the vow it swears: the Sojourn that vow
+    // answers is resolved once this result is told — by its keep or its
+    // upgrade's narration, not by finishMove (heldResult.js; issue #364
+    // SOJOURN-HELD-SWEAR-ORDER).
+    ...(resolution.moveId === "swear_an_iron_vow" ? { swornVowId: swornVowId(interpretation.moveTargetId ?? null) } : {}),
   } : null;
   const moveResultMessage = await postMoveResult(
     resolution,
@@ -2046,8 +2051,12 @@ export async function finishMove(rolled, campaignState) {
   // whatever its roll, so the Sojourn it answers is resolved as a strong hit
   // now, after the swear's own narration (issue #364
   // SOJOURN-VOW-OPTION-REMINDER-ONLY). Before the riders: their prompt can
-  // wait on the GM.
-  if (resolution?.moveId === "swear_an_iron_vow") {
+  // wait on the GM. Not a swear still held for Burn / Improve / Keep: it is
+  // not told yet, and the refuge was narrated before the oath it answers —
+  // the held result's keep, or its upgrade's narration, resolves the Sojourn
+  // once the swear is told (heldResult.js resolveNeedsOfToldSwear; issue #364
+  // SOJOURN-HELD-SWEAR-ORDER).
+  if (resolution?.moveId === "swear_an_iron_vow" && !rolled.held) {
     const vowId = swornVowId(interpretation?.moveTargetId ?? null);
     if (vowId) {
       await import("./sojournNeed.js")
