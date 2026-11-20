@@ -82,7 +82,16 @@ site, it is asked again without those words — "the expedition to the
 Sunken" is for the unexplored "The Sunken Vaults", as "the Sunken" is;
 compared whole it linked none, so its finish charted nothing (issue #364
 EXPEDITION-JOURNEY-WORDS-SITE-LINK). The expedition a course is read as asks
-as the course did.
+as the course did. The site ladder also takes a name the label begins, as the
+place resolver's start rung does — after the exact and whole-word rungs, the
+label whole then without its journey words, and only when it begins one
+unexplored site's name (two name neither; the active sector's asked first;
+`selectSectorSite`'s `requireLabelMatch`, so the finish's arrival and reveal
+ask it too): "the Sunk", "Sunk" and "the expedition to the Sunk" are for "The
+Sunken Vaults". The ladder took no word cut short, so "the Sunk" — a place to
+the resolver — linked nothing and recorded nothing, and its finish docked at
+the vault and charted nothing; "Sunk" recorded a second destination for it
+(issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -507,7 +516,9 @@ then exact → whole-word substring → type-keyword vault/derelict → sole-und
 (the finish passes `requireLabelMatch`: no sole-undiscovered rung, and the
 pin's own "Unexplored Site" names the active sector's one unexplored site, so
 an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
-`!reveal-site` keeps the guess),
+`!reveal-site` keeps the guess; with it a name the label begins names the
+one site it begins, after the whole-word rung, as at the expedition's start —
+§0, issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung

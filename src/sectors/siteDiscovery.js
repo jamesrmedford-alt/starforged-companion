@@ -46,7 +46,10 @@ export function siteDisplayName(site) {
 /**
  * The site an expedition is for: the discovery its track links (`siteId`),
  * charted or not, else the unexplored site its label names — exact, whole
- * words or the type keyword (`requireLabelMatch`: never the sole-site guess,
+ * words, a name it begins (one site's only: "the Sunk" for "The Sunken
+ * Vaults", as the place resolver reads it — issue #364
+ * EXPEDITION-PREFIX-SITE-LADDER-MISMATCH) or the type keyword
+ * (`requireLabelMatch`: never the sole-site guess,
  * so an expedition to a settlement is for no site). Finishing the expedition
  * arrives there, by the site's location Actor: the crew names an unexplored
  * site in their own words (its pin reads "Unexplored Site"), so the label
