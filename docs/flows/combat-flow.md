@@ -628,7 +628,11 @@ one-time (`reward.status` flips from "promised" — written first, as the
 grant's claim — and a granted reward records the outcome it was granted at,
 `reward.grantedAt`, so a weak-hit win upgraded to a strong hit gets the
 strong hit's once: its second point, or its string lifted — the victory card
-carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
+carries its move's `resolutionId` for the same upgrade, issue #362 D7; of the
+served vow's reward alone, `wonFightRewardCopies` as below — a vow deleted
+between the win and the upgrade pays nothing more, where the sole open vow's
+weak-hit reward was raised, issue #364
+WON-FIGHT-UPGRADE-REWARD-DELETED-VOW-SOLE-OPEN); it
 lands on the roller's copy when they hold one, else on the
 PC holding the promised reward. It is the reward of the vow the fight served
 alone (`wonFightRewardCopies`): its copies by the track's `linkedVowId`, else —

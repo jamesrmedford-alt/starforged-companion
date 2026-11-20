@@ -3098,7 +3098,13 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
   // in words: its code was printed, "(vow-gone)" (issue #364
   // MOVE-CARD-RAW-REASON-CODE).
   else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} — ${payoffReasonWords(milestone.reason ?? "refused", { final: milestone.final === true })}`);
-  const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
+  // The difference of the served vow's reward alone — none with no copy left:
+  // the name ladder's sole-open-vow rung raised another vow's weak-hit reward
+  // and gave its second point (issue #364
+  // WON-FIGHT-UPGRADE-REWARD-DELETED-VOW-SOLE-OPEN). The milestone's line
+  // already tells the table the vow is gone.
+  const served = wonFightRewardCopies(track, vowName, copies, rollerActor?.id ?? null);
+  const reward = !served.length ? null : await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies: served }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
     return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
   });
