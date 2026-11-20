@@ -1490,7 +1490,8 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             previous:    older.length ? older : null,
             // setFlag merges: a key the restored version lacks keeps the removed one's value
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
-            ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null } : {}),
+            ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null,
+              resolvedBy: versions[at].resolvedBy ?? null } : {}),
           };
           // The version put back may be one written between two removed
           // narrations: it holds the earlier one's step.
@@ -1557,7 +1558,11 @@ function withoutStepsPlayedBy(entry, removed) {
  *   - the truth one of them revealed (`truthRevealedBy`) unrevealed, and the
  *     oracle rolls that reveal showed (`rollsShownBy`) unshown — as putting
  *     back the version before that narration leaves them, so the next reveal
- *     shows the rolls again (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
+ *     shows the rolls again (issue #364 PLAN-CLUE-TRUTH-NO-MARK);
+ *   - the ending one of them gave the plan's story (`resolvedBy`) undone:
+ *     the plan is in play again (issue #364 PLAN-RESOLVED-NO-MARK — under a
+ *     GM's edit of the ended plan it stayed resolved, where with the
+ *     narration's own version on top it came back).
  * A record-level mark is cleared with an explicit null: the page flag is
  * merged on write. Null when the version holds nothing of theirs.
  *
@@ -1575,7 +1580,8 @@ function takenBackFrom(version, removed) {
   const clue  = clues.some(theirClue);
   const truth = version?.truthRevealed === true && by(version.truthRevealedBy);
   const rolls = version?.rollsShown === true && by(version.rollsShownBy);
-  if (!step && !clue && !truth && !rolls) return null;
+  const ended = version?.status === "resolved" && by(version.resolvedBy);
+  if (!step && !clue && !truth && !rolls && !ended) return null;
   const next = { ...version };
   if (step) {
     next.escalation = steps.map((e) => {
@@ -1595,6 +1601,7 @@ function takenBackFrom(version, removed) {
   }
   if (truth) Object.assign(next, { truthRevealed: false, truthRevealedBy: null });
   if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
+  if (ended) Object.assign(next, { status: "active", resolvedBy: null });
   return { version: next, step };
 }
 
@@ -1652,7 +1659,9 @@ function noteStepTakenBack(out, entry) {
  * with the clocks they link — as undoNarrationEntries leaves the Secrets
  * journal, whether it has run yet or not: a plan whose newest version one of
  * them wrote stands as its newest version none of them wrote (gone, when they
- * made it); any other plan stands as it is. For the undo of a plan clock's
+ * made it); any other plan stands as it is — but for an ending one of them
+ * gave it, which the undo takes back by its mark (`resolvedBy`,
+ * takenBackFrom): that plan is in play again. For the undo of a plan clock's
  * pacing (clocks/planClockPacing.js planInPlayFor): the X-Card's pause write
  * comes before the plans are put back, a supersede's clock re-arm after, and
  * both must leave a clock alone whose plan is gone or closed (issue #364
@@ -1677,7 +1686,10 @@ export function hiddenPlansInPlayWithout(narrationIds) {
       const stands = fromRemoved(entry)
         ? ((Array.isArray(entry.previous) ? entry.previous : []).find(v => v && !fromRemoved(v)) ?? null)
         : entry;
-      if (!stands || (stands.status ?? "active") !== "active") continue;
+      if (!stands) continue;
+      const status   = stands.status ?? "active";
+      const reopened = status === "resolved" && typeof stands.resolvedBy === "string" && removed.has(stands.resolvedBy);
+      if (status !== "active" && !reopened) continue;
       const id = stands.id ?? entry.id;
       if (typeof id === "string" && id) planIds.add(id);
       if (typeof stands.clockId === "string" && stands.clockId) clockIds.add(stands.clockId);

@@ -125,6 +125,7 @@ export function normaliseSkeleton(raw) {
   const truth = text(raw.truth, TEXT_MAX);
   const truthRevealed = raw.truthRevealed === true && !!truth;
   const rollsShown    = raw.rollsShown === true;
+  const status        = SKELETON_STATUSES.includes(raw.status) ? raw.status : "active";
   return {
     id,
     kind,
@@ -158,7 +159,13 @@ export function normaliseSkeleton(raw) {
     // these rolls"); spent or dropped once it is decided.
     reroll:        text(raw.reroll, ITEM_MAX),
     rollsShown,
-    status:        SKELETON_STATUSES.includes(raw.status) ? raw.status : "active",
+    status,
+    // The narration whose beat ended the plan's story (`resolved`) — the
+    // truth's mark, for the ending: taking that narration back puts the plan
+    // back in play, whatever was written to it since (issue #364
+    // PLAN-RESOLVED-NO-MARK). Null on a plan its subject's end, or a GM,
+    // closed. Always present, as the truth's marks are.
+    resolvedBy:    markOf(status === "resolved", raw.resolvedBy),
     sceneId:       typeof raw.sceneId === "string" ? raw.sceneId : null,
     sessionId:     typeof raw.sessionId === "string" ? raw.sessionId : null,
     createdFrom:   normaliseProvenance(raw.createdFrom),
@@ -389,7 +396,9 @@ export function normaliseCountdown(countdown) {
  * it shows (`revealedBy`, shownMark) and the truth it reveals
  * (`truthRevealedBy`), each only when this beat is what showed it: a clue
  * already shown, a truth already revealed, keeps the mark — or the lack of
- * one — it has (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
+ * one — it has (issue #364 PLAN-CLUE-TRUTH-NO-MARK). And the ending, when
+ * this beat is what ends the story (`resolvedBy`; a plan its subject's end
+ * already resolved keeps none — issue #364 PLAN-RESOLVED-NO-MARK).
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
@@ -401,10 +410,12 @@ export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {
   const id = typeof narrationId === "string" && ID_RE.test(narrationId) ? narrationId : null;
   const by = id ? { playedBy: id } : {};
   const truthNow = !record.truthRevealed && shown.has("truth") && !!record.truth;
+  const endsNow  = reveal.resolved === true && record.status !== "resolved";
   return {
     ...record,
     truthRevealed: record.truthRevealed || truthNow,
     ...(truthNow ? { truthRevealedBy: id } : {}),
+    ...(endsNow ? { resolvedBy: id } : {}),
     clues:         record.clues.map(c => (shown.has(c.id) && !c.revealed ? { ...c, revealed: true, ...(id ? { revealedBy: id } : {}) } : c)),
     escalation:    record.escalation.map(e => (e.id === reveal.advanced && !e.done ? { ...e, done: true, ...by } : e)),
     status:        reveal.resolved ? "resolved" : record.status,
