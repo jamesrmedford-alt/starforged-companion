@@ -407,6 +407,59 @@ function roundSessionOver(round, cs = campaignStateNow()) {
   return !sessionInPlay(cs) || round?.sessionId !== (cs.currentSessionId ?? null);
 }
 
+/**
+ * The number of a round's session: the one the round opened with, else — a
+ * round opened before rounds kept it — the one that session's narrator cards
+ * carry, else the one its summary was carried forward under (LAST SESSION, or
+ * the mark of a session closed without its summary). Null when nothing names
+ * it: unknown, never another session's.
+ *
+ * @param {Object} round
+ * @param {Object} cs — campaignState as stored
+ * @returns {number|null}
+ */
+function roundSessionNumber(round, cs) {
+  const numbered = (n) => (Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null);
+  if (numbered(round?.sessionNumber)) return numbered(round.sessionNumber);
+  const card = (game.messages?.contents ?? []).findLast?.((m) => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true && f.sessionId === round.sessionId && numbered(f.sessionNumber) !== null;
+  });
+  if (card) return numbered(card.flags[MODULE_ID].sessionNumber);
+  for (const kept of [cs?.previousSessionSummary, cs?.unsummarisedSession]) {
+    if (kept?.sessionId === round.sessionId && numbered(kept.sessionNumber)) return numbered(kept.sessionNumber);
+  }
+  return null;
+}
+
+/**
+ * The working copy of campaignState a round is narrated from: the store as
+ * it stands, in the round's own session. A round whose session is over can be
+ * narrated after the world load has minted the next one — by the re-check of
+ * an upgrade in flight (recheckWhenInFlightLapses), or a GM's Send now — and
+ * the store's current session is then the minted one: its card, the facts
+ * its narration recorded and the story it was told from were the next
+ * session's, where the pass that runs during the load itself (before the
+ * mint is stored) keeps the round's own. So the copy names the round's
+ * session and its number whichever pass narrates it; everything narrateRound
+ * files by session reads them from the copy, and nothing writes the copy's
+ * session back (each of its writes is its own fields onto the latest store).
+ * A round with no session of its own, or narrated in its session, takes the
+ * copy as it is (issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT).
+ *
+ * @param {Object} round
+ * @returns {Object}
+ */
+function roundNarrationState(round) {
+  const cs = workingCopy();
+  const own = round?.sessionId ?? null;
+  if (!own || (cs.currentSessionId ?? null) === own) return cs;
+  const sessionNumber = roundSessionNumber(round, cs);
+  cs.currentSessionId = own;
+  cs.sessionNumber = sessionNumber;
+  return cs;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Opening and closing rounds
 // ─────────────────────────────────────────────────────────────────────────────
@@ -434,6 +487,7 @@ export async function openRoundIfDue(reason = "due") {
       if (roundIsOpen(latest) && (latest.sessionId === sessionId || isResolving(latest))) return latest;
       return createRound({
         id: randomId(), number: nextRoundNumber(latest, sessionId), sessionId,
+        sessionNumber: cs.sessionNumber ?? null,
         now: nowIso(), participants: currentParticipants(),
       });
     });
@@ -1718,7 +1772,7 @@ async function narrateTheRound() {
     await closeCardUpgrades(round, null);
     const narrated = round;
     const told = await narrateRound({
-      round: narrated, campaignState: workingCopy(),
+      round: narrated, campaignState: roundNarrationState(narrated),
       stillNarrating: () => narrationStillOurs(narrated.id, lock.claim, dropsAtClaim),
       // Its card says why it closed unnarrated, not "no key on this game"
       // (ROUND-CLOSED-UNNARRATED-WORDING).

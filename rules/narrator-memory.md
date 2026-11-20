@@ -18,7 +18,10 @@ layers. This file is the never-break list.
    Mode round's one card (issue #340): `roundId`, `roundNumber` and
    `roundEntries` (the players who acted, no one else) beside the family, its
    own `moveId` / `outcome` / `resolutionId` empty; its fallback card keeps
-   the family with `narrationFallback`. One exception
+   the family with `narrationFallback`; its `sessionId` is the round's own
+   session, whichever pass narrates it — after the next session's mint too
+   (driver.js `roundNarrationState`, issue #364
+   ROUND-CARD-SESSION-ID-AFTER-MINT). One exception
    (issue #321 U35): the move narration's "narration unavailable" card keeps
    the family so the session recap counts the move, and every narrator-memory
    read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
