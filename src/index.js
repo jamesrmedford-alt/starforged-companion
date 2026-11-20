@@ -3825,19 +3825,6 @@ function registerCommandVehicleHook() {
 }
 
 /**
- * Determine whether a chat message is player narration that should be
- * routed through the move interpretation pipeline.
- *
- * Uses string literals for message types — CONST.CHAT_MESSAGE_TYPES was
- * restructured in Foundry v13 and the constants can no longer be relied on.
- *
- * Excluded:
- * - OOC, roll, and whisper message types
- * - Messages already processed by this module (move result cards, narration cards)
- * - GM messages
- * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
- */
-/**
  * True when chat content is a foundry-ironsworn chat card: its root element
  * carries one of the system's own classes (`ironsworn-message`,
  * `ironsworn-roll`, …). Issue #325 W08.
@@ -3859,6 +3846,19 @@ function isIronswornSystemCard(text) {
  */
 export const MIN_NARRATION_LENGTH = 10;
 
+/**
+ * Determine whether a chat message is player narration that should be
+ * routed through the move interpretation pipeline.
+ *
+ * Uses string literals for message types — CONST.CHAT_MESSAGE_TYPES was
+ * restructured in Foundry v13 and the constants can no longer be relied on.
+ *
+ * Excluded:
+ * - OOC, roll, and whisper message types
+ * - Messages already processed by this module (move result cards, narration cards)
+ * - Messages starting with "\" (escape), "@" (direct commands), "/" (slash commands) or "!" (module commands)
+ * - Lines under MIN_NARRATION_LENGTH characters
+ */
 export function isPlayerNarration(message) {
   const text = narrationCandidateText(message);
   return text !== null && text.length >= MIN_NARRATION_LENGTH;
@@ -4436,11 +4436,6 @@ async function handleJournalCommand(message) {
 }
 
 /**
- * Load the active character for the pacing classifier. Returns a minimal
- * { name, connections } object — the classifier doesn't need full stat
- * state. Returns null when no character is set.
- */
-/**
  * Emit a console warning when the stored Claude API key obviously isn't
  * an Anthropic key. Anthropic keys are `sk-ant-…`; OpenRouter keys are
  * `sk-or-v1-…` and a common copy-paste mistake. This is best-effort —
@@ -4490,6 +4485,10 @@ function warnIfClaudeKeyLooksWrong() {
  * character (known-issues PACING-CHARACTER-SOLO). It follows the speaker
  * rule now (multiplayer/speaker.js, issue #321 U23): the one PC of a
  * one-PC world, else none.
+ *
+ * @returns {{ name: string|null, actorId: string|null }|null} a minimal
+ *   snapshot — the classifier doesn't need full stat state; null when no
+ *   character is resolved
  */
 function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
   try {
@@ -4982,6 +4981,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
 }
 
 /**
+ * Below this many filled boxes, the expedition card's Finish button is shown
+ * muted: a progress roll under it misses more often than not (3 boxes: 64%;
+ * 4 boxes: 49%).
+ */
+export const EXPEDITION_FINISH_READY_BOXES = 4;
+
+/**
  * Exploration lifecycle feedback — confirm an expedition progress mark and,
  * when the track was just auto-created at the interpreter-inferred rank, tell
  * the player they can re-rank it in the Progress Tracks panel (the inference
@@ -4991,13 +4997,6 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
  *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
  *   them, whoever presses it (issue #329 X05)
  */
-/**
- * Below this many filled boxes, the expedition card's Finish button is shown
- * muted: a progress roll under it misses more often than not (3 boxes: 64%;
- * 4 boxes: 49%).
- */
-export const EXPEDITION_FINISH_READY_BOXES = 4;
-
 async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
@@ -8691,10 +8690,6 @@ async function handleShipMapCommand(message) {
 }
 
 /**
- * Post the resolved move result to chat.
- * Returns the created ChatMessage so the caller can attach Loremaster context.
- */
-/**
  * Apply this outcome's asset consequence riders (consequence-riders feature).
  * Automatic meter riders apply silently; optional / "choose one" / progress
  * riders prompt. A mark that is the outcome's own resolves to the sole track
@@ -8914,10 +8909,14 @@ async function retryRiderStep(s, actorId) {
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
 /**
+ * Post the resolved move result to chat.
+ *
  * @param {{ id: string, label?: string }|null} [fight] — a combat move's own
  *   fight (the pipeline's moveFight): stamped as combatTrackId /
  *   combatTrackLabel and named on the Finish the Fight button, which forwards
  *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
+ * @returns {Promise<ChatMessage>} the created message, for the caller (the
+ *   move pipeline's moveResultMessage)
  */
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null, extraFlags = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the

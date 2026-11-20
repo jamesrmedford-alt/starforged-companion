@@ -45,10 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/index.js — Determine whether a chat message is player narration that should be",
-  "src/index.js — Exploration lifecycle feedback — confirm an expedition progress mark and,",
-  "src/index.js — Load the active character for the pacing classifier. Returns a minimal",
-  "src/index.js — Post the resolved move result to chat.",
   "src/moves/resolver.js — A move's oracle seeds with the Pay the Price its pipeline rolled for the",
   "src/moves/resolver.js — Map a move ID + outcome to its specific mechanical consequences.",
   "src/moves/sufferCard.js — True when an \"any\" card cannot take this suffer move: one the prompt",
