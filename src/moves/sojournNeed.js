@@ -34,8 +34,10 @@
  *     (`sojournSwearTold`, actorBridge.markNeedVowSwearTold), so a resolve
  *     that cannot be made then is made later, by the vow all the same
  *     (resolveToldSojournNeeds: after the Batch Mode round that held it
- *     back, and at the canonical GM's load; issue #364
- *     SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING). A vow deleted from the sheet
+ *     back, at the canonical GM's load, and when a GM who leaves or stands
+ *     down leaves another GM canonical; issue #364
+ *     SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING, SOJOURN-NO-SWEEP-ON-GM-TAKEOVER).
+ *     A vow deleted from the sheet
  *     before its swear is rolled is no
  *     longer the card's: the card stops saying it is on the sheet and offers
  *     ⚔ again (needVowOnSheet — the sheet, read on every render, and written
@@ -68,7 +70,7 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { isCanonicalGM, onGmStoodDown } from "../multiplayer/gmGate.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
 import {
   getActor, createCharacterVowItem, isPlayerCharacterActor, readNeedVow, vowNeedCardId, needCardIdsOfVow,
@@ -266,7 +268,12 @@ export async function postSojournNeedCard({ actor, resolutionId, stakes = null }
  * Register once — from `ready`: on the canonical GM the Sojourns of the vows
  * whose swear was told before this page loaded are resolved now
  * (resolveToldSojournNeeds), so a reload between the oath and its refuge
- * loses nothing.
+ * loses nothing. So are they when a GM leaves, or their page stands down,
+ * and this GM is canonical after it — on the hooks the Batch Mode driver
+ * takes over a departed GM's round on (batch/driver.js onUserConnected):
+ * the GM who had them to resolve is gone, and a table of two GMs waited for
+ * the next round's close or a reload of the GM who took over (issue #364
+ * SOJOURN-NO-SWEEP-ON-GM-TAKEOVER).
  */
 export function registerSojournNeedHook() {
   if (registerSojournNeedHook._installed) return;
@@ -275,6 +282,13 @@ export function registerSojournNeedHook() {
     releaseNeedsOfDeletedVow(item).catch(err =>
       console.warn(`${MODULE_ID} | sojourn: a deleted vow's need card could not be opened again:`, err?.message ?? err));
   });
+  const gmGone = (user) => {
+    if (!user?.isGM) return;
+    resolveToldSojournNeeds().catch(err =>
+      console.warn(`${MODULE_ID} | sojourn: the Sojourns of the vows a departed GM had sworn could not be resolved:`, err?.message ?? err));
+  };
+  globalThis.Hooks?.on?.("userConnected", (user, connected) => { if (!connected) gmGone(user); });
+  onGmStoodDown(gmGone);
   resolveToldSojournNeeds().catch(err =>
     console.warn(`${MODULE_ID} | sojourn: the Sojourns of the vows sworn before this page loaded could not be resolved:`, err?.message ?? err));
   onChatMessageRender((message, root) => {
@@ -464,9 +478,10 @@ export async function resolveSojournNeedsForVow(vowId) {
  * say) — the resolves that could not be made when the swear was told. Called
  * where one can be made again: once a Batch Mode round is narrated and closed
  * (batch/driver.js finishRound — a round being resolved refuses the resolve:
- * it tells its entries once, and the refuge follows it), and at the canonical
+ * it tells its entries once, and the refuge follows it), at the canonical
  * GM's load (registerSojournNeedHook — the page reloaded between the oath and
- * the resolve). Each card is claimed first (`resolved`), so a Sojourn is
+ * the resolve), and when a GM leaves or stands down and this GM is canonical
+ * after it (registerSojournNeedHook — the GM who had it to make is gone). Each card is claimed first (`resolved`), so a Sojourn is
  * resolved once whichever call comes first, ✔ It is done included. Canonical
  * GM; a no-op with nothing told and unresolved.
  *

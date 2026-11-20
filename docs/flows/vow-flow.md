@@ -226,7 +226,10 @@ resolved refuses it (the round tells its entries once — a participant's held
 swear the round keeps before it rolls is told exactly then), and
 `resolveToldSojournNeeds` resolves the open cards of the told vows
 (`actorBridge.toldNeedCardIds`) once the round is narrated and closed
-(`batch/driver.js` `finishRound`) and at the canonical GM's load (issue #364
+(`batch/driver.js` `finishRound`), at the canonical GM's load, and when a
+GM leaves or their page stands down and leaves this GM canonical
+(`registerSojournNeedHook`, on the driver's own takeover hooks — issue #364
+SOJOURN-NO-SWEEP-ON-GM-TAKEOVER) (issue #364
 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the refused resolve was only
 logged). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done
