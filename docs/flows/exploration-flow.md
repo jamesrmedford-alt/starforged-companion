@@ -52,7 +52,20 @@ location's name or the working label its record keeps
 (`siteDiscovery.siteNamedBy`): the expedition is linked to that site, so its
 finish arrives there (issue #362 AC50 — after the GM renamed a charted
 destination, a course by its old working label minted a second location,
-record and pin for it).
+record and pin for it). Whether a label names a tracked place is asked by
+§0.5's rule for a destination — the place's name and little else
+(`resolveCurrentLocationName(…, { asDestination: true })`) — and for an
+expedition typed as one the journey's own words are little else too
+(`journeyWords`; `nameMatch.placeNameAndLittleElse`'s `journey`: expedition,
+journey and their plurals; to, toward, towards, for, into): "the expedition
+to Bleakhold", "the Bleakhold expedition" and "a journey toward Bleakhold
+Station" are for Bleakhold and record nothing; "the wreck beyond Bleakhold",
+or "Archer's rendezvous — the gap" with a settlement Archer on the map, is a
+new uncharted site — a preposition that places the destination beside the
+known place (beyond, near, past, outside, off …) is what makes it another
+place. It was asked the looser way — any label holding the name as whole
+words — so nothing was recorded or linked for those, and the finish docked
+at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -109,9 +122,16 @@ record and pin for it).
   expedition it is read as asks the same way before it records its uncharted
   destination (`resolution.courseRerouted`) — asked the looser way it
   recorded none, and its finish docked at the settlement. A fragment of a
-  place's name ("Bleak", "the gap") still names it. Not narrowed: an
-  expedition typed as one ("the expedition to Bleakhold" is for Bleakhold),
-  the arrival by name (a place in the words around it, §3) and the GM's `!at`.
+  place's name ("Bleak", "the gap") still names it. An Undertake an
+  Expedition typed as one asks by the same rule before it records its
+  destination (§0), the journey's own words little else too
+  (`{ asDestination: true, journeyWords: true }`): "the expedition to
+  Bleakhold" is for Bleakhold, "the wreck beyond Bleakhold" a new site —
+  asked the looser way, it was for Bleakhold (issue #364
+  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The journey's words are not a
+  course's: the course's question, and the expedition it is read as, ask
+  without them. Not narrowed: the arrival by name (a place in the words
+  around it, §3) and the GM's `!at`.
 
 ## 1. Setting out
 

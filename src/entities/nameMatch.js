@@ -224,6 +224,29 @@ function isPlaceKindWord(word, kind) {
 }
 
 /**
+ * The words an expedition's label may hold beside the place it is for, that
+ * say only that it is a journey there — the module's own words for one:
+ *   - the move's nouns: "expedition" (the move, its track, the label its plan
+ *     is given — "the expedition to ‹name›", resolver.js
+ *     expeditionPlanRequest) and "journey" (the interpreter's and the
+ *     classifier's word for it: "any journey toward a destination that is
+ *     not a charted, known place"). A plural counts.
+ *   - the prepositions that only say "towards": to, toward, towards, for,
+ *     into.
+ * A preposition that places the destination beside the known place — beyond,
+ * near, past, outside, off, under, above, behind, around, of … — is not one:
+ * that is what makes "the wreck beyond Bleakhold" another place than
+ * Bleakhold. The one list (placeNameAndLittleElse's `journey`).
+ */
+const JOURNEY_NOUNS = new Set(["expedition", "journey"]);
+const TOWARDS_WORDS = new Set(["to", "toward", "towards", "for", "into"]);
+
+/** Whether a (lower-case) word says only that a label is a journey to its place. */
+function isJourneyWord(word) {
+  return TOWARDS_WORDS.has(word) || JOURNEY_NOUNS.has(word) || JOURNEY_NOUNS.has(word.replace(/s$/, ""));
+}
+
+/**
  * Whether a destination's label is a known place's name and little else:
  * the name's words, together and in order, and around them nothing but
  * articles and words that say what kind of place it is — "Bleakhold
@@ -235,16 +258,25 @@ function isPlaceKindWord(word, kind) {
  * decision; the caller is index.js resolveCurrentLocationName, for a travel
  * move asking whether its destination is a place the campaign knows).
  *
+ * `journey` — the label is an expedition's own (the destination an Undertake
+ * an Expedition typed as one names, kept as its track's label): the
+ * journey's own words are little else too (isJourneyWord), so "the
+ * expedition to Bleakhold", "the Bleakhold expedition" and "a journey toward
+ * Bleakhold Station" are for Bleakhold, and "the expedition to the wreck
+ * beyond Bleakhold" is not (issue #364
+ * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+ *
  * @param {string} label — the destination, as the move names it
  * @param {string} placeName — the known place's name
  * @param {"settlement"|"location"|"planet"} kind — the place's record type
+ * @param {{ journey?: boolean }} [opts]
  * @returns {boolean}
  */
-export function placeNameAndLittleElse(label, placeName, kind) {
+export function placeNameAndLittleElse(label, placeName, kind, { journey = false } = {}) {
   const outer = nameWords(label);
   const inner = nameWords(placeName);
   if (!inner.length || outer.length < inner.length) return false;
-  const little = (w) => ARTICLES.has(w) || isPlaceKindWord(w, kind);
+  const little = (w) => ARTICLES.has(w) || isPlaceKindWord(w, kind) || (journey && isJourneyWord(w));
   for (let at = 0; at + inner.length <= outer.length; at++) {
     if (!inner.every((w, i) => w === outer[at + i])) continue;
     if (outer.slice(0, at).every(little) && outer.slice(at + inner.length).every(little)) return true;

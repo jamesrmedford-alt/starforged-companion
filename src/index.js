@@ -2463,10 +2463,13 @@ async function applyOutcomeEffects({
             // label named Archer, no site was recorded, and the finish docked
             // at the settlement (issue #364
             // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT). An expedition typed as
-            // one keeps its reading: "the expedition to Bleakhold" is for
-            // Bleakhold.
+            // one is asked by the same rule — it was asked the looser way,
+            // and one for "the wreck beyond Bleakhold" was for Bleakhold —
+            // with the journey's own words beside the name little else too:
+            // "the expedition to Bleakhold" is for Bleakhold (issue #364
+            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
             if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
-              && !resolveCurrentLocationName(label, campaignState, { asDestination: !!resolution.courseRerouted })) {
+              && !resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords: !resolution.courseRerouted })) {
               linked = siteNamedBy(campaignState, label);
               const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world
@@ -8420,10 +8423,10 @@ function escapeChatHtml(s) {
  * AT-COMMAND-OLD-LABEL; the course takes the same step in travel.js
  * rerouteUnchartedCourse, issue #362 AC50).
  *
- * `asDestination` (a Set a Course asking whether the place it sets out for
- * is one the campaign knows — the course's reroute, travel.js chartedPlaceFor
- * — and the start of the expedition that course was read as, before it
- * records an uncharted destination) narrows the whole-word rung one way. A
+ * `asDestination` (a travel move asking whether the place it sets out for
+ * is one the campaign knows — a Set a Course's reroute, travel.js
+ * chartedPlaceFor, and the start of a new expedition, before it records an
+ * uncharted destination) narrows the whole-word rung one way. A
  * fragment of a place's name still names it ("the gap" for "Archer's
  * rendezvous — the gap"). A destination that holds a place's name is that
  * place only when it is the name and little else — an article, a word for
@@ -8432,18 +8435,28 @@ function escapeChatHtml(s) {
  * with a settlement Archer on the map, a first course for "Archer's
  * rendezvous — the gap" was a course to Archer (issue #364
  * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
- * The others do not pass it: an expedition typed as one keeps the reading
- * its label had ("the expedition to Bleakhold" is for Bleakhold), an arrival
- * with no site or pin to dock at by id reads a place in the words around it
- * (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own
- * naming, its card saying where it landed.
+ *
+ * `journeyWords` (with `asDestination`: the start of an expedition typed as
+ * one — never a course's question, nor the expedition a course is read as,
+ * which asks as the course did) counts the journey's own words as little
+ * else too: an expedition's label may say it is one — "the expedition to
+ * Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
+ * wreck beyond Bleakhold" is a new destination. A typed expedition was asked
+ * the looser way, so that one was for Bleakhold: no uncharted site was
+ * recorded, and its finish docked at the settlement (issue #364
+ * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+ *
+ * The others pass neither: an arrival with no site or pin to dock at by id
+ * reads a place in the words around it (known-issues
+ * ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own naming, its card
+ * saying where it landed.
  *
  * @param {string} name
  * @param {Object} campaignState
- * @param {{ siteRecordNames?: boolean, asDestination?: boolean }} [opts]
+ * @param {{ siteRecordNames?: boolean, asDestination?: boolean, journeyWords?: boolean }} [opts]
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
-export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false, asDestination = false } = {}) {
+export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false, asDestination = false, journeyWords = false } = {}) {
   const target = name?.trim().toLowerCase();
   if (!target) return null;
 
@@ -8486,7 +8499,8 @@ export function resolveCurrentLocationName(name, campaignState, { siteRecordName
   // One name inside the other, as whole words. For a destination, a place's
   // name inside it is that place only as its name and little else.
   const within = (c) => wholeWordsFit(c.lc, target)
-    && (!asDestination || wholeWordPattern(target).test(c.lc) || placeNameAndLittleElse(target, c.entity.name, c.type));
+    && (!asDestination || wholeWordPattern(target).test(c.lc)
+      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords }));
   return pick(c => c.lc === target)
       ?? (siteRecordNames ? byRecordName() : null)
       ?? pick(c => c.lc.startsWith(target))

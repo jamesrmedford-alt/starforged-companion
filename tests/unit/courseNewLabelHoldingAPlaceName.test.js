@@ -20,9 +20,11 @@
 // looser way it recorded none, and its finish docked at the settlement.
 //
 // Not changed, and pinned here: the arrival and `!at` read a place in the
-// words around it, and an expedition typed as one keeps the reading its label
-// had ("the expedition to Bleakhold" is for Bleakhold —
-// tests/unit/expeditionFinishRevealsNamedSite.test.js).
+// words around it, and an expedition typed as "the expedition to Bleakhold"
+// is for Bleakhold (tests/unit/expeditionFinishRevealsNamedSite.test.js). A
+// typed expedition's own label is asked by the rule since issue #364
+// EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT, the journey's words little else
+// (tests/unit/expeditionNewLabelHoldingAPlaceName.test.js).
 //
 // Production wiring: the player's lines through the GM's real pipeline on a
 // booted table, as tests/unit/courseOldLabelBeforeLooserRungs.test.js — here
@@ -195,7 +197,7 @@ describe('issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — control: the name 
   }, 30_000);
 });
 
-describe('issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — the arrival, `!at` and a typed expedition read a place in the words around it, as before', () => {
+describe('issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — the arrival and `!at` read a place in the words around it, and "the expedition to Bleakhold" is for Bleakhold, as before', () => {
   it('an Undertake an Expedition typed for "the expedition to Bleakhold" is for Bleakhold: no uncharted site is recorded', async () => {
     await undertakeExpedition('the expedition to Bleakhold');
 
