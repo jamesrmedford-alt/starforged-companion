@@ -1914,6 +1914,28 @@ function noteStepTakenBack(out, entry) {
 }
 
 /**
+ * Whether the Threats journal still holds the page of this id — what a hidden
+ * plan about a recorded threat names as its subject (secrets.js
+ * planSignificantThreat: the plan shares the page's id). For a supersede's
+ * `keepPlanAbout` (resultUpgrade.js plansKeptThroughSupersede, issue #364
+ * BURN-DROPS-RECORDED-THREAT-PLAN): a threat has no retracted state — a page
+ * that is there is a threat on record. A read; false when the journal cannot
+ * be read.
+ *
+ * @param {string|null} pageId
+ * @returns {boolean}
+ */
+export function threatPageStands(pageId) {
+  if (typeof pageId !== "string" || !pageId) return false;
+  try {
+    return (findJournal(JOURNAL_NAMES.threats)?.pages?.contents ?? []).some(p => p?.id === pageId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: the Threats journal could not be read for the page ${pageId}:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
  * The hidden plans in play once the given narrations are taken back, by id,
  * with the clocks they link — as undoNarrationEntries leaves the Secrets
  * journal, whether it has run yet or not: a plan whose newest version one of

@@ -1037,7 +1037,10 @@ keeps one it filed with its rolls alone about a card that is still there —
 the agenda of the NPC a Make a Connection hit created, as filed and still
 stamped with that narration, so the X-Card that removes her card takes it:
 `plansKeptThroughSupersede` → `undoNarrationEntries`' `keepPlanAbout`, issue
-#364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA) — its oracle rolls then shown — Phase 2;
+#364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA — and the plan its capture filed
+for a threat it recorded as significant, about the Threats page, which
+stands with those records (`threatPageStands`): issue #364
+BURN-DROPS-RECORDED-THREAT-PLAN) — its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —

@@ -1079,13 +1079,20 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
  * where an NPC is created: taken back with the narration, it was filed by
  * nothing again, and the NPC had none for the rest of the campaign (issue
  * #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA). The plan is about the card,
- * not about what the struck narration told. A plan about a name, a scene, a
+ * not about what the struck narration told. And the ones about a threat's
+ * page that is still on the Threats journal — the plan the capture filed for
+ * a threat it recorded as significant (secrets.js planSignificantThreat):
+ * the page stands with the superseded narration's other World Journal records
+ * (decisions.md, issue #338 D8), and its plan went — the threat stayed on
+ * record, and among the narrator's active threats, unplanned until a later
+ * capture happened to record it again, then under a new plan with new rolls
+ * (issue #364 BURN-DROPS-RECORDED-THREAT-PLAN). A plan about a name, a scene, a
  * track or a vow is the narration's own telling — a price's new enemy, a
  * question it posed, what its move asked it to decide — and goes with it; the
  * re-narration is asked for its move's again (`skeletonRequests`). Told by
  * the plan's subject alone: the plan model is not this module's to import
- * (secretsStayHidden.test.js). Null when the cards cannot be read: every
- * plan is then taken back, as before. Never throws.
+ * (secretsStayHidden.test.js). Null when the cards and pages cannot be read:
+ * every plan is then taken back, as before. Never throws.
  *
  * @param {string} label — for the log
  * @returns {Promise<((subject: Object) => boolean)|null>}
@@ -1093,9 +1100,16 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 async function plansKeptThroughSupersede(label) {
   try {
     const { resolveEntityById } = await import("../entities/registry.js");
-    return (subject) => subject?.type === "entity" && typeof subject.id === "string" && !!subject.id && !!resolveEntityById(subject.id);
+    const { threatPageStands } = await import("../world/worldJournal.js");
+    return (subject) => {
+      const id = typeof subject?.id === "string" && subject.id ? subject.id : null;
+      if (!id) return false;
+      if (subject.type === "entity") return !!resolveEntityById(id);
+      if (subject.type === "threat") return threatPageStands(id);
+      return false;
+    };
   } catch (err) {
-    console.warn(`${MODULE_ID} | ${label}: the cards the superseded narration's plans are about could not be read:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | ${label}: the cards and pages the superseded narration's plans are about could not be read:`, err?.message ?? err);
     return null;
   }
 }
@@ -1105,8 +1119,8 @@ async function plansKeptThroughSupersede(label) {
  * X-Card on it takes them (worldJournal.js undoNarrationEntries, the Secrets
  * category alone; clocks.js removeClocksMadeBy) — and, with a truth it
  * revealed, the Lore entry that reveal filed, which mirrors the plan
- * (undoRevealedTruthLore). But for a plan it filed about a card that stays:
- * that plan stays too, as filed (plansKeptThroughSupersede). Canonical GM.
+ * (undoRevealedTruthLore). But for a plan it filed about a card or a Threats
+ * page that stays: that plan stays too, as filed (plansKeptThroughSupersede). Canonical GM.
  * Never throws.
  *
  * @param {string[]} ids — the superseded narrations
