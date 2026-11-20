@@ -630,7 +630,15 @@ grant's claim — and a granted reward records the outcome it was granted at,
 strong hit's once: its second point, or its string lifted — the victory card
 carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
 lands on the roller's copy when they hold one, else on the
-PC holding the promised reward. A grant that does not land is not swallowed:
+PC holding the promised reward. It is the reward of the vow the fight served
+alone (`wonFightRewardCopies`): its copies by the track's `linkedVowId`, else —
+a fight linked by name — the vow its name names, exactly or as whole words
+(`namedVowCopies`); never the table's sole open vow, the name ladder's last
+rung, which granted another vow's promised reward when the fight's vow was
+deleted before the win. With no copy left, nothing is granted and the GMs'
+payoff card says so, with no Retry ("Any reward promised for … — the vow is on
+no character's sheet any more", issue #364
+WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN). A grant that does not land is not swallowed:
 the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
 with a one-press Retry, and "🎁 Reward earned" is posted only once the grant
 lands (issue #306 R04 — see `vow-flow.md` §4).

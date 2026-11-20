@@ -2989,16 +2989,44 @@ async function applyWonFightPayoff(track, outcome, rollerActor, { resolutionId =
   const cardVowId = vowId ?? (typeof track?.linkedVowId === "string" && track.linkedVowId ? track.linkedVowId : null);
   await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId: cardVowId, resolutionId }).catch(err =>
     console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
-  const granted = await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies }).catch(err => {
-    console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
-    return null;
-  });
+  // The reward of the vow the fight served, and no other's: with no copy of
+  // it on any sheet, nothing is granted and the GMs are told, once — the name
+  // ladder's sole-open-vow rung granted another vow's promised reward (issue
+  // #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+  const served = wonFightRewardCopies(track, vowName, copies, rollerActor?.id ?? null);
+  const granted = served.length
+    ? await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies: served }).catch(err => {
+      console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
+      return null;
+    })
+    : { ok: false, final: true, step: "reward", reason: "no-vow", servedGone: true };
   if (granted && !granted.ok) {
     await postPayoffFailureCard({
-      source: "fight", vowName, vowId: granted.vowId ?? null,
-      actorId: rollerActor?.id ?? null, outcome, failures: [granted],
+      source: "fight", vowName, vowId: granted.vowId ?? cardVowId,
+      actorId: rollerActor?.id ?? null, outcome, failures: [granted], final: granted.final === true,
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
+}
+
+/**
+ * The copies of the vow a won fight served, whose promised reward its win
+ * pays: those the track's `linkedVowId` names (fightLinkedVow's `copies`); a
+ * fight linked by id with none on any sheet served a vow deleted since — a
+ * namesake is another vow — so none; a fight linked by name, the vow its name
+ * names, exactly or as whole words (namedVowCopies). Never the table's sole
+ * open vow: resolveVowItemCopies' last rung found another vow, whose promised
+ * reward was granted (issue #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+ *
+ * @param {{ linkedVowId?: string|null }} track — the fight
+ * @param {string|null} vowName — fightLinkedVow's
+ * @param {Array<{actor, item}>|null} copies — fightLinkedVow's
+ * @param {string|null} actorId — the winner
+ * @returns {Array<{actor, item}>}
+ */
+function wonFightRewardCopies(track, vowName, copies, actorId) {
+  if (Array.isArray(copies) && copies.length) return copies;
+  if (typeof track?.linkedVowId === "string" && track.linkedVowId) return [];
+  return namedVowCopies(vowName, actorId).copies;
 }
 
 /**
@@ -6007,8 +6035,7 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // table's only other open vow, its id and all (issue #364
   // NO-VOW-ID-CARD-MARKS-WRONG-VOW). With no vow found the card has its name
   // alone, and its ⚑ asks which vow advances.
-  const found = linked ? null : resolveVowItemCopies(vowName, { actorId }).primary;
-  const primary = found && vowNameMatch(found, String(vowName ?? "").trim().toLowerCase()) > 0 ? found : null;
+  const primary = linked ? null : namedVowCopies(vowName, actorId).primary;
   const item = linked ? (linked.state === "open" ? linked.item : null)
     : (primary?.item?.system?.completed === true ? null : (primary?.item ?? null));
   const vowRank        = item?.system?.rank ?? null;
@@ -6324,6 +6351,22 @@ function rollerVowEntry(all, lo, { actorId = null, itemId = null } = {}) {
   if (!actorId || !lo) return null;
   const own = all.filter(e => e.actor?.id === actorId && vowNameMatch(e, lo) === 2);
   return own.find(e => e.item.system?.completed !== true) ?? own[0] ?? null;
+}
+
+// The vow a name names — exactly, or one inside the other as whole words
+// (vowNameMatch) — and its copies: resolveVowItemCopies without its
+// sole-open-vow rung, which found another vow for a name that names none (a
+// vow deleted, or renamed past its name). What a won fight's victory card and
+// its reward find by a name alone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW,
+// WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+//
+// @param {string|null} vowName
+// @param {string|null} [actorId] — the roller, whose own vow comes first
+// @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
+function namedVowCopies(vowName, actorId = null) {
+  const found = resolveVowItemCopies(vowName, { actorId });
+  return found.primary && vowNameMatch(found.primary, String(vowName ?? "").trim().toLowerCase()) > 0
+    ? found : { primary: null, copies: [] };
 }
 
 // Name-ladder score of a vow entry against a lowercased target: 2 exact,
@@ -7253,6 +7296,12 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
+        // A won fight whose vow is on no sheet at the win: whatever reward it
+        // promised left with it, and no other vow's is given in its place
+        // (applyWonFightPayoff; issue #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+        if (f.servedGone === true) {
+          return `Any reward promised for “${escapeChatHtml(vowName ?? "the vow")}” — ${why}; none was given, and no other vow's reward in its place.`;
+        }
         // A closing line for a step name nothing here runs (a card another
         // version wrote, or a damaged one): named as recorded, never as the reward.
         if (f.final === true && typeof f.step === "string" && f.step && f.step !== "reward") {
