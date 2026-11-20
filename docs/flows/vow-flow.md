@@ -229,7 +229,10 @@ swear the round keeps before it rolls is told exactly then), and
 (`batch/driver.js` `finishRound`), at the canonical GM's load, and when a
 GM leaves or their page stands down and leaves this GM canonical
 (`registerSojournNeedHook`, on the driver's own takeover hooks — issue #364
-SOJOURN-NO-SWEEP-ON-GM-TAKEOVER) (issue #364
+SOJOURN-NO-SWEEP-ON-GM-TAKEOVER), and once a kept Sojourn's own narration
+is written (`heldResult.keepHeldResult` — a swear told while it was written
+is refused, `narration-in-flight`; issue #364
+SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY) (issue #364
 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the refused resolve was only
 logged). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done

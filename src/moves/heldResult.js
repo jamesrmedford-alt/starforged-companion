@@ -188,6 +188,27 @@ async function resolveNeedsOfToldSwear(held) {
     .catch(err => console.warn(`${MODULE_ID} | held result: the Sojourn a sworn vow answers could not be resolved:`, err?.message ?? err));
 }
 
+/**
+ * A kept Sojourn's own narration is written and its card's claim released
+ * (keepHeldResult): a vow's swear told meanwhile found that claim held here
+ * and its resolve was refused — "This Sojourn's own narration is still being
+ * written" (sojournNeed.js resolveSojournNeed, `narration-in-flight`) — and
+ * waited for the next round's close or the canonical GM's load. The vows
+ * whose swear is told have their Sojourns resolved now
+ * (resolveToldSojournNeeds — once, by each need card's claim; issue #364
+ * SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY). A no-op for any other move. Never
+ * throws.
+ *
+ * @param {string|null} moveId — the kept result's move
+ * @returns {Promise<void>}
+ */
+async function resolveNeedsAfterSojournKept(moveId) {
+  if (moveId !== "sojourn") return;
+  await import("./sojournNeed.js")
+    .then(({ resolveToldSojournNeeds }) => resolveToldSojournNeeds())
+    .catch(err => console.warn(`${MODULE_ID} | held result: the Sojourns of the vows sworn while its narration was written could not be resolved:`, err?.message ?? err));
+}
+
 /** A working copy of the stored campaign state: the narration starts a scene and applies its sidecar on it. */
 function workingState() {
   const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
@@ -210,6 +231,7 @@ export async function keepHeldResult(message, by = "keep") {
   // Burned or improved already — its upgrade's narration closes the wait.
   if (flagsOf(message).burn?.consumed || flagsOf(message).improve?.consumed) return { applied: false, reason: "upgraded" };
   if (!claimResultUpgrade(id)) return { applied: false, reason: "in-flight" };
+  const keptMove = flagsOf(message).awaitingUpgrade?.resolution?.moveId ?? null;
   try {
     const held = flagsOf(message).awaitingUpgrade;
     const actorId = flagsOf(message).actorId ?? held.speakerActorId ?? null;
@@ -239,6 +261,8 @@ export async function keepHeldResult(message, by = "keep") {
     return { applied: true };
   } finally {
     releaseResultUpgrade(id);
+    // A kept Sojourn: a swear told while its narration was written follows it now.
+    await resolveNeedsAfterSojournKept(keptMove);
   }
 }
 

@@ -529,7 +529,9 @@ resolve refused then — a Batch Mode round is being resolved — or lost to a
 reload is made by `resolveToldSojournNeeds`, from what the vows say, once the
 round is narrated and closed (`batch/driver.js` `finishRound`), at the
 canonical GM's load, and when a GM's leaving or standing down leaves another
-GM canonical (issue #364 SOJOURN-NO-SWEEP-ON-GM-TAKEOVER) — issue #364
+GM canonical (issue #364 SOJOURN-NO-SWEEP-ON-GM-TAKEOVER), and once a kept
+Sojourn's own narration is written (`heldResult.keepHeldResult`; issue #364
+SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY) — issue #364
 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING):
 the move card reads as an improved
 result's does (`buildResolvedCardContent` — "Miss" and its lines struck,
