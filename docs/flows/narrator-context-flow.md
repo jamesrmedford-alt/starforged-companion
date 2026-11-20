@@ -51,8 +51,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   issue #362 AC02). A price that is one of the player's choices
   (`resolution.priceChoice` — Explore a Waypoint's miss with a match: Pay
   the Price, or Confront Chaos instead; Sojourn's miss: "No relief — Pay
-  the Price", or the community's need taken on with a vow, issue #364
-  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE) is settled when the
+  the Price", or the community's need taken on, issue #364
+  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — once that need is answered,
+  the help done or a vow sworn, the Sojourn is narrated again as the strong
+  hit it resolves as, a second beat whose MOVE OUTCOME says "A miss,
+  resolved as a strong hit": `moves/sojournNeed.js`,
+  SOJOURN-VOW-OPTION-REMINDER-ONLY) is settled when the
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
   table's cards — the waypoint's claim, and the option the choice card was
   resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as

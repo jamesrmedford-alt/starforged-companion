@@ -55,7 +55,7 @@ import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDe
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { upgradeStampOwed, upgradeClosedByRound } from "../batch/round.js";
+import { upgradeStampOwed, upgradeClosedByRound, isResolving } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -147,6 +147,20 @@ function storedRound() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a Batch Mode round is being resolved now — rolling, asking about
+ * its upgrades, or being narrated (round.js isResolving, the stored round).
+ * A round tells its entries once: a narration that is not the round's own
+ * waits for it (sojournNeed.js — a Sojourn miss resolved as a strong hit is
+ * narrated after the round, never beside it). False with no round, or one
+ * still collecting.
+ *
+ * @returns {boolean}
+ */
+export function roundResolvingNow() {
+  return isResolving(storedRound());
 }
 
 /**

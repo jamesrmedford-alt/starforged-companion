@@ -36,6 +36,7 @@ import {
 } from "./moves/improveResult.js";
 import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
+import { registerSojournNeedHook } from "./moves/sojournNeed.js";
 import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
@@ -9767,6 +9768,9 @@ Hooks.once("ready", () => {
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the
   // move lock — see sufferCard.js); wire its buttons.
   registerSufferCardHook();
+  // A Sojourn miss's "Community needs help": its card's ⚔ Swear an Iron Vow
+  // and ✔ It is done (issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY).
+  registerSojournNeedHook();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a
   // returning session doesn't inherit the previous run's MOVE count.

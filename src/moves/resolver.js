@@ -1115,8 +1115,12 @@ const CONSEQUENCE_MAP = {
       case "miss": return {
         ...emptyConsequences(),
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "Community needs help (Swear an Iron Vow)", route: "swear_an_iron_vow" },
-          { label: "No relief — Pay the Price",                route: "pay_the_price" },
+          // Answered — the help given, or a vow sworn to see it done — the
+          // move resolves as a strong hit (`resolvesAs`): the pick posts the
+          // community's need card, which resolves it (sojournNeed.js; issue
+          // #364 SOJOURN-VOW-OPTION-REMINDER-ONLY).
+          { label: "Community needs help — do it, or Swear an Iron Vow", route: "swear_an_iron_vow", resolvesAs: "strong_hit" },
+          { label: "No relief — Pay the Price",                          route: "pay_the_price" },
         ]},
         otherEffect: "Choose: community needs help (do it or Swear an Iron Vow → resolves as strong hit) OR no relief and situation worsens (Pay the Price)."
       };
@@ -2246,6 +2250,13 @@ function safeRollPaired(t1, t2) {
   }
 }
 
+// How a miss's answered demand is told in the MOVE OUTCOME's roll line, by
+// how it was answered (`needAnswered` — sojournNeed.js).
+const NEED_ANSWERED_ROLLS = Object.freeze({
+  vow:  "an iron vow was sworn to see the community's need done",
+  done: "the character did what the community asked",
+});
+
 /**
  * Build the formatted string injected into the Loremaster context packet.
  * Gives Loremaster the full mechanical picture so narration is coherent —
@@ -2253,7 +2264,10 @@ function safeRollPaired(t1, t2) {
  * resolutions built outside resolveMove: a Burn Momentum's (`momentumBurned`),
  * an Improve Result's (`resultImproved`, `improvedBy`) and a sheet-rolled
  * progress move's — their narrations were asked to "narrate the consequence"
- * of a move they were never named (issue #325 W20).
+ * of a move they were never named (issue #325 W20) — and a Sojourn miss
+ * resolved as a strong hit once the community's need was answered
+ * (`needAnswered`: "vow" | "done" — sojournNeed.js; issue #364
+ * SOJOURN-VOW-OPTION-REMINDER-ONLY).
  *
  * @param {Object} r — the resolution's fields
  * @returns {string}
@@ -2275,6 +2289,8 @@ export function buildLoremasterContext(r) {
     ? `Momentum burned (${r.momentumBurnedFrom ?? r.actionScore})${vs}`
     : r.resultImproved
       ? `Result improved to a strong hit${r.improvedBy ? ` (${r.improvedBy})` : ""}`
+      : r.needAnswered
+        ? `A miss, resolved as a strong hit — ${NEED_ANSWERED_ROLLS[r.needAnswered] ?? NEED_ANSWERED_ROLLS.done}`
       : r.isProgressMove
         ? `Progress score: ${r.progressScore}${vs}`
         : `Action: ${dieStr} + ${r.statValue}${r.adds ? ` + ${r.adds}` : ""} = ${r.actionScore}${vs}`;

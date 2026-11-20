@@ -457,7 +457,13 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // offers the mark-or-table choice; any other loss is a harm step, which
   // owes the resist roll instead (issue #330 D3).
   const resistMiss = isMiss && (resolution.moveId === 'endure_harm' || resolution.moveId === 'endure_stress');
-  const executorOpts = { isMiss, isMissWithMatch, resistMiss, ...targets };
+  // A choice that resolves the move as another outcome (Sojourn's "Community
+  // needs help" — `resolvesAs`, resolver.js) carries the stakes its player
+  // saw before the roll: the strong hit it resolves as is narrated with the
+  // hit as stated (sojournNeed.js).
+  const resolves = Array.isArray(prompt.options) && prompt.options.some(o => o?.resolvesAs);
+  const executorOpts = { isMiss, isMissWithMatch, resistMiss, ...targets,
+    ...(resolves && resolution.stakes ? { moveStakes: resolution.stakes } : {}) };
 
   // Non-blocking: post a choice card the player taps, instead of awaiting a
   // modal dialog INSIDE the move-concurrency lock. A dialog that failed to

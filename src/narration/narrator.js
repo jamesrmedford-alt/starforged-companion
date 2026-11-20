@@ -2419,10 +2419,12 @@ export async function postNarrationCard(narrationText, resolution, campaignState
 
 /**
  * True when the resolution's playerNarration is what a player wrote — not
- * the marker a Burn Momentum / Improve Result re-narration carries.
+ * the marker a Burn Momentum / Improve Result re-narration carries, nor the
+ * one a Sojourn miss resolved as a strong hit carries ('resolved' —
+ * moves/sojournNeed.js).
  */
 function isPlayerWrittenInput(resolution) {
-  return resolution?.inputMethod !== 'burn' && resolution?.inputMethod !== 'improve';
+  return !['burn', 'improve', 'resolved'].includes(resolution?.inputMethod);
 }
 
 /**

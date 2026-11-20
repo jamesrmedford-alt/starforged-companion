@@ -2041,6 +2041,20 @@ export async function recordMove(rolled, campaignState) {
 export async function finishMove(rolled, campaignState) {
   const { applyMoveConsequenceRiders } = pipelineHost();
   const { resolution, interpretation, rollerActor } = rolled;
+  // A vow sworn to see a community's need done (a Sojourn miss's "Community
+  // needs help" — its card wrote the vow, sojournNeed.js): the vow is sworn
+  // whatever its roll, so the Sojourn it answers is resolved as a strong hit
+  // now, after the swear's own narration (issue #364
+  // SOJOURN-VOW-OPTION-REMINDER-ONLY). Before the riders: their prompt can
+  // wait on the GM.
+  if (resolution?.moveId === "swear_an_iron_vow") {
+    const vowId = swornVowId(interpretation?.moveTargetId ?? null);
+    if (vowId) {
+      await import("./sojournNeed.js")
+        .then(({ resolveSojournNeedsForVow }) => resolveSojournNeedsForVow(vowId))
+        .catch(err => console.warn(`${MODULE_ID} | the Sojourn a sworn vow answers could not be resolved:`, err?.message ?? err));
+    }
+  }
   // Auto-apply asset consequence riders from this outcome — meters and
   // progress — so the player never adjusts resources by hand. Runs after
   // persistResolution so the move's own consequences land first; optional

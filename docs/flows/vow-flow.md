@@ -189,6 +189,23 @@ vow did not take releases the claim and whispers the presser, with no
 "🤝 Linked" card — issue #329 X07 — and a vow no character holds closes the
 Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward offer.
 
+**A vow sworn to see a community's need done.** A Sojourn miss's "Community
+needs help" is answered on the community's need card
+(`src/moves/sojournNeed.js`; combat-flow.md, issue #364
+SOJOURN-VOW-OPTION-REMINDER-ONLY). Its **⚔ Swear an Iron Vow** (relayed
+`sojourn.need`, the roller's player or a GM, claimed once on the card —
+`vowRequested`) writes the vow on the roller's sheet through
+`createCharacterVowItem` (no `vowId`) with the name and rank typed on the
+card — blank, a vow still to be named — so the hook above posts its "🆕 New
+vow recorded" card, as Begin a Session's offer does; a vow the sheet refuses
+releases the claim and the presser is told. The need card keeps the Item's
+id (`vowId`), and when a Swear an Iron Vow for that vow has been rolled and
+narrated (`movePipeline.finishMove` — `swornVowId` →
+`resolveSojournNeedsForVow`) the Sojourn it answers is resolved as a strong
+hit. Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
+a swear typed in chat is not recognised, and the need card's ✔ It is done
+resolves the Sojourn instead.
+
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
 the roll shapes momentum and the narration.

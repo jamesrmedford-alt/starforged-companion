@@ -488,7 +488,41 @@ a held result's or a Batch Mode round's after it — "No relief" picked: the
 price is delivered; "Community needs help" picked (the card's
 `chosenIndex`): the price's seed lines go and the narrator is told none is
 paid (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — it was seeded
-and told as paid in all three). The card
+and told as paid in all three). "Community needs help" is answered on a
+card of its own (`src/moves/sojournNeed.js`; issue #364
+SOJOURN-VOW-OPTION-REMINDER-ONLY — the pick posted only a "Trigger:
+swear_an_iron_vow" reminder, and nothing resolved the Sojourn as the strong
+hit the rule gives). The option carries `resolvesAs: "strong_hit"`; its
+route call's executor (`sufferDialog.runSufferCall`, the canonical GM) posts
+**the community's need** card for the choice card's own resolution
+(`postSojournNeedCard` — flags `sojournNeedCard`, `resolutionId`, `actorId`,
+the stakes shown before the roll; a pick applied from no choice card keeps
+the reminder; a card the world refuses hands the pick back,
+`reopenSufferCard`). Its two buttons relay `sojourn.need`
+(`applySojournNeedFromRelay`; the roller's player or a GM, one press at a
+time, a refused press whispered): **⚔ Swear an Iron Vow** writes the vow —
+the name and rank typed on the card, or a vow still to be named — on the
+roller's sheet (`actorBridge.createCharacterVowItem`, claimed first:
+`vowRequested`, then `vowId`), which is the existing swear flow's own entry
+(vow-flow.md §1: the createItem hook's "🆕 New vow recorded" card and its
+⚔ Swear it (roll)); **✔ It is done** is the player's word. The Sojourn is
+resolved once (`resolveSojournNeed`, the card's `resolved` claimed first) —
+by ✔, or when that vow's Swear an Iron Vow has been rolled and narrated
+(`movePipeline.finishMove` → `resolveSojournNeedsForVow`, by the vow's id;
+the vow is sworn whatever its roll): the move card reads as an improved
+result's does (`buildResolvedCardContent` — "Miss" and its lines struck,
+"✦ Resolved as a strong hit", the strong hit's text), and the strong hit is
+narrated as a **second beat** (`narrateResolution`, a resolution with
+`needAnswered` — its MOVE OUTCOME says "A miss, resolved as a strong hit" —
+the stated hit delivered, no `upgradeOf`). The miss's own narration is not
+superseded: the demand it told is what the answer answers. The X-Card
+pauses that narration as it pauses any (the cards still say resolved); a
+miss still held for Burn / Improve / Keep is kept first; and ✔ is refused,
+and says so, while a Batch Mode round is being resolved
+(`resultUpgrade.roundResolvingNow`) or the kept miss's narration is being
+written. The recover moves the strong hit grants stay the table's. Never
+answered, the Sojourn stays a miss whose price was declined. The price's
+own card
 records the price under the move that paid it
 (its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
 renders) and asks for no follow-up narration: the move's narration depicts

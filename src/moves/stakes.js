@@ -330,7 +330,8 @@ const PRICE_ALTERNATIVES = Object.freeze({
       "and do not resolve it: which it comes to is the player's to choose.",
     declined: "On this miss the player chose to answer the community's need — to do what it asks, or Swear an Iron Vow to see it done — instead of paying a price",
     after:    "Show what the community needs, or the costly demand it makes in exchange for safe harbor, and the character taking it on — " +
-      "and leave it there: the vow is Swear an Iron Vow's to tell (its own move, narrated after this one), and the refuge it wins is resolved at the table, not here.",
+      "and leave it there, the refuge not yet given: a vow is Swear an Iron Vow's to tell (its own move, narrated after this one), and once the vow is sworn " +
+      "or the help is done this move is resolved as a strong hit — the refuge it wins is told then, in a narration of its own, not here.",
   }),
 });
 
