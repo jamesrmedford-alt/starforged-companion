@@ -903,7 +903,15 @@ could not cover the session — no key on that client yet, a failed call —
 marks it `unsummarisedSession`, and the canonical GM summarises its cards into
 `previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
 after each narrator card, at the load and when its key is set — issue #347
-AB15) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
+AB15; a narration posted into the session LAST SESSION names after the mint —
+a Batch Mode round narrated late, filed under its own session — marks it
+again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
+text again from that session's cards, one summary call per late card, what a
+mint folded onto it from a session nobody began kept
+(`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
+that text and marks the session the same way, `dropLastSessionTelling`; when
+the mint carried no summary for the card's session, LAST SESSION is left as
+it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65) — mints

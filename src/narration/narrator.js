@@ -27,6 +27,7 @@ import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js'
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
+import { lastSessionTextParts, lastSessionTextFrom } from '../session/lifecycle.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
@@ -2947,6 +2948,9 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
+ *   - `previousSessionSummary` / `unsummarisedSession`: LAST SESSION's own
+ *     text dropped and its session marked for the catch-up, when it tells a
+ *     removed narration posted late into that session (dropLastSessionTelling);
  *   - `xCardRedirect`: the redirect the first narration after a GM resumes
  *     carries — set on every play, X-carded cards or not.
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
@@ -2955,10 +2959,12 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
  * @param {{ cards?: Object[]|null }} [opts]
- * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
+ * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean,
+ *   lastSessionDropped: string|null }}
  *   the X-carded cards, the truths retracted, the current session, and whether
  *   its summary was dropped — the Session Log's story End wrote from it
- *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
+ *   goes too (safety.js finishXCardRemoval, issue #345 AA27); and the session
+ *   whose LAST SESSION text was dropped, whose page's story goes the same way
  */
 export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
@@ -3013,8 +3019,46 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
     }
   }
 
+  // LAST SESSION, when it tells a removed narration that was posted late into
+  // the session it names.
+  const lastSessionDropped = dropLastSessionTelling(cs, cards);
+
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
-  return { cards, retracted, sessionId, summaryDropped };
+  return { cards, retracted, sessionId, summaryDropped, lastSessionDropped };
+}
+
+/**
+ * Take LAST SESSION's own text out of `cs` when it may tell a narration the
+ * X-Card removes: a card filed under the session LAST SESSION names — posted
+ * late into it (narratedLateIntoEarlierSession) — at or before the time the
+ * summary was last written (the catch-up after that card made it from the
+ * card: bringLastSessionUpToDate). The summary is a droppable convenience:
+ * its text goes now, what a mint folded onto it from a session nobody began
+ * stays (lifecycle.js lastSessionTextParts), and the session is marked short
+ * (`unsummarisedSession`) so the catch-up makes it again from the cards that
+ * remain — unless a later session's mark stands, whose catch-up replaces
+ * LAST SESSION anyway. Mutates `cs` (new objects; the stored ones are never
+ * changed) — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION.
+ *
+ * @param {Object} cs
+ * @param {Object[]} cards — the X-carded cards
+ * @returns {string|null} the session whose LAST SESSION text was dropped
+ */
+function dropLastSessionTelling(cs, cards) {
+  const prev = cs?.previousSessionSummary;
+  const session = typeof prev?.sessionId === 'string' && prev.sessionId ? prev.sessionId : null;
+  if (!session || session === (cs.currentSessionId ?? null)) return null;
+  const { own, between } = lastSessionTextParts(prev.text);
+  if (!own) return null;
+  const writtenAt = Date.parse(prev.updatedAt ?? '');
+  const told = (cards ?? []).some(m => (m?.flags?.[MODULE_ID]?.sessionId ?? null) === session
+    && (!Number.isFinite(writtenAt) || (messageTime(m) ?? 0) <= writtenAt));
+  if (!told) return null;
+  cs.previousSessionSummary = { ...prev, text: between };
+  if (!cs.unsummarisedSession?.sessionId) {
+    cs.unsummarisedSession = { sessionId: session, sessionNumber: prev.sessionNumber ?? null };
+  }
+  return session;
 }
 
 /**
@@ -3719,10 +3763,61 @@ export function registerRollingSummaryRefreshHook() {
       return;
     }
     refreshRollingSessionSummary();
+    // A catch-up begun before this card posted was not made from it.
+    const earlier = _sessionCatchUp;
     // A session the mint closed out short gets its LAST SESSION now, if a key
     // is here (issue #347 AB15).
     catchUpUnsummarisedSession();
+    // A narration posted into the session LAST SESSION names, after the mint
+    // that closed it, brings LAST SESSION up to date (issue #364
+    // LATE-ROUND-NOT-IN-LAST-SESSION).
+    bringLastSessionUpToDate(message, earlier);
   });
+}
+
+/**
+ * Bring LAST SESSION up to date with a narration posted into the session it
+ * names after the mint that closed that session — a Batch Mode round narrated
+ * late keeps its own session (ROUND-CARD-SESSION-ID-AFTER-MINT). The mint
+ * fixed `previousSessionSummary` from the cards present then, the card's post
+ * refreshed the current session's summary alone, and the card is in no ring
+ * of the current session: the next session's narrator was told that round's
+ * prose by nothing (issue #364 LATE-ROUND-NOT-IN-LAST-SESSION). The session is
+ * marked short again (`unsummarisedSession`, with the number LAST SESSION
+ * carries) and the catch-up summarises its cards from source — one summary
+ * call per late card, and a failed one is tried again as any catch-up is.
+ * Only for the session LAST SESSION names: when the mint carried no summary
+ * for the card's session the store has no record of it to bring up to date,
+ * and none is made up; a mark for another session — a later one, closed out
+ * short — stands. On the canonical GM (the hook's gate); the mark is a world
+ * write onto the latest store, at its turn on the write chain. Never throws.
+ *
+ * @param {ChatMessage} message — the narrator card that posted
+ * @param {Promise<boolean>|null} earlier — a catch-up in flight when it posted
+ * @returns {Promise<boolean>} whether LAST SESSION was brought up to date
+ */
+async function bringLastSessionUpToDate(message, earlier) {
+  try {
+    if (!rollingSummaryEnabled()) return false;
+    const own = message?.flags?.[MODULE_ID]?.sessionId ?? null;
+    const named = (cs) => !!own && own !== (cs?.currentSessionId ?? null) && cs?.previousSessionSummary?.sessionId === own;
+    if (!named(storedCampaignState()) || !inNarratorMemory(message, own)) return false;
+    if (earlier) await earlier;
+    const owed = await serialiseCampaignStateWrite(async () => {
+      const latest = storedCampaignState();
+      if (!named(latest)) return false;                              // a mint moved on
+      const mark = latest.unsummarisedSession ?? null;
+      if (mark?.sessionId) return mark.sessionId === own;            // owed already — or a later session's is
+      await game.settings.set(MODULE_ID, 'campaignState', { ...latest, unsummarisedSession: {
+        sessionId: own, sessionNumber: latest.previousSessionSummary.sessionNumber ?? null,
+      } });
+      return true;
+    }, 'last session owed a late narration');
+    return owed ? await catchUpUnsummarisedSession() : false;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: LAST SESSION could not be brought up to date with a late narration:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**
@@ -3896,7 +3991,13 @@ let _sessionCatchUp = null;
  * summary becomes LAST SESSION, the mark cleared. Run after each narrator card
  * (End a Session's closing vignette among them), at the world load and when
  * this GM's key is set; one at a time; fail-open — a failed or X-Carded call
- * leaves the mark for the next try. A later mint replaces the mark.
+ * leaves the mark for the next try. A later mint replaces the mark. A
+ * narration posted late into the session LAST SESSION names marks it again
+ * (bringLastSessionUpToDate), and so does an X-Card that takes one back
+ * (dropLastSessionTelling): the session's own part of the text is made again
+ * from its cards, and what a mint folded onto it from a session nobody began
+ * is kept (lifecycle.js lastSessionTextParts — issue #364
+ * LATE-ROUND-NOT-IN-LAST-SESSION).
  *
  * @returns {Promise<boolean>} whether LAST SESSION was caught up
  */
@@ -3909,6 +4010,7 @@ export function catchUpUnsummarisedSession() {
   if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
   _sessionCatchUp = (async () => {
     try {
+      const xCardPlaysAtStart = xCardPlayCount();
       const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
       const text = hasCards
         ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
@@ -3918,13 +4020,22 @@ export function catchUpUnsummarisedSession() {
       const write = serialiseCampaignStateWrite(async () => {
         const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
         if (latest.unsummarisedSession?.sessionId !== pending.sessionId) return false;   // a later mint moved on
+        // An X-Card played since the summary was made may have removed a
+        // narration it tells — one posted late into this session, which the
+        // X-Card still answers (XCARD-MISSES-LATE-ROUND-CARD): not stored,
+        // and the mark stays for the next try.
+        if (text?.trim() && xCardPlayCount() !== xCardPlaysAtStart) return false;
+        // What a mint folded onto LAST SESSION from a session nobody began is
+        // not made from this session's cards: kept as it is (issue #331 X65).
+        const prior  = latest.previousSessionSummary;
+        const folded = prior?.sessionId === pending.sessionId ? lastSessionTextParts(prior.text).between : '';
         await game.settings.set(MODULE_ID, 'campaignState', {
           ...latest,
           unsummarisedSession: null,
           ...(text?.trim() ? { previousSessionSummary: {
             sessionId:     pending.sessionId,
             sessionNumber: pending.sessionNumber ?? null,
-            text:          text.trim(),
+            text:          lastSessionTextFrom(text, folded),
             updatedAt:     new Date().toISOString(),
           } } : {}),
         });

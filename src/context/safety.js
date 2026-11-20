@@ -340,7 +340,8 @@ function removeXCardedNarration(narrator, cs) {
  * (issue #345 AA27). Fail-open per step.
  *
  * @param {Object|null} narrator
- * @param {{ cards: Object[], retracted: Object[], sessionId?: string|null, summaryDropped?: boolean }} removal
+ * @param {{ cards: Object[], retracted: Object[], sessionId?: string|null, summaryDropped?: boolean,
+ *   lastSessionDropped?: string|null }} removal
  * @returns {Promise<void>}
  */
 async function finishXCardRemoval(narrator, removal) {
@@ -428,6 +429,11 @@ async function finishXCardRemoval(narrator, removal) {
   try {
     const { retractSessionLogSummary } = await import("../world/worldJournal.js");
     await retractSessionLogSummary(removal.sessionId ?? null, { narrative: removal.summaryDropped === true });
+    // LAST SESSION told a removed narration posted late into the session it
+    // names, and was dropped with it: that session's page goes the same way,
+    // and its story is written back when LAST SESSION is made again
+    // (restoreSessionLogStory — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION).
+    if (removal.lastSessionDropped) await retractSessionLogSummary(removal.lastSessionDropped, { narrative: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: revising the Session Log's summary failed:`, err?.message ?? err);
   }

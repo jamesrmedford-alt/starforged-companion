@@ -340,7 +340,18 @@ layers. This file is the never-break list.
    summary error returns the prior text and never blocks a narration. Regen
    runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
    never inside `buildNarratorExtras`, which only reads the cached text — a
-   regen is a Haiku call over the whole session (issue #286 B7). Full drop
+   regen is a Haiku call over the whole session (issue #286 B7). LAST
+   SESSION (`previousSessionSummary`) is the same kind of text and follows the
+   same rules after the mint that kept it: a narration posted into the session
+   it names — a Batch Mode round narrated late — marks that session
+   `unsummarisedSession` again and the catch-up makes its text again from the
+   session's cards, on the canonical GM (`bringLastSessionUpToDate` →
+   `catchUpUnsummarisedSession`), keeping what a mint folded onto it from a
+   session nobody began (`lastSessionTextParts`); an X-Card that removes such
+   a narration drops the session's own text and marks it the same way
+   (`dropLastSessionTelling`); and when the mint carried no summary for the
+   card's session nothing is made up (issue #364
+   LATE-ROUND-NOT-IN-LAST-SESSION). Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 ## Tuning knobs (don't add new ones before using these)
