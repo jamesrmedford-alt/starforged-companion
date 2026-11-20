@@ -401,7 +401,12 @@ the vault and charted nothing; "Sunk" recorded a second destination for it
   Kael's tug at Bleakhold" is Bleakhold's, where the connection Kael Dros was
   the hit and the position named no place — issue #364
   SHIP-SEED-NONSPATIAL-HIT-FIRST; a seed that names no place, "alongside the
-  Covenant flagship", stays free text, issue #321 U43). A record that names no place (free text) leaves it. The Entities panel's "Set as
+  Covenant flagship", stays free text, issue #321 U43 — and it reads a name
+  of two or more words the seed holds whole before its words: a ship's or a
+  person's words are no place's, a place's name is that place — "alongside
+  the Bleakhold Runner" names no place, and "orbiting Kaan Deep" is Kaan
+  Deep's: word by word they were Bleakhold and the planet Kaan, issue #364
+  SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue

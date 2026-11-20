@@ -20,7 +20,7 @@
  * before `applySidecar` runs.
  */
 
-import { buildNameIndex, resolveEntityName, activeSectorNamesakeFirst, hasCapitalForm } from "../context/relevanceResolver.js";
+import { buildNameIndex, resolveEntityName, activeSectorNamesakeFirst, hasCapitalForm, wholeWordPattern } from "../context/relevanceResolver.js";
 import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
@@ -421,12 +421,49 @@ function lookupSector(id, campaignState) {
 }
 
 /**
+ * The multi-word names a seed holds whole: every indexed full name of two or
+ * more words that occurs in it as whole words, in any case — as
+ * relevanceResolver.matchNamesInNarration reads a name of more than one word
+ * — as character spans in the seed's order, the longer kept where two
+ * overlap. `asName`: the seed writes it as a name, each word the name
+ * capitalises (a leading article aside) capitalised as written — "the
+ * derelict starship" holds the site Derelict Starship's name in prose case.
+ * For matchSeedAgainstIndex's word scan (issue #364
+ * SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP).
+ *
+ * @param {Map<string, Object>} index — buildNameIndex's
+ * @param {string} ref
+ * @returns {Array<{ start: number, end: number, hit: Object, asName: boolean }>}
+ */
+function multiWordNamesIn(index, ref) {
+  const capital = (w) => /^\p{Lu}/u.test(w);
+  const asName  = (written, name) => {
+    const said = written.split(/\s+/);
+    return String(name ?? "").trim().split(/\s+/).every((w, i) => !capital(w)
+      || (i === 0 && /^(?:the|a|an)$/iu.test(w)) || capital(said[i] ?? "") || !hasCapitalForm(said[i] ?? ""));
+  };
+  const found = [];
+  for (const [key, entity] of index) {
+    if (!/\s/u.test(key)) continue;
+    for (const m of ref.matchAll(wholeWordPattern(key, "gi"))) {
+      found.push({ start: m.index, end: m.index + m[0].length, hit: entity, asName: asName(m[0], entity?.name) });
+    }
+  }
+  found.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+  const kept = [];
+  for (const span of found) {
+    if (!kept.some(k => span.start < k.end && k.start < span.end)) kept.push(span);
+  }
+  return kept.sort((a, b) => a.start - b.start);
+}
+
+/**
  * Match a free-text seed against the name index with tolerance for the
  * phrasing narrators and players actually use (Cluster C / F5 gap 3):
  *
  *   "Lyra"                         → exact
  *   "Lyra's orbital graveyard"     → word scan → "Lyra"
- *   "the Vault of Tears"           → word scan → "Vault" (a name part)
+ *   "the Vault of Tears"           → its whole name, read before its words
  *   "a derelict station above Kaan" → word scan → "Kaan", never "station"
  *   "holding off 734"              → word scan → "734" (Relay 734's part)
  *
@@ -454,7 +491,20 @@ function lookupSector(id, campaignState) {
  * SHIP-SEED-NONSPATIAL-HIT-FIRST, the maintainer's decision). A seed that is
  * such a name whole — "Kael Dros", "Kael's" — has nothing past it: null, as
  * does a phrase that names no place ("alongside the Covenant flagship", issue
- * #321 U43). Exported for unit testing.
+ * #321 U43).
+ *
+ * A name of two or more words the seed holds whole is read whole before its
+ * words (multiWordNamesIn): a non-place's words are taken out of the scan,
+ * and a place's name, written as a name, is a hit where it stands in the
+ * capitalised pass. Word by word, a ship or a person whose name holds a
+ * one-word place's was that place — with a ship "Bleakhold Runner",
+ * "alongside the Bleakhold Runner" put the ship at Bleakhold — and "orbiting
+ * Kaan Deep" was the planet Kaan's (issue #364
+ * SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP). Now the first names no place (free
+ * text), "alongside the Bleakhold Runner at Kaan" is Kaan's, and the second
+ * is Kaan Deep's. A place's name in prose case is left to the word scan, as
+ * its lowercase words were: "the derelict starship off Kaan" is Kaan's.
+ * Exported for unit testing.
  */
 export function matchSeedAgainstIndex(index, ref) {
   const lookup = String(ref ?? "").toLowerCase();
@@ -470,14 +520,21 @@ export function matchSeedAgainstIndex(index, ref) {
   }
 
   const entities = [...new Set(index.values())];
-  const words = String(ref).split(/\s+/)
-    .map(raw => raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter(Boolean);
+  // The multi-word names it holds whole — a place's in prose case aside.
+  const spans = multiWordNamesIn(index, String(ref)).filter(span => !isPlace(span.hit) || span.asName);
+  const words = [...String(ref).matchAll(/\S+/gu)]
+    .map(m => ({ word: m[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""), at: m.index, end: m.index + m[0].length }))
+    .filter(w => w.word);
   // The capitalised words, then the words with no capital to write. A
   // lowercase word is in neither pass. A name that is not a place's is read
-  // past.
-  for (const asked of [(w) => /^\p{Lu}/u.test(w), (w) => !hasCapitalForm(w)]) {
-    for (const word of words) {
+  // past; a multi-word name is read whole where it stands, in the first pass.
+  for (const [pass, asked] of [(w) => /^\p{Lu}/u.test(w), (w) => !hasCapitalForm(w)].entries()) {
+    for (const { word, at, end } of words) {
+      const span = spans.find(s => at < s.end && s.start < end);
+      if (span) {
+        if (pass === 0 && isPlace(span.hit)) return span.hit;
+        continue;
+      }
       if (!asked(word)) continue;
       const hit = resolveEntityName(word, entities);
       if (isPlace(hit)) return hit;
