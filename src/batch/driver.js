@@ -110,6 +110,8 @@ import {
   keepUndecidedUpgrades,
   upgradesSettled,
   undecidedUpgrades,
+  UPGRADE_IN_FLIGHT_GRACE_MS,
+  UPGRADE_IN_FLIGHT_MAX_MS,
   beginNarration,
   claimNarration,
   recoveryPlan,
@@ -737,7 +739,13 @@ async function advanceOnce() {
       // came back to the card — after the session, into the next one's chat
       // (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END).
       if (!upgradesSettled(getStoredRound()) && roundSessionOver(getStoredRound())) await keepUpgrades(null);
-      if (!upgradesSettled(getStoredRound())) return false;
+      if (!upgradesSettled(getStoredRound())) {
+        // Over, and still waiting: only for an upgrade in flight within its
+        // wait. Nothing else is due to run a pass then, so this one asks for
+        // one more when that wait lapses.
+        recheckWhenInFlightLapses(getStoredRound());
+        return false;
+      }
       // The X-Card stops a round resolving: decided, it waits for a GM to
       // resume (the lift runs this pass again), as a collecting round does —
       // it went on to its narration, and closed behind the paused notice,
@@ -1440,6 +1448,55 @@ function upgradeHandlerLive(cardId) {
   if (typeof by !== "string" || !by || by === game.user?.id) return false;
   const user = game.users?.get?.(by) ?? null;
   return !!(user?.isGM && user.active && gmPageCanAct(by));
+}
+
+// The one re-check pending for an over session's round that waits on an
+// upgrade in flight (recheckWhenInFlightLapses): its round, and its timer.
+let _inFlightRecheck = null;
+// Past the lapse, so the pass the timer runs reads the upgrade as lapsed.
+const IN_FLIGHT_RECHECK_MARGIN_MS = 250;
+
+/**
+ * An over session's round left at its upgrade step by the pass waits only
+ * for upgrades in flight — the pass kept every other — each until its wait
+ * lapses (round.js keepUndecidedUpgrades: UPGRADE_IN_FLIGHT_GRACE_MS, or
+ * UPGRADE_IN_FLIGHT_MAX_MS while its handler still runs). A handler that
+ * runs decides its entry and runs a pass itself (acceptRoundUpgrade); one
+ * that died with its page never will, and once the session is over nothing
+ * else is due to run one. So a load into an over session less than the grace
+ * after the step began left the round "being resolved" until something
+ * unrelated ran a pass — a GM's Send now, a user joining (issue #364
+ * ROUND-UPGRADE-STEP-IDLE-NO-TRIGGER, its second half). The pass runs once
+ * more when the earliest wait lapses: one timer a round, and only for a
+ * lapse still ahead — an upgrade past its wait that the pass could not keep
+ * (the world refused the write) is the GMs' Send now, never a loop here.
+ *
+ * Not a round whose session is in play: there an upgrade in flight past its
+ * grace is kept by a GM's Send now alone. And not the four idle hours
+ * themselves, which get no timer (the maintainer's decision): this waits out
+ * only a wait already running.
+ *
+ * @param {Object|null} round — as stored, after the pass
+ */
+function recheckWhenInFlightLapses(round) {
+  if (round?.phase !== ROUND_PHASE.UPGRADING || !roundSessionOver(round)) return;
+  if (_inFlightRecheck?.roundId === round.id) return;
+  const now = Date.now();
+  const waits = undecidedUpgrades(round).map(id => round.entries[id]?.upgrade).filter(u => u?.inFlight)
+    .map(u => Date.parse(u.inFlightSince ?? "")
+      + (upgradeHandlerLive(u.cardId) ? UPGRADE_IN_FLIGHT_MAX_MS : UPGRADE_IN_FLIGHT_GRACE_MS) - now)
+    .filter(ms => Number.isFinite(ms) && ms > 0);
+  if (!waits.length) return;
+  if (_inFlightRecheck) clearTimeout(_inFlightRecheck.timer);
+  const roundId = round.id;
+  const timer = setTimeout(() => {
+    if (_inFlightRecheck?.roundId === roundId) _inFlightRecheck = null;
+    const latest = getStoredRound();
+    if (latest?.id !== roundId || latest.phase !== ROUND_PHASE.UPGRADING) return;
+    advanceRound("in-flight-lapsed").catch(err =>
+      console.warn(`${MODULE_ID} | Batch Mode: the re-check of an upgrade in flight:`, err?.message ?? err));
+  }, Math.min(...waits) + IN_FLIGHT_RECHECK_MARGIN_MS);
+  _inFlightRecheck = { roundId, timer };
 }
 
 /**
