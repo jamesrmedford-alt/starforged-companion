@@ -173,7 +173,11 @@ export function buildNameIndex(entities, dismissedEntities = []) {
  *      ("Dockmaster Kael Dros");
  *   4. one capitalised first or last name that a single entity has ("Kael";
  *      "Captain Vance" → "Vance"). A lowercase word ("the station") never
- *      matches a name part.
+ *      matches a name part. A part with no capital to write — "734" for
+ *      Unit 734, a name in a script without case — is no lowercase word and
+ *      matches as written: asked for a capital, it never resolved, and a
+ *      fact about "734" stayed text beside her card (issue #364
+ *      NAME-PART-NO-CAPITAL-FORM-UNRESOLVED; namesOneWordName's rule).
  *
  * A trailing possessive is dropped first ("Kael's" → "Kael").
  *
@@ -206,7 +210,7 @@ export function resolveEntityName(name, entities, dismissedEntities = []) {
     if (hit) return hit;
   }
 
-  if (rest.length === 1 && /^\p{Lu}/u.test(rest[0])) {
+  if (rest.length === 1 && (/^\p{Lu}/u.test(rest[0]) || !hasCapitalForm(rest[0]))) {
     return parts.get(rest[0].toLowerCase()) ?? null;
   }
   return null;
