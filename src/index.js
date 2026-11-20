@@ -5462,6 +5462,15 @@ function registerRecommitHook() {
       btn.disabled = true;
       return;
     }
+    // A bond's offer whose NPC had their card deleted since (the delete's
+    // stamp — cardActions.retireBondRecommitOffersFor): retired on every
+    // client and render, and says why (issue #364
+    // PAYOFF-CARD-DEEPEN-DELETED-NPC).
+    if (liveCardFlags(message)?.offerRetired) {
+      btn.disabled = true;
+      btn.title = `${f.connectionName ?? "This connection"}'s card was deleted — there is no bond to recommit to`;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (event) => {
@@ -7278,6 +7287,35 @@ export function wirePayoffRetryButton(message, root) {
     btn.disabled = true;
     btn.textContent = "↻ Retried";
     return;
+  }
+  // A deepen with an NPC whose card was deleted since is retired (the
+  // delete's stamp — cardActions.retirePayoffDeepenStepsFor): its line is
+  // struck through and says why, and the Retry leaves it out. With every
+  // step retired there is nothing to retry — the step failed again on each
+  // press, onto a fresh card (issue #364 PAYOFF-CARD-DEEPEN-DELETED-NPC).
+  const live    = liveCardFlags(message) ?? f;
+  const steps   = Array.isArray(live.steps) ? live.steps : [];
+  const retired = (Array.isArray(live.retiredSteps) ? live.retiredSteps : []).filter(i => steps[i]);
+  if (retired.length) {
+    const lines = root.querySelector(".sf-payoff-failure")?.querySelector("ul")?.children ?? [];
+    const names = [];
+    for (const i of retired) {
+      const who = steps[i].connectionName ?? "This connection";
+      names.push(who);
+      const line = lines[i];
+      if (!line) continue;
+      line.classList.add("sf-payoff-step-retired");
+      line.setAttribute("style", "text-decoration: line-through; opacity: 0.65;");
+      line.title = `Retired — ${who}'s card was deleted: there is no bond to deepen`;
+    }
+    const whose = `${[...new Set(names)].join(", ")}'s card was deleted — there is no bond to deepen`;
+    if (retired.length >= steps.length) {
+      btn.disabled = true;
+      btn.textContent = "↻ Nothing to retry";
+      btn.title = whose;
+      return;
+    }
+    btn.title = `Apply the other steps again — once (${whose})`;
   }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);

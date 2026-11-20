@@ -602,6 +602,10 @@ needs) showing each value as it stands now. Its "↻ Retry these steps"
 `cardActions.applyPayoffRetry`, GM only, the card GM-authored) claims the
 card (`resolved`) before anything runs, then `retryPayoffSteps` re-runs each
 step the ledger does not mark landed; any that fail again go on a fresh card.
+A deepen step whose NPC's card was deleted since is retired and left out
+(the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
+#364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
+card").
 A refused claim of the reward is step `reward` (nothing given); a refused
 grant after it is step `rewardGrant`, carrying the PC and amount. Each step
 used to log to the console only — a refused legacy still paid its XP, a

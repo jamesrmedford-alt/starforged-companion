@@ -541,7 +541,13 @@ async function tearDownDeletedConnection(actor) {
  * left, which the name then means; the GMs are told which vows no longer
  * serve a connection. With the links, the won-fight cards already in chat
  * lose their "🤝 Deepen your bond with …" (cardActions.retireFightVowDeepenFor,
- * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found").
+ * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found"), and
+ * the payoff failure cards in chat lose the deepen step their Retry would run
+ * again for a bond nobody can find (cardActions.retirePayoffDeepenStepsFor).
+ * The bond recommit offers in chat for the deleted card go whatever the
+ * namesake test says — they name the card by its id
+ * (cardActions.retireBondRecommitOffersFor; issue #364
+ * PAYOFF-CARD-DEEPEN-DELETED-NPC).
  * Canonical GM (both callers). After the card's id is off `connectionIds`.
  *
  * @param {string} name — the deleted NPC's name
@@ -549,14 +555,18 @@ async function tearDownDeletedConnection(actor) {
  * @returns {Promise<void>}
  */
 async function clearDeletedConnectionReferences(name, deletedId) {
-  if (!name || connectionNamedRemains(name, deletedId)) return;
   // Dynamic imports: actorBridge and cardActions import entity modules.
+  const { retireFightVowDeepenFor, retirePayoffDeepenStepsFor, retireBondRecommitOffersFor } = await import("../moves/cardActions.js");
+  // The bond recommit offers in chat name the card by its id: this card's, namesake or not.
+  await retireBondRecommitOffersFor(deletedId);
+  if (!name || connectionNamedRemains(name, deletedId)) return;
   const { clearVowLinksToConnection } = await import("../character/actorBridge.js");
   const { cleared } = await clearVowLinksToConnection(name);
   if (cleared.length) await postVowLinksClearedNotice(name, cleared);
-  // The victory cards already in chat that offer to deepen that bond.
-  const { retireFightVowDeepenFor } = await import("../moves/cardActions.js");
+  // The victory cards already in chat that offer to deepen that bond, and
+  // the payoff failure cards whose Retry would deepen it.
   await retireFightVowDeepenFor(name);
+  await retirePayoffDeepenStepsFor(name);
 }
 
 /**

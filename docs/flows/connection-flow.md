@@ -318,6 +318,26 @@ not the NPC's record, so the NPC was still "unused" and went with the X-Card —
 kept naming a connection that no longer existed (issue #364
 XCARD-NPC-DELETE-SKIPS-TEARDOWN).
 
+That step retires two more leftovers already in chat (issue #364
+PAYOFF-CARD-DEEPEN-DELETED-NPC), as the Deepen button is retired — canonical
+GM, a flag on the card, the button rendered disabled with its reason, the
+GM-side handler applying nothing:
+- a **payoff failure card's deepen step** for that name
+  (`cardActions.retirePayoffDeepenStepsFor`, under the namesake test — a step
+  names its connection by name): the card is stamped `retiredSteps`, the
+  positions in its `steps` a Retry leaves out (`applyPayoffRetry`) and its
+  render strikes through (`index.js` `wirePayoffRetryButton`). Only that step:
+  the card's other steps keep their Retry; with every step retired the Retry
+  renders disabled ("↻ Nothing to retry") and a press that reaches the GM
+  applies and claims nothing. The Retry used to run the deepen again for a
+  connection nobody could find, which failed again onto a fresh card;
+- a **bond recommit offer** for that card
+  (`cardActions.retireBondRecommitOffersFor`, by the offer's `hostId` — the
+  card's own id, so whatever the namesake test says): stamped `offerRetired`,
+  rendered disabled (`index.js` `registerRecommitHook`), and
+  `applyRollerRecommit` recommits nothing for it. Pressed, it used to claim
+  the offer and say the connection "is no longer a connection".
+
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
 Connection seed's) goal to the record's `goal`, and `seedConnectionActor` —
