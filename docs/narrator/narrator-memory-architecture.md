@@ -188,7 +188,16 @@ CLAUDE.md "audit consumers" rule):
   X-carded card. A narration card created while the X-Card is active — its
   reply passed its check just before the play, its card on the way while the
   pause's pick ran — is removed as the X-Card removes one, on the canonical
-  GM (`registerXCardLatePostHook`, XCARD-POST-RACE). A round card is one beat: the walk back from the newest card
+  GM (`registerXCardLatePostHook`, XCARD-POST-RACE). The pick and that guard
+  also reach a narration posted since the current session was minted and filed
+  under the session before it — a round narrated late keeps its own session
+  (`narratedLateIntoEarlierSession`, issue #364 XCARD-MISSES-LATE-ROUND-CARD):
+  it is on screen, so the X-Card answers it when it is the newest narration,
+  and a beat is one session's (a narration of the current session bounds a
+  late beat; a current beat passes a late card over). The Round window's
+  newest narration reads it the same way; the ring, the rolling summary and
+  the Private Channel's ring do not — the card is its own session's story.
+  A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
   two minutes (issue #340). The pick reads the chat as it was — the messages

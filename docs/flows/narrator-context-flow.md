@@ -296,7 +296,12 @@ exclusion, a maintainer decision). In the same write as the pause,
 `suppressScene` (`src/context/safety.js`, on the canonical GM) calls
 `applyXCardToNarratorMemory` (`narrator.js`), which picks the cards with
 `xCardedNarrationCards`: the newest narrator card of the session still in
-narrator memory, with the narrator cards of the same beat — those after the
+narrator memory — or one posted since the session was minted and filed under
+the session before it, a Batch Mode round narrated late, which is on screen
+like any other (`narratedLateIntoEarlierSession`, issue #364
+XCARD-MISSES-LATE-ROUND-CARD; a beat is one session's, and the guard for a
+card that posts during the pause and the Round window's newest narration
+read it the same way) — with the narrator cards of the same beat — those after the
 last message someone sent (a forced move's post — the Roll button's re-post
 of the player's line, a button's forced move — counts as one, issue #326 W42)
 and at most two minutes older; an earlier X-Card's

@@ -44,7 +44,7 @@ import { requestGmAction, hasActiveGM, onlyStoodDownGMs } from "../multiplayer/g
 import { onGmLoadChange } from "../multiplayer/gmGate.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm, renderStakesBlock } from "./settingsPanel.js";
-import { isXCardActive } from "../narration/narrator.js";
+import { isXCardActive, narratedLateIntoEarlierSession } from "../narration/narrator.js";
 import { sanitizePlayerText } from "../narration/narratorPrompt.js";
 import { isNarrationXCarded } from "../context/safety.js";
 import { sessionInPlay } from "../session/lifecycle.js";
@@ -72,16 +72,22 @@ const RELAY_FAILURE_GM_RELOAD =
  * never one the X-Card removed: its card's `xCarded` flag lands after the
  * pause's own write, which already names it (`xCardedNarrationIds`,
  * isNarrationXCarded), and the window re-renders on that write (issue #342
- * Z32; decisions.md "The X-Card forgets what it answered").
+ * Z32; decisions.md "The X-Card forgets what it answered"). A round narrated
+ * after the next session was minted is filed under its own session and posted
+ * in this one: the newest narration posted is the one shown, so that card
+ * counts (narrator.js narratedLateIntoEarlierSession — issue #364
+ * XCARD-MISSES-LATE-ROUND-CARD; the window showed an older narration, or none).
  */
 function newestNarration() {
-  let sessionId = null;
-  try { sessionId = game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null; }
-  catch { sessionId = null; }
+  let cs = null;
+  try { cs = game.settings.get(MODULE_ID, "campaignState") ?? null; }
+  catch { cs = null; }
+  const sessionId = cs?.currentSessionId ?? null;
   const cards = (game.messages?.contents ?? []).filter(m => {
     const f = m?.flags?.[MODULE_ID];
     return f?.narratorCard && !f.narrationFallback && !f.xCarded && !isNarrationXCarded(f.narrationId) && !f.burnSuperseded
-      && (!sessionId || f.sessionId === sessionId) && typeof f.narrationText === "string" && f.narrationText.trim()
+      && (!sessionId || f.sessionId === sessionId || narratedLateIntoEarlierSession(m, cs))
+      && typeof f.narrationText === "string" && f.narrationText.trim()
       && !(Array.isArray(m.whisper) && m.whisper.length);
   });
   const last = cards[cards.length - 1];

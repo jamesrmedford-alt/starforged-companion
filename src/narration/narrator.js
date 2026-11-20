@@ -2575,6 +2575,38 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
   return true;
 }
 
+/**
+ * Whether a narration card was posted late into an earlier session: filed
+ * under a session other than the one current in `cs`, in that session's
+ * narrator memory, and posted since the current session was minted
+ * (`lastSessionTimestamp`, which only a mint stamps). A Batch Mode round
+ * whose session is over can be narrated after the world load has minted the
+ * next one, and its card keeps the round's own session
+ * (ROUND-CARD-SESSION-ID-AFTER-MINT): the table is shown it in the current
+ * session, so the readers that answer "the narration on screen" — the
+ * X-Card's pick, its guard for a card that posts during the pause, the Round
+ * window — reach it by this, where "the current session's cards" walked past
+ * it (issue #364 XCARD-MISSES-LATE-ROUND-CARD). The store names the session a
+ * mint replaced only when that session left a summary
+ * (`previousSessionSummary`), so the mint's time is the test: no card filed
+ * under another session and posted since can be anything else. The narrator's
+ * ring and the rolling summary do not read it — the card is its own
+ * session's story.
+ *
+ * @param {Object} m — a ChatMessage, or a deleted message's record
+ * @param {Object|null} cs — campaignState (`currentSessionId`, `lastSessionTimestamp`)
+ * @returns {boolean}
+ */
+export function narratedLateIntoEarlierSession(m, cs) {
+  const current = cs?.currentSessionId ?? null;
+  const own = m?.flags?.[MODULE_ID]?.sessionId ?? null;
+  if (!current || !own || own === current) return false;
+  const mintedAt = Date.parse(cs?.lastSessionTimestamp ?? '');
+  const at = messageTime(m);
+  if (!Number.isFinite(mintedAt) || at === null || at < mintedAt) return false;
+  return inNarratorMemory(m, own);
+}
+
 // ---------------------------------------------------------------------------
 // Deleted chat messages and the X-Card (issue #347 AB22)
 // ---------------------------------------------------------------------------
@@ -2772,6 +2804,15 @@ function chatAsItWas() {
 // cleared" card, or a card an earlier X-Card removed bounds the beat; when one
 // of those is newer than any narration, nothing was narrated since and the
 // X-Card removes nothing more.
+//
+// A narration posted since the session was minted but filed under the session
+// before it — a Batch Mode round narrated late (narratedLateIntoEarlierSession)
+// — is on screen like any other: when it is the newest narration, the X-Card
+// answers it, with the late narrations of its session posted in its beat. A
+// beat is one session's: a narration of the current session bounds a late
+// beat, and a late narration is passed over by a current one's (issue #364
+// XCARD-MISSES-LATE-ROUND-CARD — the pick took the current session's cards
+// alone, so it removed nothing, or an older narration instead).
 
 /** How much older than the newest X-carded card a card of the same beat may be. */
 const XCARD_BEAT_WINDOW_MS = 2 * 60 * 1000;
@@ -2794,13 +2835,18 @@ function messageTime(message) {
  * record (`deleted: true`), which flagXCardedCards passes over — never the
  * kept beat before it (issue #347 AB22).
  *
- * @param {string|null} sessionId
+ * @param {string|null} sessionId — the current session
+ * @param {Object|null} [cs] — the campaignState the card is played on: when
+ *   its session was minted (`lastSessionTimestamp`), so a narration posted
+ *   since into the session before it is reached; without it, the current
+ *   session's cards alone
  * @returns {Array<Object>} ChatMessage documents, and deleted messages' records
  */
-export function xCardedNarrationCards(sessionId) {
+export function xCardedNarrationCards(sessionId, cs = null) {
   if (!sessionId) return [];
   const messages = chatAsItWas();
-  const inMemory = { has: (m) => inNarratorMemory(m, sessionId) };
+  const minted = { currentSessionId: sessionId, lastSessionTimestamp: cs?.lastSessionTimestamp ?? null };
+  const isLate = (m) => narratedLateIntoEarlierSession(m, minted);
   const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
 
   // The newest narration, unless an earlier X-Card already answered it.
@@ -2808,7 +2854,7 @@ export function xCardedNarrationCards(sessionId) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     const f = m?.flags?.[MODULE_ID];
-    if (inMemory.has(m)) { newestIdx = i; break; }
+    if (inNarratorMemory(m, sessionId) || isLate(m)) { newestIdx = i; break; }
     if (f?.xcardClearedCard || f?.xCarded) return [];   // nothing narrated since
     // anything else — this play's own X-Card card, a person's message, another card — is passed over
   }
@@ -2817,6 +2863,13 @@ export function xCardedNarrationCards(sessionId) {
   const newest   = messages[newestIdx];
   const newestAt = messageTime(newest);
   const newestRound = newest?.flags?.[MODULE_ID]?.roundId ?? null;
+  // The beat is the newest narration's session's: the current one's, or — a
+  // narration posted late into the session before — that session's late cards.
+  const beatSession = newest?.flags?.[MODULE_ID]?.sessionId ?? null;
+  const lateBeat = beatSession !== sessionId;
+  const inMemory = { has: lateBeat
+    ? (m) => isLate(m) && (m?.flags?.[MODULE_ID]?.sessionId ?? null) === beatSession
+    : (m) => inNarratorMemory(m, sessionId) };
   const beat = [newest];
   for (let i = newestIdx - 1; i >= 0; i--) {
     const m = messages[i];
@@ -2832,12 +2885,13 @@ export function xCardedNarrationCards(sessionId) {
     // passed it and took the paced narration before it).
     if (f.bypassPacing || f.forcedMoveId) break;
     if (isBoundary(f) || f.xCarded) break;      // an earlier X-Card answered what came before
+    if (lateBeat && inNarratorMemory(m, sessionId)) break;   // the current session's narration: a late beat began after it
     if (!inMemory.has(m)) continue;             // one of this module's other cards
     const at = messageTime(m);
     if (newestAt !== null && at !== null && newestAt - at > XCARD_BEAT_WINDOW_MS) break;
     beat.unshift(m);
   }
-  return withStruckByUpgrade(beat, messages, sessionId);
+  return withStruckByUpgrade(beat, messages, beatSession);
 }
 
 /**
@@ -2854,7 +2908,7 @@ export function xCardedNarrationCards(sessionId) {
  *
  * @param {Object[]} beat — the cards the walk picked
  * @param {Object[]} messages — the chat as it was
- * @param {string} sessionId
+ * @param {string} sessionId — the beat's session (its cards' own)
  * @returns {Object[]}
  */
 function withStruckByUpgrade(beat, messages, sessionId) {
@@ -2902,15 +2956,15 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
  * @param {{ cards?: Object[]|null }} [opts]
  * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
- *   the X-carded cards, the truths retracted, their session, and whether the
- *   session's summary was dropped — the Session Log's story End wrote from it
+ *   the X-carded cards, the truths retracted, the current session, and whether
+ *   its summary was dropped — the Session Log's story End wrote from it
  *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
  */
 export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
   // `cards`: a narration that posted after the pause (XCARD-POST-RACE) —
   // removed the same way, in place of the pick.
-  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId);
+  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId, cs);
   const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
 
   const retracted = retractNarrations(cs, ids);
@@ -3004,14 +3058,17 @@ function dropXCardedPremise(cs, cards, ids) {
  */
 function summaryCoversCards(summary, sessionId, cards) {
   if (!sessionId || summary?.sessionId !== sessionId || !cards?.length) return false;
+  // The session's own cards: a narration posted late into the session before
+  // (narratedLateIntoEarlierSession) was never part of this summary's source.
+  const own = cards.filter(c => (c?.flags?.[MODULE_ID]?.sessionId ?? null) === sessionId);
   // A narration whose card was deleted (issue #347 AB22) has no place in
   // chat to count: a summary written after it may have been made from it.
   const covered = Number(summary.coveredCount) || 0;
   const writtenAt = Date.parse(summary.updatedAt ?? '');
-  if (covered > 0 && cards.some(c => c?.deleted
+  if (covered > 0 && own.some(c => c?.deleted
       && (!Number.isFinite(writtenAt) || (messageTime(c) ?? 0) <= writtenAt))) return true;
   const inMemory = sessionNarratorCards(sessionId);
-  const at = cards
+  const at = own
     .map(c => inMemory.findIndex(m => m === c || (!!m?.id && m.id === c?.id)))
     .filter(i => i >= 0);
   return at.length > 0 && Math.min(...at) < (Number(summary.coveredCount) || 0);

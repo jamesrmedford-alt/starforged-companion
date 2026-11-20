@@ -239,6 +239,10 @@ const NO_REMOVAL = Object.freeze({ cards: [], retracted: [] });
  * `xCardedNarrationIds` (its capture, a relayed sidecar and a stale merge then
  * write nothing), its oracle results dropped, its capture undone. Canonical
  * GM, on its campaignState write chain. Registered at `ready` (index.js).
+ * The card is the current session's, or one posted late into the session
+ * before it — a Batch Mode round narrated after the mint, filed under its own
+ * session (narrator.js narratedLateIntoEarlierSession; issue #364
+ * XCARD-MISSES-LATE-ROUND-CARD — the guard took the current session's alone).
  */
 export function registerXCardLatePostHook() {
   Hooks.on("createChatMessage", onNarrationPostedDuringPause);
@@ -253,7 +257,7 @@ function onNarrationPostedDuringPause(message) {
     // The cards that co-mark the family but are no narration (narrator memory's defensive excludes).
     if (f.worldJournalContradiction || f.worldJournalCard || f.recapCard || f.draftEntityCard) return undefined;
     const cs = game.settings.get(MODULE_ID, "campaignState");
-    if (!cs?.xCardActive || (f.sessionId ?? null) !== (cs.currentSessionId ?? null)) return undefined;
+    if (!cs?.xCardActive) return undefined;
     return removeNarrationPostedDuringPause(message).catch(err =>
       console.warn(`${MODULE_ID} | X-Card: removing a narration that posted after the pause failed:`, err?.message ?? err));
   } catch (err) {
@@ -268,10 +272,14 @@ async function removeNarrationPostedDuringPause(message) {
   await serialiseCampaignStateWrite(() => {
     // A copy, as the pause's own write (#302).
     const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+    // The session's own card, or one posted late into the session before it.
+    const session = message?.flags?.[MODULE_ID]?.sessionId ?? null;
+    if (session !== (cs.currentSessionId ?? null) && !narrator.narratedLateIntoEarlierSession(message, cs)) return undefined;
     removal = narrator.applyXCardToNarratorMemory(cs, { cards: [message] });
     if (!removal.cards.length) return undefined;
     return game.settings.set(MODULE_ID, "campaignState", cs);
   }, "X-Card: a narration posted after the pause");
+  if (!removal.cards.length) return;
   console.info(`${MODULE_ID} | X-Card: a narration whose card posted after the pause was removed with it.`);
   await finishXCardRemoval(narrator, removal);
 }

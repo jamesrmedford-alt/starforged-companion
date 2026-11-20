@@ -234,7 +234,11 @@ layers. This file is the never-break list.
    AA01); an oracle follow-up the X-Card interrupted, which posts no card,
    drops its raw card's own (XCARD-ORACLE-FOLLOWUP-UNWRITTEN). A narration
    card that posts while the X-Card is active is removed with it
-   (XCARD-POST-RACE), and the Chronicle entries the scribe wrote from a
+   (XCARD-POST-RACE) — one posted late into the session before the current
+   one too, which the X-Card's pick answers like any narration on screen when
+   it is the newest (`narratedLateIntoEarlierSession`: filed under another
+   session, posted since the current one was minted; issue #364
+   XCARD-MISSES-LATE-ROUND-CARD) — and the Chronicle entries the scribe wrote from a
    removed narration go too (XCARD-CHRONICLE).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
