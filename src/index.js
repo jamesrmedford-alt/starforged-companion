@@ -5246,7 +5246,7 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
  * @param {{ narration?: string, actorId?: string|null, moveId?: "fulfill_your_vow"|"forsake_your_vow",
  *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
  */
-async function postWhichVowCard({ narration, actorId = null, vows, moveId = "fulfill_your_vow" }) {
+export async function postWhichVowCard({ narration = null, actorId = null, vows, moveId = "fulfill_your_vow", lead: askedLead = null }) {
   const forsake = moveId === "forsake_your_vow";
   const buttons = vows.map(v => {
     const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
@@ -5254,7 +5254,9 @@ async function postWhichVowCard({ narration, actorId = null, vows, moveId = "ful
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
       + `title="${forsake ? "Forsake this vow" : "Roll this vow's progress"}">${forsake ? "⛓" : "🏁"} ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
-  const lead = forsake
+  // `askedLead`: a won-fight card's 🏁 whose vow its name no longer names
+  // (cardActions.js applyAttemptFulfilVow; issue #364 ATTEMPT-FULFIL-NO-ID-CARD).
+  const lead = askedLead ? askedLead : forsake
     ? (vows.length > 1
       ? "More than one of your vows is open and nothing named one of them. Choose the vow to forsake — nothing has been cleared yet."
       : "Nothing named one of your open vows. Forsake this one? Nothing has been cleared yet.")
@@ -6364,12 +6366,13 @@ function rollerVowEntry(all, lo, { actorId = null, itemId = null } = {}) {
 // sole-open-vow rung, which found another vow for a name that names none (a
 // vow deleted, or renamed past its name). What a won fight's victory card and
 // its reward find by a name alone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW,
-// WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+// WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN) — and its 🏁, exported for
+// cardActions.js applyAttemptFulfilVow (issue #364 ATTEMPT-FULFIL-NO-ID-CARD).
 //
 // @param {string|null} vowName
 // @param {string|null} [actorId] — the roller, whose own vow comes first
 // @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
-function namedVowCopies(vowName, actorId = null) {
+export function namedVowCopies(vowName, actorId = null) {
   const found = resolveVowItemCopies(vowName, { actorId });
   return found.primary && vowNameMatch(found.primary, String(vowName ?? "").trim().toLowerCase()) > 0
     ? found : { primary: null, copies: [] };

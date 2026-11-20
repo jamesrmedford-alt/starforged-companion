@@ -621,7 +621,14 @@ fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue
 after the holder fulfilled it) — or is on no sheet any more, its milestone
 and 🏁 are retired on every client and render, titled why
 (`wireFightVowButtons` → `linkedVowClosed`), and a press that reaches the
-GM marks or rolls nothing (issue #325 W29). It then grants the
+GM marks or rolls nothing (issue #325 W29). On a card with no vow id (its
+vow on no sheet by its name when posted), 🏁 rolls only a vow its name names
+(`namedVowCopies`); a name that names none asks with Fulfill Your Vow's own
+"Which vow?" card (`postWhichVowCard`, the roller's open vows, each even
+alone) and nothing is rolled until a person chooses — the name ladder's
+sole-open-vow rung rolled another vow, and with several open the forced move
+fell to the roller's one open vow (issue #364 ATTEMPT-FULFIL-NO-ID-CARD; ⚑
+asks the same way, NO-VOW-ID-CARD-MARKS-WRONG-VOW). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
