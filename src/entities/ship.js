@@ -807,13 +807,17 @@ function generateId() {
 // SEED — populate a freshly-created starship Actor from oracle rolls
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Called by the createActor hook in src/index.js when a user creates a
-// `type='starship'` Actor via the Foundry sidebar (or any path that doesn't
-// already pre-populate the flag payload). The hook handles the gating;
-// this function does the actual roll + write + silent portrait.
+// Two functions, one per branch of the createActor hook in src/index.js,
+// which runs when a user creates a `type='starship'` Actor via the Foundry
+// sidebar (or any path that doesn't already pre-populate the flag payload).
+// The hook handles the gating: with the auto-seed setting off it calls
+// registerStarshipActorLight (a blank, registered ship to Finalise later);
+// with it on, seedStarshipActor does the actual roll + write + silent
+// portrait. The Entity Panel's Finalise and the Quickstart call
+// seedStarshipActor too.
 //
 // Skip detection lives in the hook (notes / type / firstLook already set).
-// This function assumes seeding is wanted by the time it's called.
+// seedStarshipActor assumes seeding is wanted by the time it's called.
 
 /**
  * Light registration for a freshly-created starship Actor when the auto-seed
