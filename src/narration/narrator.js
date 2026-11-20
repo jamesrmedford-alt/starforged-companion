@@ -4038,16 +4038,18 @@ export function catchUpUnsummarisedSession() {
   catch { stored = null; }
   const pending = stored?.unsummarisedSession ?? null;
   if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
-  // Nothing of the session narrated yet, and its Batch Mode round still to be
-  // — the mint recorded it with no text: it stays owed, for the round's
-  // narration to make its summary (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
-  // Asked here, not in the call below: a return there before its first await
-  // would run its `finally` before `_sessionCatchUp` is set.
-  if (sessionRoundUnnarrated(pending.sessionId) && sessionNarratorCards(pending.sessionId).length === 0) {
-    return Promise.resolve(false);
-  }
-  _sessionCatchUp = (async () => {
+  const run = (async () => {
+    // None of the body runs before the memo below is set: a body that threw
+    // or returned before its first await ran its `finally` first, and the
+    // memo then kept that settled promise for the rest of the page load —
+    // every later catch-up returned it, and nothing was caught up again
+    // (issue #364 CATCHUP-MEMOISED-SETTLED-PROMISE).
+    await null;
     try {
+      // Nothing of the session narrated yet, and its Batch Mode round still to
+      // be — the mint recorded it with no text: it stays owed, for the round's
+      // narration to make its summary (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
+      if (sessionRoundUnnarrated(pending.sessionId) && sessionNarratorCards(pending.sessionId).length === 0) return false;
       const xCardPlaysAtStart = xCardPlayCount();
       const cards = sessionNarratorCards(pending.sessionId);
       const hasCards = cards.length > 0;
@@ -4111,11 +4113,12 @@ export function catchUpUnsummarisedSession() {
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
       return false;
-    } finally {
-      _sessionCatchUp = null;
     }
   })();
-  return _sessionCatchUp;
+  // … and it is cleared once the body settles, however it settles.
+  const memo = run.finally(() => { if (_sessionCatchUp === memo) _sessionCatchUp = null; });
+  _sessionCatchUp = memo;
+  return memo;
 }
 
 function refreshRollingSessionSummary({ relay = false } = {}) {
