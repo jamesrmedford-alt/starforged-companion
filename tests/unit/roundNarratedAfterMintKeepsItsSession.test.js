@@ -244,7 +244,8 @@ describe('issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT — a round of an over ses
 describe('issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT — a round opened before rounds kept their session\'s number', () => {
   /** The stored round as an earlier version opened it: its session's id, no number. */
   function roundWithoutItsSessionNumber() {
-    const { sessionNumber: _dropped, ...r } = round();
+    const r = { ...round() };
+    delete r.sessionNumber;
     table.world.setSetting('batchMode.round', r);
   }
 
