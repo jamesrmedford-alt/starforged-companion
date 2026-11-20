@@ -418,13 +418,16 @@ async function restoreAssetTrack(step) {
  * strings.
  *
  * @param {Object} s — the card's step record
- * @returns {Promise<{ ok: boolean, reason?: string }>}
+ * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string }>}
  */
 export async function retryUpgradeStep(s) {
   switch (s?.effect) {
     case "meters": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      // The character's sheet gone since: `final` — a later press finds none
+      // either, so the Retry tells the GMs once and offers no further Retry
+      // (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-CHARACTER-GONE-LOOP).
+      if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
       const changes = s.changes && typeof s.changes === "object" ? s.changes : {};
       const valid = Object.entries(changes).every(([k, v]) => PC_METERS.includes(k) && Number.isInteger(v) && Math.abs(v) <= 16);
       if (!valid) return { ok: false, reason: "invalid step" };
@@ -457,7 +460,7 @@ export async function retryUpgradeStep(s) {
       break;
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
       break;
     }
@@ -560,7 +563,8 @@ export function describeUpgradeStep(f, why) {
     }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
-      return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
+      // No card was posted, and — its character gone (`final`) — none will be.
+      return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}.${f.final === true ? "" : " Nothing on it has been chosen yet."}`;
     }
     case "assetTrack":
       return `Restore ${escapeHtml(f.name ?? (f.track === "health" ? "the companion" : "the vehicle"))}'s ${f.track === "health" ? "health" : "integrity"} by ${Number(f.amount) || 0}, which the reverted price took — ${why}.`;

@@ -1082,7 +1082,9 @@ function outstandingSessionMomentum(sessionId) {
   const names = new Set();
   for (const m of game.messages?.contents ?? []) {
     const f = m?.flags?.[MODULE_ID];
-    if (!f?.payoffFailureCard || f.resolved || f.source !== "session") continue;
+    // A card with no Retry (`retryable: false`) names what is no longer owed
+    // — a PC whose sheet is gone (index.js retryPayoffSteps): nothing waits on it.
+    if (!f?.payoffFailureCard || f.resolved || f.retryable === false || f.source !== "session") continue;
     for (const s of f.steps ?? []) {
       if (s?.step === "momentum" && s.sessionId === sessionId) names.add(game.actors?.get?.(s.pcId)?.name ?? "a character");
     }

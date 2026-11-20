@@ -6865,6 +6865,14 @@ const PAYOFF_REASONS = {
   "vow-gone":  "the vow is on no character's sheet any more",
 };
 
+// Why a `final` outcome is owed nothing any more — its line under "Not
+// applied — and no longer owed" (retryPayoffSteps). A reason not listed keeps
+// its PAYOFF_REASONS text, which already says so (the vow fulfilled, a card no
+// longer in chat, a result upgraded since).
+const PAYOFF_FINAL_REASONS = {
+  "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
+};
+
 const PAYOFF_TITLES = {
   fulfil:      (c) => `Vow payoff incomplete — “${c.vowName ?? "your vow"}”`,
   fight:       (c) => `Victory reward incomplete — “${c.vowName ?? "your vow"}”`,
@@ -6955,7 +6963,7 @@ function payoffStepRecord(f) {
 
 // One failed step, as a line of the GM card: what, why, and its value now.
 async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
-  const why = escapeChatHtml(PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
+  const why = escapeChatHtml((f.final === true ? PAYOFF_FINAL_REASONS[f.reason] : null) ?? PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
     + (f.error ? ` <span class="sf-card-hint">(${escapeChatHtml(f.error)})</span>` : "");
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   try {
@@ -7120,9 +7128,9 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
  * pressed — goes on no Retry card: the GMs are told once, on a card without
  * one, and the pressed card stays resolved. It went on a fresh Retry card
  * like any other, so every press posted another whose Retry could not succeed
- * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). Every value
- * comes from the GM-authored card. Exported for src/moves/cardActions.js
- * applyPayoffRetry.
+ * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). So does a
+ * step whose character's sheet is gone (PC_GONE). Every value comes from the
+ * GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
  *
  * @param {Object} card — the failure card's module flags
  * @returns {Promise<Array<Object>>} the steps that failed again (a `final` one is not among them)
@@ -7163,6 +7171,14 @@ export async function retryPayoffSteps(card) {
   return failures;
 }
 
+// A step's character no longer in the world — its Actor deleted since the
+// card was posted (or no longer a player character's): the step names it by
+// id, so no later press finds one either. `final`: the GMs' Retry says so
+// once, on a card with no Retry — as a plain failure it went on a fresh Retry
+// card on every press (retryPayoffSteps; issue #364
+// PAYOFF-RETRY-CHARACTER-GONE-LOOP).
+const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
+
 // Run one failed step again. The card is GM-authored, but its values are still
 // checked: a legacy is one of the three tracks, 1–40 ticks.
 async function runPayoffStep(s, card, copies) {
@@ -7182,7 +7198,7 @@ async function runPayoffStep(s, card, copies) {
       const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
       const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
       if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
     }
@@ -7193,7 +7209,7 @@ async function runPayoffStep(s, card, copies) {
       const { upgradeKindFor } = await import("./moves/resultUpgrade.js");
       const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
       // Upgraded since: the claim on the move card (`burn` / `improve`
       // `.consumed`) is never released, so the old outcome's card is owed on
@@ -7266,7 +7282,7 @@ async function runPayoffStep(s, card, copies) {
       const amount = Math.floor(Number(s.amount));
       if (!(amount >= 1 && amount <= 2)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       try {
         await applyMeterChanges(pc, { momentum: amount });
         return { ok: true };
@@ -7282,7 +7298,7 @@ async function runPayoffStep(s, card, copies) {
       const xp = Math.floor(Number(s.xp));
       if (!LEGACY_LABELS[s.track] || !(xp >= 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
@@ -7305,6 +7321,8 @@ async function runPayoffStep(s, card, copies) {
     }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      // The holder's sheet deleted since the claim: no one to give it to.
+      if (!pc) return PC_GONE;
       const given = await giveReward(pc, s.reward, s.plan);
       if (given.ok) {
         await postRewardGrantCard(s.reward, s.plan).catch(err =>
@@ -9036,7 +9054,7 @@ async function describeRiderStep(f, why, actorId) {
  *
  * @param {Object} s — the step: { rider, track, shipActorId }
  * @param {string|null} actorId — the card's PC
- * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string, error?: string }>}
  */
 async function retryRiderStep(s, actorId) {
   const rider = normaliseRider({ ...s?.rider, condition: "any" }, s?.rider?.assetName ?? "");
@@ -9047,7 +9065,7 @@ async function retryRiderStep(s, actorId) {
     return { ok, reason, error };
   }
   const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
-  if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+  if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return PC_GONE;
   const [{ ok, reason, error }] = await applyMeterRiders([rider], { characterActor: pc, shipActorId: s.shipActorId ?? null });
   // A supply loss the PC, unprepared by now, owes to another suffer move: its
   // picker is posted — the step is settled, and a second Retry would post

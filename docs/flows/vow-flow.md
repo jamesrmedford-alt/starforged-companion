@@ -634,7 +634,13 @@ an `upgradeOpen` step whose move card was deleted — issue #364
 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP; and a `choiceCard` step whose move's
 result was upgraded since — "superseded": the upgrade's claim on the move
 card is never released, so its new outcome's card stands on every later
-press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP).
+press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP; and any step
+whose character's Actor was deleted since — "no-pc" (`PC_GONE`): a
+`suffer`, `choiceCard`, `momentum`, `xp`, `rewardGrant` or `rider` step, an
+`upgrade` step's meters or choice card; its line says the character's sheet
+is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
+Retry" note skips a card with no Retry — issue #364
+PAYOFF-RETRY-CHARACTER-GONE-LOOP).
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
