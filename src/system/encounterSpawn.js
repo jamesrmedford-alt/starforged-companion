@@ -113,16 +113,6 @@ async function worldEncounterActor(canonical) {
 }
 
 /**
- * Resolve and (optionally) place an encounter Actor.
- *   GM with an active scene → reuse or import the world Actor and create its
- *   token at canvas centre.
- *   Otherwise → post a stat-summary chat card.
- *
- * @param {string} name
- * @returns {Promise<{actor: Object|null, placed: boolean}>} `actor` is the
- *   world Actor when placed, else the compendium Actor
- */
-/**
  * Where a token sits centred on a scene: its top-left, so its middle is the
  * middle of the scene's own rectangle. Foundry pads a scene (a module sector
  * scene: 10% each side), so the canvas origin is not the scene's corner —
@@ -146,6 +136,16 @@ function sceneCentreFor(scene, token = {}) {
   return { x: Math.round(left + w / 2 - tw / 2), y: Math.round(top + h / 2 - th / 2) };
 }
 
+/**
+ * Resolve and (optionally) place an encounter Actor.
+ *   GM with an active scene → reuse or import the world Actor and create its
+ *   token at canvas centre.
+ *   Otherwise → post a stat-summary chat card.
+ *
+ * @param {string} name
+ * @returns {Promise<{actor: Object|null, placed: boolean}>} `actor` is the
+ *   world Actor when placed, else the compendium Actor
+ */
 export async function spawnEncounter(name) {
   const canonical = await getCanonicalEncounterActor(name);
   if (!canonical) {
