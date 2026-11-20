@@ -659,7 +659,10 @@ applied — and no longer owed"), and the pressed card stays resolved (issue
 #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP: a won fight's milestone
 raise with the victory card deleted and its ⚑ never pressed; and a won
 fight's refused milestone mark whose vow was fulfilled, or left every sheet,
-before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; and
+before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; on a
+card that carries no vow id the vow is found by name alone, and its "no
+open vow" is final when no copy by that exact name is on any sheet,
+fulfilled ones counting — issue #364 PAYOFF-RETRY-MILESTONE-NO-VOW-ID; and
 an `upgradeOpen` step whose move card was deleted — issue #364
 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP; and a `choiceCard` step whose move's
 result was upgraded since — "superseded": the upgrade's claim on the move

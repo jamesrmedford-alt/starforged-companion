@@ -7452,8 +7452,20 @@ async function runPayoffStep(s, card, copies) {
       // once, on the vow's payoff ledger.
       const marks = Math.floor(Number(s.marks));
       if (typeof s.cardId !== "string" || !s.cardId || !(marks >= 1 && marks <= 3)) return { ok: false, reason: "invalid step" };
-      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
+      const res = await upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
         vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null });
+      // No open vow to mark, on a card that carries no vow id (neither it nor
+      // its victory card): its name is all it has, and no copy by that exact
+      // name is on any sheet — fulfilled ones counting, as VOW_GONE reads a
+      // reward's vow. Deleted, nothing is left to mark on this press or a
+      // later one: `final`, told once with no Retry. It went on a fresh Retry
+      // card each time (issue #364 PAYOFF-RETRY-MILESTONE-NO-VOW-ID). A card
+      // with a vow id is answered by that id ("vow-gone"), as before.
+      if (res?.ok === false && res.reason === "no-vow" && !(typeof res.vowId === "string" && res.vowId)
+        && !payoffVowCopies({ vowName: card.vowName ?? null, actorId: card.actorId ?? null }).length) {
+        return { ...res, final: true };
+      }
+      return res;
     }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
