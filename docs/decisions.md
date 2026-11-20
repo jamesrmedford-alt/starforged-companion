@@ -6,6 +6,185 @@ rejected.
 
 ---
 
+## Issue #364's second round of open items: a Sojourn miss answered with a vow is resolved as a strong hit, a destination names a known place only as its name and little else, no timer for an idle round (2026-11)
+
+**Decision:** (the sixteen items left open by the fixes of issue #364's open items — `known-issues.md` → "Found while fixing issue #364's open items" — settled at the maintainer's request on 2026-11-20, "Please handle the 16 items that cropped up, and any others that crop up while doing that", with the maintainer's answers to the three that were decisions, and the items found while settling them.)
+
+- **A Sojourn miss answered with the community's need is resolved as a
+  strong hit** (SOJOURN-VOW-OPTION-REMINDER-ONLY; the maintainer's answer:
+  resolve it). The option posts a need card with two answers: "⚔ Swear an
+  Iron Vow" (the vow is written to the roller's sheet and its own card rolls
+  the swear) and "✔ It is done" (the player's word). Once the swear is
+  rolled — whatever it rolls: the move asks for the vow, not for a hit on
+  it — or ✔ is pressed, the Sojourn is resolved as a strong hit. The
+  resolution is a **second beat**, not a supersede: the miss's narration
+  stands, the move card is struck and marked resolved, and the refuge is
+  narrated after it with no `upgradeOf`. The swear takes two presses (the
+  need card's, then the vow card's roll). A Swear an Iron Vow typed in chat
+  is not recognised as the answer; ✔ stays available after the vow is
+  written; ✔ is refused while a round is resolving and says so.
+- **A destination names a known place only as its name and little else**
+  (COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; the maintainer's answer: a rule).
+  A place's name inside a Set a Course destination is that place when the
+  destination is the name plus an article or a word for that kind of record
+  (settlement: settlement, community, station, outpost; location: location,
+  structure, site, station, anomaly, ruin and the derelict and vault words;
+  planet: planet; plurals count). A longer label is a new, uncharted
+  destination and the course is read as an expedition there. A fragment of
+  a place's name still names it. `!at` — the GM's own naming, whose card
+  says where it landed — and the arrival by name keep the looser reading.
+- **No timer for a round left idle with the GM's page loaded**
+  (ROUND-UPGRADE-STEP-IDLE-NO-TRIGGER; the maintainer's answer: accept). The
+  keep happens at the next advance pass or the next load. One narrow timer
+  was added for the edge the row also named: a round of an over session
+  whose Burn or Improve was in flight when the page died is re-checked once,
+  about a minute after the load, when the in-flight mark lapses — without it
+  that round waited for a GM's Send now.
+- **A filed plan names the resolution it was filed for**
+  (KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE, REVERTED-PRICE-PLAN-STAYS-WAITING):
+  `createdFrom.resolutionId`, the upgraded resolution's for a re-narration.
+  A narration does not ask again for a plan its resolution already has, and
+  a price reverted whole takes back the still-undecided plan it filed.
+- **Everything a narration does to a plan carries that narration's mark**
+  (PLAN-CLUE-TRUTH-NO-MARK, PLAN-RESOLVED-NO-MARK): a clue shown
+  (`revealedBy`), the truth revealed and its rolls shown (`truthRevealedBy`,
+  `rollsShownBy`), the story ended (`resolvedBy`) — as a played step already
+  did (`playedBy`). Taking a narration back undoes each by its mark in every
+  version of the plan; a later writer's own writes stand. The marks do not
+  leave the GM's game: the plans sent to a player's Private Channel carry a
+  step's id, text and whether it was played (PLAN-RELAY-CARRIES-PLAYED-MARK).
+- **A clock whose plan has left play stays retired**
+  (RETIRED-PLAN-CLOCK-XCARD-REACTIVATES): un-pacing asks whether the plan is
+  in play once the removed narrations are taken back. The stale pacing stamp
+  is not cleaned up; the check is where it is read.
+- **The starship sheet wins at load** (SHEET-IMPACT-NO-GM-ASSET-STALE): at
+  the canonical GM's load the Starship asset card's Battered and Cursed are
+  set to the sheet's, and the GMs are told each box that changed. A box
+  ticked on the asset card with no GM connected cannot be told apart from an
+  impact cleared on the sheet, so it is cleared too — the notice says how to
+  put it back.
+- **"⚑ pressed" is the card's stamp or the vow's ledger**
+  (FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE,
+  FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE), and a refused raise's Retry step
+  carries what the card said, so it can be paid after the card is deleted.
+- **Both deletes of an NPC card clear what named it**
+  (XCARD-NPC-DELETE-SKIPS-TEARDOWN, PAYOFF-CARD-DEEPEN-DELETED-NPC): a GM's
+  and the X-Card's share one step — vow links, the GMs' notice, victory
+  cards' Deepen, payoff failure cards' deepen steps, and bond recommit
+  offers (by the card's id, namesake or not).
+- **A word with no capital to write is no lowercase word**
+  (ONE-WORD-NAME-NO-CAPITAL-FORM, NAME-PART-NO-CAPITAL-FORM-UNRESOLVED;
+  issue #362 D6's rule, completed): a name or name part that starts with a
+  digit, or in a script without case, is matched as a whole word wherever it
+  is typed. "Unit 7" is therefore named by "I wait 7 hours".
+- **An expedition's own label follows the destination rule, and its journey
+  words are little else** (EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT): the
+  nouns expedition and journey and the prepositions to, toward, towards, for
+  and into. A preposition that places the destination beside the known
+  place (beyond, near, past, off …) never counts — that is what makes it
+  another place. The expedition a rerouted course becomes asks as the course
+  did, without the journey words.
+- **A ship position asks capitalised words first, then words with no capital
+  to write** (SHIP-SEED-NUMERIC-PART): a number may be a quantity, so "12
+  hours out from Kaan" stays Kaan's with an Outpost 12 on the map; "holding
+  off 734" is Relay 734's.
+- **A round is told and filed as its own session's, whichever pass narrates
+  it** (ROUND-CARD-SESSION-ID-AFTER-MINT): narrated after the next session
+  was minted, it is still given its session's state, and its card, ring and
+  records carry that session. A round keeps its session's number.
+- **A payoff step can be final** (FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP
+  and the Retry loops found with it): a Retry that can never succeed — the
+  card it needs deleted, the vow fulfilled or gone — tells the GMs once on a
+  card with no Retry, instead of posting a fresh Retry card on every press.
+  The same holds for a step whose character, vow, place or vehicle was
+  deleted since, or whose move was upgraded since (PAYOFF-RETRY-…-LOOP). A
+  step whose record cannot be read ("invalid step") is final by one rule in
+  the Retry — nothing rewrites a card's steps — and is told apart: no Retry
+  can apply it, so its card says to apply it by hand if it is still owed. A
+  card with no Retry is not counted by End a Session's or Begin a Session's
+  "waits on a GM's Retry" notes.
+- **A plan's rolls card goes with its plan or its reveal, struck**
+  (TAKEN-BACK-PLAN-ROLLS-CARD-STAYS). No undo path deletes a chat card: the
+  card stays with its rolls struck and a line saying why. A GM's Retire
+  leaves it.
+- **The Lore entry a reveal files is the plan's, not the narration's**
+  (SUPERSEDED-REVEAL-LORE-STANDS). It names the plan it mirrors (`revealOf`)
+  and follows the plan's truth: when a supersede takes the reveal back, the
+  entry goes back to what it was before, or is deleted if the reveal made
+  it. This does not change issue #338 D8 — the superseded narration's *own*
+  World Journal records still stand. Deleted, not retracted as the X-Card
+  does: a retracted entry keeps its mark when the truth is revealed again,
+  and a superseded fact is no bar to restating it.
+- **The X-Card's delete of an NPC retires the plans about them**
+  (XCARD-NPC-DELETE-LEAVES-PLAN), as a GM's delete does. A GM's edit of the
+  NPC's agenda does not count as the table having used the NPC.
+- **The link between a community's-need card and its vow is on the vow**
+  (SOJOURN-NEED-CARD-VOW-ID-WRITE-REFUSED): one write, at the vow's
+  creation. The card stores neither the vow's id nor a "vow requested"
+  claim; "one vow per card" rests on the canonical GM's one-press guard and
+  on a vow naming the card being on the sheet. The sheet is what the card
+  reads (SOJOURN-VOW-DELETED-BEFORE-SWORN). A swear held for Burn / Keep
+  resolves its Sojourn when it is told, not when it is rolled
+  (SOJOURN-HELD-SWEAR-ORDER). "Its swear has been told" is a durable mark on
+  the vow too (`sojournSwearTold`, never cleared), so a resolve the moment
+  refuses — a round being resolved, a refused claim — is made after the round
+  is told and closed, or at the canonical GM's next load
+  (SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING); the card's `resolved` claim stays
+  the one guard against resolving it twice.
+- **A plan about a card or a page that outlives a supersede stays, as filed**
+  (BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA, BURN-DROPS-RECORDED-THREAT-PLAN).
+  Issue #338 D8 keeps the superseded narration's records; an NPC's agenda and
+  a significant threat's plan are about those records, not about what the
+  struck narration told, so they stay — still waiting, with their rolls and
+  the struck narration's stamp, so an X-Card on the upgraded beat still takes
+  them with the card (issue #347 D2). What the struck narration did to such a
+  plan goes back by its marks, and a plan it decided goes, as before.
+- **The narration on screen can be the session before's** (XCARD-MISSES-LATE-ROUND-CARD,
+  LATE-ROUND-NOT-IN-LAST-SESSION). A narration filed under an earlier session
+  and posted since the mint — told by the mint's own time stamp, since the
+  store names the replaced session only when it left a summary — is what the
+  X-Card answers, what the post-race guard removes and what the Round window
+  shows; it stays filed under its own session, and a beat is one session's (a
+  late beat stops at a narration of the current session). LAST SESSION follows
+  it: a card filed under the session LAST SESSION names brings that summary up
+  to date through the existing catch-up, and an X-Card on such a card empties
+  LAST SESSION's own text until the catch-up makes it again. A mint keeps a
+  session still owed its summary (LAST-SESSION-OWED-LOST-AT-MINT).
+
+**Reason:** each was a defect or a gap the fixes of issue #364's open items
+left or exposed; those only "read from the code" were reproduced in a test
+first, and the four that did not show a defect are pinned by tests instead.
+
+**Rejected:** *A timer on a session's four-hour mark for a round left idle
+with the GM's page loaded* — the maintainer's answer; the next pass or load
+keeps it. *Resolving the Sojourn by superseding the miss* — the miss happened:
+the community's demand it told is what the vow or the help answers. *Asking
+the table whenever a destination holds a known name* — the maintainer chose a
+rule. *The destination rule for `!at`* — the GM's own naming, whose card says
+where it landed. *One leftmost-first scan for a ship position* — a number may
+be a quantity: it put "12 hours out from Kaan" at an Outpost 12. *Retracting
+the Lore entry of a superseded reveal* — a retracted entry keeps its mark when
+the truth is revealed again. *Deleting a withdrawn rolls card* — no undo path
+deletes a chat card. *A "vow requested" claim on the need card* — a second
+store, and it left ⚔ disabled for good when the GM's page died between the
+claim and the vow. *Returning a step that can never succeed without its step
+name* — the Retry re-posted it under the step's old name. *Stamping a late
+round's card with the session minted since* — it was told and filed as the
+next session's.
+
+**Amends:** "Issue #364's open items" (a Sojourn miss answered with the
+community's need is now resolved, not only reminded; the idle-round timer it
+rejected stays rejected, with a one-shot re-check for an upgrade in flight at a
+load; a payoff step can be final); "Issue #362 D6" (a word with no capital to
+write is no lowercase word, wherever the rule is asked); issue #338 D8 (the
+Lore entry a reveal files is the plan's mirror and follows the plan's truth on
+a supersede, and a plan about a card or page the supersede leaves stays with
+it — the superseded narration's own records still stand); "The X-Card forgets
+what it answered" (the narration on screen may be filed under the session
+before, when it was posted since the mint).
+
+---
+
 ## Issue #364's open items: a Cursed un-ticked on the starship sheet stands, a played plan step carries its narration, a price that is a choice is told as it stands (2026-11)
 
 **Decision:** (the twenty-one items left open by the issue #364 fixes — `known-issues.md` → "Found while fixing issue #364" — fixed at the maintainer's request on 2026-11-19, with the maintainer's answers to the three that were decisions.)
