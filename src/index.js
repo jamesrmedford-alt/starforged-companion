@@ -7139,6 +7139,17 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
       case "rewardGrant": {
         const pc   = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who  = escapeChatHtml(pc?.name ?? "the character");
+        // Its holder's sheet gone, on a shared vow: the vow's other
+        // characters, whom a GM may give it to by hand (decided — issue #364
+        // PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE). A vow on one sheet alone
+        // keeps the line below.
+        const others = f.final === true && f.reason === "no-pc" && Array.isArray(f.otherHolders) ? f.otherHolders.filter(Boolean) : [];
+        if (others.length) {
+          const named = others.map(n => escapeChatHtml(n));
+          const list = named.length > 1 ? `${named.slice(0, -1).join(", ")} or ${named.at(-1)}` : named[0];
+          return `The promised reward “${escapeChatHtml(f.reward?.description ?? "your reward")}” — recorded as earned, but not given: the character's sheet is gone from the world. `
+            + `The vow is shared, so a GM can give it by hand to another of its characters — ${list}.`;
+        }
         const form = f.plan?.form;
         const meter = (form === "supply" || form === "momentum") ? readCharacterSnapshot(pc)?.meters?.[form] : undefined;
         const now  = meter !== undefined ? ` ${who}'s ${form} stands at ${meter} now; this adds ${f.plan?.amount ?? 1}.` : "";
@@ -7238,6 +7249,18 @@ export async function retryPayoffSteps(card) {
     }).catch(err => console.warn(`${MODULE_ID} | payoff retry: failure card failed:`, err?.message ?? err));
   }
   return failures;
+}
+
+// The names of the characters holding a copy of a payoff card's vow other
+// than `pcId`'s — a shared vow's (the crew's inciting vow, flagged
+// `sharedVow` on every sheet, or any vow whose copies are on several
+// sheets). Empty for a vow on one sheet alone.
+function otherVowHolderNames(copies, pcId) {
+  const names = new Map();
+  for (const { actor } of Array.isArray(copies) ? copies : []) {
+    if (actor?.id && actor.id !== pcId && !names.has(actor.id)) names.set(actor.id, actor.name ?? "a character");
+  }
+  return [...names.values()];
 }
 
 // A step's character no longer in the world — its Actor deleted since the
@@ -7469,8 +7492,15 @@ async function runPayoffStep(s, card, copies) {
     }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      // The holder's sheet deleted since the claim: no one to give it to.
-      if (!pc) return PC_GONE;
+      // The holder's sheet deleted since the claim: no one to give it to. A
+      // shared vow's other characters — those holding a copy of it — are
+      // named on the closing line, for a GM who wants to give it to one of
+      // them by hand: nothing is re-granted (issue #364
+      // PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE, decided — wording only).
+      if (!pc) {
+        const others = otherVowHolderNames(copies, s.pcId);
+        return others.length ? { ...PC_GONE, otherHolders: others } : PC_GONE;
+      }
       const given = await giveReward(pc, s.reward, s.plan);
       if (given.ok) {
         await postRewardGrantCard(s.reward, s.plan).catch(err =>

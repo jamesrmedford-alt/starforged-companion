@@ -675,7 +675,11 @@ on a deleted character's asset, and an `upgrade` step's unprepared clear once
 none of its characters is left (one still in the world is cleared — one
 deleted made the whole step unreadable, issue #364
 PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE); its line says the character's sheet
-is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
+is gone (`PAYOFF_FINAL_REASONS`) — for a `rewardGrant` on a shared
+vow (its copies on other sheets: the crew's inciting vow, or any vow on several
+sheets) the line names the reward and says a GM can give it by hand to another
+of the vow's characters, naming them, with nothing re-granted (decided — issue
+#364 PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE) — and End a Session's "waits on a GM's
 Retry" note skips a card with no Retry — issue #364
 PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
 whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
