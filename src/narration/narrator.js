@@ -253,42 +253,6 @@ function maxTokensWithSidecar(baseMaxTokens) {
 // ---------------------------------------------------------------------------
 
 /**
- * The narrator's system-prompt context is assembled in exactly ONE place: here.
- * Every narrator call site — move resolution, paced narrative, scene query,
- * oracle follow-up, session vignette, inciting incident, campaign recap —
- * builds its `extras` packet through this function, so new context added here
- * reaches every path at once. This is the single seam to extend going forward;
- * do not hand-assemble `extras` at a call site (that is the per-path drift this
- * unifies away — campaign truths used to reach only the move path, entity cards
- * only three paths, the party roster only three, and the recap none).
- *
- * Context EVERY path receives (the uniform packet):
- *   - current location card, active sector anchor, campaign-truths digest
- *   - multiplayer party roster, audio-markup flag, the mode + player text
- * The creative-latitude permission block is also uniform, but resolved one
- * level up in buildNarratorSystemPrompt: move_resolution's class is dynamic
- * (passed in via the relevance result below); every other mode falls back to a
- * per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
- *
- * Relevance (entity cards + matched IDs + name map) has just two rules:
- *   - move_resolution: derived from the FULL relevance result the caller
- *     already resolved (it owns the clarification-dialog control flow and the
- *     dynamic permission class); oracle seeds — which only a move produces —
- *     ride along here too.
- *   - every other mode: resolved here lexically (no API call) from the player
- *     text ∪ scene-frame present names. Modes with no player text (vignette /
- *     inciting / recap) match nothing and rely on the sector roster for cast.
- *
- * @param {string} mode               — narrator mode (see NARRATOR_MODES)
- * @param {Object} campaignState
- * @param {Object} [opts]
- * @param {string} [opts.playerNarration] — player text this turn (lexical relevance)
- * @param {Object|null} [opts.character]  — resolved active character (names the speaking PC for the roster)
- * @param {Object|null} [opts.relevance]  — pre-resolved FULL relevance result (move path only)
- * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
- * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
- */
-/**
  * Build the shipboard-combat guidance block when a fight is active aboard the
  * command vehicle. Detects an open combat track + a command vehicle, then
  * delegates the inject/skip decision and the text to the pure battleStations
@@ -350,6 +314,43 @@ async function readSceneVowFor(extras) {
   }
 }
 
+/**
+ * The narrator's system-prompt context is assembled in exactly ONE place: here.
+ * Every narrator call site — move resolution, paced narrative, scene query,
+ * oracle follow-up, session vignette, inciting incident, campaign recap —
+ * builds its `extras` packet through this function, so new context added here
+ * reaches every path at once. This is the single seam to extend going forward;
+ * do not hand-assemble `extras` at a call site (that is the per-path drift this
+ * unifies away — campaign truths used to reach only the move path, entity cards
+ * only three paths, the party roster only three, and the recap none).
+ *
+ * Context EVERY path receives (the uniform packet):
+ *   - current location card, active sector anchor, campaign-truths digest
+ *   - multiplayer party roster, audio-markup flag, the mode + player text
+ * The creative-latitude permission block is also uniform, but resolved one
+ * level up in buildNarratorSystemPrompt: move_resolution's class is dynamic
+ * (passed in via the relevance result below); every other mode falls back to a
+ * per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
+ *
+ * Relevance (entity cards + matched IDs + name map) has just two rules:
+ *   - move_resolution: derived from the FULL relevance result the caller
+ *     already resolved (it owns the clarification-dialog control flow and the
+ *     dynamic permission class); oracle seeds — which only a move produces —
+ *     ride along here too.
+ *   - every other mode: resolved here lexically (no API call) from the player
+ *     text ∪ scene-frame present names. Modes with no player text (vignette /
+ *     inciting / recap) match nothing and rely on the sector roster for cast.
+ *
+ * @param {string} mode               — narrator mode (see NARRATOR_MODES)
+ * @param {Object} campaignState
+ * @param {Object} [opts] — the four below, and actingActorIds, planRequests,
+ *   endingTrackIds, planIds and beatClaim (see the body)
+ * @param {string} [opts.playerNarration] — player text this turn (lexical relevance)
+ * @param {Object|null} [opts.character]  — resolved active character (names the speaking PC for the roster)
+ * @param {Object|null} [opts.relevance]  — pre-resolved FULL relevance result (move path only)
+ * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
+ * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
+ */
 export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const {
     playerNarration = '',
@@ -5626,19 +5627,6 @@ export function currentLocationName(campaignState) {
 }
 
 /**
- * Build the active-sector anchor block for the narrator system prompt.
- *
- * The paced-narrative and scene-interrogation narrator paths previously had
- * no sector context whatsoever and would freely invent settlement names for
- * places the player was already inside. The move-pipeline narrator got
- * sector content through `buildSectorSection` in the assembler, but the
- * other two paths never call the assembler.
- *
- * This helper emits a directive block — not just a list — so the model is
- * pushed to *reuse* the established settlement names rather than inventing
- * alternatives. Returns empty string when no active sector is set.
- */
-/**
  * Render an established NPC's recorded profile for the active-sector roster.
  * Leads with `Name — Role` (kept as the stable head so reuse directives and
  * tests still match) and appends every other recorded attribute — goal,
@@ -5682,6 +5670,19 @@ function lostConnectionNote(c) {
   return reason ? `connection lost: ${reason}` : 'connection lost';
 }
 
+/**
+ * Build the active-sector anchor block for the narrator system prompt.
+ *
+ * The paced-narrative and scene-interrogation narrator paths previously had
+ * no sector context whatsoever and would freely invent settlement names for
+ * places the player was already inside. The move-pipeline narrator got
+ * sector content through `buildSectorSection` in the assembler, but the
+ * other two paths never call the assembler.
+ *
+ * This helper emits a directive block — not just a list — so the model is
+ * pushed to *reuse* the established settlement names rather than inventing
+ * alternatives. Returns empty string when no active sector is set.
+ */
 export function formatActiveSector(campaignState) {
   const id     = campaignState?.activeSectorId;
   if (!id) return '';
@@ -5984,21 +5985,6 @@ async function postPacedNarrationPausedCard(campaignState = null) {
 }
 
 /**
- * Short notice posted when a paced narration — a typed line the pacing
- * classifier read as narrative — could not be written: its Claude call failed
- * (overloaded, a server error, a timeout, a rate limit on the retry too), its
- * reply had no prose (issue #347 AB21), or its prompt could not be built
- * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
- * postFallbackCard and `@scene` its fallback card; the line posted nothing and
- * told nobody, after a wait of up to four minutes, and just sat in chat. Not
- * a narrator card, so it never enters the recent-narration ring, the rolling
- * summary or the chronicle; posted by the client that narrates the line (the
- * chat pipeline's, the canonical GM).
- *
- * @param {Object|null} [campaignState]
- * @returns {Promise<ChatMessage|null>}
- */
-/**
  * The pacing router's way to tell the table a line it read as narrative was
  * not narrated — a throw before narratePacedInput began (known-issues
  * PACED-ROUTER-THROW). Never throws.
@@ -6011,6 +5997,22 @@ export function tellPacedLineNotNarrated(campaignState, err) {
   return postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
 }
 
+/**
+ * Short notice posted when a paced narration — a typed line the pacing
+ * classifier read as narrative — could not be written: its Claude call failed
+ * (overloaded, a server error, a timeout, a rate limit on the retry too), its
+ * reply had no prose (issue #347 AB21), or its prompt could not be built
+ * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
+ * postFallbackCard and `@scene` its fallback card; the line posted nothing and
+ * told nobody, after a wait of up to four minutes, and just sat in chat. Not
+ * a narrator card, so it never enters the recent-narration ring, the rolling
+ * summary or the chronicle; posted by the client that narrates the line (the
+ * chat pipeline's, the canonical GM).
+ *
+ * @param {Object|null} [campaignState]
+ * @param {string} [reason] — failureReason.js clause
+ * @returns {Promise<ChatMessage|null>}
+ */
 async function postPacedNarrationFailedCard(campaignState = null, reason = claudeFailureReason(null)) {
   try {
     return await ChatMessage.create({

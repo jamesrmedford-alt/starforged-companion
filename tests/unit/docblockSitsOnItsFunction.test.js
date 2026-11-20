@@ -45,12 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/narration/narrator.js — Build the active-sector anchor block for the narrator system prompt.",
-  "src/narration/narrator.js — Short notice posted when a paced narration — a typed line the pacing",
-  "src/narration/narrator.js — The narrator's system-prompt context is assembled in exactly ONE place: here.",
-  "src/narration/narratorPrompt.js — Format a single entity record as a narrator-prompt card.",
-  "src/narration/narratorPrompt.js — Mandatory sidecar response-format instruction appended to every narrator",
-  "src/narration/narratorPrompt.js — Render a ledger subject as the human-readable prefix used in the block.",
   "src/safety/sessionLifecycleDialogs.js — Begin a Session ran again on a session already begun — say what (didn't)",
   "src/sectors/sectorSceneHooks.js — Shared gating for the two token→position handlers.",
   "src/session/lifecycle.js — Start a new session: keep the closing session's rolling summary as",
