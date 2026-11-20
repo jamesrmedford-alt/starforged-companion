@@ -421,6 +421,9 @@ async function restoreAssetTrack(step) {
  * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string }>}
  */
 export async function retryUpgradeStep(s) {
+  // What runs: the step as recorded — an unprepared clear's, its characters
+  // still in the world.
+  let step = s;
   switch (s?.effect) {
     case "meters": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
@@ -446,9 +449,8 @@ export async function retryUpgradeStep(s) {
         return { ok: false, reason: "invalid step" };
       }
       break;
-    case "unprepared":
-      if (!Array.isArray(s.pcIds) || !s.pcIds.length
-        || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
+    case "unprepared": {
+      if (!Array.isArray(s.pcIds) || !s.pcIds.length || !s.pcIds.every(id => typeof id === "string")) {
         return { ok: false, reason: "invalid step" };
       }
       // The momentum it gives back: only to its own PCs, at most the
@@ -457,7 +459,21 @@ export async function retryUpgradeStep(s) {
         || !Object.entries(s.momentumBack).every(([id, n]) => s.pcIds.includes(id) && Number.isInteger(n) && n > 0 && n <= 16))) {
         return { ok: false, reason: "invalid step" };
       }
+      // A character deleted since needs no clear (runUpgradeStep skips one):
+      // the ones still in the world are cleared, and with none left nothing
+      // is owed — `final` ("no-pc"), told once with no further Retry. One
+      // deleted character made the whole step "invalid step", so the Retry
+      // never cleared the others (issue #364
+      // PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE). An id naming an Actor
+      // that is no player character's is still a record no Retry can run.
+      const actors = s.pcIds.map(id => globalThis.game?.actors?.get?.(id) ?? null);
+      if (actors.some(a => a && !isPlayerCharacterActor(a))) return { ok: false, reason: "invalid step" };
+      const here = s.pcIds.filter((_id, i) => actors[i]);
+      if (!here.length) return { ok: false, final: true, reason: "no-pc" };
+      const back = s.momentumBack ? Object.fromEntries(Object.entries(s.momentumBack).filter(([id]) => here.includes(id))) : null;
+      step = { ...s, pcIds: here, ...(back && Object.keys(back).length ? { momentumBack: back } : { momentumBack: undefined }) };
       break;
+    }
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
@@ -470,9 +486,15 @@ export async function retryUpgradeStep(s) {
       if (!["integrity", "health"].includes(s.track) || !Number.isInteger(s.amount) || s.amount < 1 || s.amount > 5) {
         return { ok: false, reason: "invalid step" };
       }
-      if (!(typeof s.vehicleActorId === "string" && s.vehicleActorId)
-        && !(typeof s.itemId === "string" && s.itemId && isPlayerCharacterActor(globalThis.game?.actors?.get?.(s.pcId) ?? null))) {
-        return { ok: false, reason: "invalid step" };
+      if (!(typeof s.vehicleActorId === "string" && s.vehicleActorId)) {
+        if (!(typeof s.itemId === "string" && s.itemId && typeof s.pcId === "string" && s.pcId)) return { ok: false, reason: "invalid step" };
+        // An asset Item of a character deleted since: no sheet to put it
+        // back on — `final` ("no-pc"), as for a meters step; it answered
+        // "invalid step" (issue #364 PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE).
+        // An Actor there that is no player character's is a record no Retry can run.
+        const owner = globalThis.game?.actors?.get?.(s.pcId) ?? null;
+        if (!owner) return { ok: false, final: true, reason: "no-pc" };
+        if (!isPlayerCharacterActor(owner)) return { ok: false, reason: "invalid step" };
       }
       break;
     default:
@@ -480,7 +502,7 @@ export async function retryUpgradeStep(s) {
   }
   const failures = [];
   const report = {};
-  const landed = await applyUpgradeStep(s, failures, report);
+  const landed = await applyUpgradeStep(step, failures, report);
   // A clock rewind takes back the trigger its vignette narrated, as the first
   // pass's does (revertPayThePrice, issue #342 Z46): the Retry of a refused
   // rewind left the vignette live beside a clock no longer full, and the

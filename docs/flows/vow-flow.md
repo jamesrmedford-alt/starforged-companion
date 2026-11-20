@@ -667,7 +667,11 @@ card is never released, so its new outcome's card stands on every later
 press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP; and any step
 whose character's Actor was deleted since — "no-pc" (`PC_GONE`): a
 `suffer`, `choiceCard`, `momentum`, `xp`, `rewardGrant` or `rider` step, an
-`upgrade` step's meters or choice card; its line says the character's sheet
+`upgrade` step's meters or choice card, an `upgrade` step's track to restore
+on a deleted character's asset, and an `upgrade` step's unprepared clear once
+none of its characters is left (one still in the world is cleared — one
+deleted made the whole step unreadable, issue #364
+PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE); its line says the character's sheet
 is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
 Retry" note skips a card with no Retry — issue #364
 PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
