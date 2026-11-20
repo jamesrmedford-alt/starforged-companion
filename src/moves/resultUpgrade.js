@@ -643,6 +643,7 @@ const REVERSAL_CARDS = {
 export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [], resolutionId = null } = {}) {
   if (!ptpReversals) return [];
   await forgetRevertedPrice(resolutionId, kind);
+  await takeBackRevertedPricePlans(resolutionId, kind);
   const reverted = [];
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
@@ -908,6 +909,43 @@ async function forgetRevertedPrice(resolutionId, kind) {
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: the reverted price could not be taken out of the recent oracle results:`, err?.message ?? err);
     return false;
+  }
+}
+
+/**
+ * What asks for a plan on a price's behalf: the new enemy it revealed
+ * (skeletons.js planRequestsFromSeeds' `new_enemy` — the plan model is not
+ * this module's to import, secretsStayHidden.test.js). Not the expedition the
+ * move began, which stands whatever became of its price.
+ */
+const PRICE_PLAN_TRIGGERS = Object.freeze(["new_enemy"]);
+
+/**
+ * The reverted price's hidden plan goes with it (issue #364
+ * REVERTED-PRICE-PLAN-STAYS-WAITING): "A new enemy is revealed" asks the
+ * move's narration for the enemy's plan, and a narration never written — a
+ * failed call, an empty reply, one the X-Card paused — files it with its
+ * rolls alone, stamped with no narration. The supersede takes back what the
+ * move's narration wrote by that narration's id (retractSupersededNarrations),
+ * so this plan stayed: an enemy no price revealed, put to the next narration
+ * to decide. It is found by the resolution it was filed for instead
+ * (worldJournal.js undoPlansFiledFor: only while still waiting — one decided
+ * since stands). Canonical GM; a journal write. Never throws.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<number>} the plans taken back
+ */
+async function takeBackRevertedPricePlans(resolutionId, kind) {
+  if (typeof resolutionId !== "string" || !resolutionId) return 0;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return 0;
+    const { undoPlansFiledFor } = await import("../world/worldJournal.js");
+    return await undoPlansFiledFor(resolutionId, { triggers: [...PRICE_PLAN_TRIGGERS] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: the plan filed for the reverted price could not be taken back:`, err?.message ?? err);
+    return 0;
   }
 }
 

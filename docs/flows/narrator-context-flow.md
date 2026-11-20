@@ -1083,7 +1083,13 @@ after the plan's last step then runs again, empty (`rerunRetiredPlanClock`;
 issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
 capture's link), so the version before it is never pushed off the three-deep
-history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,
+history (`updateSkeleton`, issue #362 AC34); a plan filed with its rolls alone
+by a narration that was never written carries no narration's id, so a Burn
+Momentum / Improve Result that reverts its move's price entirely takes the
+price's new enemy back by the resolution it was filed for instead
+(`createdFrom.resolutionId`) — while it still waits to be decided; one decided
+since stays (`revertPayThePrice` → `worldJournal.undoPlansFiledFor`, issue
+#364 REVERTED-PRICE-PLAN-STAYS-WAITING); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute

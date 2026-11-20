@@ -1559,6 +1559,49 @@ function stepsTakenBackFrom(version, removed) {
   };
 }
 
+/**
+ * Take the hidden plans filed for a move back by the resolution they were
+ * filed for (`createdFrom.resolutionId`) — what undoNarrationEntries cannot
+ * reach (issue #364 REVERTED-PRICE-PLAN-STAYS-WAITING). A price that revealed
+ * a new enemy asks its move's narration for the enemy's plan; a narration
+ * that was never written — a failed call, an empty reply, one the X-Card
+ * paused — files it with its rolls alone under no narration's id. A Burn
+ * Momentum or Improve Result that reverts that price entirely struck its
+ * cards and took it out of the narrator's memory, and the plan stayed: an
+ * enemy no price revealed, waiting to be decided by the next narration.
+ *
+ * Only a plan still waiting — in play, nothing decided — is taken: its page
+ * is deleted, as a plan a removed narration made is. One decided since, by a
+ * later narration it was in play for or by a GM, is that writer's now and
+ * stays, as a plan another narration rewrote stays when its maker is removed
+ * (undoNarrationEntries). A plan filed before plans kept their resolution
+ * carries none, and is never found. On the caller's canonical GM. Fail-open
+ * per plan; never throws.
+ *
+ * @param {string|null} resolutionId — the move the plans were filed for
+ * @param {{ triggers?: string[] }} [opts] — what asked for the plans to take back (their `createdFrom.trigger`)
+ * @returns {Promise<number>} the plans taken back
+ */
+export async function undoPlansFiledFor(resolutionId, { triggers = [] } = {}) {
+  if (typeof resolutionId !== "string" || !resolutionId || !Array.isArray(triggers) || !triggers.length) return 0;
+  let deleted = 0;
+  const journal = findJournal(JOURNAL_NAMES.secrets);
+  for (const page of [...(journal?.pages?.contents ?? [])]) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+    const from = entry?.createdFrom;
+    if (!from || from.resolutionId !== resolutionId || !triggers.includes(from.trigger)) continue;
+    const decided = typeof entry.truth === "string" && entry.truth.trim().length > 0;
+    if ((entry.status ?? "active") !== "active" || decided) continue;
+    try {
+      await page.delete();
+      deleted += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgrade: could not take back the plan "${page?.name}" filed for a reverted price:`, err?.message ?? err);
+    }
+  }
+  return deleted;
+}
+
 /** Name a plan in play whose step the undo un-played by its mark, with the clock it links (undoNarrationEntries `stepsTakenBack`). */
 function noteStepTakenBack(out, entry) {
   if (typeof entry?.id !== "string" || (entry.status ?? "active") !== "active") return;
