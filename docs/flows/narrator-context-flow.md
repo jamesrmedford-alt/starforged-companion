@@ -633,8 +633,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   event set it (issue #362 D3: named marks told a player at the console a
   hidden plan was just made or decided) — so any GM's client reports and the
   narrating GM reads it; the ids stay on the reporting client (its pending
-  marks, and the snapshot page's log — `namedSnapshotCauses`; another GM's
-  mark logs as `out_of_date`). Several between two calls take one snapshot,
+  marks, and the snapshot page's log — `namedSnapshotCauses`, which names
+  the events after the replaced snapshot's own cut when this client took it
+  (`markSnapshotTaken`, by order, not by the clock — issue #364
+  SNAPSHOT-EVENT-SAME-MS); another GM's mark logs as `out_of_date`). Several between two calls take one snapshot,
   and the mark it answered is cleared with it; an event reported while a mark
   stands writes nothing (the next snapshot covers it), and one reported once
   the mark is answered writes a newer one.

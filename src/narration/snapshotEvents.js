@@ -110,6 +110,20 @@ const _detail = [];
 const DETAIL_KEPT = 100;
 
 /**
+ * Where each snapshot taken on this client cut `_detail`: its `takenAt` → the
+ * sequence number of the last event it answered (markSnapshotTaken). The next
+ * snapshot names the events after that cut, by order rather than by clock: by
+ * the clock (`at >= takenAt`), an event reported in the same millisecond as
+ * the snapshot that answered it was named again, and one stamped earlier by a
+ * clock stepped back was dropped (issue #364 SNAPSHOT-EVENT-SAME-MS). A
+ * snapshot taken on another client, or before this page loaded, has no cut
+ * here: the clock is all there is.
+ */
+const _cuts = new Map();
+const CUTS_KEPT = 20;
+let _seq = 0;
+
+/**
  * The marks a snapshot taken on this client has answered (`id@time`), kept
  * until the setting has dropped them: the write that drops them takes a round
  * trip, and until it lands the stored list still names them — read as
@@ -178,13 +192,33 @@ export function describeSnapshotEvent(id) {
   return EVENT_BY_ID.get(id)?.description ?? String(id ?? '');
 }
 
-/** The events that take a snapshot reported on this client at or after `sinceMs`, each id once, oldest first. */
-function snapshotEventDetail(sinceMs = 0) {
+/**
+ * The events that take a snapshot reported on this client since the snapshot
+ * being replaced, each id once, oldest first: after its cut when this client
+ * took it (`heldTakenAt`, markSnapshotTaken), else at or after `sinceMs`.
+ */
+function snapshotEventDetail(sinceMs = 0, heldTakenAt = null) {
+  const cut = typeof heldTakenAt === 'string' && _cuts.has(heldTakenAt) ? _cuts.get(heldTakenAt) : null;
   const out = [];
   for (const e of _detail) {
-    if (e.at >= (Number(sinceMs) || 0) && !out.includes(e.id)) out.push(e.id);
+    const after = cut !== null ? e.seq > cut : e.at >= (Number(sinceMs) || 0);
+    if (after && !out.includes(e.id)) out.push(e.id);
   }
   return out;
+}
+
+/**
+ * A snapshot was taken on this client, its causes named: the events reported
+ * so far are its, and the next snapshot names only those after them (by
+ * order — snapshotEventDetail). Called by worldSnapshotStore when it takes
+ * one. Memory only; bounded.
+ *
+ * @param {string} takenAt — the snapshot's `takenAt`
+ */
+export function markSnapshotTaken(takenAt) {
+  if (typeof takenAt !== 'string' || !takenAt) return;
+  _cuts.set(takenAt, _seq);
+  for (const key of [..._cuts.keys()].slice(0, Math.max(0, _cuts.size - CUTS_KEPT))) _cuts.delete(key);
 }
 
 /**
@@ -196,15 +230,16 @@ function snapshotEventDetail(sinceMs = 0) {
  * reload this client's own mark is "out_of_date" too.
  *
  * @param {Array<{ id: string, at: number }>} events — pendingSnapshotEvents' list, as the snapshot read it
- * @param {{ sinceMs?: number, also?: string[] }} [opts] — `also`: the causes the call found itself
+ * @param {{ sinceMs?: number, heldTakenAt?: string|null, also?: string[] }} [opts] — `also`: the causes the
+ *   call found itself; `heldTakenAt`: the replaced snapshot's `takenAt`, which names its cut when this client took it
  * @returns {string[]}
  */
-export function namedSnapshotCauses(events, { sinceMs = 0, also = [] } = {}) {
+export function namedSnapshotCauses(events, { sinceMs = 0, heldTakenAt = null, also = [] } = {}) {
   const own = new Set(_reportedUnder.values());
   const ids = (Array.isArray(events) ? events : [])
     .filter(e => !(e?.id === OUT_OF_DATE && own.has(markKey(e))))
     .map(e => e?.id);
-  return snapshotCauses([...snapshotEventDetail(sinceMs), ...ids, ...(Array.isArray(also) ? also : [])]);
+  return snapshotCauses([...snapshotEventDetail(sinceMs, heldTakenAt), ...ids, ...(Array.isArray(also) ? also : [])]);
 }
 
 /** The setting's marks, as stored: `[{ id, at }]` — the one opaque mark (a world from before issue #362 D3 may hold named ones). Fail-open: none. */
@@ -266,7 +301,7 @@ export function reportSnapshotEvent(id, { now = Date.now() } = {}) {
     console.debug?.(`${MODULE_ID} | world snapshot: "${id}" reported on a player's client — not marked (a GM's client reports it).`);
     return false;
   }
-  _detail.push({ id, at: now });
+  _detail.push({ id, at: now, seq: ++_seq });
   if (_detail.length > DETAIL_KEPT) _detail.splice(0, _detail.length - DETAIL_KEPT);
   if (_local.has(id) || storedEvents().length) return true;
   _local.set(id, now);
@@ -349,4 +384,6 @@ export function _resetSnapshotEventsForTests() {
   _answered.clear();
   _reportedUnder.clear();
   _detail.length = 0;
+  _cuts.clear();
+  _seq = 0;
 }
