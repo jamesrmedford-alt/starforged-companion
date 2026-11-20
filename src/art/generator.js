@@ -633,18 +633,6 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
 }
 
 /**
- * Attach a generated portrait to an Actor-hosted entity so the native Actor
- * sheet and its tokens render the art — not just the Entity Panel. The base64
- * journal copy (storeArtAsset) feeds the panel's custom HTML; Foundry document
- * image fields need a real file path, so the bytes are uploaded to the world
- * data dir and `actor.img` / the prototype-token texture point at it (per
- * docs/foundry-reference/foundry-api-reference.md → FilePicker.upload).
- *
- * No-op for journal-hosted entities (faction / creature) — they have no
- * image-bearing document. GM-gated (uploads require GM). Non-blocking:
- * a missing Actor portrait is preferable to a broken seed or narration.
- */
-/**
  * Embed (or replace) a portrait image block at the top of a starship's Notes
  * HTML (F5). Wrapped in a marker div so it can be swapped on regeneration
  * without duplicating, and so it's stripped cleanly before re-adding.
@@ -665,6 +653,18 @@ export function withPortraitInNotes(notesHtml, imgPath) {
   return block + stripped;
 }
 
+/**
+ * Attach a generated portrait to an Actor-hosted entity so the native Actor
+ * sheet and its tokens render the art — not just the Entity Panel. The base64
+ * journal copy (storeArtAsset) feeds the panel's custom HTML; Foundry document
+ * image fields need a real file path, so the bytes are uploaded to the world
+ * data dir and `actor.img` / the prototype-token texture point at it (per
+ * docs/foundry-reference/foundry-api-reference.md → FilePicker.upload).
+ *
+ * No-op for journal-hosted entities (faction / creature) — they have no
+ * image-bearing document. GM-gated (uploads require GM). Non-blocking:
+ * a missing Actor portrait is preferable to a broken seed or narration.
+ */
 async function attachPortraitToActor(journalEntryId, entityType, b64, assetId) {
   try {
     if (!b64) return;

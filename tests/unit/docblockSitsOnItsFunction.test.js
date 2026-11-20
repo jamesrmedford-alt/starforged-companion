@@ -45,7 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/art/generator.js — Attach a generated portrait to an Actor-hosted entity so the native Actor",
   "src/entities/entityExtractor.js — Collect names that have been proposed in a still-pending \"New Entities",
   "src/entities/registry.js — Register an entity's host-document id in a campaignState id list, on the",
   "src/entities/ship.js — Roll oracles to populate a starship's type / first-look / mission,",
