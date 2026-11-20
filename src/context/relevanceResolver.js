@@ -553,12 +553,16 @@ export function wholeWordPattern(token, flags = "i") {
 
 /**
  * Whether a word has a capital to write: it starts with a cased letter. A
- * digit, and a letter of a script without case, have none.
+ * digit, and a letter of a script without case, have none — so a word
+ * without one is no lowercase word, wherever "a lowercase word never names
+ * anything" is the rule: this module's name-part rung and one-word names,
+ * and the ship position's word scan (shipPosition.js matchSeedAgainstIndex,
+ * issue #364 SHIP-SEED-NUMERIC-PART), which it is exported for.
  *
  * @param {string} word
  * @returns {boolean}
  */
-function hasCapitalForm(word) {
+export function hasCapitalForm(word) {
   return /^[\p{Lu}\p{Ll}\p{Lt}]/u.test(String(word ?? ""));
 }
 

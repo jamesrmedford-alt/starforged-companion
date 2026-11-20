@@ -20,7 +20,7 @@
  * before `applySidecar` runs.
  */
 
-import { buildNameIndex, resolveEntityName, activeSectorNamesakeFirst } from "../context/relevanceResolver.js";
+import { buildNameIndex, resolveEntityName, activeSectorNamesakeFirst, hasCapitalForm } from "../context/relevanceResolver.js";
 import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
@@ -417,14 +417,23 @@ function lookupSector(id, campaignState) {
  *   "Lyra's orbital graveyard"     → word scan → "Lyra"
  *   "the Vault of Tears"           → word scan → "Vault" (a name part)
  *   "a derelict station above Kaan" → word scan → "Kaan", never "station"
+ *   "holding off 734"              → word scan → "734" (Relay 734's part)
  *
  * Precedence: full ref → possessive-stripped full ref (exact index keys) →
  * a scan of the seed's capitalised words, leftmost first, each resolved
  * through resolveEntityName's bounded ladder: a full name, or one name part
  * a single entity has. A lowercase word is never looked up, so a common noun
  * cannot match a name part (issue #321 U43: "a derelict station" docked the
- * ship at Bleakhold Station). Returns the hit or null. Exported for unit
- * testing.
+ * ship at Bleakhold Station). A word with no capital to write — a number, a
+ * name in a script without case — is no lowercase word, and is looked up as
+ * written (relevanceResolver.hasCapitalForm, the resolver's own rule for a
+ * name part): the scan asked every word for a capital before the resolver
+ * was asked, so "holding off 734" named no place — free text, and the
+ * sector token stayed (issue #364 SHIP-SEED-NUMERIC-PART). Such words are
+ * asked after the capitalised ones, leftmost first again: a capital says a
+ * word is written as a name, and a number may be a quantity — "12 hours out
+ * from Kaan" is Kaan's with an Outpost 12 on the map, as it was. Returns the
+ * hit or null. Exported for unit testing.
  */
 export function matchSeedAgainstIndex(index, ref) {
   const lookup = String(ref ?? "").toLowerCase();
@@ -437,11 +446,17 @@ export function matchSeedAgainstIndex(index, ref) {
   }
 
   const entities = [...new Set(index.values())];
-  for (const raw of String(ref).split(/\s+/)) {
-    const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-    if (!/^\p{Lu}/u.test(word)) continue;
-    const hit = resolveEntityName(word, entities);
-    if (hit) return hit;
+  const words = String(ref).split(/\s+/)
+    .map(raw => raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+  // The capitalised words, then the words with no capital to write. A
+  // lowercase word is in neither pass.
+  for (const asked of [(w) => /^\p{Lu}/u.test(w), (w) => !hasCapitalForm(w)]) {
+    for (const word of words) {
+      if (!asked(word)) continue;
+      const hit = resolveEntityName(word, entities);
+      if (hit) return hit;
+    }
   }
   return null;
 }

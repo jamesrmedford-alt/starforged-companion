@@ -365,7 +365,8 @@ at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
   ARRIVAL-LOCATION-PHRASE-SPLIT; since issue #345 AA23 the resolver's last
   rung is whole words either way, which finds a place named in words around
   it too — the position's scan still adds a name part, "Kovash" for the
-  Kovash Hulk). A record that names no place (free text) leaves it. The Entities panel's "Set as
+  Kovash Hulk, or one with no capital to write, "734" for Relay 734: issue
+  #364 SHIP-SEED-NUMERIC-PART). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
