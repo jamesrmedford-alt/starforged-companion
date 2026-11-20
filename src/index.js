@@ -225,7 +225,7 @@ import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
-import { registerStarshipConditionSync } from "./entities/ship.js";
+import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
   DEFAULT_NPC_VOICE_ID,
@@ -9545,6 +9545,18 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | ship integrity reconcile failed:`, err?.message ?? err);
+      }
+      try {
+        // Issue #364 SHEET-IMPACT-NO-GM-ASSET-STALE — the same load brings
+        // each starship's STARSHIP asset card to its sheet's impacts: one
+        // toggled while no GM was connected was never mirrored, and the
+        // card's next edit wrote the stale box back over the sheet.
+        const cards = await reconcileStarshipAssetConditions();
+        if (cards.mirrored) {
+          console.log(`${MODULE_ID} | ship impacts: brought ${cards.mirrored} STARSHIP asset card(s) to their sheet's impacts`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | ship impacts reconcile failed:`, err?.message ?? err);
       }
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");

@@ -614,7 +614,9 @@ export async function changeIntegrity(actorId, delta, { restore = false } = {}) 
  *     the module holds no record of has its impacts written directly — and
  *     its cursed is permanent too: the un-tick is not written, and the box is
  *     ticked again (issue #364 STARSHIP-UNTRACKED-CURSED-CLEAR).
- * Canonical GM only. Never throws.
+ * Canonical GM only — an impact toggled while none is connected is mirrored
+ * at the next canonical GM's world load (reconcileStarshipAssetConditions).
+ * Never throws.
  */
 export function registerStarshipConditionSync() {
   Hooks.on("updateActor", async (actor, change) => {
@@ -672,6 +674,72 @@ export function registerStarshipConditionSync() {
       console.warn(`${MODULE_ID} | starship conditions: the STARSHIP asset's condition could not be written to ${item?.parent?.name ?? "its starship"}'s impacts:`, err?.message ?? err);
     }
   });
+}
+
+/**
+ * World-load reconcile of each starship's STARSHIP asset conditions with its
+ * native impacts (issue #364 SHEET-IMPACT-NO-GM-ASSET-STALE). The mirror above
+ * (registerStarshipConditionSync) runs on the canonical GM, so an impact
+ * toggled on the starship sheet while no GM was connected never reached the
+ * asset card: its box kept the old value, and the next edit of that card's
+ * conditions read the stale box as a fresh tick and wrote it to the impact —
+ * a Battered, or a Cursed, cleared on the sheet was ticked again (against
+ * decisions.md → "A Cursed un-ticked on the starship sheet stands").
+ *
+ * The canonical GM's load brings each asset's boxes to the native impacts —
+ * the canonical store — before any such edit: every `starship` Actor, with a
+ * module record or without one (the mirror serves both). Nothing is written
+ * where the two agree, and the write is the mirror's own (`conditionMirror`,
+ * which the `updateItem` branch skips). A box ticked on the asset card while
+ * no GM was connected is the same disagreement seen from the other side, and
+ * the two cannot be told apart at load — so the GMs are whispered what each
+ * card showed and what it shows now. Never throws.
+ *
+ * @returns {Promise<{ mirrored: number }>} the starships whose asset card was written
+ */
+export async function reconcileStarshipAssetConditions() {
+  const summary = { mirrored: 0 };
+  if (!isCanonicalGM()) return summary;
+  for (const actor of [...(globalThis.game?.actors ?? [])]) {
+    if (actor?.type !== "starship") continue;
+    try {
+      const card = readCommandVehicleConditions(actor);
+      if (!card) continue;
+      const native = actor.system?.debility ?? {};
+      const impacts = Object.fromEntries(["battered", "cursed"]
+        .filter(key => typeof native[key] === "boolean").map(key => [key, native[key]]));
+      if (!(await setCommandVehicleConditions(actor, impacts))) continue;
+      summary.mirrored += 1;
+      postConditionsReconciledNotice(actor.name, card, readCommandVehicleConditions(actor) ?? card);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | starship conditions: reconciling ${actor?.name ?? "a starship"}'s STARSHIP asset with its impacts failed:`, err?.message ?? err);
+    }
+  }
+  return summary;
+}
+
+/**
+ * GM whisper: the world load found a starship's STARSHIP asset card and its
+ * sheet's impacts disagreeing, and brought the card to the sheet
+ * (reconcileStarshipAssetConditions). Which was edited while no GM was
+ * connected cannot be known, so the GMs are told each box that changed and
+ * how to put it right if the card was. Never throws.
+ */
+function postConditionsReconciledNotice(name, before, after) {
+  const changed = ["battered", "cursed"].filter(key => before[key] !== after[key]);
+  if (!changed.length) return;
+  const label = (key) => key[0].toUpperCase() + key.slice(1);
+  const lines = changed.map(key => `<li><strong>${label(key)}</strong>: the card showed it ${before[key] ? "ticked" : "clear"}, `
+    + `the sheet has it ${after[key] ? "marked" : "clear"} — the card's box is ${after[key] ? "ticked" : "cleared"} now.</li>`).join("");
+  const gmIds = globalThis.game?.users?.filter ? globalThis.game.users.filter(u => u.isGM).map(u => u.id) : [];
+  Promise.resolve(globalThis.ChatMessage?.create?.({
+    content: `<div class="sf-migrate-card"><div class="sf-migrate-label">◈ Ship impacts — the Starship asset card now matches the sheet</div>`
+      + `<p><strong>${escapeHtml(name ?? "The ship")}</strong>: its Starship asset card and the impacts on its sheet disagreed — `
+      + `one of them was changed while no GM was connected. The sheet's impacts are the ship's, so the card follows them:</p>`
+      + `<ul>${lines}</ul><p>If the card was right, set the impact on the ship's sheet.</p></div>`,
+    whisper: gmIds,
+    flags:   { [MODULE_ID]: { shipConditionsReconciledNotice: true } },
+  })).catch(err => console.warn(`${MODULE_ID} | starship conditions: the GM notice failed:`, err?.message ?? err));
 }
 
 /**
