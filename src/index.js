@@ -6960,6 +6960,8 @@ function payoffStepRecord(f) {
     case "upgrade":     return upgradeStepRecord(f);
     case "upgradeOpen": return { step: "upgradeOpen", messageId: f.messageId ?? null, moveName: f.moveName ?? null,
       kinds: (Array.isArray(f.kinds) ? f.kinds : []).filter(k => k === "burn" || k === "improve") };
+    case "heldWait":    return { step: "heldWait", messageId: f.messageId ?? null, moveName: f.moveName ?? null,
+      by: f.by === "improve" ? "improve" : "burn" };
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
       clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
@@ -7023,6 +7025,15 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
           : open ? " It is open now."
           : " Its buttons wait until this lands; the result is recorded, and its roller has not decided.";
         return `${escapeChatHtml(upgradeButtonNames(f.kinds))} on ${escapeChatHtml(pc?.name ?? "the roller")}'s ${escapeChatHtml(f.moveName ?? "move")} card, opened once its result was recorded — ${why}.${now}`;
+      }
+      case "heldWait": {
+        // A held result's wait its Burn / Improve could not close (issue #364 HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN).
+        const pc   = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        const card = f.messageId ? (game.messages?.get?.(f.messageId) ?? null) : null;
+        const now  = !card ? " The card is no longer in chat."
+          : card.flags?.[MODULE_ID]?.awaitingUpgrade?.open !== true ? " It is closed now."
+          : " Until it is, the card still offers Keep the result — the upgraded result is paid and narrated already.";
+        return `${escapeChatHtml(pc?.name ?? "The roller")}'s ${escapeChatHtml(f.moveName ?? "move")} card, closed to Burn / Improve / Keep once its ${f.by === "improve" ? "Improve Result" : "Burn Momentum"} was applied — ${why}.${now}`;
       }
       case "momentum": {
         // A PC's Begin / End a Session momentum (issue #311 P08).
@@ -7282,6 +7293,16 @@ async function runPayoffStep(s, card, copies) {
       // card each time (issue #364 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP).
       if (!card) return { ok: false, final: true, reason: "card-gone" };
       return openRecordedUpgrades(card, s.kinds);
+    }
+    case "heldWait": {
+      // A held result's wait its Burn / Improve could not close (issue #364
+      // HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN): closed now, and only closed —
+      // the upgraded result was paid and narrated when it was applied. The
+      // move card deleted since: nothing to close, on any later press.
+      const { closeUpgradedWait } = await import("./moves/heldResult.js");
+      const card = typeof s.messageId === "string" ? (game.messages?.get?.(s.messageId) ?? null) : null;
+      if (!card) return { ok: false, final: true, reason: "card-gone" };
+      return closeUpgradedWait(card, s.by);
     }
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).

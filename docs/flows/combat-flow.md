@@ -521,7 +521,9 @@ side: the cards its `sojournNeedCard` names, `actorBridge.needCardIdsOfVow`;
 the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
 is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
 Sojourn after the held swear's keep, or after its upgrade's narration (told
-by `narrateHeldUpgrade` whether or not the card's wait could be closed —
+by `narrateHeldUpgrade` whether or not the card's wait could be closed — a
+close the world refused goes to the GMs' Retry, issue #364
+HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN;
 issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED) —
 issue #364 SOJOURN-HELD-SWEAR-ORDER; that the swear has been told is written
 on the vow (`sojournSwearTold`, `actorBridge.markNeedVowSwearTold`), and a
