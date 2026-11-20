@@ -115,7 +115,8 @@ describe('issue #364 SHIP-SEED-NONSPATIAL-HIT-FIRST — inferShipPosition: the p
     activeSectorId: 'sec-1',
   };
   const infer = (seed) => {
-    const { updatedAt, ...rest } = inferShipPosition(seed, state, { source: 'narrator_sidecar' });
+    const rest = { ...inferShipPosition(seed, state, { source: 'narrator_sidecar' }) };
+    delete rest.updatedAt;
     return rest;
   };
 
