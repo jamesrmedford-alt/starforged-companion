@@ -364,6 +364,24 @@ export function sessionInPlay(campaignState, now = Date.now()) {
 }
 
 /**
+ * Whether the session `campaignState` is about to close out was never begun:
+ * Begin a Session (or the Campaign Start's) stamped it, its gate is open —
+ * only a Begin opens it, and a world from before the stamp has its open gate
+ * to show for it — or End a Session closed it. A session ended before the
+ * stamp existed (issue #300 F11), or begun by a Campaign Start before it
+ * stamped, read as unbegun: the next session took its number, and the count
+ * stayed one behind (issue #331 X64).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function closingSessionUnbegun(campaignState) {
+  const closing = campaignState?.currentSessionId;
+  return !!closing && campaignState.sessionStartedId !== closing
+    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
+}
+
+/**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
  * none; a closing session nobody began adds its summary to the older one,
@@ -386,24 +404,6 @@ export function sessionInPlay(campaignState, now = Date.now()) {
  * @param {number} [now] — epoch ms
  * @returns {Object}
  */
-/**
- * Whether the session `campaignState` is about to close out was never begun:
- * Begin a Session (or the Campaign Start's) stamped it, its gate is open —
- * only a Begin opens it, and a world from before the stamp has its open gate
- * to show for it — or End a Session closed it. A session ended before the
- * stamp existed (issue #300 F11), or begun by a Campaign Start before it
- * stamped, read as unbegun: the next session took its number, and the count
- * stayed one behind (issue #331 X64).
- *
- * @param {Object} campaignState
- * @returns {boolean}
- */
-function closingSessionUnbegun(campaignState) {
-  const closing = campaignState?.currentSessionId;
-  return !!closing && campaignState.sessionStartedId !== closing
-    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
-}
-
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
