@@ -274,7 +274,6 @@ describe("Sojourn's miss — picking the community's need offers the vow or the 
     await click(need, SWEAR, "pl-2");
 
     expect(flagsOf(need)).toMatchObject({ resolved: false });
-    expect(flagsOf(need).vowRequested ?? false).toBe(false);
     expect(pc.items.contents).toEqual([]);
     expect(narrations()).toHaveLength(1);
     const told = table.cards(f => f.pressRefusedNotice);
@@ -346,7 +345,10 @@ describe("Sojourn's miss — a vow sworn to see the community's need done resolv
     expect(pc.items.contents).toHaveLength(1);
     const [vow] = pc.items.contents;
     expect(vow).toMatchObject({ name: "Clear the reactor of raiders", type: "progress", system: { subtype: "vow", rank: "formidable" } });
-    expect(flagsOf(need)).toMatchObject({ resolved: false, vowRequested: true, vowId: vow.id });
+    // The vow says which card it answers; the card keeps no copy of the link.
+    expect(vow.flags[MODULE_ID]).toMatchObject({ sojournNeedCard: need._id });
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
+    expect(flagsOf(need)).not.toHaveProperty("vowId");
     expect(contentOf(need)).toContain('"Clear the reactor of raiders" is on Kira\'s sheet');
     expect(contentOf(need)).toContain("⚔ Swear it (roll)");
     expect(contentOf(need)).not.toContain("sf-sojourn-need-swear");
@@ -401,14 +403,15 @@ describe("Sojourn's miss — a vow sworn to see the community's need done resolv
     await swearOnNeed(need, { name: "Clear the reactor" });
 
     expect(pc.items.contents).toEqual([]);
-    expect(flagsOf(need)).toMatchObject({ resolved: false, vowRequested: false });
-    expect(flagsOf(need).vowId ?? null).toBeNull();
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
+    expect(contentOf(need)).toContain("⚔ Swear an Iron Vow</button>");
     expect(table.cards(f => f.pressRefusedNotice)[0].content).toContain("could not be written on Kira");
 
     control.itemFails = false;
     await swearOnNeed(need, { name: "Clear the reactor" });
     expect(pc.items.contents).toHaveLength(1);
-    expect(flagsOf(need)).toMatchObject({ vowId: pc.items.contents[0].id });
+    expect(pc.items.contents[0].flags[MODULE_ID]).toMatchObject({ sojournNeedCard: need._id });
+    expect(contentOf(need)).toContain('"Clear the reactor" is on Kira\'s sheet');
   }, 60_000);
 
   it("the vow written but never sworn: It is done still resolves it, and the vow's later swear resolves nothing twice", async () => {
@@ -481,7 +484,7 @@ describe("Sojourn's answered need — the pieces (issue #364)", () => {
     expect(open).toContain('data-action="sf-sojourn-need-done"');
     expect(open).toContain('<option value="dangerous" selected>dangerous</option>');
     expect(open).toContain("Kira &lt;i&gt;'s sheet");
-    const written = buildSojournNeedHtml({ actorName: "Kira", vowRequested: true, vowId: "v1", vowName: 'Free "Ash"' });
+    const written = buildSojournNeedHtml({ actorName: "Kira", vowId: "v1", vowName: 'Free "Ash"' });
     expect(written).toContain("&quot;Ash&quot;");
     expect(written).not.toContain("sf-sojourn-need-swear");
     expect(written).toContain("sf-sojourn-need-done");

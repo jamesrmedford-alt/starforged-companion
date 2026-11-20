@@ -193,16 +193,22 @@ Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward off
 needs help" is answered on the community's need card
 (`src/moves/sojournNeed.js`; combat-flow.md, issue #364
 SOJOURN-VOW-OPTION-REMINDER-ONLY). Its **⚔ Swear an Iron Vow** (relayed
-`sojourn.need`, the roller's player or a GM, claimed once on the card —
-`vowRequested`) writes the vow on the roller's sheet through
-`createCharacterVowItem` (no `vowId`) with the name and rank typed on the
+`sojourn.need`, the roller's player or a GM, one press at a time and one
+vow per card) writes the vow on the roller's sheet through
+`createCharacterVowItem` (no `vowId`; `sojournNeedCard`: the card's chat
+message id, as a module flag of the vow) with the name and rank typed on the
 card — blank, a vow still to be named — so the hook above posts its "🆕 New
 vow recorded" card, as Begin a Session's offer does; a vow the sheet refuses
-releases the claim and the presser is told. The need card keeps the Item's
-id (`vowId`), and when a Swear an Iron Vow for that vow has been rolled and
-narrated (`movePipeline.finishMove` — `swornVowId` →
-`resolveSojournNeedsForVow`) the Sojourn it answers is resolved as a strong
-hit. A swear held for Burn / Improve / Keep is not narrated at its roll: its
+changes nothing and the presser is told. The vow's `sojournNeedCard` flag is
+the one link between the vow and its card — made in the write that makes
+the vow, read through `actorBridge` (`vowNeedCardId`, `readNeedVow`,
+`needCardIdsOfVow`); the card keeps no vow id (issue #364
+SOJOURN-NEED-CARD-VOW-ID-WRITE-REFUSED: it kept the link in a second write
+of its own, and a vow whose card write was refused resolved nothing). When
+a Swear an Iron Vow for that vow has been rolled and narrated
+(`movePipeline.finishMove` — `swornVowId` → `resolveSojournNeedsForVow`,
+which finds the card from the vow) the Sojourn it answers is resolved as a
+strong hit. A swear held for Burn / Improve / Keep is not narrated at its roll: its
 card keeps the vow (`awaitingUpgrade.swornVowId`) and the Sojourn is
 resolved once the held swear is told — `heldResult.keepHeldResult`, or
 `narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
@@ -210,8 +216,8 @@ SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). Only the ⚔
 a swear typed in chat is not recognised, and the need card's ✔ It is done
 resolves the Sojourn instead. That vow deleted from the sheet before it is
 sworn is no longer the card's: the card stops saying it is on the sheet and
-offers ⚔ again (read from the card's flags and the sheet on every render,
-and written back by the canonical GM's `deleteItem` hook), and another vow
+offers ⚔ again (read from the sheet on every render, and written back to
+the card's text by the canonical GM's `deleteItem` hook), and another vow
 written from it is the one whose swear resolves the Sojourn (issue #364
 SOJOURN-VOW-DELETED-BEFORE-SWORN).
 

@@ -11,11 +11,11 @@
  * so for good — nothing could swear the vow it named, and ⚔ never came back
  * (only ✔ It is done was left).
  *
- * The card now reads its vow from the sheet: the canonical GM's deleteItem
- * hook opens the card again for every client, and — when no GM saw the
- * deletion, or the world refused that write — each client's own render
- * offers ⚔ again from the card's flags and the sheet, a reloaded page's
- * included. A ⚔ press then writes another vow, and that vow's swear resolves
+ * The card now reads its vow from the sheet (the vow that names the card —
+ * its `sojournNeedCard` flag): the canonical GM's deleteItem hook opens the
+ * card again for every client, and — when no GM saw the deletion, or the
+ * world refused that write — each client's own render offers ⚔ again from
+ * the sheet, a reloaded page's included. A ⚔ press then writes another vow, and that vow's swear resolves
  * the Sojourn.
  *
  * End to end on a booted GM / two-player table (tests/helpers/multiClient.js);
@@ -166,9 +166,8 @@ describe("the community's need card whose vow was deleted before it was sworn (i
 
     await deleteVow(first);
 
-    // The canonical GM opened the card again: its stored text and flags, for every client.
-    expect(flagsOf(need)).toMatchObject({ resolved: false, vowRequested: false });
-    expect(flagsOf(need).vowId ?? null).toBeNull();
+    // The canonical GM opened the card again: its stored text, for every client.
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
     expect(contentOf(need)).not.toContain(ON_SHEET);
     expect(contentOf(need)).toContain(GONE);
     expect(contentOf(need)).toContain("⚔ Swear an Iron Vow</button>");
@@ -181,7 +180,8 @@ describe("the community's need card whose vow was deleted before it was sworn (i
 
     expect(pc.items.contents.map(i => i.name)).toEqual(["Hold the east gate"]);
     const [second] = pc.items.contents;
-    expect(flagsOf(need)).toMatchObject({ resolved: false, vowRequested: true, vowId: second.id });
+    expect(second.flags[MODULE_ID]).toMatchObject({ sojournNeedCard: need._id });
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
     expect(contentOf(need)).toContain(`"Hold the east gate" ${ON_SHEET}`);
     expect(contentOf(need)).not.toContain(GONE);
 
@@ -198,7 +198,6 @@ describe("the community's need card whose vow was deleted before it was sworn (i
 
     // No client heard the hook (deleted with no GM at the table): the stored card is as it was.
     await deleteVow(first, { heard: false });
-    expect(flagsOf(need)).toMatchObject({ vowRequested: true, vowId: first.id });
     expect(contentOf(need)).toContain(ON_SHEET);
 
     for (const who of ["gm-1", "pl-1", "pl-2"]) {
@@ -216,7 +215,8 @@ describe("the community's need card whose vow was deleted before it was sworn (i
     await swearOnNeed(need, "Hold the east gate");
 
     expect(pc.items.contents.map(i => i.name)).toEqual(["Hold the east gate"]);
-    expect(flagsOf(need)).toMatchObject({ resolved: false, vowRequested: true, vowId: pc.items.contents[0].id });
+    expect(pc.items.contents[0].flags[MODULE_ID]).toMatchObject({ sojournNeedCard: need._id });
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
     expect(contentOf(need)).toContain(`"Hold the east gate" ${ON_SHEET}`);
     // The new vow is on the sheet: the card says so, and offers no third.
     expect(shown(need, "pl-2").querySelector(SWEAR)).toBeNull();
@@ -230,7 +230,7 @@ describe("the community's need card whose vow was deleted before it was sworn (i
     await deleteVow(first);
 
     expect(refused.refused).toBe(1);
-    expect(flagsOf(need)).toMatchObject({ vowRequested: true, vowId: first.id });
+    expect(contentOf(need)).toContain(ON_SHEET);
     expect(shown(need, "pl-1").querySelector(SWEAR)?.disabled).toBe(false);
   }, 60_000);
 
@@ -251,11 +251,13 @@ describe("the community's need card whose vow was deleted before it was sworn (i
     const before = contentOf(need);
 
     table.fireDocumentHook("pl-1", "deleteItem", { id: "asset-1", type: "asset", parent: pc }, {});
-    table.fireDocumentHook("pl-1", "deleteItem", { id: "vow-other", type: "progress", parent: pc }, {});
+    // Not even an Item that named this card, while the vow written for it is on the sheet.
+    table.fireDocumentHook("pl-1", "deleteItem", { id: "vow-other", type: "progress", parent: pc,
+      flags: { [MODULE_ID]: { sojournNeedCard: need._id } } }, {});
     await settled();
 
     expect(contentOf(need)).toBe(before);
-    expect(flagsOf(need)).toMatchObject({ vowRequested: true, vowId: vow.id });
+    expect(vow.flags[MODULE_ID]).toMatchObject({ sojournNeedCard: need._id });
     for (const who of ["gm-1", "pl-1", "pl-2"]) expect(shown(need, who).querySelector(SWEAR)).toBeNull();
     const { applySojournNeedFromRelay } = await table.client("gm-1").import("../../src/moves/sojournNeed.js");
     expect(await table.client("gm-1").run(() => applySojournNeedFromRelay({ messageId: need._id, way: "vow", vowName: "Another" }, { requesterIsGM: true })))

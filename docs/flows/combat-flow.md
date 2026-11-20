@@ -502,19 +502,22 @@ the reminder; a card the world refuses hands the pick back,
 (`applySojournNeedFromRelay`; the roller's player or a GM, one press at a
 time, a refused press whispered): **⚔ Swear an Iron Vow** writes the vow —
 the name and rank typed on the card, or a vow still to be named — on the
-roller's sheet (`actorBridge.createCharacterVowItem`, claimed first:
-`vowRequested`, then `vowId`), which is the existing swear flow's own entry
+roller's sheet (`actorBridge.createCharacterVowItem`, with the card's id as
+the vow's own `sojournNeedCard` flag — the one link between the two, made
+in the write that makes the vow; the card keeps no vow id, issue #364
+SOJOURN-NEED-CARD-VOW-ID-WRITE-REFUSED), which is the existing swear flow's own entry
 (vow-flow.md §1: the createItem hook's "🆕 New vow recorded" card and its
 ⚔ Swear it (roll)); **✔ It is done** is the player's word. The sheet is the
-truth about that vow: the card reads it from there (`needVowOnSheet`), and a
-vow deleted before its swear was rolled leaves the card open again — each
-render offers ⚔ from the card's flags and the sheet, the canonical GM's
+truth about that vow: the card reads it from there (`needVowOnSheet` —
+`actorBridge.readNeedVow`), and a vow deleted before its swear was rolled
+leaves the card open again — each render offers ⚔ from the sheet, the canonical GM's
 `deleteItem` hook writes that back to the card (`releaseNeedsOfDeletedVow`),
 and a press writes another vow (issue #364
 SOJOURN-VOW-DELETED-BEFORE-SWORN). The Sojourn is
 resolved once (`resolveSojournNeed`, the card's `resolved` claimed first) —
 by ✔, or when that vow's Swear an Iron Vow has been rolled and narrated
-(`movePipeline.finishMove` → `resolveSojournNeedsForVow`, by the vow's id;
+(`movePipeline.finishMove` → `resolveSojournNeedsForVow`, from the vow's
+side: the cards its `sojournNeedCard` names, `actorBridge.needCardIdsOfVow`;
 the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
 is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
 Sojourn after the held swear's keep, or after its upgrade's narration —
