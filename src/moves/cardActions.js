@@ -1281,6 +1281,13 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform, what, n
     console.warn(`${MODULE_ID} | ${label}: message ${messageId} is not its offer — ignored.`);
     return { applied: false, reason: "not-a-recommit-offer" };
   }
+  // The NPC's card was deleted and this offer retired with it
+  // (retireBondRecommitOffersFor): a press from a window that had not
+  // re-rendered recommits nothing and claims nothing.
+  if (f.offerRetired) {
+    console.debug(`${MODULE_ID} | ${label}: offer ${messageId} was retired — its connection's card was deleted; nothing recommitted.`);
+    return { applied: false, reason: "retired" };
+  }
   const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
@@ -1875,6 +1882,83 @@ export async function retireFightVowDeepenFor(connectionName) {
   return retired;
 }
 
+/**
+ * Retire the deepen step of the payoff failure cards already in chat whose
+ * bond is with an NPC whose card was deleted (issue #364
+ * PAYOFF-CARD-DEEPEN-DELETED-NPC; the delete's reference clearing —
+ * connection.js clearDeletedConnectionReferences, on the canonical GM, when
+ * no other card of that name is left). The card's Retry ran the step again
+ * for a connection nobody could find: it failed again, onto a fresh card with
+ * its own Retry. Only that step is retired — the card's other steps (a
+ * legacy, a reward) keep their Retry: the card is stamped `retiredSteps`,
+ * the positions in its `steps` a Retry leaves out (applyPayoffRetry) and its
+ * render strikes through (index.js wirePayoffRetryButton); with every step
+ * retired the Retry renders disabled and says why. A step names its
+ * connection by name only, as the vow's link does. Cards already retried, and
+ * reports with no Retry, are left as they are. A refused stamp leaves the
+ * step live — retried, it fails again as before. Never throws.
+ *
+ * @param {string} connectionName — the deleted NPC's name
+ * @returns {Promise<number>} the steps retired
+ */
+export async function retirePayoffDeepenStepsFor(connectionName) {
+  const wanted = String(connectionName ?? "").trim().toLowerCase();
+  if (!wanted || !isCanonicalGM()) return 0;
+  let retired = 0;
+  for (const message of globalThis.game?.messages?.contents ?? []) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.payoffFailureCard || f.resolved || f.retryable === false || !Array.isArray(f.steps)) continue;
+    const already = retiredPayoffSteps(f);
+    const hits = f.steps.map((s, i) => i).filter(i => !already.has(i) && f.steps[i]?.step === "deepen"
+      && String(f.steps[i].connectionName ?? "").trim().toLowerCase() === wanted);
+    if (!hits.length) continue;
+    try {
+      await message.update({ [`flags.${MODULE_ID}.retiredSteps`]: [...already, ...hits].sort((a, b) => a - b) });
+      retired += hits.length;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | payoff retry: retiring the deepen step on card ${message?.id ?? "?"} failed:`, err?.message ?? err);
+    }
+  }
+  return retired;
+}
+
+/** The positions in a payoff failure card's `steps` that were retired (retirePayoffDeepenStepsFor). */
+function retiredPayoffSteps(f) {
+  return new Set((Array.isArray(f?.retiredSteps) ? f.retiredSteps : []).filter(i => Number.isInteger(i) && i >= 0));
+}
+
+/**
+ * Retire the bond recommit offers already in chat for an NPC whose card was
+ * deleted (issue #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; connection.js
+ * clearDeletedConnectionReferences, on the canonical GM). A Forge a Bond
+ * miss's "🔁 Recommit to the Bond" stayed live: pressed, it claimed the offer
+ * and told the presser the connection "is no longer a connection". The offer
+ * names its NPC by the card's own id (`hostId`), so it is retired whether or
+ * not a namesake's card is left. Stamped `offerRetired`: the button renders
+ * disabled on every client and says why (index.js registerRecommitHook), and
+ * the relay handler recommits nothing for it (applyRollerRecommit). An offer
+ * already taken is left as it is. A refused stamp leaves the offer live —
+ * pressed, it answers as before. Never throws.
+ *
+ * @param {string} hostId — the deleted NPC card's Actor id
+ * @returns {Promise<number>} the offers retired
+ */
+export async function retireBondRecommitOffersFor(hostId) {
+  if (typeof hostId !== "string" || !hostId || !isCanonicalGM()) return 0;
+  let retired = 0;
+  for (const message of globalThis.game?.messages?.contents ?? []) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.bondRecommitOfferCard || f.recommitted || f.offerRetired || f.hostId !== hostId) continue;
+    try {
+      await message.update({ [`flags.${MODULE_ID}.offerRetired`]: true });
+      retired += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | bond recommit: retiring the offer on card ${message?.id ?? "?"} failed:`, err?.message ?? err);
+    }
+  }
+  return retired;
+}
+
 // Apply one won-fight action once per card. `apply` resolves false (nothing to
 // apply), or the step's result: only { ok: true } stamps the card. A step that
 // did not land leaves the action unapplied — its button re-arms, so the press
@@ -1925,7 +2009,9 @@ async function applyFightVowAction(action, payload, ctx, apply) {
 /**
  * gmRelay handler for "payoff.retry" — runs on the canonical GM (issue #306
  * R04). Re-runs the steps a payoff failure card lists (src/index.js
- * retryPayoffSteps), once per card.
+ * retryPayoffSteps), once per card — but for a step retired since
+ * (`retiredSteps`: a deepen with an NPC whose card was deleted, issue #364
+ * PAYOFF-CARD-DEEPEN-DELETED-NPC).
  *
  * GM only: the card is whispered to the GMs, and a Retry re-applies writes.
  * The card must be GM-authored, and every value comes from it — never from
@@ -1959,6 +2045,16 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | payoff retry: card ${messageId} already retried — ignoring the press.`);
     return { applied: false, reason: "already-resolved" };
   }
+  // A step retired since the card was posted — a deepen with an NPC whose
+  // card was deleted (retirePayoffDeepenStepsFor) — is not run again; with
+  // every step retired there is nothing to retry, and the card is left as it
+  // is (a press from a window that had not re-rendered).
+  const retiredAt = retiredPayoffSteps(f);
+  const steps = (Array.isArray(f.steps) ? f.steps : []).filter((_s, i) => !retiredAt.has(i));
+  if (retiredAt.size && !steps.length) {
+    console.debug(`${MODULE_ID} | payoff retry: every step of card ${messageId} was retired — nothing retried.`);
+    return { applied: false, reason: "nothing-to-retry" };
+  }
 
   _inFlight.add(key);
   try {
@@ -1969,7 +2065,7 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
       return { applied: false, reason: "claim-refused" };
     }
     const { retryPayoffSteps } = await import("../index.js");
-    const failed = await retryPayoffSteps(f);
+    const failed = await retryPayoffSteps({ ...f, steps });
     return { applied: true, failed: failed.length };
   } finally {
     _inFlight.delete(key);

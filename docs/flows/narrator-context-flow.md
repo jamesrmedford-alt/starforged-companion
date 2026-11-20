@@ -51,8 +51,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   issue #362 AC02). A price that is one of the player's choices
   (`resolution.priceChoice` — Explore a Waypoint's miss with a match: Pay
   the Price, or Confront Chaos instead; Sojourn's miss: "No relief — Pay
-  the Price", or the community's need taken on with a vow, issue #364
-  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE) is settled when the
+  the Price", or the community's need taken on, issue #364
+  SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — once that need is answered,
+  the help done or a vow sworn, the Sojourn is narrated again as the strong
+  hit it resolves as, a second beat whose MOVE OUTCOME says "A miss,
+  resolved as a strong hit": `moves/sojournNeed.js`,
+  SOJOURN-VOW-OPTION-REMINDER-ONLY) is settled when the
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
   table's cards — the waypoint's claim, and the option the choice card was
   resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
@@ -292,7 +296,12 @@ exclusion, a maintainer decision). In the same write as the pause,
 `suppressScene` (`src/context/safety.js`, on the canonical GM) calls
 `applyXCardToNarratorMemory` (`narrator.js`), which picks the cards with
 `xCardedNarrationCards`: the newest narrator card of the session still in
-narrator memory, with the narrator cards of the same beat — those after the
+narrator memory — or one posted since the session was minted and filed under
+the session before it, a Batch Mode round narrated late, which is on screen
+like any other (`narratedLateIntoEarlierSession`, issue #364
+XCARD-MISSES-LATE-ROUND-CARD; a beat is one session's, and the guard for a
+card that posts during the pause and the Round window's newest narration
+read it the same way) — with the narrator cards of the same beat — those after the
 last message someone sent (a forced move's post — the Roll button's re-post
 of the player's line, a button's forced move — counts as one, issue #326 W42)
 and at most two minutes older; an earlier X-Card's
@@ -894,7 +903,18 @@ could not cover the session — no key on that client yet, a failed call —
 marks it `unsummarisedSession`, and the canonical GM summarises its cards into
 `previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
 after each narrator card, at the load and when its key is set — issue #347
-AB15) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
+AB15; a narration posted into the session LAST SESSION names after the mint —
+a Batch Mode round narrated late, filed under its own session — marks it
+again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
+text again from that session's cards, one summary call per late card, what a
+mint folded onto it from a session nobody began kept
+(`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
+that text and marks the session the same way, `dropLastSessionTelling`; when
+the mint carried no summary for the card's session, LAST SESSION is left as
+it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION; a later mint keeps the
+mark while LAST SESSION goes on naming that session, so a summary an X-Card
+emptied or a keyless GM closed out short is still made once the next session
+is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
@@ -1001,7 +1021,13 @@ exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 so do a move's and a round's narration the X-Card pauses, on entry or once the
 reply is in — the move stands, a paused narration is never narrated again, and
 its paused notice closes a round: `filePausedPlanRequests`, issue #364
-XCARD-PAUSED-NARRATION-PLAN-REQUESTS;
+XCARD-PAUSED-NARRATION-PLAN-REQUESTS; each request names the resolution it is
+made for, and the plan it files keeps it — `createdFrom.resolutionId`, with a
+narration's stamp or without — so a later narration of the same move, a Burn
+Momentum / Improve Result re-narration that keeps the price, asks for no plan
+already filed for that resolution: `movePlanRequests` puts it that plan by id
+and tells the price's new enemy by that plan's rolls, issue #364
+KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE;
 the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
 switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
 narration with prose still files its requests with their rolls alone, stamped
@@ -1015,14 +1041,33 @@ for its decision changes nothing, issue #362 AC16), which becomes a ledger truth
 (`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
 correction or decision of the same id is laid on first, so a truth changed or
 decided and revealed in one beat is the one the ledger and Lore both state,
-issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
+issue #362 AC13) and confirmed lore — the plan's truth mirrored into the Lore
+journal, the entry naming its plan (`revealOf`) and stamped with the
+narration: an X-Card on the narration retracts it, and a Burn / Improve
+supersede, which takes back the narration's plans alone, takes this entry
+back with the truth it mirrors (`undoSupersededPlans` →
+`undoRevealedTruthLore`: deleted, or put back as it was before the reveal;
+the narration's other World Journal records stand — issue #364
+SUPERSEDED-REVEAL-LORE-STANDS; and of the narration's plans the supersede
+keeps one it filed with its rolls alone about a card that is still there —
+the agenda of the NPC a Make a Connection hit created, as filed and still
+stamped with that narration, so the X-Card that removes her card takes it:
+`plansKeptThroughSupersede` → `undoNarrationEntries`' `keepPlanAbout`, issue
+#364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA — and the plan its capture filed
+for a threat it recorded as significant, about the Threats page, which
+stands with those records (`threatPageStands`): issue #364
+BURN-DROPS-RECORDED-THREAT-PLAN) — its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
 `retirePlanClock`, issue #362 AC10 — and so does a plan whose page a GM deletes
 in the journal sidebar, or whose journal is deleted: the canonical GM's
 `deleteJournalEntryPage` / `deleteJournalEntry` hooks retire its clocks,
-`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK), a `countdown` becomes a clock
+`retireClocksOfDeletedPlans`, issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK — and the same hooks withdraw the
+table's cards of its oracle rolls, whatever deleted the page (an X-Card's or a
+supersede's undo, a reverted price, a GM): struck, with a line saying why,
+flagged `rollsWithdrawn` — `withdrawRollsCardsOfDeletedPlans`, issue #364
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS), a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge —
 once a challenge holds it as its tension clock it is the challenge's, and the
 plan's pacing neither rewinds nor retires it (`heldBySceneChallenge`, issue
@@ -1055,7 +1100,11 @@ the narration back — a supersede, or the X-Card's pause write — runs the clo
 again at its fill from before plus the segments turned since, at most one short
 of full, the step it played owed again (`planClockPacing.js`: the clock is that
 narration's by its stamp, `pacedByOneOf`, wherever a later price has turned it —
-issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; a burned price's plan clock is put back one
+issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; and only while the clock's plan
+is in play once the narration is taken back, `planInPlayFor`, told the plans by
+`worldJournal.hiddenPlansInPlayWithout` — a clock retired after a last step
+keeps its stamp when the plan is then retired, deleted or ended by a later
+narration, and is left retired, issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES; a burned price's plan clock is put back one
 short of full and its vignette struck by that id, issue #362 AC33 — the price's
 receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
 advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that
@@ -1065,7 +1114,11 @@ when the clock triggered again before the first price is burned its stamp is
 the later trigger's, so the burned price's own vignette — a live card under the
 id its receipt names, `clocksWithVignetteWritten` — is struck by that id and the
 clock left as the later trigger and the prices after it left it, no segment
-given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN);
+given back, issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN — and the reversal
+card says of each clock what the rewind did to it, from the `fates` the rewind
+reports: rewound a segment, put back one short of full with its TRIGGERED
+scene taken back, or left as it stands with only this price's scene taken
+back, issue #364 PLAN-CLOCK-REWOUND-WORDING);
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back — and a step a narration played carries that
 narration on the step itself (`playedBy`, `applyRevealToSkeleton`), so taking
@@ -1074,10 +1127,26 @@ also under a version another narration or a GM wrote since (a clue shown
 between a trigger vignette and the burn of its price left the step played with
 its vignette struck and its clock re-armed); a clock a later trigger retired
 after the plan's last step then runs again, empty (`rerunRetiredPlanClock`;
-issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN) — a plan keeps one version a narration,
+issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN); a clue a narration showed and a
+truth it revealed carry it the same way (`revealedBy` on the clue,
+`truthRevealedBy` and `rollsShownBy` on the record) and go back unshown with
+it under a later writer's version too, that writer's own writes standing —
+the truth's scene fact and Lore entry go by the narration's stamp, as always
+(issue #364 PLAN-CLUE-TRUTH-NO-MARK), and the rolls card that reveal posted is
+withdrawn in chat with it (`withdrawRollsCardsOfReveals`), so a reveal made
+again leaves one rolls card standing (issue #364
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS); an ending the narration gave the plan's
+story goes back by its mark too (`resolvedBy`), the plan in play again and its
+clock with it (issue #364 PLAN-RESOLVED-NO-MARK) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
 capture's link), so the version before it is never pushed off the three-deep
-history (`updateSkeleton`, issue #362 AC34); a relayed sidecar carries its plan requests,
+history (`updateSkeleton`, issue #362 AC34); a plan filed with its rolls alone
+by a narration that was never written carries no narration's id, so a Burn
+Momentum / Improve Result that reverts its move's price entirely takes the
+price's new enemy back by the resolution it was filed for instead
+(`createdFrom.resolutionId`) — while it still waits to be decided; one decided
+since stays (`revertPayThePrice` → `worldJournal.undoPlansFiledFor`, issue
+#364 REVERTED-PRICE-PLAN-STAYS-WAITING); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute

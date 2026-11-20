@@ -364,6 +364,59 @@ export function sessionInPlay(campaignState, now = Date.now()) {
 }
 
 /**
+ * Whether the session `campaignState` is about to close out was never begun:
+ * Begin a Session (or the Campaign Start's) stamped it, its gate is open —
+ * only a Begin opens it, and a world from before the stamp has its open gate
+ * to show for it — or End a Session closed it. A session ended before the
+ * stamp existed (issue #300 F11), or begun by a Campaign Start before it
+ * stamped, read as unbegun: the next session took its number, and the count
+ * stayed one behind (issue #331 X64).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function closingSessionUnbegun(campaignState) {
+  const closing = campaignState?.currentSessionId;
+  return !!closing && campaignState.sessionStartedId !== closing
+    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
+}
+
+/** What leads the summary of a session nobody began, folded onto LAST SESSION (mintSession, issue #331 X65). */
+const BETWEEN_SESSIONS_LEAD = "Narrated between sessions, while no session was begun: ";
+
+/**
+ * LAST SESSION's text (`previousSessionSummary.text`) in its two parts: the
+ * summary of the session it names (`own`), and what mints folded onto it
+ * from sessions nobody began (`between` — from the first fold's lead to the
+ * end, issue #331 X65). The fold is made from another session's cards, so a
+ * writer that summarises the named session again — a narration posted late
+ * into it, or the X-Card taking one back (narrator.js
+ * catchUpUnsummarisedSession, dropLastSessionTelling) — replaces `own` and
+ * keeps `between` (issue #364 LATE-ROUND-NOT-IN-LAST-SESSION).
+ *
+ * @param {string|null|undefined} text
+ * @returns {{ own: string, between: string }}
+ */
+export function lastSessionTextParts(text) {
+  const whole = typeof text === "string" ? text.trim() : "";
+  const at = whole.indexOf(BETWEEN_SESSIONS_LEAD);
+  if (at < 0) return { own: whole, between: "" };
+  return { own: whole.slice(0, at).trim(), between: whole.slice(at).trim() };
+}
+
+/**
+ * LAST SESSION's text from its two parts (lastSessionTextParts), as
+ * mintSession joins them.
+ *
+ * @param {string} own
+ * @param {string} between
+ * @returns {string}
+ */
+export function lastSessionTextFrom(own, between) {
+  return [own, between].map(t => (typeof t === "string" ? t.trim() : "")).filter(Boolean).join("\n\n");
+}
+
+/**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
  * none; a closing session nobody began adds its summary to the older one,
@@ -386,24 +439,6 @@ export function sessionInPlay(campaignState, now = Date.now()) {
  * @param {number} [now] — epoch ms
  * @returns {Object}
  */
-/**
- * Whether the session `campaignState` is about to close out was never begun:
- * Begin a Session (or the Campaign Start's) stamped it, its gate is open —
- * only a Begin opens it, and a world from before the stamp has its open gate
- * to show for it — or End a Session closed it. A session ended before the
- * stamp existed (issue #300 F11), or begun by a Campaign Start before it
- * stamped, read as unbegun: the next session took its number, and the count
- * stayed one behind (issue #331 X64).
- *
- * @param {Object} campaignState
- * @returns {boolean}
- */
-function closingSessionUnbegun(campaignState) {
-  const closing = campaignState?.currentSessionId;
-  return !!closing && campaignState.sessionStartedId !== closing
-    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
-}
-
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
@@ -420,7 +455,7 @@ export function mintSession(campaignState, now = Date.now()) {
       // played (issue #331 X65).
       campaignState.previousSessionSummary = {
         ...prev,
-        text:      `${prevText}\n\nNarrated between sessions, while no session was begun: ${text}`,
+        text:      `${prevText}\n\n${BETWEEN_SESSIONS_LEAD}${text}`,
         updatedAt: summary.updatedAt ?? prev.updatedAt ?? null,
       };
     } else {
@@ -584,8 +619,18 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
       console.warn(`${MODULE_ID} | session roll: stale-scene close failed:`, err?.message ?? err);
     }
   }
+  // A session still owed its summary stays owed while LAST SESSION goes on
+  // naming it: the closing session left no summary of its own (nothing was
+  // narrated in it), or one folded onto LAST SESSION (nobody began it). Every
+  // mint replaced the mark, so a LAST SESSION an X-Card had emptied — the
+  // table stopped before anything else was narrated — or one closed out short
+  // on a browser with no key was never made again once the next session was
+  // minted (issue #364 LAST-SESSION-OWED-LOST-AT-MINT).
+  const owed = campaignState.unsummarisedSession ?? null;
   mintSession(campaignState, now);
-  campaignState.unsummarisedSession = unsummarised;
+  const stillOwed = owed?.sessionId && owed.sessionId !== closing
+    && campaignState.previousSessionSummary?.sessionId === owed.sessionId ? owed : null;
+  campaignState.unsummarisedSession = unsummarised ?? stillOwed;
   return true;
 }
 

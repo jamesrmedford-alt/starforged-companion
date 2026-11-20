@@ -36,6 +36,7 @@ import {
 } from "./moves/improveResult.js";
 import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
+import { registerSojournNeedHook } from "./moves/sojournNeed.js";
 import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
@@ -171,7 +172,8 @@ import {
 } from "./ui/companionToolbar.js";
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
-import { wholeWordsFit } from "./context/relevanceResolver.js";
+import { wholeWordsFit, wholeWordPattern } from "./context/relevanceResolver.js";
+import { placeNameAndLittleElse } from "./entities/nameMatch.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
@@ -225,7 +227,7 @@ import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
-import { registerStarshipConditionSync } from "./entities/ship.js";
+import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
   DEFAULT_NPC_VOICE_ID,
@@ -2454,7 +2456,20 @@ async function applyOutcomeEffects({
             // label names exactly, charted since — by the working label its
             // record keeps, its location renamed — is the one it is for, by
             // the link: a second site was minted for it (issue #362 AC50).
-            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
+            // A Set a Course read as this expedition has asked already, as
+            // for a destination, and the answer was "no charted place" —
+            // "Archer's rendezvous — the gap" is not the settlement Archer.
+            // The same question is asked here: asked the looser way, the
+            // label named Archer, no site was recorded, and the finish docked
+            // at the settlement (issue #364
+            // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT). An expedition typed as
+            // one is asked by the same rule — it was asked the looser way,
+            // and one for "the wreck beyond Bleakhold" was for Bleakhold —
+            // with the journey's own words beside the name little else too:
+            // "the expedition to Bleakhold" is for Bleakhold (issue #364
+            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
+              && !resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords: !resolution.courseRerouted })) {
               linked = siteNamedBy(campaignState, label);
               const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world
@@ -3037,19 +3052,42 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
  *     payoff ledger, `milestone:<card>:upgrade` (markFightVowMilestoneOnce),
  *     is read before the mark and written by it, so a second run marks
  *     nothing.
+ * "Pressed" is the card's stamp (`resolvedActions.markMilestone`), or the
+ * press's own entry on the vow's payoff ledger, `milestone:<card>` — a mark
+ * that landed with its stamp refused (issue #336 Y24) left the card unstamped,
+ * so by the stamp alone it was raised to the strong hit's count, and the next
+ * press, finding the ledger entry, marked nothing: the strong hit's extra
+ * mark was lost (issue #364 FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE).
  * A refused raise or mark is a `milestoneUpgrade` step for the GMs' payoff
  * card (issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — each was a "Not
  * applied" line on the upgraded move card, with no Retry: the burn was spent
  * and the milestone lost). A vow fulfilled or gone since has nothing to mark
  * and is no step. `lacking`: the marks owed once ⚑ was pressed, kept on the
  * step so its Retry still marks them when the victory card is gone from chat.
+ * `whenPressed`: on a refused raise's step, the marks a press at the count
+ * the card showed would lack. With the card gone its Retry read "never
+ * pressed, nothing to add to" — unchecked: a ⚑ pressed before the card was
+ * deleted had marked the vow, and the Retry refused "victory-card-gone" onto
+ * a fresh card each time, the strong hit's extra mark never paid. The vow's
+ * payoff ledger (`milestone:<card>`) says whether that press landed; when it
+ * did, those marks are marked, once (issue #364
+ * FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE). When it did not — the card gone,
+ * its ⚑ never pressed — no milestone of the win was marked from that card and
+ * none can be: the outcome is `final`, with no step. As a step it failed
+ * again on every Retry, each onto a fresh card whose own Retry could not
+ * succeed either; a Retry now tells the GMs once, on a card with no Retry
+ * (retryPayoffSteps — issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
+ * A vow fulfilled or gone from every sheet since is `final` the same way
+ * (issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP); the first payment
+ * reads it as no step — a line on the move card.
  *
- * @param {{ cardId: string|null, marks: number, lacking?: number|null, vowName?: string|null,
- *   vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
- * @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, what?: string, step?: string,
- *   cardId?: string, marks?: number, lacking?: number|null, vowId?: string|null, reason?: string, error?: string }>}
+ * @param {{ cardId: string|null, marks: number, lacking?: number|null, whenPressed?: number|null,
+ *   vowName?: string|null, vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, final?: boolean, applied?: string, what?: string, step?: string,
+ *   cardId?: string, marks?: number, lacking?: number|null, whenPressed?: number|null, vowId?: string|null,
+ *   reason?: string, error?: string }>}
  */
-async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = null, vowName = null, vowId = null, actorId = null } = {}) {
+async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = null, whenPressed = null, vowName = null, vowId = null, actorId = null } = {}) {
   const card = cardId ? (game.messages?.get?.(cardId) ?? null) : null;
   const f = card?.flags?.[MODULE_ID]?.fightVowCard === true ? card.flags[MODULE_ID] : null;
   const vow = {
@@ -3057,18 +3095,29 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
     actorId: (typeof f?.actorId === "string" && f.actorId) ? f.actorId : actorId,
   };
   const label = vow.vowName ?? "the vow";
-  const refused = (what, more, res) => ({
-    ok: false, step: "milestoneUpgrade", cardId, marks, lacking: more, vowId: vow.vowId ?? null, what,
+  const owed = (n) => Math.max(0, Math.floor(Number(n)) || 0);
+  const refused = (what, more, res, ifPressed = null) => ({
+    ok: false, step: "milestoneUpgrade", cardId, marks, lacking: more, whenPressed: ifPressed, vowId: vow.vowId ?? null, what,
     reason: res?.reason ?? "refused", ...(res?.error ? { error: res.error } : {}),
   });
-  const more = f ? marks - Number(f.marks ?? marks) : Math.max(0, Math.floor(Number(lacking)) || 0);
+  // The card gone: the marks its step says a press lacked — or, on a refused
+  // raise's step, the marks a press at the card's count would lack, when the
+  // vow's payoff ledger says that press landed before the card went.
+  const more = f ? marks - Number(f.marks ?? marks)
+    : owed(lacking) || (cardId && owed(whenPressed) && payoffStepLanded(payoffVowCopies(vow), `milestone:${cardId}`) ? owed(whenPressed) : 0);
   if (!f && !more) {
     // Its ⚑ was never pressed and the card is gone: nothing to raise, and no
-    // mark of this win on the vow to add to.
-    return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" });
+    // mark of this win on the vow to add to — nor can one come, with no ⚑
+    // left to press. Final: no step, so no Retry is offered for it.
+    return { ok: false, final: true, cardId, marks, vowId: vow.vowId ?? null,
+      what: `the strong hit's milestone ×${marks} on the victory card`, reason: "victory-card-gone" };
   }
   if (more <= 0) return { ok: true, skipped: true };
-  if (f && !f.resolvedActions?.markMilestone) {
+  // ⚑ pressed: its stamp, or the mark its press left on the vow's payoff
+  // ledger when the stamp was refused.
+  const pressed = !f || !!f.resolvedActions?.markMilestone
+    || payoffStepLanded(payoffVowCopies(vow), `milestone:${cardId}`);
+  if (!pressed) {
     const what = `the strong hit's milestone ×${marks} on the victory card`;
     try {
       await card.update({
@@ -3078,15 +3127,19 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
       return { ok: true, applied: `the victory card's milestone toward ${label} raised to ×${marks}` };
     } catch (err) {
       console.warn(`${MODULE_ID} | won fight: the victory card's milestone could not be raised:`, err?.message ?? err);
-      return refused(what, null, { reason: "refused", error: errText(err) });
+      return refused(what, null, { reason: "refused", error: errText(err) }, more);
     }
   }
   const what = `${more} more milestone mark${more === 1 ? "" : "s"} toward ${label}`;
   const res = await markFightVowMilestoneOnce({ cardId: `${cardId}:upgrade`, ...vow, marks: more })
     .catch(err => ({ ok: false, reason: "refused", error: errText(err) }));
   if (res?.ok) return res.skipped ? { ok: true, skipped: true } : { ok: true, applied: what };
-  // Fulfilled, or on no sheet any more: nothing to mark, and nothing to retry.
-  if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return { ok: false, what, reason: res.reason };
+  // Fulfilled, or on no sheet any more: nothing to mark, and nothing to retry
+  // — `final`, so the GMs' Retry of a refused mark says so once and offers no
+  // further Retry: with no step it went on a fresh Retry card under the step's
+  // old name, and every press found the vow fulfilled again (issue #364
+  // FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP).
+  if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return { ok: false, final: true, what, reason: res.reason };
   return refused(what, more, res);
 }
 
@@ -3825,19 +3878,6 @@ function registerCommandVehicleHook() {
 }
 
 /**
- * Determine whether a chat message is player narration that should be
- * routed through the move interpretation pipeline.
- *
- * Uses string literals for message types — CONST.CHAT_MESSAGE_TYPES was
- * restructured in Foundry v13 and the constants can no longer be relied on.
- *
- * Excluded:
- * - OOC, roll, and whisper message types
- * - Messages already processed by this module (move result cards, narration cards)
- * - GM messages
- * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
- */
-/**
  * True when chat content is a foundry-ironsworn chat card: its root element
  * carries one of the system's own classes (`ironsworn-message`,
  * `ironsworn-roll`, …). Issue #325 W08.
@@ -3859,6 +3899,19 @@ function isIronswornSystemCard(text) {
  */
 export const MIN_NARRATION_LENGTH = 10;
 
+/**
+ * Determine whether a chat message is player narration that should be
+ * routed through the move interpretation pipeline.
+ *
+ * Uses string literals for message types — CONST.CHAT_MESSAGE_TYPES was
+ * restructured in Foundry v13 and the constants can no longer be relied on.
+ *
+ * Excluded:
+ * - OOC, roll, and whisper message types
+ * - Messages already processed by this module (move result cards, narration cards)
+ * - Messages starting with "\" (escape), "@" (direct commands), "/" (slash commands) or "!" (module commands)
+ * - Lines under MIN_NARRATION_LENGTH characters
+ */
 export function isPlayerNarration(message) {
   const text = narrationCandidateText(message);
   return text !== null && text.length >= MIN_NARRATION_LENGTH;
@@ -4436,11 +4489,6 @@ async function handleJournalCommand(message) {
 }
 
 /**
- * Load the active character for the pacing classifier. Returns a minimal
- * { name, connections } object — the classifier doesn't need full stat
- * state. Returns null when no character is set.
- */
-/**
  * Emit a console warning when the stored Claude API key obviously isn't
  * an Anthropic key. Anthropic keys are `sk-ant-…`; OpenRouter keys are
  * `sk-or-v1-…` and a common copy-paste mistake. This is best-effort —
@@ -4490,6 +4538,10 @@ function warnIfClaudeKeyLooksWrong() {
  * character (known-issues PACING-CHARACTER-SOLO). It follows the speaker
  * rule now (multiplayer/speaker.js, issue #321 U23): the one PC of a
  * one-PC world, else none.
+ *
+ * @returns {{ name: string|null, actorId: string|null }|null} a minimal
+ *   snapshot — the classifier doesn't need full stat state; null when no
+ *   character is resolved
  */
 function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
   try {
@@ -4982,6 +5034,13 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
 }
 
 /**
+ * Below this many filled boxes, the expedition card's Finish button is shown
+ * muted: a progress roll under it misses more often than not (3 boxes: 64%;
+ * 4 boxes: 49%).
+ */
+export const EXPEDITION_FINISH_READY_BOXES = 4;
+
+/**
  * Exploration lifecycle feedback — confirm an expedition progress mark and,
  * when the track was just auto-created at the interpreter-inferred rank, tell
  * the player they can re-rank it in the Progress Tracks panel (the inference
@@ -4991,13 +5050,6 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
  *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
  *   them, whoever presses it (issue #329 X05)
  */
-/**
- * Below this many filled boxes, the expedition card's Finish button is shown
- * muted: a progress roll under it misses more often than not (3 boxes: 64%;
- * 4 boxes: 49%).
- */
-export const EXPEDITION_FINISH_READY_BOXES = 4;
-
 async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
@@ -5425,6 +5477,15 @@ function registerRecommitHook() {
     if (!btn) return;
     if (liveCardFlags(message)?.recommitted) {
       btn.disabled = true;
+      return;
+    }
+    // A bond's offer whose NPC had their card deleted since (the delete's
+    // stamp — cardActions.retireBondRecommitOffersFor): retired on every
+    // client and render, and says why (issue #364
+    // PAYOFF-CARD-DEEPEN-DELETED-NPC).
+    if (liveCardFlags(message)?.offerRetired) {
+      btn.disabled = true;
+      btn.title = `${f.connectionName ?? "This connection"}'s card was deleted — there is no bond to recommit to`;
       return;
     }
     const fresh = btn.cloneNode(true);
@@ -6799,9 +6860,22 @@ const PAYOFF_REASONS = {
   "no-pc":     "no player character to receive it",
   "superseded": "the move's result was upgraded since, and its new outcome stands",
   "card-gone": "the move card is no longer in chat",
+  "place-gone": "the place is no longer in the world",
   "victory-card-gone": "the victory card is no longer in chat, and its ⚑ was never pressed",
   "vow-completed": "the vow is fulfilled — nothing to mark",
   "vow-gone":  "the vow is on no character's sheet any more",
+};
+
+// Why a `final` outcome is owed nothing any more — its line under "Not
+// applied — and no longer owed" (retryPayoffSteps). A reason not listed keeps
+// its PAYOFF_REASONS text, which already says so (the vow fulfilled, a card no
+// longer in chat, a result upgraded since).
+const PAYOFF_FINAL_REASONS = {
+  "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
+  "no-vow": "the vow is on no character's sheet any more",
+  "no-vehicle": "the vehicle is no longer in the world",
+  // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
+  "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
 
 const PAYOFF_TITLES = {
@@ -6826,30 +6900,44 @@ const PAYOFF_TITLES = {
  * pressing Retry, which re-runs only these steps, once
  * (wirePayoffRetryButton). `retryable: false` (a won-fight card's button,
  * which is itself the retry: its action stays unapplied) posts the report
- * without one. Exported for that button's GM-side handler.
+ * without one. `final`: what a Retry found it can never apply — nothing is
+ * owed for it any more — told once on a card with no Retry, which says so
+ * (retryPayoffSteps, issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
+ * `unreadable`: steps the card's own record makes impossible to run again
+ * ("invalid step") — told once on a card with no Retry too, but as what no
+ * Retry can apply, to be applied by hand if still owed: nothing says they are
+ * owed no longer (issue #364 PAYOFF-RETRY-INVALID-STEP-LOOP).
+ * Exported for that button's GM-side handler.
  *
  * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider"|"persist", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
- *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
+ *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean, final?: boolean,
+ *   unreadable?: boolean }} card
  */
-export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true }) {
+export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true, final = false, unreadable = false }) {
   const context = { source, vowName, vowId, actorId, outcome, connectionName };
   const lines = [];
   for (const f of failures) lines.push(`<li>${await describePayoffFailure(f, context)}</li>`);
   const title = (PAYOFF_TITLES[source] ?? PAYOFF_TITLES.fulfil)(context);
-  const footer = retryable
-    ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
-      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-payoff-retry" `
-      + `title="Apply the steps above again — once">↻ Retry these steps</button></div>`
-    : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
+  const withRetry = retryable && !final && !unreadable;
+  const one = failures.length === 1;
+  const footer = unreadable
+    ? `<p class="sf-card-hint">No Retry is offered: it would read the same record on every press. If ${one ? "this is" : "these are"} still owed, apply ${one ? "it" : "them"} by hand. Only GMs see this card.</p>`
+    : final
+    ? `<p class="sf-card-hint">Nothing is owed for ${failures.length === 1 ? "this" : "these"} any more, so there is nothing to retry. Only GMs see this card.</p>`
+    : withRetry
+      ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
+        + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-payoff-retry" `
+        + `title="Apply the steps above again — once">↻ Retry these steps</button></div>`
+      : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card sf-payoff-failure"><strong>${escapeChatHtml(title)}</strong>`
-      + `<p>Not applied:</p><ul>${lines.join("")}</ul>${footer}</div>`,
+      + `<p>${unreadable ? `Not applied — and no Retry can apply ${one ? "it" : "them"}:` : final ? "Not applied — and no longer owed:" : "Not applied:"}</p><ul>${lines.join("")}</ul>${footer}</div>`,
     whisper: gmUserIds(),
     // steps: what a Retry re-runs — read from this GM-authored card, never
     // from the click (src/moves/cardActions.js applyPayoffRetry).
     flags: { [MODULE_ID]: {
-      payoffFailureCard: true, retryable, resolved: false, ...context,
+      payoffFailureCard: true, retryable: withRetry, resolved: false, ...context,
       steps: failures.map(payoffStepRecord),
     } },
   });
@@ -6863,7 +6951,8 @@ function payoffStepRecord(f) {
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
-    case "milestoneUpgrade": return { step: "milestoneUpgrade", cardId: f.cardId ?? null, marks: f.marks ?? 1, lacking: f.lacking ?? null };
+    case "milestoneUpgrade": return { step: "milestoneUpgrade", cardId: f.cardId ?? null, marks: f.marks ?? 1, lacking: f.lacking ?? null,
+      whenPressed: f.whenPressed ?? null };
     case "xp":       return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "choiceCard":  return { step: "choiceCard", pcId: f.pcId ?? null, moveId: f.moveId ?? null, moveName: f.moveName ?? null,
@@ -6887,7 +6976,7 @@ function payoffStepRecord(f) {
 
 // One failed step, as a line of the GM card: what, why, and its value now.
 async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
-  const why = escapeChatHtml(PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
+  const why = escapeChatHtml((f.final === true ? PAYOFF_FINAL_REASONS[f.reason] : null) ?? PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
     + (f.error ? ` <span class="sf-card-hint">(${escapeChatHtml(f.error)})</span>` : "");
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   try {
@@ -7035,6 +7124,11 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
+        // A closing line for a step name nothing here runs (a card another
+        // version wrote, or a damaged one): named as recorded, never as the reward.
+        if (f.final === true && typeof f.step === "string" && f.step && f.step !== "reward") {
+          return `The step this card records as “${escapeChatHtml(f.step)}” — ${why}.`;
+        }
         return `The promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""} — ${why}; nothing was given.`;
     }
   } catch (err) {
@@ -7046,17 +7140,34 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
 /**
  * The GM side of a payoff card's Retry, once the card is claimed: each step
  * runs again unless a fulfilment's ledger says it landed meanwhile, and any
- * that fail again go on a fresh card with its own Retry. Every value comes
- * from the GM-authored card. Exported for src/moves/cardActions.js
- * applyPayoffRetry.
+ * that fail again go on a fresh card with its own Retry. A step whose outcome
+ * is `final` — nothing a Retry could ever apply, and nothing owed for it: a
+ * won fight's milestone raise with the victory card gone and its ⚑ never
+ * pressed — goes on no Retry card: the GMs are told once, on a card without
+ * one, and the pressed card stays resolved. It went on a fresh Retry card
+ * like any other, so every press posted another whose Retry could not succeed
+ * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). So does a
+ * step whose character's sheet is gone (PC_GONE), and a reward step whose
+ * vow is on no sheet (VOW_GONE). A step answered "invalid step" — by
+ * runPayoffStep or any runner it calls: a value out of range, a shape or a
+ * step name nothing here runs — goes on no Retry card either: the card's
+ * record never changes, so every press read it the same and posted another
+ * card whose Retry could not succeed. It is told once as what no Retry can
+ * apply (`unreadable`), never as no longer owed (issue #364
+ * PAYOFF-RETRY-INVALID-STEP-LOOP). Every value comes from the GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
  *
  * @param {Object} card — the failure card's module flags
- * @returns {Promise<Array<Object>>} the steps that failed again
+ * @returns {Promise<Array<Object>>} the steps that failed again (a `final` one is not among them)
  */
 export async function retryPayoffSteps(card) {
   const fulfil = card?.source === "fulfil";
   const copies = (fulfil || card?.source === "fight") ? payoffVowCopies(card ?? {}) : [];
   const failures = [];
+  // What a Retry can never apply (`final`): told, with no Retry.
+  const settled = [];
+  // What no Retry can run — the card's record of the step is not valid: told
+  // once too, as not applied and to be applied by hand if still owed.
+  const unreadable = [];
   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
     const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
     // A PC's box XP is on no ledger: only this card's Retry gives it.
@@ -7066,9 +7177,25 @@ export async function retryPayoffSteps(card) {
     if (res?.ok) {
       if (onLedger && !res.skipped) await recordPayoffStep(copies, ledgerStep);
       failures.push(...(res.xpFailures ?? []));
+    } else if (res?.reason === "invalid step") {
+      unreadable.push({ ...s, ...res, final: true, step: s?.step });
+    } else if (res?.final === true) {
+      settled.push({ ...s, ...res, step: s?.step });
     } else {
       failures.push({ ...s, ...res, step: res?.step ?? s?.step });
     }
+  }
+  if (settled.length) {
+    await postPayoffFailureCard({
+      source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
+      outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures: settled, final: true,
+    }).catch(err => console.warn(`${MODULE_ID} | payoff retry: the card for what is no longer owed failed:`, err?.message ?? err));
+  }
+  if (unreadable.length) {
+    await postPayoffFailureCard({
+      source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
+      outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures: unreadable, unreadable: true,
+    }).catch(err => console.warn(`${MODULE_ID} | payoff retry: the card for what no Retry can run failed:`, err?.message ?? err));
   }
   if (failures.length) {
     await postPayoffFailureCard({
@@ -7079,8 +7206,26 @@ export async function retryPayoffSteps(card) {
   return failures;
 }
 
+// A step's character no longer in the world — its Actor deleted since the
+// card was posted (or no longer a player character's): the step names it by
+// id, so no later press finds one either. `final`: the GMs' Retry says so
+// once, on a card with no Retry — as a plain failure it went on a fresh Retry
+// card on every press (retryPayoffSteps; issue #364
+// PAYOFF-RETRY-CHARACTER-GONE-LOOP).
+const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
+
+// A reward step's vow on no character's sheet any more: no copy by the card's
+// vow id, nor by its exact name — fulfilled copies count as there
+// (payoffVowCopies), so this is a vow deleted from every sheet, as
+// upgradeFightVowMilestone's "vow-gone" is. No reward is left to claim or to
+// raise, on this press or a later one: `final`. As a plain failure it went on
+// a fresh Retry card on every press (issue #364 PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
+const VOW_GONE = Object.freeze({ ok: false, final: true, reason: "no-vow" });
+
 // Run one failed step again. The card is GM-authored, but its values are still
-// checked: a legacy is one of the three tracks, 1–40 ticks.
+// checked: a legacy is one of the three tracks, 1–40 ticks. A record that
+// fails its check answers "invalid step", here and in every runner this calls:
+// the Retry reads that answer as one no later press can change (retryPayoffSteps).
 async function runPayoffStep(s, card, copies) {
   switch (s?.step) {
     case "legacy": {
@@ -7091,14 +7236,14 @@ async function runPayoffStep(s, card, copies) {
     case "deepen":
       return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1));
     case "reward":
-      if (!copies.length) return { ok: false, reason: "no-vow" };
+      if (!copies.length) return VOW_GONE;
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
     case "suffer": {
       // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
       const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
       const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
       if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
     }
@@ -7109,9 +7254,14 @@ async function runPayoffStep(s, card, copies) {
       const { upgradeKindFor } = await import("./moves/resultUpgrade.js");
       const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
-      if (s.resolutionId && upgradeKindFor(s.resolutionId)) return { ok: false, reason: "superseded" };
+      // Upgraded since: the claim on the move card (`burn` / `improve`
+      // `.consumed`) is never released, so the old outcome's card is owed on
+      // no later press either — `final`, told once with no Retry. It went on
+      // a fresh Retry card each time (issue #364
+      // PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP).
+      if (s.resolutionId && upgradeKindFor(s.resolutionId)) return { ok: false, final: true, reason: "superseded" };
       const card = await postSufferChoiceCard({
         sufferPrompt: s.sufferPrompt, actor: pc, executorOpts: s.executorOpts ?? {},
         moveId: s.moveId ?? null, resolutionId: s.resolutionId ?? null,
@@ -7127,7 +7277,10 @@ async function runPayoffStep(s, card, copies) {
       // has closed it since (a Keep, a later move, a round's close) still does.
       const { openRecordedUpgrades } = await import("./moves/resultUpgrade.js");
       const card = typeof s.messageId === "string" ? (game.messages?.get?.(s.messageId) ?? null) : null;
-      if (!card) return { ok: false, reason: "card-gone" };
+      // The move card deleted since: no card to open, now or on any later
+      // press — `final`, told once with no Retry. It went on a fresh Retry
+      // card each time (issue #364 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP).
+      if (!card) return { ok: false, final: true, reason: "card-gone" };
       return openRecordedUpgrades(card, s.kinds);
     }
     case "rider":
@@ -7137,7 +7290,17 @@ async function runPayoffStep(s, card, copies) {
       // A move's arrival whose record the world refused (issue #331 X18):
       // the place it reached, written onto the latest store (on the client's
       // campaignState write chain — CAMPSTATE-CHAIN-REST).
-      const located = currentLocationForEntityId(typeof s.locationId === "string" ? s.locationId : null);
+      const placeId = typeof s.locationId === "string" && s.locationId ? s.locationId : null;
+      const located = currentLocationForEntityId(placeId);
+      // The place deleted since — its record named a document that is gone,
+      // or no longer a settlement, location or planet: nowhere to arrive, on
+      // this press or a later one. `final`, told once with no Retry. It
+      // answered "invalid step", and before that answer was read as final it
+      // went on a fresh Retry card each time; as an unreadable record it was
+      // then told as one to apply by hand, which nobody can (issue #364
+      // PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP). A record that names its place
+      // under another type is still not valid.
+      if (placeId && !located) return { ok: false, final: true, reason: "place-gone" };
       if (!located || located.type !== s.locationType) return { ok: false, reason: "invalid step" };
       try {
         await serialiseCampaignStateWrite(() => {
@@ -7174,7 +7337,7 @@ async function runPayoffStep(s, card, copies) {
       const amount = Math.floor(Number(s.amount));
       if (!(amount >= 1 && amount <= 2)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       try {
         await applyMeterChanges(pc, { momentum: amount });
         return { ok: true };
@@ -7190,7 +7353,7 @@ async function runPayoffStep(s, card, copies) {
       const xp = Math.floor(Number(s.xp));
       if (!LEGACY_LABELS[s.track] || !(xp >= 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return PC_GONE;
       const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
@@ -7198,7 +7361,7 @@ async function runPayoffStep(s, card, copies) {
       // A weak-hit win's reward raised to the strong hit's, its claim refused
       // (issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY): the upgrade again —
       // claim first, so a reward already raised gives nothing more.
-      if (!copies.length) return { ok: false, reason: "no-vow" };
+      if (!copies.length) return VOW_GONE;
       return upgradeLinkedVowReward(card.vowName ?? null, "strong_hit", { actorId: card.actorId ?? null, copies });
     case "milestoneUpgrade": {
       // A weak-hit win's milestone raised to the strong hit's, the raise of
@@ -7208,11 +7371,13 @@ async function runPayoffStep(s, card, copies) {
       // once, on the vow's payoff ledger.
       const marks = Math.floor(Number(s.marks));
       if (typeof s.cardId !== "string" || !s.cardId || !(marks >= 1 && marks <= 3)) return { ok: false, reason: "invalid step" };
-      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null,
+      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
         vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null });
     }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      // The holder's sheet deleted since the claim: no one to give it to.
+      if (!pc) return PC_GONE;
       const given = await giveReward(pc, s.reward, s.plan);
       if (given.ok) {
         await postRewardGrantCard(s.reward, s.plan).catch(err =>
@@ -7242,6 +7407,35 @@ export function wirePayoffRetryButton(message, root) {
     btn.disabled = true;
     btn.textContent = "↻ Retried";
     return;
+  }
+  // A deepen with an NPC whose card was deleted since is retired (the
+  // delete's stamp — cardActions.retirePayoffDeepenStepsFor): its line is
+  // struck through and says why, and the Retry leaves it out. With every
+  // step retired there is nothing to retry — the step failed again on each
+  // press, onto a fresh card (issue #364 PAYOFF-CARD-DEEPEN-DELETED-NPC).
+  const live    = liveCardFlags(message) ?? f;
+  const steps   = Array.isArray(live.steps) ? live.steps : [];
+  const retired = (Array.isArray(live.retiredSteps) ? live.retiredSteps : []).filter(i => steps[i]);
+  if (retired.length) {
+    const lines = root.querySelector(".sf-payoff-failure")?.querySelector("ul")?.children ?? [];
+    const names = [];
+    for (const i of retired) {
+      const who = steps[i].connectionName ?? "This connection";
+      names.push(who);
+      const line = lines[i];
+      if (!line) continue;
+      line.classList.add("sf-payoff-step-retired");
+      line.setAttribute("style", "text-decoration: line-through; opacity: 0.65;");
+      line.title = `Retired — ${who}'s card was deleted: there is no bond to deepen`;
+    }
+    const whose = `${[...new Set(names)].join(", ")}'s card was deleted — there is no bond to deepen`;
+    if (retired.length >= steps.length) {
+      btn.disabled = true;
+      btn.textContent = "↻ Nothing to retry";
+      btn.title = whose;
+      return;
+    }
+    btn.title = `Apply the other steps again — once (${whose})`;
   }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
@@ -8346,12 +8540,40 @@ function escapeChatHtml(s) {
  * AT-COMMAND-OLD-LABEL; the course takes the same step in travel.js
  * rerouteUnchartedCourse, issue #362 AC50).
  *
+ * `asDestination` (a travel move asking whether the place it sets out for
+ * is one the campaign knows — a Set a Course's reroute, travel.js
+ * chartedPlaceFor, and the start of a new expedition, before it records an
+ * uncharted destination) narrows the whole-word rung one way. A
+ * fragment of a place's name still names it ("the gap" for "Archer's
+ * rendezvous — the gap"). A destination that holds a place's name is that
+ * place only when it is the name and little else — an article, a word for
+ * what kind of place it is ("Bleakhold Station", "the Bleakhold settlement";
+ * nameMatch.placeNameAndLittleElse). A longer label is a new destination:
+ * with a settlement Archer on the map, a first course for "Archer's
+ * rendezvous — the gap" was a course to Archer (issue #364
+ * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
+ *
+ * `journeyWords` (with `asDestination`: the start of an expedition typed as
+ * one — never a course's question, nor the expedition a course is read as,
+ * which asks as the course did) counts the journey's own words as little
+ * else too: an expedition's label may say it is one — "the expedition to
+ * Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
+ * wreck beyond Bleakhold" is a new destination. A typed expedition was asked
+ * the looser way, so that one was for Bleakhold: no uncharted site was
+ * recorded, and its finish docked at the settlement (issue #364
+ * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+ *
+ * The others pass neither: an arrival with no site or pin to dock at by id
+ * reads a place in the words around it (known-issues
+ * ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own naming, its card
+ * saying where it landed.
+ *
  * @param {string} name
  * @param {Object} campaignState
- * @param {{ siteRecordNames?: boolean }} [opts]
+ * @param {{ siteRecordNames?: boolean, asDestination?: boolean, journeyWords?: boolean }} [opts]
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
-export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false } = {}) {
+export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false, asDestination = false, journeyWords = false } = {}) {
   const target = name?.trim().toLowerCase();
   if (!target) return null;
 
@@ -8391,10 +8613,15 @@ export function resolveCurrentLocationName(name, campaignState, { siteRecordName
       { activeSectorId })?.site?.actorId;
     return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
   };
+  // One name inside the other, as whole words. For a destination, a place's
+  // name inside it is that place only as its name and little else.
+  const within = (c) => wholeWordsFit(c.lc, target)
+    && (!asDestination || wholeWordPattern(target).test(c.lc)
+      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords }));
   return pick(c => c.lc === target)
       ?? (siteRecordNames ? byRecordName() : null)
       ?? pick(c => c.lc.startsWith(target))
-      ?? pick(c => wholeWordsFit(c.lc, target))
+      ?? pick(within)
       ?? null;
 }
 
@@ -8691,10 +8918,6 @@ async function handleShipMapCommand(message) {
 }
 
 /**
- * Post the resolved move result to chat.
- * Returns the created ChatMessage so the caller can attach Loremaster context.
- */
-/**
  * Apply this outcome's asset consequence riders (consequence-riders feature).
  * Automatic meter riders apply silently; optional / "choose one" / progress
  * riders prompt. A mark that is the outcome's own resolves to the sole track
@@ -8886,7 +9109,7 @@ async function describeRiderStep(f, why, actorId) {
  *
  * @param {Object} s — the step: { rider, track, shipActorId }
  * @param {string|null} actorId — the card's PC
- * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string, error?: string }>}
  */
 async function retryRiderStep(s, actorId) {
   const rider = normaliseRider({ ...s?.rider, condition: "any" }, s?.rider?.assetName ?? "");
@@ -8897,12 +9120,17 @@ async function retryRiderStep(s, actorId) {
     return { ok, reason, error };
   }
   const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
-  if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+  if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return PC_GONE;
   const [{ ok, reason, error }] = await applyMeterRiders([rider], { characterActor: pc, shipActorId: s.shipActorId ?? null });
   // A supply loss the PC, unprepared by now, owes to another suffer move: its
   // picker is posted — the step is settled, and a second Retry would post
   // another (issue #336 Y19).
   if (reason === "redirected") return { ok: true };
+  // An integrity effect whose vehicle is gone: the step names it by its
+  // Actor's id (or names none), so no later press finds one — `final`, told
+  // once with no Retry. It went on a fresh Retry card each time (issue #364
+  // PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+  if (reason === "no-vehicle") return { ok: false, final: true, reason };
   return { ok, reason, error };
 }
 
@@ -8914,10 +9142,14 @@ async function retryRiderStep(s, actorId) {
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
 /**
+ * Post the resolved move result to chat.
+ *
  * @param {{ id: string, label?: string }|null} [fight] — a combat move's own
  *   fight (the pipeline's moveFight): stamped as combatTrackId /
  *   combatTrackLabel and named on the Finish the Fight button, which forwards
  *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
+ * @returns {Promise<ChatMessage>} the created message, for the caller (the
+ *   move pipeline's moveResultMessage)
  */
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null, extraFlags = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
@@ -9538,6 +9770,18 @@ Hooks.once("ready", () => {
         console.warn(`${MODULE_ID} | ship integrity reconcile failed:`, err?.message ?? err);
       }
       try {
+        // Issue #364 SHEET-IMPACT-NO-GM-ASSET-STALE — the same load brings
+        // each starship's STARSHIP asset card to its sheet's impacts: one
+        // toggled while no GM was connected was never mirrored, and the
+        // card's next edit wrote the stale box back over the sheet.
+        const cards = await reconcileStarshipAssetConditions();
+        if (cards.mirrored) {
+          console.log(`${MODULE_ID} | ship impacts: brought ${cards.mirrored} STARSHIP asset card(s) to their sheet's impacts`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | ship impacts reconcile failed:`, err?.message ?? err);
+      }
+      try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
         if (summary.moved || summary.foldersDeleted) {
@@ -9731,6 +9975,9 @@ Hooks.once("ready", () => {
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the
   // move lock — see sufferCard.js); wire its buttons.
   registerSufferCardHook();
+  // A Sojourn miss's "Community needs help": its card's ⚔ Swear an Iron Vow
+  // and ✔ It is done (issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY).
+  registerSojournNeedHook();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a
   // returning session doesn't inherit the previous run's MOVE count.

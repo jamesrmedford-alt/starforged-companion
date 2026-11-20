@@ -199,6 +199,11 @@ export function vehicleChoicesOf(actor, executorOpts = {}) {
   return { vehicleCount: vehicleChoices.length, vehicleChoices };
 }
 
+/** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
+function clearTracksOf(prompt) {
+  return (Array.isArray(prompt?.clearTracks) ? prompt.clearTracks : []).filter(t => typeof t?.id === "string" && t.id);
+}
+
 /**
  * True when an "any" card cannot take this suffer move: one the prompt
  * excludes (a redirected loss — sufferExecutor.sacrificeResources),
@@ -207,11 +212,6 @@ export function vehicleChoicesOf(actor, executorOpts = {}) {
  * Companion Takes a Hit / Withstand Damage with no companion / vehicle to
  * take it (issue #362 AC28).
  */
-/** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
-function clearTracksOf(prompt) {
-  return (Array.isArray(prompt?.clearTracks) ? prompt.clearTracks : []).filter(t => typeof t?.id === "string" && t.id);
-}
-
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
   // A suffer move with nothing to suffer it pays nothing: no companion (or
@@ -336,7 +336,9 @@ export function summarizeSufferCalls(calls, results = []) {
         : "a module marked broken (on the starship sheet)"); break;
       case "route":               parts.push(c.route === "pay_the_price" && c.price
         ? "the price paid (see its card)"
-        : `see "Trigger: ${c.route}"`); break;
+        : c.resolvesAs === "strong_hit"
+          ? "the community's need taken on (answer it on its card)"
+          : `see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("a complication (see its card)"); break;
       default: break;
     }
@@ -866,6 +868,15 @@ async function handleSufferPick(message, dataset) {
     if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
     return { applied: false, reason: "post-failed" };
   }
+  // The community's need (Sojourn's miss) is answered on a card of its own:
+  // one the world refused leaves nothing to answer it on, so the pick is
+  // handed back, as a resist roll's refused post hands its card back (issue
+  // #364 SOJOURN-VOW-OPTION-REMINDER-ONLY).
+  if (!multi && calls.length === 1 && calls[0].kind === "route" && results[0]?.ok === false && results[0].reason === "post-failed") {
+    const reopened = await reopenSufferCard(message, { note: NEED_UNPOSTED_NOTE });
+    if (reopened && f.resolutionId && f.upgraded !== true) await reopenUpgradesForUndoneChoice(f.resolutionId);
+    return { applied: false, reason: "post-failed" };
+  }
   // A single pick that found nothing to suffer it — the companion or the
   // vehicle gone since the card was drawn — paid nothing: the card stays the
   // cost's, open for another pick (issue #362 AC28), and its move's Burn /
@@ -898,6 +909,10 @@ async function handleSufferPick(message, dataset) {
 // What a resist card handed back after the world refused its roll's post says
 // (issue #362 AC60) — on its content only: the next press re-renders it.
 const RESIST_UNPOSTED_NOTE = "The roll could not be posted — the world did not save it. Press it again.";
+
+// What a choice card says when the card its pick is answered on (Sojourn's
+// community's need — sojournNeed.js) could not be posted. Content only, as above.
+const NEED_UNPOSTED_NOTE = "The card to answer it on could not be posted — the world did not save it. Press it again.";
 
 /**
  * Re-open a suffer choice card — not resolved, not superseded, its buttons

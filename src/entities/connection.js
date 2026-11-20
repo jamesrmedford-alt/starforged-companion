@@ -427,6 +427,21 @@ export async function retractNarrationConnections(narrationIds) {
       // Its teardown is this one: the deleteActor hook leaves it alone (issue #362 D10).
       await document.delete({ [MODULE_ID]: { [TORN_DOWN_OPTION]: true } });
       await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
+      // What names it goes too, as when a GM deletes the card: a vow linked
+      // to it since (the vow card's Link — no use of the NPC's record, so the
+      // card was still deleted) kept the link (issue #364
+      // XCARD-NPC-DELETE-SKIPS-TEARDOWN). Its own guard: the steps after it
+      // still run.
+      try {
+        await clearDeletedConnectionReferences(String(data.name || document.name || "").trim(), document.id);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | X-Card: clearing what named the removed connection ${name} failed:`, err?.message ?? err);
+      }
+      // And the plans still in play about the card, as a GM's delete retires
+      // them: the removed narration's own are undone by its id already; one a
+      // GM edited or a kept narration decided since stayed in play about a
+      // card that no longer exists (issue #364 XCARD-NPC-DELETE-LEAVES-PLAN).
+      await retirePlansAboutDeletedConnection(document.id);
       await deleteEntityArtAssets(FLAG_KEY, data._id ?? null, { portraitId: data.portraitId ?? null });
       if (data.createdFromDraft) {
         const { reopenConfirmedDraftRow } = await import("./entityExtractor.js");
@@ -488,17 +503,10 @@ export function registerConnectionDeleteHook() {
  * where the table marked them (actorBridge.retireDeletedConnectionBondItems:
  * the card is gone, a player's marks are not erased); its portraits
  * (deleteEntityArtAssets); its hidden plan retired, as a GM's Retire does
- * (secrets.retireSkeleton). Each step is a no-op once done.
+ * (retirePlansAboutDeletedConnection — the X-Card's delete runs it too). Each
+ * step is a no-op once done.
  *
- * And the references that name it (issue #364 DELETED-NPC-NAME-REFERENCES):
- * the vows linked to it — a vow's link is the connection's name, so a won
- * fight still offered to deepen the bond with the deleted NPC and the vow's
- * fulfilment listed a deepen no Retry could land. The links are cleared
- * (actorBridge.clearVowLinksToConnection) unless another card of that name is
- * left, which the name then means; the GMs are told which vows no longer
- * serve a connection. With the links, the won-fight cards already in chat
- * lose their "🤝 Deepen your bond with …" (cardActions.retireFightVowDeepenFor,
- * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found").
+ * And the references that name it (clearDeletedConnectionReferences).
  *
  * @param {Actor} actor
  * @returns {Promise<void>}
@@ -509,20 +517,92 @@ async function tearDownDeletedConnection(actor) {
   const name     = String(record.name || actor.name || "").trim();
   await unregisterDeletedConnection(actor.id, name);
   // Dynamic imports, as the X-Card's: actorBridge and the Secrets journal import entity modules.
-  const { retireDeletedConnectionBondItems, clearVowLinksToConnection } = await import("../character/actorBridge.js");
+  const { retireDeletedConnectionBondItems } = await import("../character/actorBridge.js");
   await retireDeletedConnectionBondItems({ connectionId: recordId });
-  if (name && !connectionNamedRemains(name, actor.id)) {
-    const { cleared } = await clearVowLinksToConnection(name);
-    if (cleared.length) await postVowLinksClearedNotice(name, cleared);
-    // The victory cards already in chat that offer to deepen that bond.
-    const { retireFightVowDeepenFor } = await import("../moves/cardActions.js");
-    await retireFightVowDeepenFor(name);
-  }
+  await clearDeletedConnectionReferences(name, actor.id);
   await deleteEntityArtAssets(FLAG_KEY, recordId, { portraitId: record.portraitId ?? null });
-  const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
-  for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === actor.id)) {
-    await retireSkeleton(plan.id);
+  await retirePlansAboutDeletedConnection(actor.id);
+}
+
+/**
+ * Retire the hidden plans in play about a deleted NPC card — the plans whose
+ * subject is the card, by its Actor id — as a GM's Retire does
+ * (secrets.retireSkeleton: out of play, kept in the Secrets journal, its
+ * clock retired with it). A GM's delete of the card always did this (issue
+ * #362 D10). The X-Card's delete of an NPC its narration created did not
+ * (issue #364 XCARD-NPC-DELETE-LEAVES-PLAN): the plans that narration itself
+ * wrote are undone by its id before the card goes (worldJournal.js
+ * undoNarrationEntries), but a plan about the NPC that someone else owns by
+ * then — the agenda a GM edited in the Secrets panel, or one a kept narration
+ * decided — stays when its maker is removed, and "used" reads the NPC's
+ * record, sheet and bond marks, never a plan (connectionUsed,
+ * sheetWrittenByTable): the card was deleted and the plan stayed in play,
+ * about a subject that no longer existed, put to every later narration. Both
+ * deletes call it (tearDownDeletedConnection, retractNarrationConnections).
+ * Canonical GM (both callers). Never throws: the steps after it still run.
+ *
+ * @param {string} deletedId — the deleted card's Actor id
+ * @returns {Promise<void>}
+ */
+async function retirePlansAboutDeletedConnection(deletedId) {
+  if (typeof deletedId !== "string" || !deletedId) return;
+  try {
+    // Dynamic import: the Secrets journal imports entity modules.
+    const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
+    for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === deletedId)) {
+      await retireSkeleton(plan.id);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deleted NPC card ${deletedId}: its hidden plans could not be retired:`, err?.message ?? err);
   }
+}
+
+/**
+ * Clear the references that name a deleted NPC (issue #364
+ * DELETED-NPC-NAME-REFERENCES) — the one step both deletes of an NPC card
+ * share: a GM's, in the Actors sidebar (tearDownDeletedConnection), and the
+ * X-Card's, of an NPC its narration created (retractNarrationConnections).
+ * The rest of the two teardowns differs — the X-Card deletes the bond Items
+ * before the card and keeps the NPC when one is marked, and runs in step with
+ * its finish, where the hook's runs after the delete — so the hook stands
+ * down for the X-Card's delete (TORN_DOWN_OPTION) and the X-Card skipped this
+ * step with it: a vow linked to the NPC after its narration (the vow card's
+ * Link writes the vow, not the NPC's record, so the NPC was still "unused"
+ * and deleted) kept its link (issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN).
+ *
+ * The vows linked to it — a vow's link is the connection's name, so a won
+ * fight still offered to deepen the bond with the deleted NPC and the vow's
+ * fulfilment listed a deepen no Retry could land. The links are cleared
+ * (actorBridge.clearVowLinksToConnection) unless another card of that name is
+ * left, which the name then means; the GMs are told which vows no longer
+ * serve a connection. With the links, the won-fight cards already in chat
+ * lose their "🤝 Deepen your bond with …" (cardActions.retireFightVowDeepenFor,
+ * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found"), and
+ * the payoff failure cards in chat lose the deepen step their Retry would run
+ * again for a bond nobody can find (cardActions.retirePayoffDeepenStepsFor).
+ * The bond recommit offers in chat for the deleted card go whatever the
+ * namesake test says — they name the card by its id
+ * (cardActions.retireBondRecommitOffersFor; issue #364
+ * PAYOFF-CARD-DEEPEN-DELETED-NPC).
+ * Canonical GM (both callers). After the card's id is off `connectionIds`.
+ *
+ * @param {string} name — the deleted NPC's name
+ * @param {string} deletedId — its card's Actor id
+ * @returns {Promise<void>}
+ */
+async function clearDeletedConnectionReferences(name, deletedId) {
+  // Dynamic imports: actorBridge and cardActions import entity modules.
+  const { retireFightVowDeepenFor, retirePayoffDeepenStepsFor, retireBondRecommitOffersFor } = await import("../moves/cardActions.js");
+  // The bond recommit offers in chat name the card by its id: this card's, namesake or not.
+  await retireBondRecommitOffersFor(deletedId);
+  if (!name || connectionNamedRemains(name, deletedId)) return;
+  const { clearVowLinksToConnection } = await import("../character/actorBridge.js");
+  const { cleared } = await clearVowLinksToConnection(name);
+  if (cleared.length) await postVowLinksClearedNotice(name, cleared);
+  // The victory cards already in chat that offer to deepen that bond, and
+  // the payoff failure cards whose Retry would deepen it.
+  await retireFightVowDeepenFor(name);
+  await retirePayoffDeepenStepsFor(name);
 }
 
 /**

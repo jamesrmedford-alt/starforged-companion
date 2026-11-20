@@ -18,6 +18,16 @@
  * narration left it — asked, a price paid between a trigger vignette and the
  * X-Card on it left the step back unplayed and the clock where it was (issue
  * #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE).
+ *
+ * A stamp alone does not say the clock is still its plan's to pace: a clock a
+ * pacing retired (after a last step) keeps the stamp when its plan then
+ * leaves play — retired by a GM, its page deleted, its story ended by a later
+ * narration — because every "the plan left, retire its clock" path looks only
+ * at running clocks. So each undo also asks whether the clock's plan is in
+ * play once the narration is taken back (planInPlayFor), told the plans by a
+ * caller that reads them (worldJournal.js hiddenPlansInPlayWithout); a clock
+ * whose plan is gone or closed is left as it is (issue #364
+ * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
  */
 
 /**
@@ -54,6 +64,26 @@ export function pacedByOneOf(clock, narrationIds) {
   if (!id) return false;
   for (const candidate of narrationIds ?? []) if (candidate === id) return true;
   return false;
+}
+
+/**
+ * Whether the plan a clock paces is in play — among the plans the caller
+ * names: the plan the clock is stamped with (`planId`), or one that links the
+ * clock (`clockIds` — a clock from before clocks carried their plan). What a
+ * pacing's undo asks before it runs a clock again: a clock whose plan is gone
+ * or closed stays as it is (issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
+ * With the plans not known (`null` — they could not be read) every clock
+ * counts as its plan's, as before.
+ *
+ * @param {object|null} clock — a campaignState.clocks entry
+ * @param {{ planIds: Set<string>, clockIds: Set<string> }|null|undefined} plansInPlay —
+ *   worldJournal.js hiddenPlansInPlayWithout's
+ * @returns {boolean}
+ */
+export function planInPlayFor(clock, plansInPlay) {
+  if (!plansInPlay || typeof plansInPlay !== "object") return true;
+  const has = (set, id) => typeof id === "string" && !!id && typeof set?.has === "function" && set.has(id);
+  return has(plansInPlay.planIds, clock?.planId) || has(plansInPlay.clockIds, clock?._id);
 }
 
 /**

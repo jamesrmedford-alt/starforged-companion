@@ -18,7 +18,10 @@ layers. This file is the never-break list.
    Mode round's one card (issue #340): `roundId`, `roundNumber` and
    `roundEntries` (the players who acted, no one else) beside the family, its
    own `moveId` / `outcome` / `resolutionId` empty; its fallback card keeps
-   the family with `narrationFallback`. One exception
+   the family with `narrationFallback`; its `sessionId` is the round's own
+   session, whichever pass narrates it — after the next session's mint too
+   (driver.js `roundNarrationState`, issue #364
+   ROUND-CARD-SESSION-ID-AFTER-MINT). One exception
    (issue #321 U35): the move narration's "narration unavailable" card keeps
    the family so the session recap counts the move, and every narrator-memory
    read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
@@ -33,14 +36,17 @@ layers. This file is the never-break list.
    and a removed or superseded narration's pacing of a plan clock is taken
    back with its step, issue #362 AC33 — matched by the stamp alone, so also
    after a later price turned the clock, issue #364
-   PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; the burned price's receipt names that
+   PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE, and only while the clock's plan is
+   in play once the narration is taken back, `planInPlayFor`,
+   RETIRED-PLAN-CLOCK-XCARD-REACTIVATES; the burned price's receipt names that
    vignette, `vignetteNarrationId`, so a price paid in between does not hide
    it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — and it is struck by
    that id when the clock has triggered again since and carries the later
    trigger's stamp, the later trigger left standing, PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN;
    the plan step a narration played carries that narration, `playedBy`, and
    goes back unplayed with it whatever was written to the plan since,
-   PLAN-STEP-REWRITTEN-BEFORE-BURN) —
+   PLAN-STEP-REWRITTEN-BEFORE-BURN — as do a clue it showed, `revealedBy`, and
+   a truth it revealed, `truthRevealedBy`, PLAN-CLUE-TRUTH-NO-MARK) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
@@ -228,7 +234,11 @@ layers. This file is the never-break list.
    AA01); an oracle follow-up the X-Card interrupted, which posts no card,
    drops its raw card's own (XCARD-ORACLE-FOLLOWUP-UNWRITTEN). A narration
    card that posts while the X-Card is active is removed with it
-   (XCARD-POST-RACE), and the Chronicle entries the scribe wrote from a
+   (XCARD-POST-RACE) — one posted late into the session before the current
+   one too, which the X-Card's pick answers like any narration on screen when
+   it is the newest (`narratedLateIntoEarlierSession`: filed under another
+   session, posted since the current one was minted; issue #364
+   XCARD-MISSES-LATE-ROUND-CARD) — and the Chronicle entries the scribe wrote from a
    removed narration go too (XCARD-CHRONICLE).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
@@ -330,7 +340,20 @@ layers. This file is the never-break list.
    summary error returns the prior text and never blocks a narration. Regen
    runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
    never inside `buildNarratorExtras`, which only reads the cached text — a
-   regen is a Haiku call over the whole session (issue #286 B7). Full drop
+   regen is a Haiku call over the whole session (issue #286 B7). LAST
+   SESSION (`previousSessionSummary`) is the same kind of text and follows the
+   same rules after the mint that kept it: a narration posted into the session
+   it names — a Batch Mode round narrated late — marks that session
+   `unsummarisedSession` again and the catch-up makes its text again from the
+   session's cards, on the canonical GM (`bringLastSessionUpToDate` →
+   `catchUpUnsummarisedSession`), keeping what a mint folded onto it from a
+   session nobody began (`lastSessionTextParts`); an X-Card that removes such
+   a narration drops the session's own text and marks it the same way
+   (`dropLastSessionTelling`); and when the mint carried no summary for the
+   card's session nothing is made up (issue #364
+   LATE-ROUND-NOT-IN-LAST-SESSION). The mark outlives a later mint while LAST
+   SESSION goes on naming its session (`rollSessionIfDue`,
+   LAST-SESSION-OWED-LOST-AT-MINT). Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 ## Tuning knobs (don't add new ones before using these)

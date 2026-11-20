@@ -254,19 +254,23 @@ export function nextRoundNumber(previous, sessionId) {
 /**
  * A new round, collecting, with an entry waiting for each participant. (No
  * scene id: the narration uses the scene current when it runs, and nothing
- * read the one a round opened in — issue #342 Z37.)
+ * read the one a round opened in — issue #342 Z37.) It keeps its session's
+ * number beside its id: a round narrated once another session is current is
+ * still told, and filed, as its own session's (driver.js roundNarrationState
+ * — issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT).
  *
  * @param {{ id: string, number: number, sessionId: string|null,
- *   now: string, participants: Array<Object> }} args
+ *   sessionNumber?: number|null, now: string, participants: Array<Object> }} args
  * @returns {Object}
  */
-export function createRound({ id, number, sessionId, now, participants = [] }) {
+export function createRound({ id, number, sessionId, sessionNumber = null, now, participants = [] }) {
   const entries = {};
   for (const p of participants) if (p?.userId) entries[p.userId] = newEntry(p);
   return {
     id,
     number,
     sessionId: sessionId ?? null,
+    sessionNumber: Number.isFinite(Number(sessionNumber)) && Number(sessionNumber) > 0 ? Number(sessionNumber) : null,
     phase:         ROUND_PHASE.COLLECTING,
     openedAt:      now,
     resolverId:    null,

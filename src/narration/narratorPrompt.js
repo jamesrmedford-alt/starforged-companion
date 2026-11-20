@@ -20,15 +20,6 @@ import { lengthPhrase, sentenceRule } from './proseVariety.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Mandatory sidecar response-format instruction appended to every narrator
- * system prompt. Tells the narrator to emit prose followed by a single
- * fenced JSON block describing new truths and state changes. The block is
- * parsed off-screen by src/factContinuity/sidecarParser.js and stripped
- * before the prose reaches chat.
- *
- * Returns a single string ready to push onto the system-prompt parts array.
- */
-/**
  * NPC-dialogue markup instruction — audio-narration scope §6.
  *
  * Appended to the narrator system prompt only when the audio.enabled
@@ -65,6 +56,18 @@ export function appendNpcMarkupInstruction() {
   ].join('\n');
 }
 
+/**
+ * Mandatory sidecar response-format instruction appended to every narrator
+ * system prompt. Tells the narrator to emit prose followed by a single
+ * fenced JSON block describing new truths and state changes. The block is
+ * parsed off-screen by src/factContinuity/sidecarParser.js and stripped
+ * before the prose reaches chat.
+ *
+ * Returns a single string ready to push onto the system-prompt parts array.
+ *
+ * @param {{ mode?: string, sceneFrameEnabled?: boolean, skeletonsEnabled?: boolean }} [options]
+ * @returns {string}
+ */
 export function appendSidecarInstruction(options = {}) {
   const mode              = typeof options.mode === 'string' ? options.mode : 'move_resolution';
   const sceneFrameEnabled = options.sceneFrameEnabled !== false;
@@ -598,13 +601,6 @@ function estimateTokens(s) {
   return Math.ceil(s.length / 4);
 }
 
-/**
- * Render a ledger subject as the human-readable prefix used in the block.
- *   entity → display name from the lookup, else the record's own name, else
- *            the entity ID.
- *   scene  → "scene"
- *   text   → the original text
- */
 /** The newest `subjectText` among a text subject's state entries that still names its key, or ''. */
 function textSubjectAsWritten(entries, key) {
   let best = null;
@@ -616,6 +612,13 @@ function textSubjectAsWritten(entries, key) {
   return best?.text ?? '';
 }
 
+/**
+ * Render a ledger subject as the human-readable prefix used in the block.
+ *   entity → display name from the lookup, else the record's own name, else
+ *            the entity ID.
+ *   scene  → "scene"
+ *   text   → the original text
+ */
 function formatSubjectLabel(subject, nameLookup) {
   if (!subject || typeof subject !== 'object') return 'unknown';
   switch (subject.kind) {
@@ -988,16 +991,6 @@ function selectCardTierEntries(tier) {
 }
 
 /**
- * Format a single entity record as a narrator-prompt card.
- * Includes the canonical tier (with a hard or soft instruction depending on
- * canonicalLocked) and up to CARD_TIER_LINES generative-tier entries
- * (selectCardTierEntries).
- *
- * @param {Object} entity     — entity record (any type)
- * @param {string} entityType — "connection" | "ship" | "settlement" | "faction" | "planet" | "location" | "creature"
- * @returns {string}
- */
-/**
  * Where a connection's relationship stands (issue #286 C5): lost or bonded,
  * then its last few relationship events (`history`, written by forgeBond /
  * loseConnection) — none of which reached the narrator, so a severed
@@ -1018,6 +1011,16 @@ function formatConnectionStanding(connection) {
   return lines;
 }
 
+/**
+ * Format a single entity record as a narrator-prompt card.
+ * Includes the canonical tier (with a hard or soft instruction depending on
+ * canonicalLocked) and up to CARD_TIER_LINES generative-tier entries
+ * (selectCardTierEntries).
+ *
+ * @param {Object} entity     — entity record (any type)
+ * @param {string} entityType — "connection" | "ship" | "settlement" | "faction" | "planet" | "location" | "creature"
+ * @returns {string}
+ */
 export function formatEntityCard(entity, entityType) {
   if (!entity) return '';
   const typeLabel = ENTITY_TYPE_LABELS[entityType] ?? 'Entity';

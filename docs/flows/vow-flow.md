@@ -189,6 +189,54 @@ vow did not take releases the claim and whispers the presser, with no
 "🤝 Linked" card — issue #329 X07 — and a vow no character holds closes the
 Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward offer.
 
+**A vow sworn to see a community's need done.** A Sojourn miss's "Community
+needs help" is answered on the community's need card
+(`src/moves/sojournNeed.js`; combat-flow.md, issue #364
+SOJOURN-VOW-OPTION-REMINDER-ONLY). Its **⚔ Swear an Iron Vow** (relayed
+`sojourn.need`, the roller's player or a GM, one press at a time and one
+vow per card) writes the vow on the roller's sheet through
+`createCharacterVowItem` (no `vowId`; `sojournNeedCard`: the card's chat
+message id, as a module flag of the vow) with the name and rank typed on the
+card — blank, a vow still to be named — so the hook above posts its "🆕 New
+vow recorded" card, as Begin a Session's offer does; a vow the sheet refuses
+changes nothing and the presser is told. The vow's `sojournNeedCard` flag is
+the one link between the vow and its card — made in the write that makes
+the vow, read through `actorBridge` (`vowNeedCardId`, `readNeedVow`,
+`needCardIdsOfVow`); the card keeps no vow id (issue #364
+SOJOURN-NEED-CARD-VOW-ID-WRITE-REFUSED: it kept the link in a second write
+of its own, and a vow whose card write was refused resolved nothing). When
+a Swear an Iron Vow for that vow has been rolled and narrated
+(`movePipeline.finishMove` — `swornVowId` → `resolveSojournNeedsForVow`,
+which finds the card from the vow) the Sojourn it answers is resolved as a
+strong hit. A swear held for Burn / Improve / Keep is not narrated at its roll: its
+card keeps the vow (`awaitingUpgrade.swornVowId`) and the Sojourn is
+resolved once the held swear is told — `heldResult.keepHeldResult`, or
+`narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
+SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath) — also
+when the world refused the write that closes the held card's wait:
+`narrateHeldUpgrade` then narrates the upgraded swear itself, as an upgrade
+of a result that was not held is narrated, and the Sojourn follows it
+(issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED: the narration was handed
+back to `index.js`, which told the swear with nothing after it). That the
+swear has been told is written on the vow (`sojournSwearTold`,
+`actorBridge.markNeedVowSwearTold` — beside its `sojournNeedCard`; the card's
+`resolved` says whether its Sojourn is resolved), so a resolve that cannot be
+made then is made later by the vow, with no press: a Batch Mode round being
+resolved refuses it (the round tells its entries once — a participant's held
+swear the round keeps before it rolls is told exactly then), and
+`resolveToldSojournNeeds` resolves the open cards of the told vows
+(`actorBridge.toldNeedCardIds`) once the round is narrated and closed
+(`batch/driver.js` `finishRound`) and at the canonical GM's load (issue #364
+SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the refused resolve was only
+logged). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
+a swear typed in chat is not recognised, and the need card's ✔ It is done
+resolves the Sojourn instead. That vow deleted from the sheet before it is
+sworn is no longer the card's: the card stops saying it is on the sheet and
+offers ⚔ again (read from the sheet on every render, and written back to
+the card's text by the canonical GM's `deleteItem` hook), and another vow
+written from it is the one whose swear resolves the Sojourn (issue #364
+SOJOURN-VOW-DELETED-BEFORE-SWORN).
+
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
 the roll shapes momentum and the narration.
@@ -253,7 +301,23 @@ All real progress lands on **item ticks** (`system.current`) via
   `fulfilPayoff["milestone:<card id>:upgrade"]` (`upgradeFightVowMilestone`,
   issue #362 D7): read before the mark and written by it, so the GMs'
   Retry of a mark the world refused (payoff step `milestoneUpgrade`, issue
-  #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) never marks twice. Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) never marks twice. "Pressed"
+  there is the card's stamp (`resolvedActions.markMilestone`) **or** the
+  press's own ledger entry, `fulfilPayoff["milestone:<card id>"]`: a mark
+  whose stamp the world refused left the card unstamped, so by the stamp
+  alone the upgrade raised its count and the next press — finding the
+  ledger entry — marked nothing, losing the strong hit's extra mark (issue
+  #364 FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE). The same ledger entry decides
+  a refused raise's Retry once the victory card is deleted: the step keeps
+  the marks a press at the card's count would lack (`whenPressed`), paid
+  once when the ledger says that press landed — it read "never pressed" and
+  refused "victory-card-gone" every time (issue #364
+  FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE). When the ledger says it did not —
+  the card gone, its ⚑ never pressed — nothing is owed and nothing can be:
+  the outcome is `final`, and the Retry (`retryPayoffSteps`) posts no fresh
+  Retry card for it, telling the GMs once on a card with no Retry; as a step
+  it failed again on every press, onto another card (issue #364
+  FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
   PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
@@ -574,6 +638,47 @@ needs) showing each value as it stands now. Its "↻ Retry these steps"
 `cardActions.applyPayoffRetry`, GM only, the card GM-authored) claims the
 card (`resolved`) before anything runs, then `retryPayoffSteps` re-runs each
 step the ledger does not mark landed; any that fail again go on a fresh card.
+A step whose outcome is `final` — nothing a Retry could ever apply, nothing
+owed for it — goes on no Retry card: the GMs are told once on a card with no
+Retry (`postPayoffFailureCard({ final: true })`, `retryable: false`, "Not
+applied — and no longer owed"), and the pressed card stays resolved (issue
+#364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP: a won fight's milestone
+raise with the victory card deleted and its ⚑ never pressed; and a won
+fight's refused milestone mark whose vow was fulfilled, or left every sheet,
+before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; and
+an `upgradeOpen` step whose move card was deleted — issue #364
+UPGRADE-OPEN-RETRY-CARD-GONE-LOOP; and a `choiceCard` step whose move's
+result was upgraded since — "superseded": the upgrade's claim on the move
+card is never released, so its new outcome's card stands on every later
+press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP; and any step
+whose character's Actor was deleted since — "no-pc" (`PC_GONE`): a
+`suffer`, `choiceCard`, `momentum`, `xp`, `rewardGrant` or `rider` step, an
+`upgrade` step's meters or choice card; its line says the character's sheet
+is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
+Retry" note skips a card with no Retry — issue #364
+PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
+whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
+copy by the card's vow id nor its exact name, fulfilled copies counting as
+there, so a vow fulfilled since is still paid — issue #364
+PAYOFF-RETRY-VOW-GONE-REWARD-LOOP; and an `arrival` step whose place was
+deleted since — "place-gone": nowhere to arrive — issue #364
+PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP; and a `rider` step's integrity effect,
+or an `upgrade` step's vehicle track to restore, whose vehicle Actor is gone
+— "no-vehicle", the step names it by id — issue #364
+PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+A step the Retry answers "invalid step" for — its record on the card fails
+the runner's check (a value out of range, a shape, a step name nothing
+runs), and the record never changes — goes on no Retry card either, but is
+not "no longer owed": the GMs are told once on a second kind of closing card
+(`postPayoffFailureCard({ unreadable: true })`, `retryable: false`, "Not
+applied — and no Retry can apply it", to be applied by hand if still owed —
+issue #364 PAYOFF-RETRY-INVALID-STEP-LOOP). The session notes that name
+what still waits on a Retry (`outstandingSessionMomentum` /
+`outstandingSessionClocks`) read only cards that carry one.
+A deepen step whose NPC's card was deleted since is retired and left out
+(the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
+#364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
+card").
 A refused claim of the reward is step `reward` (nothing given); a refused
 grant after it is step `rewardGrant`, carrying the PC and amount. Each step
 used to log to the console only — a refused legacy still paid its XP, a

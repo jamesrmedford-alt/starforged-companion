@@ -516,14 +516,6 @@ async function beginSessionOnce(payload) {
 
 
 /**
- * Begin a Session ran again on a session already begun — say what (didn't)
- * happen, and name a session-start clock advance still waiting on the GMs'
- * Retry card, since Begin again is the natural (and wrong) way to try again
- * (issue #316 T04).
- *
- * @param {string|null} sessionId
- */
-/**
  * Begin a Session's start write was refused: nothing began. Posted where the
  * Begin card is, so its promise ("scene set", "+1 momentum") is not the last
  * word (issue #329 X13 — End a Session reports its own write failure).
@@ -538,6 +530,14 @@ async function postSessionNotStartedCard(vignetteRolled) {
   }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the not-started card failed:`, err?.message ?? err));
 }
 
+/**
+ * Begin a Session ran again on a session already begun — say what (didn't)
+ * happen, and name a session-start clock advance still waiting on the GMs'
+ * Retry card, since Begin again is the natural (and wrong) way to try again
+ * (issue #316 T04).
+ *
+ * @param {string|null} sessionId
+ */
 async function postSessionAlreadyBegunCard(sessionId = null) {
   const owed = outstandingSessionClocks(sessionId);
   const owedNote = owed.length
@@ -1082,7 +1082,9 @@ function outstandingSessionMomentum(sessionId) {
   const names = new Set();
   for (const m of game.messages?.contents ?? []) {
     const f = m?.flags?.[MODULE_ID];
-    if (!f?.payoffFailureCard || f.resolved || f.source !== "session") continue;
+    // A card with no Retry (`retryable: false`) names what is no longer owed
+    // — a PC whose sheet is gone (index.js retryPayoffSteps): nothing waits on it.
+    if (!f?.payoffFailureCard || f.resolved || f.retryable === false || f.source !== "session") continue;
     for (const s of f.steps ?? []) {
       if (s?.step === "momentum" && s.sessionId === sessionId) names.add(game.actors?.get?.(s.pcId)?.name ?? "a character");
     }
@@ -1103,7 +1105,9 @@ function outstandingSessionClocks(sessionId) {
   const names = new Set();
   for (const m of game.messages?.contents ?? []) {
     const f = m?.flags?.[MODULE_ID];
-    if (!f?.payoffFailureCard || f.resolved || f.source !== "sessionClocks") continue;
+    // A card with no Retry (`retryable: false`) is a closing note — a `clocks`
+    // step no Retry can run (index.js retryPayoffSteps): no Retry saves it.
+    if (!f?.payoffFailureCard || f.resolved || f.retryable === false || f.source !== "sessionClocks") continue;
     for (const s of f.steps ?? []) {
       if (s?.step !== "clocks" || s.sessionId !== sessionId) continue;
       for (const c of s.clocks ?? []) names.add(String(c?.name ?? "a clock"));

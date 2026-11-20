@@ -209,6 +209,9 @@ export const GM_ACTIONS = Object.freeze({
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
   // Issue #354 P2-10 — a free-flow result held for Burn / Improve / Keep: "Keep the result" pays its price and narrates it
   "move.keepResult":           { load: () => import("../moves/heldResult.js"),                       fn: "applyKeepResultFromRelay", claude: true },
+  // Issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY — the community's need card of a Sojourn miss: "⚔ Swear an Iron Vow"
+  // writes the vow on the roller's sheet; "✔ It is done" resolves the Sojourn as a strong hit and narrates it
+  "sojourn.need":              { load: () => import("../moves/sojournNeed.js"),                      fn: "applySojournNeedFromRelay", claude: true },
   "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
   "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
   "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },

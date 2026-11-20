@@ -83,7 +83,9 @@ const PRICE = `${PICK}[data-option-index="1"]`;
 let table, pc;
 const flagsOf   = (card) => table.world.message(card._id).flags[MODULE_ID];
 const ptpCards  = () => table.cards(f => f.payThePriceCard);
-const vowCards  = () => table.cards(f => f.sufferDeferred && f.route === "swear_an_iron_vow");
+// The community's need card the pick posts (sojournNeed.js — it was a bare
+// "Trigger: swear_an_iron_vow" reminder: SOJOURN-VOW-OPTION-REMINDER-ONLY).
+const vowCards  = () => table.cards(f => f.sojournNeedCard);
 const moveCard  = () => table.cards(f => f.moveResolution).at(-1);
 const choice    = () => table.cards(f => f.sufferCard && f.moveId === "sojourn").at(-1) ?? null;
 const narrations = () => table.claude.calls.filter(c => c.model === NARRATION_MODEL
@@ -195,7 +197,7 @@ describe("Sojourn — a held miss is narrated after its choice (issue #364)", ()
 
     await click(choice(), VOW);
 
-    expect(vowCards(), "the pick asks for the vow to be sworn").toHaveLength(1);
+    expect(vowCards(), "the pick posts the card the need is answered on").toHaveLength(1);
     expect(narrations()).toHaveLength(1);
     const [narration] = narrations();
     expect(seededPrices(narration)).toEqual([]);

@@ -52,7 +52,20 @@ location's name or the working label its record keeps
 (`siteDiscovery.siteNamedBy`): the expedition is linked to that site, so its
 finish arrives there (issue #362 AC50 — after the GM renamed a charted
 destination, a course by its old working label minted a second location,
-record and pin for it).
+record and pin for it). Whether a label names a tracked place is asked by
+§0.5's rule for a destination — the place's name and little else
+(`resolveCurrentLocationName(…, { asDestination: true })`) — and for an
+expedition typed as one the journey's own words are little else too
+(`journeyWords`; `nameMatch.placeNameAndLittleElse`'s `journey`: expedition,
+journey and their plurals; to, toward, towards, for, into): "the expedition
+to Bleakhold", "the Bleakhold expedition" and "a journey toward Bleakhold
+Station" are for Bleakhold and record nothing; "the wreck beyond Bleakhold",
+or "Archer's rendezvous — the gap" with a settlement Archer on the map, is a
+new uncharted site — a preposition that places the destination beside the
+known place (beyond, near, past, outside, off …) is what makes it another
+place. It was asked the looser way — any label holding the name as whole
+words — so nothing was recorded or linked for those, and the finish docked
+at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -95,6 +108,30 @@ record and pin for it).
   COURSE-OLD-LABEL-LOOSER-RUNG-FIRST). The same label while the site is still
   uncharted is the expedition either way: its location Actor carries the
   label, so the resolver's exact rung finds the unexplored site.
+  **A known place's name inside the destination names that place only when
+  the destination is the name and little else** — an article, a word for what
+  kind of place it is ("Bleakhold Station", "the Bleakhold settlement"; the
+  module's own words for a settlement, a location and a planet,
+  `nameMatch.placeNameAndLittleElse`). A longer label is a new, uncharted
+  destination: with Archer on the map and nothing recorded for the gap, a
+  first course for "Archer's rendezvous — the gap" — or "the wreck beyond
+  Bleakhold" — was a course to the settlement (issue #364
+  COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
+  The course asks the resolver as for a destination
+  (`resolveCurrentLocationName(…, { asDestination: true })`), and the
+  expedition it is read as asks the same way before it records its uncharted
+  destination (`resolution.courseRerouted`) — asked the looser way it
+  recorded none, and its finish docked at the settlement. A fragment of a
+  place's name ("Bleak", "the gap") still names it. An Undertake an
+  Expedition typed as one asks by the same rule before it records its
+  destination (§0), the journey's own words little else too
+  (`{ asDestination: true, journeyWords: true }`): "the expedition to
+  Bleakhold" is for Bleakhold, "the wreck beyond Bleakhold" a new site —
+  asked the looser way, it was for Bleakhold (issue #364
+  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The journey's words are not a
+  course's: the course's question, and the expedition it is read as, ask
+  without them. Not narrowed: the arrival by name (a place in the words
+  around it, §3) and the GM's `!at`.
 
 ## 1. Setting out
 
@@ -328,7 +365,8 @@ record and pin for it).
   ARRIVAL-LOCATION-PHRASE-SPLIT; since issue #345 AA23 the resolver's last
   rung is whole words either way, which finds a place named in words around
   it too — the position's scan still adds a name part, "Kovash" for the
-  Kovash Hulk). A record that names no place (free text) leaves it. The Entities panel's "Set as
+  Kovash Hulk, or one with no capital to write, "734" for Relay 734: issue
+  #364 SHIP-SEED-NUMERIC-PART). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue

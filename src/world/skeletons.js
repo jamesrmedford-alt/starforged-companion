@@ -19,6 +19,8 @@
  *   - applyPlanToSkeleton — a narrator plan laid onto a record
  *   - selectRelevantSkeletons — the plans one beat is shown
  *   - planRequestsFromSeeds — the plans a narration's seeds ask it to decide
+ *   - planFiledFor / seedsWithPlannedEnemy — the plan already filed for a
+ *     request's resolution, and a re-narration's seeds told with its rolls
  */
 
 import { sameSubject } from "../entities/nameMatch.js";
@@ -86,6 +88,21 @@ const playedMark = (step) => (step?.done === true && typeof step.playedBy === "s
   ? { playedBy: step.playedBy } : {});
 
 /**
+ * A shown clue's mark: the narration whose beat showed it (`revealedBy`),
+ * kept on a clue that is shown and nowhere else — the step's mark, for a
+ * clue. Only steps carried one, so a clue a taken-back narration showed still
+ * stood as shown once another narration, or a GM, had written the plan since
+ * (issue #364 PLAN-CLUE-TRUTH-NO-MARK). A clue shown before this carries
+ * none, and is taken back only with its narration's own version of the plan,
+ * as before.
+ */
+const shownMark = (clue) => (clue?.revealed === true && typeof clue.revealedBy === "string" && ID_RE.test(clue.revealedBy)
+  ? { revealedBy: clue.revealedBy } : {});
+
+/** A record-level mark's narration id, or null: kept only while what it marks stands (`stands`). */
+const markOf = (stands, id) => (stands && typeof id === "string" && ID_RE.test(id) ? id : null);
+
+/**
  * A skeleton record as the store keeps it: every field present, bounded and
  * typed. Unknown fields are dropped; a missing id, kind or subject name makes
  * it null (nothing to file).
@@ -103,9 +120,12 @@ export function normaliseSkeleton(raw) {
     .map((e, i) => ({ id: typeof e?.id === "string" && ID_RE.test(e.id) ? e.id : itemId("e", i), text: text(e?.text ?? e, ITEM_MAX), done: e?.done === true, ...playedMark(e) }))
     .filter(e => e.text);
   const clues = (Array.isArray(raw.clues) ? raw.clues : []).slice(0, LIST_MAX)
-    .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true }))
+    .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true, ...shownMark(c) }))
     .filter(c => c.text);
   const truth = text(raw.truth, TEXT_MAX);
+  const truthRevealed = raw.truthRevealed === true && !!truth;
+  const rollsShown    = raw.rollsShown === true;
+  const status        = SKELETON_STATUSES.includes(raw.status) ? raw.status : "active";
   return {
     id,
     kind,
@@ -123,15 +143,29 @@ export function normaliseSkeleton(raw) {
     resolutions:   textList(raw.resolutions),
     // A truth not yet decided was never revealed: a flag set on one (a
     // reveal of an undecided plan, before issue #362 AC16) does not stand.
-    truthRevealed: raw.truthRevealed === true && !!truth,
+    truthRevealed,
+    // The narration whose beat revealed the truth, and the one that showed
+    // its oracle rolls with it — the step's `playedBy`, for the truth: taking
+    // that narration back un-reveals it by this mark, whatever was written to
+    // the plan since (issue #364 PLAN-CLUE-TRUTH-NO-MARK). Null on a truth a
+    // GM revealed, or one revealed before the mark was kept. Always present:
+    // a page flag is merged on write, and a mark left out would never clear.
+    truthRevealedBy: markOf(truthRevealed, raw.truthRevealedBy),
+    rollsShownBy:    markOf(rollsShown, raw.rollsShownBy),
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     // The one re-roll a plan awaiting its decision may use in place of a
     // result that contradicts the story ("one re-roll", issue #353 "Rules for
     // these rolls"); spent or dropped once it is decided.
     reroll:        text(raw.reroll, ITEM_MAX),
-    rollsShown:    raw.rollsShown === true,
-    status:        SKELETON_STATUSES.includes(raw.status) ? raw.status : "active",
+    rollsShown,
+    status,
+    // The narration whose beat ended the plan's story (`resolved`) — the
+    // truth's mark, for the ending: taking that narration back puts the plan
+    // back in play, whatever was written to it since (issue #364
+    // PLAN-RESOLVED-NO-MARK). Null on a plan its subject's end, or a GM,
+    // closed. Always present, as the truth's marks are.
+    resolvedBy:    markOf(status === "resolved", raw.resolvedBy),
     sceneId:       typeof raw.sceneId === "string" ? raw.sceneId : null,
     sessionId:     typeof raw.sessionId === "string" ? raw.sessionId : null,
     createdFrom:   normaliseProvenance(raw.createdFrom),
@@ -180,10 +214,21 @@ export function normaliseSubject(subject) {
   };
 }
 
+/**
+ * Where a plan came from (`createdFrom`): the narration that filed it, the
+ * move, what asked for it (`trigger`), and the resolution it was filed for
+ * (`resolutionId` — the move's own id; for a Burn Momentum / Improve Result
+ * re-narration, the resolution it upgrades; a Batch Mode round entry's own).
+ * The resolution is what a plan filed with its rolls alone by a narration
+ * that was never written — which no narration id stamps — is found by: a
+ * later narration of the same move decides it instead of filing a second
+ * (planFiledFor; issue #364 KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE). Null on a
+ * plan no move's request filed, and on every plan filed before the field.
+ */
 function normaliseProvenance(p) {
-  if (!p || typeof p !== "object") return { narrationId: null, moveId: null, trigger: null };
+  if (!p || typeof p !== "object") return { narrationId: null, moveId: null, trigger: null, resolutionId: null };
   const str = (v) => (typeof v === "string" && v.length <= 64 ? v : null);
-  return { narrationId: str(p.narrationId), moveId: str(p.moveId), trigger: str(p.trigger) };
+  return { narrationId: str(p.narrationId), moveId: str(p.moveId), trigger: str(p.trigger), resolutionId: str(p.resolutionId) };
 }
 
 /**
@@ -347,7 +392,13 @@ export function normaliseCountdown(countdown) {
  * on every player's Session panel as a standing demand.
  *
  * The step it plays is marked with the narration that played it (`playedBy`,
- * playedMark) — a step already played keeps the mark it has.
+ * playedMark) — a step already played keeps the mark it has. So is each clue
+ * it shows (`revealedBy`, shownMark) and the truth it reveals
+ * (`truthRevealedBy`), each only when this beat is what showed it: a clue
+ * already shown, a truth already revealed, keeps the mark — or the lack of
+ * one — it has (issue #364 PLAN-CLUE-TRUTH-NO-MARK). And the ending, when
+ * this beat is what ends the story (`resolvedBy`; a plan its subject's end
+ * already resolved keeps none — issue #364 PLAN-RESOLVED-NO-MARK).
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
@@ -356,11 +407,16 @@ export function normaliseCountdown(countdown) {
  */
 export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {}) {
   const shown = new Set(reveal.revealed);
-  const by = typeof narrationId === "string" && ID_RE.test(narrationId) ? { playedBy: narrationId } : {};
+  const id = typeof narrationId === "string" && ID_RE.test(narrationId) ? narrationId : null;
+  const by = id ? { playedBy: id } : {};
+  const truthNow = !record.truthRevealed && shown.has("truth") && !!record.truth;
+  const endsNow  = reveal.resolved === true && record.status !== "resolved";
   return {
     ...record,
-    truthRevealed: record.truthRevealed || (shown.has("truth") && !!record.truth),
-    clues:         record.clues.map(c => (shown.has(c.id) ? { ...c, revealed: true } : c)),
+    truthRevealed: record.truthRevealed || truthNow,
+    ...(truthNow ? { truthRevealedBy: id } : {}),
+    ...(endsNow ? { resolvedBy: id } : {}),
+    clues:         record.clues.map(c => (shown.has(c.id) && !c.revealed ? { ...c, revealed: true, ...(id ? { revealedBy: id } : {}) } : c)),
     escalation:    record.escalation.map(e => (e.id === reveal.advanced && !e.done ? { ...e, done: true, ...by } : e)),
     status:        reveal.resolved ? "resolved" : record.status,
   };
@@ -395,8 +451,8 @@ export function applyPlanToSkeleton(record, plan) {
     next.escalation = plan.escalation.map((t, i) => ({ id: itemId("e", i), text: t, done: done.has(t), ...playedMark(done.get(t)) }));
   }
   if (plan.clues.length) {
-    const shown = new Set(record.clues.filter(c => c.revealed).map(c => c.text));
-    next.clues = plan.clues.map((t, i) => ({ id: itemId("c", i), text: t, revealed: shown.has(t) }));
+    const shown = new Map(record.clues.filter(c => c.revealed).map(c => [c.text, c]));
+    next.clues = plan.clues.map((t, i) => ({ id: itemId("c", i), text: t, revealed: shown.has(t), ...shownMark(shown.get(t)) }));
   }
   if (plan.resolutions.length) next.resolutions = plan.resolutions;
   if (next.truth) next.reroll = "";   // decided: an unused re-roll goes
@@ -510,8 +566,12 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     .slice(0, Math.max(0, Number.isInteger(ctx.max) ? ctx.max : MAX_RELEVANT_SKELETONS));
 }
 
-/** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines). */
+/** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines), and what each begins with. */
 const NEW_ENEMY_SEED = /^The new enemy — /;
+const NEW_ENEMY_PREFIX = "The new enemy — ";
+
+/** What asks for a new enemy's plan: the price that revealed it (a plan's `createdFrom.trigger`). */
+const NEW_ENEMY_TRIGGER = "new_enemy";
 
 /** What a new enemy's plan is called until a narration names it. */
 const NEW_ENEMY_LABEL = "the new enemy this price reveals";
@@ -549,7 +609,7 @@ export function planRequestsFromSeeds(seeds, refBase) {
     out.push({
       ref:         `plan-${refBase}-enemy`.slice(0, 64),
       kind:        "threat",
-      trigger:     "new_enemy",
+      trigger:     NEW_ENEMY_TRIGGER,
       label:       NEW_ENEMY_LABEL,
       oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
     });
@@ -568,6 +628,52 @@ export function planRequestsFromSeeds(seeds, refBase) {
     });
   }
   return out;
+}
+
+/**
+ * The plan already filed for the resolution a request is made for (issue #364
+ * KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE): the same kind, asked for by the same
+ * trigger, for the same resolution (`createdFrom.resolutionId`). A Battle or
+ * Clash burned or improved to a weak hit keeps its price; when that price
+ * revealed a new enemy and the move's first narration was never written, the
+ * enemy's plan was filed with its rolls alone, stamped with no narration —
+ * and the re-narration's seeds asked for it again, with no subject id to
+ * know it by. Null for a request that names no resolution, and never a plan
+ * filed before plans kept theirs.
+ *
+ * @param {Object[]} records — normaliseSkeleton's, inactive ones too: a plan a GM retired, or one that
+ *   joined another, was still filed
+ * @param {{ kind?: string, trigger?: string, resolutionId?: string }|null} request
+ * @returns {Object|null}
+ */
+export function planFiledFor(records, request) {
+  const resolutionId = typeof request?.resolutionId === "string" && request.resolutionId ? request.resolutionId : null;
+  if (!resolutionId) return null;
+  return (Array.isArray(records) ? records : []).find(r => r?.kind === request.kind
+    && r.createdFrom?.resolutionId === resolutionId
+    && (r.createdFrom.trigger ?? "") === (request.trigger ?? "")) ?? null;
+}
+
+/**
+ * A narration's oracle seeds with the new enemy's lines as its plan holds
+ * them — planRequestsFromSeeds' enemy lines, the other way: the narration
+ * that decides a plan already filed for its price (planFiledFor) is told the
+ * rolls that plan was filed with, not a second set rolled for the
+ * re-narration. The same seeds when they carry no enemy line, or none of the
+ * plans is a price's new enemy that keeps its rolls.
+ *
+ * @param {{ results?: string[] }|null} seeds — a resolution's oracleSeeds
+ * @param {Object[]} plans — the plans already filed for the resolution (normaliseSkeleton's)
+ * @returns {{ results?: string[] }|null}
+ */
+export function seedsWithPlannedEnemy(seeds, plans) {
+  const lines = Array.isArray(seeds?.results) ? seeds.results : [];
+  const plan = (Array.isArray(plans) ? plans : []).find(p => p?.kind === "threat" && p.createdFrom?.trigger === NEW_ENEMY_TRIGGER);
+  const rolls = (Array.isArray(plan?.oracleSeeds) ? plan.oracleSeeds : []).filter(s => typeof s === "string" && s);
+  const first = lines.findIndex(l => typeof l === "string" && NEW_ENEMY_SEED.test(l));
+  if (first < 0 || !rolls.length) return seeds ?? null;
+  const rest = lines.filter(l => !(typeof l === "string" && NEW_ENEMY_SEED.test(l)));
+  return { ...seeds, results: [...rest.slice(0, first), ...rolls.map(s => `${NEW_ENEMY_PREFIX}${s}`), ...rest.slice(first)] };
 }
 
 /** The moves whose rolled find a plan keeps the meaning of (Phase 4). */
@@ -596,7 +702,8 @@ export const PLAN_REQUESTS_PER_NARRATION = 24;
  *
  * @param {*} requests
  * @param {{ max?: number }} [opts]
- * @returns {Array<{ ref: string, kind: string, trigger: string, label: string, oracleSeeds: string[] }>}
+ * @returns {Array<{ ref: string, kind: string, trigger: string, label: string, oracleSeeds: string[],
+ *   reroll?: string, subject?: Object, resolutionId?: string }>}
  */
 export function normalisePlanRequests(requests, { max = PLANS_PER_SIDECAR } = {}) {
   if (!Array.isArray(requests)) return [];
@@ -614,6 +721,8 @@ export function normalisePlanRequests(requests, { max = PLANS_PER_SIDECAR } = {}
       ...(text(r.reroll, ITEM_MAX) ? { reroll: text(r.reroll, ITEM_MAX) } : {}),
       // A request about a known subject (an expedition's track) names it by id.
       ...(normaliseSubject(r.subject) ? { subject: normaliseSubject(r.subject) } : {}),
+      // The resolution it is made for — the plan's provenance (normaliseProvenance).
+      ...(typeof r.resolutionId === "string" && ID_RE.test(r.resolutionId) ? { resolutionId: r.resolutionId } : {}),
     }));
 }
 

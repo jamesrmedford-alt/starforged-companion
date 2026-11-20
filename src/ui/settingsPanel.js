@@ -2722,14 +2722,6 @@ export function readMoveAbilitiesForm(root) {
 }
 
 /**
- * The confirm form's "Applicable abilities" block — the confirm dialog's,
- * and a Batch Mode Round window's (issue #340): one form, not a copy.
- *
- * @param {Array<Object>} abilities — the reading's applicable abilities
- * @param {string} currentStat — the move's listed stat
- * @returns {string} HTML ('' with no abilities)
- */
-/**
  * What the roll is for, before it (issue #353 R1): what a hit gets, and what
  * a miss costs when that is its price (stakes.js stakesShown) — the Confirm
  * dialog's and a Batch Mode round reading's. '' for none.
@@ -2746,6 +2738,14 @@ export function renderStakesBlock(stakes) {
   return `<div class="confirm-stakes"><span class="confirm-field-label">At stake</span>${rows}</div>`;
 }
 
+/**
+ * The confirm form's "Applicable abilities" block — the confirm dialog's,
+ * and a Batch Mode Round window's (issue #340): one form, not a copy.
+ *
+ * @param {Array<Object>} abilities — the reading's applicable abilities
+ * @param {string} currentStat — the move's listed stat
+ * @returns {string} HTML ('' with no abilities)
+ */
 export function renderMoveAbilitiesForm(abilities, currentStat) {
   return renderApplicableAbilitiesBlock(abilities, currentStat);
 }

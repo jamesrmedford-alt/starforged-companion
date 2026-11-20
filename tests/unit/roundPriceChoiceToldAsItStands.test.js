@@ -282,7 +282,9 @@ describe("a Batch Mode round — Sojourn's miss is told as its choice stands (is
   it('the vow picked first: the round is told no price is paid — none seeded, none delivered', async () => {
     await roundWaitingForRen(SOJOURN_LINE);
     await click(choiceCard('sojourn'), option(0));
-    expect(table.cards(f => f.sufferDeferred && f.route === 'swear_an_iron_vow')).toHaveLength(1);
+    // The card the need is answered on (sojournNeed.js) — it was a bare reminder to swear.
+    expect(table.cards(f => f.sojournNeedCard)).toHaveLength(1);
+    expect(table.cards(f => f.sufferDeferred && f.route === 'swear_an_iron_vow')).toEqual([]);
 
     const entry = await renKeeps();
     expect(entry).toContain('#### THE PRICE WAS NOT PAID');
@@ -291,5 +293,36 @@ describe("a Batch Mode round — Sojourn's miss is told as its choice stands (is
     expect(entry).not.toContain('it is what this miss costs');
     expect(ptpCards()).toEqual([]);
     expect(kira.system.spirit.value).toBe(5);
+  }, 60_000);
+
+  // Issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY: the answered need resolves
+  // the Sojourn as a strong hit, narrated as a beat of its own — after the
+  // round has told the miss, never beside the round's one narration.
+  it("It is done pressed while the round still waits is refused and said; after the round is told it resolves, narrated after it", async () => {
+    const DONE = '[data-action="sf-sojourn-need-done"]';
+    const strongHits = () => table.claude.calls.filter(c => c.model === NARRATION_MODEL
+      && /Narrate the consequence/.test(c.userText ?? '') && /A miss, resolved as a strong hit/.test(c.userText ?? ''));
+    await roundWaitingForRen(SOJOURN_LINE);
+    await click(choiceCard('sojourn'), option(0));
+    const need = table.cards(f => f.sojournNeedCard).at(-1);
+
+    await click(need, DONE);
+    expect(flagsOf(need)).toMatchObject({ resolved: false });
+    expect(table.cards(f => f.pressRefusedNotice).at(-1).content).toContain('A round is being resolved');
+    expect(flagsOf(moveCard()).resolutionId).toBe(flagsOf(need).resolutionId);
+    expect(table.world.message(moveCard()._id).content).not.toContain('sf-sojourn-resolved');
+    expect(strongHits()).toHaveLength(0);
+
+    const entry = await renKeeps();
+    expect(entry).toContain('#### THE PRICE WAS NOT PAID');
+    await table.client('gm-1').click(need._id, DONE);
+    await table.settle(); await table.drain();
+
+    expect(flagsOf(need)).toMatchObject({ resolved: true });
+    expect(table.world.message(moveCard()._id).content).toContain("✦ Resolved as a strong hit — the community's need was met.");
+    expect(strongHits()).toHaveLength(1);
+    expect(strongHits()[0].userText).toContain(`- On a hit: ${SOJOURN_STAKES.hit}`);
+    expect(table.claude.calls.indexOf(strongHits()[0])).toBeGreaterThan(table.claude.calls.indexOf(roundCalls()[0]));
+    expect(roundCalls(), 'the round was narrated once').toHaveLength(1);
   }, 60_000);
 });

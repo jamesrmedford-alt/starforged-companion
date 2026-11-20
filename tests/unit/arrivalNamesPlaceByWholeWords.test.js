@@ -161,8 +161,11 @@ describe('issue #345 AA23 — an arrival named by a word another place\'s name h
       .toEqual({ currentLocation: 'actor-port', dockedAtRockhome: false, token: PORT_XY });
   }, 60_000);
 
-  it('control: a destination that names the place in words around it — "the docks of Rockhome" — arrives there', async () => {
-    await setACourse('the docks of Rockhome');
+  // "the docks of Rockhome" until issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT:
+  // a course whose destination holds a place's name among other words is an
+  // expedition for a new destination (tests/unit/courseNewLabelHoldingAPlaceName.test.js).
+  it('control: a destination that is the place\'s name and a word for its kind — "Rockhome Station" — arrives there', async () => {
+    await setACourse('Rockhome Station');
     expect(where()).toEqual({ currentLocation: 'actor-rock', docked: 'actor-rock', token: ROCK_XY });
   }, 60_000);
 });

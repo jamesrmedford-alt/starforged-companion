@@ -118,7 +118,15 @@ multi-client harness (`tests/helpers/multiClient.js`).
   #340: the window opening in the player's browser, a typed line kept as
   table talk, the GM's Send now, one round card credited to the roller —
   Claude answered by a stub on the GM page's `fetch`, since the canonical GM
-  reads and narrates). Add a scenario as one
+  reads and narrates); a Notes-tab removal crossing clients (issue #364
+  QUENCH-CROSS-CLIENT-STAMP: the GM makes an NPC card with
+  `createConnection` and makes the player its owner; the player adds a
+  paragraph, then takes one off — the GM's `updateActor` gets the stamp the
+  player's `preUpdateActor` put on the update's options for the removal
+  only, and the canonical GM reports `entity_detail_removed`. Quench proves
+  that stamp on the editing client alone; this is the hop
+  `registry.js` `registerSheetNotesRemovalHook` rests on when anyone but
+  the canonical GM edits the sheet). Add a scenario as one
   more `await scenario(...)` block. Assert on GM-side state, and wait with
   `page.waitForFunction`, never a fixed sleep (`SETTLE_MS` is only the
   window for a duplicate to show up).
@@ -127,7 +135,11 @@ multi-client harness (`tests/helpers/multiClient.js`).
   because Quench leaves state behind. It uses only what the module itself
   provides (`/modules/starforged-companion/src/...` dynamic imports,
   `ChatMessage.create`). CI has no Claude key, so pick scenarios that need
-  none (session vignettes are unchecked).
+  none (session vignettes are unchecked). A scenario that makes documents
+  of its own, pins a setting or installs a hook puts all of it back in a
+  `finally` on the GM's page (the Batch Mode round; the Notes-tab removal
+  deletes its NPC card and waits for the delete's teardown to take the id
+  off `connectionIds`).
 - **Container.** `mcr.microsoft.com/playwright:v1.56.1-noble` (the
   `players` service, `docker-compose.e2e.yml`) ships the browsers; `npm ci`
   installs `playwright@1.56.1` from `test/ci/playwright/package-lock.json`.

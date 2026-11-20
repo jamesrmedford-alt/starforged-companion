@@ -28,7 +28,7 @@ import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isNarrationXCarded } from "../context/safety.js";
 import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
-  undoNarrationEntries,
+  undoNarrationEntries, withdrawRollsCards,
 } from "./worldJournal.js";
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
@@ -166,7 +166,9 @@ let _plansSocketInstalled = false;
  * chooses (selectRelevantSkeletons: this scene's, its frame's, the entities
  * and names the message matches) — on the GM's client, as records holding
  * only what UNREVEALED renders: never their oracle rolls, re-roll, clock or
- * provenance. None with the narrative skeleton off. Never throws.
+ * provenance — nor which narration played a step or showed a clue (the undo's
+ * marks, issue #364 PLAN-RELAY-CARRIES-PLAYED-MARK). None with the narrative
+ * skeleton off. Never throws.
  *
  * @param {{ text?: string, matchedEntityIds?: string[] }} ctx
  * @returns {Object[]}
@@ -183,7 +185,11 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
     }).filter(r => r.truth).map(r => ({
       id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
       truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
-      escalation: r.escalation, clues: r.clues, resolutions: r.resolutions,
+      // A step and a clue as UNREVEALED renders them — not the narration
+      // that played or showed it (`playedBy`, `revealedBy`: the store's
+      // bookkeeping for the undo; issue #364 PLAN-RELAY-CARRIES-PLAYED-MARK).
+      escalation: r.escalation.map(e => ({ id: e.id, text: e.text, done: e.done })),
+      clues: r.clues.map(c => ({ id: c.id, text: c.text, revealed: c.revealed })), resolutions: r.resolutions,
     }));
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the plans in play could not be read:`, err?.message ?? err);
@@ -977,7 +983,11 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const base = {
         kind: req.kind, subject, oracleSeeds: req.oracleSeeds, sceneId, sessionId,
         ...(req.reroll ? { reroll: req.reroll } : {}),
-        createdFrom: { narrationId, moveId, trigger: req.trigger || null },
+        // The resolution the request was made for stays with the plan, filed
+        // by a narration or — unstamped — by an exit that wrote none: a later
+        // narration of the same move finds it by this (issue #364
+        // KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE; skeletons.js planFiledFor).
+        createdFrom: { narrationId, moveId, trigger: req.trigger || null, resolutionId: req.resolutionId ?? null },
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
       const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
@@ -1030,8 +1040,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const before = getSkeleton(reveal.id);
       if (!before || !planInPlay(before, ending)) continue;
       const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
+      // The rolls shown with a truth carry the narration too, when it is
+      // this reveal that shows them (`rollsShownBy`): its undo puts them
+      // back unshown with the truth (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
       const after = await updateSkeleton(reveal.id,
-        r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
+        r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }),
+          ...(truthNow ? { rollsShown: true, ...(r.rollsShown ? {} : { rollsShownBy: narrationId }) } : {}) }), { narrationId });
       if (!after) continue;
       out.revealed += 1;
       // What the narrator's world snapshot makes of it (issue #357): a truth
@@ -1070,7 +1084,10 @@ function loreTitleOf(record) {
 
 /**
  * A plan's truth the fiction revealed: filed as confirmed lore (stamped with
- * the narration, so the X-Card retracts it with the reveal), and the oracle
+ * the narration, so the X-Card retracts it with the reveal, and naming the
+ * plan — `revealOf` — so a Burn / Improve supersede of the narration takes it
+ * back with the truth it mirrors: worldJournal.js undoRevealedTruthLore, issue
+ * #364 SUPERSEDED-REVEAL-LORE-STANDS), and the oracle
  * rolls behind it shown to the table — "hidden until their truth is revealed,
  * then shown" (decided) — unless they already were.
  */
@@ -1078,7 +1095,7 @@ async function onTruthRevealed(record, { campaignState, narrationId, rollsWereSh
   if (isNarrationXCarded(narrationId)) return;   // issue #362 AC35
   await recordLoreDiscovery(loreTitleOf(record), {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
-    ...(narrationId ? { narrationId } : {}),
+    ...(narrationId ? { narrationId, revealOf: record.id } : {}),
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
   if (!rollsWereShown) await postRollsCard(record, { narrationId });
@@ -1142,6 +1159,60 @@ async function retirePlanClock(record) {
 }
 
 /**
+ * The plans that went with the deleted pages: each page's plan, unless
+ * another page of the store still holds it — a GM's copy of the page deleted,
+ * not the plan. The deleted pages themselves are not counted, whether or not
+ * the store still lists them when the hook runs.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ * @returns {Array<{ record: Object, narrationId: string|null }>} each plan, and the narration its newest version was written by
+ */
+function plansGoneWith(pages) {
+  const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
+  const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
+  const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
+  const plans = [];
+  for (const page of gone) {
+    const entry = entryOf(page);
+    const record = normaliseSkeleton(entry);
+    if (!record || kept.has(record.id)) continue;
+    plans.push({ record, narrationId: typeof entry?.narrationId === "string" && entry.narrationId ? entry.narrationId : null });
+  }
+  return plans;
+}
+
+/**
+ * Plans whose pages are gone take the table's cards of their oracle rolls
+ * with them (issue #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS): "The oracle,
+ * behind the scenes" — posted when the plan was made, with "show hidden
+ * rolls" on, or when its truth was revealed — stayed in chat for a plan that
+ * no longer existed. Whatever deleted the page: the X-Card's undo of the
+ * narration that made the plan and a Burn Momentum / Improve Result's
+ * supersede of it (worldJournal.js undoNarrationEntries), a reverted price
+ * (undoPlansFiledFor), or a GM in the journal sidebar. Each standing card of
+ * such a plan is withdrawn (worldJournal.js withdrawRollsCards: struck, a
+ * line saying why) — "Withdrawn — X-Card" when the X-Card removed the
+ * narration the plan was last written by, as its other cards read. A plan
+ * another page still holds keeps its card (plansGoneWith). Canonical GM
+ * (registerPlanSubjectHooks). Never throws.
+ *
+ * @param {Object[]} pages — the JournalEntryPage documents deleted
+ */
+async function withdrawRollsCardsOfDeletedPlans(pages) {
+  try {
+    const gone = new Map(plansGoneWith(pages).map(p => [p.record.id, p]));
+    if (!gone.size) return;
+    await withdrawRollsCards((f) => {
+      const plan = gone.get(f.skeletonId);
+      if (!plan) return null;
+      return isNarrationXCarded(plan.narrationId) ? "xcard" : "planGone";
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the rolls card of a plan whose page was deleted was not withdrawn:`, err?.message ?? err);
+  }
+}
+
+/**
  * Plans whose pages are gone from the Secrets journal take their clocks with
  * them (issue #364 PLAN-PAGE-DELETE-LEAVES-CLOCK): a GM who deletes a plan's
  * page in the journal sidebar — not the panel's Retire, which retires the
@@ -1160,12 +1231,7 @@ async function retirePlanClock(record) {
  */
 async function retireClocksOfDeletedPlans(pages) {
   try {
-    const gone = (Array.isArray(pages) ? pages : []).filter(Boolean);
-    const goneIds = new Set(gone.map(p => p.id).filter(Boolean));
-    const kept = new Set(secretPages().filter(p => !gone.includes(p) && !goneIds.has(p.id)).map(p => entryOf(p)?.id).filter(Boolean));
-    for (const page of gone) {
-      const record = normaliseSkeleton(entryOf(page));
-      if (!record || kept.has(record.id)) continue;
+    for (const { record } of plansGoneWith(pages)) {
       const clocks = storedClocks().filter(c => c && c.active !== false
         && (c.planId === record.id || (c._id === record.clockId && !c.planId)));
       for (const clock of clocks) {
@@ -1467,7 +1533,7 @@ export async function fileRequestedPlan(request, { campaignState = null } = {}) 
   return createSkeleton({
     kind: req.kind, subject: req.subject ?? { type: "name", id: null, name }, oracleSeeds: req.oracleSeeds,
     sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
-    createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null },
+    createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null, resolutionId: req.resolutionId ?? null },
   });
 }
 
@@ -1648,7 +1714,9 @@ async function closeVowPlanIfEnded(item, status) {
  * (closeVowPlanIfEnded). And a plan's own end to its clock: its page deleted
  * from the Secrets journal, or the journal itself deleted, retires the clocks
  * it held (retireClocksOfDeletedPlans, issue #364
- * PLAN-PAGE-DELETE-LEAVES-CLOCK). Document hooks fire on every client: the
+ * PLAN-PAGE-DELETE-LEAVES-CLOCK) and withdraws the table's cards of its
+ * oracle rolls (withdrawRollsCardsOfDeletedPlans, issue #364
+ * TAKEN-BACK-PLAN-ROLLS-CARD-STAYS). Document hooks fire on every client: the
  * canonical GM closes it, once. Register once, at ready.
  */
 export function registerPlanSubjectHooks() {
@@ -1666,12 +1734,15 @@ export function registerPlanSubjectHooks() {
   Hooks.on("deleteJournalEntryPage", (page) => {
     if (!isCanonicalGM() || !entryOf(page)) return;
     void retireClocksOfDeletedPlans([page]);
+    void withdrawRollsCardsOfDeletedPlans([page]);
   });
   // A journal deleted whole fires no page hook for the pages it held.
   Hooks.on("deleteJournalEntry", (journal) => {
     if (!isCanonicalGM()) return;
     const pages = (journal?.pages?.contents ?? []).filter(p => entryOf(p));
-    if (pages.length) void retireClocksOfDeletedPlans(pages);
+    if (!pages.length) return;
+    void retireClocksOfDeletedPlans(pages);
+    void withdrawRollsCardsOfDeletedPlans(pages);
   });
 }
 
@@ -1687,7 +1758,10 @@ function rollsLine(record) {
 /**
  * The table's card of a plan's oracle rolls ("the oracle, behind the
  * scenes"): posted when its truth is revealed, or — "show hidden rolls" on —
- * when it is made. Carries the narration that showed it.
+ * when it is made. Carries its plan (`skeletonId`) and, on a reveal's card,
+ * the narration that showed it: the card is withdrawn with the plan
+ * (withdrawRollsCardsOfDeletedPlans) and with the reveal (worldJournal.js
+ * undoNarrationEntries) — issue #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS.
  */
 async function postRollsCard(record, { narrationId = null } = {}) {
   if (!record?.oracleSeeds?.length) return null;
@@ -1730,7 +1804,9 @@ export async function revealSkeletonNow(id) {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
-  const revealed = await updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true }), { byGm: true });
+  // The GM's own reveal: no narration's to take back (the marks cleared —
+  // issue #364 PLAN-CLUE-TRUTH-NO-MARK).
+  const revealed = await updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true, truthRevealedBy: null, rollsShownBy: null }), { byGm: true });
   if (revealed) reportSnapshotEvent("plan_revealed");
   return revealed;
 }
@@ -1762,10 +1838,12 @@ export async function editSkeleton(id, fields = {}) {
   // An item kept word for word keeps whether it was played or shown — a
   // played step with the narration that played it (`playedBy`), so taking
   // that narration back still un-plays it (issue #364
-  // PLAN-STEP-REWRITTEN-BEFORE-BURN).
+  // PLAN-STEP-REWRITTEN-BEFORE-BURN), and a shown clue with the narration
+  // that showed it (`revealedBy`, issue #364 PLAN-CLUE-TRUTH-NO-MARK).
   const relist = (lines, old, prefix, flag) => lines.map((t, i) => {
     const kept = old.find(o => o.text === t && o[flag] === true) ?? null;
-    return { id: `${prefix}${i + 1}`, text: t, [flag]: !!kept, ...(typeof kept?.playedBy === "string" ? { playedBy: kept.playedBy } : {}) };
+    return { id: `${prefix}${i + 1}`, text: t, [flag]: !!kept, ...(typeof kept?.playedBy === "string" ? { playedBy: kept.playedBy } : {}),
+      ...(typeof kept?.revealedBy === "string" ? { revealedBy: kept.revealedBy } : {}) };
   });
   const edited = await updateSkeleton(id, (r) => {
     const next = { ...r, subject: { ...r.subject } };

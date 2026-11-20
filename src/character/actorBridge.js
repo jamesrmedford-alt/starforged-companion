@@ -1250,6 +1250,116 @@ export function vowCopyId(item) {
 }
 
 /**
+ * The community's need card a vow Item was written to answer — a Sojourn
+ * miss's "Community needs help" (moves/sojournNeed.js): the chat message id
+ * the vow carries as its module `sojournNeedCard` flag, set in the write that
+ * created it (createCharacterVowItem). The vow's flag is the one link between
+ * the two — the card keeps no vow id (issue #364
+ * SOJOURN-NEED-CARD-VOW-ID-WRITE-REFUSED). Null for any other Item.
+ *
+ * @param {Item|null} item
+ * @returns {string|null}
+ */
+export function vowNeedCardId(item) {
+  const id = item?.type === "progress" ? item.flags?.[MODULE_ID]?.sojournNeedCard : null;
+  return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * The vow on `actor`'s sheet that was written to answer the need card
+ * `needCardId` (vowNeedCardId) — its id and name as they stand now — or null:
+ * none was written, or it has been deleted since.
+ *
+ * @param {Actor|null} actor
+ * @param {string|null} needCardId — the need card's chat message id
+ * @returns {{ id: string, name: string }|null}
+ */
+export function readNeedVow(actor, needCardId) {
+  if (typeof needCardId !== "string" || !needCardId) return null;
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const vow = (Array.isArray(items) ? items : [])
+    .find(i => i?.system?.subtype === "vow" && vowNeedCardId(i) === needCardId);
+  return vow ? { id: vow.id ?? vow._id ?? null, name: vow.name ?? "" } : null;
+}
+
+/**
+ * The need cards the vow `vowId` was written to answer: the `sojournNeedCard`
+ * of each of its copies (isVowCopy) on the player characters' sheets. Empty
+ * for a vow written for none — every vow but a Sojourn's.
+ *
+ * @param {string|null} vowId — the vow's id (vowCopyId)
+ * @returns {string[]} chat message ids
+ */
+export function needCardIdsOfVow(vowId) {
+  if (typeof vowId !== "string" || !vowId) return [];
+  const ids = new Set();
+  for (const actor of getPlayerActors()) {
+    for (const item of (actor?.items?.contents ?? [])) {
+      const cardId = isVowCopy(item, vowId) ? vowNeedCardId(item) : null;
+      if (cardId) ids.add(cardId);
+    }
+  }
+  return [...ids];
+}
+
+/**
+ * Record on the vow `vowId` that its Swear an Iron Vow has been told — rolled
+ * and narrated: the module `sojournSwearTold` flag of each of its copies that
+ * was written to answer a need card (vowNeedCardId). The vow is the one place
+ * that says so, beside its link to the card; the card's own `resolved` says
+ * whether its Sojourn has been resolved for it. So a resolve that cannot be
+ * made when the swear is told — a Batch Mode round is being resolved, or the
+ * page reloads first — is made later from what the vow says
+ * (moves/sojournNeed.js resolveToldSojournNeeds; issue #364
+ * SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the resolve was one call, and a
+ * refused one was only logged). GM-only (Item flag write). A vow written for
+ * no need card is left as it is. Never throws: a refused write is warned.
+ *
+ * @param {string|null} vowId — the vow's id (vowCopyId)
+ * @returns {Promise<number>} the copies that say so now
+ */
+export async function markNeedVowSwearTold(vowId) {
+  if (typeof vowId !== "string" || !vowId) return 0;
+  let told = 0;
+  for (const actor of getPlayerActors()) {
+    for (const item of (actor?.items?.contents ?? [])) {
+      if (!isVowCopy(item, vowId) || !vowNeedCardId(item)) continue;
+      if (item.flags?.[MODULE_ID]?.sojournSwearTold === true) {
+        told += 1;
+        continue;
+      }
+      if (!item.setFlag) continue;
+      try {
+        await staleChecked('markNeedVowSwearTold', () => item.setFlag(MODULE_ID, "sojournSwearTold", true));
+        told += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | markNeedVowSwearTold failed:`, err?.message ?? err);
+      }
+    }
+  }
+  return told;
+}
+
+/**
+ * The need cards of every vow whose Swear an Iron Vow has been told
+ * (markNeedVowSwearTold): the `sojournNeedCard` of each such vow on the
+ * player characters' sheets. Empty when no told vow answers a need.
+ *
+ * @returns {string[]} chat message ids
+ */
+export function toldNeedCardIds() {
+  const ids = new Set();
+  for (const actor of getPlayerActors()) {
+    for (const item of (actor?.items?.contents ?? [])) {
+      const cardId = item?.system?.subtype === "vow" && item.flags?.[MODULE_ID]?.sojournSwearTold === true
+        ? vowNeedCardId(item) : null;
+      if (cardId) ids.add(cardId);
+    }
+  }
+  return [...ids];
+}
+
+/**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
  * found by its vowId (isVowCopy) across all player characters. GM-only (Item flag
  * writes). No-op when the vow or reward is missing.
@@ -1734,9 +1844,13 @@ export async function setBondItemRank(keys = {}, rank) {
  * against vendor progress-sheet.vue; sizes 4/6/8/10/12). Used by the
  * inciting-incident ⚔ Swear this vow flow for time-dependent vows (F4).
  *
+ * `sojournNeedCard` — the chat message id of the community's need card the
+ * vow is written to answer (moves/sojournNeed.js) — rides the same write as a
+ * module flag: the vow's one link to its card (vowNeedCardId).
+ *
  * @param {Actor} actor
  * @param {{ name: string, rank?: string, vowId?: string,
- *           clock?: { max: number } | null }} data
+ *           clock?: { max: number } | null, sojournNeedCard?: string }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterVowItem(actor, data) {
@@ -1751,10 +1865,11 @@ export async function createCharacterVowItem(actor, data) {
     // sharedVow flag lets the sync hook find sibling copies (see swearVow.js).
     // linkedConnectionName records the connection a vow serves (#241) so
     // fulfilling/advancing it can offer to deepen that bond.
-    extraFlags: (data?.shared || data?.linkedConnectionName)
+    extraFlags: (data?.shared || data?.linkedConnectionName || data?.sojournNeedCard)
       ? {
           ...(data?.shared ? { sharedVow: true } : {}),
           ...(data?.linkedConnectionName ? { linkedConnectionName: data.linkedConnectionName } : {}),
+          ...(typeof data?.sojournNeedCard === "string" && data.sojournNeedCard ? { sojournNeedCard: data.sojournNeedCard } : {}),
         }
       : null,
   });

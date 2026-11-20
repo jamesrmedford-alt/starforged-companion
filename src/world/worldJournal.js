@@ -603,6 +603,11 @@ function isGmRuledLore(entry) {
  * left as the GM left it, and returned unchanged (issue
  * #330 D9 — the narrator mentioning it again made it canon again).
  *
+ * `entry.revealOf` — a hidden plan's id, on the entry a narration's reveal of
+ * that plan's truth files: the entry is the plan's truth mirrored into Lore,
+ * and follows it when a supersede takes the reveal back
+ * (undoRevealedTruthLore).
+ *
  * Empty titles are rejected.
  *
  * @param {string} title
@@ -650,6 +655,13 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     sceneId:          entry?.sceneId ?? existing?.sceneId ?? null,
     createdAt:        existing?.createdAt ?? now,
     updatedAt:        now,
+    // The hidden plan whose revealed truth this entry mirrors, by the plan's
+    // id — set by a narration's reveal alone (secrets.js onTruthRevealed), so
+    // a supersede of that narration takes the entry back with the truth
+    // (undoRevealedTruthLore, issue #364 SUPERSEDED-REVEAL-LORE-STANDS).
+    // Always written, null on every other write: the flag is merged, and an
+    // entry anything else wrote since is no longer the reveal's.
+    revealOf:         typeof entry?.revealOf === "string" && entry.revealOf ? entry.revealOf : null,
     // The narration whose capture wrote it, and the version it replaced —
     // for the X-Card (issue #329 X01).
     ...narrationStamp(entry?.narrationId, existing),
@@ -1424,17 +1436,34 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * played with its vignette gone and its clock re-armed). What the later
  * writer wrote stands; the plans in play touched that way are named with
  * the clock each links (`stepsTakenBack`), for the caller's clocks.
+ * A clue one of them showed, and a truth one of them revealed (with the
+ * oracle rolls it showed), go back the same way by their own marks
+ * (`revealedBy`, `truthRevealedBy`, `rollsShownBy` — issue #364
+ * PLAN-CLUE-TRUTH-NO-MARK: only steps carried a mark, so under a later
+ * writer's version the clue stayed shown and the truth revealed). What a
+ * truth's reveal wrote outside the plan — its scene fact, its Lore entry —
+ * is stamped with the narration and goes by that stamp, as it always did;
+ * with the Lore category left out (a supersede), the reveal's Lore entry is
+ * the caller's to take back (undoRevealedTruthLore).
+ * A plan they made is kept instead of deleted when the caller says what it is
+ * about outlives them (`keepPlanAbout` — a supersede deletes no NPC card,
+ * issue #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA) and they filed it with
+ * its rolls alone: as they filed it, what they did to it since taken back by
+ * the marks above (planKeptAsFiled).
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
  *
  * @param {string[]} narrationIds
- * @param {{ categories?: string[]|null }} [opts] — the categories to undo (default every one, and the Session Log)
+ * @param {{ categories?: string[]|null, keepPlanAbout?: ((subject: Object) => boolean)|null }} [opts] — `categories`:
+ *   the categories to undo (default every one, and the Session Log); `keepPlanAbout`: whether a plan the
+ *   narrations made about this subject (the stored plan's `subject`) stays in the Secrets journal — not
+ *   given, every plan they made is deleted (the X-Card)
  * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number,
  *   stepsTakenBack: Array<{ id: string, clockId: string|null }> }>}
  *   `stepsTakenBack`: the active plans a step was un-played in under a version the narrations did not write
  */
-export async function undoNarrationEntries(narrationIds, { categories = null } = {}) {
+export async function undoNarrationEntries(narrationIds, { categories = null, keepPlanAbout = null } = {}) {
   const out = { restored: 0, retracted: 0, deleted: 0, beats: 0, stepsTakenBack: [] };
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
   if (!removed.size) return out;
@@ -1460,7 +1489,7 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             const unplayed = withoutStepsPlayedBy(entry, removed);
             if (unplayed) {
               await writeEntryPage(page, flagKey, unplayed.entry);
-              if (unplayed.top) noteStepTakenBack(out, unplayed.entry);
+              if (unplayed.stepTop) noteStepTakenBack(out, unplayed.entry);
             }
           } catch (err) {
             console.warn(`${MODULE_ID} | X-Card: could not take a removed narration's step back from the plan "${page?.name}":`, err?.message ?? err);
@@ -1483,12 +1512,15 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             previous:    older.length ? older : null,
             // setFlag merges: a key the restored version lacks keeps the removed one's value
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
+            ...(category === "lore" ? { revealOf: versions[at].revealOf ?? null } : {}),
+            ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null,
+              resolvedBy: versions[at].resolvedBy ?? null } : {}),
           };
           // The version put back may be one written between two removed
           // narrations: it holds the earlier one's step.
           const unplayed = category === "secrets" ? withoutStepsPlayedBy(restored, removed) : null;
           await writeEntryPage(page, flagKey, unplayed?.entry ?? restored);
-          if (unplayed?.top) noteStepTakenBack(out, unplayed.entry);
+          if (unplayed?.stepTop) noteStepTakenBack(out, unplayed.entry);
           out.restored += 1;
         } else if (category === "lore") {
           const now = new Date().toISOString();
@@ -1499,6 +1531,16 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
           });
           out.retracted += 1;
         } else {
+          // A plan they filed about something that outlives them stays with
+          // it (issue #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA): the
+          // agenda of an NPC a superseded Make a Connection created was
+          // deleted while her card stayed, and nothing filed it again.
+          const kept = category === "secrets" ? planKeptAsFiled(entry, removed, keepPlanAbout) : null;
+          if (kept) {
+            if (kept.changed) await writeEntryPage(page, flagKey, kept.entry);
+            if (kept.stepTop) noteStepTakenBack(out, kept.entry);
+            continue;
+          }
           await page.delete();
           out.deleted += 1;
         }
@@ -1507,6 +1549,10 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
       }
     }
   }
+
+  // The rolls card a taken-back reveal posted goes with the reveal (issue
+  // #364 TAKEN-BACK-PLAN-ROLLS-CARD-STAYS).
+  if (only.includes("secrets")) await withdrawRollsCardsOfReveals(removed);
 
   if (Array.isArray(categories) && !categories.includes("sessionLog")) return out;
   const logJournal = findJournal(JOURNAL_NAMES.sessionLog);
@@ -1521,48 +1567,421 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
 }
 
 /**
- * A stored plan entry with the escalation steps the removed narrations played
- * put back unplayed, in the entry and in each earlier version it keeps
- * (`previous`) — a later undo may restore one of those. Null when none holds a
- * step of theirs.
+ * The version of a plan the removed narrations made that stays when what the
+ * plan is about outlives them (issue #364
+ * BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA): the one it was filed as — the
+ * oldest it keeps, every version being theirs — while that version is its
+ * rolls alone, nothing decided (as undoPlansFiledFor reads "still waiting").
+ * Such a plan is about its subject, not about what the narrations told: an
+ * NPC's agenda is filed where her card is made, after the narration's own
+ * side-data, for a later narration to decide. Null — the plan goes with the
+ * narrations — when the caller keeps no plan about its subject
+ * (`keepPlanAbout` not given, or false for it), and when the narrations
+ * decided it as they filed it: that truth is their telling.
  *
- * @param {Object} entry — the stored Secrets entry
- * @param {Set<string>} removed — the narrations taken back
- * @returns {{ entry: Object, top: boolean }|null} the entry to write, and whether its own steps changed
+ * @param {Object} entry — a stored Secrets entry no version of which another writer wrote
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout — the caller's (undoNarrationEntries)
+ * @returns {Object|null}
  */
-function withoutStepsPlayedBy(entry, removed) {
-  const top = stepsTakenBackFrom(entry, removed);
-  const versions = Array.isArray(entry?.previous) ? entry.previous : null;
-  const older = versions ? versions.map(v => stepsTakenBackFrom(v, removed) ?? v) : null;
-  const olderChanged = !!older && older.some((v, i) => v !== versions[i]);
-  if (!top && !olderChanged) return null;
-  return { entry: { ...(top ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top };
+function planVersionFiled(entry, keepPlanAbout) {
+  if (typeof keepPlanAbout !== "function" || !entry?.subject || typeof entry.subject !== "object") return null;
+  let stays = false;
+  try {
+    stays = keepPlanAbout(entry.subject) === true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: whether the subject of the plan "${entry?.id}" still stands could not be read:`, err?.message ?? err);
+  }
+  if (!stays) return null;
+  const versions = (Array.isArray(entry.previous) ? entry.previous : []).filter(v => v && typeof v === "object");
+  const filed = versions.length ? versions[versions.length - 1] : entry;
+  const decided = typeof filed.truth === "string" && filed.truth.trim().length > 0;
+  return decided ? null : filed;
 }
 
 /**
- * One version of a plan with the steps the removed narrations played — each
- * marked `playedBy` one of them — unplayed and unmarked, the rest of the
- * version as it is; null when it holds none of theirs.
+ * A plan the removed narrations made, as it stays when what it is about
+ * outlives them (planVersionFiled): as filed, less what they did to it since
+ * — a later version of theirs dropped, and in the filed one a clue shown, a
+ * step played, the truth revealed, the story ended taken back by their marks
+ * (takenBackFrom). It keeps the stamp of the narration that filed it: an
+ * X-Card that removes that narration, and the card it made, still takes the
+ * plan. Null when the plan is not kept.
+ *
+ * @param {Object} entry — the stored Secrets entry
+ * @param {Set<string>} removed — the narrations taken back
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout
+ * @returns {{ entry: Object, changed: boolean, stepTop: boolean }|null} the entry to keep, whether it
+ *   differs from the stored one (a write is owed), and whether a step of its own was un-played
  */
-function stepsTakenBackFrom(version, removed) {
-  const steps = Array.isArray(version?.escalation) ? version.escalation : null;
-  const theirs = (e) => e?.done === true && typeof e.playedBy === "string" && removed.has(e.playedBy);
-  if (!steps?.some(theirs)) return null;
+function planKeptAsFiled(entry, removed, keepPlanAbout) {
+  const filed = planVersionFiled(entry, keepPlanAbout);
+  if (!filed) return null;
+  const undone = takenBackFrom(filed, removed);
+  if (filed === entry && !undone) return { entry, changed: false, stepTop: false };
+  const version = undone?.version ?? filed;
   return {
-    ...version,
-    escalation: steps.map((e) => {
-      if (!theirs(e)) return e;
-      const step = { ...e, done: false };
-      delete step.playedBy;
-      return step;
-    }),
+    // setFlag merges: every key the kept version may lack is written.
+    entry: { ...version, narrationId: filed.narrationId ?? null, previous: null,
+      truthRevealedBy: version.truthRevealedBy ?? null, rollsShownBy: version.rollsShownBy ?? null, resolvedBy: version.resolvedBy ?? null },
+    changed: true, stepTop: undone?.step === true,
   };
+}
+
+/**
+ * A stored plan entry with what the removed narrations played or showed of it
+ * put back — its escalation steps unplayed, its clues unshown, its truth
+ * unrevealed (takenBackFrom) — in the entry and in each earlier version it
+ * keeps (`previous`): a later undo may restore one of those. Null when none
+ * holds anything of theirs.
+ *
+ * @param {Object} entry — the stored Secrets entry
+ * @param {Set<string>} removed — the narrations taken back
+ * @returns {{ entry: Object, top: boolean, stepTop: boolean }|null} the entry to write, whether its own
+ *   content changed, and whether a step of its own was un-played (the caller's clocks: a step is owed again)
+ */
+function withoutStepsPlayedBy(entry, removed) {
+  const top = takenBackFrom(entry, removed);
+  const versions = Array.isArray(entry?.previous) ? entry.previous : null;
+  const older = versions ? versions.map(v => takenBackFrom(v, removed)?.version ?? v) : null;
+  const olderChanged = !!older && older.some((v, i) => v !== versions[i]);
+  if (!top && !olderChanged) return null;
+  return { entry: { ...(top?.version ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top, stepTop: top?.step === true };
+}
+
+/**
+ * One version of a plan with what the removed narrations did to it taken
+ * back by its marks, the rest of the version as it is:
+ *   - the steps they played (`playedBy`) unplayed and unmarked;
+ *   - the clues they showed (`revealedBy`) unshown and unmarked;
+ *   - the truth one of them revealed (`truthRevealedBy`) unrevealed, and the
+ *     oracle rolls that reveal showed (`rollsShownBy`) unshown — as putting
+ *     back the version before that narration leaves them, so the next reveal
+ *     shows the rolls again (issue #364 PLAN-CLUE-TRUTH-NO-MARK);
+ *   - the ending one of them gave the plan's story (`resolvedBy`) undone:
+ *     the plan is in play again (issue #364 PLAN-RESOLVED-NO-MARK — under a
+ *     GM's edit of the ended plan it stayed resolved, where with the
+ *     narration's own version on top it came back).
+ * A record-level mark is cleared with an explicit null: the page flag is
+ * merged on write. Null when the version holds nothing of theirs.
+ *
+ * @param {Object} version — a stored Secrets entry, or one of its `previous`
+ * @param {Set<string>} removed — the narrations taken back
+ * @returns {{ version: Object, step: boolean }|null} the version, and whether a step was un-played
+ */
+function takenBackFrom(version, removed) {
+  const by = (id) => typeof id === "string" && removed.has(id);
+  const steps = Array.isArray(version?.escalation) ? version.escalation : [];
+  const clues = Array.isArray(version?.clues) ? version.clues : [];
+  const theirStep = (e) => e?.done === true && by(e.playedBy);
+  const theirClue = (c) => c?.revealed === true && by(c.revealedBy);
+  const step  = steps.some(theirStep);
+  const clue  = clues.some(theirClue);
+  const truth = version?.truthRevealed === true && by(version.truthRevealedBy);
+  const rolls = version?.rollsShown === true && by(version.rollsShownBy);
+  const ended = version?.status === "resolved" && by(version.resolvedBy);
+  if (!step && !clue && !truth && !rolls && !ended) return null;
+  const next = { ...version };
+  if (step) {
+    next.escalation = steps.map((e) => {
+      if (!theirStep(e)) return e;
+      const undone = { ...e, done: false };
+      delete undone.playedBy;
+      return undone;
+    });
+  }
+  if (clue) {
+    next.clues = clues.map((c) => {
+      if (!theirClue(c)) return c;
+      const unshown = { ...c, revealed: false };
+      delete unshown.revealedBy;
+      return unshown;
+    });
+  }
+  if (truth) Object.assign(next, { truthRevealed: false, truthRevealedBy: null });
+  if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
+  if (ended) Object.assign(next, { status: "active", resolvedBy: null });
+  return { version: next, step };
+}
+
+/**
+ * Take back the Lore entries the given narrations' reveals of a hidden plan's
+ * truth filed (issue #364 SUPERSEDED-REVEAL-LORE-STANDS). A reveal files the
+ * plan's truth as confirmed Lore (secrets.js onTruthRevealed): one fact in
+ * two stores, the plan canonical, the Lore entry its mirror — named by the
+ * plan's id (`revealOf`) and stamped with the revealing narration. A Burn
+ * Momentum or Improve Result that supersedes that narration takes back its
+ * plans alone (undoNarrationEntries, the Secrets category): the truth went
+ * back to hidden, its scene fact was retracted, and the mirror stayed
+ * confirmed — the journal players read, and the narrator's ESTABLISHED LORE,
+ * stating a truth the Secrets journal held hidden.
+ *
+ * Each Lore entry that mirrors a plan (`revealOf`), was last written by one of
+ * the narrations, and whose plan no longer has its truth revealed — hidden
+ * again, or the plan gone — goes back as a plan the narration wrote does: put
+ * back as it was before them when it existed (the newest `previous` none of
+ * them wrote), its page deleted when their reveal made it. Deleted, not
+ * retracted as the X-Card retracts it: a retracted entry stays out of canon
+ * when the same title is confirmed again, and a superseded narration's fact
+ * is no bar to a later one stating it (issue #338 D8) — the next reveal files
+ * the entry anew, once. Nothing else of the narrations' World Journal is
+ * touched: what their own capture recorded stands beside the re-narration
+ * (decisions.md, issue #338 D8 / #347 D2). An entry a GM's own Reveal now, or
+ * any other write, rewrote since is not the reveal's (`revealOf` cleared, or
+ * another stamp) and stands; so does one filed before entries named their
+ * plan. Run after the plans are put back. Canonical GM (the caller's).
+ * Fail-open per entry; never throws.
+ *
+ * @param {string[]} narrationIds — the superseded narrations
+ * @returns {Promise<{ restored: number, deleted: number }>}
+ */
+export async function undoRevealedTruthLore(narrationIds) {
+  const out = { restored: 0, deleted: 0 };
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return out;
+  const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+  // The plans whose truth stands revealed, as the undo left them.
+  const revealed = new Set();
+  for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+    const plan = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+    if (typeof plan?.id === "string" && plan.truthRevealed === true) revealed.add(plan.id);
+  }
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  for (const page of [...(journal?.pages?.contents ?? [])]) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (typeof entry?.revealOf !== "string" || !entry.revealOf || !fromRemoved(entry) || revealed.has(entry.revealOf)) continue;
+    try {
+      const versions = Array.isArray(entry.previous) ? entry.previous : [];
+      const at = versions.findIndex(v => v && !fromRemoved(v));
+      if (at >= 0) {
+        const older = versions.slice(at + 1);
+        // setFlag merges: every key the version put back may lack is written.
+        await writeEntryPage(page, FLAG_KEYS.lore, {
+          ...versions[at],
+          narrationId: versions[at].narrationId ?? null,
+          previous:    older.length ? older : null,
+          revealOf:    versions[at].revealOf ?? null,
+        });
+        out.restored += 1;
+      } else {
+        await page.delete();
+        out.deleted += 1;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgrade: could not take back the Lore entry "${page?.name}" of a superseded reveal:`, err?.message ?? err);
+    }
+  }
+  return out;
+}
+
+/** The line a withdrawn rolls card carries, by what took it back (withdrawRollsCards). */
+const ROLLS_CARD_NOTES = Object.freeze({
+  // As a draft row the X-Card withdrew reads (entityExtractor.js).
+  xcard:    "Withdrawn — X-Card",
+  planGone: "Withdrawn — the plan behind these rolls is no longer in play.",
+  // A Burn Momentum or Improve Result superseded the narration that revealed it.
+  reveal:   "Superseded — the outcome was upgraded: this was not revealed.",
+});
+
+/** A rolls card's content with its rolls struck and a line saying why (idempotent). */
+function withdrawnRollsCardContent(content, note) {
+  const html = String(content ?? "");
+  if (html.includes("sf-rolls-withdrawn")) return html;
+  const line = `<div class="sf-rolls-withdrawn-note" style="opacity:0.7;font-style:italic;">${note}</div>`;
+  const struck = html.replace('<div class="sf-card-body">',
+    '<div class="sf-card-body sf-rolls-withdrawn" style="opacity:0.55;text-decoration:line-through;">');
+  return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${line}</div>`) : struck + line;
+}
+
+/**
+ * Withdraw the table's cards of a plan's oracle rolls ("The oracle, behind
+ * the scenes" — secrets.js postRollsCard, flagged `secretRollsCard` with the
+ * plan's `skeletonId` and, on a reveal's card, the revealing `narrationId`)
+ * that no longer stand for anything (issue #364
+ * TAKEN-BACK-PLAN-ROLLS-CARD-STAYS: nothing read those flags once the card
+ * was posted, so the card of a plan taken back stayed in chat, and a reveal
+ * taken back and made again left two). A card `reasonFor` names a reason for
+ * is kept in chat, as every card of a taken-back narration is — its rolls
+ * struck, a line saying why (ROLLS_CARD_NOTES), and flagged `rollsWithdrawn`
+ * with the reason, which this reads to pass over a card already withdrawn.
+ * Called for a plan whose page is gone (secrets.js
+ * withdrawRollsCardsOfDeletedPlans, the page hook) and for a reveal taken
+ * back (withdrawRollsCardsOfReveals). A chat write: canonical GM. Fail-open
+ * per card; never throws.
+ *
+ * @param {(flags: Object) => ("xcard"|"planGone"|"reveal"|null)} reasonFor — why a standing rolls card goes, or null to leave it
+ * @returns {Promise<number>} the cards withdrawn
+ */
+export async function withdrawRollsCards(reasonFor) {
+  if (typeof reasonFor !== "function" || !isCanonicalGM()) return 0;
+  let withdrawn = 0;
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])]) {
+    const f = message?.flags?.[MODULE_ID];
+    if (f?.secretRollsCard !== true || f.rollsWithdrawn) continue;
+    try {
+      const reason = reasonFor(f);
+      const note = typeof reason === "string" && Object.hasOwn(ROLLS_CARD_NOTES, reason) ? ROLLS_CARD_NOTES[reason] : null;
+      if (!note) continue;
+      await message.update({
+        [`flags.${MODULE_ID}.rollsWithdrawn`]: reason,
+        content: withdrawnRollsCardContent(message.content, note),
+      });
+      withdrawn += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | secrets: the rolls card ${message?.id} could not be withdrawn:`, err?.message ?? err);
+    }
+  }
+  return withdrawn;
+}
+
+/**
+ * The rolls cards the removed narrations' reveals posted, withdrawn once the
+ * undo has un-shown those rolls (undoNarrationEntries; takenBackFrom's
+ * `rollsShownBy`, or the version before the reveal put back): the next reveal
+ * posts the rolls again, and the first card would stand beside it. A plan
+ * whose rolls are still shown keeps its card — a GM's own Reveal now since is
+ * no narration's to take back. The card of a plan whose page is gone is the
+ * page hook's (secrets.js). The line says the X-Card when it removed the
+ * narration, a superseded outcome otherwise — the undo's two callers. Never
+ * throws.
+ *
+ * @param {Set<string>} removed — the narrations taken back
+ */
+async function withdrawRollsCardsOfReveals(removed) {
+  try {
+    const shown = new Map();
+    for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+      const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+      if (typeof entry?.id === "string") shown.set(entry.id, shown.get(entry.id) === true || entry.rollsShown === true);
+    }
+    const { isNarrationXCarded } = await import("../context/safety.js");
+    await withdrawRollsCards((f) => {
+      if (typeof f.narrationId !== "string" || !removed.has(f.narrationId)) return null;
+      if (shown.get(f.skeletonId) !== false) return null;
+      return isNarrationXCarded(f.narrationId) ? "xcard" : "reveal";
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the rolls card of a reveal taken back could not be withdrawn:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Take the hidden plans filed for a move back by the resolution they were
+ * filed for (`createdFrom.resolutionId`) — what undoNarrationEntries cannot
+ * reach (issue #364 REVERTED-PRICE-PLAN-STAYS-WAITING). A price that revealed
+ * a new enemy asks its move's narration for the enemy's plan; a narration
+ * that was never written — a failed call, an empty reply, one the X-Card
+ * paused — files it with its rolls alone under no narration's id. A Burn
+ * Momentum or Improve Result that reverts that price entirely struck its
+ * cards and took it out of the narrator's memory, and the plan stayed: an
+ * enemy no price revealed, waiting to be decided by the next narration.
+ *
+ * Only a plan still waiting — in play, nothing decided — is taken: its page
+ * is deleted, as a plan a removed narration made is. One decided since, by a
+ * later narration it was in play for or by a GM, is that writer's now and
+ * stays, as a plan another narration rewrote stays when its maker is removed
+ * (undoNarrationEntries). A plan filed before plans kept their resolution
+ * carries none, and is never found. On the caller's canonical GM. Fail-open
+ * per plan; never throws.
+ *
+ * @param {string|null} resolutionId — the move the plans were filed for
+ * @param {{ triggers?: string[] }} [opts] — what asked for the plans to take back (their `createdFrom.trigger`)
+ * @returns {Promise<number>} the plans taken back
+ */
+export async function undoPlansFiledFor(resolutionId, { triggers = [] } = {}) {
+  if (typeof resolutionId !== "string" || !resolutionId || !Array.isArray(triggers) || !triggers.length) return 0;
+  let deleted = 0;
+  const journal = findJournal(JOURNAL_NAMES.secrets);
+  for (const page of [...(journal?.pages?.contents ?? [])]) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+    const from = entry?.createdFrom;
+    if (!from || from.resolutionId !== resolutionId || !triggers.includes(from.trigger)) continue;
+    const decided = typeof entry.truth === "string" && entry.truth.trim().length > 0;
+    if ((entry.status ?? "active") !== "active" || decided) continue;
+    try {
+      await page.delete();
+      deleted += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgrade: could not take back the plan "${page?.name}" filed for a reverted price:`, err?.message ?? err);
+    }
+  }
+  return deleted;
 }
 
 /** Name a plan in play whose step the undo un-played by its mark, with the clock it links (undoNarrationEntries `stepsTakenBack`). */
 function noteStepTakenBack(out, entry) {
   if (typeof entry?.id !== "string" || (entry.status ?? "active") !== "active") return;
   out.stepsTakenBack.push({ id: entry.id, clockId: typeof entry.clockId === "string" && entry.clockId ? entry.clockId : null });
+}
+
+/**
+ * Whether the Threats journal still holds the page of this id — what a hidden
+ * plan about a recorded threat names as its subject (secrets.js
+ * planSignificantThreat: the plan shares the page's id). For a supersede's
+ * `keepPlanAbout` (resultUpgrade.js plansKeptThroughSupersede, issue #364
+ * BURN-DROPS-RECORDED-THREAT-PLAN): a threat has no retracted state — a page
+ * that is there is a threat on record. A read; false when the journal cannot
+ * be read.
+ *
+ * @param {string|null} pageId
+ * @returns {boolean}
+ */
+export function threatPageStands(pageId) {
+  if (typeof pageId !== "string" || !pageId) return false;
+  try {
+    return (findJournal(JOURNAL_NAMES.threats)?.pages?.contents ?? []).some(p => p?.id === pageId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: the Threats journal could not be read for the page ${pageId}:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * The hidden plans in play once the given narrations are taken back, by id,
+ * with the clocks they link — as undoNarrationEntries leaves the Secrets
+ * journal, whether it has run yet or not: a plan whose newest version one of
+ * them wrote stands as its newest version none of them wrote (gone, when they
+ * made it); any other plan stands as it is — but for an ending one of them
+ * gave it, which the undo takes back by its mark (`resolvedBy`,
+ * takenBackFrom): that plan is in play again. For the undo of a plan clock's
+ * pacing (clocks/planClockPacing.js planInPlayFor): the X-Card's pause write
+ * comes before the plans are put back, a supersede's clock re-arm after, and
+ * both must leave a clock alone whose plan is gone or closed (issue #364
+ * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES) — while a plan the removed narration
+ * itself closed is in play again, and its clock runs. Ids only, never a
+ * plan's content. Null when the journals cannot be read: the caller then
+ * asks nothing. `keepPlanAbout` is the undo's own (a supersede's): a plan
+ * they made that it keeps stands as filed (planVersionFiled).
+ *
+ * @param {string[]} narrationIds — the narrations taken back
+ * @param {{ keepPlanAbout?: ((subject: Object) => boolean)|null }} [opts] — as given to undoNarrationEntries
+ * @returns {{ planIds: Set<string>, clockIds: Set<string> }|null}
+ */
+export function hiddenPlansInPlayWithout(narrationIds, { keepPlanAbout = null } = {}) {
+  try {
+    if (!globalThis.game?.journal) return null;
+    const removed = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
+    const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+    const planIds  = new Set();
+    const clockIds = new Set();
+    for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+      const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+      if (!entry || typeof entry !== "object") continue;
+      const stands = fromRemoved(entry)
+        ? ((Array.isArray(entry.previous) ? entry.previous : []).find(v => v && !fromRemoved(v)) ?? planVersionFiled(entry, keepPlanAbout))
+        : entry;
+      if (!stands) continue;
+      const status   = stands.status ?? "active";
+      const reopened = status === "resolved" && typeof stands.resolvedBy === "string" && removed.has(stands.resolvedBy);
+      if (status !== "active" && !reopened) continue;
+      const id = stands.id ?? entry.id;
+      if (typeof id === "string" && id) planIds.add(id);
+      if (typeof stands.clockId === "string" && stands.clockId) clockIds.add(stands.clockId);
+    }
+    return { planIds, clockIds };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: the hidden plans in play could not be read:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**

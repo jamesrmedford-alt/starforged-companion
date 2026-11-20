@@ -27,8 +27,9 @@ import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js'
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
+import { lastSessionTextParts, lastSessionTextFrom } from '../session/lifecycle.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
-import { unpacedClock, pacedByOneOf } from '../clocks/planClockPacing.js';
+import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
@@ -57,6 +58,7 @@ import {
   getConfirmedLore,
   getRecordedLocations,
   selectLoreForContext,
+  hiddenPlansInPlayWithout,
 } from '../world/worldJournal.js';
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
@@ -75,7 +77,7 @@ import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
@@ -253,42 +255,6 @@ function maxTokensWithSidecar(baseMaxTokens) {
 // ---------------------------------------------------------------------------
 
 /**
- * The narrator's system-prompt context is assembled in exactly ONE place: here.
- * Every narrator call site — move resolution, paced narrative, scene query,
- * oracle follow-up, session vignette, inciting incident, campaign recap —
- * builds its `extras` packet through this function, so new context added here
- * reaches every path at once. This is the single seam to extend going forward;
- * do not hand-assemble `extras` at a call site (that is the per-path drift this
- * unifies away — campaign truths used to reach only the move path, entity cards
- * only three paths, the party roster only three, and the recap none).
- *
- * Context EVERY path receives (the uniform packet):
- *   - current location card, active sector anchor, campaign-truths digest
- *   - multiplayer party roster, audio-markup flag, the mode + player text
- * The creative-latitude permission block is also uniform, but resolved one
- * level up in buildNarratorSystemPrompt: move_resolution's class is dynamic
- * (passed in via the relevance result below); every other mode falls back to a
- * per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
- *
- * Relevance (entity cards + matched IDs + name map) has just two rules:
- *   - move_resolution: derived from the FULL relevance result the caller
- *     already resolved (it owns the clarification-dialog control flow and the
- *     dynamic permission class); oracle seeds — which only a move produces —
- *     ride along here too.
- *   - every other mode: resolved here lexically (no API call) from the player
- *     text ∪ scene-frame present names. Modes with no player text (vignette /
- *     inciting / recap) match nothing and rely on the sector roster for cast.
- *
- * @param {string} mode               — narrator mode (see NARRATOR_MODES)
- * @param {Object} campaignState
- * @param {Object} [opts]
- * @param {string} [opts.playerNarration] — player text this turn (lexical relevance)
- * @param {Object|null} [opts.character]  — resolved active character (names the speaking PC for the roster)
- * @param {Object|null} [opts.relevance]  — pre-resolved FULL relevance result (move path only)
- * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
- * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
- */
-/**
  * Build the shipboard-combat guidance block when a fight is active aboard the
  * command vehicle. Detects an open combat track + a command vehicle, then
  * delegates the inject/skip decision and the text to the pure battleStations
@@ -350,6 +316,43 @@ async function readSceneVowFor(extras) {
   }
 }
 
+/**
+ * The narrator's system-prompt context is assembled in exactly ONE place: here.
+ * Every narrator call site — move resolution, paced narrative, scene query,
+ * oracle follow-up, session vignette, inciting incident, campaign recap —
+ * builds its `extras` packet through this function, so new context added here
+ * reaches every path at once. This is the single seam to extend going forward;
+ * do not hand-assemble `extras` at a call site (that is the per-path drift this
+ * unifies away — campaign truths used to reach only the move path, entity cards
+ * only three paths, the party roster only three, and the recap none).
+ *
+ * Context EVERY path receives (the uniform packet):
+ *   - current location card, active sector anchor, campaign-truths digest
+ *   - multiplayer party roster, audio-markup flag, the mode + player text
+ * The creative-latitude permission block is also uniform, but resolved one
+ * level up in buildNarratorSystemPrompt: move_resolution's class is dynamic
+ * (passed in via the relevance result below); every other mode falls back to a
+ * per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
+ *
+ * Relevance (entity cards + matched IDs + name map) has just two rules:
+ *   - move_resolution: derived from the FULL relevance result the caller
+ *     already resolved (it owns the clarification-dialog control flow and the
+ *     dynamic permission class); oracle seeds — which only a move produces —
+ *     ride along here too.
+ *   - every other mode: resolved here lexically (no API call) from the player
+ *     text ∪ scene-frame present names. Modes with no player text (vignette /
+ *     inciting / recap) match nothing and rely on the sector roster for cast.
+ *
+ * @param {string} mode               — narrator mode (see NARRATOR_MODES)
+ * @param {Object} campaignState
+ * @param {Object} [opts] — the four below, and actingActorIds, planRequests,
+ *   endingTrackIds, planIds and beatClaim (see the body)
+ * @param {string} [opts.playerNarration] — player text this turn (lexical relevance)
+ * @param {Object|null} [opts.character]  — resolved active character (names the speaking PC for the roster)
+ * @param {Object|null} [opts.relevance]  — pre-resolved FULL relevance result (move path only)
+ * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
+ * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
+ */
 export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const {
     playerNarration = '',
@@ -1315,6 +1318,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     relevance,
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
+    // The plans already filed for this move, put to its narration by id.
+    planIds:         owed.planIds,
     endingTrackIds,
     beatClaim,
   });
@@ -1468,26 +1473,74 @@ export async function narrateResolution(resolution, campaignState, options = {},
  *    AC15). A player's own key rolls none: plans are a GM's;
  *  - a price that revealed a new enemy asks the narration to decide what it
  *    is (issue #353 Phase 1) — from its seeds, the one record of the roll. So
- *    does an expedition the move began (its track — Phase 3).
+ *    does an expedition the move began (its track — Phase 3);
+ *  - each request names the resolution it is made for — this move's, or the
+ *    one a Burn Momentum / Improve Result re-narration upgrades — and the
+ *    plan it files keeps it (`createdFrom.resolutionId`). A request whose
+ *    plan was already filed for that resolution is not made again (issue
+ *    #364 KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE): a Battle or Clash burned or
+ *    improved to a weak hit keeps its price, and when the move's first
+ *    narration was never written — its call failed, its reply was empty, the
+ *    X-Card paused it — the new enemy that price revealed was filed with its
+ *    rolls alone, under no narration's stamp, and the re-narration's seeds
+ *    asked for a second. The plan filed is put to this narration instead
+ *    (`planIds` — shown whatever else is in play, to decide by its id), and
+ *    the seeds tell the enemy by that plan's rolls, not by a second set.
  *
  * @param {Object} resolution
  * @param {Object|null} campaignState
  * @param {string} refBase — unique to the narration (its id)
- * @returns {{ resolution: Object, planRequests: Object[] }}
+ * @returns {{ resolution: Object, planRequests: Object[], planIds: string[] }}
  */
 function movePlanRequests(resolution, campaignState, refBase) {
   let move = resolution;
   if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
   if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
-  const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]
-    : [];
-  return { resolution: move, planRequests };
+  if (!skeletonsEnabled()) return { resolution: move, planRequests: [], planIds: [] };
+  const asked = forResolution([move?.upgradeOf, move?._id].find(id => typeof id === 'string' && id) ?? null,
+    [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]);
+  const { requests, plans } = lessPlansAlreadyFiled(asked);
+  // A plan no longer in play — retired by a GM, or joined to another plan —
+  // was filed all the same: it is neither asked for again nor shown.
+  const inPlay = plans.filter(p => p.status === 'active');
+  if (inPlay.length && move?.oracleSeeds) move = { ...move, oracleSeeds: seedsWithPlannedEnemy(move.oracleSeeds, inPlay) };
+  return { resolution: move, planRequests: requests, planIds: inPlay.map(p => p.id) };
+}
+
+/** Plan requests, each naming the resolution it is made for — what the plan it files keeps (skeletons.js normaliseProvenance). */
+const forResolution = (resolutionId, requests) => (typeof resolutionId === 'string' && resolutionId
+  ? requests.map(r => ({ ...r, resolutionId })) : requests);
+
+/**
+ * A move's plan requests, less those whose plan was already filed for the
+ * resolution they name (skeletons.js planFiledFor), with the plans found. It
+ * reads the plans, as unplannedRequests does, on the GM's client its caller
+ * runs on. Fail-open: an unreadable journal asks for them all.
+ *
+ * @param {Object[]} requests — each naming its resolution (forResolution)
+ * @returns {{ requests: Object[], plans: Object[] }}
+ */
+function lessPlansAlreadyFiled(requests) {
+  if (!requests.some(r => r?.resolutionId)) return { requests, plans: [] };
+  let records;
+  try {
+    records = listSkeletons({ includeInactive: true });
+  } catch {
+    return { requests, plans: [] };
+  }
+  const plans = [];
+  const open = requests.filter((r) => {
+    const plan = planFiledFor(records, r);
+    if (plan) plans.push(plan);
+    return !plan;
+  });
+  return { requests: open, plans };
 }
 
 /**
  * The plans a round's entries ask its narration to decide: each entry's
- * price that revealed a new enemy, each expedition one began.
+ * price that revealed a new enemy, each expedition one began — each request
+ * naming its own entry's resolution, which the plan it files keeps.
  *
  * @param {Object[]} entries — roundNarrationEntries', their hidden rolls made
  * @param {string} refBase — unique to the narration (its id)
@@ -1495,10 +1548,10 @@ function movePlanRequests(resolution, campaignState, refBase) {
  */
 function roundPlanRequests(entries, refBase) {
   if (!skeletonsEnabled()) return [];
-  return entries.flatMap((e, i) => [
+  return entries.flatMap((e, i) => forResolution(e.input?.resolutionId ?? null, [
     ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${refBase}-${i + 1}`),
     ...normalisePlanRequests(e.input?.skeletonRequests),
-  ]);
+  ]));
 }
 
 /**
@@ -1512,7 +1565,8 @@ function roundPlanRequests(entries, refBase) {
  * closes the round (batch/driver.js roundNarrationPosted), and a GM's resume
  * picks play up at the next move — so this is the one filing; a Burn Momentum
  * or Improve Result re-narration asks again only for subjects still unplanned
- * (unplannedRequests). Never throws: the paused notice posts whatever
+ * (unplannedRequests), and for no plan already filed for the move it upgrades
+ * (lessPlansAlreadyFiled). Never throws: the paused notice posts whatever
  * happens here.
  *
  * @param {() => Object[]} requests — builds the narration's plan requests
@@ -2366,10 +2420,12 @@ export async function postNarrationCard(narrationText, resolution, campaignState
 
 /**
  * True when the resolution's playerNarration is what a player wrote — not
- * the marker a Burn Momentum / Improve Result re-narration carries.
+ * the marker a Burn Momentum / Improve Result re-narration carries, nor the
+ * one a Sojourn miss resolved as a strong hit carries ('resolved' —
+ * moves/sojournNeed.js).
  */
 function isPlayerWrittenInput(resolution) {
-  return resolution?.inputMethod !== 'burn' && resolution?.inputMethod !== 'improve';
+  return !['burn', 'improve', 'resolved'].includes(resolution?.inputMethod);
 }
 
 /**
@@ -2518,6 +2574,38 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
   if (f.xCarded && !forRecap) return false;
   if (Array.isArray(m.whisper) && m.whisper.length) return false;
   return true;
+}
+
+/**
+ * Whether a narration card was posted late into an earlier session: filed
+ * under a session other than the one current in `cs`, in that session's
+ * narrator memory, and posted since the current session was minted
+ * (`lastSessionTimestamp`, which only a mint stamps). A Batch Mode round
+ * whose session is over can be narrated after the world load has minted the
+ * next one, and its card keeps the round's own session
+ * (ROUND-CARD-SESSION-ID-AFTER-MINT): the table is shown it in the current
+ * session, so the readers that answer "the narration on screen" — the
+ * X-Card's pick, its guard for a card that posts during the pause, the Round
+ * window — reach it by this, where "the current session's cards" walked past
+ * it (issue #364 XCARD-MISSES-LATE-ROUND-CARD). The store names the session a
+ * mint replaced only when that session left a summary
+ * (`previousSessionSummary`), so the mint's time is the test: no card filed
+ * under another session and posted since can be anything else. The narrator's
+ * ring and the rolling summary do not read it — the card is its own
+ * session's story.
+ *
+ * @param {Object} m — a ChatMessage, or a deleted message's record
+ * @param {Object|null} cs — campaignState (`currentSessionId`, `lastSessionTimestamp`)
+ * @returns {boolean}
+ */
+export function narratedLateIntoEarlierSession(m, cs) {
+  const current = cs?.currentSessionId ?? null;
+  const own = m?.flags?.[MODULE_ID]?.sessionId ?? null;
+  if (!current || !own || own === current) return false;
+  const mintedAt = Date.parse(cs?.lastSessionTimestamp ?? '');
+  const at = messageTime(m);
+  if (!Number.isFinite(mintedAt) || at === null || at < mintedAt) return false;
+  return inNarratorMemory(m, own);
 }
 
 // ---------------------------------------------------------------------------
@@ -2717,6 +2805,15 @@ function chatAsItWas() {
 // cleared" card, or a card an earlier X-Card removed bounds the beat; when one
 // of those is newer than any narration, nothing was narrated since and the
 // X-Card removes nothing more.
+//
+// A narration posted since the session was minted but filed under the session
+// before it — a Batch Mode round narrated late (narratedLateIntoEarlierSession)
+// — is on screen like any other: when it is the newest narration, the X-Card
+// answers it, with the late narrations of its session posted in its beat. A
+// beat is one session's: a narration of the current session bounds a late
+// beat, and a late narration is passed over by a current one's (issue #364
+// XCARD-MISSES-LATE-ROUND-CARD — the pick took the current session's cards
+// alone, so it removed nothing, or an older narration instead).
 
 /** How much older than the newest X-carded card a card of the same beat may be. */
 const XCARD_BEAT_WINDOW_MS = 2 * 60 * 1000;
@@ -2739,13 +2836,18 @@ function messageTime(message) {
  * record (`deleted: true`), which flagXCardedCards passes over — never the
  * kept beat before it (issue #347 AB22).
  *
- * @param {string|null} sessionId
+ * @param {string|null} sessionId — the current session
+ * @param {Object|null} [cs] — the campaignState the card is played on: when
+ *   its session was minted (`lastSessionTimestamp`), so a narration posted
+ *   since into the session before it is reached; without it, the current
+ *   session's cards alone
  * @returns {Array<Object>} ChatMessage documents, and deleted messages' records
  */
-export function xCardedNarrationCards(sessionId) {
+export function xCardedNarrationCards(sessionId, cs = null) {
   if (!sessionId) return [];
   const messages = chatAsItWas();
-  const inMemory = { has: (m) => inNarratorMemory(m, sessionId) };
+  const minted = { currentSessionId: sessionId, lastSessionTimestamp: cs?.lastSessionTimestamp ?? null };
+  const isLate = (m) => narratedLateIntoEarlierSession(m, minted);
   const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
 
   // The newest narration, unless an earlier X-Card already answered it.
@@ -2753,7 +2855,7 @@ export function xCardedNarrationCards(sessionId) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     const f = m?.flags?.[MODULE_ID];
-    if (inMemory.has(m)) { newestIdx = i; break; }
+    if (inNarratorMemory(m, sessionId) || isLate(m)) { newestIdx = i; break; }
     if (f?.xcardClearedCard || f?.xCarded) return [];   // nothing narrated since
     // anything else — this play's own X-Card card, a person's message, another card — is passed over
   }
@@ -2762,6 +2864,13 @@ export function xCardedNarrationCards(sessionId) {
   const newest   = messages[newestIdx];
   const newestAt = messageTime(newest);
   const newestRound = newest?.flags?.[MODULE_ID]?.roundId ?? null;
+  // The beat is the newest narration's session's: the current one's, or — a
+  // narration posted late into the session before — that session's late cards.
+  const beatSession = newest?.flags?.[MODULE_ID]?.sessionId ?? null;
+  const lateBeat = beatSession !== sessionId;
+  const inMemory = { has: lateBeat
+    ? (m) => isLate(m) && (m?.flags?.[MODULE_ID]?.sessionId ?? null) === beatSession
+    : (m) => inNarratorMemory(m, sessionId) };
   const beat = [newest];
   for (let i = newestIdx - 1; i >= 0; i--) {
     const m = messages[i];
@@ -2777,12 +2886,13 @@ export function xCardedNarrationCards(sessionId) {
     // passed it and took the paced narration before it).
     if (f.bypassPacing || f.forcedMoveId) break;
     if (isBoundary(f) || f.xCarded) break;      // an earlier X-Card answered what came before
+    if (lateBeat && inNarratorMemory(m, sessionId)) break;   // the current session's narration: a late beat began after it
     if (!inMemory.has(m)) continue;             // one of this module's other cards
     const at = messageTime(m);
     if (newestAt !== null && at !== null && newestAt - at > XCARD_BEAT_WINDOW_MS) break;
     beat.unshift(m);
   }
-  return withStruckByUpgrade(beat, messages, sessionId);
+  return withStruckByUpgrade(beat, messages, beatSession);
 }
 
 /**
@@ -2799,7 +2909,7 @@ export function xCardedNarrationCards(sessionId) {
  *
  * @param {Object[]} beat — the cards the walk picked
  * @param {Object[]} messages — the chat as it was
- * @param {string} sessionId
+ * @param {string} sessionId — the beat's session (its cards' own)
  * @returns {Object[]}
  */
 function withStruckByUpgrade(beat, messages, sessionId) {
@@ -2838,6 +2948,9 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
+ *   - `previousSessionSummary` / `unsummarisedSession`: LAST SESSION's own
+ *     text dropped and its session marked for the catch-up, when it tells a
+ *     removed narration posted late into that session (dropLastSessionTelling);
  *   - `xCardRedirect`: the redirect the first narration after a GM resumes
  *     carries — set on every play, X-carded cards or not.
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
@@ -2846,16 +2959,18 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
  * @param {{ cards?: Object[]|null }} [opts]
- * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
- *   the X-carded cards, the truths retracted, their session, and whether the
- *   session's summary was dropped — the Session Log's story End wrote from it
- *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
+ * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean,
+ *   lastSessionDropped: string|null }}
+ *   the X-carded cards, the truths retracted, the current session, and whether
+ *   its summary was dropped — the Session Log's story End wrote from it
+ *   goes too (safety.js finishXCardRemoval, issue #345 AA27); and the session
+ *   whose LAST SESSION text was dropped, whose page's story goes the same way
  */
 export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
   // `cards`: a narration that posted after the pause (XCARD-POST-RACE) —
   // removed the same way, in place of the pick.
-  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId);
+  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId, cs);
   const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
 
   const retracted = retractNarrations(cs, ids);
@@ -2878,8 +2993,15 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // has turned it since: asked whether it still stood as paced, a price paid
   // between a trigger vignette and this card left the clock where it was with
   // the step back unplayed (issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE).
+  // Only a clock whose plan is in play once they are taken back — the undo
+  // of the plans runs after this write, so the plans are read as it will
+  // leave them (hiddenPlansInPlayWithout): a clock retired after a last step
+  // keeps its stamp when its plan is then retired or deleted, and ran again
+  // with no plan behind it (issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
   if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => pacedByOneOf(c, ids))) {
-    cs.clocks = cs.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
+    const plansInPlay = hiddenPlansInPlayWithout(ids);
+    const theirs = (c) => pacedByOneOf(c, ids) && planInPlayFor(c, plansInPlay);
+    if (cs.clocks.some(theirs)) cs.clocks = cs.clocks.map(c => (theirs(c) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;
@@ -2897,8 +3019,46 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
     }
   }
 
+  // LAST SESSION, when it tells a removed narration that was posted late into
+  // the session it names.
+  const lastSessionDropped = dropLastSessionTelling(cs, cards);
+
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
-  return { cards, retracted, sessionId, summaryDropped };
+  return { cards, retracted, sessionId, summaryDropped, lastSessionDropped };
+}
+
+/**
+ * Take LAST SESSION's own text out of `cs` when it may tell a narration the
+ * X-Card removes: a card filed under the session LAST SESSION names — posted
+ * late into it (narratedLateIntoEarlierSession) — at or before the time the
+ * summary was last written (the catch-up after that card made it from the
+ * card: bringLastSessionUpToDate). The summary is a droppable convenience:
+ * its text goes now, what a mint folded onto it from a session nobody began
+ * stays (lifecycle.js lastSessionTextParts), and the session is marked short
+ * (`unsummarisedSession`) so the catch-up makes it again from the cards that
+ * remain — unless a later session's mark stands, whose catch-up replaces
+ * LAST SESSION anyway. Mutates `cs` (new objects; the stored ones are never
+ * changed) — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION.
+ *
+ * @param {Object} cs
+ * @param {Object[]} cards — the X-carded cards
+ * @returns {string|null} the session whose LAST SESSION text was dropped
+ */
+function dropLastSessionTelling(cs, cards) {
+  const prev = cs?.previousSessionSummary;
+  const session = typeof prev?.sessionId === 'string' && prev.sessionId ? prev.sessionId : null;
+  if (!session || session === (cs.currentSessionId ?? null)) return null;
+  const { own, between } = lastSessionTextParts(prev.text);
+  if (!own) return null;
+  const writtenAt = Date.parse(prev.updatedAt ?? '');
+  const told = (cards ?? []).some(m => (m?.flags?.[MODULE_ID]?.sessionId ?? null) === session
+    && (!Number.isFinite(writtenAt) || (messageTime(m) ?? 0) <= writtenAt));
+  if (!told) return null;
+  cs.previousSessionSummary = { ...prev, text: between };
+  if (!cs.unsummarisedSession?.sessionId) {
+    cs.unsummarisedSession = { sessionId: session, sessionNumber: prev.sessionNumber ?? null };
+  }
+  return session;
 }
 
 /**
@@ -2942,14 +3102,17 @@ function dropXCardedPremise(cs, cards, ids) {
  */
 function summaryCoversCards(summary, sessionId, cards) {
   if (!sessionId || summary?.sessionId !== sessionId || !cards?.length) return false;
+  // The session's own cards: a narration posted late into the session before
+  // (narratedLateIntoEarlierSession) was never part of this summary's source.
+  const own = cards.filter(c => (c?.flags?.[MODULE_ID]?.sessionId ?? null) === sessionId);
   // A narration whose card was deleted (issue #347 AB22) has no place in
   // chat to count: a summary written after it may have been made from it.
   const covered = Number(summary.coveredCount) || 0;
   const writtenAt = Date.parse(summary.updatedAt ?? '');
-  if (covered > 0 && cards.some(c => c?.deleted
+  if (covered > 0 && own.some(c => c?.deleted
       && (!Number.isFinite(writtenAt) || (messageTime(c) ?? 0) <= writtenAt))) return true;
   const inMemory = sessionNarratorCards(sessionId);
-  const at = cards
+  const at = own
     .map(c => inMemory.findIndex(m => m === c || (!!m?.id && m.id === c?.id)))
     .filter(i => i >= 0);
   return at.length > 0 && Math.min(...at) < (Number(summary.coveredCount) || 0);
@@ -3600,10 +3763,61 @@ export function registerRollingSummaryRefreshHook() {
       return;
     }
     refreshRollingSessionSummary();
+    // A catch-up begun before this card posted was not made from it.
+    const earlier = _sessionCatchUp;
     // A session the mint closed out short gets its LAST SESSION now, if a key
     // is here (issue #347 AB15).
     catchUpUnsummarisedSession();
+    // A narration posted into the session LAST SESSION names, after the mint
+    // that closed it, brings LAST SESSION up to date (issue #364
+    // LATE-ROUND-NOT-IN-LAST-SESSION).
+    bringLastSessionUpToDate(message, earlier);
   });
+}
+
+/**
+ * Bring LAST SESSION up to date with a narration posted into the session it
+ * names after the mint that closed that session — a Batch Mode round narrated
+ * late keeps its own session (ROUND-CARD-SESSION-ID-AFTER-MINT). The mint
+ * fixed `previousSessionSummary` from the cards present then, the card's post
+ * refreshed the current session's summary alone, and the card is in no ring
+ * of the current session: the next session's narrator was told that round's
+ * prose by nothing (issue #364 LATE-ROUND-NOT-IN-LAST-SESSION). The session is
+ * marked short again (`unsummarisedSession`, with the number LAST SESSION
+ * carries) and the catch-up summarises its cards from source — one summary
+ * call per late card, and a failed one is tried again as any catch-up is.
+ * Only for the session LAST SESSION names: when the mint carried no summary
+ * for the card's session the store has no record of it to bring up to date,
+ * and none is made up; a mark for another session — a later one, closed out
+ * short — stands. On the canonical GM (the hook's gate); the mark is a world
+ * write onto the latest store, at its turn on the write chain. Never throws.
+ *
+ * @param {ChatMessage} message — the narrator card that posted
+ * @param {Promise<boolean>|null} earlier — a catch-up in flight when it posted
+ * @returns {Promise<boolean>} whether LAST SESSION was brought up to date
+ */
+async function bringLastSessionUpToDate(message, earlier) {
+  try {
+    if (!rollingSummaryEnabled()) return false;
+    const own = message?.flags?.[MODULE_ID]?.sessionId ?? null;
+    const named = (cs) => !!own && own !== (cs?.currentSessionId ?? null) && cs?.previousSessionSummary?.sessionId === own;
+    if (!named(storedCampaignState()) || !inNarratorMemory(message, own)) return false;
+    if (earlier) await earlier;
+    const owed = await serialiseCampaignStateWrite(async () => {
+      const latest = storedCampaignState();
+      if (!named(latest)) return false;                              // a mint moved on
+      const mark = latest.unsummarisedSession ?? null;
+      if (mark?.sessionId) return mark.sessionId === own;            // owed already — or a later session's is
+      await game.settings.set(MODULE_ID, 'campaignState', { ...latest, unsummarisedSession: {
+        sessionId: own, sessionNumber: latest.previousSessionSummary.sessionNumber ?? null,
+      } });
+      return true;
+    }, 'last session owed a late narration');
+    return owed ? await catchUpUnsummarisedSession() : false;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: LAST SESSION could not be brought up to date with a late narration:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**
@@ -3777,7 +3991,15 @@ let _sessionCatchUp = null;
  * summary becomes LAST SESSION, the mark cleared. Run after each narrator card
  * (End a Session's closing vignette among them), at the world load and when
  * this GM's key is set; one at a time; fail-open — a failed or X-Carded call
- * leaves the mark for the next try. A later mint replaces the mark.
+ * leaves the mark for the next try. A later mint replaces the mark, unless
+ * LAST SESSION goes on naming the marked session (lifecycle.js
+ * rollSessionIfDue — issue #364 LAST-SESSION-OWED-LOST-AT-MINT). A
+ * narration posted late into the session LAST SESSION names marks it again
+ * (bringLastSessionUpToDate), and so does an X-Card that takes one back
+ * (dropLastSessionTelling): the session's own part of the text is made again
+ * from its cards, and what a mint folded onto it from a session nobody began
+ * is kept (lifecycle.js lastSessionTextParts — issue #364
+ * LATE-ROUND-NOT-IN-LAST-SESSION).
  *
  * @returns {Promise<boolean>} whether LAST SESSION was caught up
  */
@@ -3790,6 +4012,7 @@ export function catchUpUnsummarisedSession() {
   if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
   _sessionCatchUp = (async () => {
     try {
+      const xCardPlaysAtStart = xCardPlayCount();
       const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
       const text = hasCards
         ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
@@ -3799,13 +4022,22 @@ export function catchUpUnsummarisedSession() {
       const write = serialiseCampaignStateWrite(async () => {
         const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
         if (latest.unsummarisedSession?.sessionId !== pending.sessionId) return false;   // a later mint moved on
+        // An X-Card played since the summary was made may have removed a
+        // narration it tells — one posted late into this session, which the
+        // X-Card still answers (XCARD-MISSES-LATE-ROUND-CARD): not stored,
+        // and the mark stays for the next try.
+        if (text?.trim() && xCardPlayCount() !== xCardPlaysAtStart) return false;
+        // What a mint folded onto LAST SESSION from a session nobody began is
+        // not made from this session's cards: kept as it is (issue #331 X65).
+        const prior  = latest.previousSessionSummary;
+        const folded = prior?.sessionId === pending.sessionId ? lastSessionTextParts(prior.text).between : '';
         await game.settings.set(MODULE_ID, 'campaignState', {
           ...latest,
           unsummarisedSession: null,
           ...(text?.trim() ? { previousSessionSummary: {
             sessionId:     pending.sessionId,
             sessionNumber: pending.sessionNumber ?? null,
-            text:          text.trim(),
+            text:          lastSessionTextFrom(text, folded),
             updatedAt:     new Date().toISOString(),
           } } : {}),
         });
@@ -5626,19 +5858,6 @@ export function currentLocationName(campaignState) {
 }
 
 /**
- * Build the active-sector anchor block for the narrator system prompt.
- *
- * The paced-narrative and scene-interrogation narrator paths previously had
- * no sector context whatsoever and would freely invent settlement names for
- * places the player was already inside. The move-pipeline narrator got
- * sector content through `buildSectorSection` in the assembler, but the
- * other two paths never call the assembler.
- *
- * This helper emits a directive block — not just a list — so the model is
- * pushed to *reuse* the established settlement names rather than inventing
- * alternatives. Returns empty string when no active sector is set.
- */
-/**
  * Render an established NPC's recorded profile for the active-sector roster.
  * Leads with `Name — Role` (kept as the stable head so reuse directives and
  * tests still match) and appends every other recorded attribute — goal,
@@ -5682,6 +5901,19 @@ function lostConnectionNote(c) {
   return reason ? `connection lost: ${reason}` : 'connection lost';
 }
 
+/**
+ * Build the active-sector anchor block for the narrator system prompt.
+ *
+ * The paced-narrative and scene-interrogation narrator paths previously had
+ * no sector context whatsoever and would freely invent settlement names for
+ * places the player was already inside. The move-pipeline narrator got
+ * sector content through `buildSectorSection` in the assembler, but the
+ * other two paths never call the assembler.
+ *
+ * This helper emits a directive block — not just a list — so the model is
+ * pushed to *reuse* the established settlement names rather than inventing
+ * alternatives. Returns empty string when no active sector is set.
+ */
 export function formatActiveSector(campaignState) {
   const id     = campaignState?.activeSectorId;
   if (!id) return '';
@@ -5984,21 +6216,6 @@ async function postPacedNarrationPausedCard(campaignState = null) {
 }
 
 /**
- * Short notice posted when a paced narration — a typed line the pacing
- * classifier read as narrative — could not be written: its Claude call failed
- * (overloaded, a server error, a timeout, a rate limit on the retry too), its
- * reply had no prose (issue #347 AB21), or its prompt could not be built
- * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
- * postFallbackCard and `@scene` its fallback card; the line posted nothing and
- * told nobody, after a wait of up to four minutes, and just sat in chat. Not
- * a narrator card, so it never enters the recent-narration ring, the rolling
- * summary or the chronicle; posted by the client that narrates the line (the
- * chat pipeline's, the canonical GM).
- *
- * @param {Object|null} [campaignState]
- * @returns {Promise<ChatMessage|null>}
- */
-/**
  * The pacing router's way to tell the table a line it read as narrative was
  * not narrated — a throw before narratePacedInput began (known-issues
  * PACED-ROUTER-THROW). Never throws.
@@ -6011,6 +6228,22 @@ export function tellPacedLineNotNarrated(campaignState, err) {
   return postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
 }
 
+/**
+ * Short notice posted when a paced narration — a typed line the pacing
+ * classifier read as narrative — could not be written: its Claude call failed
+ * (overloaded, a server error, a timeout, a rate limit on the retry too), its
+ * reply had no prose (issue #347 AB21), or its prompt could not be built
+ * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
+ * postFallbackCard and `@scene` its fallback card; the line posted nothing and
+ * told nobody, after a wait of up to four minutes, and just sat in chat. Not
+ * a narrator card, so it never enters the recent-narration ring, the rolling
+ * summary or the chronicle; posted by the client that narrates the line (the
+ * chat pipeline's, the canonical GM).
+ *
+ * @param {Object|null} [campaignState]
+ * @param {string} [reason] — failureReason.js clause
+ * @returns {Promise<ChatMessage|null>}
+ */
 async function postPacedNarrationFailedCard(campaignState = null, reason = claudeFailureReason(null)) {
   try {
     return await ChatMessage.create({

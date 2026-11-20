@@ -110,6 +110,8 @@ import {
   keepUndecidedUpgrades,
   upgradesSettled,
   undecidedUpgrades,
+  UPGRADE_IN_FLIGHT_GRACE_MS,
+  UPGRADE_IN_FLIGHT_MAX_MS,
   beginNarration,
   claimNarration,
   recoveryPlan,
@@ -405,6 +407,59 @@ function roundSessionOver(round, cs = campaignStateNow()) {
   return !sessionInPlay(cs) || round?.sessionId !== (cs.currentSessionId ?? null);
 }
 
+/**
+ * The number of a round's session: the one the round opened with, else — a
+ * round opened before rounds kept it — the one that session's narrator cards
+ * carry, else the one its summary was carried forward under (LAST SESSION, or
+ * the mark of a session closed without its summary). Null when nothing names
+ * it: unknown, never another session's.
+ *
+ * @param {Object} round
+ * @param {Object} cs — campaignState as stored
+ * @returns {number|null}
+ */
+function roundSessionNumber(round, cs) {
+  const numbered = (n) => (Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null);
+  if (numbered(round?.sessionNumber)) return numbered(round.sessionNumber);
+  const card = (game.messages?.contents ?? []).findLast?.((m) => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true && f.sessionId === round.sessionId && numbered(f.sessionNumber) !== null;
+  });
+  if (card) return numbered(card.flags[MODULE_ID].sessionNumber);
+  for (const kept of [cs?.previousSessionSummary, cs?.unsummarisedSession]) {
+    if (kept?.sessionId === round.sessionId && numbered(kept.sessionNumber)) return numbered(kept.sessionNumber);
+  }
+  return null;
+}
+
+/**
+ * The working copy of campaignState a round is narrated from: the store as
+ * it stands, in the round's own session. A round whose session is over can be
+ * narrated after the world load has minted the next one — by the re-check of
+ * an upgrade in flight (recheckWhenInFlightLapses), or a GM's Send now — and
+ * the store's current session is then the minted one: its card, the facts
+ * its narration recorded and the story it was told from were the next
+ * session's, where the pass that runs during the load itself (before the
+ * mint is stored) keeps the round's own. So the copy names the round's
+ * session and its number whichever pass narrates it; everything narrateRound
+ * files by session reads them from the copy, and nothing writes the copy's
+ * session back (each of its writes is its own fields onto the latest store).
+ * A round with no session of its own, or narrated in its session, takes the
+ * copy as it is (issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT).
+ *
+ * @param {Object} round
+ * @returns {Object}
+ */
+function roundNarrationState(round) {
+  const cs = workingCopy();
+  const own = round?.sessionId ?? null;
+  if (!own || (cs.currentSessionId ?? null) === own) return cs;
+  const sessionNumber = roundSessionNumber(round, cs);
+  cs.currentSessionId = own;
+  cs.sessionNumber = sessionNumber;
+  return cs;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Opening and closing rounds
 // ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +487,7 @@ export async function openRoundIfDue(reason = "due") {
       if (roundIsOpen(latest) && (latest.sessionId === sessionId || isResolving(latest))) return latest;
       return createRound({
         id: randomId(), number: nextRoundNumber(latest, sessionId), sessionId,
+        sessionNumber: cs.sessionNumber ?? null,
         now: nowIso(), participants: currentParticipants(),
       });
     });
@@ -737,7 +793,13 @@ async function advanceOnce() {
       // came back to the card — after the session, into the next one's chat
       // (issue #364 ROUND-UPGRADE-STEP-AT-SESSION-END).
       if (!upgradesSettled(getStoredRound()) && roundSessionOver(getStoredRound())) await keepUpgrades(null);
-      if (!upgradesSettled(getStoredRound())) return false;
+      if (!upgradesSettled(getStoredRound())) {
+        // Over, and still waiting: only for an upgrade in flight within its
+        // wait. Nothing else is due to run a pass then, so this one asks for
+        // one more when that wait lapses.
+        recheckWhenInFlightLapses(getStoredRound());
+        return false;
+      }
       // The X-Card stops a round resolving: decided, it waits for a GM to
       // resume (the lift runs this pass again), as a collecting round does —
       // it went on to its narration, and closed behind the paused notice,
@@ -1442,6 +1504,55 @@ function upgradeHandlerLive(cardId) {
   return !!(user?.isGM && user.active && gmPageCanAct(by));
 }
 
+// The one re-check pending for an over session's round that waits on an
+// upgrade in flight (recheckWhenInFlightLapses): its round, and its timer.
+let _inFlightRecheck = null;
+// Past the lapse, so the pass the timer runs reads the upgrade as lapsed.
+const IN_FLIGHT_RECHECK_MARGIN_MS = 250;
+
+/**
+ * An over session's round left at its upgrade step by the pass waits only
+ * for upgrades in flight — the pass kept every other — each until its wait
+ * lapses (round.js keepUndecidedUpgrades: UPGRADE_IN_FLIGHT_GRACE_MS, or
+ * UPGRADE_IN_FLIGHT_MAX_MS while its handler still runs). A handler that
+ * runs decides its entry and runs a pass itself (acceptRoundUpgrade); one
+ * that died with its page never will, and once the session is over nothing
+ * else is due to run one. So a load into an over session less than the grace
+ * after the step began left the round "being resolved" until something
+ * unrelated ran a pass — a GM's Send now, a user joining (issue #364
+ * ROUND-UPGRADE-STEP-IDLE-NO-TRIGGER, its second half). The pass runs once
+ * more when the earliest wait lapses: one timer a round, and only for a
+ * lapse still ahead — an upgrade past its wait that the pass could not keep
+ * (the world refused the write) is the GMs' Send now, never a loop here.
+ *
+ * Not a round whose session is in play: there an upgrade in flight past its
+ * grace is kept by a GM's Send now alone. And not the four idle hours
+ * themselves, which get no timer (the maintainer's decision): this waits out
+ * only a wait already running.
+ *
+ * @param {Object|null} round — as stored, after the pass
+ */
+function recheckWhenInFlightLapses(round) {
+  if (round?.phase !== ROUND_PHASE.UPGRADING || !roundSessionOver(round)) return;
+  if (_inFlightRecheck?.roundId === round.id) return;
+  const now = Date.now();
+  const waits = undecidedUpgrades(round).map(id => round.entries[id]?.upgrade).filter(u => u?.inFlight)
+    .map(u => Date.parse(u.inFlightSince ?? "")
+      + (upgradeHandlerLive(u.cardId) ? UPGRADE_IN_FLIGHT_MAX_MS : UPGRADE_IN_FLIGHT_GRACE_MS) - now)
+    .filter(ms => Number.isFinite(ms) && ms > 0);
+  if (!waits.length) return;
+  if (_inFlightRecheck) clearTimeout(_inFlightRecheck.timer);
+  const roundId = round.id;
+  const timer = setTimeout(() => {
+    if (_inFlightRecheck?.roundId === roundId) _inFlightRecheck = null;
+    const latest = getStoredRound();
+    if (latest?.id !== roundId || latest.phase !== ROUND_PHASE.UPGRADING) return;
+    advanceRound("in-flight-lapsed").catch(err =>
+      console.warn(`${MODULE_ID} | Batch Mode: the re-check of an upgrade in flight:`, err?.message ?? err));
+  }, Math.min(...waits) + IN_FLIGHT_RECHECK_MARGIN_MS);
+  _inFlightRecheck = { roundId, timer };
+}
+
 /**
  * The upgrade offers no one can answer are kept, as the round's lifecycle
  * keeps them ("the roller left = Keep", round.js): a roller who isn't
@@ -1661,7 +1772,7 @@ async function narrateTheRound() {
     await closeCardUpgrades(round, null);
     const narrated = round;
     const told = await narrateRound({
-      round: narrated, campaignState: workingCopy(),
+      round: narrated, campaignState: roundNarrationState(narrated),
       stillNarrating: () => narrationStillOurs(narrated.id, lock.claim, dropsAtClaim),
       // Its card says why it closed unnarrated, not "no key on this game"
       // (ROUND-CLOSED-UNNARRATED-WORDING).
@@ -1838,6 +1949,8 @@ async function finishRound(round, reason) {
   const moves = (closed.acting ?? []).map(id => rolledFor(closed.id, closed.entries[id])).filter(Boolean);
   forgetRolledHere();
   afterTheRound(async () => {
+    // Before the riders: their prompt can wait on the GM.
+    await resolveToldNeeds();
     for (const rolled of moves) {
       await finishMove(rolled, cs).catch(err => console.warn(`${MODULE_ID} | Batch Mode: consequence riders failed:`, err?.message ?? err));
     }
@@ -1879,6 +1992,23 @@ let _afterRounds = Promise.resolve();
 function afterTheRound(work) {
   _afterRounds = _afterRounds.then(work).catch(err =>
     console.warn(`${MODULE_ID} | Batch Mode: after the round:`, err?.message ?? err));
+}
+
+/**
+ * A round is narrated and closed: the Sojourns whose vow's Swear an Iron Vow
+ * was told while it was being resolved are resolved now — a participant's
+ * free-flow swear the round kept before it rolled (rollRound), or one told
+ * beside it. A round being resolved refuses that resolve: it tells its
+ * entries once, and the refuge is narrated after it (moves/sojournNeed.js
+ * resolveToldSojournNeeds — what the vows on the sheets say; issue #364
+ * SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING). Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+async function resolveToldNeeds() {
+  await import("../moves/sojournNeed.js")
+    .then(({ resolveToldSojournNeeds }) => resolveToldSojournNeeds())
+    .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the Sojourns of the vows sworn during the round could not be resolved:`, err?.message ?? err));
 }
 
 /** The forced moves a resolving round held, run as free-flow off the advance pass. */
@@ -2400,6 +2530,8 @@ export async function recoverRound(reason = "recovery") {
     } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason) && round.phase !== ROUND_PHASE.UPGRADING) {
       await queueRoundWrite(r => (r?.id === round.id ? closeRound(r, { reason: "session-ended", now: nowIso() }) : r))
         .catch(err => console.warn(`${MODULE_ID} | Batch Mode: an ended session's round could not be closed:`, err?.message ?? err));
+      // No finishRound for this close: what waited for the round follows it here.
+      afterTheRound(resolveToldNeeds);
     } else if (isResolving(round)) {
       const resolver = round.resolverId && round.resolverId !== game.user.id ? game.users?.get?.(round.resolverId) : null;
       if (resolver?.active) return;   // that GM is resolving it

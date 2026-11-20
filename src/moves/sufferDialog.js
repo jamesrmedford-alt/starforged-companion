@@ -134,7 +134,11 @@ function optionToCalls(opt, selection) {
         ...(Array.isArray(opt.price.sufferRoutes) ? { sufferRoutes: opt.price.sufferRoutes } : {}),
         ...(stated ? { stated: true } : {}) }
       : null;
-    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
+    // An option whose answer resolves its move as another outcome (Sojourn's
+    // "Community needs help" — `resolvesAs`, resolver.js) says so: its
+    // executor posts the card that resolves it (sojournNeed.js).
+    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}),
+      ...(opt.resolvesAs === "strong_hit" ? { resolvesAs: opt.resolvesAs } : {}) }];
   }
 
   // Combat progress mark — marks the active combat track N times.
@@ -616,6 +620,24 @@ async function runSufferCall(call, actor, opts) {
         const { payChosenPrice } = await import("../index.js");
         const paid = await payChosenPrice(call.price, actor);
         return { kind: "route", route: call.route, ...paid };
+      }
+      // Sojourn's "Community needs help": answered — the help given, or a
+      // vow sworn to see it done — the move resolves as a strong hit. Its
+      // own card offers both and resolves it (sojournNeed.js); only a
+      // reminder to swear was posted, and nothing ever resolved the Sojourn
+      // (issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY). The Sojourn is the
+      // choice card's own resolution; a pick applied from no such card keeps
+      // the reminder below. A card the world refuses hands the pick back
+      // (sufferCard.js handleSufferPick).
+      if (call.resolvesAs === "strong_hit" && actor) {
+        const { needResolutionOf, postSojournNeedCard } = await import("./sojournNeed.js");
+        const need = needResolutionOf(opts?.sufferCardId ?? null);
+        if (need) {
+          const card = await postSojournNeedCard({ actor, resolutionId: need.resolutionId, stakes: opts?.moveStakes ?? null });
+          return card
+            ? { kind: "route", route: call.route }
+            : { kind: "route", route: call.route, ok: false, reason: "post-failed" };
+        }
       }
       // Surface a chat card prompting the player/GM to trigger the
       // follow-up move themselves. Auto-firing Swear an Iron Vow /

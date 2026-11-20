@@ -55,7 +55,7 @@ import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDe
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { upgradeStampOwed, upgradeClosedByRound } from "../batch/round.js";
+import { upgradeStampOwed, upgradeClosedByRound, isResolving } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -150,6 +150,20 @@ function storedRound() {
 }
 
 /**
+ * Whether a Batch Mode round is being resolved now — rolling, asking about
+ * its upgrades, or being narrated (round.js isResolving, the stored round).
+ * A round tells its entries once: a narration that is not the round's own
+ * waits for it (sojournNeed.js — a Sojourn miss resolved as a strong hit is
+ * narrated after the round, never beside it). False with no round, or one
+ * still collecting.
+ *
+ * @returns {boolean}
+ */
+export function roundResolvingNow() {
+  return isResolving(storedRound());
+}
+
+/**
  * Whether a Batch Mode round's result card has had its Burn / Improve decided
  * by its round — the round's own record (round.js upgradeClosedByRound), not
  * only the card's `roundClosed` mirror of it (issue #344 A03). False for a
@@ -232,7 +246,9 @@ export function upgradeButtonNames(kinds) {
  *
  * A clock rewind (`tensionClocks`, `vowClocks`) reports on `report.untriggered`
  * the clocks its landed writes took out of their triggered state, as the
- * writes read them (issue #342 Z46).
+ * writes read them (issue #342 Z46) — and a tension clocks' on `report.fates`
+ * what it did to each clock (clocks.js revertTensionClocksForBurn), which the
+ * reversal card says (tensionClockLine).
  *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string, triggered?: true, vignetteNarrationId?: string }> }
@@ -241,13 +257,14 @@ export function upgradeButtonNames(kinds) {
  *   | { effect: "assetTrack", track: "integrity"|"health", amount: number, pcId: string|null, vehicleActorId?: string, itemId?: string, name?: string|null }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
- * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
+ * @param {{ untriggered?: Array<Object>, fates?: Object<string, Object> }|null} [report] — filled in by a clock rewind
  * @returns {Promise<boolean>} whether it landed
  */
 export async function applyUpgradeStep(step, failures, report = null) {
   try {
     const res = await runUpgradeStep(step);
     if (report && typeof report === "object" && Array.isArray(res.untriggered)) report.untriggered = res.untriggered;
+    if (report && typeof report === "object" && res.fates && typeof res.fates === "object") report.fates = res.fates;
     if (res.ok) return true;
     failures.push({
       ...step,
@@ -283,15 +300,22 @@ async function runUpgradeStep(step) {
       const vignettes = Object.fromEntries(filled
         .filter(c => typeof c.vignetteNarrationId === "string" && c.vignetteNarrationId)
         .map(c => [c._id, c.vignetteNarrationId]));
+      // What the write did to each clock, for the reversal card's lines
+      // (issue #364 PLAN-CLOCK-REWOUND-WORDING).
+      const fates = {};
       const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id), {
         triggered: filled.map(c => c._id),
         vignettes,
+        // The ones whose plan is out of play once that vignette is taken
+        // back: not run again (issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
+        planGone: await clocksWhosePlanIsGone(vignettes),
         // The ones whose vignette stands on the table: struck by that id even
         // when the clock has triggered again since and carries the later
         // trigger's stamp (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
         narrated: clocksWithVignetteWritten(vignettes),
+        fates,
       });
-      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
+      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [], fates };
     }
     case "vowClocks": {
       const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
@@ -394,13 +418,16 @@ async function restoreAssetTrack(step) {
  * strings.
  *
  * @param {Object} s — the card's step record
- * @returns {Promise<{ ok: boolean, reason?: string }>}
+ * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string }>}
  */
 export async function retryUpgradeStep(s) {
   switch (s?.effect) {
     case "meters": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      // The character's sheet gone since: `final` — a later press finds none
+      // either, so the Retry tells the GMs once and offers no further Retry
+      // (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-CHARACTER-GONE-LOOP).
+      if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
       const changes = s.changes && typeof s.changes === "object" ? s.changes : {};
       const valid = Object.entries(changes).every(([k, v]) => PC_METERS.includes(k) && Number.isInteger(v) && Math.abs(v) <= 16);
       if (!valid) return { ok: false, reason: "invalid step" };
@@ -433,7 +460,7 @@ export async function retryUpgradeStep(s) {
       break;
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
-      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
       break;
     }
@@ -464,7 +491,12 @@ export async function retryUpgradeStep(s) {
       : vowClocksUntriggered(s.entries, report.untriggered, landed ? [] : (failures[0]?.entries ?? s.entries));
     await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind), typeof s.resolutionId === "string" ? s.resolutionId : null);
   }
-  return landed ? { ok: true } : { ok: false, ...failures[0] };
+  if (landed) return { ok: true };
+  // A vehicle's track to restore, its Actor gone since: the step names it by
+  // id, so no later press finds one — `final`, told once with no further
+  // Retry (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+  const vehicleGone = s.effect === "assetTrack" && typeof s.vehicleActorId === "string" && failures[0]?.reason === "no-vehicle";
+  return { ok: false, ...failures[0], ...(vehicleGone ? { final: true } : {}) };
 }
 
 /** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
@@ -536,7 +568,8 @@ export function describeUpgradeStep(f, why) {
     }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
-      return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
+      // No card was posted, and — its character gone (`final`) — none will be.
+      return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}.${f.final === true ? "" : " Nothing on it has been chosen yet."}`;
     }
     case "assetTrack":
       return `Restore ${escapeHtml(f.name ?? (f.track === "health" ? "the companion" : "the vehicle"))}'s ${f.track === "health" ? "health" : "integrity"} by ${Number(f.amount) || 0}, which the reverted price took — ${why}.`;
@@ -615,6 +648,39 @@ function clampsToGiveBack(ptpReversals, clearedIds, skipId) {
   return [...owed];
 }
 
+/**
+ * A tension clock's line on the reversal card: what the rewind did to it
+ * (clocks.js revertTensionClocksForBurn `fates`). Every clock on the price's
+ * receipt was said to be "rewound" — a hidden plan's clock put back up to one
+ * short of full, and one deliberately left as a later trigger paced it, whose
+ * only reversal is the price's own TRIGGERED scene struck (issue #364
+ * PLAN-CLOCK-REWOUND-WORDING). A clock the rewind changed nothing on — gone,
+ * or empty already — has no line: the card lists what was unwound. Never
+ * names what stands behind the clock (issue #362 D3). A clock's name is text:
+ * the narrator's countdown label, a scene challenge's, a GM's `!clock` —
+ * never markup (issue #362 AC83).
+ *
+ * A clock left because what it paced is over (`closed` — issue #364
+ * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES) is said to stay retired.
+ *
+ * @param {{ name?: string|null }} clock — the receipt's entry
+ * @param {{ fate: "rewound"|"putBack"|"left"|"closed", filled: number, segments: number, active: boolean }|undefined} fate
+ * @returns {string|null} HTML, or null when nothing was done to the clock
+ */
+function tensionClockLine(clock, fate) {
+  const name = escapeHtml(clock?.name);
+  const at   = fate?.active === false ? "retired" : `${fate?.filled}/${fate?.segments}`;
+  switch (fate?.fate) {
+    case "rewound": return `${name} clock rewound`;
+    case "putBack": return `${name} clock put back to ${at} — its TRIGGERED scene is taken back`;
+    case "left":    return `${name} clock left as it stands (${at}): it triggered again since — only this price's TRIGGERED scene is taken back`;
+    case "closed":  return fate.active === false
+      ? `${name} clock stays retired — only this price's TRIGGERED scene is taken back`
+      : `${name} clock left as it stands (${at}) — only this price's TRIGGERED scene is taken back`;
+    default:        return null;
+  }
+}
+
 const REVERSAL_CARDS = {
   burn:    { title: "⏰ Burn reversal",    lead: "Momentum burned — the Price reverts:", flag: "burnReversal" },
   improve: { title: "⏰ Improve reversal", lead: "Result improved — the Price reverts:", flag: "improveReversal" },
@@ -643,6 +709,7 @@ const REVERSAL_CARDS = {
 export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [], resolutionId = null } = {}) {
   if (!ptpReversals) return [];
   await forgetRevertedPrice(resolutionId, kind);
+  await takeBackRevertedPricePlans(resolutionId, kind);
   const reverted = [];
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
@@ -671,9 +738,12 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // and the resolution upgraded — what the struck vignette is stamped with
   // (issue #347 D2).
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
-    // A clock's name is text: the narrator's countdown label, a scene
-    // challenge's, a GM's `!clock` — never markup (issue #362 AC83).
-    for (const c of tension) reverted.push(`${escapeHtml(c.name)} clock rewound`);
+    // One line per clock the rewind changed, saying what it did to it
+    // (tensionClockLine).
+    for (const c of tension) {
+      const line = tensionClockLine(c, tensionReport.fates?.[c._id]);
+      if (line) reverted.push(line);
+    }
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
@@ -911,6 +981,43 @@ async function forgetRevertedPrice(resolutionId, kind) {
   }
 }
 
+/**
+ * What asks for a plan on a price's behalf: the new enemy it revealed
+ * (skeletons.js planRequestsFromSeeds' `new_enemy` — the plan model is not
+ * this module's to import, secretsStayHidden.test.js). Not the expedition the
+ * move began, which stands whatever became of its price.
+ */
+const PRICE_PLAN_TRIGGERS = Object.freeze(["new_enemy"]);
+
+/**
+ * The reverted price's hidden plan goes with it (issue #364
+ * REVERTED-PRICE-PLAN-STAYS-WAITING): "A new enemy is revealed" asks the
+ * move's narration for the enemy's plan, and a narration never written — a
+ * failed call, an empty reply, one the X-Card paused — files it with its
+ * rolls alone, stamped with no narration. The supersede takes back what the
+ * move's narration wrote by that narration's id (retractSupersededNarrations),
+ * so this plan stayed: an enemy no price revealed, put to the next narration
+ * to decide. It is found by the resolution it was filed for instead
+ * (worldJournal.js undoPlansFiledFor: only while still waiting — one decided
+ * since stands). Canonical GM; a journal write. Never throws.
+ *
+ * @param {string|null} resolutionId — the upgraded move's
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<number>} the plans taken back
+ */
+async function takeBackRevertedPricePlans(resolutionId, kind) {
+  if (typeof resolutionId !== "string" || !resolutionId) return 0;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return 0;
+    const { undoPlansFiledFor } = await import("../world/worldJournal.js");
+    return await undoPlansFiledFor(resolutionId, { triggers: [...PRICE_PLAN_TRIGGERS] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: the plan filed for the reverted price could not be taken back:`, err?.message ?? err);
+    return 0;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // What the superseded outcome narrated (issue #338 D8)
@@ -964,9 +1071,57 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 }
 
 /**
+ * Which hidden plans a superseded narration made stay when it is taken back
+ * (worldJournal.js undoNarrationEntries `keepPlanAbout`): the ones about an
+ * entity's card that is still there — the agenda a Make a Connection hit's
+ * capture filed for the NPC it created (secrets.js planNpcAgenda). A
+ * supersede deletes no card, unlike the X-Card, and an agenda is filed only
+ * where an NPC is created: taken back with the narration, it was filed by
+ * nothing again, and the NPC had none for the rest of the campaign (issue
+ * #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA). The plan is about the card,
+ * not about what the struck narration told. And the ones about a threat's
+ * page that is still on the Threats journal — the plan the capture filed for
+ * a threat it recorded as significant (secrets.js planSignificantThreat):
+ * the page stands with the superseded narration's other World Journal records
+ * (decisions.md, issue #338 D8), and its plan went — the threat stayed on
+ * record, and among the narrator's active threats, unplanned until a later
+ * capture happened to record it again, then under a new plan with new rolls
+ * (issue #364 BURN-DROPS-RECORDED-THREAT-PLAN). A plan about a name, a scene, a
+ * track or a vow is the narration's own telling — a price's new enemy, a
+ * question it posed, what its move asked it to decide — and goes with it; the
+ * re-narration is asked for its move's again (`skeletonRequests`). Told by
+ * the plan's subject alone: the plan model is not this module's to import
+ * (secretsStayHidden.test.js). Null when the cards and pages cannot be read:
+ * every plan is then taken back, as before. Never throws.
+ *
+ * @param {string} label — for the log
+ * @returns {Promise<((subject: Object) => boolean)|null>}
+ */
+async function plansKeptThroughSupersede(label) {
+  try {
+    const { resolveEntityById } = await import("../entities/registry.js");
+    const { threatPageStands } = await import("../world/worldJournal.js");
+    return (subject) => {
+      const id = typeof subject?.id === "string" && subject.id ? subject.id : null;
+      if (!id) return false;
+      if (subject.type === "entity") return !!resolveEntityById(id);
+      if (subject.type === "threat") return threatPageStands(id);
+      return false;
+    };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the cards and pages the superseded narration's plans are about could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * A superseded narration's plan writes and countdown clocks, taken back as an
  * X-Card on it takes them (worldJournal.js undoNarrationEntries, the Secrets
- * category alone; clocks.js removeClocksMadeBy). Canonical GM. Never throws.
+ * category alone; clocks.js removeClocksMadeBy) — and, with a truth it
+ * revealed, the Lore entry that reveal filed, which mirrors the plan
+ * (undoRevealedTruthLore). But for a plan it filed about a card or a Threats
+ * page that stays: that plan stays too, as filed (plansKeptThroughSupersede). Canonical GM.
+ * Never throws.
  *
  * @param {string[]} ids — the superseded narrations
  * @param {string} label — for the log
@@ -975,10 +1130,21 @@ async function undoSupersededPlans(ids, label) {
   // The plans a step of theirs was taken back from under a later narration's
   // version (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN).
   let owed = [];
+  // The plans in play once theirs are taken back: a clock they paced whose
+  // plan is gone or closed is not run again (issue #364
+  // RETIRED-PLAN-CLOCK-XCARD-REACTIVATES). Not read: no clock is held back.
+  let plansInPlay = null;
   try {
-    const { undoNarrationEntries } = await import("../world/worldJournal.js");
-    const undone = await undoNarrationEntries(ids, { categories: ["secrets"] });
+    const { undoNarrationEntries, undoRevealedTruthLore, hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
+    const keepPlanAbout = await plansKeptThroughSupersede(label);
+    const undone = await undoNarrationEntries(ids, { categories: ["secrets"], keepPlanAbout });
+    // A truth they revealed is hidden again: the Lore entry that reveal filed
+    // is the plan's truth mirrored, and goes back with it — that entry alone,
+    // the rest of their World Journal stands (issue #364
+    // SUPERSEDED-REVEAL-LORE-STANDS; decisions.md, issue #338 D8).
+    await undoRevealedTruthLore(ids);
     owed = Array.isArray(undone?.stepsTakenBack) ? undone.stepsTakenBack : [];
+    plansInPlay = hiddenPlansInPlayWithout(ids, { keepPlanAbout });
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
@@ -987,7 +1153,7 @@ async function undoSupersededPlans(ids, label) {
     await removeClocksMadeBy(ids);
     // A plan clock it paced goes back one short of full, the step it played
     // put back unplayed above (issue #362 AC33).
-    await restoreClocksPacedBy(ids);
+    await restoreClocksPacedBy(ids, { plansInPlay });
     // A clock a later narration retired after what was then the plan's last
     // step runs again for the step now owed — the first of two triggers
     // burned after the second played the plan out.
@@ -1023,6 +1189,38 @@ function clocksWithVignetteWritten(vignettes) {
   return named.filter(([clockId, narrationId]) => live.has(`${clockId}\n${narrationId}`)).map(([clockId]) => clockId);
 }
 
+/**
+ * Of the clocks a price's receipt names a trigger vignette for, those whose
+ * hidden plan is no longer in play once that vignette is taken back — the
+ * plan retired or resolved by something else since, or its page gone
+ * (worldJournal.js hiddenPlansInPlayWithout, read per vignette: a plan that
+ * vignette itself closed is in play again). The burn's clock rewind leaves
+ * them as they are (clocks.js revertTensionClocksForBurn `planGone`, issue
+ * #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES). Empty when the plans cannot be
+ * read. Never throws.
+ *
+ * @param {Object<string, string>} vignettes — narration id by clock id
+ * @returns {Promise<string[]>} clock ids
+ */
+async function clocksWhosePlanIsGone(vignettes) {
+  const named = Object.entries(vignettes ?? {});
+  if (!named.length) return [];
+  try {
+    const { hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
+    const { planInPlayFor } = await import("../clocks/planClockPacing.js");
+    const clocks = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.clocks ?? [];
+    // Read as the supersede of that vignette will leave them (undoSupersededPlans).
+    const keepPlanAbout = await plansKeptThroughSupersede("upgrade");
+    return named.filter(([clockId, narrationId]) => {
+      const clock = clocks.find(c => c?._id === clockId) ?? null;
+      return !!clock && !planInPlayFor(clock, hiddenPlansInPlayWithout([narrationId], { keepPlanAbout }));
+    }).map(([clockId]) => clockId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | upgrade: the plans behind the rewound clocks could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
 /** Whether the scene ledgers hold anything the given narrations wrote and that still stands. */
 function ledgersHold(cs, ids) {
   const theirs = (e) => !!e && typeof e === "object" && ids.has(e.narrationId);
@@ -1043,11 +1241,22 @@ const VIGNETTE_SUPERSEDED_NOTES = {
   improve: "Superseded — the result was improved and the clock rewound: this has not happened.",
 };
 
-/** A clock vignette card's prose struck through, with a note saying why (idempotent). */
-function supersededVignetteContent(content, kind) {
+// The note on a vignette struck with its clock left as it stands — the clock
+// triggered again since, and nothing was rewound (clocks.js
+// revertTensionClocksForBurn `clockStands`): the card said "the clock
+// rewound" beside a clock the reversal had not touched (issue #364
+// PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+const VIGNETTE_SUPERSEDED_NOTES_CLOCK_STANDS = {
+  burn:    "Superseded — momentum was burned: this has not happened.",
+  improve: "Superseded — the result was improved: this has not happened.",
+};
+
+/** A clock vignette card's prose struck through, with a note saying why (idempotent); `clockStands` — its clock was not rewound. */
+function supersededVignetteContent(content, kind, clockStands = false) {
   const html = String(content ?? "");
   if (html.includes("sf-narration-superseded")) return html;
-  const note = `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${VIGNETTE_SUPERSEDED_NOTES[kind] ?? VIGNETTE_SUPERSEDED_NOTES.burn}</div>`;
+  const notes = clockStands ? VIGNETTE_SUPERSEDED_NOTES_CLOCK_STANDS : VIGNETTE_SUPERSEDED_NOTES;
+  const note = `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${notes[kind] ?? notes.burn}</div>`;
   const struck = html.replace(/<em>([\s\S]*?)<\/em>/,
     (_full, inner) => `<em class="sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></em>`);
   return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${note}</div>`) : struck + note;
@@ -1109,15 +1318,22 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     // reports the price's own vignette under the same key, from its receipt
     // (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
     const paced = new Map();
+    // Those of them whose clock the rewind left as it stands: their note
+    // does not say it was rewound (issue #364 PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+    const stands = new Set();
     for (const c of clocks) {
       const id = vignetteClockId(c);
-      if (id && typeof c?.pacedBy === "string" && c.pacedBy) paced.set(id, c.pacedBy);
+      if (id && typeof c?.pacedBy === "string" && c.pacedBy) {
+        paced.set(id, c.pacedBy);
+        if (c.clockStands === true) stands.add(id);
+      }
     }
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
     const cards = [];
+    const standing = [];
     for (const clockId of clockIds) {
       if (paced.has(clockId)) {
         const card = newestFirst.find(m => {
@@ -1125,7 +1341,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
           return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
             && f.narrationId === paced.get(clockId) && f.xCarded !== true && f.burnSuperseded !== true;
         });
-        if (card) cards.push(card);
+        if (card) (stands.has(clockId) ? standing : cards).push(card);
         continue;
       }
       // Its vignette is still being written: it is narrated only while the
@@ -1148,6 +1364,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
       if (card) cards.push(card);
     }
     await strikeTriggerVignetteCards(cards, kind, resolutionId);
+    await strikeTriggerVignetteCards(standing, kind, resolutionId, { clockStands: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
   }
@@ -1160,14 +1377,18 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
  * rolling summary made from them dropped first (issue #345 AA24), each card
  * flagged `burnSuperseded` (naming the upgraded resolution, `supersededFor`,
  * when known — else marked `lateStruck` for the upgrade to name), its prose
- * struck, and what its sidecar wrote retracted. Canonical GM. Never throws.
+ * struck, and what its sidecar wrote retracted. The note says the clock was
+ * rewound unless it was left as it stands (`clockStands` — a clock that
+ * triggered again since; issue #364 PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+ * Canonical GM. Never throws.
  *
  * @param {Object[]} cards — ChatMessage documents
  * @param {"burn"|"improve"} kind
  * @param {string|null} [resolutionId] — the resolution upgraded, when known
+ * @param {{ clockStands?: boolean }} [opts] — the cards' clock was not rewound
  * @returns {Promise<void>}
  */
-export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null) {
+export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null, { clockStands = false } = {}) {
   const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
   if (!list.length) return;
   try {
@@ -1183,7 +1404,7 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
         ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : { [`flags.${MODULE_ID}.lateStruck`]: true }),
-        content: supersededVignetteContent(card.content, kind),
+        content: supersededVignetteContent(card.content, kind, clockStands),
       }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
       const narrationId = card.flags?.[MODULE_ID]?.narrationId;
       if (typeof narrationId === "string" && narrationId) narrationIds.push(narrationId);

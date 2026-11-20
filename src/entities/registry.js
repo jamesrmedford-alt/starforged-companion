@@ -346,22 +346,6 @@ export function resolveEntityById(id) {
 }
 
 /**
- * Register an entity's host-document id in a campaignState id list, on the
- * LATEST stored campaignState — never by writing the caller's whole object
- * (issue #300 F14, CREATE-PERSIST-WHOLE). Creators run inside long-lived
- * callers — the move pipeline's Make a Connection auto-create, a vow card's
- * connection prompt — whose snapshot predates writes relayed meanwhile (an
- * X-Card, a flag, Private Lines, clocks), and writing it whole reverted them.
- * The creator still pushes the id onto the caller's copy, so a caller's own
- * later persist (persistResolution's id-list union) keeps it. No await
- * between the read and the write.
- *
- * @param {string} listKey   the campaignState id list, e.g. "connectionIds"
- * @param {string} id        the host document id
- * @param {string} [label]   the caller, for the error log
- * @returns {Promise<void>}  rejects when the setting write fails
- */
-/**
  * Register a new entity's host id in a campaignState id list: on the latest
  * stored campaignState first (registerEntityIdInStore), then — once the world
  * has taken it — on the caller's copy, so a caller's own later persist keeps
@@ -595,6 +579,22 @@ export function warnEntityNotRegistered(kind, name) {
     `The ${kind}${named} was not registered — the world did not save it. Loading the world again registers it.`);
 }
 
+/**
+ * Register an entity's host-document id in a campaignState id list, on the
+ * LATEST stored campaignState — never by writing the caller's whole object
+ * (issue #300 F14, CREATE-PERSIST-WHOLE). Creators run inside long-lived
+ * callers — the move pipeline's Make a Connection auto-create, a vow card's
+ * connection prompt — whose snapshot predates writes relayed meanwhile (an
+ * X-Card, a flag, Private Lines, clocks), and writing it whole reverted them.
+ * The creator still pushes the id onto the caller's copy, so a caller's own
+ * later persist (persistResolution's id-list union) keeps it. No await
+ * between the read and the write.
+ *
+ * @param {string} listKey   the campaignState id list, e.g. "connectionIds"
+ * @param {string} id        the host document id
+ * @param {string} [label]   the caller, for the error log
+ * @returns {Promise<void>}  rejects when the setting write fails
+ */
 export async function registerEntityIdInStore(listKey, id, label = listKey) {
   // Read and written at its turn on the client's campaignState write chain
   // (CAMPSTATE-CHAIN-REST), on a copy of the store: nothing is set on the
