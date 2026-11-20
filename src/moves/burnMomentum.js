@@ -138,9 +138,16 @@ export function claimResultUpgrade(messageId) {
   return true;
 }
 
-/** Release a claim taken by claimResultUpgrade. */
+// The waits for a claim's release (resultUpgradeSettled), by move-card id.
+const _releaseWaits = new Map();
+
+/** Release a claim taken by claimResultUpgrade — and whatever waits for it (resultUpgradeSettled). */
 export function releaseResultUpgrade(messageId) {
   _upgradeInFlight.delete(messageId);
+  const waits = _releaseWaits.get(messageId);
+  if (!waits) return;
+  _releaseWaits.delete(messageId);
+  for (const resolve of waits) resolve();
 }
 
 /**
@@ -154,6 +161,26 @@ export function releaseResultUpgrade(messageId) {
  */
 export function resultUpgradeRunningHere(messageId) {
   return _upgradeInFlight.has(messageId);
+}
+
+/**
+ * Settles once no burn, improvement or keep of this move card is being
+ * applied on this client — at once when none is (resultUpgradeRunningHere).
+ * Sojourn's "Community needs help" waits on it before its need card is
+ * posted: a held miss its roller's next line is keeping is told first
+ * (sufferCard.js handleSufferPick — issue #364
+ * SOJOURN-NEED-CARD-DURING-OTHER-KEEP). Never rejects.
+ *
+ * @param {string|null} messageId — the move card
+ * @returns {Promise<void>}
+ */
+export function resultUpgradeSettled(messageId) {
+  if (!messageId || !_upgradeInFlight.has(messageId)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const waits = _releaseWaits.get(messageId) ?? [];
+    waits.push(resolve);
+    _releaseWaits.set(messageId, waits);
+  });
 }
 
 /**

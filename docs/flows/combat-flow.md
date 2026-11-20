@@ -498,7 +498,9 @@ route call's executor (`sufferDialog.runSufferCall`, the canonical GM) posts
 once the held miss the pick kept has been told (`sufferCard.handleSufferPick`
 awaits `closeUpgradesForChoice`'s `keeping`; issue #364
 SOJOURN-OATH-NARRATED-BEFORE-MISS: posted at once, its vow could be sworn
-and told before the miss)
+and told before the miss), or that a keep of it already being told — its
+roller's next line's — has been (`burnMomentum.resultUpgradeSettled`;
+SOJOURN-NEED-CARD-DURING-OTHER-KEEP)
 (`postSojournNeedCard` — flags `sojournNeedCard`, `resolutionId`, `actorId`,
 the stakes shown before the roll; a pick applied from no choice card keeps
 the reminder; a card the world refuses hands the pick back,

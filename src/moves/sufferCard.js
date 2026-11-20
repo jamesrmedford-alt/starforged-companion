@@ -33,7 +33,7 @@ import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction, applyWaypointOraclePick } from "./cardActions.js";
-import { requesterOwnsActor } from "./burnMomentum.js";
+import { requesterOwnsActor, resultUpgradeSettled } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
 import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice, moveCardFor } from "./resultUpgrade.js";
 
@@ -865,8 +865,14 @@ async function handleSufferPick(message, dataset) {
   // the narration of the held miss this pick kept: posted at once, the vow
   // could be sworn and told before the miss was, the oath before the trouble
   // it answers (issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS). A miss that was
-  // not held has nothing to wait for; any other pick applies at once.
-  if (closed?.keeping && answeredOnItsOwnCard(calls)) await closed.keeping;
+  // not held has nothing to wait for; any other pick applies at once. A keep
+  // of that miss already being told — its roller's next line kept it, so
+  // this pick kept nothing — is waited for the same way (issue #364
+  // SOJOURN-NEED-CARD-DURING-OTHER-KEEP).
+  if (answeredOnItsOwnCard(calls)) {
+    if (closed?.keeping) await closed.keeping;
+    await resultUpgradeSettled(moveCardFor(f.resolutionId ?? null)?.id ?? null);
+  }
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
