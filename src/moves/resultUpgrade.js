@@ -1064,7 +1064,9 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 /**
  * A superseded narration's plan writes and countdown clocks, taken back as an
  * X-Card on it takes them (worldJournal.js undoNarrationEntries, the Secrets
- * category alone; clocks.js removeClocksMadeBy). Canonical GM. Never throws.
+ * category alone; clocks.js removeClocksMadeBy) — and, with a truth it
+ * revealed, the Lore entry that reveal filed, which mirrors the plan
+ * (undoRevealedTruthLore). Canonical GM. Never throws.
  *
  * @param {string[]} ids — the superseded narrations
  * @param {string} label — for the log
@@ -1078,8 +1080,13 @@ async function undoSupersededPlans(ids, label) {
   // RETIRED-PLAN-CLOCK-XCARD-REACTIVATES). Not read: no clock is held back.
   let plansInPlay = null;
   try {
-    const { undoNarrationEntries, hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
+    const { undoNarrationEntries, undoRevealedTruthLore, hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
     const undone = await undoNarrationEntries(ids, { categories: ["secrets"] });
+    // A truth they revealed is hidden again: the Lore entry that reveal filed
+    // is the plan's truth mirrored, and goes back with it — that entry alone,
+    // the rest of their World Journal stands (issue #364
+    // SUPERSEDED-REVEAL-LORE-STANDS; decisions.md, issue #338 D8).
+    await undoRevealedTruthLore(ids);
     owed = Array.isArray(undone?.stepsTakenBack) ? undone.stepsTakenBack : [];
     plansInPlay = hiddenPlansInPlayWithout(ids);
   } catch (err) {

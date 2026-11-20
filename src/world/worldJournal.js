@@ -603,6 +603,11 @@ function isGmRuledLore(entry) {
  * left as the GM left it, and returned unchanged (issue
  * #330 D9 — the narrator mentioning it again made it canon again).
  *
+ * `entry.revealOf` — a hidden plan's id, on the entry a narration's reveal of
+ * that plan's truth files: the entry is the plan's truth mirrored into Lore,
+ * and follows it when a supersede takes the reveal back
+ * (undoRevealedTruthLore).
+ *
  * Empty titles are rejected.
  *
  * @param {string} title
@@ -650,6 +655,13 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     sceneId:          entry?.sceneId ?? existing?.sceneId ?? null,
     createdAt:        existing?.createdAt ?? now,
     updatedAt:        now,
+    // The hidden plan whose revealed truth this entry mirrors, by the plan's
+    // id — set by a narration's reveal alone (secrets.js onTruthRevealed), so
+    // a supersede of that narration takes the entry back with the truth
+    // (undoRevealedTruthLore, issue #364 SUPERSEDED-REVEAL-LORE-STANDS).
+    // Always written, null on every other write: the flag is merged, and an
+    // entry anything else wrote since is no longer the reveal's.
+    revealOf:         typeof entry?.revealOf === "string" && entry.revealOf ? entry.revealOf : null,
     // The narration whose capture wrote it, and the version it replaced —
     // for the X-Card (issue #329 X01).
     ...narrationStamp(entry?.narrationId, existing),
@@ -1430,7 +1442,9 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * PLAN-CLUE-TRUTH-NO-MARK: only steps carried a mark, so under a later
  * writer's version the clue stayed shown and the truth revealed). What a
  * truth's reveal wrote outside the plan — its scene fact, its Lore entry —
- * is stamped with the narration and goes by that stamp, as it always did.
+ * is stamped with the narration and goes by that stamp, as it always did;
+ * with the Lore category left out (a supersede), the reveal's Lore entry is
+ * the caller's to take back (undoRevealedTruthLore).
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
@@ -1490,6 +1504,7 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             previous:    older.length ? older : null,
             // setFlag merges: a key the restored version lacks keeps the removed one's value
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
+            ...(category === "lore" ? { revealOf: versions[at].revealOf ?? null } : {}),
             ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null,
               resolvedBy: versions[at].resolvedBy ?? null } : {}),
           };
@@ -1607,6 +1622,76 @@ function takenBackFrom(version, removed) {
   if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
   if (ended) Object.assign(next, { status: "active", resolvedBy: null });
   return { version: next, step };
+}
+
+/**
+ * Take back the Lore entries the given narrations' reveals of a hidden plan's
+ * truth filed (issue #364 SUPERSEDED-REVEAL-LORE-STANDS). A reveal files the
+ * plan's truth as confirmed Lore (secrets.js onTruthRevealed): one fact in
+ * two stores, the plan canonical, the Lore entry its mirror — named by the
+ * plan's id (`revealOf`) and stamped with the revealing narration. A Burn
+ * Momentum or Improve Result that supersedes that narration takes back its
+ * plans alone (undoNarrationEntries, the Secrets category): the truth went
+ * back to hidden, its scene fact was retracted, and the mirror stayed
+ * confirmed — the journal players read, and the narrator's ESTABLISHED LORE,
+ * stating a truth the Secrets journal held hidden.
+ *
+ * Each Lore entry that mirrors a plan (`revealOf`), was last written by one of
+ * the narrations, and whose plan no longer has its truth revealed — hidden
+ * again, or the plan gone — goes back as a plan the narration wrote does: put
+ * back as it was before them when it existed (the newest `previous` none of
+ * them wrote), its page deleted when their reveal made it. Deleted, not
+ * retracted as the X-Card retracts it: a retracted entry stays out of canon
+ * when the same title is confirmed again, and a superseded narration's fact
+ * is no bar to a later one stating it (issue #338 D8) — the next reveal files
+ * the entry anew, once. Nothing else of the narrations' World Journal is
+ * touched: what their own capture recorded stands beside the re-narration
+ * (decisions.md, issue #338 D8 / #347 D2). An entry a GM's own Reveal now, or
+ * any other write, rewrote since is not the reveal's (`revealOf` cleared, or
+ * another stamp) and stands; so does one filed before entries named their
+ * plan. Run after the plans are put back. Canonical GM (the caller's).
+ * Fail-open per entry; never throws.
+ *
+ * @param {string[]} narrationIds — the superseded narrations
+ * @returns {Promise<{ restored: number, deleted: number }>}
+ */
+export async function undoRevealedTruthLore(narrationIds) {
+  const out = { restored: 0, deleted: 0 };
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return out;
+  const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+  // The plans whose truth stands revealed, as the undo left them.
+  const revealed = new Set();
+  for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+    const plan = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+    if (typeof plan?.id === "string" && plan.truthRevealed === true) revealed.add(plan.id);
+  }
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  for (const page of [...(journal?.pages?.contents ?? [])]) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (typeof entry?.revealOf !== "string" || !entry.revealOf || !fromRemoved(entry) || revealed.has(entry.revealOf)) continue;
+    try {
+      const versions = Array.isArray(entry.previous) ? entry.previous : [];
+      const at = versions.findIndex(v => v && !fromRemoved(v));
+      if (at >= 0) {
+        const older = versions.slice(at + 1);
+        // setFlag merges: every key the version put back may lack is written.
+        await writeEntryPage(page, FLAG_KEYS.lore, {
+          ...versions[at],
+          narrationId: versions[at].narrationId ?? null,
+          previous:    older.length ? older : null,
+          revealOf:    versions[at].revealOf ?? null,
+        });
+        out.restored += 1;
+      } else {
+        await page.delete();
+        out.deleted += 1;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgrade: could not take back the Lore entry "${page?.name}" of a superseded reveal:`, err?.message ?? err);
+    }
+  }
+  return out;
 }
 
 /** The line a withdrawn rolls card carries, by what took it back (withdrawRollsCards). */

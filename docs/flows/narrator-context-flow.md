@@ -1025,7 +1025,14 @@ for its decision changes nothing, issue #362 AC16), which becomes a ledger truth
 (`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
 correction or decision of the same id is laid on first, so a truth changed or
 decided and revealed in one beat is the one the ledger and Lore both state,
-issue #362 AC13) and confirmed lore, its oracle rolls then shown — Phase 2;
+issue #362 AC13) and confirmed lore — the plan's truth mirrored into the Lore
+journal, the entry naming its plan (`revealOf`) and stamped with the
+narration: an X-Card on the narration retracts it, and a Burn / Improve
+supersede, which takes back the narration's plans alone, takes this entry
+back with the truth it mirrors (`undoSupersededPlans` →
+`undoRevealedTruthLore`: deleted, or put back as it was before the reveal;
+the narration's other World Journal records stand — issue #364
+SUPERSEDED-REVEAL-LORE-STANDS) — its oracle rolls then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —

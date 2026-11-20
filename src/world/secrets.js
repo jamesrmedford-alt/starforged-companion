@@ -1084,7 +1084,10 @@ function loreTitleOf(record) {
 
 /**
  * A plan's truth the fiction revealed: filed as confirmed lore (stamped with
- * the narration, so the X-Card retracts it with the reveal), and the oracle
+ * the narration, so the X-Card retracts it with the reveal, and naming the
+ * plan — `revealOf` — so a Burn / Improve supersede of the narration takes it
+ * back with the truth it mirrors: worldJournal.js undoRevealedTruthLore, issue
+ * #364 SUPERSEDED-REVEAL-LORE-STANDS), and the oracle
  * rolls behind it shown to the table — "hidden until their truth is revealed,
  * then shown" (decided) — unless they already were.
  */
@@ -1092,7 +1095,7 @@ async function onTruthRevealed(record, { campaignState, narrationId, rollsWereSh
   if (isNarrationXCarded(narrationId)) return;   // issue #362 AC35
   await recordLoreDiscovery(loreTitleOf(record), {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
-    ...(narrationId ? { narrationId } : {}),
+    ...(narrationId ? { narrationId, revealOf: record.id } : {}),
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
   if (!rollsWereShown) await postRollsCard(record, { narrationId });
