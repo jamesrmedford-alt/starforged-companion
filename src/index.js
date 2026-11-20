@@ -3049,13 +3049,22 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
  * and the milestone lost). A vow fulfilled or gone since has nothing to mark
  * and is no step. `lacking`: the marks owed once ⚑ was pressed, kept on the
  * step so its Retry still marks them when the victory card is gone from chat.
+ * `whenPressed`: on a refused raise's step, the marks a press at the count
+ * the card showed would lack. With the card gone its Retry read "never
+ * pressed, nothing to add to" — unchecked: a ⚑ pressed before the card was
+ * deleted had marked the vow, and the Retry refused "victory-card-gone" onto
+ * a fresh card each time, the strong hit's extra mark never paid. The vow's
+ * payoff ledger (`milestone:<card>`) says whether that press landed; when it
+ * did, those marks are marked, once (issue #364
+ * FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE).
  *
- * @param {{ cardId: string|null, marks: number, lacking?: number|null, vowName?: string|null,
- *   vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
+ * @param {{ cardId: string|null, marks: number, lacking?: number|null, whenPressed?: number|null,
+ *   vowName?: string|null, vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
  * @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, what?: string, step?: string,
- *   cardId?: string, marks?: number, lacking?: number|null, vowId?: string|null, reason?: string, error?: string }>}
+ *   cardId?: string, marks?: number, lacking?: number|null, whenPressed?: number|null, vowId?: string|null,
+ *   reason?: string, error?: string }>}
  */
-async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = null, vowName = null, vowId = null, actorId = null } = {}) {
+async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = null, whenPressed = null, vowName = null, vowId = null, actorId = null } = {}) {
   const card = cardId ? (game.messages?.get?.(cardId) ?? null) : null;
   const f = card?.flags?.[MODULE_ID]?.fightVowCard === true ? card.flags[MODULE_ID] : null;
   const vow = {
@@ -3063,15 +3072,20 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
     actorId: (typeof f?.actorId === "string" && f.actorId) ? f.actorId : actorId,
   };
   const label = vow.vowName ?? "the vow";
-  const refused = (what, more, res) => ({
-    ok: false, step: "milestoneUpgrade", cardId, marks, lacking: more, vowId: vow.vowId ?? null, what,
+  const owed = (n) => Math.max(0, Math.floor(Number(n)) || 0);
+  const refused = (what, more, res, ifPressed = null) => ({
+    ok: false, step: "milestoneUpgrade", cardId, marks, lacking: more, whenPressed: ifPressed, vowId: vow.vowId ?? null, what,
     reason: res?.reason ?? "refused", ...(res?.error ? { error: res.error } : {}),
   });
-  const more = f ? marks - Number(f.marks ?? marks) : Math.max(0, Math.floor(Number(lacking)) || 0);
+  // The card gone: the marks its step says a press lacked — or, on a refused
+  // raise's step, the marks a press at the card's count would lack, when the
+  // vow's payoff ledger says that press landed before the card went.
+  const more = f ? marks - Number(f.marks ?? marks)
+    : owed(lacking) || (cardId && owed(whenPressed) && payoffStepLanded(payoffVowCopies(vow), `milestone:${cardId}`) ? owed(whenPressed) : 0);
   if (!f && !more) {
     // Its ⚑ was never pressed and the card is gone: nothing to raise, and no
     // mark of this win on the vow to add to.
-    return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" });
+    return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" }, owed(whenPressed) || null);
   }
   if (more <= 0) return { ok: true, skipped: true };
   // ⚑ pressed: its stamp, or the mark its press left on the vow's payoff
@@ -3088,7 +3102,7 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
       return { ok: true, applied: `the victory card's milestone toward ${label} raised to ×${marks}` };
     } catch (err) {
       console.warn(`${MODULE_ID} | won fight: the victory card's milestone could not be raised:`, err?.message ?? err);
-      return refused(what, null, { reason: "refused", error: errText(err) });
+      return refused(what, null, { reason: "refused", error: errText(err) }, more);
     }
   }
   const what = `${more} more milestone mark${more === 1 ? "" : "s"} toward ${label}`;
@@ -6872,7 +6886,8 @@ function payoffStepRecord(f) {
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
-    case "milestoneUpgrade": return { step: "milestoneUpgrade", cardId: f.cardId ?? null, marks: f.marks ?? 1, lacking: f.lacking ?? null };
+    case "milestoneUpgrade": return { step: "milestoneUpgrade", cardId: f.cardId ?? null, marks: f.marks ?? 1, lacking: f.lacking ?? null,
+      whenPressed: f.whenPressed ?? null };
     case "xp":       return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "choiceCard":  return { step: "choiceCard", pcId: f.pcId ?? null, moveId: f.moveId ?? null, moveName: f.moveName ?? null,
@@ -7217,7 +7232,7 @@ async function runPayoffStep(s, card, copies) {
       // once, on the vow's payoff ledger.
       const marks = Math.floor(Number(s.marks));
       if (typeof s.cardId !== "string" || !s.cardId || !(marks >= 1 && marks <= 3)) return { ok: false, reason: "invalid step" };
-      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null,
+      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
         vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null });
     }
     case "rewardGrant": {
