@@ -123,7 +123,9 @@ That runs `test/ci/scripts/e2e.sh`, which:
    joins the same world as the GM and as a player it creates, and checks
    the multiplayer paths Quench (a single GM) can't — the X-Card, `!oracle`
    posting one card, a player's Begin a Session, Burn Momentum applying once,
-   Private Lines reaching the GM. Failure screenshots land in
+   Private Lines reaching the GM, a Batch Mode round, and a paragraph a
+   player takes off an NPC card's Notes tab reaching the GM's client marked
+   as a removal. Failure screenshots land in
    `playwright/artifacts/`. See `rules/ci-e2e.md` → "Second client".
 7. Runs the scripted playthroughs in the same container
    (`playwright/playthrough.mjs`, issue #290 part 2): a GM and a player play a

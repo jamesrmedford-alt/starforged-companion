@@ -15,8 +15,11 @@
 //
 // Scenarios: the X-Card, `!oracle` producing exactly one card, a player's
 // Begin a Session persisting, Burn Momentum applying once, a player's
-// Private Lines reaching campaignState.safety, and a Batch Mode round (the
-// window opening in the player's browser, Send now, one round card).
+// Private Lines reaching campaignState.safety, a Batch Mode round (the
+// window opening in the player's browser, Send now, one round card), and a
+// Notes-tab removal crossing clients (issue #364: the stamp the player's
+// preUpdateActor puts on their edit of an NPC card they own is on the options
+// the GM's updateActor receives, and the GM reports the removal).
 //
 // Exit code 0 when every scenario passes; 1 otherwise. Failure screenshots
 // land in ./artifacts (uploaded by .github/workflows/e2e.yml).
@@ -351,6 +354,147 @@ async function main() {
       }
       await player.page.waitForFunction((sel) => !document.querySelector(sel), ROUND_WINDOW, { timeout: STEP_MS })
         .catch(() => { throw new Error("the player's Round window stayed open after Batch Mode was turned off"); });
+    });
+
+    await scenario("Notes tab: a line the player takes off an NPC card they own reaches the GM's updateActor stamped, and the GM reports it — a line they add is not", async () => {
+      // Issue #364 QUENCH-CROSS-CLIENT-STAMP. The notes as they were are
+      // readable only where an edit is requested, so the editing client
+      // compares them in preUpdateActor and stamps the update's options, and
+      // the canonical GM reports `entity_detail_removed` when the stamped
+      // update reaches its own updateActor (registry.js
+      // registerSheetNotesRemovalHook). Quench (documentHookAssumptions) proves
+      // the stamp reaches updateActor on the client that made the edit; this is
+      // the hop between two clients.
+      const NAME  = `E2E Broker ${Date.now()}`;
+      const HELD  = "E2E: keeps a berth at Bleakhold.";
+      const LINE  = "E2E-SENTINEL: owes the Iron League a blood debt.";
+      const ADDED = "E2E-ADDED: limps since the riots.";
+      try {
+        // GM side: the settings the case rests on pinned (a new card's creation
+        // hook writes nothing to its Notes tab; nothing is reported with the
+        // world snapshot switched off), an NPC card as the module makes one — a
+        // `character` Actor flagged a connection — with two paragraphs on its
+        // Notes tab, the player made its owner, and a probe on every later
+        // Notes edit of it: who made it, and whether the module's stamp
+        // (registry.js NOTES_LOST_OPTION) was on the options this client got.
+        const cardId = await gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, NAME, HELD, LINE, playerId }) => {
+          const { createConnection } = await import(`${MODULE_SRC}/entities/connection.js`);
+          const { isCanonicalGM } = await import(`${MODULE_SRC}/multiplayer/gmGate.js`);
+          if (!isCanonicalGM()) throw new Error("the GM's page is not the canonical GM — no client would report the removal");
+          const saved = window.__e2eNotes = { settingsBefore: {}, edits: [], hookId: null, since: 0 };
+          for (const [key, value] of Object.entries({ worldSnapshot: true, autoSeedConnection: false })) {
+            const before = game.settings.get(MODULE_ID, key);
+            if (before === value) continue;
+            saved.settingsBefore[key] = before;
+            await game.settings.set(MODULE_ID, key, value);
+          }
+          await createConnection({ name: NAME, role: "Broker" },
+            foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {}));
+          const card = game.actors.find(a => a.name === NAME && a.flags?.[MODULE_ID]?.entityType === "connection");
+          if (!card) throw new Error("the NPC card was not made");
+          await card.update({ "system.notes": `<p>${HELD}</p><p>${LINE}</p>` });
+          if (!String(card.system?.notes ?? "").includes(LINE)) throw new Error("the NPC card's Notes tab does not hold the line the GM wrote");
+          await card.update({ ownership: { [playerId]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER } });
+          saved.hookId = Hooks.on("updateActor", (doc, change, options, userId) => {
+            if (doc?.id !== card.id || !foundry.utils.hasProperty(change, "system.notes")) return;
+            saved.edits.push({ userId, stamped: options?.[MODULE_ID]?.sheetNotesLostText === true });
+          });
+          // The events this client reported are read back by time
+          // (snapshotEvents.js namedSnapshotCauses): start strictly after any
+          // reported while the card was made.
+          const started = Date.now();
+          while (Date.now() <= started) await new Promise(r => setTimeout(r, 1));
+          saved.since = Date.now();
+          return card.id;
+        }, { MODULE_ID, MODULE_SRC, NAME, HELD, LINE, playerId: ids.playerId });
+
+        // The card, its notes and the ownership reach the player's client: the
+        // player's preUpdateActor compares an edit with the notes it holds.
+        await player.page.waitForFunction(({ cardId, LINE }) => {
+          const card = game.actors.get(cardId);
+          return card?.isOwner === true && String(card.system?.notes ?? "").includes(LINE);
+        }, { cardId, LINE }, { timeout: STEP_MS })
+          .catch(() => { throw new Error("the player's client never held the NPC card as its owner, with the notes the GM wrote"); });
+
+        // An edit made on the player's client, and whether the player's own
+        // updateActor got the stamp — which tells a stamp never made from one
+        // lost between the clients when the GM's did not get it.
+        const playerWrites = (notes) => player.page.evaluate(async ({ MODULE_ID, cardId, notes }) => {
+          const card = game.actors.get(cardId);
+          const own = [];
+          const hook = Hooks.on("updateActor", (doc, _change, options) => {
+            if (doc?.id === cardId) own.push(options?.[MODULE_ID]?.sheetNotesLostText === true);
+          });
+          try {
+            await card.update({ "system.notes": notes });
+          } finally {
+            Hooks.off("updateActor", hook);
+          }
+          return { stamped: own.includes(true), notes: String(card.system?.notes ?? "") };
+        }, { MODULE_ID, cardId, notes });
+        // The GM's probe has seen `n` Notes edits made by the player.
+        const gmSeesPlayerEdits = (n) => gm.page.waitForFunction(({ playerId, n }) =>
+          (window.__e2eNotes?.edits ?? []).filter(e => e.userId === playerId).length >= n,
+        { playerId: ids.playerId, n }, { timeout: STEP_MS })
+          .catch(() => { throw new Error(`the GM's updateActor never fired for the player's Notes edit (waiting for ${n})`); });
+        // What the GM's client holds: the player's edits as its updateActor
+        // got them, and whether it reported a detail removed since the start
+        // (`onRecord`: every event it has reported, for a failure's message).
+        const onGm = () => gm.page.evaluate(async ({ MODULE_SRC, playerId }) => {
+          const { namedSnapshotCauses } = await import(`${MODULE_SRC}/narration/snapshotEvents.js`);
+          const saved = window.__e2eNotes;
+          return {
+            edits: saved.edits.filter(e => e.userId === playerId),
+            removalReported: namedSnapshotCauses([], { sinceMs: saved.since }).includes("entity_detail_removed"),
+            onRecord: namedSnapshotCauses([], { sinceMs: 0 }),
+          };
+        }, { MODULE_SRC, playerId: ids.playerId });
+
+        // The control: the player adds a paragraph — nothing is taken off.
+        const added = await playerWrites(`<p>${HELD}</p><p>${LINE}</p><p>${ADDED}</p>`);
+        assert(added.notes.includes(ADDED) && added.notes.includes(LINE), "the paragraph the player added is not on the Notes tab");
+        await gmSeesPlayerEdits(1);
+        const afterAdd = await onGm();
+        assert(!afterAdd.edits.some(e => e.stamped), "an edit that only adds text reached the GM's updateActor stamped as a removal");
+        assert(!afterAdd.removalReported, "the GM reported a detail removed for an edit that only adds text");
+
+        // The player takes a paragraph off.
+        const removed = await playerWrites(`<p>${HELD}</p><p>${ADDED}</p>`);
+        assert(!removed.notes.includes(LINE), "the line the player took off is still on the Notes tab");
+        await gmSeesPlayerEdits(afterAdd.edits.length + 1);
+        const afterRemove = await onGm();
+        assert(afterRemove.edits.slice(afterAdd.edits.length).some(e => e.stamped),
+          `the player's edit reached the GM's updateActor without the stamp — ${removed.stamped
+            ? "the player's own updateActor got it, so it was lost between the clients"
+            : "the player's own updateActor did not get it either: their preUpdateActor never stamped the edit"}`);
+        assert(afterRemove.removalReported, "the canonical GM did not report entity_detail_removed for the line the player took off"
+          + ` (events its client has reported in all: ${afterRemove.onRecord.join(", ") || "none"})`);
+      } finally {
+        // The probe off, the card deleted — the delete hook's teardown takes
+        // its id off connectionIds (connection.js onConnectionActorDeleted):
+        // wait for it to land — and the pinned settings put back.
+        const cleaned = await gm.page.evaluate(async ({ MODULE_ID, NAME }) => {
+          const saved = window.__e2eNotes;
+          window.__e2eNotes = null;
+          if (saved?.hookId != null) Hooks.off("updateActor", saved.hookId);
+          const out = { deleted: false, tornDown: true };
+          try {
+            const card = game.actors.find(a => a.name === NAME && a.flags?.[MODULE_ID]?.entityType === "connection");
+            if (card) {
+              const cardId = card.id;
+              await card.delete();
+              out.deleted = true;
+              const listed = () => (game.settings.get(MODULE_ID, "campaignState")?.connectionIds ?? []).includes(cardId);
+              for (let i = 0; i < 100 && listed(); i++) await new Promise(r => setTimeout(r, 50));
+              out.tornDown = !listed();
+            }
+          } finally {
+            for (const [key, value] of Object.entries(saved?.settingsBefore ?? {})) await game.settings.set(MODULE_ID, key, value);
+          }
+          return out;
+        }, { MODULE_ID, NAME }).catch(err => { log(`Notes tab cleanup failed: ${err?.message ?? err}`); return null; });
+        if (cleaned?.deleted && !cleaned.tornDown) log("Notes tab cleanup: the deleted NPC card's id is still in connectionIds");
+      }
     });
   } catch (err) {
     results.push({ name: "setup", ok: false, error: err?.message ?? String(err) });
