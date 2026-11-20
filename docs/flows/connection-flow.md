@@ -291,9 +291,10 @@ back to its name (`unregisterDeletedConnection` → `ledgers.demoteEntitySubject
 the PCs' bond Items keyed to it are deleted — a bond a player marked (a tick,
 a forged bond) is kept and marked lost instead, as a severed one is
 (`actorBridge.retireDeletedConnectionBondItems`) — its portraits go
-(`art/storage.deleteEntityArtAssets`) and its hidden plan is retired
-(`secrets.retireSkeleton`). What named the NPC goes too (issue #364
-DELETED-NPC-NAME-REFERENCES): the vows linked to them lose
+(`art/storage.deleteEntityArtAssets`) and the hidden plans in play whose subject
+is the card, by its id, are retired as a GM's Retire does
+(`retirePlansAboutDeletedConnection` → `secrets.retireSkeleton`). What named
+the NPC goes too (issue #364 DELETED-NPC-NAME-REFERENCES): the vows linked to them lose
 the link — a vow's link is the connection's **name**
 (`linkedConnectionName`), so a fight won for the vow still offered
 "🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no
@@ -316,7 +317,14 @@ notice, the victory cards' Deepen): the X-Card's delete skipped it, so a vow
 linked to the NPC since its narration — the vow card's Link writes the vow,
 not the NPC's record, so the NPC was still "unused" and went with the X-Card —
 kept naming a connection that no longer existed (issue #364
-XCARD-NPC-DELETE-SKIPS-TEARDOWN).
+XCARD-NPC-DELETE-SKIPS-TEARDOWN). The X-Card's delete retires the plans about
+the card as well (the same `retirePlansAboutDeletedConnection`): the
+X-Card's undo deletes the plans its narration wrote before the card goes, but
+a plan about the NPC that a GM edited in the Secrets panel, or a kept narration
+decided, is that writer's and stays — and "used" reads the NPC's record,
+sheet and bond marks, never a plan — so the card was deleted and the plan
+stayed in play about a subject that no longer existed (issue #364
+XCARD-NPC-DELETE-LEAVES-PLAN).
 
 That step retires two more leftovers already in chat (issue #364
 PAYOFF-CARD-DEEPEN-DELETED-NPC), as the Deepen button is retired — canonical

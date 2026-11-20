@@ -437,6 +437,11 @@ export async function retractNarrationConnections(narrationIds) {
       } catch (err) {
         console.warn(`${MODULE_ID} | X-Card: clearing what named the removed connection ${name} failed:`, err?.message ?? err);
       }
+      // And the plans still in play about the card, as a GM's delete retires
+      // them: the removed narration's own are undone by its id already; one a
+      // GM edited or a kept narration decided since stayed in play about a
+      // card that no longer exists (issue #364 XCARD-NPC-DELETE-LEAVES-PLAN).
+      await retirePlansAboutDeletedConnection(document.id);
       await deleteEntityArtAssets(FLAG_KEY, data._id ?? null, { portraitId: data.portraitId ?? null });
       if (data.createdFromDraft) {
         const { reopenConfirmedDraftRow } = await import("./entityExtractor.js");
@@ -498,7 +503,8 @@ export function registerConnectionDeleteHook() {
  * where the table marked them (actorBridge.retireDeletedConnectionBondItems:
  * the card is gone, a player's marks are not erased); its portraits
  * (deleteEntityArtAssets); its hidden plan retired, as a GM's Retire does
- * (secrets.retireSkeleton). Each step is a no-op once done.
+ * (retirePlansAboutDeletedConnection — the X-Card's delete runs it too). Each
+ * step is a no-op once done.
  *
  * And the references that name it (clearDeletedConnectionReferences).
  *
@@ -515,9 +521,39 @@ async function tearDownDeletedConnection(actor) {
   await retireDeletedConnectionBondItems({ connectionId: recordId });
   await clearDeletedConnectionReferences(name, actor.id);
   await deleteEntityArtAssets(FLAG_KEY, recordId, { portraitId: record.portraitId ?? null });
-  const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
-  for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === actor.id)) {
-    await retireSkeleton(plan.id);
+  await retirePlansAboutDeletedConnection(actor.id);
+}
+
+/**
+ * Retire the hidden plans in play about a deleted NPC card — the plans whose
+ * subject is the card, by its Actor id — as a GM's Retire does
+ * (secrets.retireSkeleton: out of play, kept in the Secrets journal, its
+ * clock retired with it). A GM's delete of the card always did this (issue
+ * #362 D10). The X-Card's delete of an NPC its narration created did not
+ * (issue #364 XCARD-NPC-DELETE-LEAVES-PLAN): the plans that narration itself
+ * wrote are undone by its id before the card goes (worldJournal.js
+ * undoNarrationEntries), but a plan about the NPC that someone else owns by
+ * then — the agenda a GM edited in the Secrets panel, or one a kept narration
+ * decided — stays when its maker is removed, and "used" reads the NPC's
+ * record, sheet and bond marks, never a plan (connectionUsed,
+ * sheetWrittenByTable): the card was deleted and the plan stayed in play,
+ * about a subject that no longer existed, put to every later narration. Both
+ * deletes call it (tearDownDeletedConnection, retractNarrationConnections).
+ * Canonical GM (both callers). Never throws: the steps after it still run.
+ *
+ * @param {string} deletedId — the deleted card's Actor id
+ * @returns {Promise<void>}
+ */
+async function retirePlansAboutDeletedConnection(deletedId) {
+  if (typeof deletedId !== "string" || !deletedId) return;
+  try {
+    // Dynamic import: the Secrets journal imports entity modules.
+    const { listSkeletons, retireSkeleton } = await import("../world/secrets.js");
+    for (const plan of listSkeletons().filter(r => r?.subject?.type === "entity" && r.subject.id === deletedId)) {
+      await retireSkeleton(plan.id);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deleted NPC card ${deletedId}: its hidden plans could not be retired:`, err?.message ?? err);
   }
 }
 
