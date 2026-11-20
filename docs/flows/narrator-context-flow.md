@@ -1148,7 +1148,21 @@ the truth's scene fact and Lore entry go by the narration's stamp, as always
 (issue #364 PLAN-CLUE-TRUTH-NO-MARK), and the rolls card that reveal posted is
 withdrawn in chat with it (`withdrawRollsCardsOfReveals`), so a reveal made
 again leaves one rolls card standing (issue #364
-TAKEN-BACK-PLAN-ROLLS-CARD-STAYS); an ending the narration gave the plan's
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS) — and the X-Card's take-back of a truth
+withholds it: the plan is marked `truthWithheldBy` (the revealing narration;
+`undoNarrationEntries`' `withholdTruths`, passed by `retractNarrationCapture`
+and `secrets.takenBackForXCard`, never by a supersede, whose re-narration may
+reveal it again), so UNREVEALED and the world snapshot show the plan without
+its truth, nothing offers it (DECIDE NOW, a countdown's `revealsTruth`, an
+expedition's or vow's ending line, an oracle question's odds, the Private
+Channel's relay), and a narration's reveal of it is not recorded — no plan
+mark, ledger fact, Lore entry or rolls card — while its clues, steps and clock
+stay in play; the GMs are whispered once which plan and how to lift it
+(`safety.postWithheldTruthsNotice`): a GM's edit of the truth's text lifts it,
+and Reveal now still reveals it, each later reveal confirming again the Lore
+entry the X-carded one filed, by the plan's id (`recordLoreDiscovery`'s
+`revealOf`) — issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; an ending the
+narration gave the plan's
 story goes back by its mark too (`resolvedBy`), the plan in play again and its
 clock with it (issue #364 PLAN-RESOLVED-NO-MARK) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its

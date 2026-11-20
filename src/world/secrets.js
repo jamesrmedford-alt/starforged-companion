@@ -25,7 +25,7 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
-import { isNarrationXCarded } from "../context/safety.js";
+import { isNarrationXCarded, postWithheldTruthsNotice } from "../context/safety.js";
 import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
   undoNarrationEntries, withdrawRollsCards,
@@ -182,7 +182,9 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
       frame:            stored?.sceneFrame ?? null,
       matchedEntityIds: (Array.isArray(matchedEntityIds) ? matchedEntityIds : []).filter(id => typeof id === "string").slice(0, PLANS_IDS_MAX),
       text:             typeof text === "string" ? text.slice(0, PLANS_TEXT_MAX) : "",
-    }).filter(r => r.truth).map(r => ({
+    // A truth the X-Card withheld is not relayed (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE): a
+    // player's client keeps only decided plans, so the plan stays out of the Private Channel's story.
+    }).filter(r => r.truth).filter(r => !r.truthWithheldBy).map(r => ({
       id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
       truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
       // A step and a clue as UNREVEALED renders them — not the narration
@@ -433,7 +435,10 @@ function mayWrite(byGm) {
 async function takenBackForXCard(narrationId) {
   if (!isNarrationXCarded(narrationId)) return false;
   try {
-    await undoNarrationEntries([narrationId], { categories: ["secrets"] });
+    // A truth the write revealed is withheld, as the X-Card's own undo
+    // withholds one, and the GMs are told (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+    const undone = await undoNarrationEntries([narrationId], { categories: ["secrets"], withholdTruths: true });
+    if (undone?.truthsWithheld?.length) await postWithheldTruthsNotice(undone.truthsWithheld);
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a plan write the X-Card overtook could not be taken back:`, err?.message ?? err);
   }
@@ -869,7 +874,8 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   for (const reveal of normaliseReveals(sidecar?.reveals)) {
     if (!reveal.revealed.includes("truth")) continue;
     const stored = getSkeleton(reveal.id);
-    if (!stored || !planInPlay(stored, ending) || stored.truthRevealed) continue;
+    // A truth the X-Card withheld files no fact (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+    if (!stored || !planInPlay(stored, ending) || stored.truthRevealed || stored.truthWithheldBy) continue;
     const plan = decided.get(reveal.id);
     const record = plan && !plan.sameAs && !joinedByName(stored, plan) ? applyPlanToSkeleton(stored, plan) : stored;
     if (!record.truth) continue;
@@ -1039,7 +1045,10 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     for (const reveal of reveals) {
       const before = getSkeleton(reveal.id);
       if (!before || !planInPlay(before, ending)) continue;
-      const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
+      // A truth the X-Card withheld is not revealed, filed or shown by a
+      // narration: the plan stays unrevealed, the rest of the reveal stands
+      // (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; skeletons.js applyRevealToSkeleton).
+      const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth && !before.truthWithheldBy;
       // The rolls shown with a truth carry the narration too, when it is
       // this reveal that shows them (`rollsShownBy`): its undo puts them
       // back unshown with the truth (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
@@ -1401,7 +1410,8 @@ export function planForClock(clockId) {
   const plan = listSkeletons().find(r => r.clockId === clockId) ?? null;
   if (!plan) return null;
   const step = plan.escalation.find(e => !e.done) ?? null;
-  return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed };
+  // A truth the X-Card withheld is no answer to count down to (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+  return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed && !plan.truthWithheldBy };
 }
 
 /**
@@ -1800,8 +1810,11 @@ export async function revealSkeletonNow(id) {
     { secretRevealCard: true, skeletonId: record.id },
   );
   const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+  // Naming its plan (`revealOf`): the entry an X-carded reveal of this truth
+  // filed, retracted, is this reveal's mirror again — the GM's decision
+  // (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; worldJournal.js recordLoreDiscovery).
   await recordLoreDiscovery(loreTitleOf(record), {
-    text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
+    text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth, revealOf: record.id,
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
   // The GM's own reveal: no narration's to take back (the marks cleared —
@@ -1849,6 +1862,10 @@ export async function editSkeleton(id, fields = {}) {
     const next = { ...r, subject: { ...r.subject } };
     if (typeof fields.subject === "string" && fields.subject.trim()) next.subject.name = fields.subject;
     for (const f of ["truth", "wants", "knows"]) if (typeof fields[f] === "string") next[f] = fields[f];
+    // A truth the X-Card withheld is the narrator's again once the GM changes
+    // it: the new truth was never on screen (issue #364
+    // XCARD-REVEAL-REREVEAL-NO-LORE). An edit that leaves its text lifts nothing.
+    if (typeof fields.truth === "string" && fields.truth.trim() !== String(r.truth ?? "").trim()) next.truthWithheldBy = null;
     if (Array.isArray(fields.escalation)) next.escalation = relist(fields.escalation, r.escalation, "e", "done");
     if (Array.isArray(fields.clues)) next.clues = relist(fields.clues, r.clues, "c", "revealed");
     if (Array.isArray(fields.resolutions)) next.resolutions = fields.resolutions;

@@ -51,7 +51,9 @@ const SYSTEM = [
  */
 export function planForQuestion(question) {
   if (typeof question !== "string" || !question.trim() || !skeletonsEnabled()) return null;
-  const decided = listSkeletons().filter(r => r.truth);
+  // A truth the X-Card withheld sets no odds: the answer would tell it (issue
+  // #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+  const decided = listSkeletons().filter(r => r.truth && !r.truthWithheldBy);
   return decided.find(r => r.kind === "mystery" && r.question && sameQuestion(r.question, question))
     // Under any name the subject goes by (its aliases — issue #354 P2-30).
     ?? decided.find(r => [r.subject.name, ...(r.aliases ?? [])].some(n => nameMentioned(n, question)))

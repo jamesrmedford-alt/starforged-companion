@@ -2323,11 +2323,21 @@ const ENTRY_LABELS = Object.freeze({
     clues: 'Waypoints, in order (the next not yet shown is the next one reached)' },
 });
 
-/** One decided plan, as the narrator reads it. */
+/**
+ * Whether the X-Card withheld a plan's truth (`truthWithheldBy` on the record,
+ * issue #364 XCARD-REVEAL-REREVEAL-NO-LORE): the narrator is never given it,
+ * nor asked to reveal it.
+ */
+const truthWithheld = (r) => typeof r?.truthWithheldBy === 'string' && r.truthWithheldBy.length > 0;
+
+/** One decided plan, as the narrator reads it — a withheld truth left out (truthWithheld). */
 function formatSkeletonEntry(r) {
   const label = ENTRY_LABELS[r.kind] ?? ENTRY_LABELS.default;
   const lines = [`### ${skeletonHeading(r)} (id ${r.id})`];
-  lines.push(`${label.truth}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
+  const withheld = truthWithheld(r);
+  lines.push(withheld
+    ? `${label.truth}: not part of this story — never decide, reveal or hint at it, and never record "truth" as revealed for this plan.`
+    : `${label.truth}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
   if (r.wants) lines.push(`Wants: ${r.wants}`);
   if (r.knows) lines.push(`Knows: ${r.knows}`);
   const steps = (r.escalation ?? []).map(e => `[${e.id}] ${e.text}${e.done ? ' (played)' : ''}`);
@@ -2336,9 +2346,11 @@ function formatSkeletonEntry(r) {
   if (clues.length) lines.push(`${label.clues}: ${clues.join('; ')}`);
   if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
   if (r.kind === 'expedition') {
-    lines.push('When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
+    lines.push(withheld ? 'When the expedition is finished, record it as resolved.'
+      : 'When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
   } else if (r.kind === 'vow') {
-    lines.push('When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
+    lines.push(withheld ? 'When the vow is fulfilled or forsaken, its story ends: record it as resolved.'
+      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
   }
   return lines.join('\n');
 }
