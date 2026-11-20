@@ -11,9 +11,11 @@
  * the scene helper's.
  *
  * This scan finds every docblock that is followed at once by another docblock
- * (a typedef, callback or file-header block aside). The instances known when
- * the scan was written are listed below — documentation debt, each to be
- * moved back onto its function; the test fails on any instance that is not
+ * (a typedef, callback or file-header block aside), and the test fails on any.
+ * Twenty-three more stood that way when the scan was written and were listed
+ * below as documentation debt; each is back on its function (issue #364
+ * DOCBLOCKS-STACKED) and the list is empty. It stays as the one place such a
+ * docblock could be knowingly left: the test fails on an instance that is not
  * listed, and on a listed one that is gone (take it off the list).
  */
 
@@ -42,10 +44,11 @@ function orphanedDocblocks() {
   return found.sort();
 }
 
-// Known when the scan was written (issue #364): each docblock below has drifted
-// off its function. Move it back and delete its line here.
-const KNOWN = [
-].sort();
+// Stacked docblocks knowingly left where they are: "file — first line", as
+// orphanedDocblocks() gives them. None — the twenty-three known when the scan
+// was written are back on their functions (issue #364 DOCBLOCKS-STACKED). Move
+// a new one back rather than listing it.
+const KNOWN = [];
 
 describe("issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the function it documents", () => {
   it("applyNarratorSidecar's docblock is its own, not stacked on ensureSceneStarted's", () => {
@@ -54,12 +57,12 @@ describe("issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the funct
     expect(orphanedDocblocks().filter(o => o.includes("Process a raw narrator API response"))).toEqual([]);
   });
 
-  it("no docblock is stacked on another's, beyond the ones already known", () => {
+  it("no docblock is stacked on another's", () => {
     const fresh = orphanedDocblocks().filter(o => !KNOWN.includes(o));
     expect(fresh, "a docblock directly followed by another docblock: the first has drifted off its function — move it back").toEqual([]);
   });
 
-  it("every known instance is still there (delete a line from KNOWN once its docblock is moved back)", () => {
+  it("KNOWN lists only docblocks that are still stacked — none today (delete a line once its docblock is moved back)", () => {
     const found = orphanedDocblocks();
     expect(KNOWN.filter(k => !found.includes(k))).toEqual([]);
   });
