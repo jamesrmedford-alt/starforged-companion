@@ -1168,7 +1168,12 @@ stay in play; the GMs are whispered once which plan and how to lift it
 (`safety.postWithheldTruthsNotice`): a GM's edit of the truth's text lifts it,
 and Reveal now still reveals it, each later reveal confirming again the Lore
 entry the X-carded one filed, by the plan's id (`recordLoreDiscovery`'s
-`revealOf`) — issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; an ending the
+`revealOf`) — issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; a reveal whose
+write the X-Card overtook (refused for the removed narration by
+`updateSkeleton`, so there was no reveal for the undo to take back) still
+marks the truth withheld, as bookkeeping, the GMs told once
+(`applyPlanSideData` → `withholdXCardedReveal`, issue #364
+XCARD-BEFORE-REVEAL-WRITE); an ending the
 narration gave the plan's
 story goes back by its mark too (`resolvedBy`), the plan in play again and its
 clock with it (issue #364 PLAN-RESOLVED-NO-MARK) — a plan keeps one version a narration,

@@ -1042,6 +1042,9 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       }
     }
 
+    // The plans whose truth this narration's prose told but whose reveal the
+    // X-Card overtook, for one notice to the GMs (issue #364 XCARD-BEFORE-REVEAL-WRITE).
+    const withheld = [];
     for (const reveal of reveals) {
       const before = getSkeleton(reveal.id);
       if (!before || !planInPlay(before, ending)) continue;
@@ -1055,7 +1058,17 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const after = await updateSkeleton(reveal.id,
         r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }),
           ...(truthNow ? { rollsShown: true, ...(r.rollsShown ? {} : { rollsShownBy: narrationId }) } : {}) }), { narrationId });
-      if (!after) continue;
+      if (!after) {
+        // The X-Card removed the narration before this write had its turn
+        // (updateSkeleton refuses it — issue #362 AC35): the reveal is not
+        // recorded, so the X-Card's undo found no reveal to take back and
+        // withheld nothing, while the removed prose told the truth. It is
+        // withheld all the same — bookkeeping, nothing else of the reveal
+        // filed (issue #364 XCARD-BEFORE-REVEAL-WRITE).
+        const kept = truthNow && isNarrationXCarded(narrationId) ? await withholdXCardedReveal(before, narrationId) : null;
+        if (kept) withheld.push(kept);
+        continue;
+      }
       out.revealed += 1;
       // What the narrator's world snapshot makes of it (issue #357): a truth
       // revealed or a story ended is a major event; a clue shown or a step
@@ -1065,6 +1078,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
       await paceAfterReveal(before, after, narrationId);
     }
+    if (withheld.length) await postWithheldTruthsNotice(withheld);
 
     // An enemy the prose introduced gets a plan (issue #354 P2-29) — after
     // the plans above, so one this same narration decided is found by name.
@@ -1083,6 +1097,37 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     console.warn(`${MODULE_ID} | secrets: a narration's plans were not applied:`, err?.message ?? err);
   }
   return out;
+}
+
+/**
+ * A reveal of a plan's truth whose narration the X-Card removed before the
+ * reveal's write had its turn (issue #364 XCARD-BEFORE-REVEAL-WRITE): the
+ * write is refused (updateSkeleton, issue #362 AC35), so the X-Card's undo —
+ * which withholds a truth by the reveal it takes back (worldJournal.js
+ * undoNarrationEntries `withholdTruths`) — found none, while the removed prose
+ * had told the truth and the narrator was still given it to reveal again. The
+ * plan is marked as that undo marks one, `truthWithheldBy` the removed
+ * narration: bookkeeping, not a new version (`keepStamp` — the plan keeps the
+ * narration that made it); its truth stays unrevealed and nothing else of the
+ * reveal is filed. Only while the plan holds the truth the reveal found,
+ * decided, unrevealed and not yet withheld — a reveal the post-write check took
+ * back (takenBackForXCard) was withheld by its own undo. Canonical GM
+ * (applyPlanSideData); never throws.
+ *
+ * @param {Object} before — the plan as the reveal found it (normaliseSkeleton's)
+ * @param {string} narrationId — the removed narration
+ * @returns {Promise<{ id: string, name: string }|null>} the plan withheld, for the GMs' notice
+ */
+async function withholdXCardedReveal(before, narrationId) {
+  const truth = String(before?.truth ?? "").trim();
+  if (!truth) return null;
+  const marked = await updateSkeleton(before.id, r => (r.truth.trim() === truth && !r.truthRevealed && !r.truthWithheldBy
+    ? { ...r, truthWithheldBy: narrationId } : null), { keepStamp: true });
+  if (!marked) return null;
+  // The world snapshot states the truth the X-Card took out (issue #357): as
+  // the X-Card's own play, this takes a new one.
+  reportSnapshotEvent("xcard_played");
+  return { id: marked.id, name: skeletonPageName(marked) };
 }
 
 /** A plan's title in the Lore journal: "Threat: the escort", "Mystery: Which name…?". */
