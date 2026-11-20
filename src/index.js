@@ -7195,7 +7195,12 @@ async function runPayoffStep(s, card, copies) {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
       if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
-      if (s.resolutionId && upgradeKindFor(s.resolutionId)) return { ok: false, reason: "superseded" };
+      // Upgraded since: the claim on the move card (`burn` / `improve`
+      // `.consumed`) is never released, so the old outcome's card is owed on
+      // no later press either — `final`, told once with no Retry. It went on
+      // a fresh Retry card each time (issue #364
+      // PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP).
+      if (s.resolutionId && upgradeKindFor(s.resolutionId)) return { ok: false, final: true, reason: "superseded" };
       const card = await postSufferChoiceCard({
         sufferPrompt: s.sufferPrompt, actor: pc, executorOpts: s.executorOpts ?? {},
         moveId: s.moveId ?? null, resolutionId: s.resolutionId ?? null,

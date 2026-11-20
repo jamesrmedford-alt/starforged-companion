@@ -631,7 +631,10 @@ raise with the victory card deleted and its ⚑ never pressed; and a won
 fight's refused milestone mark whose vow was fulfilled, or left every sheet,
 before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; and
 an `upgradeOpen` step whose move card was deleted — issue #364
-UPGRADE-OPEN-RETRY-CARD-GONE-LOOP).
+UPGRADE-OPEN-RETRY-CARD-GONE-LOOP; and a `choiceCard` step whose move's
+result was upgraded since — "superseded": the upgrade's claim on the move
+card is never released, so its new outcome's card stands on every later
+press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP).
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
