@@ -45,8 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/ui/progressTracks.js — Open the progress track panel.",
-  "src/ui/settingsPanel.js — The confirm form's \"Applicable abilities\" block — the confirm dialog's,",
 ].sort();
 
 describe("issue #364 SIDECAR-DOCBLOCK-MISPLACED — a docblock sits on the function it documents", () => {

@@ -1131,12 +1131,6 @@ export class ProgressTrackApp extends ApplicationV2 {
 // ---------------------------------------------------------------------------
 
 /**
- * Open the progress track panel.
- * Called from the PTT button or a chat command hook.
- * @returns {ProgressTrackApp}
- */
-
-/**
  * A combat position, read for a character: the move pipeline's interpreter
  * directive (only position-legal combat moves) and Take Decisive Action's
  * bad-spot downgrade (play kit p. 5: "if you are in a bad spot, count a
@@ -1173,6 +1167,11 @@ export async function getActiveCombatPosition(actorId = null) {
 }
 
 
+/**
+ * Open the progress track panel.
+ * Called from the PTT button or a chat command hook.
+ * @returns {ProgressTrackApp}
+ */
 export function openProgressTracks() {
   return ProgressTrackApp.open();
 }
