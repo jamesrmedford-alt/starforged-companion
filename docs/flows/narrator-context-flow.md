@@ -927,7 +927,10 @@ emptied or a keyless GM closed out short is still made once the next session
 is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
-LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
+LAST SESSION under its own number (it replaced it — issue #331 X65), a LAST
+SESSION still owed its summary (its mark names it) even with no text of its
+own, so it keeps its place and its mark (issue #364
+EMPTIED-LAST-SESSION-PREP-ONLY-MINT) — mints
 the next id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
 joined `SESSION_MINT_FIELDS`): the new session is begun by Begin a Session —
 a session nobody ended handed its open gate to the next, so Begin did nothing

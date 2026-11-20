@@ -529,15 +529,23 @@ export function mintSession(campaignState, now = Date.now(), { roundUnnarrated =
     const text     = summary.text.trim();
     const prev     = campaignState.previousSessionSummary;
     const prevText = typeof prev?.text === "string" ? prev.text.trim() : "";
-    if (closingUnbegun && prevText) {
+    // A LAST SESSION whose session is still owed its summary — its mark names
+    // it — holds its place with no text of its own: an X-Card took back what
+    // it told and the catch-up has not made it again yet, or the mint recorded
+    // it for a round left to be narrated. Replaced, its mark went with it and
+    // that session was never told again (issue #364
+    // EMPTIED-LAST-SESSION-PREP-ONLY-MINT).
+    const prevOwed = !!prev?.sessionId && campaignState.unsummarisedSession?.sessionId === prev.sessionId;
+    if (closingUnbegun && (prevText || prevOwed)) {
       // What was narrated in a session nobody began — a world opened to
       // prepare (`@scene`, `!oracle`) — is added to the summary of the
       // session before it, which stays LAST SESSION under its own number. It
       // replaced that summary, so the narrator lost what the table last
-      // played (issue #331 X65).
+      // played (issue #331 X65). The owed session's catch-up writes its own
+      // text in front of the fold (lastSessionTextParts).
       campaignState.previousSessionSummary = {
         ...prev,
-        text:      `${prevText}\n\n${BETWEEN_SESSIONS_LEAD}${text}`,
+        text:      lastSessionTextFrom(prevText, `${BETWEEN_SESSIONS_LEAD}${text}`),
         updatedAt: summary.updatedAt ?? prev.updatedAt ?? null,
       };
     } else {
