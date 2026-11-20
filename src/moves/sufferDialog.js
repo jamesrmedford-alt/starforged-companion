@@ -290,6 +290,42 @@ export function isRetryableSufferCall(call) {
   }
 }
 
+/**
+ * True when a suffer call run again by the GMs' Retry found what it changes
+ * gone for good: a target the step names by id — the vehicle (the pick's own
+ * asset id, the move's support vehicle, or the vehicle Actor it was rolled
+ * against), the companion (the pick's, the move's, or a Heal's patient), the
+ * track a cleared mark of progress comes off — no longer there, or that track
+ * finished (nothing reopens a finished track). The executors look a named
+ * target up by that id alone, so no later press finds it either. A target the
+ * step does not name — the command vehicle, the character's only companion —
+ * is looked up at the press, and one may be there on a later press: not gone
+ * for good. The Retry tells a step gone for good once, on a card with no
+ * Retry (index.js runPayoffStep): as a plain failure it went on a fresh Retry
+ * card on every press (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+ *
+ * @param {Object} call — the step's call (isRetryableSufferCall's)
+ * @param {Object} opts — the step's executor opts
+ * @param {Object} result — the call's runSufferResolution result
+ * @returns {boolean}
+ */
+export function sufferTargetGoneForGood(call, opts, result) {
+  const named = (v) => typeof v === "string" && v.length > 0;
+  const ownId = call?.kind === "suffer" && named(call.itemId);
+  switch (result?.reason) {
+    case "no-vehicle":
+      return ownId || named(opts?.vehicleItemId) || named(opts?.vehicleActorId);
+    case "no-companion":
+      return ownId || named(opts?.companionItemId)
+        || (call?.kind === "meter" && call.meterKey === "health" && named(opts?.patientCompanionItemId));
+    case "track-gone":
+    case "track-done":
+      return call?.kind === "clear-progress";
+    default:
+      return false;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Async runner — turns a resolved selection into actual writes

@@ -6877,6 +6877,12 @@ const PAYOFF_REASONS = {
   "victory-card-gone": "the victory card is no longer in chat, and its ⚑ was never pressed",
   "vow-completed": "the vow is fulfilled — nothing to mark",
   "vow-gone":  "the vow is on no character's sheet any more",
+  // A suffer step's target, or an asset effect's track, not there at the
+  // press — each printed its raw code (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+  "no-vehicle":   "no vehicle to change",
+  "no-companion": "no companion to change",
+  "track-gone":   "its progress track is gone",
+  "track-done":   "its progress track is finished",
 };
 
 // Why a `final` outcome is owed nothing any more — its line under "Not
@@ -6887,6 +6893,9 @@ const PAYOFF_FINAL_REASONS = {
   "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
   "no-vow": "the vow is on no character's sheet any more",
   "no-vehicle": "the vehicle is no longer in the world",
+  "no-companion": "the companion is no longer on the character's sheet",
+  "track-gone": "its progress track is no longer in the world",
+  "track-done": "its progress track is finished, so nothing is left to change on it",
   // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
   "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
@@ -7264,11 +7273,20 @@ async function runPayoffStep(s, card, copies) {
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
     case "suffer": {
       // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
-      const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+      const { runSufferResolution, isRetryableSufferCall, sufferTargetGoneForGood } = await import("./moves/sufferDialog.js");
       const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
       if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
       if (!isPlayerCharacterActor(pc)) return PC_GONE;
-      const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
+      // A target not there is told on this Retry's own card: the executor's
+      // "Vehicle not found" card said it again on every press
+      // (`skipMissingCard`, a flag of this run alone — never stored).
+      const [res] = await runSufferResolution([s.call], pc, { ...(s.opts ?? {}), skipMissingCard: true });
+      // The vehicle, companion or track the step names by id gone since, or
+      // that track finished: no later press finds it either — `final`, told
+      // once with no Retry. It went on a fresh Retry card each time (issue
+      // #364 PAYOFF-RETRY-SUFFER-TARGET-GONE). A target it does not name (the
+      // command vehicle, the only companion) may be there on a later press.
+      if (res?.ok === false && sufferTargetGoneForGood(s.call, s.opts ?? {}, res)) return { ...res, ok: false, final: true };
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
     }
     case "choiceCard": {
@@ -9167,6 +9185,10 @@ async function retryRiderStep(s, actorId) {
   if (rider.resource === "progress") {
     if (!s.track?.id) return { ok: false, reason: "invalid step" };
     const { ok, reason, error } = await applyProgressRider(rider, s.track);
+    // The track the step names by id deleted since, or finished — nothing
+    // reopens one: `final`, told once with no Retry. It went on a fresh Retry
+    // card each time (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+    if (reason === "track-gone" || reason === "track-done") return { ok: false, final: true, reason };
     return { ok, reason, error };
   }
   const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);

@@ -679,7 +679,18 @@ deleted since — "place-gone": nowhere to arrive — issue #364
 PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP; and a `rider` step's integrity effect,
 or an `upgrade` step's vehicle track to restore, whose vehicle Actor is gone
 — "no-vehicle", the step names it by id — issue #364
-PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+PAYOFF-RETRY-VEHICLE-GONE-LOOP; and a `suffer` step whose vehicle, companion
+or cleared mark's track the step names by id is gone since, or that track
+finished — Withstand Damage's support vehicle or the vehicle Actor the move
+was rolled against, Companion Takes a Hit's companion, an integrity or
+companion-health change, a battered mark, a cleared mark of progress
+(`sufferDialog.sufferTargetGoneForGood`) — and a `rider` step's progress mark
+whose track is gone or finished: a target the step does not name (the command
+vehicle, the only companion) is looked up at the press and stays on a fresh
+Retry card; each reason is told in plain words, where its code was printed,
+and the executor's own "Vehicle not found" card is not posted on a Retry press
+(`skipMissingCard` — the first failure still posts it) — issue #364
+PAYOFF-RETRY-SUFFER-TARGET-GONE).
 A step the Retry answers "invalid step" for — its record on the card fails
 the runner's check (a value out of range, a shape, a step name nothing
 runs), and the record never changes — goes on no Retry card either, but is

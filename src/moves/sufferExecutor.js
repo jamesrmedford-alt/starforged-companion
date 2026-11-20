@@ -211,7 +211,7 @@ async function postMinimumRedirect(actor, amount, opts = {}) {
       .filter(t => t && !t.completed && Number(t.ticks ?? 0) > 0)
       .map(t => ({ id: t.id, label: t.label ?? "a track" }));
     const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
-      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll", "sufferCardId", "resistMiss"].includes(key)));
+      .filter(([key]) => !["skipCard", "skipMissingCard", "amount", "itemId", "fixedRoll", "sufferCardId", "resistMiss"].includes(key)));
     const upgradeFirst = await upgradeFirstOwed(opts);
     return await postSufferChoiceCard({
       sufferPrompt: { kind: "any", amount, count: 1, exclude: ["lose_momentum"],
@@ -1007,7 +1007,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // The move's context (miss, the vehicle / companion it was made against),
     // without this call's own arguments.
     const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
-      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll", "sufferCardId"].includes(key)));
+      .filter(([key]) => !["skipCard", "skipMissingCard", "amount", "itemId", "fixedRoll", "sufferCardId"].includes(key)));
     // The redirected loss is the price of the move that paid it: the picker
     // is bound to that move's resolution, so a Burn Momentum or Improve
     // Result that undoes the price retires it and refuses a late pick, as it
@@ -1095,6 +1095,8 @@ export async function sacrificeResources(actor, amount, opts = {}) {
  * @param {number} amount
  * @param {Object} [opts]
  * @param {boolean} [opts.skipCard]
+ * @param {boolean} [opts.skipMissingCard]  no "not found" card: the caller
+ *   reports a missing companion itself (the GMs' Retry)
  * @returns {Promise<Object>} `before`, `after`, `atZero`, `resistOwed`, the
  *   companion (`itemId`, `name`) and `momentumLoss` past 0; `skipped` with
  *   `ok: false` and the reason when there is no such companion. A write the
@@ -1111,8 +1113,11 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
   if (!res.ok) {
     // No such companion (or several, none named) — a user-visible failure
-    // worth flagging rather than silently no-oping.
-    await postSufferCard({
+    // worth flagging rather than silently no-oping. The GMs' Retry of a
+    // refused hit says so on its own card (`skipMissingCard` — index.js
+    // runPayoffStep): this card said it again on every press (issue #364
+    // PAYOFF-RETRY-SUFFER-TARGET-GONE).
+    if (!opts.skipMissingCard) await postSufferCard({
       opts,
       title: `Companion Takes a Hit (-${amount})`,
       body: companionItemId
@@ -1182,6 +1187,8 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
  * @param {Object} [opts]
  * @param {string|null} [opts.vehicleActorId]  the vehicle the move was rolled against
  * @param {boolean} [opts.skipCard]
+ * @param {boolean} [opts.skipMissingCard]  no "not found" card: the caller
+ *   reports a missing vehicle itself (the GMs' Retry)
  * @returns {Promise<Object>} `before`, `after`, `atZero`, `resistOwed`,
  *   `isCommandVehicle`, `momentumLoss` past 0; `skipped` with `ok: false` and
  *   the reason when there is no such vehicle. A write the world refuses throws.
@@ -1208,7 +1215,9 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   }
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's integrity");
   if (!res.ok) {
-    await postSufferCard({
+    // The GMs' Retry of refused damage says so on its own card
+    // (`skipMissingCard`, as for a companion above).
+    if (!opts.skipMissingCard) await postSufferCard({
       opts,
       title: `Withstand Damage (-${amount})`,
       body: vehicleItemId
