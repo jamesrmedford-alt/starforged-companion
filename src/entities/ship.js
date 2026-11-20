@@ -748,27 +748,6 @@ function generateId() {
 // This function assumes seeding is wanted by the time it's called.
 
 /**
- * Roll oracles to populate a starship's type / first-look / mission,
- * persist to both the module flag payload and `system.notes` (HTML so
- * the starship sheet renders it), and trigger a silent portrait
- * generation when an OpenRouter API key is configured.
- *
- * Does not rename the Actor — the user-supplied name is authoritative.
- *
- * @param {Actor} actor          — a freshly-created type='starship' Actor
- * @param {Object} campaignState — current campaign state (used for region
- *                                 and to thread campaignState through the
- *                                 art pipeline)
- * @param {Object} [opts]
- * @param {number} [opts.moduleLimit] — cap on the modules installed
- * @param {string} [opts.finalizedAt] — the Entity Panel's Finalise
- *   (finalize.js): stamped into the payload this seed writes, so the panel
- *   switches to Regenerate and a repeat Finalise leaves Notes alone
- * @returns {Promise<Object|null>} — the resulting ship payload, or null
- *                                   on a non-fatal failure
- */
-
-/**
  * Light registration for a freshly-created starship Actor when the auto-seed
  * setting is OFF (the default — see FOLDER-002 finalize-first). Sets a minimal
  * `flags[MODULE].ship` payload (no oracle rolls, modules, notes, or art) and
@@ -820,6 +799,27 @@ export async function registerStarshipActorLight(actor, campaignState) {
 
   return ship;
 }
+
+/**
+ * Roll oracles to populate a starship's type / first-look / mission,
+ * persist to both the module flag payload and `system.notes` (HTML so
+ * the starship sheet renders it), and trigger a silent portrait
+ * generation when an OpenRouter API key is configured.
+ *
+ * Does not rename the Actor — the user-supplied name is authoritative.
+ *
+ * @param {Actor} actor          — a freshly-created type='starship' Actor
+ * @param {Object} campaignState — current campaign state (used for region
+ *                                 and to thread campaignState through the
+ *                                 art pipeline)
+ * @param {Object} [opts]
+ * @param {number} [opts.moduleLimit] — cap on the modules installed
+ * @param {string} [opts.finalizedAt] — the Entity Panel's Finalise
+ *   (finalize.js): stamped into the payload this seed writes, so the panel
+ *   switches to Regenerate and a repeat Finalise leaves Notes alone
+ * @returns {Promise<Object|null>} — the resulting ship payload, or null
+ *                                   on a non-fatal failure
+ */
 export async function seedStarshipActor(actor, campaignState, opts = {}) {
   if (!actor || actor.type !== "starship") return null;
 

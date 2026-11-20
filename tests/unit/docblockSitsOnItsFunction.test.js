@@ -45,9 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/entities/entityExtractor.js — Collect names that have been proposed in a still-pending \"New Entities",
-  "src/entities/registry.js — Register an entity's host-document id in a campaignState id list, on the",
-  "src/entities/ship.js — Roll oracles to populate a starship's type / first-look / mission,",
   "src/index.js — Determine whether a chat message is player narration that should be",
   "src/index.js — Exploration lifecycle feedback — confirm an expedition progress mark and,",
   "src/index.js — Load the active character for the pacing classifier. Returns a minimal",

@@ -4010,16 +4010,6 @@ function collectPlaceholderConnectionNames(campaignState) {
 }
 
 /**
- * Collect names that have been proposed in a still-pending "New Entities
- * Detected" draft card but not yet accepted into an entity record or
- * dismissed. Reading from chat is sufficient — the draft card carries the
- * full `drafts` array as a flag, and deleting the card (the de-facto
- * "dismiss" gesture) naturally drops the names from this list.
- *
- * Suppresses the same NPC being re-flagged on every subsequent narration
- * that mentions them.
- */
-/**
  * The names of the draft rows of one `status` on every draft card (a type's
  * only, when given) — `DRAFT_KNOWN`'s, so a person read as someone known is
  * listed once (readAsRows).
@@ -4045,6 +4035,19 @@ function collectDraftRowNames(status, type = null) {
   }
 }
 
+/**
+ * Collect names that have been proposed in a still-pending "New Entities
+ * Detected" draft card but not yet accepted into an entity record or
+ * dismissed. Reading from chat is sufficient — the draft card carries the
+ * full `drafts` array as a flag, and deleting the card (the de-facto
+ * "dismiss" gesture) naturally drops the names from this list.
+ *
+ * Suppresses the same NPC being re-flagged on every subsequent narration
+ * that mentions them.
+ *
+ * @param {string|null} [type] — one type's rows only, when given
+ * @returns {string[]}
+ */
 function collectPendingDraftNames(type = null) {
   try {
     const messages = globalThis.game?.messages?.contents ?? [];
