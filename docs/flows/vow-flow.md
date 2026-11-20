@@ -238,7 +238,14 @@ sworn is no longer the card's: the card stops saying it is on the sheet and
 offers ⚔ again (read from the sheet on every render, and written back to
 the card's text by the canonical GM's `deleteItem` hook), and another vow
 written from it is the one whose swear resolves the Sojourn (issue #364
-SOJOURN-VOW-DELETED-BEFORE-SWORN).
+SOJOURN-VOW-DELETED-BEFORE-SWORN). Deleted once its swear was told (its
+`sojournSwearTold`, read off the deleted Item), it takes nothing back: the
+oath was sworn and told, so the `deleteItem` hook resolves the Sojourn as
+the swear's own resolve would have; one that must still wait (a round being
+resolved) is kept on the card instead (`swornVowDeleted` — the card says the
+oath stands and offers no other vow; `resolveToldSojournNeeds` reads it
+beside the vows) — decided by the maintainer, issue #364
+SOJOURN-TOLD-VOW-DELETED.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;

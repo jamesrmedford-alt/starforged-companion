@@ -42,7 +42,12 @@
  *     longer the card's: the card stops saying it is on the sheet and offers
  *     ⚔ again (needVowOnSheet — the sheet, read on every render, and written
  *     back to the card by the canonical GM's deleteItem hook; issue #364
- *     SOJOURN-VOW-DELETED-BEFORE-SWORN).
+ *     SOJOURN-VOW-DELETED-BEFORE-SWORN). One deleted once its swear was
+ *     told takes nothing back — the oath was sworn and told: its Sojourn is
+ *     resolved as the swear's own resolve would have, and a resolve that
+ *     must wait is kept on the card (`swornVowDeleted`), the vow that said
+ *     so being gone (decided by the maintainer; issue #364
+ *     SOJOURN-TOLD-VOW-DELETED).
  *   - **✔ It is done** — the help was given: the player's word, no proof.
  *
  * Resolved (resolveSojournNeed), once: the card is claimed first (`resolved`
@@ -152,15 +157,18 @@ function needVowOnSheet(message) {
 
 /**
  * Whether ⚔ Swear an Iron Vow is taken on a need card: the card is resolved,
- * or its vow is on the sheet. A vow written and deleted since — before its
- * swear was rolled — leaves it free again: nothing can swear a vow that is
+ * its vow is on the sheet, or its vow was sworn and told before it was
+ * deleted (`swornVowDeleted` — the oath stands, issue #364
+ * SOJOURN-TOLD-VOW-DELETED). A vow written and deleted since — before its
+ * swear was told — leaves it free again: nothing can swear a vow that is
  * not there (issue #364 SOJOURN-VOW-DELETED-BEFORE-SWORN).
  *
  * @param {ChatMessage} message — the need card
  * @returns {boolean}
  */
 function needVowTaken(message) {
-  return !!(liveFlags(message).resolved || needVowOnSheet(message));
+  const f = liveFlags(message);
+  return !!(f.resolved || f.swornVowDeleted || needVowOnSheet(message));
 }
 
 /** The need card's vow fields and ⚔ Swear an Iron Vow, as HTML. `gone`: a vow written from the card was deleted since. */
@@ -179,14 +187,15 @@ function vowOfferHtml(who, { gone = false } = {}) {
  * rule, the vow (its name, its rank and ⚔ Swear an Iron Vow — or, once the
  * vow is on the sheet (`vowId`), where its swear roll is) and ✔ It is done. `vowGone`:
  * open again, saying the vow written before is no longer on the sheet.
- * Resolved: how the need was answered and what the strong hit gives. Escapes
- * its inputs.
+ * `vowSworn`: the vow was sworn and told, and deleted since — the Sojourn is
+ * resolved as soon as it can be. Resolved: how the need was answered and
+ * what the strong hit gives. Escapes its inputs.
  *
  * @param {{ actorName?: string|null, vowId?: string|null, vowName?: string|null,
- *   vowGone?: boolean, resolvedBy?: "vow"|"done"|null }} [state]
+ *   vowGone?: boolean, vowSworn?: boolean, resolvedBy?: "vow"|"done"|null }} [state]
  * @returns {string}
  */
-export function buildSojournNeedHtml({ actorName = null, vowId = null, vowName = null, vowGone = false, resolvedBy = null } = {}) {
+export function buildSojournNeedHtml({ actorName = null, vowId = null, vowName = null, vowGone = false, vowSworn = false, resolvedBy = null } = {}) {
   const who  = escapeHtml(typeof actorName === "string" && actorName.trim() ? actorName.trim() : "the character");
   const head = `<div class="sf-card sf-sojourn-need${resolvedBy ? " sf-sojourn-need--resolved" : ""}">`
     + `<div class="sf-card-header">🤝 Sojourn — the community's need</div><div class="sf-card-body">`;
@@ -196,7 +205,10 @@ export function buildSojournNeedHtml({ actorName = null, vowId = null, vowName =
   }
   const rule = `<p>The community needs help, or makes a costly demand in exchange for safe harbor. `
     + `Do it, or Swear an Iron Vow to see it done, and this Sojourn is resolved as a strong hit.</p>`;
-  const vow = vowId
+  const vow = vowSworn
+    ? `<p class="sf-sojourn-need-vow sf-sojourn-need-vow-sworn">⚔ An iron vow was sworn to see it done, and told — it is no longer on ${who}'s sheet, but the oath stands: `
+      + `this Sojourn is resolved as a strong hit as soon as it can be.</p>`
+    : vowId
     ? `<p class="sf-sojourn-need-vow">⚔ ${vowName ? `"${escapeHtml(vowName)}"` : "A new vow"} is on ${who}'s sheet — `
       + `${vowName ? "" : "name it there, then "}press <strong>⚔ Swear it (roll)</strong> on its card. `
       + `Once it is sworn, this Sojourn is resolved as a strong hit.</p>`
@@ -293,7 +305,7 @@ export function registerSojournNeedHook() {
     console.warn(`${MODULE_ID} | sojourn: the Sojourns of the vows sworn before this page loaded could not be resolved:`, err?.message ?? err));
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.sojournNeedCard) return;
-    if (!liveFlags(message).resolved && !needVowOnSheet(message)) {
+    if (!liveFlags(message).resolved && !liveFlags(message).swornVowDeleted && !needVowOnSheet(message)) {
       const said = root.querySelector(".sf-sojourn-need-vow");
       if (said && !root.querySelector('[data-action="sf-sojourn-need-swear"]')) {
         const actorId = liveFlags(message).actorId;
@@ -344,17 +356,49 @@ export function registerSojournNeedHook() {
  * (writeNeedVow). Not a card whose press is being applied here, nor one
  * another vow on the sheet still answers.
  *
+ * A vow whose swear was told (its `sojournSwearTold` — the deleted Item's
+ * flags are read here) is not taken back: the oath was sworn and told, so
+ * its Sojourn is resolved now, as the swear's own resolve would have been
+ * (resolveNeedOfDeletedToldVow; decided by the maintainer, issue #364
+ * SOJOURN-TOLD-VOW-DELETED — the card offered ⚔ again, and the told mark
+ * went with the vow).
+ *
  * @param {Item|null} item — the deleted Item
- * @returns {Promise<number>} the cards opened again
+ * @returns {Promise<number>} the cards opened again or resolved
  */
 async function releaseNeedsOfDeletedVow(item) {
   const cardId = isCanonicalGM() ? vowNeedCardId(item) : null;
   const card = cardId ? (globalThis.game?.messages?.get?.(cardId) ?? null) : null;
   const f = card?.flags?.[MODULE_ID];
-  if (f?.sojournNeedCard !== true || f.resolved || _inFlight.has(card.id) || needVowOnSheet(card)) return 0;
+  if (f?.sojournNeedCard !== true || f.resolved || f.swornVowDeleted || _inFlight.has(card.id) || needVowOnSheet(card)) return 0;
   const actorName = (typeof f.actorId === "string" && f.actorId ? getActor(f.actorId)?.name : null) ?? null;
+  if (item?.flags?.[MODULE_ID]?.sojournSwearTold === true) return resolveNeedOfDeletedToldVow(card, actorName);
   await card.update({ content: buildSojournNeedHtml({ actorName, vowGone: true }) });
   return 1;
+}
+
+/**
+ * The need card of a vow deleted once its swear was told
+ * (releaseNeedsOfDeletedVow): its Sojourn is resolved now, as answered by
+ * the vow. One that cannot be resolved yet — a Batch Mode round is being
+ * resolved, or the world refused the claim — waits as the vow's own resolve
+ * would have; the vow that said its swear was told is gone, so the card
+ * says it instead (`swornVowDeleted`, read by resolveToldSojournNeeds beside
+ * the vows), and says the oath stands in place of offering ⚔ again.
+ * Canonical GM.
+ *
+ * @param {ChatMessage} card — the need card
+ * @param {string|null} actorName — its roller's name
+ * @returns {Promise<number>} 1 when resolved now
+ */
+async function resolveNeedOfDeletedToldVow(card, actorName) {
+  if (await resolveNeedsAnsweredByVow([card.id])) return 1;
+  if (liveFlags(card).resolved) return 0;
+  await card.update({
+    [`flags.${MODULE_ID}.swornVowDeleted`]: true,
+    content: buildSojournNeedHtml({ actorName, vowSworn: true }),
+  }).catch(err => console.warn(`${MODULE_ID} | sojourn: card ${card.id} could not keep that its vow was sworn — it offers the vow again:`, err?.message ?? err));
+  return 0;
 }
 
 /**
@@ -483,13 +527,19 @@ export async function resolveSojournNeedsForVow(vowId) {
  * the resolve), and when a GM leaves or stands down and this GM is canonical
  * after it (registerSojournNeedHook — the GM who had it to make is gone). Each card is claimed first (`resolved`), so a Sojourn is
  * resolved once whichever call comes first, ✔ It is done included. Canonical
- * GM; a no-op with nothing told and unresolved.
+ * GM; a no-op with nothing told and unresolved. With the vows' cards go the
+ * open cards whose told vow was deleted before its resolve could be made
+ * (`swornVowDeleted` — resolveNeedOfDeletedToldVow; issue #364
+ * SOJOURN-TOLD-VOW-DELETED).
  *
  * @returns {Promise<number>} the Sojourns resolved
  */
 export async function resolveToldSojournNeeds() {
   if (!isCanonicalGM()) return 0;
-  return resolveNeedsAnsweredByVow(toldNeedCardIds());
+  const orphaned = (globalThis.game?.messages?.contents ?? [])
+    .filter(m => m?.flags?.[MODULE_ID]?.sojournNeedCard === true && m.flags[MODULE_ID].swornVowDeleted === true && !m.flags[MODULE_ID].resolved)
+    .map(m => m.id);
+  return resolveNeedsAnsweredByVow([...new Set([...toldNeedCardIds(), ...orphaned])]);
 }
 
 /**
