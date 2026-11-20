@@ -85,7 +85,6 @@ beforeEach(async () => {
 afterEach(() => restore?.());
 
 const flags = (id) => table.world.message(id).flags[MODULE_ID];
-const BURN = '[data-action="sf-burn-momentum"]';
 // challenge 4 and 8; action die 5 — heart 1 → 6: a weak hit; momentum 9 beats both dice (a strong hit).
 const WEAK_HIT = [0.35, 0.75, 0.7];
 const vexCards = () => table.actors.filter(a => a.flags?.[MODULE_ID]?.entityType === 'connection' && a.name === 'Vex');

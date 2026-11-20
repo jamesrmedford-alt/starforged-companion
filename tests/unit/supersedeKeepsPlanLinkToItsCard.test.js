@@ -62,7 +62,7 @@ vi.mock('../../src/moves/resolver.js', async (original) => {
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import {
-  MODULE_ID, resetSkeletonTable, gmOf, plansOf, narrationCallsOf, onGm, narrateMoveOn, moveResolution, playXCard,
+  MODULE_ID, resetSkeletonTable, gmOf, plansOf, onGm, narrateMoveOn, moveResolution, playXCard,
 } from '../helpers/skeletonTable.js';
 
 const PROSE = 'Vex meets you under the gantry — a smuggler who runs the lower docks, and who already knows your name.';
@@ -71,7 +71,6 @@ const DETECTION = {
   renames:  [],
   worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
 };
-const AGENDA_TRUTH = 'Vex sells the dock codes to both sides.';
 
 let table;
 let restore;
@@ -98,10 +97,6 @@ const WEAK_HIT = [0.35, 0.75, 0.7];
 const vexCards = () => table.actors.filter(a => a.flags?.[MODULE_ID]?.entityType === 'connection' && a.name === 'Vex');
 const plansAbout = (card) => plansOf(table).filter(p => p.subject?.type === 'entity' && p.subject.id === card.id);
 const narrationIds = () => table.cards(f => f.narratorCard === true && f.narrationId).map(m => m.flags[MODULE_ID].narrationId);
-const inPlay = async () => {
-  const { listSkeletons } = await gmOf(table).import('../../src/world/secrets.js');
-  return gmOf(table).run(() => listSkeletons());
-};
 
 async function kiraBurns(card) {
   await onGm(table, () => table.client('pl-1').click(card._id, BURN));
