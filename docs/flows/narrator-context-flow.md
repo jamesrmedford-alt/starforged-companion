@@ -1001,7 +1001,13 @@ exits of `narrateResolution`, `narrateRound` and the oracle follow-up
 so do a move's and a round's narration the X-Card pauses, on entry or once the
 reply is in — the move stands, a paused narration is never narrated again, and
 its paused notice closes a round: `filePausedPlanRequests`, issue #364
-XCARD-PAUSED-NARRATION-PLAN-REQUESTS;
+XCARD-PAUSED-NARRATION-PLAN-REQUESTS; each request names the resolution it is
+made for, and the plan it files keeps it — `createdFrom.resolutionId`, with a
+narration's stamp or without — so a later narration of the same move, a Burn
+Momentum / Improve Result re-narration that keeps the price, asks for no plan
+already filed for that resolution: `movePlanRequests` puts it that plan by id
+and tells the price's new enemy by that plan's rolls, issue #364
+KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE;
 the vow scene's own fallback is `fileRequestedPlan`); and with fact continuity
 switched off — no fact block read, no ledger written, no DECIDE NOW shown — a
 narration with prose still files its requests with their rolls alone, stamped

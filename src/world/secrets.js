@@ -977,7 +977,11 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const base = {
         kind: req.kind, subject, oracleSeeds: req.oracleSeeds, sceneId, sessionId,
         ...(req.reroll ? { reroll: req.reroll } : {}),
-        createdFrom: { narrationId, moveId, trigger: req.trigger || null },
+        // The resolution the request was made for stays with the plan, filed
+        // by a narration or — unstamped — by an exit that wrote none: a later
+        // narration of the same move finds it by this (issue #364
+        // KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE; skeletons.js planFiledFor).
+        createdFrom: { narrationId, moveId, trigger: req.trigger || null, resolutionId: req.resolutionId ?? null },
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
       const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
@@ -1467,7 +1471,7 @@ export async function fileRequestedPlan(request, { campaignState = null } = {}) 
   return createSkeleton({
     kind: req.kind, subject: req.subject ?? { type: "name", id: null, name }, oracleSeeds: req.oracleSeeds,
     sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
-    createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null },
+    createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null, resolutionId: req.resolutionId ?? null },
   });
 }
 

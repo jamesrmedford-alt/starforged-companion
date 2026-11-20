@@ -75,7 +75,7 @@ import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
@@ -1316,6 +1316,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     relevance,
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
+    // The plans already filed for this move, put to its narration by id.
+    planIds:         owed.planIds,
     endingTrackIds,
     beatClaim,
   });
@@ -1469,26 +1471,74 @@ export async function narrateResolution(resolution, campaignState, options = {},
  *    AC15). A player's own key rolls none: plans are a GM's;
  *  - a price that revealed a new enemy asks the narration to decide what it
  *    is (issue #353 Phase 1) — from its seeds, the one record of the roll. So
- *    does an expedition the move began (its track — Phase 3).
+ *    does an expedition the move began (its track — Phase 3);
+ *  - each request names the resolution it is made for — this move's, or the
+ *    one a Burn Momentum / Improve Result re-narration upgrades — and the
+ *    plan it files keeps it (`createdFrom.resolutionId`). A request whose
+ *    plan was already filed for that resolution is not made again (issue
+ *    #364 KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE): a Battle or Clash burned or
+ *    improved to a weak hit keeps its price, and when the move's first
+ *    narration was never written — its call failed, its reply was empty, the
+ *    X-Card paused it — the new enemy that price revealed was filed with its
+ *    rolls alone, under no narration's stamp, and the re-narration's seeds
+ *    asked for a second. The plan filed is put to this narration instead
+ *    (`planIds` — shown whatever else is in play, to decide by its id), and
+ *    the seeds tell the enemy by that plan's rolls, not by a second set.
  *
  * @param {Object} resolution
  * @param {Object|null} campaignState
  * @param {string} refBase — unique to the narration (its id)
- * @returns {{ resolution: Object, planRequests: Object[] }}
+ * @returns {{ resolution: Object, planRequests: Object[], planIds: string[] }}
  */
 function movePlanRequests(resolution, campaignState, refBase) {
   let move = resolution;
   if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
   if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
-  const planRequests = skeletonsEnabled()
-    ? [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]
-    : [];
-  return { resolution: move, planRequests };
+  if (!skeletonsEnabled()) return { resolution: move, planRequests: [], planIds: [] };
+  const asked = forResolution([move?.upgradeOf, move?._id].find(id => typeof id === 'string' && id) ?? null,
+    [...planRequestsFromSeeds(move?.oracleSeeds, refBase), ...unplannedRequests(normalisePlanRequests(move?.skeletonRequests))]);
+  const { requests, plans } = lessPlansAlreadyFiled(asked);
+  // A plan no longer in play — retired by a GM, or joined to another plan —
+  // was filed all the same: it is neither asked for again nor shown.
+  const inPlay = plans.filter(p => p.status === 'active');
+  if (inPlay.length && move?.oracleSeeds) move = { ...move, oracleSeeds: seedsWithPlannedEnemy(move.oracleSeeds, inPlay) };
+  return { resolution: move, planRequests: requests, planIds: inPlay.map(p => p.id) };
+}
+
+/** Plan requests, each naming the resolution it is made for — what the plan it files keeps (skeletons.js normaliseProvenance). */
+const forResolution = (resolutionId, requests) => (typeof resolutionId === 'string' && resolutionId
+  ? requests.map(r => ({ ...r, resolutionId })) : requests);
+
+/**
+ * A move's plan requests, less those whose plan was already filed for the
+ * resolution they name (skeletons.js planFiledFor), with the plans found. It
+ * reads the plans, as unplannedRequests does, on the GM's client its caller
+ * runs on. Fail-open: an unreadable journal asks for them all.
+ *
+ * @param {Object[]} requests — each naming its resolution (forResolution)
+ * @returns {{ requests: Object[], plans: Object[] }}
+ */
+function lessPlansAlreadyFiled(requests) {
+  if (!requests.some(r => r?.resolutionId)) return { requests, plans: [] };
+  let records;
+  try {
+    records = listSkeletons({ includeInactive: true });
+  } catch {
+    return { requests, plans: [] };
+  }
+  const plans = [];
+  const open = requests.filter((r) => {
+    const plan = planFiledFor(records, r);
+    if (plan) plans.push(plan);
+    return !plan;
+  });
+  return { requests: open, plans };
 }
 
 /**
  * The plans a round's entries ask its narration to decide: each entry's
- * price that revealed a new enemy, each expedition one began.
+ * price that revealed a new enemy, each expedition one began — each request
+ * naming its own entry's resolution, which the plan it files keeps.
  *
  * @param {Object[]} entries — roundNarrationEntries', their hidden rolls made
  * @param {string} refBase — unique to the narration (its id)
@@ -1496,10 +1546,10 @@ function movePlanRequests(resolution, campaignState, refBase) {
  */
 function roundPlanRequests(entries, refBase) {
   if (!skeletonsEnabled()) return [];
-  return entries.flatMap((e, i) => [
+  return entries.flatMap((e, i) => forResolution(e.input?.resolutionId ?? null, [
     ...planRequestsFromSeeds(e.input?.oracleSeeds ?? null, `${refBase}-${i + 1}`),
     ...normalisePlanRequests(e.input?.skeletonRequests),
-  ]);
+  ]));
 }
 
 /**
@@ -1513,7 +1563,8 @@ function roundPlanRequests(entries, refBase) {
  * closes the round (batch/driver.js roundNarrationPosted), and a GM's resume
  * picks play up at the next move — so this is the one filing; a Burn Momentum
  * or Improve Result re-narration asks again only for subjects still unplanned
- * (unplannedRequests). Never throws: the paused notice posts whatever
+ * (unplannedRequests), and for no plan already filed for the move it upgrades
+ * (lessPlansAlreadyFiled). Never throws: the paused notice posts whatever
  * happens here.
  *
  * @param {() => Object[]} requests — builds the narration's plan requests

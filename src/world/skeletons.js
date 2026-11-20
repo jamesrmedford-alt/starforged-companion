@@ -19,6 +19,8 @@
  *   - applyPlanToSkeleton — a narrator plan laid onto a record
  *   - selectRelevantSkeletons — the plans one beat is shown
  *   - planRequestsFromSeeds — the plans a narration's seeds ask it to decide
+ *   - planFiledFor / seedsWithPlannedEnemy — the plan already filed for a
+ *     request's resolution, and a re-narration's seeds told with its rolls
  */
 
 import { sameSubject } from "../entities/nameMatch.js";
@@ -180,10 +182,21 @@ export function normaliseSubject(subject) {
   };
 }
 
+/**
+ * Where a plan came from (`createdFrom`): the narration that filed it, the
+ * move, what asked for it (`trigger`), and the resolution it was filed for
+ * (`resolutionId` — the move's own id; for a Burn Momentum / Improve Result
+ * re-narration, the resolution it upgrades; a Batch Mode round entry's own).
+ * The resolution is what a plan filed with its rolls alone by a narration
+ * that was never written — which no narration id stamps — is found by: a
+ * later narration of the same move decides it instead of filing a second
+ * (planFiledFor; issue #364 KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE). Null on a
+ * plan no move's request filed, and on every plan filed before the field.
+ */
 function normaliseProvenance(p) {
-  if (!p || typeof p !== "object") return { narrationId: null, moveId: null, trigger: null };
+  if (!p || typeof p !== "object") return { narrationId: null, moveId: null, trigger: null, resolutionId: null };
   const str = (v) => (typeof v === "string" && v.length <= 64 ? v : null);
-  return { narrationId: str(p.narrationId), moveId: str(p.moveId), trigger: str(p.trigger) };
+  return { narrationId: str(p.narrationId), moveId: str(p.moveId), trigger: str(p.trigger), resolutionId: str(p.resolutionId) };
 }
 
 /**
@@ -510,8 +523,12 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     .slice(0, Math.max(0, Number.isInteger(ctx.max) ? ctx.max : MAX_RELEVANT_SKELETONS));
 }
 
-/** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines). */
+/** The seed lines a price that reveals a new enemy carries (resolver.js newEnemySeedLines), and what each begins with. */
 const NEW_ENEMY_SEED = /^The new enemy — /;
+const NEW_ENEMY_PREFIX = "The new enemy — ";
+
+/** What asks for a new enemy's plan: the price that revealed it (a plan's `createdFrom.trigger`). */
+const NEW_ENEMY_TRIGGER = "new_enemy";
 
 /** What a new enemy's plan is called until a narration names it. */
 const NEW_ENEMY_LABEL = "the new enemy this price reveals";
@@ -549,7 +566,7 @@ export function planRequestsFromSeeds(seeds, refBase) {
     out.push({
       ref:         `plan-${refBase}-enemy`.slice(0, 64),
       kind:        "threat",
-      trigger:     "new_enemy",
+      trigger:     NEW_ENEMY_TRIGGER,
       label:       NEW_ENEMY_LABEL,
       oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
     });
@@ -568,6 +585,52 @@ export function planRequestsFromSeeds(seeds, refBase) {
     });
   }
   return out;
+}
+
+/**
+ * The plan already filed for the resolution a request is made for (issue #364
+ * KEPT-PRICE-NEW-ENEMY-PLANNED-TWICE): the same kind, asked for by the same
+ * trigger, for the same resolution (`createdFrom.resolutionId`). A Battle or
+ * Clash burned or improved to a weak hit keeps its price; when that price
+ * revealed a new enemy and the move's first narration was never written, the
+ * enemy's plan was filed with its rolls alone, stamped with no narration —
+ * and the re-narration's seeds asked for it again, with no subject id to
+ * know it by. Null for a request that names no resolution, and never a plan
+ * filed before plans kept theirs.
+ *
+ * @param {Object[]} records — normaliseSkeleton's, inactive ones too: a plan a GM retired, or one that
+ *   joined another, was still filed
+ * @param {{ kind?: string, trigger?: string, resolutionId?: string }|null} request
+ * @returns {Object|null}
+ */
+export function planFiledFor(records, request) {
+  const resolutionId = typeof request?.resolutionId === "string" && request.resolutionId ? request.resolutionId : null;
+  if (!resolutionId) return null;
+  return (Array.isArray(records) ? records : []).find(r => r?.kind === request.kind
+    && r.createdFrom?.resolutionId === resolutionId
+    && (r.createdFrom.trigger ?? "") === (request.trigger ?? "")) ?? null;
+}
+
+/**
+ * A narration's oracle seeds with the new enemy's lines as its plan holds
+ * them — planRequestsFromSeeds' enemy lines, the other way: the narration
+ * that decides a plan already filed for its price (planFiledFor) is told the
+ * rolls that plan was filed with, not a second set rolled for the
+ * re-narration. The same seeds when they carry no enemy line, or none of the
+ * plans is a price's new enemy that keeps its rolls.
+ *
+ * @param {{ results?: string[] }|null} seeds — a resolution's oracleSeeds
+ * @param {Object[]} plans — the plans already filed for the resolution (normaliseSkeleton's)
+ * @returns {{ results?: string[] }|null}
+ */
+export function seedsWithPlannedEnemy(seeds, plans) {
+  const lines = Array.isArray(seeds?.results) ? seeds.results : [];
+  const plan = (Array.isArray(plans) ? plans : []).find(p => p?.kind === "threat" && p.createdFrom?.trigger === NEW_ENEMY_TRIGGER);
+  const rolls = (Array.isArray(plan?.oracleSeeds) ? plan.oracleSeeds : []).filter(s => typeof s === "string" && s);
+  const first = lines.findIndex(l => typeof l === "string" && NEW_ENEMY_SEED.test(l));
+  if (first < 0 || !rolls.length) return seeds ?? null;
+  const rest = lines.filter(l => !(typeof l === "string" && NEW_ENEMY_SEED.test(l)));
+  return { ...seeds, results: [...rest.slice(0, first), ...rolls.map(s => `${NEW_ENEMY_PREFIX}${s}`), ...rest.slice(first)] };
 }
 
 /** The moves whose rolled find a plan keeps the meaning of (Phase 4). */
@@ -596,7 +659,8 @@ export const PLAN_REQUESTS_PER_NARRATION = 24;
  *
  * @param {*} requests
  * @param {{ max?: number }} [opts]
- * @returns {Array<{ ref: string, kind: string, trigger: string, label: string, oracleSeeds: string[] }>}
+ * @returns {Array<{ ref: string, kind: string, trigger: string, label: string, oracleSeeds: string[],
+ *   reroll?: string, subject?: Object, resolutionId?: string }>}
  */
 export function normalisePlanRequests(requests, { max = PLANS_PER_SIDECAR } = {}) {
   if (!Array.isArray(requests)) return [];
@@ -614,6 +678,8 @@ export function normalisePlanRequests(requests, { max = PLANS_PER_SIDECAR } = {}
       ...(text(r.reroll, ITEM_MAX) ? { reroll: text(r.reroll, ITEM_MAX) } : {}),
       // A request about a known subject (an expedition's track) names it by id.
       ...(normaliseSubject(r.subject) ? { subject: normaliseSubject(r.subject) } : {}),
+      // The resolution it is made for — the plan's provenance (normaliseProvenance).
+      ...(typeof r.resolutionId === "string" && ID_RE.test(r.resolutionId) ? { resolutionId: r.resolutionId } : {}),
     }));
 }
 
