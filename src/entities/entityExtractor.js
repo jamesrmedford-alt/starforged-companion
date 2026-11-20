@@ -3384,8 +3384,9 @@ function figuresNamedIn(text, figures) {
  * connection, or stood beside the NPC the line did name so that none was
  * (issue #364 CONNECTION-WHOLE-NAME-ANY-CASE; the part-name test beside it
  * already asked the rule). A one-word name with no capital to write — it
- * starts with a digit, or in a script without case — has no lowercase form
- * to mistake for an ordinary word and is matched whole, as before.
+ * starts with a digit, or in a script without case — is matched whole in any
+ * form by that rule itself (issue #364 ONE-WORD-NAME-NO-CAPITAL-FORM; this
+ * kept a guard of its own for it until the shared rule had the case).
  *
  * @param {string} text
  * @param {string} name — the figure's name as recorded
@@ -3394,8 +3395,7 @@ function figuresNamedIn(text, figures) {
 function namesWholeName(text, name) {
   const n = String(name ?? "").trim();
   if (!n) return false;
-  const oneCasedWord = !/\s/u.test(n) && /^[\p{Lu}\p{Ll}\p{Lt}]/u.test(n);
-  return oneCasedWord ? namesOneWordName(text, n) : wholeWordPattern(n).test(text);
+  return /\s/u.test(n) ? wholeWordPattern(n).test(text) : namesOneWordName(text, n);
 }
 
 /**

@@ -548,6 +548,17 @@ export function wholeWordPattern(token, flags = "i") {
 }
 
 /**
+ * Whether a word has a capital to write: it starts with a cased letter. A
+ * digit, and a letter of a script without case, have none.
+ *
+ * @param {string} word
+ * @returns {boolean}
+ */
+function hasCapitalForm(word) {
+  return /^[\p{Lu}\p{Ll}\p{Lt}]/u.test(String(word ?? ""));
+}
+
+/**
  * Whether a typed text names a one-word name — a first or last name, or a
  * name of one word — as a name is written (issue #362 D6, decided A): as a
  * whole word that starts with a capital as typed, or, in any case, in
@@ -559,6 +570,14 @@ export function wholeWordPattern(token, flags = "i") {
  * the scanner" brought in Echo Vega. A name of more than one word is matched
  * whole, in any case, by its callers.
  *
+ * A word with no capital to write — it starts with a digit ("7-Zero", the
+ * "734" of Unit 734), or with a letter of a script without case — has no
+ * lowercase form to mistake for an ordinary word, and no capital to ask for:
+ * it is matched as a whole word, in any form. Asked for its capital, it could
+ * be named only in address position — by the fellow-PC rule, relevance and
+ * Make a Connection's part-names alike (issue #364
+ * ONE-WORD-NAME-NO-CAPITAL-FORM).
+ *
  * @param {string} text — the typed line (any case)
  * @param {string} word — the one-word name (any case)
  * @returns {boolean}
@@ -567,6 +586,7 @@ export function namesOneWordName(text, word) {
   const t = String(text ?? "");
   const w = String(word ?? "").trim();
   if (!t || !w) return false;
+  if (!hasCapitalForm(w)) return wholeWordPattern(w).test(t);
   for (const m of t.matchAll(wholeWordPattern(w, "gi"))) {
     if (/^\p{Lu}/u.test(m[0])) return true;
     const before = t.slice(0, m.index);
