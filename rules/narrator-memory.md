@@ -42,7 +42,8 @@ layers. This file is the never-break list.
    trigger's stamp, the later trigger left standing, PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN;
    the plan step a narration played carries that narration, `playedBy`, and
    goes back unplayed with it whatever was written to the plan since,
-   PLAN-STEP-REWRITTEN-BEFORE-BURN) —
+   PLAN-STEP-REWRITTEN-BEFORE-BURN — as do a clue it showed, `revealedBy`, and
+   a truth it revealed, `truthRevealedBy`, PLAN-CLUE-TRUTH-NO-MARK) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

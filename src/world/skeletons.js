@@ -88,6 +88,21 @@ const playedMark = (step) => (step?.done === true && typeof step.playedBy === "s
   ? { playedBy: step.playedBy } : {});
 
 /**
+ * A shown clue's mark: the narration whose beat showed it (`revealedBy`),
+ * kept on a clue that is shown and nowhere else — the step's mark, for a
+ * clue. Only steps carried one, so a clue a taken-back narration showed still
+ * stood as shown once another narration, or a GM, had written the plan since
+ * (issue #364 PLAN-CLUE-TRUTH-NO-MARK). A clue shown before this carries
+ * none, and is taken back only with its narration's own version of the plan,
+ * as before.
+ */
+const shownMark = (clue) => (clue?.revealed === true && typeof clue.revealedBy === "string" && ID_RE.test(clue.revealedBy)
+  ? { revealedBy: clue.revealedBy } : {});
+
+/** A record-level mark's narration id, or null: kept only while what it marks stands (`stands`). */
+const markOf = (stands, id) => (stands && typeof id === "string" && ID_RE.test(id) ? id : null);
+
+/**
  * A skeleton record as the store keeps it: every field present, bounded and
  * typed. Unknown fields are dropped; a missing id, kind or subject name makes
  * it null (nothing to file).
@@ -105,9 +120,11 @@ export function normaliseSkeleton(raw) {
     .map((e, i) => ({ id: typeof e?.id === "string" && ID_RE.test(e.id) ? e.id : itemId("e", i), text: text(e?.text ?? e, ITEM_MAX), done: e?.done === true, ...playedMark(e) }))
     .filter(e => e.text);
   const clues = (Array.isArray(raw.clues) ? raw.clues : []).slice(0, LIST_MAX)
-    .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true }))
+    .map((c, i) => ({ id: typeof c?.id === "string" && ID_RE.test(c.id) ? c.id : itemId("c", i), text: text(c?.text ?? c, ITEM_MAX), revealed: c?.revealed === true, ...shownMark(c) }))
     .filter(c => c.text);
   const truth = text(raw.truth, TEXT_MAX);
+  const truthRevealed = raw.truthRevealed === true && !!truth;
+  const rollsShown    = raw.rollsShown === true;
   return {
     id,
     kind,
@@ -125,14 +142,22 @@ export function normaliseSkeleton(raw) {
     resolutions:   textList(raw.resolutions),
     // A truth not yet decided was never revealed: a flag set on one (a
     // reveal of an undecided plan, before issue #362 AC16) does not stand.
-    truthRevealed: raw.truthRevealed === true && !!truth,
+    truthRevealed,
+    // The narration whose beat revealed the truth, and the one that showed
+    // its oracle rolls with it — the step's `playedBy`, for the truth: taking
+    // that narration back un-reveals it by this mark, whatever was written to
+    // the plan since (issue #364 PLAN-CLUE-TRUTH-NO-MARK). Null on a truth a
+    // GM revealed, or one revealed before the mark was kept. Always present:
+    // a page flag is merged on write, and a mark left out would never clear.
+    truthRevealedBy: markOf(truthRevealed, raw.truthRevealedBy),
+    rollsShownBy:    markOf(rollsShown, raw.rollsShownBy),
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     // The one re-roll a plan awaiting its decision may use in place of a
     // result that contradicts the story ("one re-roll", issue #353 "Rules for
     // these rolls"); spent or dropped once it is decided.
     reroll:        text(raw.reroll, ITEM_MAX),
-    rollsShown:    raw.rollsShown === true,
+    rollsShown,
     status:        SKELETON_STATUSES.includes(raw.status) ? raw.status : "active",
     sceneId:       typeof raw.sceneId === "string" ? raw.sceneId : null,
     sessionId:     typeof raw.sessionId === "string" ? raw.sessionId : null,
@@ -360,7 +385,11 @@ export function normaliseCountdown(countdown) {
  * on every player's Session panel as a standing demand.
  *
  * The step it plays is marked with the narration that played it (`playedBy`,
- * playedMark) — a step already played keeps the mark it has.
+ * playedMark) — a step already played keeps the mark it has. So is each clue
+ * it shows (`revealedBy`, shownMark) and the truth it reveals
+ * (`truthRevealedBy`), each only when this beat is what showed it: a clue
+ * already shown, a truth already revealed, keeps the mark — or the lack of
+ * one — it has (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
  *
  * @param {Object} record — normaliseSkeleton's
  * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
@@ -369,11 +398,14 @@ export function normaliseCountdown(countdown) {
  */
 export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {}) {
   const shown = new Set(reveal.revealed);
-  const by = typeof narrationId === "string" && ID_RE.test(narrationId) ? { playedBy: narrationId } : {};
+  const id = typeof narrationId === "string" && ID_RE.test(narrationId) ? narrationId : null;
+  const by = id ? { playedBy: id } : {};
+  const truthNow = !record.truthRevealed && shown.has("truth") && !!record.truth;
   return {
     ...record,
-    truthRevealed: record.truthRevealed || (shown.has("truth") && !!record.truth),
-    clues:         record.clues.map(c => (shown.has(c.id) ? { ...c, revealed: true } : c)),
+    truthRevealed: record.truthRevealed || truthNow,
+    ...(truthNow ? { truthRevealedBy: id } : {}),
+    clues:         record.clues.map(c => (shown.has(c.id) && !c.revealed ? { ...c, revealed: true, ...(id ? { revealedBy: id } : {}) } : c)),
     escalation:    record.escalation.map(e => (e.id === reveal.advanced && !e.done ? { ...e, done: true, ...by } : e)),
     status:        reveal.resolved ? "resolved" : record.status,
   };
@@ -408,8 +440,8 @@ export function applyPlanToSkeleton(record, plan) {
     next.escalation = plan.escalation.map((t, i) => ({ id: itemId("e", i), text: t, done: done.has(t), ...playedMark(done.get(t)) }));
   }
   if (plan.clues.length) {
-    const shown = new Set(record.clues.filter(c => c.revealed).map(c => c.text));
-    next.clues = plan.clues.map((t, i) => ({ id: itemId("c", i), text: t, revealed: shown.has(t) }));
+    const shown = new Map(record.clues.filter(c => c.revealed).map(c => [c.text, c]));
+    next.clues = plan.clues.map((t, i) => ({ id: itemId("c", i), text: t, revealed: shown.has(t), ...shownMark(shown.get(t)) }));
   }
   if (plan.resolutions.length) next.resolutions = plan.resolutions;
   if (next.truth) next.reroll = "";   // decided: an unused re-roll goes

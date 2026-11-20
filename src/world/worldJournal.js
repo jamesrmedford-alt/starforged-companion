@@ -1424,6 +1424,13 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * played with its vignette gone and its clock re-armed). What the later
  * writer wrote stands; the plans in play touched that way are named with
  * the clock each links (`stepsTakenBack`), for the caller's clocks.
+ * A clue one of them showed, and a truth one of them revealed (with the
+ * oracle rolls it showed), go back the same way by their own marks
+ * (`revealedBy`, `truthRevealedBy`, `rollsShownBy` — issue #364
+ * PLAN-CLUE-TRUTH-NO-MARK: only steps carried a mark, so under a later
+ * writer's version the clue stayed shown and the truth revealed). What a
+ * truth's reveal wrote outside the plan — its scene fact, its Lore entry —
+ * is stamped with the narration and goes by that stamp, as it always did.
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
@@ -1460,7 +1467,7 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             const unplayed = withoutStepsPlayedBy(entry, removed);
             if (unplayed) {
               await writeEntryPage(page, flagKey, unplayed.entry);
-              if (unplayed.top) noteStepTakenBack(out, unplayed.entry);
+              if (unplayed.stepTop) noteStepTakenBack(out, unplayed.entry);
             }
           } catch (err) {
             console.warn(`${MODULE_ID} | X-Card: could not take a removed narration's step back from the plan "${page?.name}":`, err?.message ?? err);
@@ -1483,12 +1490,13 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
             previous:    older.length ? older : null,
             // setFlag merges: a key the restored version lacks keeps the removed one's value
             ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
+            ...(category === "secrets" ? { truthRevealedBy: versions[at].truthRevealedBy ?? null, rollsShownBy: versions[at].rollsShownBy ?? null } : {}),
           };
           // The version put back may be one written between two removed
           // narrations: it holds the earlier one's step.
           const unplayed = category === "secrets" ? withoutStepsPlayedBy(restored, removed) : null;
           await writeEntryPage(page, flagKey, unplayed?.entry ?? restored);
-          if (unplayed?.top) noteStepTakenBack(out, unplayed.entry);
+          if (unplayed?.stepTop) noteStepTakenBack(out, unplayed.entry);
           out.restored += 1;
         } else if (category === "lore") {
           const now = new Date().toISOString();
@@ -1521,42 +1529,73 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
 }
 
 /**
- * A stored plan entry with the escalation steps the removed narrations played
- * put back unplayed, in the entry and in each earlier version it keeps
- * (`previous`) — a later undo may restore one of those. Null when none holds a
- * step of theirs.
+ * A stored plan entry with what the removed narrations played or showed of it
+ * put back — its escalation steps unplayed, its clues unshown, its truth
+ * unrevealed (takenBackFrom) — in the entry and in each earlier version it
+ * keeps (`previous`): a later undo may restore one of those. Null when none
+ * holds anything of theirs.
  *
  * @param {Object} entry — the stored Secrets entry
  * @param {Set<string>} removed — the narrations taken back
- * @returns {{ entry: Object, top: boolean }|null} the entry to write, and whether its own steps changed
+ * @returns {{ entry: Object, top: boolean, stepTop: boolean }|null} the entry to write, whether its own
+ *   content changed, and whether a step of its own was un-played (the caller's clocks: a step is owed again)
  */
 function withoutStepsPlayedBy(entry, removed) {
-  const top = stepsTakenBackFrom(entry, removed);
+  const top = takenBackFrom(entry, removed);
   const versions = Array.isArray(entry?.previous) ? entry.previous : null;
-  const older = versions ? versions.map(v => stepsTakenBackFrom(v, removed) ?? v) : null;
+  const older = versions ? versions.map(v => takenBackFrom(v, removed)?.version ?? v) : null;
   const olderChanged = !!older && older.some((v, i) => v !== versions[i]);
   if (!top && !olderChanged) return null;
-  return { entry: { ...(top ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top };
+  return { entry: { ...(top?.version ?? entry), ...(olderChanged ? { previous: older } : {}) }, top: !!top, stepTop: top?.step === true };
 }
 
 /**
- * One version of a plan with the steps the removed narrations played — each
- * marked `playedBy` one of them — unplayed and unmarked, the rest of the
- * version as it is; null when it holds none of theirs.
+ * One version of a plan with what the removed narrations did to it taken
+ * back by its marks, the rest of the version as it is:
+ *   - the steps they played (`playedBy`) unplayed and unmarked;
+ *   - the clues they showed (`revealedBy`) unshown and unmarked;
+ *   - the truth one of them revealed (`truthRevealedBy`) unrevealed, and the
+ *     oracle rolls that reveal showed (`rollsShownBy`) unshown — as putting
+ *     back the version before that narration leaves them, so the next reveal
+ *     shows the rolls again (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
+ * A record-level mark is cleared with an explicit null: the page flag is
+ * merged on write. Null when the version holds nothing of theirs.
+ *
+ * @param {Object} version — a stored Secrets entry, or one of its `previous`
+ * @param {Set<string>} removed — the narrations taken back
+ * @returns {{ version: Object, step: boolean }|null} the version, and whether a step was un-played
  */
-function stepsTakenBackFrom(version, removed) {
-  const steps = Array.isArray(version?.escalation) ? version.escalation : null;
-  const theirs = (e) => e?.done === true && typeof e.playedBy === "string" && removed.has(e.playedBy);
-  if (!steps?.some(theirs)) return null;
-  return {
-    ...version,
-    escalation: steps.map((e) => {
-      if (!theirs(e)) return e;
-      const step = { ...e, done: false };
-      delete step.playedBy;
-      return step;
-    }),
-  };
+function takenBackFrom(version, removed) {
+  const by = (id) => typeof id === "string" && removed.has(id);
+  const steps = Array.isArray(version?.escalation) ? version.escalation : [];
+  const clues = Array.isArray(version?.clues) ? version.clues : [];
+  const theirStep = (e) => e?.done === true && by(e.playedBy);
+  const theirClue = (c) => c?.revealed === true && by(c.revealedBy);
+  const step  = steps.some(theirStep);
+  const clue  = clues.some(theirClue);
+  const truth = version?.truthRevealed === true && by(version.truthRevealedBy);
+  const rolls = version?.rollsShown === true && by(version.rollsShownBy);
+  if (!step && !clue && !truth && !rolls) return null;
+  const next = { ...version };
+  if (step) {
+    next.escalation = steps.map((e) => {
+      if (!theirStep(e)) return e;
+      const undone = { ...e, done: false };
+      delete undone.playedBy;
+      return undone;
+    });
+  }
+  if (clue) {
+    next.clues = clues.map((c) => {
+      if (!theirClue(c)) return c;
+      const unshown = { ...c, revealed: false };
+      delete unshown.revealedBy;
+      return unshown;
+    });
+  }
+  if (truth) Object.assign(next, { truthRevealed: false, truthRevealedBy: null });
+  if (rolls) Object.assign(next, { rollsShown: false, rollsShownBy: null });
+  return { version: next, step };
 }
 
 /**

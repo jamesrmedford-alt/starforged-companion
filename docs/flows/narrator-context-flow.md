@@ -1088,7 +1088,12 @@ also under a version another narration or a GM wrote since (a clue shown
 between a trigger vignette and the burn of its price left the step played with
 its vignette struck and its clock re-armed); a clock a later trigger retired
 after the plan's last step then runs again, empty (`rerunRetiredPlanClock`;
-issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN) — a plan keeps one version a narration,
+issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN); a clue a narration showed and a
+truth it revealed carry it the same way (`revealedBy` on the clue,
+`truthRevealedBy` and `rollsShownBy` on the record) and go back unshown with
+it under a later writer's version too, that writer's own writes standing —
+the truth's scene fact and Lore entry go by the narration's stamp, as always
+(issue #364 PLAN-CLUE-TRUTH-NO-MARK) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its
 capture's link), so the version before it is never pushed off the three-deep
 history (`updateSkeleton`, issue #362 AC34); a plan filed with its rolls alone

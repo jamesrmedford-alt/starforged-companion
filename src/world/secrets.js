@@ -183,7 +183,8 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
     }).filter(r => r.truth).map(r => ({
       id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
       truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
-      escalation: r.escalation, clues: r.clues, resolutions: r.resolutions,
+      // A clue as UNREVEALED renders it: not the narration that showed it.
+      escalation: r.escalation, clues: r.clues.map(c => ({ id: c.id, text: c.text, revealed: c.revealed })), resolutions: r.resolutions,
     }));
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the plans in play could not be read:`, err?.message ?? err);
@@ -1034,8 +1035,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const before = getSkeleton(reveal.id);
       if (!before || !planInPlay(before, ending)) continue;
       const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
+      // The rolls shown with a truth carry the narration too, when it is
+      // this reveal that shows them (`rollsShownBy`): its undo puts them
+      // back unshown with the truth (issue #364 PLAN-CLUE-TRUTH-NO-MARK).
       const after = await updateSkeleton(reveal.id,
-        r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
+        r => ({ ...applyRevealToSkeleton(r, reveal, { narrationId }),
+          ...(truthNow ? { rollsShown: true, ...(r.rollsShown ? {} : { rollsShownBy: narrationId }) } : {}) }), { narrationId });
       if (!after) continue;
       out.revealed += 1;
       // What the narrator's world snapshot makes of it (issue #357): a truth
@@ -1734,7 +1739,9 @@ export async function revealSkeletonNow(id) {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
-  const revealed = await updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true }), { byGm: true });
+  // The GM's own reveal: no narration's to take back (the marks cleared —
+  // issue #364 PLAN-CLUE-TRUTH-NO-MARK).
+  const revealed = await updateSkeleton(id, r => ({ ...r, truthRevealed: true, rollsShown: true, truthRevealedBy: null, rollsShownBy: null }), { byGm: true });
   if (revealed) reportSnapshotEvent("plan_revealed");
   return revealed;
 }
@@ -1766,10 +1773,12 @@ export async function editSkeleton(id, fields = {}) {
   // An item kept word for word keeps whether it was played or shown — a
   // played step with the narration that played it (`playedBy`), so taking
   // that narration back still un-plays it (issue #364
-  // PLAN-STEP-REWRITTEN-BEFORE-BURN).
+  // PLAN-STEP-REWRITTEN-BEFORE-BURN), and a shown clue with the narration
+  // that showed it (`revealedBy`, issue #364 PLAN-CLUE-TRUTH-NO-MARK).
   const relist = (lines, old, prefix, flag) => lines.map((t, i) => {
     const kept = old.find(o => o.text === t && o[flag] === true) ?? null;
-    return { id: `${prefix}${i + 1}`, text: t, [flag]: !!kept, ...(typeof kept?.playedBy === "string" ? { playedBy: kept.playedBy } : {}) };
+    return { id: `${prefix}${i + 1}`, text: t, [flag]: !!kept, ...(typeof kept?.playedBy === "string" ? { playedBy: kept.playedBy } : {}),
+      ...(typeof kept?.revealedBy === "string" ? { revealedBy: kept.revealedBy } : {}) };
   });
   const edited = await updateSkeleton(id, (r) => {
     const next = { ...r, subject: { ...r.subject } };
