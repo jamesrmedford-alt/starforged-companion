@@ -3991,7 +3991,9 @@ let _sessionCatchUp = null;
  * summary becomes LAST SESSION, the mark cleared. Run after each narrator card
  * (End a Session's closing vignette among them), at the world load and when
  * this GM's key is set; one at a time; fail-open — a failed or X-Carded call
- * leaves the mark for the next try. A later mint replaces the mark. A
+ * leaves the mark for the next try. A later mint replaces the mark, unless
+ * LAST SESSION goes on naming the marked session (lifecycle.js
+ * rollSessionIfDue — issue #364 LAST-SESSION-OWED-LOST-AT-MINT). A
  * narration posted late into the session LAST SESSION names marks it again
  * (bringLastSessionUpToDate), and so does an X-Card that takes one back
  * (dropLastSessionTelling): the session's own part of the text is made again

@@ -911,7 +911,10 @@ mint folded onto it from a session nobody began kept
 (`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
 that text and marks the session the same way, `dropLastSessionTelling`; when
 the mint carried no summary for the card's session, LAST SESSION is left as
-it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
+it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION; a later mint keeps the
+mark while LAST SESSION goes on naming that session, so a summary an X-Card
+emptied or a keyless GM closed out short is still made once the next session
+is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65) — mints

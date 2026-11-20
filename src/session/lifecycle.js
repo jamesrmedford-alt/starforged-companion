@@ -619,8 +619,18 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
       console.warn(`${MODULE_ID} | session roll: stale-scene close failed:`, err?.message ?? err);
     }
   }
+  // A session still owed its summary stays owed while LAST SESSION goes on
+  // naming it: the closing session left no summary of its own (nothing was
+  // narrated in it), or one folded onto LAST SESSION (nobody began it). Every
+  // mint replaced the mark, so a LAST SESSION an X-Card had emptied — the
+  // table stopped before anything else was narrated — or one closed out short
+  // on a browser with no key was never made again once the next session was
+  // minted (issue #364 LAST-SESSION-OWED-LOST-AT-MINT).
+  const owed = campaignState.unsummarisedSession ?? null;
   mintSession(campaignState, now);
-  campaignState.unsummarisedSession = unsummarised;
+  const stillOwed = owed?.sessionId && owed.sessionId !== closing
+    && campaignState.previousSessionSummary?.sessionId === owed.sessionId ? owed : null;
+  campaignState.unsummarisedSession = unsummarised ?? stillOwed;
   return true;
 }
 

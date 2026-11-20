@@ -351,7 +351,9 @@ layers. This file is the never-break list.
    a narration drops the session's own text and marks it the same way
    (`dropLastSessionTelling`); and when the mint carried no summary for the
    card's session nothing is made up (issue #364
-   LATE-ROUND-NOT-IN-LAST-SESSION). Full drop
+   LATE-ROUND-NOT-IN-LAST-SESSION). The mark outlives a later mint while LAST
+   SESSION goes on naming its session (`rollSessionIfDue`,
+   LAST-SESSION-OWED-LOST-AT-MINT). Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 ## Tuning knobs (don't add new ones before using these)
