@@ -305,7 +305,12 @@ roller `campaignState.nextMoveBonuses[actorId]` (`grantNextMoveBonus`), which
 the pipeline adds to that character's next action roll (`consumeNextMoveBonus`,
 `src/moves/nextMoveAdd.js`); Secure an Advantage's strong hit grants it through
 `applyOutcomeEffects` (`nextMoveBonus` consequence). The pick only posted a
-reminder card (issue #322 V02).
+reminder card (issue #322 V02). An Aid Your Ally's are the ally's
+(`interpretation.allyActorId`): an ally gone since the move — before a Burn
+Momentum or Improve Result of it — takes nothing of the upgraded hit, its +1
+or its momentum (`resultUpgrade.js` `payAllyMomentum`), and nor does the
+roller; the move card's "Not applied" says why (issue #364
+UPGRADE-ALLY-GONE-BONUS-TO-ROLLER — the +1 went to whoever rolled).
 
 **Position** (`in_control` / `bad_spot`) is **per character** (rulebook,
 Battle Stations!; issue #322 V03). The fight's track holds each player

@@ -93,6 +93,7 @@ import {
   retractSupersededNarrations,
   upgradeAllyId,
   momentumShares,
+  payAllyMomentum,
   standingPriceOf,
 } from "./resultUpgrade.js";
 
@@ -763,10 +764,10 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   const momentumNote = burnedMomentumLine(momentum.value, readMomentumState(actor).value, momentumReset);
   // Aid Your Ally: the burned hit's momentum is the ally's, less what the
   // recorded hit already paid them (AID-ALLY-UPGRADE).
+  // An ally gone since the move takes none of it, nor does the burner: a
+  // line for the card's "Not applied" (issue #364 UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
   const allyMomentum = momentumShares(newConsequences, allyId).ally - momentumShares(burn.originalConsequences, allyId).ally;
-  if (allyId && allyMomentum) {
-    await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: allyMomentum } }, failures);
-  }
+  const allyNotPaid  = await payAllyMomentum(allyId, allyMomentum, actor, failures);
 
   // The original outcome's pending choice is retired and the burned outcome's
   // offered once (issue #311 P03). A price that stands keeps the cards it
@@ -790,7 +791,8 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // Its own writes the world refused go on its payoff card, with a Retry (issue #362 AC49).
   failures.push(...(effects.failures ?? []));
 
-  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), momentumNote) })
+  const notApplied = [...(allyNotPaid ? [allyNotPaid] : []), ...(effects.notApplied ?? [])];
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, notApplied, priceStands, priceCardsKept }), momentumNote) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 

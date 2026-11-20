@@ -51,7 +51,7 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
+import { applyMeterChanges, getActor, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -1992,7 +1992,9 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
  * Aid Your Ally's ally, as an upgrade's card carries it (`targets.allyActorId`,
  * the pipeline's moveTargets): the PC a hit's benefits go to — "they (instead
  * of you) take the benefits of the move" (issue #325 W17). Null when the move
- * named none, or named the roller.
+ * named none, or named the roller. The ally may be gone since the move: their
+ * share is then nobody's, never the roller's (payAllyMomentum; issue #364
+ * UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
  *
  * @param {Object|null} state — the card's `burn` / `improve` flag (or the targets' holder)
  * @param {string|null} rollerId
@@ -2018,6 +2020,32 @@ export function upgradeAllyId(state, rollerId) {
 export function momentumShares(consequences, allyId) {
   const m = Number(consequences?.momentumChange ?? 0);
   return allyId && consequences?.beneficiary === "ally" ? { roller: 0, ally: m } : { roller: m, ally: 0 };
+}
+
+/**
+ * Pay Aid Your Ally's ally their share of an upgrade's momentum (momentumShares'
+ * `ally`, less what the recorded hit already paid them), as a `meters` step of
+ * the upgrade. An ally gone since the move — deleted, or no longer a player
+ * character (actorBridge) — takes nothing, and nor does the roller, whose
+ * share holds none of it: the step went to the GMs' payoff card, whose Retry
+ * could only answer that the sheet is gone (issue #364
+ * UPGRADE-ALLY-GONE-BONUS-TO-ROLLER). The line the move card's "Not applied"
+ * carries for it is returned instead, in the payoff card's words.
+ *
+ * @param {string|null} allyId — upgradeAllyId's
+ * @param {number} amount — the ally's momentum owed by the upgrade
+ * @param {Actor|null} roller — the upgrading PC, who aided them
+ * @param {Array<Object>} failures — the upgrade's refused writes
+ * @returns {Promise<string|null>} the "Not applied" line, or null
+ */
+export async function payAllyMomentum(allyId, amount, roller, failures) {
+  if (!allyId || !amount) return null;
+  if (!isPlayerCharacterActor(getActor(allyId))) {
+    const { payoffReasonWords } = await import("../index.js");
+    return `${amount > 0 ? "+" : ""}${amount} momentum for the character ${roller?.name ?? "the roller"} aided — ${payoffReasonWords("no-pc", { final: true })}`;
+  }
+  await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: amount } }, failures);
+  return null;
 }
 
 /**

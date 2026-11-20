@@ -2619,11 +2619,19 @@ async function applyOutcomeEffects({
   // added to their next action roll (consumeNextMoveBonus); it was card text
   // alone (issue #322 V02). An upgrade grants what its outcome adds.
   const nextBonus = Number(next.nextMoveBonus ?? 0) - Number(orig.nextMoveBonus ?? 0);
-  // Aid Your Ally: the ally takes it (issue #325 W17).
-  const allyActor = next.beneficiary === "ally" && interpretation?.allyActorId
-    ? (game.actors?.get?.(interpretation.allyActorId) ?? null) : null;
-  const bonusTaker = isPlayerCharacterActor(allyActor) ? allyActor : rollerActor;
-  if (nextBonus > 0) {
+  // Aid Your Ally: the ally takes it (issue #325 W17). An ally the move named
+  // who is gone since — deleted, or no longer a player character — takes
+  // nothing, and nor does the roller: a Burn Momentum or Improve Result of
+  // the move gave the upgraded hit's +1 to whoever rolled (issue #364
+  // UPGRADE-ALLY-GONE-BONUS-TO-ROLLER). The card says why, in words.
+  const allyId    = next.beneficiary === "ally" && typeof interpretation?.allyActorId === "string" && interpretation.allyActorId
+    ? interpretation.allyActorId : null;
+  const allyActor = allyId ? getActor(allyId) : null;
+  const allyGone  = allyId !== null && !isPlayerCharacterActor(allyActor);
+  const bonusTaker = allyId ? allyActor : rollerActor;
+  if (nextBonus > 0 && allyGone) {
+    notApplied.push(`+${nextBonus} on the next move for the character ${rollerActor?.name ?? "the roller"} aided — ${payoffReasonWords("no-pc", { final: true })}`);
+  } else if (nextBonus > 0) {
     try {
       const granted = await grantNextMoveBonus(bonusTaker?.id ?? null, nextBonus, resolution.moveId ?? null);
       if (granted.ok) applied.push(`+${nextBonus} on ${bonusTaker?.name ?? "the roller"}'s next move`);
@@ -6963,7 +6971,10 @@ const PAYOFF_FINAL_REASONS = {
 // move card's "Not applied", a warning: the GMs' payoff card's own tables, a
 // `final` outcome's text first, and plain words for a code with neither. The
 // raw code was printed there, "(vow-gone)" (issue #364 MOVE-CARD-RAW-REASON-CODE).
-function payoffReasonWords(reason, { final = false } = {}) {
+// Exported for an upgrade's own "Not applied" line — Aid Your Ally's ally gone
+// since the move (resultUpgrade.js payAllyMomentum; issue #364
+// UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
+export function payoffReasonWords(reason, { final = false } = {}) {
   return (final ? PAYOFF_FINAL_REASONS[reason] : null) ?? PAYOFF_REASONS[reason] ?? "it could not be applied";
 }
 

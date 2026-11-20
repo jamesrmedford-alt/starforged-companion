@@ -59,6 +59,7 @@ import {
   effectsNoteHtml,
   upgradeAllyId,
   momentumShares,
+  payAllyMomentum,
   standingPriceOf,
 } from "./resultUpgrade.js";
 import {
@@ -387,10 +388,10 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences, allyId) }, failures);
   // Aid Your Ally: the strong hit's momentum is the ally's, less what the
   // recorded hit already paid them (AID-ALLY-UPGRADE).
+  // An ally gone since the move takes none of it, nor does the improver: a
+  // line for the card's "Not applied" (issue #364 UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
   const allyMomentum = momentumShares(newConsequences, allyId).ally - momentumShares(improve.originalConsequences, allyId).ally;
-  if (allyId && allyMomentum) {
-    await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: allyMomentum } }, failures);
-  }
+  const allyNotPaid  = await payAllyMomentum(allyId, allyMomentum, actor, failures);
 
   // The original outcome's pending choice is retired and the strong hit's
   // offered once (issue #311 P03); a price that stands keeps its cards, as
@@ -414,7 +415,8 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept }), improve, newConsequences) })
+  const notApplied = [...(allyNotPaid ? [allyNotPaid] : []), ...(effects.notApplied ?? [])];
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, notApplied, priceStands, priceCardsKept }), improve, newConsequences) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
