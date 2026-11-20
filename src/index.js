@@ -6872,6 +6872,8 @@ const PAYOFF_REASONS = {
 const PAYOFF_FINAL_REASONS = {
   "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
   "no-vow": "the vow is on no character's sheet any more",
+  // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
+  "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
 
 const PAYOFF_TITLES = {
@@ -6899,19 +6901,27 @@ const PAYOFF_TITLES = {
  * without one. `final`: what a Retry found it can never apply — nothing is
  * owed for it any more — told once on a card with no Retry, which says so
  * (retryPayoffSteps, issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
+ * `unreadable`: steps the card's own record makes impossible to run again
+ * ("invalid step") — told once on a card with no Retry too, but as what no
+ * Retry can apply, to be applied by hand if still owed: nothing says they are
+ * owed no longer (issue #364 PAYOFF-RETRY-INVALID-STEP-LOOP).
  * Exported for that button's GM-side handler.
  *
  * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider"|"persist", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
- *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean, final?: boolean }} card
+ *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean, final?: boolean,
+ *   unreadable?: boolean }} card
  */
-export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true, final = false }) {
+export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true, final = false, unreadable = false }) {
   const context = { source, vowName, vowId, actorId, outcome, connectionName };
   const lines = [];
   for (const f of failures) lines.push(`<li>${await describePayoffFailure(f, context)}</li>`);
   const title = (PAYOFF_TITLES[source] ?? PAYOFF_TITLES.fulfil)(context);
-  const withRetry = retryable && !final;
-  const footer = final
+  const withRetry = retryable && !final && !unreadable;
+  const one = failures.length === 1;
+  const footer = unreadable
+    ? `<p class="sf-card-hint">No Retry is offered: it would read the same record on every press. If ${one ? "this is" : "these are"} still owed, apply ${one ? "it" : "them"} by hand. Only GMs see this card.</p>`
+    : final
     ? `<p class="sf-card-hint">Nothing is owed for ${failures.length === 1 ? "this" : "these"} any more, so there is nothing to retry. Only GMs see this card.</p>`
     : withRetry
       ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
@@ -6920,7 +6930,7 @@ export async function postPayoffFailureCard({ source, vowName = null, vowId = nu
       : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card sf-payoff-failure"><strong>${escapeChatHtml(title)}</strong>`
-      + `<p>${final ? "Not applied — and no longer owed:" : "Not applied:"}</p><ul>${lines.join("")}</ul>${footer}</div>`,
+      + `<p>${unreadable ? `Not applied — and no Retry can apply ${one ? "it" : "them"}:` : final ? "Not applied — and no longer owed:" : "Not applied:"}</p><ul>${lines.join("")}</ul>${footer}</div>`,
     whisper: gmUserIds(),
     // steps: what a Retry re-runs — read from this GM-authored card, never
     // from the click (src/moves/cardActions.js applyPayoffRetry).
@@ -7112,6 +7122,11 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
+        // A closing line for a step name nothing here runs (a card another
+        // version wrote, or a damaged one): named as recorded, never as the reward.
+        if (f.final === true && typeof f.step === "string" && f.step && f.step !== "reward") {
+          return `The step this card records as “${escapeChatHtml(f.step)}” — ${why}.`;
+        }
         return `The promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""} — ${why}; nothing was given.`;
     }
   } catch (err) {
@@ -7131,7 +7146,13 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
  * like any other, so every press posted another whose Retry could not succeed
  * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). So does a
  * step whose character's sheet is gone (PC_GONE), and a reward step whose
- * vow is on no sheet (VOW_GONE). Every value comes from the GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
+ * vow is on no sheet (VOW_GONE). A step answered "invalid step" — by
+ * runPayoffStep or any runner it calls: a value out of range, a shape or a
+ * step name nothing here runs — goes on no Retry card either: the card's
+ * record never changes, so every press read it the same and posted another
+ * card whose Retry could not succeed. It is told once as what no Retry can
+ * apply (`unreadable`), never as no longer owed (issue #364
+ * PAYOFF-RETRY-INVALID-STEP-LOOP). Every value comes from the GM-authored card. Exported for src/moves/cardActions.js applyPayoffRetry.
  *
  * @param {Object} card — the failure card's module flags
  * @returns {Promise<Array<Object>>} the steps that failed again (a `final` one is not among them)
@@ -7142,6 +7163,9 @@ export async function retryPayoffSteps(card) {
   const failures = [];
   // What a Retry can never apply (`final`): told, with no Retry.
   const settled = [];
+  // What no Retry can run — the card's record of the step is not valid: told
+  // once too, as not applied and to be applied by hand if still owed.
+  const unreadable = [];
   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
     const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
     // A PC's box XP is on no ledger: only this card's Retry gives it.
@@ -7151,6 +7175,8 @@ export async function retryPayoffSteps(card) {
     if (res?.ok) {
       if (onLedger && !res.skipped) await recordPayoffStep(copies, ledgerStep);
       failures.push(...(res.xpFailures ?? []));
+    } else if (res?.reason === "invalid step") {
+      unreadable.push({ ...s, ...res, final: true, step: s?.step });
     } else if (res?.final === true) {
       settled.push({ ...s, ...res, step: s?.step });
     } else {
@@ -7162,6 +7188,12 @@ export async function retryPayoffSteps(card) {
       source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
       outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures: settled, final: true,
     }).catch(err => console.warn(`${MODULE_ID} | payoff retry: the card for what is no longer owed failed:`, err?.message ?? err));
+  }
+  if (unreadable.length) {
+    await postPayoffFailureCard({
+      source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
+      outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures: unreadable, unreadable: true,
+    }).catch(err => console.warn(`${MODULE_ID} | payoff retry: the card for what no Retry can run failed:`, err?.message ?? err));
   }
   if (failures.length) {
     await postPayoffFailureCard({
@@ -7189,7 +7221,9 @@ const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
 const VOW_GONE = Object.freeze({ ok: false, final: true, reason: "no-vow" });
 
 // Run one failed step again. The card is GM-authored, but its values are still
-// checked: a legacy is one of the three tracks, 1–40 ticks.
+// checked: a legacy is one of the three tracks, 1–40 ticks. A record that
+// fails its check answers "invalid step", here and in every runner this calls:
+// the Retry reads that answer as one no later press can change (retryPayoffSteps).
 async function runPayoffStep(s, card, copies) {
   switch (s?.step) {
     case "legacy": {

@@ -645,6 +645,15 @@ whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
 copy by the card's vow id nor its exact name, fulfilled copies counting as
 there, so a vow fulfilled since is still paid — issue #364
 PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
+A step the Retry answers "invalid step" for — its record on the card fails
+the runner's check (a value out of range, a shape, a step name nothing
+runs), and the record never changes — goes on no Retry card either, but is
+not "no longer owed": the GMs are told once on a second kind of closing card
+(`postPayoffFailureCard({ unreadable: true })`, `retryable: false`, "Not
+applied — and no Retry can apply it", to be applied by hand if still owed —
+issue #364 PAYOFF-RETRY-INVALID-STEP-LOOP). The session notes that name
+what still waits on a Retry (`outstandingSessionMomentum` /
+`outstandingSessionClocks`) read only cards that carry one.
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC

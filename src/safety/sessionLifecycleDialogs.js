@@ -1105,7 +1105,9 @@ function outstandingSessionClocks(sessionId) {
   const names = new Set();
   for (const m of game.messages?.contents ?? []) {
     const f = m?.flags?.[MODULE_ID];
-    if (!f?.payoffFailureCard || f.resolved || f.source !== "sessionClocks") continue;
+    // A card with no Retry (`retryable: false`) is a closing note — a `clocks`
+    // step no Retry can run (index.js retryPayoffSteps): no Retry saves it.
+    if (!f?.payoffFailureCard || f.resolved || f.retryable === false || f.source !== "sessionClocks") continue;
     for (const s of f.steps ?? []) {
       if (s?.step !== "clocks" || s.sessionId !== sessionId) continue;
       for (const c of s.clocks ?? []) names.add(String(c?.name ?? "a clock"));
