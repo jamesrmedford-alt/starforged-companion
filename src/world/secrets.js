@@ -166,7 +166,9 @@ let _plansSocketInstalled = false;
  * chooses (selectRelevantSkeletons: this scene's, its frame's, the entities
  * and names the message matches) — on the GM's client, as records holding
  * only what UNREVEALED renders: never their oracle rolls, re-roll, clock or
- * provenance. None with the narrative skeleton off. Never throws.
+ * provenance — nor which narration played a step or showed a clue (the undo's
+ * marks, issue #364 PLAN-RELAY-CARRIES-PLAYED-MARK). None with the narrative
+ * skeleton off. Never throws.
  *
  * @param {{ text?: string, matchedEntityIds?: string[] }} ctx
  * @returns {Object[]}
@@ -183,8 +185,11 @@ function plansInPlayFor({ text = "", matchedEntityIds = [] } = {}) {
     }).filter(r => r.truth).map(r => ({
       id: r.id, kind: r.kind, subject: r.subject, aliases: r.aliases, question: r.question, status: r.status,
       truth: r.truth, truthRevealed: r.truthRevealed, wants: r.wants, knows: r.knows,
-      // A clue as UNREVEALED renders it: not the narration that showed it.
-      escalation: r.escalation, clues: r.clues.map(c => ({ id: c.id, text: c.text, revealed: c.revealed })), resolutions: r.resolutions,
+      // A step and a clue as UNREVEALED renders them — not the narration
+      // that played or showed it (`playedBy`, `revealedBy`: the store's
+      // bookkeeping for the undo; issue #364 PLAN-RELAY-CARRIES-PLAYED-MARK).
+      escalation: r.escalation.map(e => ({ id: e.id, text: e.text, done: e.done })),
+      clues: r.clues.map(c => ({ id: c.id, text: c.text, revealed: c.revealed })), resolutions: r.resolutions,
     }));
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the plans in play could not be read:`, err?.message ?? err);
