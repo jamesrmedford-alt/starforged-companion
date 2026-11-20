@@ -307,7 +307,16 @@ test the victory cards already in chat that offer "🤝 Deepen your bond with
 (`cardActions.retireFightVowDeepenFor`): the button renders disabled on every
 client and says the card was deleted — pressed, it reported "not found"
 (issue #364 WON-FIGHT-CARD-DELETED-NPC). The X-Card's own delete of a narration's NPC passes
-`{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice.
+`{ [MODULE_ID]: { connectionTornDown: true } }`, so the hook runs nothing twice
+— the X-Card's teardown is its own (it deletes the bond Items before the card,
+keeps the NPC when one is marked, and runs in step with its finish). The two
+share the one step that clears what names the NPC
+(`connection.clearDeletedConnectionReferences`: the vow links, the GMs'
+notice, the victory cards' Deepen): the X-Card's delete skipped it, so a vow
+linked to the NPC since its narration — the vow card's Link writes the vow,
+not the NPC's record, so the NPC was still "unused" and went with the X-Card —
+kept naming a connection that no longer existed (issue #364
+XCARD-NPC-DELETE-SKIPS-TEARDOWN).
 
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
