@@ -704,14 +704,18 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
       console.warn(`${MODULE_ID} | session roll: summary finalise failed:`, err?.message ?? err);
     }
   }
-  // Its Session Log page's story, when an X-Card after End emptied it, is
-  // rebuilt from the summary just brought up to date
-  // (SESSION-LOG-STORY-NOT-REBUILT). Fail-open.
+  // Its Session Log page's story is rebuilt from the summary just brought up
+  // to date when an X-Card after End emptied it (SESSION-LOG-STORY-NOT-REBUILT),
+  // or when it was written before the newest narration that summary tells — a
+  // round narrated after End a Session but before this mint, filed under the
+  // session still current (issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT).
+  // Fail-open.
   const closingSummary = campaignState.sessionSummary;
   if (closing && caughtUp && closingSummary?.sessionId === closing && closingSummary.text?.trim()) {
     try {
       const { restoreSessionLogStory } = await import("../world/worldJournal.js");
-      await restoreSessionLogStory(closing, closingSummary.text);
+      const { sessionStoryThrough } = await import("../narration/narrator.js");
+      await restoreSessionLogStory(closing, closingSummary.text, { through: sessionStoryThrough(closing) });
     } catch (err) {
       console.warn(`${MODULE_ID} | session roll: rebuilding the Session Log's story failed:`, err?.message ?? err);
     }

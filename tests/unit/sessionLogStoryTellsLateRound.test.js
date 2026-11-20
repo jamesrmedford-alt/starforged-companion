@@ -128,6 +128,43 @@ async function lateNarration(narrationId, summary) {
   return late;
 }
 
+describe('issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT — a narration posted after End a Session but before the next session is minted', () => {
+  // Send now on a round of the ended session, before the next world load: the
+  // session is still the current one, so its card is filed under it as an
+  // ordinary card — the late-card catch-up never sees it. The mint's summary
+  // tells it; the page's story is rebuilt from that summary when the story
+  // was written before the newest card it tells.
+  it('reaches the page\'s story at the mint', async () => {
+    await narrate(stored(), 'nar-early', 'Kira digs through the rubble of the Bleakhold mine.');
+    await ChatMessage.create({ content: 'We head back to the ship.', flags: {} });   // someone speaks
+    syncChat();
+    await applyEndSession({}, { local: true });
+    await until(() => ChatMessage._created.some(m => m.flags?.[MODULE_ID]?.sessionVignetteCard));
+    await ticks();
+    syncChat();
+    expect(sessionLogSummary()?.narrative, 'setup: End wrote the story so far').toBe(AT_END);
+
+    await new Promise(r => setTimeout(r, 5));
+    replies.summary = WITH_LATE;
+    const late = await narrate(stored(), 'nar-late', 'The drones corner Kira in the vent.');
+    expect(late.flags[MODULE_ID].sessionId, 'setup: filed under the session still current').toBe(SESSION);
+    expect(stored().currentSessionId, 'setup: no mint yet').toBe(SESSION);
+
+    const cs = { ...stored(), sessionEndedId: SESSION };
+    expect(await rollSessionIfDue(cs), 'setup: the load mints the next session').toBe(true);
+    game.settings._store.set(KEY, cs);
+    await until(() => sessionLogSummary()?.narrative === WITH_LATE);
+    const page = sessionLogSummary();
+    expect(page.narrative, 'the story so far tells the narration posted before the mint').toBe(WITH_LATE);
+    expect(Date.parse(page.writtenAt), 'stamped no earlier than the card it now tells').toBeGreaterThanOrEqual(late.timestamp);
+  }, 20_000);
+
+  it('control: with no narration after End, the mint leaves the page as End wrote it', async () => {
+    await sessionEndedAndTheNextMinted();
+    expect(sessionLogSummary()?.narrative).toBe(AT_END);
+  }, 20_000);
+});
+
 describe('issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY — a narration posted late into the session End wrote the Session Log of', () => {
   it('reaches the page\'s story, which the snapshot tells once LAST SESSION has moved on', async () => {
     await sessionEndedAndTheNextMinted();

@@ -4004,6 +4004,23 @@ function storyCardsThrough(cards) {
 }
 
 /**
+ * The newest time (ms) among a session's narrator cards its Session Log story
+ * is made from (storyCardsThrough) — for the mint, which rebuilds the closing
+ * session's story from the summary it has just finalised (session/lifecycle.js
+ * rollSessionIfDue → worldJournal.js restoreSessionLogStory's `through`). A
+ * Batch Mode round narrated after End a Session but before the next session's
+ * mint is filed under the session still current, so the late-card catch-up
+ * never sees it; the mint's summary tells it, and without this time the page
+ * kept End's story without it (issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT).
+ *
+ * @param {string} sessionId
+ * @returns {number|null}
+ */
+export function sessionStoryThrough(sessionId) {
+  return typeof sessionId === 'string' && sessionId ? storyCardsThrough(sessionNarratorCards(sessionId)) : null;
+}
+
+/**
  * LAST SESSION for a session the mint closed out short (issue #347 AB15): the
  * mint's summary finalise is fail-open, and a session closed on a client with
  * no key yet — keys are per browser: another device, cleared site data, a

@@ -917,7 +917,10 @@ newest card the summary was made from (`worldJournal.js`
 `restoreSessionLogStory`'s `through` against the page's `writtenAt`, stamped
 so the same cards never rewrite it twice; End a Session's closing vignette
 left out — issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY: End's story stood,
-without the round); an X-Card on such a narration drops
+without the round; the mint rebuilds the closing session's story the same way
+from the summary it finalises, for a round narrated after End but before the
+mint — `sessionStoryThrough`, issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT);
+an X-Card on such a narration drops
 that text and marks the session the same way, `dropLastSessionTelling`; when
 the mint carried no summary for the card's session, LAST SESSION is left as
 it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's
