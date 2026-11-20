@@ -910,7 +910,14 @@ a Batch Mode round narrated late, filed under its own session — marks it
 again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
 text again from that session's cards, one summary call per late card, what a
 mint folded onto it from a session nobody began kept
-(`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
+(`lifecycle.js` `lastSessionTextParts`), and that session's Session Log
+"Story so far" — the snapshot's memory of it once a later mint moves LAST
+SESSION on — is rewritten with the same text when it was written before the
+newest card the summary was made from (`worldJournal.js`
+`restoreSessionLogStory`'s `through` against the page's `writtenAt`, stamped
+so the same cards never rewrite it twice; End a Session's closing vignette
+left out — issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY: End's story stood,
+without the round); an X-Card on such a narration drops
 that text and marks the session the same way, `dropLastSessionTelling`; when
 the mint carried no summary for the card's session, LAST SESSION is left as
 it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's

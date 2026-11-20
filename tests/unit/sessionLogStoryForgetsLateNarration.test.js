@@ -125,8 +125,10 @@ async function lateNarrationJoinsLastSession() {
   expect(late.flags[MODULE_ID].sessionId, 'setup: filed under the ended session').toBe(SESSION);
   await until(() => stored().previousSessionSummary?.text === WITH_LATE);
   expect(stored().previousSessionSummary, 'setup: LAST SESSION tells the late narration').toMatchObject({ sessionId: SESSION, text: WITH_LATE });
-  // End's story on the page was not written from it, and stands.
-  expect(sessionLogSummary()?.narrative).toBe(AT_END);
+  // End's story on the page was written before it: it tells it now too (issue #364
+  // LATE-ROUND-NOT-IN-SESSION-LOG-STORY — End's story stood, without it).
+  await until(() => sessionLogSummary()?.narrative === WITH_LATE);
+  expect(sessionLogSummary()?.narrative).toBe(WITH_LATE);
   return late;
 }
 
@@ -201,6 +203,6 @@ describe('issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — an X-Card on a narration
     expect(opening.flags[MODULE_ID].xCarded).toBe(true);
     expect(stored().previousSessionSummary).toMatchObject({ sessionId: SESSION, text: WITH_LATE });
     expect(stored().unsummarisedSession ?? null).toBeNull();
-    expect(sessionLogSummary()?.narrative).toBe(AT_END);
+    expect(sessionLogSummary()?.narrative).toBe(WITH_LATE);
   });
 });

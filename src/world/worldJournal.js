@@ -2235,25 +2235,40 @@ export async function retractSessionLogSummary(sessionId, { narrative = false } 
  * mint regenerates that session's summary from the cards that remain for
  * LAST SESSION (rollSessionIfDue's finalize, or catchUpUnsummarisedSession
  * later), and this is that write's mirror on the page — the page was left
- * without its story for good. Only a story the X-Card emptied, and only
- * while the page still has none. A journal write: the canonical GM's (both
- * callers are). Never throws.
+ * without its story for good. A story the X-Card emptied, while the page
+ * still has none; and a story written before the newest narration the
+ * summary was made from (`through`, that card's time, against the page's
+ * `writtenAt`): a Batch Mode round narrated after End a Session wrote the page
+ * is summarised into LAST SESSION by the catch-up, and the page — the
+ * snapshot's memory of the session once a later mint moves LAST SESSION on
+ * (worldSnapshot.js memoryUnits) — told it without the round (issue #364
+ * LATE-ROUND-NOT-IN-SESSION-LOG-STORY). That rewrite is stamped (`writtenAt`,
+ * no earlier than `through`), so a later one made from the same cards leaves
+ * the page alone. A journal write: the canonical GM's (both callers are).
+ * Never throws.
  *
  * @param {string|null} sessionId — the closing session
- * @param {string} text — its summary, regenerated without the removed beat
+ * @param {string} text — its summary, regenerated without the removed beat or with the late one
+ * @param {{ through?: number|null }} [opts] — the newest narration's time (ms) the summary was made from
  * @returns {Promise<boolean>} whether the page was rewritten
  */
-export async function restoreSessionLogStory(sessionId, text) {
+export async function restoreSessionLogStory(sessionId, text, { through = null } = {}) {
   const story = typeof text === "string" ? text.trim() : "";
   if (typeof sessionId !== "string" || !sessionId || !story) return false;
   try {
     const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
     const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
     const summary = flag?.summary;
-    if (!summary?.writtenAt || summary.narrativeXCarded !== true) return false;
-    if (typeof summary.narrative === "string" && summary.narrative.trim()) return false;
+    if (!summary?.writtenAt) return false;
+    const told      = typeof summary.narrative === "string" ? summary.narrative.trim() : "";
+    const emptied   = summary.narrativeXCarded === true && !told;
+    const writtenAt = Date.parse(summary.writtenAt);
+    const behind    = summary.narrativeXCarded !== true && Number.isFinite(through)
+      && (!Number.isFinite(writtenAt) || writtenAt < through) && told !== story;
+    if (!emptied && !behind) return false;
     const rebuilt = { ...summary, narrative: story };
     delete rebuilt.narrativeXCarded;
+    if (Number.isFinite(through)) rebuilt.writtenAt = new Date(Math.max(Date.now(), through)).toISOString();
     return !!(await persistSessionLogPage(page, { ...flag, summary: rebuilt }));
   } catch (err) {
     console.warn(`${MODULE_ID} | the Session Log's story could not be rebuilt:`, err?.message ?? err);

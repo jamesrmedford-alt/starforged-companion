@@ -354,7 +354,10 @@ layers. This file is the never-break list.
    `unsummarisedSession` again and the catch-up makes its text again from the
    session's cards, on the canonical GM (`bringLastSessionUpToDate` →
    `catchUpUnsummarisedSession`), keeping what a mint folded onto it from a
-   session nobody began (`lastSessionTextParts`); an X-Card that removes such
+   session nobody began (`lastSessionTextParts`), and rewrites that
+   session's Session Log story with it when the story was written before the
+   newest card it was made from (`restoreSessionLogStory`'s `through`, issue
+   #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY); an X-Card that removes such
    a narration drops the session's own text and marks it the same way
    (`dropLastSessionTelling`); and when the mint carried no summary for the
    card's session nothing is made up (issue #364

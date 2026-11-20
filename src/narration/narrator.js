@@ -3986,6 +3986,24 @@ export async function finalizeSessionSummary(campaignState) {
 let _sessionCatchUp = null;
 
 /**
+ * The newest time (ms) among a session's narrator cards that its Session Log
+ * story is made from — End a Session's closing vignette left out: End writes
+ * the page before it posts, and the page's story is End's summary
+ * (finalizeSessionSummary leaves it out the same way). Null when none has a
+ * time (worldJournal.js restoreSessionLogStory — issue #364
+ * LATE-ROUND-NOT-IN-SESSION-LOG-STORY).
+ *
+ * @param {Object[]} cards — sessionNarratorCards'
+ * @returns {number|null}
+ */
+function storyCardsThrough(cards) {
+  const times = (cards ?? [])
+    .filter(m => m?.flags?.[MODULE_ID]?.vignetteKind !== 'npc_end')
+    .map(messageTime).filter(Number.isFinite);
+  return times.length ? Math.max(...times) : null;
+}
+
+/**
  * LAST SESSION for a session the mint closed out short (issue #347 AB15): the
  * mint's summary finalise is fail-open, and a session closed on a client with
  * no key yet — keys are per browser: another device, cleared site data, a
@@ -4031,7 +4049,11 @@ export function catchUpUnsummarisedSession() {
   _sessionCatchUp = (async () => {
     try {
       const xCardPlaysAtStart = xCardPlayCount();
-      const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
+      const cards = sessionNarratorCards(pending.sessionId);
+      const hasCards = cards.length > 0;
+      // The newest narration the summary is made from: a Session Log story
+      // written before it is rewritten with the summary (below).
+      const through = storyCardsThrough(cards);
       const text = hasCards
         ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
             { forceRefresh: true, persist: false })
@@ -4074,11 +4096,13 @@ export function catchUpUnsummarisedSession() {
       const done = await write;
       if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
       // Its Session Log page's story, when an X-Card emptied it, too
-      // (SESSION-LOG-STORY-NOT-REBUILT).
+      // (SESSION-LOG-STORY-NOT-REBUILT) — and when it was written before a
+      // narration this summary tells: a round narrated late, after End wrote
+      // the page (issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY).
       if (done && text?.trim()) {
         try {
           const { restoreSessionLogStory } = await import('../world/worldJournal.js');
-          await restoreSessionLogStory(pending.sessionId, text);
+          await restoreSessionLogStory(pending.sessionId, text, { through });
         } catch (err) {
           console.warn(`${MODULE_ID} | narrator: rebuilding the Session Log's story failed:`, err?.message ?? err);
         }
