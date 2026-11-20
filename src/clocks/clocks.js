@@ -661,9 +661,9 @@ export async function rearmClock(clockId) {
  *   the clocks the reverted price filled; the narration of each one's trigger vignette, by clock
  *   id; those of them whose vignette stands written on the table; and an object this fills in
  *   with what was done to each clock, by clock id, with the clock's fill as it now stands
- * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string }>>}
+ * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension", pacedBy?: string, clockStands?: true }>>}
  *   the clocks taken out of their triggered state, and those whose own trigger vignette is to be
- *   struck by its id (`pacedBy`) with the clock left as it is (empty when none)
+ *   struck by its id (`pacedBy`) with the clock left as it is (`clockStands`) (empty when none)
  */
 export async function revertTensionClocksForBurn(ids, { triggered = [], vignettes = null, narrated = [], fates = null } = {}) {
   return serialiseClockWrite(async () => {
@@ -694,7 +694,9 @@ export async function revertTensionClocksForBurn(ids, { triggered = [], vignette
           // Its vignette was written and its pacing has been replaced since —
           // the clock triggered again: the vignette goes by its id, the clock
           // stands as the later trigger left it.
-          untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy: named });
+          // `clockStands`: its struck card's note must not say the clock was
+          // rewound (issue #364 PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+          untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension", pacedBy: named, clockStands: true });
           say(c, "left");
           continue;
         } else if ((c.filled ?? 0) > target) {

@@ -1118,11 +1118,22 @@ const VIGNETTE_SUPERSEDED_NOTES = {
   improve: "Superseded — the result was improved and the clock rewound: this has not happened.",
 };
 
-/** A clock vignette card's prose struck through, with a note saying why (idempotent). */
-function supersededVignetteContent(content, kind) {
+// The note on a vignette struck with its clock left as it stands — the clock
+// triggered again since, and nothing was rewound (clocks.js
+// revertTensionClocksForBurn `clockStands`): the card said "the clock
+// rewound" beside a clock the reversal had not touched (issue #364
+// PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+const VIGNETTE_SUPERSEDED_NOTES_CLOCK_STANDS = {
+  burn:    "Superseded — momentum was burned: this has not happened.",
+  improve: "Superseded — the result was improved: this has not happened.",
+};
+
+/** A clock vignette card's prose struck through, with a note saying why (idempotent); `clockStands` — its clock was not rewound. */
+function supersededVignetteContent(content, kind, clockStands = false) {
   const html = String(content ?? "");
   if (html.includes("sf-narration-superseded")) return html;
-  const note = `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${VIGNETTE_SUPERSEDED_NOTES[kind] ?? VIGNETTE_SUPERSEDED_NOTES.burn}</div>`;
+  const notes = clockStands ? VIGNETTE_SUPERSEDED_NOTES_CLOCK_STANDS : VIGNETTE_SUPERSEDED_NOTES;
+  const note = `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${notes[kind] ?? notes.burn}</div>`;
   const struck = html.replace(/<em>([\s\S]*?)<\/em>/,
     (_full, inner) => `<em class="sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></em>`);
   return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${note}</div>`) : struck + note;
@@ -1184,15 +1195,22 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     // reports the price's own vignette under the same key, from its receipt
     // (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
     const paced = new Map();
+    // Those of them whose clock the rewind left as it stands: their note
+    // does not say it was rewound (issue #364 PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+    const stands = new Set();
     for (const c of clocks) {
       const id = vignetteClockId(c);
-      if (id && typeof c?.pacedBy === "string" && c.pacedBy) paced.set(id, c.pacedBy);
+      if (id && typeof c?.pacedBy === "string" && c.pacedBy) {
+        paced.set(id, c.pacedBy);
+        if (c.clockStands === true) stands.add(id);
+      }
     }
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
     const cards = [];
+    const standing = [];
     for (const clockId of clockIds) {
       if (paced.has(clockId)) {
         const card = newestFirst.find(m => {
@@ -1200,7 +1218,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
           return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
             && f.narrationId === paced.get(clockId) && f.xCarded !== true && f.burnSuperseded !== true;
         });
-        if (card) cards.push(card);
+        if (card) (stands.has(clockId) ? standing : cards).push(card);
         continue;
       }
       // Its vignette is still being written: it is narrated only while the
@@ -1223,6 +1241,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
       if (card) cards.push(card);
     }
     await strikeTriggerVignetteCards(cards, kind, resolutionId);
+    await strikeTriggerVignetteCards(standing, kind, resolutionId, { clockStands: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
   }
@@ -1235,14 +1254,18 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
  * rolling summary made from them dropped first (issue #345 AA24), each card
  * flagged `burnSuperseded` (naming the upgraded resolution, `supersededFor`,
  * when known — else marked `lateStruck` for the upgrade to name), its prose
- * struck, and what its sidecar wrote retracted. Canonical GM. Never throws.
+ * struck, and what its sidecar wrote retracted. The note says the clock was
+ * rewound unless it was left as it stands (`clockStands` — a clock that
+ * triggered again since; issue #364 PLAN-VIGNETTE-NOTE-SAYS-REWOUND).
+ * Canonical GM. Never throws.
  *
  * @param {Object[]} cards — ChatMessage documents
  * @param {"burn"|"improve"} kind
  * @param {string|null} [resolutionId] — the resolution upgraded, when known
+ * @param {{ clockStands?: boolean }} [opts] — the cards' clock was not rewound
  * @returns {Promise<void>}
  */
-export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null) {
+export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null, { clockStands = false } = {}) {
   const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
   if (!list.length) return;
   try {
@@ -1258,7 +1281,7 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
         ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : { [`flags.${MODULE_ID}.lateStruck`]: true }),
-        content: supersededVignetteContent(card.content, kind),
+        content: supersededVignetteContent(card.content, kind, clockStands),
       }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
       const narrationId = card.flags?.[MODULE_ID]?.narrationId;
       if (typeof narrationId === "string" && narrationId) narrationIds.push(narrationId);
