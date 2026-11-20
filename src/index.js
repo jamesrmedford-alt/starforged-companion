@@ -7211,7 +7211,10 @@ async function runPayoffStep(s, card, copies) {
       // has closed it since (a Keep, a later move, a round's close) still does.
       const { openRecordedUpgrades } = await import("./moves/resultUpgrade.js");
       const card = typeof s.messageId === "string" ? (game.messages?.get?.(s.messageId) ?? null) : null;
-      if (!card) return { ok: false, reason: "card-gone" };
+      // The move card deleted since: no card to open, now or on any later
+      // press — `final`, told once with no Retry. It went on a fresh Retry
+      // card each time (issue #364 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP).
+      if (!card) return { ok: false, final: true, reason: "card-gone" };
       return openRecordedUpgrades(card, s.kinds);
     }
     case "rider":
