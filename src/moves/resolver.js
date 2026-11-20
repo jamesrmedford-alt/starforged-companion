@@ -215,16 +215,6 @@ export function applyMomentumBurn(momentum, challengeDice, markedImpactCount) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Map a move ID + outcome to its specific mechanical consequences.
- *
- * Returns a consequences object matching MoveResolutionSchema.consequences.
- * Where a move offers player choice (e.g. "take +2 momentum OR add +1 on next move"),
- * we return the first/default option and flag it as a choice in otherEffect.
- * The confirmation UI can present the choice before finalising.
- *
- * Source: Reference Guide pp.9-25 (each move's outcome text)
- */
-/**
  * Aid Your Ally's consequences (issue #325 W17): Secure an Advantage's — Gain
  * Ground's in a fight — with a hit's benefits for the ally (`beneficiary:
  * "ally"`: the momentum, the next-move bonus and a choice card's benefits are
@@ -255,6 +245,16 @@ export function aidYourAllyConsequences(outcome, isMatch, inFight) {
   return out;
 }
 
+/**
+ * Map a move ID + outcome to its specific mechanical consequences.
+ *
+ * Returns a consequences object matching MoveResolutionSchema.consequences.
+ * Where a move offers player choice (e.g. "take +2 momentum OR add +1 on next move"),
+ * we return the first/default option and flag it as a choice in otherEffect.
+ * The confirmation UI can present the choice before finalising.
+ *
+ * Source: Reference Guide pp.9-25 (each move's outcome text)
+ */
 export function mapConsequences(moveId, outcome, isMatch) {
   const handler = CONSEQUENCE_MAP[moveId];
   if (!handler) {
@@ -1829,16 +1829,6 @@ export function missPaysPrice(moveId) {
 }
 
 /**
- * A move's oracle seeds with the Pay the Price its pipeline rolled for the
- * card, so the narration depicts the price the table is shown and pays — one
- * roll per result (issue #321 U03). A new object; `seeds` is not changed.
- *
- * @param {Object|null} seeds — the resolution's oracleSeeds (null when none)
- * @param {string} moveId
- * @param {string|null} price — the card's Pay the Price result
- * @returns {Object|null}
- */
-/**
  * The Pay the Price a miss's choice holds, rolled once (SOJOURN-PTP-ADVISORY):
  * a miss whose play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but
  * that routes none — the price is one of its choices, an enumerated option
@@ -1944,6 +1934,16 @@ export function priceChoiceOf(prompt, price) {
   return { price: text, stated: price.stated === true, instead };
 }
 
+/**
+ * A move's oracle seeds with the Pay the Price its pipeline rolled for the
+ * card, so the narration depicts the price the table is shown and pays — one
+ * roll per result (issue #321 U03). A new object; `seeds` is not changed.
+ *
+ * @param {Object|null} seeds — the resolution's oracleSeeds (null when none)
+ * @param {string} moveId
+ * @param {string|null} price — the card's Pay the Price result
+ * @returns {Object|null}
+ */
 export function withPayThePriceSeed(seeds, moveId, price) {
   if (!price) return seeds ?? null;
   const base = seeds ?? { results: [], names: [], context: moveId };

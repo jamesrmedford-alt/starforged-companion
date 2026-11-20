@@ -45,9 +45,6 @@ function orphanedDocblocks() {
 // Known when the scan was written (issue #364): each docblock below has drifted
 // off its function. Move it back and delete its line here.
 const KNOWN = [
-  "src/moves/resolver.js — A move's oracle seeds with the Pay the Price its pipeline rolled for the",
-  "src/moves/resolver.js — Map a move ID + outcome to its specific mechanical consequences.",
-  "src/moves/sufferCard.js — True when an \"any\" card cannot take this suffer move: one the prompt",
   "src/narration/narrator.js — Build the active-sector anchor block for the narrator system prompt.",
   "src/narration/narrator.js — Short notice posted when a paced narration — a typed line the pacing",
   "src/narration/narrator.js — The narrator's system-prompt context is assembled in exactly ONE place: here.",

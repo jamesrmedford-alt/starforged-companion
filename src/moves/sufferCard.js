@@ -199,6 +199,11 @@ export function vehicleChoicesOf(actor, executorOpts = {}) {
   return { vehicleCount: vehicleChoices.length, vehicleChoices };
 }
 
+/** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
+function clearTracksOf(prompt) {
+  return (Array.isArray(prompt?.clearTracks) ? prompt.clearTracks : []).filter(t => typeof t?.id === "string" && t.id);
+}
+
 /**
  * True when an "any" card cannot take this suffer move: one the prompt
  * excludes (a redirected loss — sufferExecutor.sacrificeResources),
@@ -207,11 +212,6 @@ export function vehicleChoicesOf(actor, executorOpts = {}) {
  * Companion Takes a Hit / Withstand Damage with no companion / vehicle to
  * take it (issue #362 AC28).
  */
-/** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
-function clearTracksOf(prompt) {
-  return (Array.isArray(prompt?.clearTracks) ? prompt.clearTracks : []).filter(t => typeof t?.id === "string" && t.id);
-}
-
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
   // A suffer move with nothing to suffer it pays nothing: no companion (or
