@@ -619,7 +619,14 @@ target (`swearSharedVowForAll`). The plan is about the NPC card by id
 (`registry.iterEntityDocuments`), its rolls the record's `goal` and `role`, a
 Character Disposition and an Action + Theme for what they hide; its truth is
 decided by the next narration they are in play for (DECIDE NOW in [6.6]
-UNREVEALED — an entity matched, or made in this scene). One plan an NPC. The
+UNREVEALED — an entity matched, or made in this scene). One plan an NPC. A
+Burn Momentum or Improve Result that supersedes the Make a Connection's
+narration takes back that narration's other plans and keeps this one with
+the card, as filed (`resultUpgrade.plansKeptThroughSupersede` →
+`worldJournal.undoNarrationEntries`' `keepPlanAbout` — a supersede deletes no
+connection, and nothing files an agenda again: issue #364
+BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA); only the X-Card, which removes the
+card, takes it. The
 Entities panel marks the card's row with the GM-only ◆ (`plannedSubjects`).
 What an NPC hides lives in that plan, not on the record (`secrets` stays
 retired — decisions.md, The narrative skeleton).

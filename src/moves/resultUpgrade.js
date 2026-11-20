@@ -1071,11 +1071,43 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 }
 
 /**
+ * Which hidden plans a superseded narration made stay when it is taken back
+ * (worldJournal.js undoNarrationEntries `keepPlanAbout`): the ones about an
+ * entity's card that is still there — the agenda a Make a Connection hit's
+ * capture filed for the NPC it created (secrets.js planNpcAgenda). A
+ * supersede deletes no card, unlike the X-Card, and an agenda is filed only
+ * where an NPC is created: taken back with the narration, it was filed by
+ * nothing again, and the NPC had none for the rest of the campaign (issue
+ * #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA). The plan is about the card,
+ * not about what the struck narration told. A plan about a name, a scene, a
+ * track or a vow is the narration's own telling — a price's new enemy, a
+ * question it posed, what its move asked it to decide — and goes with it; the
+ * re-narration is asked for its move's again (`skeletonRequests`). Told by
+ * the plan's subject alone: the plan model is not this module's to import
+ * (secretsStayHidden.test.js). Null when the cards cannot be read: every
+ * plan is then taken back, as before. Never throws.
+ *
+ * @param {string} label — for the log
+ * @returns {Promise<((subject: Object) => boolean)|null>}
+ */
+async function plansKeptThroughSupersede(label) {
+  try {
+    const { resolveEntityById } = await import("../entities/registry.js");
+    return (subject) => subject?.type === "entity" && typeof subject.id === "string" && !!subject.id && !!resolveEntityById(subject.id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the cards the superseded narration's plans are about could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * A superseded narration's plan writes and countdown clocks, taken back as an
  * X-Card on it takes them (worldJournal.js undoNarrationEntries, the Secrets
  * category alone; clocks.js removeClocksMadeBy) — and, with a truth it
  * revealed, the Lore entry that reveal filed, which mirrors the plan
- * (undoRevealedTruthLore). Canonical GM. Never throws.
+ * (undoRevealedTruthLore). But for a plan it filed about a card that stays:
+ * that plan stays too, as filed (plansKeptThroughSupersede). Canonical GM.
+ * Never throws.
  *
  * @param {string[]} ids — the superseded narrations
  * @param {string} label — for the log
@@ -1090,14 +1122,15 @@ async function undoSupersededPlans(ids, label) {
   let plansInPlay = null;
   try {
     const { undoNarrationEntries, undoRevealedTruthLore, hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
-    const undone = await undoNarrationEntries(ids, { categories: ["secrets"] });
+    const keepPlanAbout = await plansKeptThroughSupersede(label);
+    const undone = await undoNarrationEntries(ids, { categories: ["secrets"], keepPlanAbout });
     // A truth they revealed is hidden again: the Lore entry that reveal filed
     // is the plan's truth mirrored, and goes back with it — that entry alone,
     // the rest of their World Journal stands (issue #364
     // SUPERSEDED-REVEAL-LORE-STANDS; decisions.md, issue #338 D8).
     await undoRevealedTruthLore(ids);
     owed = Array.isArray(undone?.stepsTakenBack) ? undone.stepsTakenBack : [];
-    plansInPlay = hiddenPlansInPlayWithout(ids);
+    plansInPlay = hiddenPlansInPlayWithout(ids, { keepPlanAbout });
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
@@ -1162,9 +1195,11 @@ async function clocksWhosePlanIsGone(vignettes) {
     const { hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
     const { planInPlayFor } = await import("../clocks/planClockPacing.js");
     const clocks = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.clocks ?? [];
+    // Read as the supersede of that vignette will leave them (undoSupersededPlans).
+    const keepPlanAbout = await plansKeptThroughSupersede("upgrade");
     return named.filter(([clockId, narrationId]) => {
       const clock = clocks.find(c => c?._id === clockId) ?? null;
-      return !!clock && !planInPlayFor(clock, hiddenPlansInPlayWithout([narrationId]));
+      return !!clock && !planInPlayFor(clock, hiddenPlansInPlayWithout([narrationId], { keepPlanAbout }));
     }).map(([clockId]) => clockId);
   } catch (err) {
     console.warn(`${MODULE_ID} | upgrade: the plans behind the rewound clocks could not be read:`, err?.message ?? err);

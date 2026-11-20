@@ -1445,17 +1445,25 @@ export async function appendSessionLogBeat(campaignState, beat) {
  * is stamped with the narration and goes by that stamp, as it always did;
  * with the Lore category left out (a supersede), the reveal's Lore entry is
  * the caller's to take back (undoRevealedTruthLore).
+ * A plan they made is kept instead of deleted when the caller says what it is
+ * about outlives them (`keepPlanAbout` — a supersede deletes no NPC card,
+ * issue #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA) and they filed it with
+ * its rolls alone: as they filed it, what they did to it since taken back by
+ * the marks above (planKeptAsFiled).
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
  *
  * @param {string[]} narrationIds
- * @param {{ categories?: string[]|null }} [opts] — the categories to undo (default every one, and the Session Log)
+ * @param {{ categories?: string[]|null, keepPlanAbout?: ((subject: Object) => boolean)|null }} [opts] — `categories`:
+ *   the categories to undo (default every one, and the Session Log); `keepPlanAbout`: whether a plan the
+ *   narrations made about this subject (the stored plan's `subject`) stays in the Secrets journal — not
+ *   given, every plan they made is deleted (the X-Card)
  * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number,
  *   stepsTakenBack: Array<{ id: string, clockId: string|null }> }>}
  *   `stepsTakenBack`: the active plans a step was un-played in under a version the narrations did not write
  */
-export async function undoNarrationEntries(narrationIds, { categories = null } = {}) {
+export async function undoNarrationEntries(narrationIds, { categories = null, keepPlanAbout = null } = {}) {
   const out = { restored: 0, retracted: 0, deleted: 0, beats: 0, stepsTakenBack: [] };
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
   if (!removed.size) return out;
@@ -1523,6 +1531,16 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
           });
           out.retracted += 1;
         } else {
+          // A plan they filed about something that outlives them stays with
+          // it (issue #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA): the
+          // agenda of an NPC a superseded Make a Connection created was
+          // deleted while her card stayed, and nothing filed it again.
+          const kept = category === "secrets" ? planKeptAsFiled(entry, removed, keepPlanAbout) : null;
+          if (kept) {
+            if (kept.changed) await writeEntryPage(page, flagKey, kept.entry);
+            if (kept.stepTop) noteStepTakenBack(out, kept.entry);
+            continue;
+          }
           await page.delete();
           out.deleted += 1;
         }
@@ -1546,6 +1564,67 @@ export async function undoNarrationEntries(narrationIds, { categories = null } =
     if (await persistSessionLogPage(page, { ...flag, beats: kept })) out.beats += beats.length - kept.length;
   }
   return out;
+}
+
+/**
+ * The version of a plan the removed narrations made that stays when what the
+ * plan is about outlives them (issue #364
+ * BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA): the one it was filed as — the
+ * oldest it keeps, every version being theirs — while that version is its
+ * rolls alone, nothing decided (as undoPlansFiledFor reads "still waiting").
+ * Such a plan is about its subject, not about what the narrations told: an
+ * NPC's agenda is filed where her card is made, after the narration's own
+ * side-data, for a later narration to decide. Null — the plan goes with the
+ * narrations — when the caller keeps no plan about its subject
+ * (`keepPlanAbout` not given, or false for it), and when the narrations
+ * decided it as they filed it: that truth is their telling.
+ *
+ * @param {Object} entry — a stored Secrets entry no version of which another writer wrote
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout — the caller's (undoNarrationEntries)
+ * @returns {Object|null}
+ */
+function planVersionFiled(entry, keepPlanAbout) {
+  if (typeof keepPlanAbout !== "function" || !entry?.subject || typeof entry.subject !== "object") return null;
+  let stays = false;
+  try {
+    stays = keepPlanAbout(entry.subject) === true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: whether the subject of the plan "${entry?.id}" still stands could not be read:`, err?.message ?? err);
+  }
+  if (!stays) return null;
+  const versions = (Array.isArray(entry.previous) ? entry.previous : []).filter(v => v && typeof v === "object");
+  const filed = versions.length ? versions[versions.length - 1] : entry;
+  const decided = typeof filed.truth === "string" && filed.truth.trim().length > 0;
+  return decided ? null : filed;
+}
+
+/**
+ * A plan the removed narrations made, as it stays when what it is about
+ * outlives them (planVersionFiled): as filed, less what they did to it since
+ * — a later version of theirs dropped, and in the filed one a clue shown, a
+ * step played, the truth revealed, the story ended taken back by their marks
+ * (takenBackFrom). It keeps the stamp of the narration that filed it: an
+ * X-Card that removes that narration, and the card it made, still takes the
+ * plan. Null when the plan is not kept.
+ *
+ * @param {Object} entry — the stored Secrets entry
+ * @param {Set<string>} removed — the narrations taken back
+ * @param {((subject: Object) => boolean)|null} keepPlanAbout
+ * @returns {{ entry: Object, changed: boolean, stepTop: boolean }|null} the entry to keep, whether it
+ *   differs from the stored one (a write is owed), and whether a step of its own was un-played
+ */
+function planKeptAsFiled(entry, removed, keepPlanAbout) {
+  const filed = planVersionFiled(entry, keepPlanAbout);
+  if (!filed) return null;
+  const undone = takenBackFrom(filed, removed);
+  if (filed === entry && !undone) return { entry, changed: false, stepTop: false };
+  const version = undone?.version ?? filed;
+  return {
+    // setFlag merges: every key the kept version may lack is written.
+    entry: { ...version, narrationId: filed.narrationId ?? null, previous: null,
+      truthRevealedBy: version.truthRevealedBy ?? null, rollsShownBy: version.rollsShownBy ?? null, resolvedBy: version.resolvedBy ?? null },
+    changed: true, stepTop: undone?.step === true,
+  };
 }
 
 /**
@@ -1848,12 +1927,14 @@ function noteStepTakenBack(out, entry) {
  * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES) — while a plan the removed narration
  * itself closed is in play again, and its clock runs. Ids only, never a
  * plan's content. Null when the journals cannot be read: the caller then
- * asks nothing.
+ * asks nothing. `keepPlanAbout` is the undo's own (a supersede's): a plan
+ * they made that it keeps stands as filed (planVersionFiled).
  *
  * @param {string[]} narrationIds — the narrations taken back
+ * @param {{ keepPlanAbout?: ((subject: Object) => boolean)|null }} [opts] — as given to undoNarrationEntries
  * @returns {{ planIds: Set<string>, clockIds: Set<string> }|null}
  */
-export function hiddenPlansInPlayWithout(narrationIds) {
+export function hiddenPlansInPlayWithout(narrationIds, { keepPlanAbout = null } = {}) {
   try {
     if (!globalThis.game?.journal) return null;
     const removed = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
@@ -1864,7 +1945,7 @@ export function hiddenPlansInPlayWithout(narrationIds) {
       const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
       if (!entry || typeof entry !== "object") continue;
       const stands = fromRemoved(entry)
-        ? ((Array.isArray(entry.previous) ? entry.previous : []).find(v => v && !fromRemoved(v)) ?? null)
+        ? ((Array.isArray(entry.previous) ? entry.previous : []).find(v => v && !fromRemoved(v)) ?? planVersionFiled(entry, keepPlanAbout))
         : entry;
       if (!stands) continue;
       const status   = stands.status ?? "active";
