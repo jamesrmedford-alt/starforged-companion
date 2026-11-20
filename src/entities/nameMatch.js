@@ -192,6 +192,66 @@ export function nameWithin(a, b) {
   return false;
 }
 
+/**
+ * The words that say what a site is, by the location type they make it
+ * (entityExtractor.js detectedSiteType; a location's kind words below).
+ */
+export const SITE_TYPE_WORDS = [
+  ["vault",    /^vaults?$/],
+  ["derelict", /^(?:derelicts?|wrecks?|wreckage|hulks?)$/],
+];
+
+/**
+ * The words that say what kind of place a record is, beside its name — by
+ * the kind of record. The module's own words for each: the record's type,
+ * the detection prompt's gloss of it ("settlement: named community, station,
+ * outpost"; "location: named specific place (derelict, vault, structure,
+ * site)"), a location's types (entities/location.js) and the words that make
+ * a detected site a derelict or a vault (SITE_TYPE_WORDS). A plural counts.
+ */
+const PLACE_KIND_WORDS = {
+  settlement: new Set(["settlement", "community", "station", "outpost"]),
+  location:   new Set(["location", "structure", "site", "station", "anomaly", "ruin"]),
+  planet:     new Set(["planet"]),
+};
+
+/** Whether a (lower-case) word says what kind of place a record of that kind is. */
+function isPlaceKindWord(word, kind) {
+  const words = PLACE_KIND_WORDS[kind];
+  if (!words) return false;
+  if (words.has(word) || words.has(word.replace(/s$/, ""))) return true;
+  return kind === "location" && SITE_TYPE_WORDS.some(([, re]) => re.test(word));
+}
+
+/**
+ * Whether a destination's label is a known place's name and little else:
+ * the name's words, together and in order, and around them nothing but
+ * articles and words that say what kind of place it is — "Bleakhold
+ * Station", "the Bleakhold settlement", "Bleakhold outpost" for the
+ * settlement Bleakhold; "the Kovash Hulk wreck" for the location Kovash Hulk.
+ * A longer label is another place's: "Archer's rendezvous — the gap" is not
+ * the settlement Archer, nor "the wreck beyond Bleakhold" Bleakhold (issue
+ * #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — a rule, the maintainer's
+ * decision; the caller is index.js resolveCurrentLocationName, for a travel
+ * move asking whether its destination is a place the campaign knows).
+ *
+ * @param {string} label — the destination, as the move names it
+ * @param {string} placeName — the known place's name
+ * @param {"settlement"|"location"|"planet"} kind — the place's record type
+ * @returns {boolean}
+ */
+export function placeNameAndLittleElse(label, placeName, kind) {
+  const outer = nameWords(label);
+  const inner = nameWords(placeName);
+  if (!inner.length || outer.length < inner.length) return false;
+  const little = (w) => ARTICLES.has(w) || isPlaceKindWord(w, kind);
+  for (let at = 0; at + inner.length <= outer.length; at++) {
+    if (!inner.every((w, i) => w === outer[at + i])) continue;
+    if (outer.slice(0, at).every(little) && outer.slice(at + inner.length).every(little)) return true;
+  }
+  return false;
+}
+
 /** A name for comparing whole: lower case, single spaces, no leading article. */
 export function nameKey(name) {
   return String(name ?? "").toLowerCase().replace(/\s+/g, " ").trim().replace(/^(?:the|a|an)\s+/, "");

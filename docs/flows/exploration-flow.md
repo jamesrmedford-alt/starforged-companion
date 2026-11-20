@@ -95,6 +95,23 @@ record and pin for it).
   COURSE-OLD-LABEL-LOOSER-RUNG-FIRST). The same label while the site is still
   uncharted is the expedition either way: its location Actor carries the
   label, so the resolver's exact rung finds the unexplored site.
+  **A known place's name inside the destination names that place only when
+  the destination is the name and little else** — an article, a word for what
+  kind of place it is ("Bleakhold Station", "the Bleakhold settlement"; the
+  module's own words for a settlement, a location and a planet,
+  `nameMatch.placeNameAndLittleElse`). A longer label is a new, uncharted
+  destination: with Archer on the map and nothing recorded for the gap, a
+  first course for "Archer's rendezvous — the gap" — or "the wreck beyond
+  Bleakhold" — was a course to the settlement (issue #364
+  COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
+  The course asks the resolver as for a destination
+  (`resolveCurrentLocationName(…, { asDestination: true })`), and the
+  expedition it is read as asks the same way before it records its uncharted
+  destination (`resolution.courseRerouted`) — asked the looser way it
+  recorded none, and its finish docked at the settlement. A fragment of a
+  place's name ("Bleak", "the gap") still names it. Not narrowed: an
+  expedition typed as one ("the expedition to Bleakhold" is for Bleakhold),
+  the arrival by name (a place in the words around it, §3) and the GM's `!at`.
 
 ## 1. Setting out
 

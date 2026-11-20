@@ -155,8 +155,13 @@ describe('an arrival named in words around a place: the current location follows
     expect(here()).toEqual({ id: 'actor-bleak', type: 'settlement' });
   }, 30_000);
 
-  it('a Set a Course "for the docks of Bleakhold" too', async () => {
-    await setACourse('for the docks of Bleakhold');
+  // A Set a Course "for the docks of Bleakhold" until issue #364
+  // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT: a course whose destination holds a
+  // place's name among other words is read as an expedition for a new
+  // destination (tests/unit/courseNewLabelHoldingAPlaceName.test.js). The name
+  // and a word for its kind is still a course there.
+  it('a Set a Course for "the Bleakhold settlement" too', async () => {
+    await setACourse('the Bleakhold settlement');
 
     expect(position(), 'the ship docked at Bleakhold (setup)').toMatchObject({ nearestSettlementId: 'actor-bleak', updatedBy: 'set_a_course' });
     expect(here()).toEqual({ id: 'actor-bleak', type: 'settlement' });

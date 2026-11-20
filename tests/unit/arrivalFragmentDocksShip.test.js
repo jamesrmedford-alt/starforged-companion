@@ -196,8 +196,12 @@ describe('an arrival named by a fragment of a place: the ship docks where the cu
     expect({ x: token.x, y: token.y }).toEqual(BLEAK_XY);
   }, 30_000);
 
+  // A Finish an Expedition: a Set a Course "for the docks of Bleakhold" is read
+  // as an expedition for a new destination since issue #364
+  // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT, and arrives nowhere. The arrival
+  // itself still reads a place in the words around it.
   it('control: an arrival named in words around a place docks there by the word scan, as before', async () => {
-    await setACourse('for the docks of Bleakhold');
+    await finish('the docks of Bleakhold');
 
     expect(position()).toMatchObject({ nearestSettlementId: 'actor-bleak' });
     expect(here()).toEqual({ id: 'actor-bleak', type: 'settlement' });

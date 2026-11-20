@@ -172,7 +172,8 @@ import {
 } from "./ui/companionToolbar.js";
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
-import { wholeWordsFit } from "./context/relevanceResolver.js";
+import { wholeWordsFit, wholeWordPattern } from "./context/relevanceResolver.js";
+import { placeNameAndLittleElse } from "./entities/nameMatch.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
@@ -2455,7 +2456,17 @@ async function applyOutcomeEffects({
             // label names exactly, charted since — by the working label its
             // record keeps, its location renamed — is the one it is for, by
             // the link: a second site was minted for it (issue #362 AC50).
-            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
+            // A Set a Course read as this expedition has asked already, as
+            // for a destination, and the answer was "no charted place" —
+            // "Archer's rendezvous — the gap" is not the settlement Archer.
+            // The same question is asked here: asked the looser way, the
+            // label named Archer, no site was recorded, and the finish docked
+            // at the settlement (issue #364
+            // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT). An expedition typed as
+            // one keeps its reading: "the expedition to Bleakhold" is for
+            // Bleakhold.
+            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
+              && !resolveCurrentLocationName(label, campaignState, { asDestination: !!resolution.courseRerouted })) {
               linked = siteNamedBy(campaignState, label);
               const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world
@@ -8371,12 +8382,30 @@ function escapeChatHtml(s) {
  * AT-COMMAND-OLD-LABEL; the course takes the same step in travel.js
  * rerouteUnchartedCourse, issue #362 AC50).
  *
+ * `asDestination` (a Set a Course asking whether the place it sets out for
+ * is one the campaign knows — the course's reroute, travel.js chartedPlaceFor
+ * — and the start of the expedition that course was read as, before it
+ * records an uncharted destination) narrows the whole-word rung one way. A
+ * fragment of a place's name still names it ("the gap" for "Archer's
+ * rendezvous — the gap"). A destination that holds a place's name is that
+ * place only when it is the name and little else — an article, a word for
+ * what kind of place it is ("Bleakhold Station", "the Bleakhold settlement";
+ * nameMatch.placeNameAndLittleElse). A longer label is a new destination:
+ * with a settlement Archer on the map, a first course for "Archer's
+ * rendezvous — the gap" was a course to Archer (issue #364
+ * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
+ * The others do not pass it: an expedition typed as one keeps the reading
+ * its label had ("the expedition to Bleakhold" is for Bleakhold), an arrival
+ * with no site or pin to dock at by id reads a place in the words around it
+ * (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own
+ * naming, its card saying where it landed.
+ *
  * @param {string} name
  * @param {Object} campaignState
- * @param {{ siteRecordNames?: boolean }} [opts]
+ * @param {{ siteRecordNames?: boolean, asDestination?: boolean }} [opts]
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
-export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false } = {}) {
+export function resolveCurrentLocationName(name, campaignState, { siteRecordNames = false, asDestination = false } = {}) {
   const target = name?.trim().toLowerCase();
   if (!target) return null;
 
@@ -8416,10 +8445,14 @@ export function resolveCurrentLocationName(name, campaignState, { siteRecordName
       { activeSectorId })?.site?.actorId;
     return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
   };
+  // One name inside the other, as whole words. For a destination, a place's
+  // name inside it is that place only as its name and little else.
+  const within = (c) => wholeWordsFit(c.lc, target)
+    && (!asDestination || wholeWordPattern(target).test(c.lc) || placeNameAndLittleElse(target, c.entity.name, c.type));
   return pick(c => c.lc === target)
       ?? (siteRecordNames ? byRecordName() : null)
       ?? pick(c => c.lc.startsWith(target))
-      ?? pick(c => wholeWordsFit(c.lc, target))
+      ?? pick(within)
       ?? null;
 }
 

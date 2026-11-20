@@ -65,7 +65,7 @@ import {
 import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
 import { planSignificantThreat, planNpcAgenda } from "../world/secrets.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
-import { personNameMatch, nameWithin, nameWords, generatedName, loreTitle } from "./nameMatch.js";
+import { personNameMatch, nameWithin, nameWords, generatedName, loreTitle, SITE_TYPE_WORDS } from "./nameMatch.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -3049,12 +3049,6 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   await setDraftStatus(message, draftIndex, "confirmed");
   return record;
 }
-
-/** The words that say what a site is, by the location type they make it (detectedSiteType). */
-const SITE_TYPE_WORDS = [
-  ["vault",    /^vaults?$/],
-  ["derelict", /^(?:derelicts?|wrecks?|wreckage|hulks?)$/],
-];
 
 /**
  * Words that end a name's or a description's opening phrase: what follows

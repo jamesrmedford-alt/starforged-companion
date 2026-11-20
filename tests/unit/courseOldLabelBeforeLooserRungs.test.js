@@ -215,11 +215,15 @@ describe('issue #364 COURSE-OLD-LABEL-LOOSER-RUNG-FIRST — a course by a site\'
     expect(state().currentLocationId).toBe('actor-archer');
   }, 30_000);
 
-  it('control: a label no site record keeps still takes the looser rungs — "Archer\'s dock" is a course to Archer', async () => {
+  // The label was "Archer's dock" until issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT:
+  // a place's name inside a longer label no longer names that place for a course
+  // (tests/unit/courseNewLabelHoldingAPlaceName.test.js); its name and a word for
+  // its kind still does.
+  it('control: a label no site record keeps still takes the looser rungs — "Archer Station" is a course to Archer', async () => {
     await chartAndRenameTheGap();
     archerIsFounded({ at: true });
 
-    await setACourse("Archer's dock");
+    await setACourse('Archer Station');
 
     expect(control.confirmed.at(-1)).toMatchObject({ moveId: 'set_a_course' });
     expect(state().currentLocationId).toBe('actor-archer');

@@ -29,9 +29,18 @@ const MODULE_ID = "starforged-companion";
  * "Unexplored Site" and is reached by expedition (its location record reads
  * `status: "unexplored"`, its discovery record `discovered: false`).
  *
+ * The resolver is asked as for a destination (`asDestination`): a known
+ * place's name inside the destination names that place only when the
+ * destination is the name and little else — an article, a word for what kind
+ * of place it is ("Bleakhold Station", "the Bleakhold settlement"). A longer
+ * label — "Archer's rendezvous — the gap" with a settlement Archer on the
+ * map, "the wreck beyond Bleakhold" — is a new, uncharted destination: it
+ * was a course to the settlement (issue #364
+ * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
+ *
  * @param {string|null} destination — the place, as the move names it
  * @param {Object} campaignState
- * @param {(name: string, state: Object) => ({ id: string, type: string, entity: Object }|null)} resolvePlace
+ * @param {(name: string, state: Object, opts?: { asDestination?: boolean }) => ({ id: string, type: string, entity: Object }|null)} resolvePlace
  * @returns {{ id: string, type: string, entity: Object }|null}
  */
 export function chartedPlaceFor(destination, campaignState, resolvePlace) {
@@ -39,7 +48,7 @@ export function chartedPlaceFor(destination, campaignState, resolvePlace) {
   if (!name || typeof resolvePlace !== "function") return null;
   let place = null;
   try {
-    place = resolvePlace(name, campaignState);
+    place = resolvePlace(name, campaignState, { asDestination: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | travel: resolving "${name}" failed:`, err?.message ?? err);
     return null;
@@ -162,8 +171,9 @@ export async function readForcedTravelDestination(interpretation, { interpret } 
  * The rungs, in `!at`'s order (index.js resolveCurrentLocationName's
  * `siteRecordNames`): a place called exactly what the destination says; then
  * the charted site whose record keeps exactly that name; only then the name
- * resolver's looser rungs — a name the destination begins, one name inside
- * the other as whole words. The looser rungs ran first and the record was
+ * resolver's looser rungs — a name the destination begins, a name the
+ * destination is a fragment of, a name the destination holds with little
+ * else beside it (chartedPlaceFor). The looser rungs ran first and the record was
  * asked only when they found nothing, so with a settlement "Archer" on the
  * map a course for the renamed site's "Archer's rendezvous — the gap" was a
  * course to Archer: it carried no `moveTargetId`, and the arrival docked the
