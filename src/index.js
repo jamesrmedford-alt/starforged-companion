@@ -6867,6 +6867,7 @@ const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
   "site-gone": "the site is no longer on the sector map",
   "sector-gone": "its sector is no longer stored",
+  "sector-no-map": "its sector's map is not stored yet",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
@@ -7077,14 +7078,14 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         // A move's site reveal whose record the world refused (issue #331 X18).
         const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
         const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === f.siteId);
-        const now    = !site ? " It is no longer on the map." : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
+        const now    = !site ? (f.final === true ? "" : " It is no longer on the map.") : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
         return `The site ${escapeChatHtml(f.name ?? "it reached")} charted as discovered — ${why}.${now}`;
       }
       case "uncharted": {
         // An uncharted destination whose move record the world refused (issue #362 AC49).
         const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
         const onMap  = !!sector?.mapData?.discoveries?.some?.(d => d?.id === f.site?.id);
-        const now    = !sector ? " Its sector is no longer stored."
+        const now    = !sector ? (f.final === true ? "" : " Its sector is no longer stored.")
           : onMap ? " It is on the map now."
           : " Until it is, the expedition that set out for it charts nothing when it is finished.";
         return `The uncharted destination ${escapeChatHtml(f.name ?? "the crew set out for")} recorded on the sector map — ${why}.${now}`;
@@ -7255,6 +7256,22 @@ const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
 // a fresh Retry card on every press (issue #364 PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
 const VOW_GONE = Object.freeze({ ok: false, final: true, reason: "no-vow" });
 
+// Whether a site's uncharted destination record still waits on a Retry: a
+// step of the card being retried (claimed before its steps run, it may land
+// or go on a fresh Retry card) or of another payoff card in chat whose Retry
+// is still live. Until it lands the site is on no map, so a Retry of its
+// reveal answers "site-gone" without that being final (runPayoffStep; issue
+// #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+function unchartedRecordAwaitsRetry(siteId, card) {
+  if (typeof siteId !== "string" || !siteId) return false;
+  const holds = (steps) => (Array.isArray(steps) ? steps : []).some(x => x?.step === "uncharted" && x.site?.id === siteId);
+  if (holds(card?.steps)) return true;
+  return (game.messages?.contents ?? []).some(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.payoffFailureCard === true && f.retryable !== false && f.resolved !== true && holds(f.steps);
+  });
+}
+
 // Run one failed step again. The card is GM-authored, but its values are still
 // checked: a legacy is one of the three tracks, 1–40 ticks. A record that
 // fails its check answers "invalid step", here and in every runner this calls:
@@ -7368,12 +7385,24 @@ async function runPayoffStep(s, card, copies) {
     case "site": {
       // A move's site reveal whose record the world refused (issue #331 X18).
       const { saveSiteDiscovered } = await import("./sectors/siteDiscovery.js");
-      return saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+      const res = await saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+      // The site on no stored map, and no record of it waiting on a Retry —
+      // nothing removes a site from a map, so nothing can put it back: `final`,
+      // told once with no Retry. It went on a fresh Retry card each time. While
+      // its uncharted destination's record waits on a Retry (this card's or
+      // another's), it can still land (issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+      if (res?.reason === "site-gone" && !unchartedRecordAwaitsRetry(s.siteId, card)) return { ...res, final: true };
+      return res;
     }
     case "uncharted": {
       // An uncharted destination's record, whose move record the world refused (issue #362 AC49).
       const { saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
-      return saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
+      const res = await saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
+      // No stored sector by that id: no later press finds one — `final`, told
+      // once with no Retry. A sector stored without its map ("sector-no-map")
+      // can still take it (issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+      if (res?.reason === "sector-gone") return { ...res, final: true };
+      return res;
     }
     case "clocks": {
       // A session-start clock advance the world refused: the rolled fills are

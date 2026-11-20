@@ -42,7 +42,10 @@ the pipeline's working copy, which its
 persist saves — an upgrade saves the record onto its stored sector at once (`saveUnchartedSite`), and a refused save is a step on the upgrade's payoff card, whose Retry saves it (issue #362 AC49); when the world refuses
 the persist, the record is a step on the GMs' payoff failure card, whose
 Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
-expedition's link named no stored site, issue #362 AC49) and its pin
+expedition's link named no stored site, issue #362 AC49; with no stored
+sector by its id that Retry settles it once, and the site's reveal Retry
+waits on it while it is live — `vow-flow.md`, "A payoff step that does not
+land", issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE) and its pin
 (`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
 there it is a site like any other: §3's finish arrives there and §4's reveal
 charts it, under the location's name (the GM may rename it; the Site

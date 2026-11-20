@@ -327,8 +327,15 @@ export async function saveUnchartedSite({ sectorId = null, site = null } = {}) {
     return await serialiseCampaignStateWrite(async () => {
       const latest  = storedState() ?? {};
       const sectors = Array.isArray(latest.sectors) ? latest.sectors : [];
-      const sector  = sectors.find(s => s?.id === sectorId && s.mapData) ?? null;
+      // No stored sector by that id: gone ("sector-gone" — nothing stores a
+      // sector under an id it had, so the GMs' Retry reads it as final). One
+      // stored without its map — the {id, name} stub sector creation writes
+      // first, which its full record replaces under the same id — is not
+      // gone: the record can land once the map does (issue #364
+      // PAYOFF-RETRY-SITE-SECTOR-GONE; both answered "sector-gone").
+      const sector  = sectors.find(s => s?.id === sectorId) ?? null;
       if (!sector) return { ok: false, reason: "sector-gone" };
+      if (!sector.mapData) return { ok: false, reason: "sector-no-map" };
       const discoveries = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
       if (discoveries.some(d => d?.id === site.id)) return { ok: true };
       const recorded = { ...sector, mapData: { ...sector.mapData, discoveries: [...discoveries, { ...site }] } };

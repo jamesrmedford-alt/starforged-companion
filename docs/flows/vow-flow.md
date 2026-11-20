@@ -690,7 +690,14 @@ vehicle, the only companion) is looked up at the press and stays on a fresh
 Retry card; each reason is told in plain words, where its code was printed,
 and the executor's own "Vehicle not found" card is not posted on a Retry press
 (`skipMissingCard` — the first failure still posts it) — issue #364
-PAYOFF-RETRY-SUFFER-TARGET-GONE).
+PAYOFF-RETRY-SUFFER-TARGET-GONE; and an `uncharted` step whose sector no
+stored sector's id is ("sector-gone": nothing stores a sector again under an
+id it had; one stored without its map — sector creation's stub — answers
+"sector-no-map" and stays retryable), and a `site` step whose site is on no
+stored map with no record of it waiting on a Retry — its `uncharted` step on
+this card or on another payoff card whose Retry is live
+(`unchartedRecordAwaitsRetry`): nothing removes a site from a map, so only
+that record can put it there — issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
 A step the Retry answers "invalid step" for — its record on the card fails
 the runner's check (a value out of range, a shape, a step name nothing
 runs), and the record never changes — goes on no Retry card either, but is
