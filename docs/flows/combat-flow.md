@@ -173,7 +173,10 @@ Two cross-cutting facts to hold onto:
   again — by the victory card as it stands then, so a ⚑ pressed since is
   paid the marks it lacked, once, on the vow's payoff ledger
   `milestone:<card id>:upgrade`; a vow fulfilled or gone since is no step —
-  issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY); a weak hit
+  issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY; "pressed" is the card's
+  stamp or the press's own ledger entry `milestone:<card id>`, so a ⚑ whose
+  mark landed with its stamp refused is paid the marks it lacked rather
+  than raised — issue #364 FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
   coming off the burn's reset, the price being the burned outcome's effect

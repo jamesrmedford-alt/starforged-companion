@@ -253,7 +253,13 @@ All real progress lands on **item ticks** (`system.current`) via
   `fulfilPayoff["milestone:<card id>:upgrade"]` (`upgradeFightVowMilestone`,
   issue #362 D7): read before the mark and written by it, so the GMs'
   Retry of a mark the world refused (payoff step `milestoneUpgrade`, issue
-  #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) never marks twice. Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY) never marks twice. "Pressed"
+  there is the card's stamp (`resolvedActions.markMilestone`) **or** the
+  press's own ledger entry, `fulfilPayoff["milestone:<card id>"]`: a mark
+  whose stamp the world refused left the card unstamped, so by the stamp
+  alone the upgrade raised its count and the next press — finding the
+  ledger entry — marked nothing, losing the strong hit's extra mark (issue
+  #364 FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
   PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open

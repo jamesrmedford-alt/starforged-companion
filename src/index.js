@@ -3037,6 +3037,12 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
  *     payoff ledger, `milestone:<card>:upgrade` (markFightVowMilestoneOnce),
  *     is read before the mark and written by it, so a second run marks
  *     nothing.
+ * "Pressed" is the card's stamp (`resolvedActions.markMilestone`), or the
+ * press's own entry on the vow's payoff ledger, `milestone:<card>` — a mark
+ * that landed with its stamp refused (issue #336 Y24) left the card unstamped,
+ * so by the stamp alone it was raised to the strong hit's count, and the next
+ * press, finding the ledger entry, marked nothing: the strong hit's extra
+ * mark was lost (issue #364 FIGHT-MILESTONE-STAMP-REFUSED-UPGRADE).
  * A refused raise or mark is a `milestoneUpgrade` step for the GMs' payoff
  * card (issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — each was a "Not
  * applied" line on the upgraded move card, with no Retry: the burn was spent
@@ -3068,7 +3074,11 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
     return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" });
   }
   if (more <= 0) return { ok: true, skipped: true };
-  if (f && !f.resolvedActions?.markMilestone) {
+  // ⚑ pressed: its stamp, or the mark its press left on the vow's payoff
+  // ledger when the stamp was refused.
+  const pressed = !f || !!f.resolvedActions?.markMilestone
+    || payoffStepLanded(payoffVowCopies(vow), `milestone:${cardId}`);
+  if (!pressed) {
     const what = `the strong hit's milestone ×${marks} on the victory card`;
     try {
       await card.update({
