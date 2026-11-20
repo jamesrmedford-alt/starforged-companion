@@ -281,7 +281,12 @@ All real progress lands on **item ticks** (`system.current`) via
   the marks a press at the card's count would lack (`whenPressed`), paid
   once when the ledger says that press landed — it read "never pressed" and
   refused "victory-card-gone" every time (issue #364
-  FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE). When the ledger says it did not —
+  the card gone, its ⚑ never pressed — nothing is owed and nothing can be:
+  the outcome is `final`, and the Retry (`retryPayoffSteps`) posts no fresh
+  Retry card for it, telling the GMs once on a card with no Retry; as a step
+  it failed again on every press, onto another card (issue #364
+  FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
   PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
@@ -602,6 +607,12 @@ needs) showing each value as it stands now. Its "↻ Retry these steps"
 `cardActions.applyPayoffRetry`, GM only, the card GM-authored) claims the
 card (`resolved`) before anything runs, then `retryPayoffSteps` re-runs each
 step the ledger does not mark landed; any that fail again go on a fresh card.
+A step whose outcome is `final` — nothing a Retry could ever apply, nothing
+owed for it — goes on no Retry card: the GMs are told once on a card with no
+Retry (`postPayoffFailureCard({ final: true })`, `retryable: false`, "Not
+applied — and no longer owed"), and the pressed card stays resolved (issue
+#364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP: a won fight's milestone
+raise with the victory card deleted and its ⚑ never pressed).
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC

@@ -3071,11 +3071,16 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
  * a fresh card each time, the strong hit's extra mark never paid. The vow's
  * payoff ledger (`milestone:<card>`) says whether that press landed; when it
  * did, those marks are marked, once (issue #364
- * FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE).
+ * FIGHT-MILESTONE-RAISE-REFUSED-CARD-GONE). When it did not — the card gone,
+ * its ⚑ never pressed — no milestone of the win was marked from that card and
+ * none can be: the outcome is `final`, with no step. As a step it failed
+ * again on every Retry, each onto a fresh card whose own Retry could not
+ * succeed either; a Retry now tells the GMs once, on a card with no Retry
+ * (retryPayoffSteps — issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
  *
  * @param {{ cardId: string|null, marks: number, lacking?: number|null, whenPressed?: number|null,
  *   vowName?: string|null, vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
- * @returns {Promise<{ ok: boolean, skipped?: boolean, applied?: string, what?: string, step?: string,
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, final?: boolean, applied?: string, what?: string, step?: string,
  *   cardId?: string, marks?: number, lacking?: number|null, whenPressed?: number|null, vowId?: string|null,
  *   reason?: string, error?: string }>}
  */
@@ -3099,8 +3104,10 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
     : owed(lacking) || (cardId && owed(whenPressed) && payoffStepLanded(payoffVowCopies(vow), `milestone:${cardId}`) ? owed(whenPressed) : 0);
   if (!f && !more) {
     // Its ⚑ was never pressed and the card is gone: nothing to raise, and no
-    // mark of this win on the vow to add to.
-    return refused(`the strong hit's milestone ×${marks} on the victory card`, null, { reason: "victory-card-gone" }, owed(whenPressed) || null);
+    // mark of this win on the vow to add to — nor can one come, with no ⚑
+    // left to press. Final: no step, so no Retry is offered for it.
+    return { ok: false, final: true, cardId, marks, vowId: vow.vowId ?? null,
+      what: `the strong hit's milestone ×${marks} on the victory card`, reason: "victory-card-gone" };
   }
   if (more <= 0) return { ok: true, skipped: true };
   // ⚑ pressed: its stamp, or the mark its press left on the vow's payoff
@@ -6873,30 +6880,36 @@ const PAYOFF_TITLES = {
  * pressing Retry, which re-runs only these steps, once
  * (wirePayoffRetryButton). `retryable: false` (a won-fight card's button,
  * which is itself the retry: its action stays unapplied) posts the report
- * without one. Exported for that button's GM-side handler.
+ * without one. `final`: what a Retry found it can never apply — nothing is
+ * owed for it any more — told once on a card with no Retry, which says so
+ * (retryPayoffSteps, issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
+ * Exported for that button's GM-side handler.
  *
  * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider"|"persist", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
- *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
+ *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean, final?: boolean }} card
  */
-export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true }) {
+export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true, final = false }) {
   const context = { source, vowName, vowId, actorId, outcome, connectionName };
   const lines = [];
   for (const f of failures) lines.push(`<li>${await describePayoffFailure(f, context)}</li>`);
   const title = (PAYOFF_TITLES[source] ?? PAYOFF_TITLES.fulfil)(context);
-  const footer = retryable
-    ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
-      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-payoff-retry" `
-      + `title="Apply the steps above again — once">↻ Retry these steps</button></div>`
-    : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
+  const withRetry = retryable && !final;
+  const footer = final
+    ? `<p class="sf-card-hint">Nothing is owed for ${failures.length === 1 ? "this" : "these"} any more, so there is nothing to retry. Only GMs see this card.</p>`
+    : withRetry
+      ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
+        + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-payoff-retry" `
+        + `title="Apply the steps above again — once">↻ Retry these steps</button></div>`
+      : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card sf-payoff-failure"><strong>${escapeChatHtml(title)}</strong>`
-      + `<p>Not applied:</p><ul>${lines.join("")}</ul>${footer}</div>`,
+      + `<p>${final ? "Not applied — and no longer owed:" : "Not applied:"}</p><ul>${lines.join("")}</ul>${footer}</div>`,
     whisper: gmUserIds(),
     // steps: what a Retry re-runs — read from this GM-authored card, never
     // from the click (src/moves/cardActions.js applyPayoffRetry).
     flags: { [MODULE_ID]: {
-      payoffFailureCard: true, retryable, resolved: false, ...context,
+      payoffFailureCard: true, retryable: withRetry, resolved: false, ...context,
       steps: failures.map(payoffStepRecord),
     } },
   });
@@ -7094,17 +7107,25 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
 /**
  * The GM side of a payoff card's Retry, once the card is claimed: each step
  * runs again unless a fulfilment's ledger says it landed meanwhile, and any
- * that fail again go on a fresh card with its own Retry. Every value comes
- * from the GM-authored card. Exported for src/moves/cardActions.js
+ * that fail again go on a fresh card with its own Retry. A step whose outcome
+ * is `final` — nothing a Retry could ever apply, and nothing owed for it: a
+ * won fight's milestone raise with the victory card gone and its ⚑ never
+ * pressed — goes on no Retry card: the GMs are told once, on a card without
+ * one, and the pressed card stays resolved. It went on a fresh Retry card
+ * like any other, so every press posted another whose Retry could not succeed
+ * (issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP). Every value
+ * comes from the GM-authored card. Exported for src/moves/cardActions.js
  * applyPayoffRetry.
  *
  * @param {Object} card — the failure card's module flags
- * @returns {Promise<Array<Object>>} the steps that failed again
+ * @returns {Promise<Array<Object>>} the steps that failed again (a `final` one is not among them)
  */
 export async function retryPayoffSteps(card) {
   const fulfil = card?.source === "fulfil";
   const copies = (fulfil || card?.source === "fight") ? payoffVowCopies(card ?? {}) : [];
   const failures = [];
+  // What a Retry can never apply (`final`): told, with no Retry.
+  const settled = [];
   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
     const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
     // A PC's box XP is on no ledger: only this card's Retry gives it.
@@ -7114,9 +7135,17 @@ export async function retryPayoffSteps(card) {
     if (res?.ok) {
       if (onLedger && !res.skipped) await recordPayoffStep(copies, ledgerStep);
       failures.push(...(res.xpFailures ?? []));
+    } else if (res?.final === true) {
+      settled.push({ ...s, ...res, step: s?.step });
     } else {
       failures.push({ ...s, ...res, step: res?.step ?? s?.step });
     }
+  }
+  if (settled.length) {
+    await postPayoffFailureCard({
+      source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
+      outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures: settled, final: true,
+    }).catch(err => console.warn(`${MODULE_ID} | payoff retry: the card for what is no longer owed failed:`, err?.message ?? err));
   }
   if (failures.length) {
     await postPayoffFailureCard({
