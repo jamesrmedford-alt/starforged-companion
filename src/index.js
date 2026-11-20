@@ -3077,6 +3077,9 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
  * again on every Retry, each onto a fresh card whose own Retry could not
  * succeed either; a Retry now tells the GMs once, on a card with no Retry
  * (retryPayoffSteps — issue #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP).
+ * A vow fulfilled or gone from every sheet since is `final` the same way
+ * (issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP); the first payment
+ * reads it as no step — a line on the move card.
  *
  * @param {{ cardId: string|null, marks: number, lacking?: number|null, whenPressed?: number|null,
  *   vowName?: string|null, vowId?: string|null, actorId?: string|null }} step — the victory card and the strong hit's count
@@ -3131,8 +3134,12 @@ async function upgradeFightVowMilestone({ cardId = null, marks = 1, lacking = nu
   const res = await markFightVowMilestoneOnce({ cardId: `${cardId}:upgrade`, ...vow, marks: more })
     .catch(err => ({ ok: false, reason: "refused", error: errText(err) }));
   if (res?.ok) return res.skipped ? { ok: true, skipped: true } : { ok: true, applied: what };
-  // Fulfilled, or on no sheet any more: nothing to mark, and nothing to retry.
-  if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return { ok: false, what, reason: res.reason };
+  // Fulfilled, or on no sheet any more: nothing to mark, and nothing to retry
+  // — `final`, so the GMs' Retry of a refused mark says so once and offers no
+  // further Retry: with no step it went on a fresh Retry card under the step's
+  // old name, and every press found the vow fulfilled again (issue #364
+  // FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP).
+  if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return { ok: false, final: true, what, reason: res.reason };
   return refused(what, more, res);
 }
 

@@ -612,7 +612,9 @@ owed for it — goes on no Retry card: the GMs are told once on a card with no
 Retry (`postPayoffFailureCard({ final: true })`, `retryable: false`, "Not
 applied — and no longer owed"), and the pressed card stays resolved (issue
 #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP: a won fight's milestone
-raise with the victory card deleted and its ⚑ never pressed).
+raise with the victory card deleted and its ⚑ never pressed; and a won
+fight's refused milestone mark whose vow was fulfilled, or left every sheet,
+before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP).
 A deepen step whose NPC's card was deleted since is retired and left out
 (the card's `retiredSteps` — `cardActions.retirePayoffDeepenStepsFor`, issue
 #364 PAYOFF-CARD-DEEPEN-DELETED-NPC; `connection-flow.md`, "Deleting an NPC
