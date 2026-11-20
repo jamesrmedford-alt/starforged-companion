@@ -33,6 +33,14 @@ const SOURCE_VALUES = new Set([
 ]);
 
 /**
+ * The records a ship can be at — a position's anchors. A person, a ship, a
+ * faction, a creature is not one: the word scan reads past their names to
+ * the first place named (matchSeedAgainstIndex, issue #364
+ * SHIP-SEED-NONSPATIAL-HIT-FIRST).
+ */
+const PLACE_TYPES = new Set(["settlement", "planet", "location"]);
+
+/**
  * The empty / "no position" record. Returned when no seed resolves
  * and no free text was supplied — callers can decide whether to skip
  * writing or persist the cleared state.
@@ -75,7 +83,13 @@ export function emptyPosition() {
  * planet that owns it is also resolved if discoverable. When a planet
  * matches, the active sector is used as the sector. When a location
  * (derelict, station, anomaly) matches, the location's `sectorId` is
- * used. Otherwise the seed is treated as free text.
+ * used. A name that is not a place's — a person, a ship, a faction, a
+ * creature — is read past to the first place the seed names after it
+ * (matchSeedAgainstIndex), and the record is that place's, as when the
+ * place is named first: "alongside Kael's tug at Bleakhold" is a position
+ * at Bleakhold, its free text empty (issue #364
+ * SHIP-SEED-NONSPATIAL-HIT-FIRST — the connection Kael Dros was the hit, so
+ * no place was recorded). Otherwise the seed is treated as free text.
  *
  * @param {string} seedRef
  * @param {Object} campaignState
@@ -110,13 +124,9 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
   );
   const index    = buildNameIndex(entities, []);
 
+  // The first place the seed names, read on past any name that is not one.
   const hit = matchSeedAgainstIndex(index, ref);
-  if (!hit) {
-    out.freeText = ref;
-    return out;
-  }
-
-  switch (hit.entityType) {
+  switch (hit?.entityType) {
     case "settlement": {
       out.nearestSettlementId = hit.journalId ?? hit._id ?? null;
       out.nearestPlanetId     = resolvePlanetForSettlement(hit, campaignState);
@@ -138,10 +148,11 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
       return out;
     }
     default: {
-      // Ship / faction / connection / creature / character — none of
-      // these are spatial anchors. Keep the narrated phrase as free text:
-      // the bare name dropped where the ship is ("alongside the Covenant
-      // flagship" became "The Covenant" — issue #321 U43).
+      // No place named — no name at all, or only a ship's, a faction's, a
+      // connection's or a creature's, none of them spatial anchors. Keep the
+      // narrated phrase as free text: the bare name dropped where the ship
+      // is ("alongside the Covenant flagship" became "The Covenant" — issue
+      // #321 U43).
       out.freeText = ref;
       return out;
     }
@@ -432,17 +443,30 @@ function lookupSector(id, campaignState) {
  * sector token stayed (issue #364 SHIP-SEED-NUMERIC-PART). Such words are
  * asked after the capitalised ones, leftmost first again: a capital says a
  * word is written as a name, and a number may be a quantity — "12 hours out
- * from Kaan" is Kaan's with an Outpost 12 on the map, as it was. Returns the
- * hit or null. Exported for unit testing.
+ * from Kaan" is Kaan's with an Outpost 12 on the map, as it was.
+ *
+ * Returns the first PLACE named — a settlement, a planet or a location — or
+ * null. A name that is not a place's (a person, a ship, a faction, a
+ * creature) is read past, in the same order, to the first place named after
+ * it: "alongside Kael's tug at Bleakhold" is Bleakhold's — it was the
+ * connection Kael Dros's, and inferShipPosition keeps a non-place hit's seed
+ * as free text, so the position named no place (issue #364
+ * SHIP-SEED-NONSPATIAL-HIT-FIRST, the maintainer's decision). A seed that is
+ * such a name whole — "Kael Dros", "Kael's" — has nothing past it: null, as
+ * does a phrase that names no place ("alongside the Covenant flagship", issue
+ * #321 U43). Exported for unit testing.
  */
 export function matchSeedAgainstIndex(index, ref) {
   const lookup = String(ref ?? "").toLowerCase();
   if (!lookup) return null;
   const stripPossessive = (s) => s.replace(/[’']s\b/gu, "");
 
+  const isPlace = (hit) => PLACE_TYPES.has(hit?.entityType);
+
+  // The seed whole: a place's name, or another's, with nothing past it.
   for (const candidate of [lookup, stripPossessive(lookup).trim()]) {
     const hit = index.get(candidate);
-    if (hit) return hit;
+    if (hit) return isPlace(hit) ? hit : null;
   }
 
   const entities = [...new Set(index.values())];
@@ -450,12 +474,13 @@ export function matchSeedAgainstIndex(index, ref) {
     .map(raw => raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
     .filter(Boolean);
   // The capitalised words, then the words with no capital to write. A
-  // lowercase word is in neither pass.
+  // lowercase word is in neither pass. A name that is not a place's is read
+  // past.
   for (const asked of [(w) => /^\p{Lu}/u.test(w), (w) => !hasCapitalForm(w)]) {
     for (const word of words) {
       if (!asked(word)) continue;
       const hit = resolveEntityName(word, entities);
-      if (hit) return hit;
+      if (isPlace(hit)) return hit;
     }
   }
   return null;

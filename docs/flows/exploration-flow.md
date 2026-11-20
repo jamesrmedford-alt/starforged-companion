@@ -376,7 +376,13 @@ second a second one (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT).
   rung is whole words either way, which finds a place named in words around
   it too — the position's scan still adds a name part, "Kovash" for the
   Kovash Hulk, or one with no capital to write, "734" for Relay 734: issue
-  #364 SHIP-SEED-NUMERIC-PART). A record that names no place (free text) leaves it. The Entities panel's "Set as
+  #364 SHIP-SEED-NUMERIC-PART — and reads past a name that is not a place's,
+  a person's, a ship's, a faction's or a creature's, to the first place
+  named, the record that place's as when it is named first: "alongside
+  Kael's tug at Bleakhold" is Bleakhold's, where the connection Kael Dros was
+  the hit and the position named no place — issue #364
+  SHIP-SEED-NONSPATIAL-HIT-FIRST; a seed that names no place, "alongside the
+  Covenant flagship", stays free text, issue #321 U43). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
