@@ -109,7 +109,9 @@ const HOST_HELPERS = Object.freeze([
   // recordMove / finishMove
   "reportUnsavedMoveRecord", "applyMoveConsequenceRiders",
   // readMove — whether a travel move's destination is a charted place (the
-  // arrival's own name resolver; travel.js, issue #348 PT06)
+  // arrival's own name resolver; travel.js, issue #348 PT06); rollMove — the
+  // place a Finish an Expedition's label names, its site reveal's tie-break
+  // (issue #364 RESOLVER-AMBIGUOUS-PREFIX)
   "resolveCurrentLocationName",
 ]);
 
@@ -910,6 +912,7 @@ export async function rollMove({
     postRecommitOfferCard, postVowRecommitOfferCard, postBondRecommitOfferCard,
     resolveVowItemCopies, completeVowItemByName, postFulfillVowCard, payFulfilledVowNative,
     postForsakeVowCard, postDecisiveActionCostCard, postMovePayThePriceCard, postMoveResult,
+    resolveCurrentLocationName,
   } = pipelineHost();
   const { speakerActor, rollerActor } = rollerFor(speakerActorId);
   // A result of the roller's still held for Burn / Improve / Keep is kept
@@ -1295,13 +1298,25 @@ export async function rollMove({
         // is folded into the in-memory campaignState so it rides along with
         // the pending persistResolution write below (revealSectorSite sets
         // it on a copy — issue #326 W51); the scene pin + passage and the
-        // location Actor update apply at once.
+        // location Actor update apply at once. A label that begins several
+        // unexplored sites' names reveals the one at the place it names to
+        // the resolver, where the arrival docked (index.js expeditionArrival
+        // asks the same way): with no link, the crew docked at one and
+        // neither was charted (issue #364 RESOLVER-AMBIGUOUS-PREFIX). The
+        // label is the expedition's own, its journey words taken off when it
+        // names no site whole, as the arrival reads it: "the expedition to
+        // the Sunken" with no link docked at the vault and charted nothing
+        // (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
         try {
           const { revealSectorSite, postSiteDiscoveryCard } = await import("../sectors/siteDiscovery.js");
-          const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
+          const label = fin.track?.label ?? interpretation.moveTarget;
+          const place = resolveCurrentLocationName(label ?? "", campaignState, { journeyWords: true });
+          const revealed = await revealSectorSite(label, {
             source:   "expedition",
             siteId:   fin.track?.siteId ?? null,
             requireLabelMatch: true,
+            placeId:  place?.id ?? null,
+            journeyWords: true,
             getState: () => campaignState,
             setState: (next) => { campaignState.sectors = next.sectors; },
           });

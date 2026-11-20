@@ -42,7 +42,10 @@ the pipeline's working copy, which its
 persist saves — an upgrade saves the record onto its stored sector at once (`saveUnchartedSite`), and a refused save is a step on the upgrade's payoff card, whose Retry saves it (issue #362 AC49); when the world refuses
 the persist, the record is a step on the GMs' payoff failure card, whose
 Retry saves it — `siteDiscovery.saveUnchartedSite`: it was lost, and the
-expedition's link named no stored site, issue #362 AC49) and its pin
+expedition's link named no stored site, issue #362 AC49; with no stored
+sector by its id that Retry settles it once, and the site's reveal Retry
+waits on it while it is live — `vow-flow.md`, "A payoff step that does not
+land", issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE) and its pin
 (`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
 there it is a site like any other: §3's finish arrives there and §4's reveal
 charts it, under the location's name (the GM may rename it; the Site
@@ -65,7 +68,39 @@ new uncharted site — a preposition that places the destination beside the
 known place (beyond, near, past, outside, off …) is what makes it another
 place. It was asked the looser way — any label holding the name as whole
 words — so nothing was recorded or linked for those, and the finish docked
-at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The
+journey words at the label's edges, with the article that leads them, are
+also taken off before the rungs that compare a label whole — a name it
+begins, a fragment of a name (`nameMatch.withoutJourneyWords`), after the
+whole label's exact rung: "the expedition to Bleak" is for Bleakhold, as
+"Bleak" is, and "expedition to the gap" for a charted "Archer's Rendezvous —
+The Gap". Compared whole, the first recorded a new uncharted site and the
+second a second one (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT). The
+unexplored site a typed expedition is linked to is asked the same way
+(`selectExpeditionSite`'s `journeyWords`): when the whole label names no
+site, it is asked again without those words — "the expedition to the
+Sunken" is for the unexplored "The Sunken Vaults", as "the Sunken" is;
+compared whole it linked none, so its finish charted nothing (issue #364
+EXPEDITION-JOURNEY-WORDS-SITE-LINK). The expedition a course is read as asks
+as the course did. The site ladder also takes a name the label begins, as the
+place resolver's start rung does — after the exact and whole-word rungs, the
+label whole then without its journey words, and only when it begins one
+unexplored site's name (two name neither; the active sector's asked first;
+`selectSectorSite`'s `requireLabelMatch`, so the finish's arrival and reveal
+ask it too): "the Sunk", "Sunk" and "the expedition to the Sunk" are for "The
+Sunken Vaults". The ladder took no word cut short, so "the Sunk" — a place to
+the resolver — linked nothing and recorded nothing, and its finish docked at
+the vault and charted nothing; "Sunk" recorded a second destination for it
+(issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH). A label that begins
+several unexplored sites' names is for the one at the place the resolver
+reads it as — its start rung's pick, the active sector's first location, else
+storage order: the one the finish docks at (`selectExpeditionSite`'s
+`placeId`). The ladder named neither while the resolver picked one of their
+locations, so "the Sunk", with "The Sunken Vaults" and "The Sunken Spire"
+unexplored, linked nothing and recorded nothing, and its finish docked at one
+and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX). A place that is
+neither site's location — a settlement "The Sunken Hold" — names neither: the
+finish docks there and charts nothing.
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -128,10 +163,13 @@ at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
   (`{ asDestination: true, journeyWords: true }`): "the expedition to
   Bleakhold" is for Bleakhold, "the wreck beyond Bleakhold" a new site —
   asked the looser way, it was for Bleakhold (issue #364
-  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). The journey's words are not a
-  course's: the course's question, and the expedition it is read as, ask
-  without them. Not narrowed: the arrival by name (a place in the words
-  around it, §3) and the GM's `!at`.
+  EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT) — and taken off the label's
+  edges before the start and fragment rungs: "the expedition to Bleak" is for
+  Bleakhold (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT). The journey's
+  words are not a course's: the course's question, and the expedition it is
+  read as, ask without them. Not narrowed: the arrival by name (a place in
+  the words around it, §3 — a finish's names lose their journey words as at
+  the start) and the GM's `!at`.
 
 ## 1. Setting out
 
@@ -366,7 +404,18 @@ at the settlement (issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
   rung is whole words either way, which finds a place named in words around
   it too — the position's scan still adds a name part, "Kovash" for the
   Kovash Hulk, or one with no capital to write, "734" for Relay 734: issue
-  #364 SHIP-SEED-NUMERIC-PART). A record that names no place (free text) leaves it. The Entities panel's "Set as
+  #364 SHIP-SEED-NUMERIC-PART — and reads past a name that is not a place's,
+  a person's, a ship's, a faction's or a creature's, to the first place
+  named, the record that place's as when it is named first: "alongside
+  Kael's tug at Bleakhold" is Bleakhold's, where the connection Kael Dros was
+  the hit and the position named no place — issue #364
+  SHIP-SEED-NONSPATIAL-HIT-FIRST; a seed that names no place, "alongside the
+  Covenant flagship", stays free text, issue #321 U43 — and it reads a name
+  of two or more words the seed holds whole before its words: a ship's or a
+  person's words are no place's, a place's name is that place — "alongside
+  the Bleakhold Runner" names no place, and "orbiting Kaan Deep" is Kaan
+  Deep's: word by word they were Bleakhold and the planet Kaan, issue #364
+  SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
@@ -449,11 +498,24 @@ site had been recorded since, or docked at another sector's namesake: issue
 pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored
 Site"), so the label alone resolved to no place and all three stayed on the
-settlement they had left (issue #342 Z14). An expedition for no site arrives
+settlement they had left (issue #342 Z14). A label that begins several
+unexplored sites' names is for the one at the place the resolver reads it as
+(§0; `placeId`), which §4's reveal charts: a track with no link — begun before
+that fix, or in the Progress Tracks panel — docked at one and charted neither
+(issue #364 RESOLVER-AMBIGUOUS-PREFIX). The arrival and the reveal ask a label
+that names no site whole again without its journey words (`journeyWords`), as
+the start does and the arrival by name reads it: compared whole, a track with
+no link for "the expedition to the Sunken" docked at "The Sunken Vaults" and
+charted nothing (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE). An
+expedition for no site arrives
 at the place its label names — the label of the expedition the move
 completes, the track ladder's pick (`expeditionArrival`), then the line's own
 words when the label names no tracked place (an expedition begun with no
-destination named, `UNNAMED_EXPEDITION_LABEL`, names none): a typed finish
+destination named, `UNNAMED_EXPEDITION_LABEL`, names none) — both asked as an
+expedition's own label, the journey words at their edges taken off before the
+start and fragment rungs (`{ journeyWords }`): "the expedition to Bleak", read
+at its start as one for Bleakhold, docked nowhere (issue #364
+EXPEDITION-JOURNEY-WORDS-FRAGMENT): a typed finish
 that named no destination, or named it in words of its own, completed the
 expedition and left the ship, its token and `currentLocationId` where the crew
 set out, read from `moveTarget` alone (issue #345 AA22); the Set a Course feedback card ("Course held cleanly (+1
@@ -477,7 +539,13 @@ then exact → whole-word substring → type-keyword vault/derelict → sole-und
 (the finish passes `requireLabelMatch`: no sole-undiscovered rung, and the
 pin's own "Unexplored Site" names the active sector's one unexplored site, so
 an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
-`!reveal-site` keeps the guess),
+`!reveal-site` keeps the guess; with it a name the label begins names the
+one site it begins, after the whole-word rung, as at the expedition's start —
+§0, issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH; of several, the one at
+the place the resolver reads the label as, where the arrival docked —
+`placeId`, issue #364 RESOLVER-AMBIGUOUS-PREFIX; the finish's reveal asks a
+label that names no site whole again without its journey words, `journeyWords`
+— issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung

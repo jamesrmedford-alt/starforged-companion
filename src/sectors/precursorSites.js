@@ -265,7 +265,9 @@ const UNEXPLORED_PIN_LABEL = normalizeLabel("Unexplored Site");
 /**
  * Choose the site a reveal, a clear or an expedition link targets, across
  * every stored sector. Mirrors selectExpeditionTrack's matching ladder —
- * exact name → whole words of one inside the other (either direction) → type keyword (vault/derelict)
+ * exact name → whole words of one inside the other (either direction) →
+ * (`requireLabelMatch` only) a name the label begins, when it begins one
+ * eligible site's name → type keyword (vault/derelict)
  * when one eligible site of that type remains → the sole eligible site — but
  * runs each rung over ALL sectors before the next, weaker one, so a guess in
  * an earlier sector can never preempt an exact match in a later one (issue
@@ -290,13 +292,27 @@ const UNEXPLORED_PIN_LABEL = normalizeLabel("Unexplored Site");
  *   or null; a link to no stored site falls back to the label)
  * @param {string|null} [opts.activeSectorId] — tried first on every rung
  * @param {boolean} [opts.requireLabelMatch] — true skips the sole-site guess,
- *   so only a site the label names returns: by name, whole words or type
+ *   so only a site the label names returns: by name, whole words, a name it
+ *   begins (one site's only — the place resolver's start rung, so the two
+ *   agree on the expedition's destination; issue #364
+ *   EXPEDITION-PREFIX-SITE-LADDER-MISMATCH) or type
  *   keyword — or, for the pin's own "Unexplored Site", the active sector's one
  *   eligible site (the only way a crew can name a site it has not reached).
  *   Used when STAMPING an expedition→site link at creation and when FINISHING
  *   an expedition (a guess would tie — and chart — unrelated expeditions to
  *   the one remaining site: an expedition to Bleakhold charted the frontier
  *   derelict, issue #342 D7); `!reveal-site` and `!clear-site` keep the guess.
+ * @param {string|null} [opts.placeId] — (`requireLabelMatch` only) the place
+ *   the label names to the place resolver (index.js
+ *   resolveCurrentLocationName's pick, by its host document id) — the one an
+ *   expedition for this label docks at. Asked on the start-of-a-name rung
+ *   alone, when the label begins several eligible sites' names: the one whose
+ *   location Actor it is (`site.actorId`) is the site; a place that is none
+ *   of theirs names none, as with no place. The resolver picks one of their
+ *   locations — the active sector's first — where this rung named neither,
+ *   so an expedition for "the Sunk" with "The Sunken Vaults" and "The Sunken
+ *   Spire" unexplored linked no site and recorded none, and its finish docked
+ *   at one of them and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX).
  * @returns {{ sector: Object, site: Object }|null}
  */
 export function selectSectorSite(sectors, label, {
@@ -304,6 +320,7 @@ export function selectSectorSite(sectors, label, {
   siteId = null,
   activeSectorId = null,
   requireLabelMatch = false,
+  placeId = null,
   // A site's name as the table knows it: its location Actor's, when the
   // caller can read it (siteDiscovery.siteDisplayName) — the record keeps the
   // generated name, so a site the GM renamed matched nothing by its new name
@@ -336,6 +353,31 @@ export function selectSectorSite(sectors, label, {
     for (const scope of [inActive(candidates), candidates]) {
       const sub = scope.find(contains);
       if (sub) return sub;
+    }
+
+    // A name the label begins, on the ladder that must name its site — the
+    // expedition's (index.js: the start's link, the finish's arrival; the
+    // finish's reveal) — as the place resolver's start rung takes it
+    // (index.js resolveCurrentLocationName): "the Sunk" for "The Sunken
+    // Vaults". Only one: a label that begins two names names neither. Without
+    // it the resolver found the vault's location for "the Sunk", so nothing
+    // was recorded, the ladder linked nothing, and the finish docked at the
+    // vault and charted nothing (issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH).
+    // When it begins several, the one at the place the resolver picks — where
+    // the expedition docks — is the one, else none: the resolver picked one of
+    // their locations, and the finish docked there and charted neither (issue
+    // #364 RESOLVER-AMBIGUOUS-PREFIX).
+    if (requireLabelMatch) {
+      const begins = (c) => normalizeLabel(siteName(c.site)).startsWith(want);
+      for (const scope of [inActive(candidates), candidates]) {
+        const hits = scope.filter(begins);
+        if (hits.length === 1) return hits[0];
+        if (hits.length > 1) {
+          const atPlace = placeId ? hits.find(c => c.site.actorId === placeId) : null;
+          if (atPlace) return atPlace;
+          break;
+        }
+      }
     }
   }
 

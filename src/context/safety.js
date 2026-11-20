@@ -359,7 +359,12 @@ async function finishXCardRemoval(narrator, removal) {
   if (ids.length) {
     try {
       const { retractNarrationCapture } = await import("../factContinuity/retractions.js");
-      await retractNarrationCapture(ids);
+      const captured = await retractNarrationCapture(ids);
+      // A plan's truth the narration revealed went back to hidden and is
+      // withheld from the narrator from now on: the GMs are told which, and
+      // how to lift it (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+      const withheld = Array.isArray(captured?.entries?.truthsWithheld) ? captured.entries.truthsWithheld : [];
+      if (withheld.length) await postWithheldTruthsNotice(withheld);
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
     }
@@ -466,6 +471,49 @@ async function postKeptConnectionsNotice(kept) {
     whisper,
     flags: { [MODULE_ID]: { xcardConnectionNotice: true } },
   });
+}
+
+/**
+ * Whisper the GMs, once, the hidden plans whose truth the X-Card withheld
+ * (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE, the maintainer's ruling): the
+ * removed narration revealed it, the undo put it back to hidden, and the
+ * narrator is no longer given it or asked to reveal it — the plan's clues,
+ * steps and clock stay in play. Names each plan by its page and says how to
+ * lift it — a GM's edit of the truth in the Secrets panel, or Reveal now —
+ * never the truth itself. Posted by the undo that withheld it: the X-Card's
+ * finish (finishXCardRemoval), or the take-back of a plan write the card
+ * overtook (secrets.js takenBackForXCard). Never throws.
+ *
+ * @param {Array<{ id: string, name: string }>} withheld — undoNarrationEntries' `truthsWithheld`
+ * @returns {Promise<Object|null>} the created ChatMessage
+ */
+export async function postWithheldTruthsNotice(withheld) {
+  const plans = (Array.isArray(withheld) ? withheld : []).filter(p => typeof p?.id === "string" && p.id);
+  if (!plans.length) return null;
+  const whisper = (game.users?.filter?.(u => u.isGM) ?? []).map(u => u.id);
+  const lines = plans.map(({ name }) => {
+    const plan = escapeHtml(name || "A hidden plan");
+    return `<li><strong>${plan}</strong>: the removed narration revealed its truth, which is hidden again — the narrator is no longer given it `
+      + `or asked to reveal it; its clues, steps and clock stay in play. To lift this, Edit the plan's truth in the World Journal panel's `
+      + `Secrets section (the narrator is then given the new truth), or reveal it yourself with Reveal now.</li>`;
+  }).join("");
+  try {
+    return await ChatMessage.create({
+      content: `
+        <div class="starforged-move-card xcard-card xcard-connection-notice">
+          <div class="move-header">
+            <span class="move-type">X-Card</span>
+          </div>
+          <div class="move-body"><ul>${lines}</ul></div>
+        </div>
+      `.trim(),
+      whisper,
+      flags: { [MODULE_ID]: { xcardTruthWithheldNotice: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the GMs could not be told which plan's truth is withheld:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**

@@ -46,7 +46,14 @@ layers. This file is the never-break list.
    the plan step a narration played carries that narration, `playedBy`, and
    goes back unplayed with it whatever was written to the plan since,
    PLAN-STEP-REWRITTEN-BEFORE-BURN — as do a clue it showed, `revealedBy`, and
-   a truth it revealed, `truthRevealedBy`, PLAN-CLUE-TRUTH-NO-MARK) —
+   a truth it revealed, `truthRevealedBy`, PLAN-CLUE-TRUTH-NO-MARK — and a
+   truth the X-Card takes back that way is withheld from the narrator from
+   then on, `truthWithheldBy`: never shown, offered or recorded revealed by a
+   narration, lifted only by a GM's edit of it or Reveal now, issue #364
+   XCARD-REVEAL-REREVEAL-NO-LORE — as is one a Burn / Improve supersede
+   took back first, by the supersede's mark `truthTakenBackBy`, when the
+   X-Card takes the struck narration with the upgraded beat,
+   XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
@@ -347,11 +354,18 @@ layers. This file is the never-break list.
    `unsummarisedSession` again and the catch-up makes its text again from the
    session's cards, on the canonical GM (`bringLastSessionUpToDate` →
    `catchUpUnsummarisedSession`), keeping what a mint folded onto it from a
-   session nobody began (`lastSessionTextParts`); an X-Card that removes such
+   session nobody began (`lastSessionTextParts`), and rewrites that
+   session's Session Log story with it when the story was written before the
+   newest card it was made from (`restoreSessionLogStory`'s `through`, issue
+   #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY); an X-Card that removes such
    a narration drops the session's own text and marks it the same way
    (`dropLastSessionTelling`); and when the mint carried no summary for the
    card's session nothing is made up (issue #364
-   LATE-ROUND-NOT-IN-LAST-SESSION). The mark outlives a later mint while LAST
+   LATE-ROUND-NOT-IN-LAST-SESSION) — a begun session whose Batch Mode round
+   was still to be narrated at the mint is recorded as LAST SESSION's session
+   with no text and marked owed, the record it displaced told meanwhile and
+   LAST SESSION again when nothing comes (`lastSessionToTell` /
+   `lastSessionSettled`, LATE-ROUND-NO-LAST-SESSION-RECORD). The mark outlives a later mint while LAST
    SESSION goes on naming its session (`rollSessionIfDue`,
    LAST-SESSION-OWED-LOST-AT-MINT). Full drop
    priority in `decisions.md` → "Rolling session summary".

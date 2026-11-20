@@ -328,13 +328,17 @@ const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'plane
  *
  * @param {string[]} narrationIds — the X-carded narrations
  * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number, renames: number, drafts: number }>}
+ *   `entries`: undoNarrationEntries' result — its `truthsWithheld`, the plans whose truth was withheld
  */
 export async function retractNarrationCapture(narrationIds) {
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
   const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0, renames: 0, drafts: 0 };
   if (!removed.size) return out;
   try {
-    out.entries = await undoNarrationEntries([...removed]);
+    // The X-Card's undo: a truth a removed narration revealed is withheld from
+    // the narrator as it goes back to hidden (issue #364
+    // XCARD-REVEAL-REREVEAL-NO-LORE) — `entries.truthsWithheld`, for the GMs' notice.
+    out.entries = await undoNarrationEntries([...removed], { withholdTruths: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: undoing the capture's World Journal entries failed:`, err?.message ?? err);
   }

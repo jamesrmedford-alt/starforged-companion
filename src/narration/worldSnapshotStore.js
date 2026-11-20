@@ -34,7 +34,7 @@ import {
   collectWorldUnits, renderWorldSnapshot, renderUnitSections, diffWorldUnits, estimateSnapshotTokens,
 } from './worldSnapshot.js';
 import {
-  worldSnapshotEnabled, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses, describeSnapshotEvent, namedSnapshotCauses,
+  worldSnapshotEnabled, pendingSnapshotEvents, clearSnapshotEvents, snapshotCauses, describeSnapshotEvent, namedSnapshotCauses, markSnapshotTaken,
 } from './snapshotEvents.js';
 import { SNAPSHOT_BLOCK_HEADING } from './narratorPrompt.js';
 
@@ -237,7 +237,9 @@ export async function resolveWorldSnapshot(campaignState, {
     // What caused it, as the page's log names it: the world's mark names no
     // event (issue #362 D3), so the events this client reported since the
     // snapshot it replaces are named in its place.
-    const causes = namedSnapshotCauses(reported, { sinceMs: held ? (Date.parse(held.takenAt) || 0) : 0, also: found });
+    const causes = namedSnapshotCauses(reported, {
+      sinceMs: held ? (Date.parse(held.takenAt) || 0) : 0, heldTakenAt: held?.takenAt ?? null, also: found,
+    });
 
     const activeSectorId = campaignState?.activeSectorId ?? world?.activeSectorId ?? null;
     const activeSector = (world?.sectors ?? []).find(s => s?.id === activeSectorId)?.name ?? null;
@@ -249,6 +251,8 @@ export async function resolveWorldSnapshot(campaignState, {
       causes, text: rendered.text, manifest: rendered.manifest, tokens: rendered.tokens,
     };
     _last = record;
+    // The events named so far are this snapshot's: the next one names those after them.
+    markSnapshotTaken(record.takenAt);
     // The events it answers stop counting now; one reported from here on is the next snapshot's.
     const cleared = clearSnapshotEvents(reported);
     const stored = queueWrite(() => writeSnapshotPage(record, {

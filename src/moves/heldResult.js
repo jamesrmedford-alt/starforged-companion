@@ -188,6 +188,27 @@ async function resolveNeedsOfToldSwear(held) {
     .catch(err => console.warn(`${MODULE_ID} | held result: the Sojourn a sworn vow answers could not be resolved:`, err?.message ?? err));
 }
 
+/**
+ * A kept Sojourn's own narration is written and its card's claim released
+ * (keepHeldResult): a vow's swear told meanwhile found that claim held here
+ * and its resolve was refused — "This Sojourn's own narration is still being
+ * written" (sojournNeed.js resolveSojournNeed, `narration-in-flight`) — and
+ * waited for the next round's close or the canonical GM's load. The vows
+ * whose swear is told have their Sojourns resolved now
+ * (resolveToldSojournNeeds — once, by each need card's claim; issue #364
+ * SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY). A no-op for any other move. Never
+ * throws.
+ *
+ * @param {string|null} moveId — the kept result's move
+ * @returns {Promise<void>}
+ */
+async function resolveNeedsAfterSojournKept(moveId) {
+  if (moveId !== "sojourn") return;
+  await import("./sojournNeed.js")
+    .then(({ resolveToldSojournNeeds }) => resolveToldSojournNeeds())
+    .catch(err => console.warn(`${MODULE_ID} | held result: the Sojourns of the vows sworn while its narration was written could not be resolved:`, err?.message ?? err));
+}
+
 /** A working copy of the stored campaign state: the narration starts a scene and applies its sidecar on it. */
 function workingState() {
   const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
@@ -210,6 +231,7 @@ export async function keepHeldResult(message, by = "keep") {
   // Burned or improved already — its upgrade's narration closes the wait.
   if (flagsOf(message).burn?.consumed || flagsOf(message).improve?.consumed) return { applied: false, reason: "upgraded" };
   if (!claimResultUpgrade(id)) return { applied: false, reason: "in-flight" };
+  const keptMove = flagsOf(message).awaitingUpgrade?.resolution?.moveId ?? null;
   try {
     const held = flagsOf(message).awaitingUpgrade;
     const actorId = flagsOf(message).actorId ?? held.speakerActorId ?? null;
@@ -239,6 +261,8 @@ export async function keepHeldResult(message, by = "keep") {
     return { applied: true };
   } finally {
     releaseResultUpgrade(id);
+    // A kept Sojourn: a swear told while its narration was written follows it now.
+    await resolveNeedsAfterSojournKept(keptMove);
   }
 }
 
@@ -346,6 +370,39 @@ export async function keepHeldResultForChoice(resolutionId) {
 }
 
 /**
+ * Close the wait of a held card whose Burn Momentum or Improve Result was
+ * applied while the world refused that close (narrateHeldUpgrade) — the GMs'
+ * Retry of that step (index.js runPayoffStep "heldWait"). The close alone:
+ * the upgraded result was paid and narrated when it was applied, so nothing
+ * is paid or narrated again. Done when the card waits no longer; a card that
+ * was not burned or improved is not this step's to close (its keep pays and
+ * narrates it). Canonical GM (the Retry's handler).
+ *
+ * @param {ChatMessage} message — the held move card
+ * @param {"burn"|"improve"} by — the upgrade that settled it
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function closeUpgradedWait(message, by) {
+  if (by !== "burn" && by !== "improve") return { ok: false, reason: "invalid step" };
+  if (!isAwaitingUpgrade(message)) return { ok: true };
+  const f = flagsOf(message);
+  if (!f?.burn?.consumed && !f?.improve?.consumed) return { ok: false, reason: "invalid step" };
+  return (await closeWait(message, by)) ? { ok: true } : { ok: false, reason: "refused" };
+}
+
+/** The GMs' "Retry these steps" card for a held card's wait its upgrade could not close (closeUpgradedWait). Never throws. */
+async function reportUnclosedWait(card, by, { actorId = null, moveName = null } = {}) {
+  try {
+    const { postPayoffFailureCard } = await import("../index.js");
+    await postPayoffFailureCard({ source: "upgrade", actorId, failures: [{
+      step: "heldWait", messageId: card?.id ?? null, by, moveName, reason: "refused",
+    }] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | held result: the wait card ${card?.id ?? "?"} could not close was not reported:`, err?.message ?? err);
+  }
+}
+
+/**
  * A Burn Momentum or Improve Result of a held result re-narrates: the
  * upgraded result is the move's one narration. The wait closes, the price the
  * card held is paid if the upgraded result pays one too (a Battle or Clash
@@ -354,12 +411,17 @@ export async function keepHeldResultForChoice(resolutionId) {
  * there is no earlier narration for it to replace. Returns undefined when the
  * resolution upgraded is not a held one: the caller narrates as before.
  *
- * A wait the world would not let close (closeWait refused) leaves the card
- * asking and what it held unpaid, and the upgraded result is narrated as the
- * caller narrates one that was not held — but here, not handed back: handed
- * back, a burned or improved swear was told with nothing after it, and the
- * Sojourn its vow answers was never resolved (finishMove had left the held
- * swear to this module; issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED).
+ * A wait the world would not let close (closeWait refused) settles the
+ * upgraded result all the same — paid, narrated with the player's line, and
+ * the Sojourn a burned or improved swear's vow answers resolved after it —
+ * and the close goes to the GMs' "Retry these steps" card, whose Retry only
+ * closes it (closeUpgradedWait). The card used to stay open, still offering
+ * Keep the result (which answered "upgraded"), and the held price the
+ * upgraded result pays was never paid: it was paid only once the wait closed
+ * (issue #364 HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN). Handed back to the
+ * caller, a burned or improved swear was told with nothing after it, and
+ * the Sojourn its vow answers was never resolved (finishMove had left the
+ * held swear to this module; issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED).
  *
  * @param {string|null} upgradeOf — the original resolution's id
  * @param {Object} resolution — the upgraded outcome's (mutated: its line and seeds)
@@ -372,22 +434,22 @@ export async function narrateHeldUpgrade(upgradeOf, resolution, campaignState, o
   if (!card) return undefined;
   const held = flagsOf(card).awaitingUpgrade;
   const by = options.kind === "improve" ? "improve" : "burn";
-  // The caller's own narration of an upgrade (index.js narrateUpgradedResolution).
-  let narration = { speakerActorId: options.speakerActorId ?? null };
-  if (await closeWait(card, by)) {
-    const actorId = flagsOf(card).actorId ?? held.speakerActorId ?? options.speakerActorId ?? null;
-    // The move's first narration: the line the player wrote, not the marker an
-    // upgrade's re-narration carries in its place.
-    if (typeof held.resolution?.playerNarration === "string" && held.resolution.playerNarration.trim()) {
-      resolution.playerNarration = held.resolution.playerNarration;
-      resolution.inputMethod = held.resolution.inputMethod ?? "chat";
-    }
-    if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
-    narration = {
-      speakerActorId: options.speakerActorId ?? held.speakerActorId ?? null,
-      moveTarget:     held.moveTarget ?? null,
-    };
+  const actorId = flagsOf(card).actorId ?? held.speakerActorId ?? options.speakerActorId ?? null;
+  if (!(await closeWait(card, by))) {
+    await reportUnclosedWait(card, by, { actorId, moveName: resolution.moveName ?? held.resolution?.moveName ?? null });
   }
+  // The move's first narration: the line the player wrote, not the marker an
+  // upgrade's re-narration carries in its place.
+  if (typeof held.resolution?.playerNarration === "string" && held.resolution.playerNarration.trim()) {
+    resolution.playerNarration = held.resolution.playerNarration;
+    resolution.inputMethod = held.resolution.inputMethod ?? "chat";
+  }
+  // Paid here, once: nothing later pays a held price of a burned or improved card (keepHeldResult answers "upgraded", the Retry only closes).
+  if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
+  const narration = {
+    speakerActorId: options.speakerActorId ?? held.speakerActorId ?? null,
+    moveTarget:     held.moveTarget ?? null,
+  };
   const { narrateResolution } = await import("../narration/narrator.js");
   try {
     return await narrateResolution(resolution, campaignState, narration);

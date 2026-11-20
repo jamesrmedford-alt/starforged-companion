@@ -98,6 +98,12 @@
  *     (vi.advanceTimersByTimeAsync) — harness deliveries use the real
  *     setImmediate captured at import, so sockets still flow
  *     (multiplayerConcurrency.test.js's relay-timeout case is the model).
+ *   - reset() and teardown() end every real-clock timer a client scheduled
+ *     that has not fired, as a page reload ends a page's timers: a test's
+ *     background pass (the chronicle scribe's 2 s timer, a debounce) does not
+ *     run in the next test. reset() does not re-boot, so a timer a page set
+ *     at boot would end at the first reset() too — no module sets one today.
+ *     A test that needs a later pass waits for it within itself.
  *   - Whispers are delivered to every client (Foundry restricts them to the
  *     recipients and GMs); actors are one shared object per actor (updates
  *     still fire updateActor on every client); journals, scenes and folders
@@ -137,6 +143,12 @@ const REAL_TIMERS = {
   setTimeout:   globalThis.setTimeout,
   setInterval:  globalThis.setInterval,
   setImmediate: globalThis.setImmediate,
+};
+// …and what ends each: reset() / teardown() end the clients' pending timers.
+const REAL_TIMER_CLEARS = {
+  setTimeout:   globalThis.clearTimeout,
+  setInterval:  globalThis.clearInterval,
+  setImmediate: globalThis.clearImmediate,
 };
 
 const als = new AsyncLocalStorage();
@@ -232,6 +244,14 @@ const _timers = {};   // name → { base, underlying, wrappers }
 // waits for it (a module's setTimeout(…, 0) hop — the oracle follow-up relay —
 // can outlast a few idle setImmediate turns). Longer timers and timers on
 // vitest's fake clock are future events a test advances explicitly.
+//
+// Every real-clock client timer is also the page's until it fires (an
+// interval, until the page goes): the table records it (table._clientTimers),
+// and reset() / teardown() end what is still pending, as a page reload ends a
+// page's timers — a background pass one test scheduled (the chronicle scribe's
+// 2 s timer after a narration, a debounce) never runs in the next test's world
+// (issue #364 HARNESS-TIMERS-OUTLIVE-RESET). Within a test nothing changes.
+// Fake-clock timers are the test's own: vi.useRealTimers() discards them.
 const SETTLE_TIMER_MAX_MS = 50;
 
 function timerState(name) {
@@ -247,18 +267,26 @@ function routedWrapper(state, impl) {
     if (!store?.client || typeof callback !== "function") return impl.call(globalThis, callback, ...rest);
     const table = store.client.table;
     const delay = state.name === "setImmediate" ? 0 : (Number(rest[0]) || 0);
+    const realClock = impl === state.base;
     let pending = null;
-    if (state.name !== "setInterval" && impl === state.base && delay <= SETTLE_TIMER_MAX_MS) {
+    if (state.name !== "setInterval" && realClock && delay <= SETTLE_TIMER_MAX_MS) {
       pending = { due: Date.now() + delay };
       table._shortTimers.add(pending);
     }
-    return impl.call(globalThis, function clientTimer(...args) {
+    const live = realClock ? { name: state.name, client: store.client.id, handle: null } : null;
+    const handle = impl.call(globalThis, function clientTimer(...args) {
       if (pending) {
         table._shortTimers.delete(pending);
         table._progress += 1;
       }
+      if (live && state.name !== "setInterval") table._clientTimers.delete(live);
       return als.run(store, () => callback.apply(this, args));
     }, ...rest);
+    if (live) {
+      live.handle = handle;
+      table._clientTimers.add(live);
+    }
+    return handle;
   };
   wrapper[ROUTED_TIMER] = impl;
   if (impl?.[PROMISIFY_CUSTOM]) wrapper[PROMISIFY_CUSTOM] = impl[PROMISIFY_CUSTOM];
@@ -1083,6 +1111,7 @@ class SimTable {
     this._serverMessages = new Map();      // id → source
     this._pending = new Set();
     this._shortTimers = new Set();   // { due } — short real-clock client timers not yet fired (routedWrapper)
+    this._clientTimers = new Set();  // { name, client, handle } — every real-clock client timer not yet fired (routedWrapper); reset() / teardown() end them (one its module cleared stays listed until then: ending it again is a no-op)
     this._progress = 0;
     this._initialUsers = userSpecs.map(u => ({ ...u }));
     this._tornDown = false;
@@ -1174,12 +1203,32 @@ class SimTable {
   }
 
   /**
+   * End every real-clock timer a client scheduled that is still pending — a
+   * timeout, an interval, an immediate, on any page this table has had (one
+   * reload() replaced too) — as a page reload ends a page's timers (issue
+   * #364 HARNESS-TIMERS-OUTLIVE-RESET).
+   */
+  #endClientTimers() {
+    for (const t of this._clientTimers) REAL_TIMER_CLEARS[t.name].call(globalThis, t.handle);
+    this._clientTimers.clear();
+    // Each was a client timer on the real clock: none of them fires now.
+    this._shortTimers.clear();
+  }
+
+  /**
    * Back to the seeded world between tests, keeping the booted clients (and
    * so their module state: hook registrations, install guards — and anything
-   * a test left in a module-level cache).
+   * a test left in a module-level cache) but not their pending timers: once
+   * the table settles, every real-clock timer a client scheduled and has not
+   * seen fire is ended, as a page reload would — so a background pass the
+   * last test scheduled (the chronicle scribe 2 s after a narration, a
+   * debounce) cannot run in the next test's world, where it was counted as
+   * that test's call and took its scripted reply (issue #364
+   * HARNESS-TIMERS-OUTLIVE-RESET).
    */
   async reset({ world = null } = {}) {
     await this.settle();
+    this.#endClientTimers();
     this._worldSettings.clear();
     const seed = world?.settings ?? this._seedWorld;
     for (const [key, value] of Object.entries(seed ?? {})) this.world.setSetting(key, value);
@@ -1277,9 +1326,11 @@ class SimTable {
     }
   }
 
+  /** The pages go: nothing more is delivered, and their pending timers end with them. */
   async teardown() {
     if (this._tornDown) return;
     this._tornDown = true;
+    this.#endClientTimers();
     for (const c of this.clients) { c.connected = false; c.socketHandlers.clear(); }
     uninstallModuleCacheRouting();
     uninstallGlobalRouting();

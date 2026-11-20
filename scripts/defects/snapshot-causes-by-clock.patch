@@ -1,0 +1,18 @@
+Defect: SNAPSHOT-EVENT-SAME-MS (issue #364) — a new world snapshot's log reads "since" the replaced snapshot by the clock alone, ignoring the cut a snapshot taken on this client marked, so an event reported in the same millisecond as the snapshot that answered it is named again and one stamped earlier by a clock stepped back is dropped
+Tests: tests/unit/snapshotCausesNamedByOrder.test.js
+Catches: an event reported in the same millisecond as the snapshot that answered it is not named again
+Catches: an event stamped before the snapshot by a clock stepped back is still named
+
+diff --git a/src/narration/snapshotEvents.js b/src/narration/snapshotEvents.js
+index 72b8f57b..604a2656 100644
+--- a/src/narration/snapshotEvents.js
++++ b/src/narration/snapshotEvents.js
+@@ -201,7 +201,7 @@ function snapshotEventDetail(sinceMs = 0, heldTakenAt = null) {
+   const cut = typeof heldTakenAt === 'string' && _cuts.has(heldTakenAt) ? _cuts.get(heldTakenAt) : null;
+   const out = [];
+   for (const e of _detail) {
+-    const after = cut !== null ? e.seq > cut : e.at >= (Number(sinceMs) || 0);
++    const after = e.at >= (Number(sinceMs) || 0);   // DEFECT: the replaced snapshot's own cut is ignored — "since" is read by the clock alone
+     if (after && !out.includes(e.id)) out.push(e.id);
+   }
+   return out;

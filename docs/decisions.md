@@ -6,6 +6,111 @@ rejected.
 
 ---
 
+## Issue #364's third round of open items: a truth the X-Card took back stays out, a kept NPC gets a fresh agenda, the ship's position reads on to the place (2026-11)
+
+**Decision:** (the eighteen items left open by the second round's fixes — `known-issues.md` → "Found while settling issue #364's second round of open items" — settled on 2026-11-20 at the maintainer's request, "Go with your recommendation on all of the new ones, and any others you find, then open a pr": the maintainer took the recommendation on the six that were decisions, and on the items found while settling them.)
+
+- **A truth the X-Card took back stays out of the story**
+  (XCARD-REVEAL-REREVEAL-NO-LORE; the maintainer took the recommendation).
+  The X-Card's undo marks a plan whose revealed truth it took back
+  (`truthWithheldBy`); the narrator is then given the plan without its truth
+  and told never to decide, reveal or hint at it, and a later reveal of it
+  records nothing. The plan's clues, steps and clock stay in play. A GM lifts
+  it by editing the truth's text, or by Reveal now. This is "The X-Card forgets
+  what it answered" applied to a plan's truth: what the X-Card removed is not
+  re-asserted. It holds when the X-Card lands before the reveal was saved
+  (XCARD-BEFORE-REVEAL-WRITE) and after a Burn Momentum or Improve Result
+  hid the truth first (XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL — a supersede
+  marks the narration whose reveal it took back, `truthTakenBackBy`, and only
+  the X-Card turns that into withholding: a burn is not the safety tool).
+- **An NPC the X-Card keeps gets a fresh agenda** (XCARD-USED-NPC-AGENDA-DELETED;
+  the maintainer took the recommendation): new rolls, no narration stamp,
+  nothing from the removed narration; none when a plan about her is still in
+  play.
+- **The ship's position reads on to the first place named**
+  (SHIP-SEED-NONSPATIAL-HIT-FIRST; the maintainer took the recommendation):
+  past a person, ship or faction to a settlement, planet or location; a phrase
+  naming no place is still kept as text (issue #321 U43). Multi-word names in
+  the phrase are read whole first, so a ship named after a place is not that
+  place (SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP).
+- **A vow sworn and told still resolves its Sojourn after it is deleted**
+  (SOJOURN-TOLD-VOW-DELETED; the maintainer took the recommendation): the oath
+  happened in the story. When the resolve at the delete is refused, the need
+  card itself keeps the fact (`swornVowDeleted`).
+- **The mint records a closing session whose round is still to be narrated**
+  (LATE-ROUND-NO-LAST-SESSION-RECORD; the maintainer took the recommendation):
+  as LAST SESSION's session, with no text and marked owed, the record it was
+  telling kept behind it (`displaced`) and told until the late narration's
+  catch-up writes the new one. Nothing is invented; a round never narrated
+  puts the older record back.
+- **A shared vow's reward whose holder's sheet was deleted names its other
+  holders** (PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE; the maintainer took the
+  recommendation): a GM can give it by hand. Nothing is re-granted
+  automatically.
+- **A benefit for a character who is gone goes to nobody**
+  (AID-ALLY-GONE-BENEFIT-TO-ROLLER): a momentum gain, next-roll bonus, health
+  or wound clear named for an aided ally or a Heal's patient who has left the
+  world is not given to the roller; the card says it was not applied.
+- **A victory card acts only on the vow its fight served**
+  (NO-VOW-ID-CARD-MARKS-WRONG-VOW): by the fight's own vow id, or a name that
+  names that vow. A card that cannot tell asks "Which vow advances?" rather
+  than marking another vow by itself.
+- **A Retry that can never succeed is final** — a step whose named vehicle,
+  companion, track, site, sector, fight, expedition, asset or vow is gone
+  (PAYOFF-RETRY-SUFFER-TARGET-GONE and the rows beside it). A target looked up
+  at the press — the command vehicle, the only companion — keeps its Retry.
+- **The need card waits for the miss** (SOJOURN-OATH-NARRATED-BEFORE-MISS,
+  SOJOURN-NEED-CARD-DURING-OTHER-KEEP): a held Sojourn miss is narrated before
+  the card that answers it is posted, so an oath is never told before the
+  trouble it answers.
+- **A destination's start of a name, and an expedition's journey words, are
+  read the same way by the place resolver and the site ladder**
+  (EXPEDITION-JOURNEY-WORDS-FRAGMENT, EXPEDITION-JOURNEY-WORDS-SITE-LINK,
+  EXPEDITION-PREFIX-SITE-LADDER-MISMATCH, RESOLVER-AMBIGUOUS-PREFIX,
+  EXPEDITION-FINISH-JOURNEY-WORDS-SITE): the expedition's start, its arrival
+  and its reveal ask the same question, and an ambiguous start of a name is
+  broken by the site at the resolver's pick, so docking and charting agree.
+- **A late narration reaches its session's Session Log story**
+  (LATE-ROUND-NOT-IN-SESSION-LOG-STORY, LATE-ROUND-SESSION-LOG-BEFORE-MINT):
+  the story is rewritten when it was written before the newest card its
+  summary tells, by the catch-up and by the mint.
+- **The test harness ends a simulated page's timers at reset**
+  (HARNESS-TIMERS-OUTLIVE-RESET), as a page reload would, so one test's
+  background pass cannot run in the next test's world.
+- **A won fight's reward, its upgrade and its Attempt to Fulfill follow the
+  served vow too** (WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN,
+  WON-FIGHT-UPGRADE-REWARD-DELETED-VOW-SOLE-OPEN, ATTEMPT-FULFIL-NO-ID-CARD):
+  with that vow gone no other vow's reward is granted or raised, and 🏁 asks
+  which vow rather than rolling another. An upgrade's benefit for a gone ally
+  goes to nobody as well (UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
+
+**Reason:** each was a defect or a gap the second round's fixes left or exposed.
+Those only "read from the code" were reproduced in a test first; LATE-ROUND-KEYLESS-GM
+showed no defect and is pinned.
+
+**Rejected:** *Letting a later reveal lift the X-Card's strike* — the X-Card's
+content would come back. *Retiring the plan whose truth the X-Card took back* —
+its clues and steps are not the removed narration's. *Withholding a truth a
+burn alone hid* — a burn is not the safety tool. *Keeping the narrated phrase
+beside the place it names* — nothing reads a settlement's free text, and it
+would look like an old token placement. *Re-granting a shared vow's reward
+automatically* — which character should get it is the GM's call. *Giving the
+benefit to the roller when the aided ally is gone* — it was the ally's.
+*Waiting with `vi.waitFor` in the audio test* — its "never made" checks need
+the whole path to settle within the counted turns. *Raising timeouts for the
+tests that failed under load* — the root causes were fixed instead.
+*A second owed mark for two sessions owed at once* (TWO-OWED-SESSIONS-ONE-MARK,
+accepted) — it would touch every reader of the one mark for a case that needs
+two failures together.
+
+**Amends:** "Issue #364's second round of open items" (a payoff step is final
+also when its named target is gone; the ship's position reads on past a
+non-place; the destination rule's journey words apply at an expedition's finish
+and in its site ladder too); "The X-Card forgets what it answered" (a plan's
+truth the X-Card took back is withheld from the narrator).
+
+---
+
 ## Issue #364's second round of open items: a Sojourn miss answered with a vow is resolved as a strong hit, a destination names a known place only as its name and little else, no timer for an idle round (2026-11)
 
 **Decision:** (the sixteen items left open by the fixes of issue #364's open items — `known-issues.md` → "Found while fixing issue #364's open items" — settled at the maintainer's request on 2026-11-20, "Please handle the 16 items that cropped up, and any others that crop up while doing that", with the maintainer's answers to the three that were decisions, and the items found while settling them.)

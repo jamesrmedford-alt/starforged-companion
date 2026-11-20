@@ -84,7 +84,7 @@ import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDe
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
 import { logPacingDecision } from "./pacing/telemetry.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getActor, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -173,7 +173,7 @@ import {
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { wholeWordsFit, wholeWordPattern } from "./context/relevanceResolver.js";
-import { placeNameAndLittleElse } from "./entities/nameMatch.js";
+import { placeNameAndLittleElse, withoutJourneyWords } from "./entities/nameMatch.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, writeOwnedFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, SESSION_IDLE_HOURS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, sessionInPlay, serialiseSessionMint } from "./session/lifecycle.js";
@@ -2140,7 +2140,16 @@ function currentLocationForEntityId(id) {
  *     unexplored site in their own words, so the arrival by the label alone
  *     resolved to no place and left the ship, its token and CURRENT LOCATION
  *     at the settlement they had left while the same move charted the site
- *     (issue #342 Z14).
+ *     (issue #342 Z14). A label that begins several unexplored sites' names
+ *     is for the one at the place it names to the resolver, where the
+ *     arrival docks by name — the reveal asks the same way (movePipeline):
+ *     the site ladder named neither, so a track with no link docked at one
+ *     and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX). The label
+ *     is asked without the journey words at its edges too, when it names no
+ *     site whole (`journeyWords`), as the arrival by name and the start read
+ *     it: a track with no link for "the expedition to the Sunken" docked at
+ *     the vault by name and the reveal charted nothing (issue #364
+ *     EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
  *   - `label` — the expedition's label, the place an expedition for no site
  *     is named after; null for one begun with no destination named. A line
  *     that names no destination, or names it in words of its own, still
@@ -2157,7 +2166,10 @@ async function expeditionArrival(interpretation, campaignState) {
     const track = selectExpeditionTrack(await listProgressTracks(), said,
       { trackId: interpretation?.moveTargetId ?? null });
     const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
-    const found = selectExpeditionSite(campaignState, track?.label ?? said, { siteId: track?.siteId ?? null });
+    const asked = track?.label ?? said;
+    const place = resolveCurrentLocationName(asked ?? "", campaignState, { journeyWords: true });
+    const found = selectExpeditionSite(campaignState, asked,
+      { siteId: track?.siteId ?? null, placeId: place?.id ?? null, journeyWords: true });
     const label = typeof track?.label === "string" ? track.label.trim() : "";
     return {
       siteActorId: found?.site?.actorId ?? null,
@@ -2287,9 +2299,15 @@ async function applyOutcomeEffects({
     // prefix rung — while the ship's position, which takes a full name or a
     // name part only, was the free text "Bleak" and its token stayed where
     // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
+    // A Finish an Expedition's names are an expedition's own — its track's
+    // label, the line's words for it — and lose their journey words before
+    // the rungs that compare a label whole, as at its start: "the expedition
+    // to Bleak", read there as one for Bleakhold, docked nowhere (issue #364
+    // EXPEDITION-JOURNEY-WORDS-FRAGMENT). A Set a Course's are not.
+    const journeyWords = resolution.moveId === "finish_an_expedition";
     const named = currentLocationForEntityId(destinationId)
-      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState) : null)
-      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
+      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState, { journeyWords }) : null)
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState, { journeyWords });
 
     // Whether the ship's position was written, and its token moved — the
     // Set a Course card says so only when it did (issue #348 PT09), and why
@@ -2446,7 +2464,22 @@ async function applyOutcomeEffects({
           try {
             const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
-            let   linked = selectExpeditionSite(campaignState, label);
+            const journeyWords = !resolution.courseRerouted;
+            // The tracked place the label names (below: asked as for a
+            // destination) — the one its finish docks at by name.
+            const place  = label && label !== UNNAMED_EXPEDITION_LABEL
+              ? resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords })
+              : null;
+            // A typed expedition's label may say it is a journey there: the
+            // site ladder asks it without those words too (issue #364
+            // EXPEDITION-JOURNEY-WORDS-SITE-LINK); a course's asks as the
+            // course did. A label that begins several unexplored sites' names
+            // is for the one at that place, where its finish docks: the
+            // ladder named neither while the resolver picked one of their
+            // locations, so nothing was linked or recorded, and the finish
+            // docked there and charted neither (issue #364
+            // RESOLVER-AMBIGUOUS-PREFIX).
+            let   linked = selectExpeditionSite(campaignState, label, { journeyWords, placeId: place?.id ?? null });
             // A destination that is no site and no tracked place — the
             // coordinates an NPC gave, "the gap" — becomes an uncharted site of
             // the active sector under the expedition's working label, with its
@@ -2459,17 +2492,19 @@ async function applyOutcomeEffects({
             // A Set a Course read as this expedition has asked already, as
             // for a destination, and the answer was "no charted place" —
             // "Archer's rendezvous — the gap" is not the settlement Archer.
-            // The same question is asked here: asked the looser way, the
-            // label named Archer, no site was recorded, and the finish docked
-            // at the settlement (issue #364
+            // The same question is asked here (`place`, above): asked the
+            // looser way, the label named Archer, no site was recorded, and
+            // the finish docked at the settlement (issue #364
             // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT). An expedition typed as
             // one is asked by the same rule — it was asked the looser way,
             // and one for "the wreck beyond Bleakhold" was for Bleakhold —
             // with the journey's own words beside the name little else too:
             // "the expedition to Bleakhold" is for Bleakhold (issue #364
-            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
-            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
-              && !resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords: !resolution.courseRerouted })) {
+            // EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT) — and taken off before
+            // the start and fragment rungs: "the expedition to Bleak" is for
+            // Bleakhold, as "Bleak" is (issue #364
+            // EXPEDITION-JOURNEY-WORDS-FRAGMENT).
+            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !place) {
               linked = siteNamedBy(campaignState, label);
               const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world
@@ -2568,8 +2603,11 @@ async function applyOutcomeEffects({
       { itemId: interpretation?.companionItemId ?? null });
     const signed = `${companionDelta > 0 ? "+" : ""}${companionDelta}`;
     if (!healed.ok) {
-      ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
-      notApplied.push(`companion health ${signed} (${healed.reason})`);
+      // Why, in words — its code was printed, "(no-companion)" (issue #364
+      // MOVE-CARD-RAW-REASON-CODE).
+      const why = payoffReasonWords(healed.reason);
+      ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${why}) — apply it on the asset.`);
+      notApplied.push(`companion health ${signed} — ${why}`);
     } else {
       applied.push(`companion health ${signed}`);
     }
@@ -2581,11 +2619,19 @@ async function applyOutcomeEffects({
   // added to their next action roll (consumeNextMoveBonus); it was card text
   // alone (issue #322 V02). An upgrade grants what its outcome adds.
   const nextBonus = Number(next.nextMoveBonus ?? 0) - Number(orig.nextMoveBonus ?? 0);
-  // Aid Your Ally: the ally takes it (issue #325 W17).
-  const allyActor = next.beneficiary === "ally" && interpretation?.allyActorId
-    ? (game.actors?.get?.(interpretation.allyActorId) ?? null) : null;
-  const bonusTaker = isPlayerCharacterActor(allyActor) ? allyActor : rollerActor;
-  if (nextBonus > 0) {
+  // Aid Your Ally: the ally takes it (issue #325 W17). An ally the move named
+  // who is gone since — deleted, or no longer a player character — takes
+  // nothing, and nor does the roller: a Burn Momentum or Improve Result of
+  // the move gave the upgraded hit's +1 to whoever rolled (issue #364
+  // UPGRADE-ALLY-GONE-BONUS-TO-ROLLER). The card says why, in words.
+  const allyId    = next.beneficiary === "ally" && typeof interpretation?.allyActorId === "string" && interpretation.allyActorId
+    ? interpretation.allyActorId : null;
+  const allyActor = allyId ? getActor(allyId) : null;
+  const allyGone  = allyId !== null && !isPlayerCharacterActor(allyActor);
+  const bonusTaker = allyId ? allyActor : rollerActor;
+  if (nextBonus > 0 && allyGone) {
+    notApplied.push(`+${nextBonus} on the next move for the character ${rollerActor?.name ?? "the roller"} aided — ${payoffReasonWords("no-pc", { final: true })}`);
+  } else if (nextBonus > 0) {
     try {
       const granted = await grantNextMoveBonus(bonusTaker?.id ?? null, nextBonus, resolution.moveId ?? null);
       if (granted.ok) applied.push(`+${nextBonus} on ${bonusTaker?.name ?? "the roller"}'s next move`);
@@ -2936,18 +2982,51 @@ function legacyMarkAdded(next, orig) {
 async function applyWonFightPayoff(track, outcome, rollerActor, { resolutionId = null } = {}) {
   const marks = wonFightMarks(track, outcome);
   const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
-  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId, resolutionId }).catch(err =>
+  // A fight linked by id keeps that id on its card, whatever became of the
+  // vow: deleted from every sheet, fightLinkedVow finds no copy by it, and a
+  // card with the name alone was built on — or its ⚑ marked — another open
+  // vow (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+  const cardVowId = vowId ?? (typeof track?.linkedVowId === "string" && track.linkedVowId ? track.linkedVowId : null);
+  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId: cardVowId, resolutionId }).catch(err =>
     console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
-  const granted = await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies }).catch(err => {
-    console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
-    return null;
-  });
+  // The reward of the vow the fight served, and no other's: with no copy of
+  // it on any sheet, nothing is granted and the GMs are told, once — the name
+  // ladder's sole-open-vow rung granted another vow's promised reward (issue
+  // #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+  const served = wonFightRewardCopies(track, vowName, copies, rollerActor?.id ?? null);
+  const granted = served.length
+    ? await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies: served }).catch(err => {
+      console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
+      return null;
+    })
+    : { ok: false, final: true, step: "reward", reason: "no-vow", servedGone: true };
   if (granted && !granted.ok) {
     await postPayoffFailureCard({
-      source: "fight", vowName, vowId: granted.vowId ?? null,
-      actorId: rollerActor?.id ?? null, outcome, failures: [granted],
+      source: "fight", vowName, vowId: granted.vowId ?? cardVowId,
+      actorId: rollerActor?.id ?? null, outcome, failures: [granted], final: granted.final === true,
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
+}
+
+/**
+ * The copies of the vow a won fight served, whose promised reward its win
+ * pays: those the track's `linkedVowId` names (fightLinkedVow's `copies`); a
+ * fight linked by id with none on any sheet served a vow deleted since — a
+ * namesake is another vow — so none; a fight linked by name, the vow its name
+ * names, exactly or as whole words (namedVowCopies). Never the table's sole
+ * open vow: resolveVowItemCopies' last rung found another vow, whose promised
+ * reward was granted (issue #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+ *
+ * @param {{ linkedVowId?: string|null }} track — the fight
+ * @param {string|null} vowName — fightLinkedVow's
+ * @param {Array<{actor, item}>|null} copies — fightLinkedVow's
+ * @param {string|null} actorId — the winner
+ * @returns {Array<{actor, item}>}
+ */
+function wonFightRewardCopies(track, vowName, copies, actorId) {
+  if (Array.isArray(copies) && copies.length) return copies;
+  if (typeof track?.linkedVowId === "string" && track.linkedVowId) return [];
+  return namedVowCopies(vowName, actorId).copies;
 }
 
 /**
@@ -3015,9 +3094,17 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
     : null;
   if (milestone?.ok && milestone.applied) applied.push(milestone.applied);
   else if (milestone && !milestone.ok && milestone.step) { failures.push(milestone); owed.push(milestone.what); }
-  // The vow is fulfilled, or on no sheet: nothing a Retry could mark.
-  else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} (${milestone.reason ?? "refused"})`);
-  const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
+  // The vow is fulfilled, or on no sheet: nothing a Retry could mark — why,
+  // in words: its code was printed, "(vow-gone)" (issue #364
+  // MOVE-CARD-RAW-REASON-CODE).
+  else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} — ${payoffReasonWords(milestone.reason ?? "refused", { final: milestone.final === true })}`);
+  // The difference of the served vow's reward alone — none with no copy left:
+  // the name ladder's sole-open-vow rung raised another vow's weak-hit reward
+  // and gave its second point (issue #364
+  // WON-FIGHT-UPGRADE-REWARD-DELETED-VOW-SOLE-OPEN). The milestone's line
+  // already tells the table the vow is gone.
+  const served = wonFightRewardCopies(track, vowName, copies, rollerActor?.id ?? null);
+  const reward = !served.length ? null : await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies: served }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
     return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
   });
@@ -5159,7 +5246,7 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
  * @param {{ narration?: string, actorId?: string|null, moveId?: "fulfill_your_vow"|"forsake_your_vow",
  *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
  */
-async function postWhichVowCard({ narration, actorId = null, vows, moveId = "fulfill_your_vow" }) {
+export async function postWhichVowCard({ narration = null, actorId = null, vows, moveId = "fulfill_your_vow", lead: askedLead = null }) {
   const forsake = moveId === "forsake_your_vow";
   const buttons = vows.map(v => {
     const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
@@ -5167,7 +5254,9 @@ async function postWhichVowCard({ narration, actorId = null, vows, moveId = "ful
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
       + `title="${forsake ? "Forsake this vow" : "Roll this vow's progress"}">${forsake ? "⛓" : "🏁"} ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
-  const lead = forsake
+  // `askedLead`: a won-fight card's 🏁 whose vow its name no longer names
+  // (cardActions.js applyAttemptFulfilVow; issue #364 ATTEMPT-FULFIL-NO-ID-CARD).
+  const lead = askedLead ? askedLead : forsake
     ? (vows.length > 1
       ? "More than one of your vows is open and nothing named one of them. Choose the vow to forsake — nothing has been cleared yet."
       : "Nothing named one of your open vows. Forsake this one? Nothing has been cleared yet.")
@@ -5949,7 +6038,12 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // #301 B02). Open vows only, as before. A fight linked by the vow's id
   // finds it by that id, whatever it is named now (issue #362 AC46).
   const linked = linkedId ? fightCardVow({ vowId: linkedId, actorId }) : null;
-  const { primary } = linked ? { primary: null } : resolveVowItemCopies(vowName, { actorId });
+  // By name, only a vow the name names (exactly, or as whole words): the
+  // ladder's sole-open-vow rung built the card of a vow deleted since on the
+  // table's only other open vow, its id and all (issue #364
+  // NO-VOW-ID-CARD-MARKS-WRONG-VOW). With no vow found the card has its name
+  // alone, and its ⚑ asks which vow advances.
+  const primary = linked ? null : namedVowCopies(vowName, actorId).primary;
   const item = linked ? (linked.state === "open" ? linked.item : null)
     : (primary?.item?.system?.completed === true ? null : (primary?.item ?? null));
   const vowRank        = item?.system?.rank ?? null;
@@ -5957,8 +6051,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // id): from the flag alone, a sheet vow whose stamp never landed carried
   // null, so 🤝 Deepen's once-only record found the vow by its name only and
   // a rename allowed a second deepen (known-issues
-  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
-  const vowId          = vowCopyId(item);
+  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY). A fight linked by id keeps it when its
+  // vow is fulfilled or gone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+  const vowId          = vowCopyId(item) ?? (linked ? linkedId : null);
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -6001,11 +6096,14 @@ async function markLinkedVowMilestone(vowName, marks, actorId = null, vowId = nu
     if (closed) return { ok: false, reason: closed === "gone" ? "vow-gone" : "vow-completed" };
     // By the card's vow id: the holder's open copy, whatever it is named now
     // (issue #345 AA17 — by name, a renamed vow fell to the winner's sole open
-    // vow). A card with no id keeps the name.
+    // vow). A card with no id keeps the name — and asks which vow advances
+    // when its name names no open vow (`askUnnamed`): a vow renamed and one
+    // deleted look the same by name, and the holder's only other open vow was
+    // marked (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
     const byId = fightCardVow({ vowId, actorId });
     const action = byId
       ? await applyReachMilestone(byId.holder, byId.item.name ?? vowName ?? null, marks, { itemId: byId.item.id })
-      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
+      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks, { askUnnamed: true });
     if (action === "mark" || action === "pick") return { ok: true };
     console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
     return { ok: false, reason: "no-vow" };
@@ -6261,6 +6359,23 @@ function rollerVowEntry(all, lo, { actorId = null, itemId = null } = {}) {
   if (!actorId || !lo) return null;
   const own = all.filter(e => e.actor?.id === actorId && vowNameMatch(e, lo) === 2);
   return own.find(e => e.item.system?.completed !== true) ?? own[0] ?? null;
+}
+
+// The vow a name names — exactly, or one inside the other as whole words
+// (vowNameMatch) — and its copies: resolveVowItemCopies without its
+// sole-open-vow rung, which found another vow for a name that names none (a
+// vow deleted, or renamed past its name). What a won fight's victory card and
+// its reward find by a name alone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW,
+// WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN) — and its 🏁, exported for
+// cardActions.js applyAttemptFulfilVow (issue #364 ATTEMPT-FULFIL-NO-ID-CARD).
+//
+// @param {string|null} vowName
+// @param {string|null} [actorId] — the roller, whose own vow comes first
+// @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
+export function namedVowCopies(vowName, actorId = null) {
+  const found = resolveVowItemCopies(vowName, { actorId });
+  return found.primary && vowNameMatch(found.primary, String(vowName ?? "").trim().toLowerCase()) > 0
+    ? found : { primary: null, copies: [] };
 }
 
 // Name-ladder score of a vow entry against a lowercased target: 2 exact,
@@ -6854,6 +6969,7 @@ const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
   "site-gone": "the site is no longer on the sector map",
   "sector-gone": "its sector is no longer stored",
+  "sector-no-map": "its sector's map is not stored yet",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
@@ -6864,6 +6980,22 @@ const PAYOFF_REASONS = {
   "victory-card-gone": "the victory card is no longer in chat, and its ⚑ was never pressed",
   "vow-completed": "the vow is fulfilled — nothing to mark",
   "vow-gone":  "the vow is on no character's sheet any more",
+  // A suffer step's target, or an asset effect's track, not there at the
+  // press — each printed its raw code (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+  "no-vehicle":   "no vehicle to change",
+  "no-companion": "no companion to change",
+  "track-gone":   "its progress track is gone",
+  "track-done":   "its progress track is finished",
+  // A suffer step's mark of progress, and a vehicle's integrity it raises —
+  // the suffer card's words (issue #364 PAYOFF-RETRY-SUFFER-PROGRESS-TRACK-GONE).
+  "no-fight":        "no open fight was named",
+  "fight-gone":      "its fight is gone",
+  "fight-over":      "its fight is over",
+  "expedition-gone": "its expedition is gone",
+  "expedition-over": "its expedition is over",
+  "ambiguous":       "more than one is open — mark it in the Progress Tracks panel",
+  "battered":        "the vehicle is battered: a Repair must clear that before its integrity can rise",
+  "no-condition":    "the vehicle has no Battered condition to mark",
 };
 
 // Why a `final` outcome is owed nothing any more — its line under "Not
@@ -6874,9 +7006,29 @@ const PAYOFF_FINAL_REASONS = {
   "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
   "no-vow": "the vow is on no character's sheet any more",
   "no-vehicle": "the vehicle is no longer in the world",
+  "no-companion": "the companion is no longer on the character's sheet",
+  "track-gone": "its progress track is no longer in the world",
+  "track-done": "its progress track is finished, so nothing is left to change on it",
+  // A support vehicle's battered mark (issue #364 BATTERED-NO-CONDITION-LOOP).
+  "no-condition": "the vehicle has no Battered condition to mark",
+  "fight-gone": "its fight is no longer in the world",
+  "fight-over": "its fight is over, so nothing is left to mark on it",
+  "expedition-gone": "its expedition is no longer in the world",
+  "expedition-over": "its expedition is over, so nothing is left to mark on it",
   // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
   "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
+
+// A payoff outcome's reason in words for a line a player reads — an upgraded
+// move card's "Not applied", a warning: the GMs' payoff card's own tables, a
+// `final` outcome's text first, and plain words for a code with neither. The
+// raw code was printed there, "(vow-gone)" (issue #364 MOVE-CARD-RAW-REASON-CODE).
+// Exported for an upgrade's own "Not applied" line — Aid Your Ally's ally gone
+// since the move (resultUpgrade.js payAllyMomentum; issue #364
+// UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
+export function payoffReasonWords(reason, { final = false } = {}) {
+  return (final ? PAYOFF_FINAL_REASONS[reason] : null) ?? PAYOFF_REASONS[reason] ?? "it could not be applied";
+}
 
 const PAYOFF_TITLES = {
   fulfil:      (c) => `Vow payoff incomplete — “${c.vowName ?? "your vow"}”`,
@@ -6960,6 +7112,8 @@ function payoffStepRecord(f) {
     case "upgrade":     return upgradeStepRecord(f);
     case "upgradeOpen": return { step: "upgradeOpen", messageId: f.messageId ?? null, moveName: f.moveName ?? null,
       kinds: (Array.isArray(f.kinds) ? f.kinds : []).filter(k => k === "burn" || k === "improve") };
+    case "heldWait":    return { step: "heldWait", messageId: f.messageId ?? null, moveName: f.moveName ?? null,
+      by: f.by === "improve" ? "improve" : "burn" };
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
       clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
@@ -6993,15 +7147,22 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
       }
       case "suffer": {
         // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
-        // An aided ally's momentum is the ally's, as its Retry applies it
-        // (sufferDialog runSufferResolution; a move's refused meters, issue #336 Y16).
-        const allyId = f.call?.kind === "meter" && f.call.meterKey === "momentum" && f.call.delta > 0 ? f.opts?.allyActorId : null;
-        const pc    = (allyId ? (game.actors?.get?.(allyId) ?? null) : null)
-          ?? (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
+        // A benefit named for an aided ally or a Heal's patient is theirs, as
+        // its Retry applies it (sufferDialog runSufferResolution; a move's
+        // refused meters, issue #336 Y16) — and one gone since is nobody's:
+        // the line named the roller, whose meter it showed (issue #364
+        // AID-ALLY-GONE-BENEFIT-TO-ROLLER).
+        const { sufferCallBeneficiaryId } = await import("./moves/sufferDialog.js");
+        const forId = sufferCallBeneficiaryId(f.call, f.opts ?? {});
+        const pcId  = forId ?? actorId;
+        const pc    = pcId ? getActor(pcId) : null;
+        const roller = forId && !pc && actorId ? getActor(actorId) : null;
+        const who   = pc?.name
+          ?? (forId ? `the character ${roller?.name ?? "the roller"} ${forId === f.opts?.allyActorId ? "aided" : "cared for"}` : "the character");
         const meter = f.call?.kind === "meter" ? f.call.meterKey : SUFFER_METERS[f.call?.sufferId];
         const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
-        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(who)} — ${why}.${now}`;
       }
       case "choiceCard": {
         // A move's suffer-choice card the world refused (ERROR-TEXT-BLAMES-KEY).
@@ -7024,6 +7185,15 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
           : " Its buttons wait until this lands; the result is recorded, and its roller has not decided.";
         return `${escapeChatHtml(upgradeButtonNames(f.kinds))} on ${escapeChatHtml(pc?.name ?? "the roller")}'s ${escapeChatHtml(f.moveName ?? "move")} card, opened once its result was recorded — ${why}.${now}`;
       }
+      case "heldWait": {
+        // A held result's wait its Burn / Improve could not close (issue #364 HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN).
+        const pc   = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        const card = f.messageId ? (game.messages?.get?.(f.messageId) ?? null) : null;
+        const now  = !card ? " The card is no longer in chat."
+          : card.flags?.[MODULE_ID]?.awaitingUpgrade?.open !== true ? " It is closed now."
+          : " Until it is, the card still offers Keep the result — the upgraded result is paid and narrated already.";
+        return `${escapeChatHtml(pc?.name ?? "The roller")}'s ${escapeChatHtml(f.moveName ?? "move")} card, closed to Burn / Improve / Keep once its ${f.by === "improve" ? "Improve Result" : "Burn Momentum"} was applied — ${why}.${now}`;
+      }
       case "momentum": {
         // A PC's Begin / End a Session momentum (issue #311 P08).
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
@@ -7044,14 +7214,14 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         // A move's site reveal whose record the world refused (issue #331 X18).
         const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
         const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === f.siteId);
-        const now    = !site ? " It is no longer on the map." : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
+        const now    = !site ? (f.final === true ? "" : " It is no longer on the map.") : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
         return `The site ${escapeChatHtml(f.name ?? "it reached")} charted as discovered — ${why}.${now}`;
       }
       case "uncharted": {
         // An uncharted destination whose move record the world refused (issue #362 AC49).
         const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
         const onMap  = !!sector?.mapData?.discoveries?.some?.(d => d?.id === f.site?.id);
-        const now    = !sector ? " Its sector is no longer stored."
+        const now    = !sector ? (f.final === true ? "" : " Its sector is no longer stored.")
           : onMap ? " It is on the map now."
           : " Until it is, the expedition that set out for it charts nothing when it is finished.";
         return `The uncharted destination ${escapeChatHtml(f.name ?? "the crew set out for")} recorded on the sector map — ${why}.${now}`;
@@ -7105,6 +7275,17 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
       case "rewardGrant": {
         const pc   = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who  = escapeChatHtml(pc?.name ?? "the character");
+        // Its holder's sheet gone, on a shared vow: the vow's other
+        // characters, whom a GM may give it to by hand (decided — issue #364
+        // PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE). A vow on one sheet alone
+        // keeps the line below.
+        const others = f.final === true && f.reason === "no-pc" && Array.isArray(f.otherHolders) ? f.otherHolders.filter(Boolean) : [];
+        if (others.length) {
+          const named = others.map(n => escapeChatHtml(n));
+          const list = named.length > 1 ? `${named.slice(0, -1).join(", ")} or ${named.at(-1)}` : named[0];
+          return `The promised reward “${escapeChatHtml(f.reward?.description ?? "your reward")}” — recorded as earned, but not given: the character's sheet is gone from the world. `
+            + `The vow is shared, so a GM can give it by hand to another of its characters — ${list}.`;
+        }
         const form = f.plan?.form;
         const meter = (form === "supply" || form === "momentum") ? readCharacterSnapshot(pc)?.meters?.[form] : undefined;
         const now  = meter !== undefined ? ` ${who}'s ${form} stands at ${meter} now; this adds ${f.plan?.amount ?? 1}.` : "";
@@ -7124,6 +7305,12 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         return `The strong hit's share of the promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""}, for a win upgraded from a weak hit — ${why}.${now}`;
       }
       default:
+        // A won fight whose vow is on no sheet at the win: whatever reward it
+        // promised left with it, and no other vow's is given in its place
+        // (applyWonFightPayoff; issue #364 WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN).
+        if (f.servedGone === true) {
+          return `Any reward promised for “${escapeChatHtml(vowName ?? "the vow")}” — ${why}; none was given, and no other vow's reward in its place.`;
+        }
         // A closing line for a step name nothing here runs (a card another
         // version wrote, or a damaged one): named as recorded, never as the reward.
         if (f.final === true && typeof f.step === "string" && f.step && f.step !== "reward") {
@@ -7206,6 +7393,18 @@ export async function retryPayoffSteps(card) {
   return failures;
 }
 
+// The names of the characters holding a copy of a payoff card's vow other
+// than `pcId`'s — a shared vow's (the crew's inciting vow, flagged
+// `sharedVow` on every sheet, or any vow whose copies are on several
+// sheets). Empty for a vow on one sheet alone.
+function otherVowHolderNames(copies, pcId) {
+  const names = new Map();
+  for (const { actor } of Array.isArray(copies) ? copies : []) {
+    if (actor?.id && actor.id !== pcId && !names.has(actor.id)) names.set(actor.id, actor.name ?? "a character");
+  }
+  return [...names.values()];
+}
+
 // A step's character no longer in the world — its Actor deleted since the
 // card was posted (or no longer a player character's): the step names it by
 // id, so no later press finds one either. `final`: the GMs' Retry says so
@@ -7221,6 +7420,22 @@ const PC_GONE = Object.freeze({ ok: false, final: true, reason: "no-pc" });
 // raise, on this press or a later one: `final`. As a plain failure it went on
 // a fresh Retry card on every press (issue #364 PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
 const VOW_GONE = Object.freeze({ ok: false, final: true, reason: "no-vow" });
+
+// Whether a site's uncharted destination record still waits on a Retry: a
+// step of the card being retried (claimed before its steps run, it may land
+// or go on a fresh Retry card) or of another payoff card in chat whose Retry
+// is still live. Until it lands the site is on no map, so a Retry of its
+// reveal answers "site-gone" without that being final (runPayoffStep; issue
+// #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+function unchartedRecordAwaitsRetry(siteId, card) {
+  if (typeof siteId !== "string" || !siteId) return false;
+  const holds = (steps) => (Array.isArray(steps) ? steps : []).some(x => x?.step === "uncharted" && x.site?.id === siteId);
+  if (holds(card?.steps)) return true;
+  return (game.messages?.contents ?? []).some(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.payoffFailureCard === true && f.retryable !== false && f.resolved !== true && holds(f.steps);
+  });
+}
 
 // Run one failed step again. The card is GM-authored, but its values are still
 // checked: a legacy is one of the three tracks, 1–40 ticks. A record that
@@ -7240,11 +7455,20 @@ async function runPayoffStep(s, card, copies) {
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
     case "suffer": {
       // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
-      const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+      const { runSufferResolution, isRetryableSufferCall, sufferTargetGoneForGood } = await import("./moves/sufferDialog.js");
       const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
       if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
       if (!isPlayerCharacterActor(pc)) return PC_GONE;
-      const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
+      // A target not there is told on this Retry's own card: the executor's
+      // "Vehicle not found" card said it again on every press
+      // (`skipMissingCard`, a flag of this run alone — never stored).
+      const [res] = await runSufferResolution([s.call], pc, { ...(s.opts ?? {}), skipMissingCard: true });
+      // The vehicle, companion or track the step names by id gone since, or
+      // that track finished: no later press finds it either — `final`, told
+      // once with no Retry. It went on a fresh Retry card each time (issue
+      // #364 PAYOFF-RETRY-SUFFER-TARGET-GONE). A target it does not name (the
+      // command vehicle, the only companion) may be there on a later press.
+      if (res?.ok === false && sufferTargetGoneForGood(s.call, s.opts ?? {}, res)) return { ...res, ok: false, final: true };
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
     }
     case "choiceCard": {
@@ -7283,6 +7507,16 @@ async function runPayoffStep(s, card, copies) {
       if (!card) return { ok: false, final: true, reason: "card-gone" };
       return openRecordedUpgrades(card, s.kinds);
     }
+    case "heldWait": {
+      // A held result's wait its Burn / Improve could not close (issue #364
+      // HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN): closed now, and only closed —
+      // the upgraded result was paid and narrated when it was applied. The
+      // move card deleted since: nothing to close, on any later press.
+      const { closeUpgradedWait } = await import("./moves/heldResult.js");
+      const card = typeof s.messageId === "string" ? (game.messages?.get?.(s.messageId) ?? null) : null;
+      if (!card) return { ok: false, final: true, reason: "card-gone" };
+      return closeUpgradedWait(card, s.by);
+    }
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).
       return retryRiderStep(s, card?.actorId ?? null);
@@ -7316,12 +7550,24 @@ async function runPayoffStep(s, card, copies) {
     case "site": {
       // A move's site reveal whose record the world refused (issue #331 X18).
       const { saveSiteDiscovered } = await import("./sectors/siteDiscovery.js");
-      return saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+      const res = await saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+      // The site on no stored map, and no record of it waiting on a Retry —
+      // nothing removes a site from a map, so nothing can put it back: `final`,
+      // told once with no Retry. It went on a fresh Retry card each time. While
+      // its uncharted destination's record waits on a Retry (this card's or
+      // another's), it can still land (issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+      if (res?.reason === "site-gone" && !unchartedRecordAwaitsRetry(s.siteId, card)) return { ...res, final: true };
+      return res;
     }
     case "uncharted": {
       // An uncharted destination's record, whose move record the world refused (issue #362 AC49).
       const { saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
-      return saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
+      const res = await saveUnchartedSite({ sectorId: s.sectorId ?? null, site: s.site ?? null });
+      // No stored sector by that id: no later press finds one — `final`, told
+      // once with no Retry. A sector stored without its map ("sector-no-map")
+      // can still take it (issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
+      if (res?.reason === "sector-gone") return { ...res, final: true };
+      return res;
     }
     case "clocks": {
       // A session-start clock advance the world refused: the rolled fills are
@@ -7371,13 +7617,32 @@ async function runPayoffStep(s, card, copies) {
       // once, on the vow's payoff ledger.
       const marks = Math.floor(Number(s.marks));
       if (typeof s.cardId !== "string" || !s.cardId || !(marks >= 1 && marks <= 3)) return { ok: false, reason: "invalid step" };
-      return upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
+      const res = await upgradeFightVowMilestone({ cardId: s.cardId, marks, lacking: s.lacking ?? null, whenPressed: s.whenPressed ?? null,
         vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null });
+      // No open vow to mark, on a card that carries no vow id (neither it nor
+      // its victory card): its name is all it has, and no copy by that exact
+      // name is on any sheet — fulfilled ones counting, as VOW_GONE reads a
+      // reward's vow. Deleted, nothing is left to mark on this press or a
+      // later one: `final`, told once with no Retry. It went on a fresh Retry
+      // card each time (issue #364 PAYOFF-RETRY-MILESTONE-NO-VOW-ID). A card
+      // with a vow id is answered by that id ("vow-gone"), as before.
+      if (res?.ok === false && res.reason === "no-vow" && !(typeof res.vowId === "string" && res.vowId)
+        && !payoffVowCopies({ vowName: card.vowName ?? null, actorId: card.actorId ?? null }).length) {
+        return { ...res, final: true };
+      }
+      return res;
     }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
-      // The holder's sheet deleted since the claim: no one to give it to.
-      if (!pc) return PC_GONE;
+      // The holder's sheet deleted since the claim: no one to give it to. A
+      // shared vow's other characters — those holding a copy of it — are
+      // named on the closing line, for a GM who wants to give it to one of
+      // them by hand: nothing is re-granted (issue #364
+      // PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE, decided — wording only).
+      if (!pc) {
+        const others = otherVowHolderNames(copies, s.pcId);
+        return others.length ? { ...PC_GONE, otherHolders: others } : PC_GONE;
+      }
       const given = await giveReward(pc, s.reward, s.plan);
       if (given.ok) {
         await postRewardGrantCard(s.reward, s.plan).catch(err =>
@@ -7639,17 +7904,20 @@ async function postDevelopRelationshipCard(plan) {
  * optional named vow (interpretation.moveTarget); null lets planReachMilestone
  * auto-select the sole open vow or, when several are open, post a picker card.
  * `itemId` names the vow Item itself (a won-fight card's vow, by its id —
- * issue #345 AA17): that open vow is marked, else none.
+ * issue #345 AA17): that open vow is marked, else none. `askUnnamed` (a
+ * won-fight card with no vow id): a target that names no open vow posts the
+ * picker, never the sole open vow (planReachMilestone; issue #364
+ * NO-VOW-ID-CARD-MARKS-WRONG-VOW).
  *
  * @param {Actor|null} actor
  * @param {string|null} target
  * @param {number} [marks]
- * @param {{ itemId?: string|null }} [opts]
+ * @param {{ itemId?: string|null, askUnnamed?: boolean }} [opts]
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1, { itemId = null } = {}) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -7665,7 +7933,7 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null } =
   const byItem = itemId ? vows.find(v => v.id === itemId && !v.completed) ?? null : null;
   const plan = itemId
     ? (byItem ? { action: "mark", vow: byItem, ticks: milestoneTicks(byItem.rank) } : { action: "none" })
-    : planReachMilestone(vows, target);
+    : planReachMilestone(vows, target, { askUnnamed });
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     await markVowProgress(actor, plan.vow.id, ticks);
@@ -8553,20 +8821,29 @@ function escapeChatHtml(s) {
  * rendezvous — the gap" was a course to Archer (issue #364
  * COURSE-NEW-LABEL-CONTAINS-SETTLEMENT; a rule, the maintainer's decision).
  *
- * `journeyWords` (with `asDestination`: the start of an expedition typed as
- * one — never a course's question, nor the expedition a course is read as,
- * which asks as the course did) counts the journey's own words as little
- * else too: an expedition's label may say it is one — "the expedition to
- * Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
+ * `journeyWords` — the label is an expedition's own: the start of an
+ * expedition typed as one (with `asDestination`), and the arrival by name at
+ * a Finish an Expedition (its track's label, the line's words for it) — never
+ * a course's question, nor the expedition a course is read as, which asks as
+ * the course did. With `asDestination` it counts the journey's own words as
+ * little else too: an expedition's label may say it is one — "the expedition
+ * to Bleakhold", "a journey toward Bleakhold Station" are for Bleakhold; "the
  * wreck beyond Bleakhold" is a new destination. A typed expedition was asked
  * the looser way, so that one was for Bleakhold: no uncharted site was
  * recorded, and its finish docked at the settlement (issue #364
- * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT).
+ * EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT). Either way the journey words at
+ * the label's edges are taken off before the rungs that compare it whole — a
+ * name it begins, a fragment of a name (nameMatch.withoutJourneyWords) —
+ * after the whole label's exact rung: "the expedition to Bleak" is for
+ * Bleakhold, as "Bleak" is, and "expedition to the gap" for a charted
+ * "Archer's Rendezvous — The Gap". Compared whole, the first recorded a new
+ * uncharted site, the second a second one, and a finish read as one for
+ * Bleakhold docked nowhere (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT).
  *
- * The others pass neither: an arrival with no site or pin to dock at by id
- * reads a place in the words around it (known-issues
- * ARRIVAL-LOCATION-PHRASE-SPLIT), and `!at` is the GM's own naming, its card
- * saying where it landed.
+ * The others pass neither: a Set a Course's arrival with no pin to dock at by
+ * id reads a place in the words around it (known-issues
+ * ARRIVAL-LOCATION-PHRASE-SPLIT), as a finish's does, and `!at` is the GM's
+ * own naming, its card saying where it landed.
  *
  * @param {string} name
  * @param {Object} campaignState
@@ -8613,14 +8890,21 @@ export function resolveCurrentLocationName(name, campaignState, { siteRecordName
       { activeSectorId })?.site?.actorId;
     return (typeof actorId === "string" && actorId && candidates.find(c => c.type === "location" && c.id === actorId)) || null;
   };
+  // An expedition's own label without the journey words at its edges, for
+  // the rungs that compare the label whole — a name it begins, a fragment of
+  // a name: "the expedition to Bleak" begins no name, "Bleak" begins
+  // Bleakhold. Null when there are none to take off, or nothing else is left.
+  const core = journeyWords ? withoutJourneyWords(target) : "";
+  const bare = core && core !== target ? core : null;
   // One name inside the other, as whole words. For a destination, a place's
   // name inside it is that place only as its name and little else.
-  const within = (c) => wholeWordsFit(c.lc, target)
+  const within = (c) => (wholeWordsFit(c.lc, target)
     && (!asDestination || wholeWordPattern(target).test(c.lc)
-      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords }));
+      || placeNameAndLittleElse(target, c.entity.name, c.type, { journey: journeyWords })))
+    || (!!bare && wholeWordPattern(bare).test(c.lc));
   return pick(c => c.lc === target)
       ?? (siteRecordNames ? byRecordName() : null)
-      ?? pick(c => c.lc.startsWith(target))
+      ?? pick(c => c.lc.startsWith(target) || (!!bare && c.lc.startsWith(bare)))
       ?? pick(within)
       ?? null;
 }
@@ -9117,6 +9401,10 @@ async function retryRiderStep(s, actorId) {
   if (rider.resource === "progress") {
     if (!s.track?.id) return { ok: false, reason: "invalid step" };
     const { ok, reason, error } = await applyProgressRider(rider, s.track);
+    // The track the step names by id deleted since, or finished — nothing
+    // reopens one: `final`, told once with no Retry. It went on a fresh Retry
+    // card each time (issue #364 PAYOFF-RETRY-SUFFER-TARGET-GONE).
+    if (reason === "track-gone" || reason === "track-done") return { ok: false, final: true, reason };
     return { ok, reason, error };
   }
   const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);

@@ -152,6 +152,36 @@ export function normaliseSkeleton(raw) {
     // a page flag is merged on write, and a mark left out would never clear.
     truthRevealedBy: markOf(truthRevealed, raw.truthRevealedBy),
     rollsShownBy:    markOf(rollsShown, raw.rollsShownBy),
+    // The narration whose reveal of the truth the X-Card took back: the truth
+    // is withheld from the narrator from then on — never shown it, never
+    // offered to reveal it, a narration's reveal of it not recorded (issue
+    // #364 XCARD-REVEAL-REREVEAL-NO-LORE, the maintainer's ruling: the
+    // X-Card's exclusion holds). Set by the X-Card's undo
+    // (worldJournal.js undoNarrationEntries `withholdTruths`); lifted by a
+    // GM's edit of the truth (secrets.js editSkeleton) and by a GM's Reveal
+    // now — kept only while the truth is decided and unrevealed. Null on
+    // every other plan, and on one stored before the mark was kept.
+    truthWithheldBy: markOf(!!truth && !truthRevealed, raw.truthWithheldBy),
+    // The narration whose reveal of the truth a Burn Momentum / Improve
+    // Result supersede took back (worldJournal.js undoNarrationEntries): the
+    // burn hides the truth again and withholds nothing — its re-narration may
+    // reveal it — but an X-Card that later removes that narration with the
+    // beat it upgraded (issue #347 D2) reads the mark as a reveal it took back
+    // itself, and withholds the truth (issue #364
+    // XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL). Kept only while the truth is
+    // decided and unrevealed; ended by a write that changes the truth's text
+    // (secrets.js updateSkeleton — the new truth was never on screen), and
+    // spent when the X-Card withholds by it. Null on every other plan.
+    truthTakenBackBy: markOf(!!truth && !truthRevealed, raw.truthTakenBackBy),
+    // The narration whose capture linked a plan filed about a name to the
+    // card or Threats page made for that name (secrets.js planNpcAgenda,
+    // planSignificantThreat) — the link's own mark, as `playedBy` is a step's:
+    // a Burn / Improve supersede of that narration keeps the link while the
+    // card or page stands, and an undo that takes the narration back without
+    // keeping it (the X-Card) puts the plan back about the name, whatever was
+    // written to it since (worldJournal.js undoNarrationEntries; issue #364
+    // SUPERSEDE-UNLINKS-EARLIER-PLAN). Kept only while the subject is linked.
+    subjectLinkedBy: markOf(subject.type !== "name" && !!subject.id, raw.subjectLinkedBy),
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     // The one re-roll a plan awaiting its decision may use in place of a
@@ -409,7 +439,9 @@ export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {
   const shown = new Set(reveal.revealed);
   const id = typeof narrationId === "string" && ID_RE.test(narrationId) ? narrationId : null;
   const by = id ? { playedBy: id } : {};
-  const truthNow = !record.truthRevealed && shown.has("truth") && !!record.truth;
+  // A truth the X-Card withheld is not revealed by a narration (issue #364
+  // XCARD-REVEAL-REREVEAL-NO-LORE): the rest of the beat's reveal stands.
+  const truthNow = !record.truthRevealed && !record.truthWithheldBy && shown.has("truth") && !!record.truth;
   const endsNow  = reveal.resolved === true && record.status !== "resolved";
   return {
     ...record,
@@ -445,7 +477,11 @@ export function applyPlanToSkeleton(record, plan) {
     next.reroll = "";
   }
   if (plan.subject) next.subject.name = plan.subject;
-  for (const field of ["truth", "wants", "knows"]) if (plan[field]) next[field] = plan[field];
+  // A withheld truth is the GM's to change, never a narration's: the narrator
+  // is not shown it (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
+  for (const field of ["truth", "wants", "knows"]) {
+    if (plan[field] && !(field === "truth" && record.truthWithheldBy)) next[field] = plan[field];
+  }
   if (plan.escalation.length) {
     const done = new Map(record.escalation.filter(e => e.done).map(e => [e.text, e]));
     next.escalation = plan.escalation.map((t, i) => ({ id: itemId("e", i), text: t, done: done.has(t), ...playedMark(done.get(t)) }));

@@ -333,6 +333,7 @@ describe("issue #364 WON-FIGHT-MILESTONE-UPGRADE-NO-RETRY — a refused mark aft
 
     expect(beacon.system.current).toBe(PER_MARK);
     expect(failCards().flatMap(c => c.flags[MODULE_ID].steps).filter(s => s.step === "milestoneUpgrade")).toEqual([]);
-    expect(String(live(card).content)).toContain("1 more milestone mark toward Bring the beacon home (vow-completed)");
+    // In words, not its code (issue #364 MOVE-CARD-RAW-REASON-CODE).
+    expect(String(live(card).content)).toContain("1 more milestone mark toward Bring the beacon home — the vow is fulfilled — nothing to mark");
   }, 30_000);
 });

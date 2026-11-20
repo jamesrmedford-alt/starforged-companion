@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 
 vi.mock('../../src/audio/elevenlabs.js', () => ({ synthesise: vi.fn() }));
 
@@ -37,10 +38,33 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => s
 
 let savedHTMLElement, savedMessages, savedUpload;
 let synthGates, uploadGates;
-const releaseSynth  = () => synthGates.shift()?.(new ArrayBuffer(16));
+/**
+ * Let the oldest synthesis waiting finish. One must be waiting: a release that
+ * found none used to do nothing (`?.`), so a segment not yet asked for was
+ * never released and the test failed later on a Sound that was never made.
+ */
+const releaseSynth = () => {
+  const gate = synthGates.shift();
+  if (!gate) throw new Error('releaseSynth: no synthesis is waiting — the segment has not been asked for yet');
+  gate(new ArrayBuffer(16));
+};
 const releaseUpload = () => uploadGates.shift()?.();
 
+/**
+ * The SHA-256 a segment's cache key hashes, made on the event loop. Node's
+ * WebCrypto digest runs on the libuv thread pool and answers whenever that
+ * thread gets the CPU: under load, later than `flush()`'s eight turns, so the
+ * segment's synthesis was not yet asked for when the test released it
+ * (TESTS-FLAKY-UNDER-LOAD). The same bytes, so every cache key is unchanged.
+ */
+async function digestOnTheEventLoop(algorithm, data) {
+  expect(String(algorithm?.name ?? algorithm).toUpperCase(), 'the cache key is a SHA-256 (setup)').toBe('SHA-256');
+  const bytes = createHash('sha256').update(ArrayBuffer.isView(data) ? data : new Uint8Array(data)).digest();
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
 beforeEach(() => {
+  vi.spyOn(crypto.subtle, 'digest').mockImplementation(digestOnTheEventLoop);
   savedHTMLElement = globalThis.HTMLElement;
   globalThis.HTMLElement = StubElement;
   setListenerResultSink(() => {});

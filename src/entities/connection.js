@@ -406,6 +406,10 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
  * the X-Card kept (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either way the
  * ledger facts promoted to the deleted card go back to its name.
  *
+ * A kept NPC with no plan gets a fresh agenda (planKeptConnectionAgenda,
+ * issue #364 XCARD-USED-NPC-AGENDA-DELETED): the capture undo before this
+ * deleted the one her creation filed, stamped with the removed narration.
+ *
  * @param {string[]} narrationIds
  * @returns {Promise<{ deleted: string[], kept: Array<{ id: string, name: string }> }>}
  */
@@ -419,11 +423,22 @@ export async function retractNarrationConnections(narrationIds) {
     if (!removed.has(data?.createdFromNarrationId)) continue;
     const name = String(data.name || document.name || "").trim() || "A connection";
     try {
-      if (connectionUsed(data) || sheetWrittenByTable(document, data)) { out.kept.push({ id: document.id, name }); continue; }
+      // A kept NPC gets a fresh agenda when she has no plan: the capture
+      // undo, which ran first, took the one her creation filed with the
+      // removed narration (issue #364 XCARD-USED-NPC-AGENDA-DELETED).
+      if (connectionUsed(data) || sheetWrittenByTable(document, data)) {
+        out.kept.push({ id: document.id, name });
+        await planKeptConnectionAgenda(data);
+        continue;
+      }
       // Dynamic import avoids an actorBridge cycle.
       const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
       const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
-      if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
+      if (bonds.marked) {
+        out.kept.push({ id: document.id, name });
+        await planKeptConnectionAgenda(data);
+        continue;
+      }
       // Its teardown is this one: the deleteActor hook leaves it alone (issue #362 D10).
       await document.delete({ [MODULE_ID]: { [TORN_DOWN_OPTION]: true } });
       await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
@@ -453,6 +468,38 @@ export async function retractNarrationConnections(narrationIds) {
     }
   }
   return out;
+}
+
+/**
+ * A connection the X-Card keeps — the table used the NPC its removed
+ * narration introduced (retractNarrationConnections) — gets a fresh agenda
+ * when she has no plan (issue #364 XCARD-USED-NPC-AGENDA-DELETED, the
+ * maintainer's ruling). The X-Card's capture undo runs first
+ * (retractions.js retractNarrationCapture → worldJournal.js
+ * undoNarrationEntries) and deleted the agenda her creation filed, stamped
+ * with the removed narration, before she was found to be kept; an agenda is
+ * filed only where an NPC is created, so nothing filed one again. Filed by
+ * secrets.js planNpcAgenda, as at her creation: new oracle rolls (her card's
+ * goal and role as they stand after the undo), no narration stamp, nothing
+ * carried from the removed narration — and its guards keep one plan an NPC:
+ * a plan about her card still there (one a GM or a kept narration wrote
+ * since), in play or not, files nothing, and an active plan under her name is
+ * linked to her card instead. Canonical GM (planNpcAgenda's own gate; the
+ * X-Card's finish). Never throws.
+ *
+ * @param {Object} data — the kept connection's record
+ * @returns {Promise<Object|null>} the plan filed or linked, or null
+ */
+async function planKeptConnectionAgenda(data) {
+  try {
+    // Dynamic import: the Secrets journal imports entity modules.
+    const { planNpcAgenda } = await import("../world/secrets.js");
+    const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    return await planNpcAgenda(data, { campaignState, narrationId: null, trigger: "xcard_kept_connection" });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: a fresh agenda for the kept connection ${data?.name ?? ""} was not filed:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**

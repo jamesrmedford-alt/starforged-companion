@@ -13,7 +13,7 @@
  * the orchestration unit-tests without a live game.
  */
 
-import { generatedName } from "../entities/nameMatch.js";
+import { generatedName, withoutJourneyWords } from "../entities/nameMatch.js";
 import { selectSectorSite, siteNamedExactly, buildSiteLocationData } from "./precursorSites.js";
 import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
@@ -46,7 +46,10 @@ export function siteDisplayName(site) {
 /**
  * The site an expedition is for: the discovery its track links (`siteId`),
  * charted or not, else the unexplored site its label names — exact, whole
- * words or the type keyword (`requireLabelMatch`: never the sole-site guess,
+ * words, a name it begins (one site's only: "the Sunk" for "The Sunken
+ * Vaults", as the place resolver reads it — issue #364
+ * EXPEDITION-PREFIX-SITE-LADDER-MISMATCH) or the type keyword
+ * (`requireLabelMatch`: never the sole-site guess,
  * so an expedition to a settlement is for no site). Finishing the expedition
  * arrives there, by the site's location Actor: the crew names an unexplored
  * site in their own words (its pin reads "Unexplored Site"), so the label
@@ -54,12 +57,29 @@ export function siteDisplayName(site) {
  * CURRENT LOCATION stayed on the settlement they left (issue #342 Z14). A
  * read of the given state.
  *
+ * `journeyWords` — the label is an expedition's own, typed as one (index.js,
+ * the start of a new expedition): when the whole label names no site, it is
+ * asked again without the journey words at its edges
+ * (nameMatch.withoutJourneyWords). Compared whole, "the Sunken" named the
+ * unexplored "The Sunken Vaults" and "the expedition to the Sunken" none: the
+ * expedition was linked to no site, and its finish charted nothing (issue
+ * #364 EXPEDITION-JOURNEY-WORDS-SITE-LINK).
+ *
+ * `placeId` — the place the label names to the place resolver (index.js
+ * resolveCurrentLocationName), where an expedition for it docks: of several
+ * unexplored sites whose names the label begins, the one whose location it
+ * is (precursorSites.selectSectorSite's `placeId`). The ladder named neither
+ * while the resolver picked one of their locations: an expedition for "the
+ * Sunk" with "The Sunken Vaults" and "The Sunken Spire" unexplored was
+ * linked to neither, and its finish docked at one and charted neither (issue
+ * #364 RESOLVER-AMBIGUOUS-PREFIX).
+ *
  * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
  * @param {string|null} label — the expedition's label
- * @param {{ siteId?: string|null }} [opts] — the track's link
+ * @param {{ siteId?: string|null, journeyWords?: boolean, placeId?: string|null }} [opts] — the track's link
  * @returns {{ sector: Object, site: Object }|null}
  */
-export function selectExpeditionSite(state, label, { siteId = null } = {}) {
+export function selectExpeditionSite(state, label, { siteId = null, journeyWords = false, placeId = null } = {}) {
   const sectors = Array.isArray(state?.sectors) ? state.sectors : [];
   if (siteId) {
     for (const sector of sectors) {
@@ -67,11 +87,16 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
       if (site) return { sector, site };
     }
   }
-  return selectSectorSite(sectors, label, {
+  const named = (name) => selectSectorSite(sectors, name, {
     requireLabelMatch: true,
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
+    placeId,
   });
+  const found = named(label);
+  if (found || !journeyWords || typeof label !== "string") return found;
+  const core = withoutJourneyWords(label);
+  return core && core !== label.trim() ? named(core) : null;
 }
 
 /**
@@ -220,6 +245,18 @@ function newSiteId() {
  *   the label names, never the sole-site guess: a Finish an Expedition's
  *   reveal (an expedition to a settlement charted the sector's last unexplored
  *   site — issue #342 D7). `!reveal-site` keeps the guess.
+ * @param {string|null} [opts.placeId] — with `requireLabelMatch`, the place
+ *   the label names to the place resolver, where the expedition docked: of
+ *   several unexplored sites whose names the label begins, the one at it is
+ *   revealed (selectSectorSite's `placeId`; issue #364
+ *   RESOLVER-AMBIGUOUS-PREFIX — the finish docked at one and charted neither)
+ * @param {boolean}  [opts.journeyWords] — the label is an expedition's own (a
+ *   Finish an Expedition's reveal): when it names no site whole, it is asked
+ *   again without the journey words at its edges (nameMatch
+ *   .withoutJourneyWords), as the finish's arrival and the expedition's start
+ *   ask (selectExpeditionSite). Compared whole, a track with no link for "the
+ *   expedition to the Sunken" docked at "The Sunken Vaults" by name and
+ *   charted nothing (issue #364 EXPEDITION-FINISH-JOURNEY-WORDS-SITE).
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise — the state with the
  *   flag set, a copy; the move pipeline's seam folds its sectors into the
@@ -237,12 +274,18 @@ export async function revealSectorSite(label, opts = {}) {
   const restyle   = opts.restyle   ?? restyleSiteOnScene;
 
   const state = getState();
-  const found = selectSectorSite(state?.sectors, label, {
+  const select = (name) => selectSectorSite(state?.sectors, name, {
     siteId:            opts.siteId ?? null,
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
     requireLabelMatch: opts.requireLabelMatch === true,
+    placeId:           opts.placeId ?? null,
   });
+  let found = select(label);
+  if (!found && opts.journeyWords === true && typeof label === "string") {
+    const core = withoutJourneyWords(label);
+    if (core && core !== label.trim()) found = select(core);
+  }
   if (!found) return null;
   const { sector, site: match } = found;
 
@@ -315,8 +358,15 @@ export async function saveUnchartedSite({ sectorId = null, site = null } = {}) {
     return await serialiseCampaignStateWrite(async () => {
       const latest  = storedState() ?? {};
       const sectors = Array.isArray(latest.sectors) ? latest.sectors : [];
-      const sector  = sectors.find(s => s?.id === sectorId && s.mapData) ?? null;
+      // No stored sector by that id: gone ("sector-gone" — nothing stores a
+      // sector under an id it had, so the GMs' Retry reads it as final). One
+      // stored without its map — the {id, name} stub sector creation writes
+      // first, which its full record replaces under the same id — is not
+      // gone: the record can land once the map does (issue #364
+      // PAYOFF-RETRY-SITE-SECTOR-GONE; both answered "sector-gone").
+      const sector  = sectors.find(s => s?.id === sectorId) ?? null;
       if (!sector) return { ok: false, reason: "sector-gone" };
+      if (!sector.mapData) return { ok: false, reason: "sector-no-map" };
       const discoveries = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
       if (discoveries.some(d => d?.id === site.id)) return { ok: true };
       const recorded = { ...sector, mapData: { ...sector.mapData, discoveries: [...discoveries, { ...site }] } };

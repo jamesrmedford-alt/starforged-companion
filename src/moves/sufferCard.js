@@ -33,7 +33,7 @@ import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction, applyWaypointOraclePick } from "./cardActions.js";
-import { requesterOwnsActor } from "./burnMomentum.js";
+import { requesterOwnsActor, resultUpgradeSettled } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
 import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor, reopenUpgradesForUndoneChoice, moveCardFor } from "./resultUpgrade.js";
 
@@ -424,6 +424,12 @@ const NOT_APPLIED = {
   "no-table":     "no such table",
   "track-gone":   "its track is gone",
   "track-done":   "its track is finished",
+  // Aid Your Ally's ally or a Heal's patient, deleted since the move: nobody
+  // takes it (issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER).
+  "no-pc":        "the character it was for is no longer in the world",
+  // A support vehicle's asset with no Battered condition (issue #364
+  // BATTERED-NO-CONDITION-LOOP — the code was printed).
+  "no-condition": "the vehicle has no Battered condition to mark",
 };
 
 /**
@@ -853,7 +859,20 @@ async function handleSufferPick(message, dataset) {
     return { applied: false, reason: "no-follow-up" };
   }
 
-  await closeUpgrades();
+  const closed = await closeUpgrades();
+  // Sojourn's "Community needs help" is answered on a card of its own — a vow
+  // sworn on it answers the trouble the miss tells — so that card waits for
+  // the narration of the held miss this pick kept: posted at once, the vow
+  // could be sworn and told before the miss was, the oath before the trouble
+  // it answers (issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS). A miss that was
+  // not held has nothing to wait for; any other pick applies at once. A keep
+  // of that miss already being told — its roller's next line kept it, so
+  // this pick kept nothing — is waited for the same way (issue #364
+  // SOJOURN-NEED-CARD-DURING-OTHER-KEEP).
+  if (answeredOnItsOwnCard(calls)) {
+    if (closed?.keeping) await closed.keeping;
+    await resultUpgradeSettled(moveCardFor(f.resolutionId ?? null)?.id ?? null);
+  }
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
@@ -904,6 +923,19 @@ async function handleSufferPick(message, dataset) {
     if (missed.length) await reportRefusedCalls(actor, calls, results, executorOpts);
   }
   return { applied: true };
+}
+
+/**
+ * Whether a pick's calls are answered on a card of their own: one route call
+ * that resolves its move as another outcome (Sojourn's "Community needs help"
+ * — `resolvesAs`, sufferDialog.js; its executor posts the community's need
+ * card, sojournNeed.js).
+ *
+ * @param {Array<Object>} calls — resolveSufferSelection's
+ * @returns {boolean}
+ */
+function answeredOnItsOwnCard(calls) {
+  return calls.length === 1 && calls[0]?.kind === "route" && calls[0].resolvesAs === "strong_hit";
 }
 
 // What a resist card handed back after the world refused its roll's post says

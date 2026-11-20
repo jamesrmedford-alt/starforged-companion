@@ -217,17 +217,26 @@ function distinctVows(vows, rollerActorId) {
 /**
  * Plan a Reach a Milestone.
  *
+ * `askUnnamed` — a won fight's victory card with no vow id, whose name is all
+ * it has: a name that names no open vow is a vow renamed or deleted since,
+ * which the sole open vow cannot tell apart, so the picker asks — a person
+ * chooses, and a deleted vow is answered by choosing none. The sole open vow
+ * was marked: another vow than the fight served (issue #364
+ * NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+ *
  * @param {Array} vows — readVows() output
  * @param {string|null} target — interpretation.moveTarget (named vow)
+ * @param {{ askUnnamed?: boolean }} [opts]
  * @returns {{action:"none"}
  *          | {action:"mark", vow:object, ticks:number}
  *          | {action:"pick", vows:Array}}
  */
-export function planReachMilestone(vows, target) {
+export function planReachMilestone(vows, target, { askUnnamed = false } = {}) {
   const open = (vows ?? []).filter(v => v && !v.completed);
   if (namesCompletedVow(vows, target)) return { action: "none", reason: "completed" };
   if (!open.length) return { action: "none" };
   const selected = selectMilestoneVow(open, target);
+  if (selected && askUnnamed && !vowByName(open, target)) return { action: "pick", vows: open };
   if (selected) return { action: "mark", vow: selected, ticks: milestoneTicks(selected.rank) };
   return { action: "pick", vows: open };
 }

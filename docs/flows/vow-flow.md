@@ -192,7 +192,9 @@ Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward off
 **A vow sworn to see a community's need done.** A Sojourn miss's "Community
 needs help" is answered on the community's need card
 (`src/moves/sojournNeed.js`; combat-flow.md, issue #364
-SOJOURN-VOW-OPTION-REMINDER-ONLY). Its **⚔ Swear an Iron Vow** (relayed
+SOJOURN-VOW-OPTION-REMINDER-ONLY), posted once a held miss the pick kept
+has been told, so the oath never comes before the trouble it answers
+(issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS). Its **⚔ Swear an Iron Vow** (relayed
 `sojourn.need`, the roller's player or a GM, one press at a time and one
 vow per card) writes the vow on the roller's sheet through
 `createCharacterVowItem` (no `vowId`; `sojournNeedCard`: the card's chat
@@ -214,8 +216,9 @@ resolved once the held swear is told — `heldResult.keepHeldResult`, or
 `narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
 SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath) — also
 when the world refused the write that closes the held card's wait:
-`narrateHeldUpgrade` then narrates the upgraded swear itself, as an upgrade
-of a result that was not held is narrated, and the Sojourn follows it
+`narrateHeldUpgrade` then settles the upgraded swear itself — narrated as
+a held result's upgrade is, the close left to the GMs' Retry (issue #364
+HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN) — and the Sojourn follows it
 (issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED: the narration was handed
 back to `index.js`, which told the swear with nothing after it). That the
 swear has been told is written on the vow (`sojournSwearTold`,
@@ -226,7 +229,13 @@ resolved refuses it (the round tells its entries once — a participant's held
 swear the round keeps before it rolls is told exactly then), and
 `resolveToldSojournNeeds` resolves the open cards of the told vows
 (`actorBridge.toldNeedCardIds`) once the round is narrated and closed
-(`batch/driver.js` `finishRound`) and at the canonical GM's load (issue #364
+(`batch/driver.js` `finishRound`), at the canonical GM's load, and when a
+GM leaves or their page stands down and leaves this GM canonical
+(`registerSojournNeedHook`, on the driver's own takeover hooks — issue #364
+SOJOURN-NO-SWEEP-ON-GM-TAKEOVER), and once a kept Sojourn's own narration
+is written (`heldResult.keepHeldResult` — a swear told while it was written
+is refused, `narration-in-flight`; issue #364
+SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY) (issue #364
 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the refused resolve was only
 logged). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done
@@ -235,7 +244,14 @@ sworn is no longer the card's: the card stops saying it is on the sheet and
 offers ⚔ again (read from the sheet on every render, and written back to
 the card's text by the canonical GM's `deleteItem` hook), and another vow
 written from it is the one whose swear resolves the Sojourn (issue #364
-SOJOURN-VOW-DELETED-BEFORE-SWORN).
+SOJOURN-VOW-DELETED-BEFORE-SWORN). Deleted once its swear was told (its
+`sojournSwearTold`, read off the deleted Item), it takes nothing back: the
+oath was sworn and told, so the `deleteItem` hook resolves the Sojourn as
+the swear's own resolve would have; one that must still wait (a round being
+resolved) is kept on the card instead (`swornVowDeleted` — the card says the
+oath stands and offers no other vow; `resolveToldSojournNeeds` reads it
+beside the vows) — decided by the maintainer, issue #364
+SOJOURN-TOLD-VOW-DELETED.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
@@ -323,7 +339,12 @@ All real progress lands on **item ticks** (`system.current`) via
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
   copy by its Item, renamed or not; fulfilled (whoever fulfilled it) or on
   no sheet, both retire and a press acts on nothing — by name they marked or
-  fulfilled the winner's or the holder's other vow (issue #345 AA17). The
+  fulfilled the winner's or the holder's other vow (issue #345 AA17). A
+  fight linked by id keeps that id on its card even when its vow is gone at
+  the win; a card with no id is built only on a vow its name names, and its
+  ⚑ (and the GMs' Retry) asks on the milestone picker when the name names no
+  open vow — it marked the holder's only other open vow (issue #364
+  NO-VOW-ID-CARD-MARKS-WRONG-VOW). The
   card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
@@ -645,7 +666,10 @@ applied — and no longer owed"), and the pressed card stays resolved (issue
 #364 FIGHT-MILESTONE-CARD-GONE-UNPRESSED-RETRY-LOOP: a won fight's milestone
 raise with the victory card deleted and its ⚑ never pressed; and a won
 fight's refused milestone mark whose vow was fulfilled, or left every sheet,
-before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; and
+before the Retry — issue #364 FIGHT-MILESTONE-RETRY-VOW-FULFILLED-LOOP; on a
+card that carries no vow id the vow is found by name alone, and its "no
+open vow" is final when no copy by that exact name is on any sheet,
+fulfilled ones counting — issue #364 PAYOFF-RETRY-MILESTONE-NO-VOW-ID; and
 an `upgradeOpen` step whose move card was deleted — issue #364
 UPGRADE-OPEN-RETRY-CARD-GONE-LOOP; and a `choiceCard` step whose move's
 result was upgraded since — "superseded": the upgrade's claim on the move
@@ -653,8 +677,22 @@ card is never released, so its new outcome's card stands on every later
 press too — issue #364 PAYOFF-RETRY-SUPERSEDED-CHOICE-LOOP; and any step
 whose character's Actor was deleted since — "no-pc" (`PC_GONE`): a
 `suffer`, `choiceCard`, `momentum`, `xp`, `rewardGrant` or `rider` step, an
-`upgrade` step's meters or choice card; its line says the character's sheet
-is gone (`PAYOFF_FINAL_REASONS`), and End a Session's "waits on a GM's
+`upgrade` step's meters or choice card, an `upgrade` step's track to restore
+on a deleted character's asset (and on an asset Item gone from a character
+still there — issue #364 PAYOFF-RETRY-UPGRADE-ASSET-GONE), and an `upgrade`
+step's unprepared clear once
+none of its characters is left (one still in the world is cleared — one
+deleted made the whole step unreadable, issue #364
+PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE); its line says the character's sheet
+is gone (`PAYOFF_FINAL_REASONS`; and a `suffer` step whose benefit is named
+for a character deleted since — Aid Your Ally's ally, a Heal's patient
+(`sufferDialog.sufferCallBeneficiaryId`): nobody takes it, never the roller,
+and its line names no one else — issue #364 AID-ALLY-GONE-BENEFIT-TO-ROLLER)
+— for a `rewardGrant` on a shared
+vow (its copies on other sheets: the crew's inciting vow, or any vow on several
+sheets) the line names the reward and says a GM can give it by hand to another
+of the vow's characters, naming them, with nothing re-granted (decided — issue
+#364 PAYOFF-RETRY-SHARED-REWARD-HOLDER-GONE) — and End a Session's "waits on a GM's
 Retry" note skips a card with no Retry — issue #364
 PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
 whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
@@ -665,7 +703,30 @@ deleted since — "place-gone": nowhere to arrive — issue #364
 PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP; and a `rider` step's integrity effect,
 or an `upgrade` step's vehicle track to restore, whose vehicle Actor is gone
 — "no-vehicle", the step names it by id — issue #364
-PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+PAYOFF-RETRY-VEHICLE-GONE-LOOP; and a `suffer` step whose vehicle, companion
+or cleared mark's track the step names by id is gone since, or that track
+finished — Withstand Damage's support vehicle or the vehicle Actor the move
+was rolled against, Companion Takes a Hit's companion, an integrity or
+companion-health change, a battered mark, a cleared mark of progress
+(`sufferDialog.sufferTargetGoneForGood`; and a mark of progress on the fight
+or expedition the move was rolled about, gone or over — issue #364
+PAYOFF-RETRY-SUFFER-PROGRESS-TRACK-GONE) — and a `rider` step's progress mark
+whose track is gone or finished: a target the step does not name (the command
+vehicle, the only companion) is looked up at the press and stays on a fresh
+Retry card; each reason is told in plain words, where its code was printed,
+and the executor's own "Vehicle not found" card is not posted on a Retry press
+(`skipMissingCard` — the first failure still posts it) — issue #364
+PAYOFF-RETRY-SUFFER-TARGET-GONE; and a `suffer` step's battered mark on a
+support vehicle whose asset has no Battered condition ("no-condition": the
+vehicle has no Battered condition to mark — issue #364
+BATTERED-NO-CONDITION-LOOP); and an `uncharted` step whose sector no
+stored sector's id is ("sector-gone": nothing stores a sector again under an
+id it had; one stored without its map — sector creation's stub — answers
+"sector-no-map" and stays retryable), and a `site` step whose site is on no
+stored map with no record of it waiting on a Retry — its `uncharted` step on
+this card or on another payoff card whose Retry is live
+(`unchartedRecordAwaitsRetry`): nothing removes a site from a map, so only
+that record can put it there — issue #364 PAYOFF-RETRY-SITE-SECTOR-GONE).
 A step the Retry answers "invalid step" for — its record on the card fails
 the runner's check (a value out of range, a shape, a step name nothing
 runs), and the record never changes — goes on no Retry card either, but is

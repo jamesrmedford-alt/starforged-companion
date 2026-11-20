@@ -305,7 +305,12 @@ roller `campaignState.nextMoveBonuses[actorId]` (`grantNextMoveBonus`), which
 the pipeline adds to that character's next action roll (`consumeNextMoveBonus`,
 `src/moves/nextMoveAdd.js`); Secure an Advantage's strong hit grants it through
 `applyOutcomeEffects` (`nextMoveBonus` consequence). The pick only posted a
-reminder card (issue #322 V02).
+reminder card (issue #322 V02). An Aid Your Ally's are the ally's
+(`interpretation.allyActorId`): an ally gone since the move — before a Burn
+Momentum or Improve Result of it — takes nothing of the upgraded hit, its +1
+or its momentum (`resultUpgrade.js` `payAllyMomentum`), and nor does the
+roller; the move card's "Not applied" says why (issue #364
+UPGRADE-ALLY-GONE-BONUS-TO-ROLLER — the +1 went to whoever rolled).
 
 **Position** (`in_control` / `bad_spot`) is **per character** (rulebook,
 Battle Stations!; issue #322 V03). The fight's track holds each player
@@ -494,7 +499,13 @@ SOJOURN-VOW-OPTION-REMINDER-ONLY — the pick posted only a "Trigger:
 swear_an_iron_vow" reminder, and nothing resolved the Sojourn as the strong
 hit the rule gives). The option carries `resolvesAs: "strong_hit"`; its
 route call's executor (`sufferDialog.runSufferCall`, the canonical GM) posts
-**the community's need** card for the choice card's own resolution
+**the community's need** card for the choice card's own resolution —
+once the held miss the pick kept has been told (`sufferCard.handleSufferPick`
+awaits `closeUpgradesForChoice`'s `keeping`; issue #364
+SOJOURN-OATH-NARRATED-BEFORE-MISS: posted at once, its vow could be sworn
+and told before the miss), or that a keep of it already being told — its
+roller's next line's — has been (`burnMomentum.resultUpgradeSettled`;
+SOJOURN-NEED-CARD-DURING-OTHER-KEEP)
 (`postSojournNeedCard` — flags `sojournNeedCard`, `resolutionId`, `actorId`,
 the stakes shown before the roll; a pick applied from no choice card keeps
 the reminder; a card the world refuses hands the pick back,
@@ -521,14 +532,20 @@ side: the cards its `sojournNeedCard` names, `actorBridge.needCardIdsOfVow`;
 the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
 is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
 Sojourn after the held swear's keep, or after its upgrade's narration (told
-by `narrateHeldUpgrade` whether or not the card's wait could be closed —
+by `narrateHeldUpgrade` whether or not the card's wait could be closed — a
+close the world refused goes to the GMs' Retry, issue #364
+HELD-CARD-WAIT-NOT-CLOSED-STAYS-OPEN;
 issue #364 SOJOURN-HELD-SWEAR-CLOSEWAIT-REFUSED) —
 issue #364 SOJOURN-HELD-SWEAR-ORDER; that the swear has been told is written
 on the vow (`sojournSwearTold`, `actorBridge.markNeedVowSwearTold`), and a
 resolve refused then — a Batch Mode round is being resolved — or lost to a
 reload is made by `resolveToldSojournNeeds`, from what the vows say, once the
-round is narrated and closed (`batch/driver.js` `finishRound`) and at the
-canonical GM's load — issue #364 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING):
+round is narrated and closed (`batch/driver.js` `finishRound`), at the
+canonical GM's load, and when a GM's leaving or standing down leaves another
+GM canonical (issue #364 SOJOURN-NO-SWEEP-ON-GM-TAKEOVER), and once a kept
+Sojourn's own narration is written (`heldResult.keepHeldResult`; issue #364
+SOJOURN-NARRATION-IN-FLIGHT-NO-RETRY) — issue #364
+SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING):
 the move card reads as an improved
 result's does (`buildResolvedCardContent` — "Miss" and its lines struck,
 "✦ Resolved as a strong hit", the strong hit's text), and the strong hit is
@@ -569,7 +586,17 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 carries (`vowId`, `fightCardVow`): the holder's open copy by its Item,
 whatever it is named now — by name, a vow its holder fulfilled, renamed or
 deleted fell through to the winner's or the holder's other vow (issue #345
-AA17); a card with no id keeps the name — plus **🏁 Attempt to Fulfill** (a forced
+AA17); a fight linked by id keeps that id on its card whatever became of the
+vow (deleted from every sheet before the win, `fightLinkedVow` finds no copy
+and the card names it by its old name — the id retires ⚑ and 🏁). A card
+with no id keeps the name: it is built only on a vow its name names (exactly
+or as whole words — the name ladder's sole-open-vow rung built a deleted
+vow's card on the table's only other open vow), and its ⚑ — and the GMs'
+Retry of a refused mark — posts the "Which vow advances?" picker when the
+name names no open vow (`applyReachMilestone`'s `askUnnamed`,
+`planReachMilestone`): a deleted vow and a renamed one look the same by name,
+and the holder's only other open vow was marked (issue #364
+NO-VOW-ID-CARD-MARKS-WRONG-VOW) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
 the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
 (issue #329 X05), else the PC holding the vow the fight served
@@ -594,16 +621,35 @@ fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue
 after the holder fulfilled it) — or is on no sheet any more, its milestone
 and 🏁 are retired on every client and render, titled why
 (`wireFightVowButtons` → `linkedVowClosed`), and a press that reaches the
-GM marks or rolls nothing (issue #325 W29). It then grants the
+GM marks or rolls nothing (issue #325 W29). On a card with no vow id (its
+vow on no sheet by its name when posted), 🏁 rolls only a vow its name names
+(`namedVowCopies`); a name that names none asks with Fulfill Your Vow's own
+"Which vow?" card (`postWhichVowCard`, the roller's open vows, each even
+alone) and nothing is rolled until a person chooses — the name ladder's
+sole-open-vow rung rolled another vow, and with several open the forced move
+fell to the roller's one open vow (issue #364 ATTEMPT-FULFIL-NO-ID-CARD; ⚑
+asks the same way, NO-VOW-ID-CARD-MARKS-WRONG-VOW). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
 grant's claim — and a granted reward records the outcome it was granted at,
 `reward.grantedAt`, so a weak-hit win upgraded to a strong hit gets the
 strong hit's once: its second point, or its string lifted — the victory card
-carries its move's `resolutionId` for the same upgrade, issue #362 D7); it
+carries its move's `resolutionId` for the same upgrade, issue #362 D7; of the
+served vow's reward alone, `wonFightRewardCopies` as below — a vow deleted
+between the win and the upgrade pays nothing more, where the sole open vow's
+weak-hit reward was raised, issue #364
+WON-FIGHT-UPGRADE-REWARD-DELETED-VOW-SOLE-OPEN); it
 lands on the roller's copy when they hold one, else on the
-PC holding the promised reward. A grant that does not land is not swallowed:
+PC holding the promised reward. It is the reward of the vow the fight served
+alone (`wonFightRewardCopies`): its copies by the track's `linkedVowId`, else —
+a fight linked by name — the vow its name names, exactly or as whole words
+(`namedVowCopies`); never the table's sole open vow, the name ladder's last
+rung, which granted another vow's promised reward when the fight's vow was
+deleted before the win. With no copy left, nothing is granted and the GMs'
+payoff card says so, with no Retry ("Any reward promised for … — the vow is on
+no character's sheet any more", issue #364
+WON-FIGHT-REWARD-DELETED-VOW-SOLE-OPEN). A grant that does not land is not swallowed:
 the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
 with a one-press Retry, and "🎁 Reward earned" is posted only once the grant
 lands (issue #306 R04 — see `vow-flow.md` §4).

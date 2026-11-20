@@ -51,7 +51,7 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
+import { applyMeterChanges, getActor, isPlayerCharacterActor, readCharacterSnapshot, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
 import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -421,6 +421,9 @@ async function restoreAssetTrack(step) {
  * @returns {Promise<{ ok: boolean, final?: boolean, reason?: string }>}
  */
 export async function retryUpgradeStep(s) {
+  // What runs: the step as recorded — an unprepared clear's, its characters
+  // still in the world.
+  let step = s;
   switch (s?.effect) {
     case "meters": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
@@ -446,9 +449,8 @@ export async function retryUpgradeStep(s) {
         return { ok: false, reason: "invalid step" };
       }
       break;
-    case "unprepared":
-      if (!Array.isArray(s.pcIds) || !s.pcIds.length
-        || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
+    case "unprepared": {
+      if (!Array.isArray(s.pcIds) || !s.pcIds.length || !s.pcIds.every(id => typeof id === "string")) {
         return { ok: false, reason: "invalid step" };
       }
       // The momentum it gives back: only to its own PCs, at most the
@@ -457,7 +459,21 @@ export async function retryUpgradeStep(s) {
         || !Object.entries(s.momentumBack).every(([id, n]) => s.pcIds.includes(id) && Number.isInteger(n) && n > 0 && n <= 16))) {
         return { ok: false, reason: "invalid step" };
       }
+      // A character deleted since needs no clear (runUpgradeStep skips one):
+      // the ones still in the world are cleared, and with none left nothing
+      // is owed — `final` ("no-pc"), told once with no further Retry. One
+      // deleted character made the whole step "invalid step", so the Retry
+      // never cleared the others (issue #364
+      // PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE). An id naming an Actor
+      // that is no player character's is still a record no Retry can run.
+      const actors = s.pcIds.map(id => globalThis.game?.actors?.get?.(id) ?? null);
+      if (actors.some(a => a && !isPlayerCharacterActor(a))) return { ok: false, reason: "invalid step" };
+      const here = s.pcIds.filter((_id, i) => actors[i]);
+      if (!here.length) return { ok: false, final: true, reason: "no-pc" };
+      const back = s.momentumBack ? Object.fromEntries(Object.entries(s.momentumBack).filter(([id]) => here.includes(id))) : null;
+      step = { ...s, pcIds: here, ...(back && Object.keys(back).length ? { momentumBack: back } : { momentumBack: undefined }) };
       break;
+    }
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, final: true, reason: "no-pc" };
@@ -470,9 +486,15 @@ export async function retryUpgradeStep(s) {
       if (!["integrity", "health"].includes(s.track) || !Number.isInteger(s.amount) || s.amount < 1 || s.amount > 5) {
         return { ok: false, reason: "invalid step" };
       }
-      if (!(typeof s.vehicleActorId === "string" && s.vehicleActorId)
-        && !(typeof s.itemId === "string" && s.itemId && isPlayerCharacterActor(globalThis.game?.actors?.get?.(s.pcId) ?? null))) {
-        return { ok: false, reason: "invalid step" };
+      if (!(typeof s.vehicleActorId === "string" && s.vehicleActorId)) {
+        if (!(typeof s.itemId === "string" && s.itemId && typeof s.pcId === "string" && s.pcId)) return { ok: false, reason: "invalid step" };
+        // An asset Item of a character deleted since: no sheet to put it
+        // back on — `final` ("no-pc"), as for a meters step; it answered
+        // "invalid step" (issue #364 PAYOFF-RETRY-UPGRADE-UNPREPARED-ONE-PC-GONE).
+        // An Actor there that is no player character's is a record no Retry can run.
+        const owner = globalThis.game?.actors?.get?.(s.pcId) ?? null;
+        if (!owner) return { ok: false, final: true, reason: "no-pc" };
+        if (!isPlayerCharacterActor(owner)) return { ok: false, reason: "invalid step" };
       }
       break;
     default:
@@ -480,7 +502,7 @@ export async function retryUpgradeStep(s) {
   }
   const failures = [];
   const report = {};
-  const landed = await applyUpgradeStep(s, failures, report);
+  const landed = await applyUpgradeStep(step, failures, report);
   // A clock rewind takes back the trigger its vignette narrated, as the first
   // pass's does (revertPayThePrice, issue #342 Z46): the Retry of a refused
   // rewind left the vignette live beside a clock no longer full, and the
@@ -496,7 +518,13 @@ export async function retryUpgradeStep(s) {
   // id, so no later press finds one — `final`, told once with no further
   // Retry (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-VEHICLE-GONE-LOOP).
   const vehicleGone = s.effect === "assetTrack" && typeof s.vehicleActorId === "string" && failures[0]?.reason === "no-vehicle";
-  return { ok: false, ...failures[0], ...(vehicleGone ? { final: true } : {}) };
+  // A support vehicle's or a companion's asset Item gone from its character's
+  // sheet (the character still there): the step names it by its Item's id —
+  // `final` too. It went on a fresh Retry card each time (issue #364
+  // PAYOFF-RETRY-UPGRADE-ASSET-GONE).
+  const assetGone = s.effect === "assetTrack" && !(typeof s.vehicleActorId === "string" && s.vehicleActorId)
+    && typeof s.itemId === "string" && ["no-vehicle", "no-companion"].includes(failures[0]?.reason);
+  return { ok: false, ...failures[0], ...(vehicleGone || assetGone ? { final: true } : {}) };
 }
 
 /** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
@@ -1570,12 +1598,21 @@ export function upgradeOpenFor(resolutionId) {
  * offers it *instead* of the ordinary choice, and it stacked on top (issue
  * #316 T06). Best effort.
  *
+ * A free-flow result held for Burn / Improve / Keep is kept by the choice —
+ * its price paid and its narration posted — and that keep is handed back,
+ * not awaited (`keeping`): the choice being applied does not wait on a
+ * narration, save the pick whose answer is a card of its own — Sojourn's
+ * "Community needs help", whose card waits for the miss to be told
+ * (sufferCard.js handleSufferPick; issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS).
+ *
  * @param {string|null} resolutionId
+ * @returns {Promise<{ keeping: Promise<{ applied: boolean, reason?: string }>|null }>} the keep the
+ *   choice started (it never rejects), or null when the result was not held
  */
 export async function closeUpgradesForChoice(resolutionId) {
   const card = moveCardFor(resolutionId);
   const f    = card?.flags?.[MODULE_ID];
-  if (!f) return;
+  if (!f) return { keeping: null };
   const update = Object.fromEntries(["burn", "improve"]
     .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
     .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
@@ -1589,12 +1626,16 @@ export async function closeUpgradesForChoice(resolutionId) {
   }
   // A free-flow result held for Burn / Improve / Keep (issue #354 P2-10):
   // choosing its consequence keeps it — its price and narration follow now.
-  // Not awaited: the choice being applied does not wait on a narration.
-  if (f.awaitingUpgrade?.open) {
-    void import("./heldResult.js")
-      .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
-      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err));
-  }
+  // Not awaited here: the choice being applied does not wait on a narration
+  // (its caller may, for the one pick that must — the docblock says which).
+  if (!f.awaitingUpgrade?.open) return { keeping: null };
+  const keeping = import("./heldResult.js")
+    .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
+    .catch(err => {
+      console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err);
+      return { applied: false, reason: "error" };
+    });
+  return { keeping };
 }
 
 /**
@@ -1951,7 +1992,9 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
  * Aid Your Ally's ally, as an upgrade's card carries it (`targets.allyActorId`,
  * the pipeline's moveTargets): the PC a hit's benefits go to — "they (instead
  * of you) take the benefits of the move" (issue #325 W17). Null when the move
- * named none, or named the roller.
+ * named none, or named the roller. The ally may be gone since the move: their
+ * share is then nobody's, never the roller's (payAllyMomentum; issue #364
+ * UPGRADE-ALLY-GONE-BONUS-TO-ROLLER).
  *
  * @param {Object|null} state — the card's `burn` / `improve` flag (or the targets' holder)
  * @param {string|null} rollerId
@@ -1977,6 +2020,32 @@ export function upgradeAllyId(state, rollerId) {
 export function momentumShares(consequences, allyId) {
   const m = Number(consequences?.momentumChange ?? 0);
   return allyId && consequences?.beneficiary === "ally" ? { roller: 0, ally: m } : { roller: m, ally: 0 };
+}
+
+/**
+ * Pay Aid Your Ally's ally their share of an upgrade's momentum (momentumShares'
+ * `ally`, less what the recorded hit already paid them), as a `meters` step of
+ * the upgrade. An ally gone since the move — deleted, or no longer a player
+ * character (actorBridge) — takes nothing, and nor does the roller, whose
+ * share holds none of it: the step went to the GMs' payoff card, whose Retry
+ * could only answer that the sheet is gone (issue #364
+ * UPGRADE-ALLY-GONE-BONUS-TO-ROLLER). The line the move card's "Not applied"
+ * carries for it is returned instead, in the payoff card's words.
+ *
+ * @param {string|null} allyId — upgradeAllyId's
+ * @param {number} amount — the ally's momentum owed by the upgrade
+ * @param {Actor|null} roller — the upgrading PC, who aided them
+ * @param {Array<Object>} failures — the upgrade's refused writes
+ * @returns {Promise<string|null>} the "Not applied" line, or null
+ */
+export async function payAllyMomentum(allyId, amount, roller, failures) {
+  if (!allyId || !amount) return null;
+  if (!isPlayerCharacterActor(getActor(allyId))) {
+    const { payoffReasonWords } = await import("../index.js");
+    return `${amount > 0 ? "+" : ""}${amount} momentum for the character ${roller?.name ?? "the roller"} aided — ${payoffReasonWords("no-pc", { final: true })}`;
+  }
+  await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: amount } }, failures);
+  return null;
 }
 
 /**

@@ -2857,6 +2857,14 @@ body.sf-touch .sf-round-window .sf-round-target { min-height: 44px; }
   cursor: help;
 }
 
+/* A hidden plan's truth the X-Card withheld (issue #364
+   SECRETS-PANEL-NO-WITHHELD-MARKER): the GM's Secrets section says so beside
+   the truth. GM-only, as the section is. */
+.sf-wj-secret-withheld {
+  font-style: italic;
+  opacity: 0.85;
+}
+
 /* ============================================================================
    WHAT IS OPEN — the vow as the spine and the table's open threads (issue #353 R3, R4)
    The Session panel's list, End a Session's focus choices, and a progress

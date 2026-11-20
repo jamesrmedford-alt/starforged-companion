@@ -633,8 +633,10 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   event set it (issue #362 D3: named marks told a player at the console a
   hidden plan was just made or decided) — so any GM's client reports and the
   narrating GM reads it; the ids stay on the reporting client (its pending
-  marks, and the snapshot page's log — `namedSnapshotCauses`; another GM's
-  mark logs as `out_of_date`). Several between two calls take one snapshot,
+  marks, and the snapshot page's log — `namedSnapshotCauses`, which names
+  the events after the replaced snapshot's own cut when this client took it
+  (`markSnapshotTaken`, by order, not by the clock — issue #364
+  SNAPSHOT-EVENT-SAME-MS); another GM's mark logs as `out_of_date`). Several between two calls take one snapshot,
   and the mark it answered is cleared with it; an event reported while a mark
   stands writes nothing (the next snapshot covers it), and one reported once
   the mark is answered writes a newer one.
@@ -908,16 +910,39 @@ a Batch Mode round narrated late, filed under its own session — marks it
 again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
 text again from that session's cards, one summary call per late card, what a
 mint folded onto it from a session nobody began kept
-(`lifecycle.js` `lastSessionTextParts`); an X-Card on such a narration drops
+(`lifecycle.js` `lastSessionTextParts`), and that session's Session Log
+"Story so far" — the snapshot's memory of it once a later mint moves LAST
+SESSION on — is rewritten with the same text when it was written before the
+newest card the summary was made from (`worldJournal.js`
+`restoreSessionLogStory`'s `through` against the page's `writtenAt`, stamped
+so the same cards never rewrite it twice; End a Session's closing vignette
+left out — issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY: End's story stood,
+without the round; the mint rebuilds the closing session's story the same way
+from the summary it finalises, for a round narrated after End but before the
+mint — `sessionStoryThrough`, issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT);
+an X-Card on such a narration drops
 that text and marks the session the same way, `dropLastSessionTelling`; when
 the mint carried no summary for the card's session, LAST SESSION is left as
-it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION; a later mint keeps the
+it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's
+Batch Mode round was still to be narrated at the mint (`sessionRoundUnnarrated`):
+a begun session with no summary of its own is then recorded as LAST SESSION's
+session with no text, the record LAST SESSION told kept behind it
+(`displaced`) and still what the narrator is told until the session's own
+summary is written (`lastSessionToTell`), and it is marked owed — the
+catch-up leaves the mark while nothing of it is narrated and the round still
+waits, and once nothing more can come (the round closed unnarrated, or the
+X-Card took back all of it) the displaced record is LAST SESSION again, at
+the catch-up or before the next mint (`lastSessionSettled`) —
+LATE-ROUND-NO-LAST-SESSION-RECORD; a later mint keeps the
 mark while LAST SESSION goes on naming that session, so a summary an X-Card
 emptied or a keyless GM closed out short is still made once the next session
 is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
-LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
+LAST SESSION under its own number (it replaced it — issue #331 X65), a LAST
+SESSION still owed its summary (its mark names it) even with no text of its
+own, so it keeps its place and its mark (issue #364
+EMPTIED-LAST-SESSION-PREP-ONLY-MINT) — mints
 the next id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
 joined `SESSION_MINT_FIELDS`): the new session is begun by Begin a Session —
 a session nobody ended handed its open gate to the next, so Begin did nothing
@@ -1056,7 +1081,12 @@ stamped with that narration, so the X-Card that removes her card takes it:
 #364 BURN-OF-MAKE-A-CONNECTION-DROPS-AGENDA — and the plan its capture filed
 for a threat it recorded as significant, about the Threats page, which
 stands with those records (`threatPageStands`): issue #364
-BURN-DROPS-RECORDED-THREAT-PLAN) — its oracle rolls then shown — Phase 2;
+BURN-DROPS-RECORDED-THREAT-PLAN; and a plan filed about a name that its
+capture linked to such a card or page keeps the link while it stands — the
+link's own mark, `subjectLinkedBy`, which an undo that keeps nothing (the
+X-Card on the upgraded beat, deleting the card) undoes, the plan about the
+name again: issue #364 SUPERSEDE-UNLINKS-EARLIER-PLAN) — its oracle rolls
+then shown — Phase 2;
 a decided threat plan gets its escalation clock (at most `MAX_PLAN_CLOCKS`
 running, not full, of active plans — `livePlanClocks`; a plan that leaves play,
 by a GM's Retire or retired as another, takes its clock with it —
@@ -1135,7 +1165,30 @@ the truth's scene fact and Lore entry go by the narration's stamp, as always
 (issue #364 PLAN-CLUE-TRUTH-NO-MARK), and the rolls card that reveal posted is
 withdrawn in chat with it (`withdrawRollsCardsOfReveals`), so a reveal made
 again leaves one rolls card standing (issue #364
-TAKEN-BACK-PLAN-ROLLS-CARD-STAYS); an ending the narration gave the plan's
+TAKEN-BACK-PLAN-ROLLS-CARD-STAYS) — and the X-Card's take-back of a truth
+withholds it: the plan is marked `truthWithheldBy` (the revealing narration;
+`undoNarrationEntries`' `withholdTruths`, passed by `retractNarrationCapture`
+and `secrets.takenBackForXCard`, never by a supersede, whose re-narration may
+reveal it again — the supersede names the reveal it took back instead,
+`truthTakenBackBy`, and the X-Card that later removes that narration with
+the beat its upgrade wrote, issue #347 D2, withholds the truth by that mark,
+issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL), so UNREVEALED and the
+world snapshot show the plan without
+its truth, nothing offers it (DECIDE NOW, a countdown's `revealsTruth`, an
+expedition's or vow's ending line, an oracle question's odds, the Private
+Channel's relay), and a narration's reveal of it is not recorded — no plan
+mark, ledger fact, Lore entry or rolls card — while its clues, steps and clock
+stay in play; the GMs are whispered once which plan and how to lift it
+(`safety.postWithheldTruthsNotice`): a GM's edit of the truth's text lifts it,
+and Reveal now still reveals it, each later reveal confirming again the Lore
+entry the X-carded one filed, by the plan's id (`recordLoreDiscovery`'s
+`revealOf`) — issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; a reveal whose
+write the X-Card overtook (refused for the removed narration by
+`updateSkeleton`, so there was no reveal for the undo to take back) still
+marks the truth withheld, as bookkeeping, the GMs told once
+(`applyPlanSideData` → `withholdXCardedReveal`, issue #364
+XCARD-BEFORE-REVEAL-WRITE); an ending the
+narration gave the plan's
 story goes back by its mark too (`resolvedBy`), the plan in play again and its
 clock with it (issue #364 PLAN-RESOLVED-NO-MARK) — a plan keeps one version a narration,
 however often that narration writes it (decision, clock link, each reveal, its

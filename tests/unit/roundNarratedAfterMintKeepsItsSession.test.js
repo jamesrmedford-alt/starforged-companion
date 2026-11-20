@@ -258,11 +258,34 @@ describe('issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT — a round opened before 
     expectNarratedAsItsOwnSessions(roundId);
   }, 60_000);
 
+  it('with no narration of its session, takes the number the mint recorded its session under (LAST SESSION) — never the minted session\'s', async () => {
+    // Since issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD the mint records a
+    // closing session whose round is still to be narrated as LAST SESSION's
+    // session, under its number: that names the round's session.
+    const roundId = await burnStillApplyingAtUpgradeStep();   // no earlier narration in the session
+    await endTheSession();
+    await gmPageDiesAndLoadsAgain();
+    expect(world().sessionNumber, 'setup: the load minted session 5').toBe(5);
+    expect(world().previousSessionSummary, 'setup: the mint recorded the round\'s session').toMatchObject({ sessionId: 'sess-1', sessionNumber: 4 });
+    roundWithoutItsSessionNumber();
+    theGraceHasPassed();
+    await sendNow();
+    await table.settle();
+    expect(roundCard()).toMatchObject({ roundId, sessionId: 'sess-1', sessionNumber: 4 });
+    expect(ventTruth()).toMatchObject({ sessionId: 'sess-1', sessionNum: 4 });
+  }, 60_000);
+
   it('and with nothing to name it, stamps none — never the minted session\'s', async () => {
     const roundId = await burnStillApplyingAtUpgradeStep();   // no earlier narration in the session
     await endTheSession();
     await gmPageDiesAndLoadsAgain();
     expect(world().sessionNumber, 'setup: the load minted session 5').toBe(5);
+    // A world whose store names the round's session nowhere: no LAST SESSION
+    // record of it and no mark owed for it.
+    const cs = { ...world() };
+    delete cs.previousSessionSummary;
+    delete cs.unsummarisedSession;
+    await table.client('gm-1').setSetting('campaignState', cs);
     roundWithoutItsSessionNumber();
     theGraceHasPassed();
     await sendNow();

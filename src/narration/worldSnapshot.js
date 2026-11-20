@@ -50,6 +50,7 @@ import {
 } from '../world/worldJournal.js';
 import { listSkeletons, skeletonsEnabled } from '../world/secrets.js';
 import { tableVows, distinctOpenVows, trackVowName } from '../session/openThreads.js';
+import { lastSessionToTell } from '../session/lifecycle.js';
 import { formatEntityCard, formatSnapshotPlan, SNAPSHOT_BLOCK_HEADING } from './narratorPrompt.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -350,7 +351,11 @@ function memoryUnits(campaignState, { progressTracks = [], summaries = true } = 
       if (!entry.sessionId || entry.sessionId === current || !text) continue;
       bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: sessionNumberOf(entry.sessionNumber), text });
     }
-    const prev = campaignState?.previousSessionSummary;
+    // A mint's record of a session whose summary is still to come has no text
+    // yet: the record it stands in front of is told meanwhile, as the per-beat
+    // LAST SESSION block tells it (lifecycle.js lastSessionToTell — issue #364
+    // LATE-ROUND-NO-LAST-SESSION-RECORD).
+    const prev = lastSessionToTell(campaignState?.previousSessionSummary);
     if (prev?.sessionId && prev.sessionId !== current && oneLine(prev.text)) {
       // The session that closed last — the newest earlier one, numbered or not.
       bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: sessionNumberOf(prev.sessionNumber), text: oneLine(prev.text), last: true });

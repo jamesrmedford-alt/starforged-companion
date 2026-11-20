@@ -58,7 +58,7 @@ describe('GM_ACTIONS wiring contract', () => {
   // budget. Pinned, so marking (or unmarking) a kind is a deliberate change.
   it('marks the handlers that await a Claude call, and their budget covers two bounded requests', () => {
     const claudeKinds = Object.keys(GM_ACTIONS).filter(k => GM_ACTIONS[k].claude).sort();
-    expect(claudeKinds).toEqual(['move.burnMomentum', 'move.improveResult', 'move.keepResult', 'oracle.narrate', 'privateChannel.publish', 'session.begin', 'session.end', 'sojourn.need']);
+    expect(claudeKinds).toEqual(['move.burnMomentum', 'move.improveResult', 'move.keepResult', 'oracle.narrate', 'privateChannel.publish', 'session.begin', 'session.end', 'sojourn.need', 'suffer.pick']);
     expect(GM_CLAUDE_ACTION_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_TIMEOUT_MS);
     expect(GM_ACTION_TIMEOUT_MS).toBeLessThan(GM_CLAUDE_ACTION_TIMEOUT_MS);
   });
@@ -69,10 +69,24 @@ describe('GM_ACTIONS wiring contract', () => {
     }
   });
 
+  // Each kind's handler module is imported once, before the checks, not
+  // inside a check's own 5 s budget: the first cold import of a handler pulls
+  // in a large module graph (index.js and the move pipeline), and under a
+  // loaded run that one import outlasted the check that happened to make it
+  // (issue #364 TESTS-COLD-IMPORT-IN-TEST-BUDGET). Settled one by one, so a
+  // handler that fails to load still fails only its own check.
+  const loaded = new Map();
+  beforeAll(async () => {
+    const entries = Object.entries(GM_ACTIONS);
+    const settled = await Promise.allSettled(entries.map(([, entry]) => entry.load()));
+    entries.forEach(([kind], i) => loaded.set(kind, settled[i]));
+  }, 30_000);
+
   for (const [kind, entry] of Object.entries(GM_ACTIONS)) {
-    it(`"${kind}" resolves to an exported handler "${entry.fn}"`, async () => {
-      const mod = await entry.load();
-      expect(typeof mod[entry.fn]).toBe('function');
+    it(`"${kind}" resolves to an exported handler "${entry.fn}"`, () => {
+      const result = loaded.get(kind);
+      if (result?.status === 'rejected') throw result.reason;
+      expect(typeof result?.value?.[entry.fn]).toBe('function');
     });
   }
 });

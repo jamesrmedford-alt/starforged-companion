@@ -40,10 +40,10 @@
 
 import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
-import { isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getPlayerActors, isPlayerCharacterActor, readVows } from "../character/actorBridge.js";
 import { messageAuthorId } from "../multiplayer/speaker.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
-import { marksForSourceRank } from "./milestone.js";
+import { marksForSourceRank, selectFulfilVow } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
@@ -758,6 +758,16 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
  * roller was stamped rolls for the clicker's own PC (the payload's `actorId`,
  * which the requester must own).
  *
+ * A won-fight card with no vow id rolls only a vow its name names, exactly or
+ * as whole words (index.js namedVowCopies); a name that names none — its vow
+ * deleted, or renamed past its name — asks with Fulfill Your Vow's own "Which
+ * vow?" card (index.js postWhichVowCard: the roller's open vows, else the
+ * table's), nothing rolled until a person chooses. The name ladder's
+ * sole-open-vow rung rolled another vow by its Item id, and with several open
+ * the pipeline's Fulfill Your Vow fell to the roller's one open vow (issue
+ * #364 ATTEMPT-FULFIL-NO-ID-CARD — the card's ⚑ asks the same way,
+ * NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+ *
  * @param {{ messageId?: string, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
  * @returns {Promise<{ posted: boolean, reason?: string }>}
@@ -784,6 +794,8 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
   let rollerId = cardActorId;
+  // A card with no vow id whose name names no vow: the vows to ask among.
+  let askAmong = null;
   // The vow the fight served, by the card's vow id (issue #345 AA17): by name,
   // once its holder renamed or deleted it the roll scored another vow — the
   // winner's, or the holder's other one. Fulfilled or on no sheet any more,
@@ -810,10 +822,14 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
     // marks it (resolveVowHolderActor). It was the winner's whoever held the
     // vow: the holder's player was refused their own vow's roll, and the
     // winner's player rolled it as the winner. A vow found nowhere keeps the
-    // card's roller (no first-PC guess).
-    const { resolveVowItemCopies, resolveVowHolderActor } = await import("../index.js");
-    if (resolveVowItemCopies(vowName, { actorId: cardActorId }).primary) {
+    // card's roller (no first-PC guess). Only a vow the name names: a name
+    // that names none asks which vow — the sole open vow was rolled (issue
+    // #364 ATTEMPT-FULFIL-NO-ID-CARD).
+    const { namedVowCopies, resolveVowHolderActor } = await import("../index.js");
+    if (namedVowCopies(vowName, cardActorId).primary) {
       rollerId = resolveVowHolderActor(vowName, cardActorId)?.id ?? cardActorId;
+    } else {
+      askAmong = fulfilVowChoices(cardActorId);
     }
   }
   const actorId = rollerId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
@@ -835,8 +851,8 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   if (byId) {
     vowItemId = byId.item?.id ?? null;
   } else if (vowName) {
-    const { resolveVowItemCopies } = await import("../index.js");
-    vowItemId = resolveVowItemCopies(vowName, { actorId: actor?.id ?? null }).primary?.item?.id ?? null;
+    const { namedVowCopies } = await import("../index.js");
+    vowItemId = namedVowCopies(vowName, actor?.id ?? null).primary?.item?.id ?? null;
   }
 
   _inFlight.add(key);
@@ -848,6 +864,16 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
       return { posted: false, reason: "claim-refused" };
     }
     try {
+      if (askAmong?.length) {
+        // Which vow? — Fulfill Your Vow's own card, its pick the roller's
+        // (applyFulfilVowPick). No open vow at all leaves the forced move
+        // below, by the name, as before: there is no other vow to roll.
+        const { postWhichVowCard } = await import("../index.js");
+        await postWhichVowCard({ actorId: actor?.id ?? null, vows: askAmong,
+          lead: `The vow this victory served, “${escapeHtml(vowName)}”, is on no character's sheet by that name — deleted, or renamed? `
+            + "Choose the vow to fulfill — nothing has been rolled yet." });
+        return { posted: true, asked: true };
+      }
       await ChatMessage.create({
         content: "Attempt to fulfill your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
@@ -868,6 +894,23 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   } finally {
     _inFlight.delete(key);
   }
+}
+
+/**
+ * The vows a 🏁 press asks among when its card's name names none (issue #364
+ * ATTEMPT-FULFIL-NO-ID-CARD): Fulfill Your Vow's own choices with no vow
+ * named (milestone.js selectFulfilVow) — the roller's open vows, a shared
+ * vow's copies once, else the table's — each one offered, even alone: one
+ * vow is not the vow the fight served.
+ *
+ * @param {string|null} rollerId
+ * @returns {Array<{ id: string, name?: string, rank?: string, ticks?: number }>}
+ */
+function fulfilVowChoices(rollerId) {
+  const actors = [...getPlayerActors()].sort((a, b) => (a.id === rollerId ? -1 : 0) - (b.id === rollerId ? -1 : 0));
+  const vows = actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+  const { vow, choices } = selectFulfilVow(vows, null, { rollerActorId: rollerId });
+  return vow ? [vow] : choices;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

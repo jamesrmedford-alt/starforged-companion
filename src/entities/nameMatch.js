@@ -236,7 +236,8 @@ function isPlaceKindWord(word, kind) {
  * A preposition that places the destination beside the known place — beyond,
  * near, past, outside, off, under, above, behind, around, of … — is not one:
  * that is what makes "the wreck beyond Bleakhold" another place than
- * Bleakhold. The one list (placeNameAndLittleElse's `journey`).
+ * Bleakhold. The one list (placeNameAndLittleElse's `journey`,
+ * withoutJourneyWords).
  */
 const JOURNEY_NOUNS = new Set(["expedition", "journey"]);
 const TOWARDS_WORDS = new Set(["to", "toward", "towards", "for", "into"]);
@@ -244,6 +245,51 @@ const TOWARDS_WORDS = new Set(["to", "toward", "towards", "for", "into"]);
 /** Whether a (lower-case) word says only that a label is a journey to its place. */
 function isJourneyWord(word) {
   return TOWARDS_WORDS.has(word) || JOURNEY_NOUNS.has(word) || JOURNEY_NOUNS.has(word.replace(/s$/, ""));
+}
+
+/**
+ * An expedition's label with the journey's own words (isJourneyWord, the one
+ * list) taken off its edges, and the article that leads them — what is left
+ * is the destination as it would be typed alone:
+ *   - before it, an article and the journey words: "the expedition to Bleak"
+ *     → "Bleak", "a journey toward Bleakhold Station" → "Bleakhold Station";
+ *     an article after them is the place's own and stays ("expedition to the
+ *     gap" → "the gap");
+ *   - after it, the journey's nouns, with the article before the label's
+ *     first word, which is theirs: "the Bleak expedition" → "Bleak".
+ * The words between are kept as typed. A preposition that places the
+ * destination beside the known place is no journey word, so "the wreck
+ * beyond Bleakhold" comes back whole. "" when nothing but journey words and
+ * articles is left: they name no place.
+ *
+ * The callers, for an expedition's own label (`journeyWords`): index.js
+ * resolveCurrentLocationName — its rungs that compare the label whole, a
+ * name it begins and a fragment of a name, compared the journey words too, so
+ * "the expedition to Bleak" recorded a new uncharted site though "Bleak" is
+ * for Bleakhold (issue #364 EXPEDITION-JOURNEY-WORDS-FRAGMENT) — and
+ * siteDiscovery.selectExpeditionSite, the site a new expedition is linked to
+ * ("the expedition to the Sunken" for "The Sunken Vaults", issue #364
+ * EXPEDITION-JOURNEY-WORDS-SITE-LINK). Pure.
+ *
+ * @param {string} label
+ * @returns {string}
+ */
+export function withoutJourneyWords(label) {
+  const words = String(label ?? "").trim().split(/\s+/).filter(Boolean);
+  const bare    = (w) => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  const article = (w) => ARTICLES.has(bare(w));
+  const journey = (w) => isJourneyWord(bare(w));
+  // Before it: the run of articles and journey words, up to its last journey word.
+  let from = 0;
+  for (let i = 0; i < words.length && (article(words[i]) || journey(words[i])); i++) {
+    if (journey(words[i])) from = i + 1;
+  }
+  // After it: the journey words that end it, and then the article that leads it.
+  let to = words.length;
+  while (to > from && journey(words[to - 1])) to--;
+  if (to < words.length && from === 0 && to > 1 && article(words[0])) from = 1;
+  const kept = words.slice(from, to);
+  return kept.every(article) ? "" : kept.join(" ");
 }
 
 /**

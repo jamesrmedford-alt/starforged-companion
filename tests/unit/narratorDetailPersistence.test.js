@@ -60,6 +60,16 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
 const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
+/**
+ * A narrator call — a move narration, an @scene answer: the narration model,
+ * its system prompt opening on the narrator's rules. Not every call on that
+ * model is one: the chronicle scribe each narration schedules on a real 2 s
+ * timer uses it too, and in a run slow enough for 2 s to pass, an earlier
+ * narration's scribe — this test's or the one before's — landed inside a
+ * later window, was counted as a second narration and took the next scripted
+ * reply (TESTS-FLAKY-UNDER-LOAD).
+ */
+const isNarration = (call) => call.model === NARRATION_MODEL && call.system.startsWith('## NARRATOR ROLE AND VOICE');
 const EMPTY_SIDECAR = { newTruths: [], stateChanges: [] };
 
 let table;
@@ -85,7 +95,7 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
   table.claude.respond((call) => {
-    if (call.model === NARRATION_MODEL) return replies.shift() ?? reply('The station hums. Nothing moves.');
+    if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
     return '{}';
   });
 });
@@ -95,7 +105,7 @@ async function narrateMove(text) {
   const from = table.claude.calls.length;
   await table.client('pl-1').chat(text, { speaker: { actor: 'pc-pat' } });
   await table.settle();
-  const narration = table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL);
+  const narration = table.claude.calls.slice(from).filter(isNarration);
   expect(narration.map(c => c.client)).toEqual(['gm-1']);
   return narration[0];
 }
@@ -256,7 +266,7 @@ describe('@scene asks about the scene in progress (A4)', () => {
 
     const from = table.claude.calls.length;
     await type('pl-1', '@scene what does the hatch look like up close?');
-    const asked = table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL);
+    const asked = table.claude.calls.slice(from).filter(isNarration);
     expect(asked.map(c => c.client)).toEqual(['gm-1']);
     expect(asked[0].system).toMatch(/SCENE FRAME[^\n]*\n {2}Where: {3}the derelict's spine corridor/);
     expect(asked[0].system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
@@ -442,7 +452,7 @@ describe('a session carries into the next one (C3, C4)', () => {
     table.claude.respond((call) => {
       if (call.system?.includes('continuity scribe')) return SUMMARY;
       if (call.userText?.includes('## CAMPAIGN CHRONICLE')) return RECAP;
-      if (call.model === NARRATION_MODEL) return replies.shift() ?? reply('The station hums. Nothing moves.');
+      if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
       return '{}';
     });
     // A recap made from the chronicle as it stands — a cache is used only
@@ -475,7 +485,7 @@ describe('a session carries into the next one (C3, C4)', () => {
     // the recap — carries both; the ring is the new session's own.
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What is the beacon doing?');
-    const question = table.claude.calls.slice(from).find(c => c.model === NARRATION_MODEL);
+    const question = table.claude.calls.slice(from).find(isNarration);
     // Last session's summary is in the world snapshot's memory (issue #357).
     expect(question.system).toContain(`### EARLIER SESSIONS\n\nNarrative texture only`);
     expect(question.system).toContain(`- Session 3: ${SUMMARY}`);
@@ -509,7 +519,7 @@ describe('a session carries into the next one (C3, C4)', () => {
     const from = table.claude.calls.length;
     await table.client('pl-1').chat('I wake up.', { speaker: { actor: 'pc-pat' } });
     await table.settle();
-    expect(table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL)).toEqual([]);
+    expect(table.claude.calls.slice(from).filter(isNarration)).toEqual([]);
     expect(table.cards(f => f.sessionGateNotice).at(-1)?.content).toMatch(/Begin a Session/);
     expect(world().lastSessionTimestamp).toBe(idle);
     expect(table.world.getSetting('sessionActivity')).toEqual({ sessionId: 'sess-1', at: idle });
@@ -568,7 +578,7 @@ describe('a keyless-GM table keeps what a player\'s narration records (D2)', () 
     }));
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What about the hatch?');
-    expect(table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL).map(c => c.client)).toEqual(['pl-1']);
+    expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
     expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
     expect(table.errors).toEqual([]);
   });

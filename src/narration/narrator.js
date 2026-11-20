@@ -27,7 +27,9 @@ import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js'
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
-import { lastSessionTextParts, lastSessionTextFrom } from '../session/lifecycle.js';
+import {
+  lastSessionTextParts, lastSessionTextFrom, lastSessionToTell, lastSessionSettled, sessionRoundUnnarrated,
+} from '../session/lifecycle.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
@@ -985,11 +987,14 @@ function auditCampaignState(campaignState) {
  * The summary of the session before this one (mintSession keeps it), as
  * `{ text, sessionNumber, isLast }` — `isLast` false when sessions between
  * them left no summary. Null when there is none, or when the rolling summary
- * is turned off.
+ * is turned off. A mint's record of a session whose summary is still to come
+ * has no text yet: the record it stands in front of is told meanwhile
+ * (lifecycle.js lastSessionToTell — issue #364
+ * LATE-ROUND-NO-LAST-SESSION-RECORD).
  */
 function previousSessionSummaryFor(campaignState) {
   if (!rollingSummaryEnabled()) return null;
-  const prev = campaignState?.previousSessionSummary;
+  const prev = lastSessionToTell(campaignState?.previousSessionSummary);
   if (typeof prev?.text !== 'string' || !prev.text.trim()) return null;
   if (prev.sessionId && prev.sessionId === campaignState?.currentSessionId) return null;
   const number  = Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null;
@@ -3981,6 +3986,41 @@ export async function finalizeSessionSummary(campaignState) {
 let _sessionCatchUp = null;
 
 /**
+ * The newest time (ms) among a session's narrator cards that its Session Log
+ * story is made from — End a Session's closing vignette left out: End writes
+ * the page before it posts, and the page's story is End's summary
+ * (finalizeSessionSummary leaves it out the same way). Null when none has a
+ * time (worldJournal.js restoreSessionLogStory — issue #364
+ * LATE-ROUND-NOT-IN-SESSION-LOG-STORY).
+ *
+ * @param {Object[]} cards — sessionNarratorCards'
+ * @returns {number|null}
+ */
+function storyCardsThrough(cards) {
+  const times = (cards ?? [])
+    .filter(m => m?.flags?.[MODULE_ID]?.vignetteKind !== 'npc_end')
+    .map(messageTime).filter(Number.isFinite);
+  return times.length ? Math.max(...times) : null;
+}
+
+/**
+ * The newest time (ms) among a session's narrator cards its Session Log story
+ * is made from (storyCardsThrough) — for the mint, which rebuilds the closing
+ * session's story from the summary it has just finalised (session/lifecycle.js
+ * rollSessionIfDue → worldJournal.js restoreSessionLogStory's `through`). A
+ * Batch Mode round narrated after End a Session but before the next session's
+ * mint is filed under the session still current, so the late-card catch-up
+ * never sees it; the mint's summary tells it, and without this time the page
+ * kept End's story without it (issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT).
+ *
+ * @param {string} sessionId
+ * @returns {number|null}
+ */
+export function sessionStoryThrough(sessionId) {
+  return typeof sessionId === 'string' && sessionId ? storyCardsThrough(sessionNarratorCards(sessionId)) : null;
+}
+
+/**
  * LAST SESSION for a session the mint closed out short (issue #347 AB15): the
  * mint's summary finalise is fail-open, and a session closed on a client with
  * no key yet — keys are per browser: another device, cleared site data, a
@@ -3999,7 +4039,12 @@ let _sessionCatchUp = null;
  * (dropLastSessionTelling): the session's own part of the text is made again
  * from its cards, and what a mint folded onto it from a session nobody began
  * is kept (lifecycle.js lastSessionTextParts — issue #364
- * LATE-ROUND-NOT-IN-LAST-SESSION).
+ * LATE-ROUND-NOT-IN-LAST-SESSION). A session the mint recorded with no text,
+ * its Batch Mode round still to be narrated, stays owed while nothing of it is
+ * narrated and the round waits; its text is written from the round's late
+ * narration, the record it displaced riding along, and with nothing to
+ * summarise that record is LAST SESSION again (lifecycle.js
+ * lastSessionSettled — LATE-ROUND-NO-LAST-SESSION-RECORD).
  *
  * @returns {Promise<boolean>} whether LAST SESSION was caught up
  */
@@ -4010,10 +4055,24 @@ export function catchUpUnsummarisedSession() {
   catch { stored = null; }
   const pending = stored?.unsummarisedSession ?? null;
   if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
-  _sessionCatchUp = (async () => {
+  const run = (async () => {
+    // None of the body runs before the memo below is set: a body that threw
+    // or returned before its first await ran its `finally` first, and the
+    // memo then kept that settled promise for the rest of the page load —
+    // every later catch-up returned it, and nothing was caught up again
+    // (issue #364 CATCHUP-MEMOISED-SETTLED-PROMISE).
+    await null;
     try {
+      // Nothing of the session narrated yet, and its Batch Mode round still to
+      // be — the mint recorded it with no text: it stays owed, for the round's
+      // narration to make its summary (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
+      if (sessionRoundUnnarrated(pending.sessionId) && sessionNarratorCards(pending.sessionId).length === 0) return false;
       const xCardPlaysAtStart = xCardPlayCount();
-      const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
+      const cards = sessionNarratorCards(pending.sessionId);
+      const hasCards = cards.length > 0;
+      // The newest narration the summary is made from: a Session Log story
+      // written before it is rewritten with the summary (below).
+      const through = storyCardsThrough(cards);
       const text = hasCards
         ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
             { forceRefresh: true, persist: false })
@@ -4030,7 +4089,15 @@ export function catchUpUnsummarisedSession() {
         // What a mint folded onto LAST SESSION from a session nobody began is
         // not made from this session's cards: kept as it is (issue #331 X65).
         const prior  = latest.previousSessionSummary;
-        const folded = prior?.sessionId === pending.sessionId ? lastSessionTextParts(prior.text).between : '';
+        const named  = prior?.sessionId === pending.sessionId;
+        const folded = named ? lastSessionTextParts(prior.text).between : '';
+        // The record a mint put this session in front of rides with it, to be
+        // LAST SESSION again should the X-Card take back all of it; and with
+        // nothing to summarise — the round closed unnarrated, or every card
+        // was removed — it is LAST SESSION again now (lifecycle.js
+        // lastSessionSettled — issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
+        const behind  = named && Object.prototype.hasOwnProperty.call(prior, 'displaced') ? { displaced: prior.displaced } : {};
+        const settled = named && !text?.trim() ? lastSessionSettled(prior) : prior;
         await game.settings.set(MODULE_ID, 'campaignState', {
           ...latest,
           unsummarisedSession: null,
@@ -4039,7 +4106,8 @@ export function catchUpUnsummarisedSession() {
             sessionNumber: pending.sessionNumber ?? null,
             text:          lastSessionTextFrom(text, folded),
             updatedAt:     new Date().toISOString(),
-          } } : {}),
+            ...behind,
+          } } : settled !== prior ? { previousSessionSummary: settled } : {}),
         });
         return true;
       }, 'last session catch-up');
@@ -4047,11 +4115,13 @@ export function catchUpUnsummarisedSession() {
       const done = await write;
       if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
       // Its Session Log page's story, when an X-Card emptied it, too
-      // (SESSION-LOG-STORY-NOT-REBUILT).
+      // (SESSION-LOG-STORY-NOT-REBUILT) — and when it was written before a
+      // narration this summary tells: a round narrated late, after End wrote
+      // the page (issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY).
       if (done && text?.trim()) {
         try {
           const { restoreSessionLogStory } = await import('../world/worldJournal.js');
-          await restoreSessionLogStory(pending.sessionId, text);
+          await restoreSessionLogStory(pending.sessionId, text, { through });
         } catch (err) {
           console.warn(`${MODULE_ID} | narrator: rebuilding the Session Log's story failed:`, err?.message ?? err);
         }
@@ -4060,11 +4130,12 @@ export function catchUpUnsummarisedSession() {
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
       return false;
-    } finally {
-      _sessionCatchUp = null;
     }
   })();
-  return _sessionCatchUp;
+  // … and it is cleared once the body settles, however it settles.
+  const memo = run.finally(() => { if (_sessionCatchUp === memo) _sessionCatchUp = null; });
+  _sessionCatchUp = memo;
+  return memo;
 }
 
 function refreshRollingSessionSummary({ relay = false } = {}) {
