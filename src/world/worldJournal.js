@@ -1609,6 +1609,48 @@ function noteStepTakenBack(out, entry) {
 }
 
 /**
+ * The hidden plans in play once the given narrations are taken back, by id,
+ * with the clocks they link — as undoNarrationEntries leaves the Secrets
+ * journal, whether it has run yet or not: a plan whose newest version one of
+ * them wrote stands as its newest version none of them wrote (gone, when they
+ * made it); any other plan stands as it is. For the undo of a plan clock's
+ * pacing (clocks/planClockPacing.js planInPlayFor): the X-Card's pause write
+ * comes before the plans are put back, a supersede's clock re-arm after, and
+ * both must leave a clock alone whose plan is gone or closed (issue #364
+ * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES) — while a plan the removed narration
+ * itself closed is in play again, and its clock runs. Ids only, never a
+ * plan's content. Null when the journals cannot be read: the caller then
+ * asks nothing.
+ *
+ * @param {string[]} narrationIds — the narrations taken back
+ * @returns {{ planIds: Set<string>, clockIds: Set<string> }|null}
+ */
+export function hiddenPlansInPlayWithout(narrationIds) {
+  try {
+    if (!globalThis.game?.journal) return null;
+    const removed = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
+    const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+    const planIds  = new Set();
+    const clockIds = new Set();
+    for (const page of findJournal(JOURNAL_NAMES.secrets)?.pages?.contents ?? []) {
+      const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets];
+      if (!entry || typeof entry !== "object") continue;
+      const stands = fromRemoved(entry)
+        ? ((Array.isArray(entry.previous) ? entry.previous : []).find(v => v && !fromRemoved(v)) ?? null)
+        : entry;
+      if (!stands || (stands.status ?? "active") !== "active") continue;
+      const id = stands.id ?? entry.id;
+      if (typeof id === "string" && id) planIds.add(id);
+      if (typeof stands.clockId === "string" && stands.clockId) clockIds.add(stands.clockId);
+    }
+    return { planIds, clockIds };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | World Journal: the hidden plans in play could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * The Session Log page's End-a-Session summary after an X-Card on its session
  * (issue #345 AA27). End writes the session's rolling summary and lore titles
  * onto the page (writeSessionLog); the X-Card's undo takes only the page's

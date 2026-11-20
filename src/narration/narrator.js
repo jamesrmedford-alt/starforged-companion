@@ -28,7 +28,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
-import { unpacedClock, pacedByOneOf } from '../clocks/planClockPacing.js';
+import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
@@ -57,6 +57,7 @@ import {
   getConfirmedLore,
   getRecordedLocations,
   selectLoreForContext,
+  hiddenPlansInPlayWithout,
 } from '../world/worldJournal.js';
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
@@ -2930,8 +2931,15 @@ export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   // has turned it since: asked whether it still stood as paced, a price paid
   // between a trigger vignette and this card left the clock where it was with
   // the step back unplayed (issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE).
+  // Only a clock whose plan is in play once they are taken back — the undo
+  // of the plans runs after this write, so the plans are read as it will
+  // leave them (hiddenPlansInPlayWithout): a clock retired after a last step
+  // keeps its stamp when its plan is then retired or deleted, and ran again
+  // with no plan behind it (issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
   if (ids.length && Array.isArray(cs.clocks) && cs.clocks.some(c => pacedByOneOf(c, ids))) {
-    cs.clocks = cs.clocks.map(c => (pacedByOneOf(c, ids) ? unpacedClock(c) : c));
+    const plansInPlay = hiddenPlansInPlayWithout(ids);
+    const theirs = (c) => pacedByOneOf(c, ids) && planInPlayFor(c, plansInPlay);
+    if (cs.clocks.some(theirs)) cs.clocks = cs.clocks.map(c => (theirs(c) ? unpacedClock(c) : c));
   }
 
   const summary = cs.sessionSummary;

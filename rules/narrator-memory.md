@@ -33,7 +33,9 @@ layers. This file is the never-break list.
    and a removed or superseded narration's pacing of a plan clock is taken
    back with its step, issue #362 AC33 — matched by the stamp alone, so also
    after a later price turned the clock, issue #364
-   PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; the burned price's receipt names that
+   PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE, and only while the clock's plan is
+   in play once the narration is taken back, `planInPlayFor`,
+   RETIRED-PLAN-CLOCK-XCARD-REACTIVATES; the burned price's receipt names that
    vignette, `vignetteNarrationId`, so a price paid in between does not hide
    it, issue #364 PLAN-CLOCK-BURN-AFTER-LATER-PRICE — and it is struck by
    that id when the clock has triggered again since and carries the later

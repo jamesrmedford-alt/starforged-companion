@@ -1061,7 +1061,11 @@ the narration back — a supersede, or the X-Card's pause write — runs the clo
 again at its fill from before plus the segments turned since, at most one short
 of full, the step it played owed again (`planClockPacing.js`: the clock is that
 narration's by its stamp, `pacedByOneOf`, wherever a later price has turned it —
-issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; a burned price's plan clock is put back one
+issue #364 PLAN-TRIGGER-XCARD-AFTER-LATER-PRICE; and only while the clock's plan
+is in play once the narration is taken back, `planInPlayFor`, told the plans by
+`worldJournal.hiddenPlansInPlayWithout` — a clock retired after a last step
+keeps its stamp when the plan is then retired, deleted or ended by a later
+narration, and is left retired, issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES; a burned price's plan clock is put back one
 short of full and its vignette struck by that id, issue #362 AC33 — the price's
 receipt names its own trigger vignette, `vignetteNarrationId`, minted with the
 advance in `advanceClocksOnPayThePrice`, so the burn finds the pacing that

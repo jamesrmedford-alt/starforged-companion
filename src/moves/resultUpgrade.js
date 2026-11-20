@@ -292,6 +292,9 @@ async function runUpgradeStep(step) {
       const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id), {
         triggered: filled.map(c => c._id),
         vignettes,
+        // The ones whose plan is out of play once that vignette is taken
+        // back: not run again (issue #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES).
+        planGone: await clocksWhosePlanIsGone(vignettes),
         // The ones whose vignette stands on the table: struck by that id even
         // when the clock has triggered again since and carries the later
         // trigger's stamp (issue #364 PLAN-CLOCK-TWO-TRIGGERS-FIRST-BURN).
@@ -634,8 +637,11 @@ function clampsToGiveBack(ptpReversals, clearedIds, skipId) {
  * the narrator's countdown label, a scene challenge's, a GM's `!clock` —
  * never markup (issue #362 AC83).
  *
+ * A clock left because what it paced is over (`closed` — issue #364
+ * RETIRED-PLAN-CLOCK-XCARD-REACTIVATES) is said to stay retired.
+ *
  * @param {{ name?: string|null }} clock — the receipt's entry
- * @param {{ fate: "rewound"|"putBack"|"left", filled: number, segments: number, active: boolean }|undefined} fate
+ * @param {{ fate: "rewound"|"putBack"|"left"|"closed", filled: number, segments: number, active: boolean }|undefined} fate
  * @returns {string|null} HTML, or null when nothing was done to the clock
  */
 function tensionClockLine(clock, fate) {
@@ -645,6 +651,9 @@ function tensionClockLine(clock, fate) {
     case "rewound": return `${name} clock rewound`;
     case "putBack": return `${name} clock put back to ${at} — its TRIGGERED scene is taken back`;
     case "left":    return `${name} clock left as it stands (${at}): it triggered again since — only this price's TRIGGERED scene is taken back`;
+    case "closed":  return fate.active === false
+      ? `${name} clock stays retired — only this price's TRIGGERED scene is taken back`
+      : `${name} clock left as it stands (${at}) — only this price's TRIGGERED scene is taken back`;
     default:        return null;
   }
 }
@@ -1050,10 +1059,15 @@ async function undoSupersededPlans(ids, label) {
   // The plans a step of theirs was taken back from under a later narration's
   // version (issue #364 PLAN-STEP-REWRITTEN-BEFORE-BURN).
   let owed = [];
+  // The plans in play once theirs are taken back: a clock they paced whose
+  // plan is gone or closed is not run again (issue #364
+  // RETIRED-PLAN-CLOCK-XCARD-REACTIVATES). Not read: no clock is held back.
+  let plansInPlay = null;
   try {
-    const { undoNarrationEntries } = await import("../world/worldJournal.js");
+    const { undoNarrationEntries, hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
     const undone = await undoNarrationEntries(ids, { categories: ["secrets"] });
     owed = Array.isArray(undone?.stepsTakenBack) ? undone.stepsTakenBack : [];
+    plansInPlay = hiddenPlansInPlayWithout(ids);
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
   }
@@ -1062,7 +1076,7 @@ async function undoSupersededPlans(ids, label) {
     await removeClocksMadeBy(ids);
     // A plan clock it paced goes back one short of full, the step it played
     // put back unplayed above (issue #362 AC33).
-    await restoreClocksPacedBy(ids);
+    await restoreClocksPacedBy(ids, { plansInPlay });
     // A clock a later narration retired after what was then the plan's last
     // step runs again for the step now owed — the first of two triggers
     // burned after the second played the plan out.
@@ -1096,6 +1110,36 @@ function clocksWithVignetteWritten(vignettes) {
       && typeof f.clockId === "string" && typeof f.narrationId === "string") live.add(`${f.clockId}\n${f.narrationId}`);
   }
   return named.filter(([clockId, narrationId]) => live.has(`${clockId}\n${narrationId}`)).map(([clockId]) => clockId);
+}
+
+/**
+ * Of the clocks a price's receipt names a trigger vignette for, those whose
+ * hidden plan is no longer in play once that vignette is taken back — the
+ * plan retired or resolved by something else since, or its page gone
+ * (worldJournal.js hiddenPlansInPlayWithout, read per vignette: a plan that
+ * vignette itself closed is in play again). The burn's clock rewind leaves
+ * them as they are (clocks.js revertTensionClocksForBurn `planGone`, issue
+ * #364 RETIRED-PLAN-CLOCK-XCARD-REACTIVATES). Empty when the plans cannot be
+ * read. Never throws.
+ *
+ * @param {Object<string, string>} vignettes — narration id by clock id
+ * @returns {Promise<string[]>} clock ids
+ */
+async function clocksWhosePlanIsGone(vignettes) {
+  const named = Object.entries(vignettes ?? {});
+  if (!named.length) return [];
+  try {
+    const { hiddenPlansInPlayWithout } = await import("../world/worldJournal.js");
+    const { planInPlayFor } = await import("../clocks/planClockPacing.js");
+    const clocks = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.clocks ?? [];
+    return named.filter(([clockId, narrationId]) => {
+      const clock = clocks.find(c => c?._id === clockId) ?? null;
+      return !!clock && !planInPlayFor(clock, hiddenPlansInPlayWithout([narrationId]));
+    }).map(([clockId]) => clockId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | upgrade: the plans behind the rewound clocks could not be read:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /** Whether the scene ledgers hold anything the given narrations wrote and that still stands. */
