@@ -6873,6 +6873,7 @@ const PAYOFF_REASONS = {
 const PAYOFF_FINAL_REASONS = {
   "no-pc": "the character's sheet is gone from the world, so there is no one left to receive it",
   "no-vow": "the vow is on no character's sheet any more",
+  "no-vehicle": "the vehicle is no longer in the world",
   // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
   "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
@@ -9125,6 +9126,11 @@ async function retryRiderStep(s, actorId) {
   // picker is posted — the step is settled, and a second Retry would post
   // another (issue #336 Y19).
   if (reason === "redirected") return { ok: true };
+  // An integrity effect whose vehicle is gone: the step names it by its
+  // Actor's id (or names none), so no later press finds one — `final`, told
+  // once with no Retry. It went on a fresh Retry card each time (issue #364
+  // PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+  if (reason === "no-vehicle") return { ok: false, final: true, reason };
   return { ok, reason, error };
 }
 

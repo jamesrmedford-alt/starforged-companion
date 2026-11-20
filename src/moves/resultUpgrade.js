@@ -491,7 +491,12 @@ export async function retryUpgradeStep(s) {
       : vowClocksUntriggered(s.entries, report.untriggered, landed ? [] : (failures[0]?.entries ?? s.entries));
     await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind), typeof s.resolutionId === "string" ? s.resolutionId : null);
   }
-  return landed ? { ok: true } : { ok: false, ...failures[0] };
+  if (landed) return { ok: true };
+  // A vehicle's track to restore, its Actor gone since: the step names it by
+  // id, so no later press finds one — `final`, told once with no further
+  // Retry (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-VEHICLE-GONE-LOOP).
+  const vehicleGone = s.effect === "assetTrack" && typeof s.vehicleActorId === "string" && failures[0]?.reason === "no-vehicle";
+  return { ok: false, ...failures[0], ...(vehicleGone ? { final: true } : {}) };
 }
 
 /** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
