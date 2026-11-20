@@ -466,7 +466,10 @@ function secretTitle(r) {
 /**
  * The Secrets section (issue #353): each active plan collapsed to its kind and
  * name until clicked — in solo play the GM is the only player, and seeing a
- * plan spoils it — with Open, Edit, Reveal now and Retire.
+ * plan spoils it — with Open, Edit, Reveal now and Retire. A truth the X-Card
+ * withheld (the plan's `truthWithheldBy`) reads "withheld", with a label
+ * beside it saying why and how to bring it back (issue #364
+ * SECRETS-PANEL-NO-WITHHELD-MARKER — the GMs' whispered note was the only sign).
  */
 function buildSecretsSection(secrets, enabled) {
   const heading = '<h3 class="sf-wj-section-heading">Secrets</h3>';
@@ -478,7 +481,8 @@ function buildSecretsSection(secrets, enabled) {
   const list = (label, items) => (items.length
     ? `<div class="sf-wj-entry-text"><strong>${escapeHtml(label)}:</strong></div><ol class="sf-wj-secret-list">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ol>` : '');
   const rows = secrets.map(r => {
-    const state = !r.truth ? 'undecided' : (r.truthRevealed ? 'revealed' : 'hidden');
+    const withheld = !!r.truth && !r.truthRevealed && !!r.truthWithheldBy;
+    const state = !r.truth ? 'undecided' : (r.truthRevealed ? 'revealed' : (withheld ? 'withheld' : 'hidden'));
     const id = escapeHtml(r.id);
     return `
 <details class="sf-wj-entry sf-wj-secret" data-id="${id}">
@@ -490,6 +494,8 @@ function buildSecretsSection(secrets, enabled) {
   ${r.kind === 'mystery' ? field('About', r.subject?.name) : ''}
   ${field('Also called', (r.aliases ?? []).join(', '))}
   ${field(r.kind === 'mystery' ? 'Answer' : 'Truth', r.truth || 'Not yet decided — the narrator decides it from the oracle rolls.')}
+  ${withheld ? `<div class="sf-wj-entry-text sf-wj-secret-withheld"><strong>Withheld:</strong> the X-Card took back its reveal — `
+    + 'the narrator is no longer given it or asked to reveal it. Edit the truth, or use Reveal now, to bring it back.</div>' : ''}
   ${field('Wants', r.wants)}
   ${field('Knows', r.knows)}
   ${list('Escalation', (r.escalation ?? []).map(e => `${e.text}${e.done ? ' (played)' : ''}`))}
