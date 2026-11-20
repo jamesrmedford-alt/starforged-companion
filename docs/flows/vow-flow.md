@@ -208,7 +208,12 @@ resolved once the held swear is told — `heldResult.keepHeldResult`, or
 `narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
 SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done
-resolves the Sojourn instead.
+resolves the Sojourn instead. That vow deleted from the sheet before it is
+sworn is no longer the card's: the card stops saying it is on the sheet and
+offers ⚔ again (read from the card's flags and the sheet on every render,
+and written back by the canonical GM's `deleteItem` hook), and another vow
+written from it is the one whose swear resolves the Sojourn (issue #364
+SOJOURN-VOW-DELETED-BEFORE-SWORN).
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;

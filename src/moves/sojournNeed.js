@@ -25,7 +25,12 @@
  *     (roll), the reward offer, the 🤝 link (session/swearVow.js). The card
  *     keeps the vow's id; once that vow's Swear an Iron Vow has been rolled
  *     and narrated (movePipeline.js finishMove → resolveSojournNeedsForVow)
- *     the Sojourn is resolved. The vow is sworn whatever its roll.
+ *     the Sojourn is resolved. The vow is sworn whatever its roll. A vow
+ *     deleted from the sheet before its swear is rolled is no longer the
+ *     card's: the card stops saying it is on the sheet and offers ⚔ again
+ *     (needVowOnSheet — read from the card's flags and the sheet on every
+ *     render, and written back to the card by the canonical GM's deleteItem
+ *     hook; issue #364 SOJOURN-VOW-DELETED-BEFORE-SWORN).
  *   - **✔ It is done** — the help was given: the player's word, no proof.
  *
  * Resolved (resolveSojournNeed), once: the card is claimed first (`resolved`
@@ -53,7 +58,7 @@
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { getActor, createCharacterVowItem, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getActor, createCharacterVowItem, isPlayerCharacterActor, readVows } from "../character/actorBridge.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { RANKS } from "../schemas.js";
@@ -113,17 +118,70 @@ function strongHit() {
 }
 
 /**
+ * The vow a need card's ⚔ Swear an Iron Vow wrote, as it stands on its
+ * roller's sheet now (actorBridge.readVows) — or null: none was written, or
+ * it is no longer there. The sheet is the truth; the card's `vowId` only
+ * names which vow to look for.
+ *
+ * @param {Object} f — the need card's module flags
+ * @returns {{ id: string, name: string }|null}
+ */
+function needVowOnSheet(f) {
+  if (typeof f?.vowId !== "string" || !f.vowId) return null;
+  const actor = typeof f.actorId === "string" && f.actorId ? (getActor(f.actorId) ?? null) : null;
+  return readVows(actor).find(v => v.id === f.vowId) ?? null;
+}
+
+/**
+ * Whether the vow an open need card wrote is gone from its roller's sheet —
+ * deleted before its swear was rolled. The card then offers ⚔ Swear an Iron
+ * Vow again: nothing can swear a vow that is not there, and the card said it
+ * was on the sheet for good (issue #364 SOJOURN-VOW-DELETED-BEFORE-SWORN).
+ *
+ * @param {Object} f — the need card's module flags
+ * @returns {boolean}
+ */
+function needVowGone(f) {
+  return !f?.resolved && typeof f?.vowId === "string" && !!f.vowId && !needVowOnSheet(f);
+}
+
+/**
+ * Whether ⚔ Swear an Iron Vow is taken on a need card: the card is resolved,
+ * its vow is on the sheet, or its vow is being written (claimed —
+ * `vowRequested` — with no vow recorded yet). A vow written and deleted
+ * since leaves it free again.
+ *
+ * @param {Object} f — the need card's module flags
+ * @returns {boolean}
+ */
+function needVowTaken(f) {
+  return !!(f?.resolved || (!needVowGone(f) && (f?.vowRequested || f?.vowId)));
+}
+
+/** The need card's vow fields and ⚔ Swear an Iron Vow, as HTML. `gone`: a vow written from the card was deleted since. */
+function vowOfferHtml(who, { vowRequested = false, gone = false } = {}) {
+  const ranks = RANKS.map(r => `<option value="${r}"${r === "dangerous" ? " selected" : ""}>${r}</option>`).join("");
+  return (gone ? `<p class="sf-incite-hint sf-sojourn-need-vow-gone">The vow written from this card is no longer on ${who}'s sheet — swear another, or press ✔ It is done.</p>` : "")
+    + `<p class="sf-sojourn-need-vow">`
+    + `<input type="text" class="sf-sojourn-need-vow-name" maxlength="${NEED_VOW_NAME_MAX}" placeholder="What do you swear to do?"> `
+    + `<select class="sf-sojourn-need-vow-rank">${ranks}</select> `
+    + `<button type="button" class="entity-btn" data-action="sf-sojourn-need-swear"${vowRequested ? " disabled" : ""}>⚔ Swear an Iron Vow</button></p>`
+    + `<p class="sf-incite-hint">The vow goes on ${who}'s sheet; its card then offers the swear roll. Left blank, it is named on its sheet.</p>`;
+}
+
+/**
  * Pure: the community's need card's HTML, as its flags stand. Open: the
  * rule, the vow (its name, its rank and ⚔ Swear an Iron Vow — or, once the
- * vow is on the sheet, where its swear roll is) and ✔ It is done. Resolved:
- * how the need was answered and what the strong hit gives. Escapes its
- * inputs.
+ * vow is on the sheet, where its swear roll is) and ✔ It is done. `vowGone`:
+ * open again, saying the vow written before is no longer on the sheet.
+ * Resolved: how the need was answered and what the strong hit gives. Escapes
+ * its inputs.
  *
  * @param {{ actorName?: string|null, vowRequested?: boolean, vowId?: string|null, vowName?: string|null,
- *   resolvedBy?: "vow"|"done"|null }} [state]
+ *   vowGone?: boolean, resolvedBy?: "vow"|"done"|null }} [state]
  * @returns {string}
  */
-export function buildSojournNeedHtml({ actorName = null, vowRequested = false, vowId = null, vowName = null, resolvedBy = null } = {}) {
+export function buildSojournNeedHtml({ actorName = null, vowRequested = false, vowId = null, vowName = null, vowGone = false, resolvedBy = null } = {}) {
   const who  = escapeHtml(typeof actorName === "string" && actorName.trim() ? actorName.trim() : "the character");
   const head = `<div class="sf-card sf-sojourn-need${resolvedBy ? " sf-sojourn-need--resolved" : ""}">`
     + `<div class="sf-card-header">🤝 Sojourn — the community's need</div><div class="sf-card-body">`;
@@ -133,16 +191,11 @@ export function buildSojournNeedHtml({ actorName = null, vowRequested = false, v
   }
   const rule = `<p>The community needs help, or makes a costly demand in exchange for safe harbor. `
     + `Do it, or Swear an Iron Vow to see it done, and this Sojourn is resolved as a strong hit.</p>`;
-  const ranks = RANKS.map(r => `<option value="${r}"${r === "dangerous" ? " selected" : ""}>${r}</option>`).join("");
   const vow = vowId
     ? `<p class="sf-sojourn-need-vow">⚔ ${vowName ? `"${escapeHtml(vowName)}"` : "A new vow"} is on ${who}'s sheet — `
       + `${vowName ? "" : "name it there, then "}press <strong>⚔ Swear it (roll)</strong> on its card. `
       + `Once it is sworn, this Sojourn is resolved as a strong hit.</p>`
-    : `<p class="sf-sojourn-need-vow">`
-      + `<input type="text" class="sf-sojourn-need-vow-name" maxlength="${NEED_VOW_NAME_MAX}" placeholder="What do you swear to do?"> `
-      + `<select class="sf-sojourn-need-vow-rank">${ranks}</select> `
-      + `<button type="button" class="entity-btn" data-action="sf-sojourn-need-swear"${vowRequested ? " disabled" : ""}>⚔ Swear an Iron Vow</button></p>`
-      + `<p class="sf-incite-hint">The vow goes on ${who}'s sheet; its card then offers the swear roll. Left blank, it is named on its sheet.</p>`;
+    : vowOfferHtml(who, { vowRequested, gone: vowGone });
   const done = `<p><button type="button" class="entity-btn" data-action="sf-sojourn-need-done" `
     + `title="The help is given, or the demand met — resolves this Sojourn as a strong hit">✔ It is done</button></p>`;
   return `${head}${rule}${vow}${done}</div></div>`;
@@ -198,13 +251,32 @@ export async function postSojournNeedCard({ actor, resolutionId, stakes = null }
  * button re-arms when the press changed nothing (refused, not delivered).
  * ⚔ Swear an Iron Vow sends the vow as the card's fields have it; it is
  * disabled once a vow was asked for, ✔ It is done once the card is resolved.
- * Register once.
+ *
+ * A vow the card wrote and that is gone from the sheet since (needVowGone —
+ * the card's flags and the sheet, read on every render, so on every client
+ * and after a reload): the rendered card offers ⚔ again in place of "… is on
+ * the sheet", whatever its stored text still says. The canonical GM's
+ * deleteItem hook also writes that back to the card (releaseNeedsOfDeletedVow),
+ * which re-renders it everywhere at once. Register once.
  */
 export function registerSojournNeedHook() {
   if (registerSojournNeedHook._installed) return;
   registerSojournNeedHook._installed = true;
+  globalThis.Hooks?.on?.("deleteItem", (item) => {
+    releaseNeedsOfDeletedVow(item).catch(err =>
+      console.warn(`${MODULE_ID} | sojourn: a deleted vow's need card could not be opened again:`, err?.message ?? err));
+  });
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.sojournNeedCard) return;
+    if (needVowGone(liveFlags(message))) {
+      const said = root.querySelector(".sf-sojourn-need-vow");
+      if (said && !root.querySelector('[data-action="sf-sojourn-need-swear"]')) {
+        const actorId = liveFlags(message).actorId;
+        const who = escapeHtml((typeof actorId === "string" && actorId ? getActor(actorId)?.name : null) ?? "the character");
+        said.insertAdjacentHTML("afterend", vowOfferHtml(who, { gone: true }));
+        said.remove();
+      }
+    }
     const wire = (action, way, taken, fields = () => ({})) => {
       const btn = root.querySelector(`[data-action="${action}"]`);
       if (!btn) return;
@@ -227,13 +299,44 @@ export function registerSojournNeedHook() {
       });
     };
     wire("sf-sojourn-need-swear", "vow",
-      () => !!(liveFlags(message).resolved || liveFlags(message).vowRequested || liveFlags(message).vowId),
+      () => needVowTaken(liveFlags(message)),
       () => ({
         vowName: String(root.querySelector(".sf-sojourn-need-vow-name")?.value ?? ""),
         rank:    String(root.querySelector(".sf-sojourn-need-vow-rank")?.value ?? ""),
       }));
     wire("sf-sojourn-need-done", "done", () => !!liveFlags(message).resolved);
   });
+}
+
+/**
+ * A vow Item was deleted (the deleteItem hook, every client — the canonical
+ * GM acts): each open need card that wrote that vow gives it up — its claim
+ * and its `vowId` cleared, its text open again and saying the vow is gone —
+ * so every client's card offers ⚔ Swear an Iron Vow again at once. A write
+ * the world refuses, or a deletion no GM saw, leaves the stored card as it
+ * was: its render still reads the sheet (registerSojournNeedHook), and a ⚔
+ * press still writes a vow (writeNeedVow). Not a card whose press is being
+ * applied here.
+ *
+ * @param {Item|null} item — the deleted Item
+ * @returns {Promise<number>} the cards opened again
+ */
+async function releaseNeedsOfDeletedVow(item) {
+  if (!item?.id || item.type !== "progress" || !isCanonicalGM()) return 0;
+  let released = 0;
+  for (const card of (globalThis.game?.messages?.contents ?? [])) {
+    const f = card?.flags?.[MODULE_ID];
+    if (f?.sojournNeedCard !== true || f.resolved || f.vowId !== item.id || _inFlight.has(card.id)) continue;
+    if (!needVowGone(f)) continue;
+    const actorName = (typeof f.actorId === "string" && f.actorId ? getActor(f.actorId)?.name : null) ?? null;
+    await card.update({
+      [`flags.${MODULE_ID}.vowRequested`]: false,
+      [`flags.${MODULE_ID}.vowId`]:        null,
+      content: buildSojournNeedHtml({ actorName, vowGone: true }),
+    });
+    released += 1;
+  }
+  return released;
 }
 
 /**
@@ -300,7 +403,9 @@ export async function applySojournNeedFromRelay(payload = {}, ctx = {}) {
  * createItem hook then posts the vow's own card, whose ⚔ Swear it (roll) is
  * the swear (session/swearVow.js registerPlayerVowHook). Claimed first
  * (`vowRequested`): a refused claim writes nothing, and a vow the sheet
- * refuses releases it.
+ * refuses releases it. A vow written before and deleted from the sheet since
+ * (needVowGone) is no vow: the press writes another, and the card names that
+ * one.
  *
  * @param {ChatMessage} message — the need card
  * @param {Actor} actor — the roller
@@ -309,7 +414,7 @@ export async function applySojournNeedFromRelay(payload = {}, ctx = {}) {
  */
 async function writeNeedVow(message, actor, payload) {
   const f = liveFlags(message);
-  if (f.vowRequested || f.vowId) return { applied: false, reason: "vow-already-written" };
+  if (needVowTaken(f)) return { applied: false, reason: "vow-already-written" };
   const name = String(payload?.vowName ?? "").replace(/\s+/g, " ").trim().slice(0, NEED_VOW_NAME_MAX);
   const rank = RANKS.includes(payload?.rank) ? payload.rank : "dangerous";
   try {

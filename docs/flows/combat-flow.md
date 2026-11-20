@@ -505,7 +505,13 @@ the name and rank typed on the card, or a vow still to be named — on the
 roller's sheet (`actorBridge.createCharacterVowItem`, claimed first:
 `vowRequested`, then `vowId`), which is the existing swear flow's own entry
 (vow-flow.md §1: the createItem hook's "🆕 New vow recorded" card and its
-⚔ Swear it (roll)); **✔ It is done** is the player's word. The Sojourn is
+⚔ Swear it (roll)); **✔ It is done** is the player's word. The sheet is the
+truth about that vow: the card reads it from there (`needVowOnSheet`), and a
+vow deleted before its swear was rolled leaves the card open again — each
+render offers ⚔ from the card's flags and the sheet, the canonical GM's
+`deleteItem` hook writes that back to the card (`releaseNeedsOfDeletedVow`),
+and a press writes another vow (issue #364
+SOJOURN-VOW-DELETED-BEFORE-SWORN). The Sojourn is
 resolved once (`resolveSojournNeed`, the card's `resolved` claimed first) —
 by ✔, or when that vow's Swear an Iron Vow has been rolled and narrated
 (`movePipeline.finishMove` → `resolveSojournNeedsForVow`, by the vow's id;
