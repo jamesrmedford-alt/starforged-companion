@@ -337,7 +337,12 @@ All real progress lands on **item ticks** (`system.current`) via
   Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
   copy by its Item, renamed or not; fulfilled (whoever fulfilled it) or on
   no sheet, both retire and a press acts on nothing — by name they marked or
-  fulfilled the winner's or the holder's other vow (issue #345 AA17). The
+  fulfilled the winner's or the holder's other vow (issue #345 AA17). A
+  fight linked by id keeps that id on its card even when its vow is gone at
+  the win; a card with no id is built only on a vow its name names, and its
+  ⚑ (and the GMs' Retry) asks on the milestone picker when the name names no
+  open vow — it marked the holder's only other open vow (issue #364
+  NO-VOW-ID-CARD-MARKS-WRONG-VOW). The
   card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.

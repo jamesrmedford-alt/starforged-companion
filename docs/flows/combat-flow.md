@@ -575,7 +575,17 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 carries (`vowId`, `fightCardVow`): the holder's open copy by its Item,
 whatever it is named now — by name, a vow its holder fulfilled, renamed or
 deleted fell through to the winner's or the holder's other vow (issue #345
-AA17); a card with no id keeps the name — plus **🏁 Attempt to Fulfill** (a forced
+AA17); a fight linked by id keeps that id on its card whatever became of the
+vow (deleted from every sheet before the win, `fightLinkedVow` finds no copy
+and the card names it by its old name — the id retires ⚑ and 🏁). A card
+with no id keeps the name: it is built only on a vow its name names (exactly
+or as whole words — the name ladder's sole-open-vow rung built a deleted
+vow's card on the table's only other open vow), and its ⚑ — and the GMs'
+Retry of a refused mark — posts the "Which vow advances?" picker when the
+name names no open vow (`applyReachMilestone`'s `askUnnamed`,
+`planReachMilestone`): a deleted vow and a renamed one look the same by name,
+and the holder's only other open vow was marked (issue #364
+NO-VOW-ID-CARD-MARKS-WRONG-VOW) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
 the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
 (issue #329 X05), else the PC holding the vow the fight served

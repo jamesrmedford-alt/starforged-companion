@@ -2949,7 +2949,12 @@ function legacyMarkAdded(next, orig) {
 async function applyWonFightPayoff(track, outcome, rollerActor, { resolutionId = null } = {}) {
   const marks = wonFightMarks(track, outcome);
   const { vowName, vowId, copies } = fightLinkedVow(track, rollerActor?.id ?? null);
-  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId, resolutionId }).catch(err =>
+  // A fight linked by id keeps that id on its card, whatever became of the
+  // vow: deleted from every sheet, fightLinkedVow finds no copy by it, and a
+  // card with the name alone was built on — or its ⚑ marked — another open
+  // vow (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+  const cardVowId = vowId ?? (typeof track?.linkedVowId === "string" && track.linkedVowId ? track.linkedVowId : null);
+  await postFightVowMilestoneCard(vowName, marks, rollerActor?.id ?? null, { vowId: cardVowId, resolutionId }).catch(err =>
     console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
   const granted = await grantLinkedVowReward(vowName, outcome, { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
@@ -5962,7 +5967,13 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // #301 B02). Open vows only, as before. A fight linked by the vow's id
   // finds it by that id, whatever it is named now (issue #362 AC46).
   const linked = linkedId ? fightCardVow({ vowId: linkedId, actorId }) : null;
-  const { primary } = linked ? { primary: null } : resolveVowItemCopies(vowName, { actorId });
+  // By name, only a vow the name names (exactly, or as whole words): the
+  // ladder's sole-open-vow rung built the card of a vow deleted since on the
+  // table's only other open vow, its id and all (issue #364
+  // NO-VOW-ID-CARD-MARKS-WRONG-VOW). With no vow found the card has its name
+  // alone, and its ⚑ asks which vow advances.
+  const found = linked ? null : resolveVowItemCopies(vowName, { actorId }).primary;
+  const primary = found && vowNameMatch(found, String(vowName ?? "").trim().toLowerCase()) > 0 ? found : null;
   const item = linked ? (linked.state === "open" ? linked.item : null)
     : (primary?.item?.system?.completed === true ? null : (primary?.item ?? null));
   const vowRank        = item?.system?.rank ?? null;
@@ -5970,8 +5981,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // id): from the flag alone, a sheet vow whose stamp never landed carried
   // null, so 🤝 Deepen's once-only record found the vow by its name only and
   // a rename allowed a second deepen (known-issues
-  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
-  const vowId          = vowCopyId(item);
+  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY). A fight linked by id keeps it when its
+  // vow is fulfilled or gone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
+  const vowId          = vowCopyId(item) ?? (linked ? linkedId : null);
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -6014,11 +6026,14 @@ async function markLinkedVowMilestone(vowName, marks, actorId = null, vowId = nu
     if (closed) return { ok: false, reason: closed === "gone" ? "vow-gone" : "vow-completed" };
     // By the card's vow id: the holder's open copy, whatever it is named now
     // (issue #345 AA17 — by name, a renamed vow fell to the winner's sole open
-    // vow). A card with no id keeps the name.
+    // vow). A card with no id keeps the name — and asks which vow advances
+    // when its name names no open vow (`askUnnamed`): a vow renamed and one
+    // deleted look the same by name, and the holder's only other open vow was
+    // marked (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
     const byId = fightCardVow({ vowId, actorId });
     const action = byId
       ? await applyReachMilestone(byId.holder, byId.item.name ?? vowName ?? null, marks, { itemId: byId.item.id })
-      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
+      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks, { askUnnamed: true });
     if (action === "mark" || action === "pick") return { ok: true };
     console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
     return { ok: false, reason: "no-vow" };
@@ -7782,17 +7797,20 @@ async function postDevelopRelationshipCard(plan) {
  * optional named vow (interpretation.moveTarget); null lets planReachMilestone
  * auto-select the sole open vow or, when several are open, post a picker card.
  * `itemId` names the vow Item itself (a won-fight card's vow, by its id —
- * issue #345 AA17): that open vow is marked, else none.
+ * issue #345 AA17): that open vow is marked, else none. `askUnnamed` (a
+ * won-fight card with no vow id): a target that names no open vow posts the
+ * picker, never the sole open vow (planReachMilestone; issue #364
+ * NO-VOW-ID-CARD-MARKS-WRONG-VOW).
  *
  * @param {Actor|null} actor
  * @param {string|null} target
  * @param {number} [marks]
- * @param {{ itemId?: string|null }} [opts]
+ * @param {{ itemId?: string|null, askUnnamed?: boolean }} [opts]
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1, { itemId = null } = {}) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -7808,7 +7826,7 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null } =
   const byItem = itemId ? vows.find(v => v.id === itemId && !v.completed) ?? null : null;
   const plan = itemId
     ? (byItem ? { action: "mark", vow: byItem, ticks: milestoneTicks(byItem.rank) } : { action: "none" })
-    : planReachMilestone(vows, target);
+    : planReachMilestone(vows, target, { askUnnamed });
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     await markVowProgress(actor, plan.vow.id, ticks);
