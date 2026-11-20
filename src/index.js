@@ -2581,8 +2581,11 @@ async function applyOutcomeEffects({
       { itemId: interpretation?.companionItemId ?? null });
     const signed = `${companionDelta > 0 ? "+" : ""}${companionDelta}`;
     if (!healed.ok) {
-      ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
-      notApplied.push(`companion health ${signed} (${healed.reason})`);
+      // Why, in words — its code was printed, "(no-companion)" (issue #364
+      // MOVE-CARD-RAW-REASON-CODE).
+      const why = payoffReasonWords(healed.reason);
+      ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${why}) — apply it on the asset.`);
+      notApplied.push(`companion health ${signed} — ${why}`);
     } else {
       applied.push(`companion health ${signed}`);
     }
@@ -3033,8 +3036,10 @@ async function payWonFightDifference(track, rollerActor, resolutionId) {
     : null;
   if (milestone?.ok && milestone.applied) applied.push(milestone.applied);
   else if (milestone && !milestone.ok && milestone.step) { failures.push(milestone); owed.push(milestone.what); }
-  // The vow is fulfilled, or on no sheet: nothing a Retry could mark.
-  else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} (${milestone.reason ?? "refused"})`);
+  // The vow is fulfilled, or on no sheet: nothing a Retry could mark — why,
+  // in words: its code was printed, "(vow-gone)" (issue #364
+  // MOVE-CARD-RAW-REASON-CODE).
+  else if (milestone && !milestone.ok) notApplied.push(`${milestone.what} — ${payoffReasonWords(milestone.reason ?? "refused", { final: milestone.final === true })}`);
   const reward = await upgradeLinkedVowReward(vowName, "strong_hit", { actorId: rollerActor?.id ?? null, copies }).catch(err => {
     console.warn(`${MODULE_ID} | won fight: the reward's strong-hit difference failed:`, err?.message ?? err);
     return { ok: false, step: "rewardUpgrade", reason: "refused", vowId, error: errText(err) };
@@ -6928,6 +6933,14 @@ const PAYOFF_FINAL_REASONS = {
   // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
   "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };
+
+// A payoff outcome's reason in words for a line a player reads — an upgraded
+// move card's "Not applied", a warning: the GMs' payoff card's own tables, a
+// `final` outcome's text first, and plain words for a code with neither. The
+// raw code was printed there, "(vow-gone)" (issue #364 MOVE-CARD-RAW-REASON-CODE).
+function payoffReasonWords(reason, { final = false } = {}) {
+  return (final ? PAYOFF_FINAL_REASONS[reason] : null) ?? PAYOFF_REASONS[reason] ?? "it could not be applied";
+}
 
 const PAYOFF_TITLES = {
   fulfil:      (c) => `Vow payoff incomplete — “${c.vowName ?? "your vow"}”`,
