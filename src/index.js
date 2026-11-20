@@ -6884,6 +6884,15 @@ const PAYOFF_REASONS = {
   "no-companion": "no companion to change",
   "track-gone":   "its progress track is gone",
   "track-done":   "its progress track is finished",
+  // A suffer step's mark of progress, and a vehicle's integrity it raises —
+  // the suffer card's words (issue #364 PAYOFF-RETRY-SUFFER-PROGRESS-TRACK-GONE).
+  "no-fight":        "no open fight was named",
+  "fight-gone":      "its fight is gone",
+  "fight-over":      "its fight is over",
+  "expedition-gone": "its expedition is gone",
+  "expedition-over": "its expedition is over",
+  "ambiguous":       "more than one is open — mark it in the Progress Tracks panel",
+  "battered":        "the vehicle is battered: a Repair must clear that before its integrity can rise",
 };
 
 // Why a `final` outcome is owed nothing any more — its line under "Not
@@ -6897,6 +6906,10 @@ const PAYOFF_FINAL_REASONS = {
   "no-companion": "the companion is no longer on the character's sheet",
   "track-gone": "its progress track is no longer in the world",
   "track-done": "its progress track is finished, so nothing is left to change on it",
+  "fight-gone": "its fight is no longer in the world",
+  "fight-over": "its fight is over, so nothing is left to mark on it",
+  "expedition-gone": "its expedition is no longer in the world",
+  "expedition-over": "its expedition is over, so nothing is left to mark on it",
   // Not "no longer owed": what no Retry can run (retryPayoffSteps, `unreadable`).
   "invalid step": "this card's record of the step is not valid, so no Retry can run it",
 };

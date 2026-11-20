@@ -695,7 +695,9 @@ or cleared mark's track the step names by id is gone since, or that track
 finished — Withstand Damage's support vehicle or the vehicle Actor the move
 was rolled against, Companion Takes a Hit's companion, an integrity or
 companion-health change, a battered mark, a cleared mark of progress
-(`sufferDialog.sufferTargetGoneForGood`) — and a `rider` step's progress mark
+(`sufferDialog.sufferTargetGoneForGood`; and a mark of progress on the fight
+or expedition the move was rolled about, gone or over — issue #364
+PAYOFF-RETRY-SUFFER-PROGRESS-TRACK-GONE) — and a `rider` step's progress mark
 whose track is gone or finished: a target the step does not name (the command
 vehicle, the only companion) is looked up at the press and stays on a fresh
 Retry card; each reason is told in plain words, where its code was printed,

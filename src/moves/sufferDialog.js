@@ -295,8 +295,9 @@ export function isRetryableSufferCall(call) {
  * gone for good: a target the step names by id — the vehicle (the pick's own
  * asset id, the move's support vehicle, or the vehicle Actor it was rolled
  * against), the companion (the pick's, the move's, or a Heal's patient), the
- * track a cleared mark of progress comes off — no longer there, or that track
- * finished (nothing reopens a finished track). The executors look a named
+ * track a cleared mark of progress comes off, the fight or the expedition the
+ * move's mark of progress is for — no longer there, or that track finished
+ * (nothing reopens a finished track). The executors look a named
  * target up by that id alone, so no later press finds it either. A target the
  * step does not name — the command vehicle, the character's only companion —
  * is looked up at the press, and one may be there on a later press: not gone
@@ -321,6 +322,16 @@ export function sufferTargetGoneForGood(call, opts, result) {
     case "track-gone":
     case "track-done":
       return call?.kind === "clear-progress";
+    // A mark of progress on the fight or the expedition the move was rolled
+    // about (`combatTrackId` / `expeditionTrackId`, resolved when it was
+    // rolled): that track by id, never another (issue #364
+    // PAYOFF-RETRY-SUFFER-PROGRESS-TRACK-GONE).
+    case "fight-gone":
+    case "fight-over":
+      return call?.kind === "combat-progress" && named(opts?.combatTrackId);
+    case "expedition-gone":
+    case "expedition-over":
+      return call?.kind === "expedition-progress" && named(opts?.expeditionTrackId);
     default:
       return false;
   }
