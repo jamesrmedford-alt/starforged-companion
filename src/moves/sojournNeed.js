@@ -30,7 +30,13 @@
  *     nothing). Once that vow's Swear an Iron Vow has been rolled and
  *     narrated (movePipeline.js finishMove → resolveSojournNeedsForVow, from
  *     the vow's side) the Sojourn is resolved. The vow is sworn whatever its
- *     roll. A vow deleted from the sheet before its swear is rolled is no
+ *     roll. That its swear has been told is written on the vow too
+ *     (`sojournSwearTold`, actorBridge.markNeedVowSwearTold), so a resolve
+ *     that cannot be made then is made later, by the vow all the same
+ *     (resolveToldSojournNeeds: after the Batch Mode round that held it
+ *     back, and at the canonical GM's load; issue #364
+ *     SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING). A vow deleted from the sheet
+ *     before its swear is rolled is no
  *     longer the card's: the card stops saying it is on the sheet and offers
  *     ⚔ again (needVowOnSheet — the sheet, read on every render, and written
  *     back to the card by the canonical GM's deleteItem hook; issue #364
@@ -56,13 +62,18 @@
  * narration comes before this one (heldResult.js); and while a Batch Mode
  * round is being resolved, or the kept miss's narration is still being
  * written, "It is done" is refused and says so — the round tells its entries
- * once, and this beat follows the miss's.
+ * once, and this beat follows the miss's. A vow whose swear is told meanwhile
+ * waits the same way, and needs no press: its Sojourn is resolved once the
+ * round is narrated and closed (batch/driver.js finishRound).
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
-import { getActor, createCharacterVowItem, isPlayerCharacterActor, readNeedVow, vowNeedCardId, needCardIdsOfVow } from "../character/actorBridge.js";
+import {
+  getActor, createCharacterVowItem, isPlayerCharacterActor, readNeedVow, vowNeedCardId, needCardIdsOfVow,
+  markNeedVowSwearTold, toldNeedCardIds,
+} from "../character/actorBridge.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { RANKS } from "../schemas.js";
@@ -252,7 +263,10 @@ export async function postSojournNeedCard({ actor, resolutionId, stakes = null }
  * whose text still offers ⚔ while its vow is on the sheet has ⚔ disabled.
  * The canonical GM's deleteItem hook also writes a deleted vow back to the
  * card (releaseNeedsOfDeletedVow), which re-renders it everywhere at once.
- * Register once.
+ * Register once — from `ready`: on the canonical GM the Sojourns of the vows
+ * whose swear was told before this page loaded are resolved now
+ * (resolveToldSojournNeeds), so a reload between the oath and its refuge
+ * loses nothing.
  */
 export function registerSojournNeedHook() {
   if (registerSojournNeedHook._installed) return;
@@ -261,6 +275,8 @@ export function registerSojournNeedHook() {
     releaseNeedsOfDeletedVow(item).catch(err =>
       console.warn(`${MODULE_ID} | sojourn: a deleted vow's need card could not be opened again:`, err?.message ?? err));
   });
+  resolveToldSojournNeeds().catch(err =>
+    console.warn(`${MODULE_ID} | sojourn: the Sojourns of the vows sworn before this page loaded could not be resolved:`, err?.message ?? err));
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.sojournNeedCard) return;
     if (!liveFlags(message).resolved && !needVowOnSheet(message)) {
@@ -421,20 +437,58 @@ async function writeNeedVow(message, actor, payload) {
 }
 
 /**
- * A Swear an Iron Vow was rolled for a vow (movePipeline.js finishMove, after
- * the swear's own narration; a held swear's: heldResult.js): every open need
- * card that vow was written for — the cards its own `sojournNeedCard` flag
- * names (actorBridge.needCardIdsOfVow) — is resolved: the Sojourn it
- * answers, as a strong hit. Canonical GM. One that cannot be resolved now
- * stays open, its ✔ It is done still live.
+ * A Swear an Iron Vow was rolled for a vow and has been told (movePipeline.js
+ * finishMove, after the swear's own narration; a held swear's:
+ * heldResult.js): the vow is marked so (actorBridge.markNeedVowSwearTold —
+ * only a vow written for a need card), and every open need card it was
+ * written for — the cards its own `sojournNeedCard` flag names
+ * (actorBridge.needCardIdsOfVow) — is resolved: the Sojourn it answers, as a
+ * strong hit. Canonical GM. One that cannot be resolved now — a Batch Mode
+ * round is being resolved — stays open, and is resolved by the vow once it
+ * can be (resolveToldSojournNeeds); its ✔ It is done stays live meanwhile.
  *
  * @param {string|null} vowId — the sworn vow's id (movePipeline.js swornVowId)
  * @returns {Promise<number>} the Sojourns resolved
  */
 export async function resolveSojournNeedsForVow(vowId) {
   if (typeof vowId !== "string" || !vowId || !isCanonicalGM()) return 0;
+  const cardIds = needCardIdsOfVow(vowId);
+  if (!cardIds.length) return 0;
+  await markNeedVowSwearTold(vowId);
+  return resolveNeedsAnsweredByVow(cardIds);
+}
+
+/**
+ * Resolve the Sojourn of every open need card whose vow's Swear an Iron Vow
+ * has been told (actorBridge.toldNeedCardIds — what the vows on the sheets
+ * say) — the resolves that could not be made when the swear was told. Called
+ * where one can be made again: once a Batch Mode round is narrated and closed
+ * (batch/driver.js finishRound — a round being resolved refuses the resolve:
+ * it tells its entries once, and the refuge follows it), and at the canonical
+ * GM's load (registerSojournNeedHook — the page reloaded between the oath and
+ * the resolve). Each card is claimed first (`resolved`), so a Sojourn is
+ * resolved once whichever call comes first, ✔ It is done included. Canonical
+ * GM; a no-op with nothing told and unresolved.
+ *
+ * @returns {Promise<number>} the Sojourns resolved
+ */
+export async function resolveToldSojournNeeds() {
+  if (!isCanonicalGM()) return 0;
+  return resolveNeedsAnsweredByVow(toldNeedCardIds());
+}
+
+/**
+ * Resolve each of the need cards `cardIds` that is still open as answered by
+ * its vow — not one resolved already, nor one a press or another resolve is
+ * being applied to here. One that is refused stays open: its vow still says
+ * its swear is told (resolveToldSojournNeeds).
+ *
+ * @param {string[]} cardIds — need cards' chat message ids
+ * @returns {Promise<number>} the Sojourns resolved
+ */
+async function resolveNeedsAnsweredByVow(cardIds) {
   let resolved = 0;
-  for (const cardId of needCardIdsOfVow(vowId)) {
+  for (const cardId of cardIds) {
     const card = globalThis.game?.messages?.get?.(cardId) ?? null;
     const f = card?.flags?.[MODULE_ID];
     if (f?.sojournNeedCard !== true || f.resolved || _inFlight.has(card.id)) continue;
@@ -442,7 +496,7 @@ export async function resolveSojournNeedsForVow(vowId) {
     try {
       const res = await resolveSojournNeed(card, "vow");
       if (res.applied) resolved += 1;
-      else console.warn(`${MODULE_ID} | sojourn: the vow is sworn, but card ${card.id} was not resolved (${res.reason ?? "?"}) — its ✔ It is done resolves it.`);
+      else console.warn(`${MODULE_ID} | sojourn: the vow is sworn, but card ${card.id} is not resolved yet (${res.reason ?? "?"}) — it is resolved once the round is narrated or this page loads again, or by its ✔ It is done.`);
     } finally {
       _inFlight.delete(card.id);
     }

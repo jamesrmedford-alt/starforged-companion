@@ -521,7 +521,13 @@ side: the cards its `sojournNeedCard` names, `actorBridge.needCardIdsOfVow`;
 the vow is sworn whatever its roll; a swear held for Burn / Improve / Keep
 is not told yet, so `finishMove` leaves it and `heldResult.js` resolves the
 Sojourn after the held swear's keep, or after its upgrade's narration —
-issue #364 SOJOURN-HELD-SWEAR-ORDER): the move card reads as an improved
+issue #364 SOJOURN-HELD-SWEAR-ORDER; that the swear has been told is written
+on the vow (`sojournSwearTold`, `actorBridge.markNeedVowSwearTold`), and a
+resolve refused then — a Batch Mode round is being resolved — or lost to a
+reload is made by `resolveToldSojournNeeds`, from what the vows say, once the
+round is narrated and closed (`batch/driver.js` `finishRound`) and at the
+canonical GM's load — issue #364 SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING):
+the move card reads as an improved
 result's does (`buildResolvedCardContent` — "Miss" and its lines struck,
 "✦ Resolved as a strong hit", the strong hit's text), and the strong hit is
 narrated as a **second beat** (`narrateResolution`, a resolution with

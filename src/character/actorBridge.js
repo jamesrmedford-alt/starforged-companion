@@ -1303,6 +1303,63 @@ export function needCardIdsOfVow(vowId) {
 }
 
 /**
+ * Record on the vow `vowId` that its Swear an Iron Vow has been told — rolled
+ * and narrated: the module `sojournSwearTold` flag of each of its copies that
+ * was written to answer a need card (vowNeedCardId). The vow is the one place
+ * that says so, beside its link to the card; the card's own `resolved` says
+ * whether its Sojourn has been resolved for it. So a resolve that cannot be
+ * made when the swear is told — a Batch Mode round is being resolved, or the
+ * page reloads first — is made later from what the vow says
+ * (moves/sojournNeed.js resolveToldSojournNeeds; issue #364
+ * SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the resolve was one call, and a
+ * refused one was only logged). GM-only (Item flag write). A vow written for
+ * no need card is left as it is. Never throws: a refused write is warned.
+ *
+ * @param {string|null} vowId — the vow's id (vowCopyId)
+ * @returns {Promise<number>} the copies that say so now
+ */
+export async function markNeedVowSwearTold(vowId) {
+  if (typeof vowId !== "string" || !vowId) return 0;
+  let told = 0;
+  for (const actor of getPlayerActors()) {
+    for (const item of (actor?.items?.contents ?? [])) {
+      if (!isVowCopy(item, vowId) || !vowNeedCardId(item)) continue;
+      if (item.flags?.[MODULE_ID]?.sojournSwearTold === true) {
+        told += 1;
+        continue;
+      }
+      if (!item.setFlag) continue;
+      try {
+        await staleChecked('markNeedVowSwearTold', () => item.setFlag(MODULE_ID, "sojournSwearTold", true));
+        told += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | markNeedVowSwearTold failed:`, err?.message ?? err);
+      }
+    }
+  }
+  return told;
+}
+
+/**
+ * The need cards of every vow whose Swear an Iron Vow has been told
+ * (markNeedVowSwearTold): the `sojournNeedCard` of each such vow on the
+ * player characters' sheets. Empty when no told vow answers a need.
+ *
+ * @returns {string[]} chat message ids
+ */
+export function toldNeedCardIds() {
+  const ids = new Set();
+  for (const actor of getPlayerActors()) {
+    for (const item of (actor?.items?.contents ?? [])) {
+      const cardId = item?.system?.subtype === "vow" && item.flags?.[MODULE_ID]?.sojournSwearTold === true
+        ? vowNeedCardId(item) : null;
+      if (cardId) ids.add(cardId);
+    }
+  }
+  return [...ids];
+}
+
+/**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
  * found by its vowId (isVowCopy) across all player characters. GM-only (Item flag
  * writes). No-op when the vow or reward is missing.

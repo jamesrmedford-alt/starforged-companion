@@ -212,7 +212,18 @@ strong hit. A swear held for Burn / Improve / Keep is not narrated at its roll: 
 card keeps the vow (`awaitingUpgrade.swornVowId`) and the Sojourn is
 resolved once the held swear is told — `heldResult.keepHeldResult`, or
 `narrateHeldUpgrade`'s narration of the burned or improved swear (issue #364
-SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
+SOJOURN-HELD-SWEAR-ORDER: the refuge was narrated before the oath). That the
+swear has been told is written on the vow (`sojournSwearTold`,
+`actorBridge.markNeedVowSwearTold` — beside its `sojournNeedCard`; the card's
+`resolved` says whether its Sojourn is resolved), so a resolve that cannot be
+made then is made later by the vow, with no press: a Batch Mode round being
+resolved refuses it (the round tells its entries once — a participant's held
+swear the round keeps before it rolls is told exactly then), and
+`resolveToldSojournNeeds` resolves the open cards of the told vows
+(`actorBridge.toldNeedCardIds`) once the round is narrated and closed
+(`batch/driver.js` `finishRound`) and at the canonical GM's load (issue #364
+SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING: the refused resolve was only
+logged). Only the ⚔ Swear it (roll) of that vow's own card names the vow by id:
 a swear typed in chat is not recognised, and the need card's ✔ It is done
 resolves the Sojourn instead. That vow deleted from the sheet before it is
 sworn is no longer the card's: the card stops saying it is on the sheet and

@@ -1949,6 +1949,8 @@ async function finishRound(round, reason) {
   const moves = (closed.acting ?? []).map(id => rolledFor(closed.id, closed.entries[id])).filter(Boolean);
   forgetRolledHere();
   afterTheRound(async () => {
+    // Before the riders: their prompt can wait on the GM.
+    await resolveToldNeeds();
     for (const rolled of moves) {
       await finishMove(rolled, cs).catch(err => console.warn(`${MODULE_ID} | Batch Mode: consequence riders failed:`, err?.message ?? err));
     }
@@ -1990,6 +1992,23 @@ let _afterRounds = Promise.resolve();
 function afterTheRound(work) {
   _afterRounds = _afterRounds.then(work).catch(err =>
     console.warn(`${MODULE_ID} | Batch Mode: after the round:`, err?.message ?? err));
+}
+
+/**
+ * A round is narrated and closed: the Sojourns whose vow's Swear an Iron Vow
+ * was told while it was being resolved are resolved now — a participant's
+ * free-flow swear the round kept before it rolled (rollRound), or one told
+ * beside it. A round being resolved refuses that resolve: it tells its
+ * entries once, and the refuge is narrated after it (moves/sojournNeed.js
+ * resolveToldSojournNeeds — what the vows on the sheets say; issue #364
+ * SOJOURN-VOW-SWORN-WHILE-ROUND-RESOLVING). Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+async function resolveToldNeeds() {
+  await import("../moves/sojournNeed.js")
+    .then(({ resolveToldSojournNeeds }) => resolveToldSojournNeeds())
+    .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the Sojourns of the vows sworn during the round could not be resolved:`, err?.message ?? err));
 }
 
 /** The forced moves a resolving round held, run as free-flow off the advance pass. */
@@ -2511,6 +2530,8 @@ export async function recoverRound(reason = "recovery") {
     } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason) && round.phase !== ROUND_PHASE.UPGRADING) {
       await queueRoundWrite(r => (r?.id === round.id ? closeRound(r, { reason: "session-ended", now: nowIso() }) : r))
         .catch(err => console.warn(`${MODULE_ID} | Batch Mode: an ended session's round could not be closed:`, err?.message ?? err));
+      // No finishRound for this close: what waited for the round follows it here.
+      afterTheRound(resolveToldNeeds);
     } else if (isResolving(round)) {
       const resolver = round.resolverId && round.resolverId !== game.user.id ? game.users?.get?.(round.resolverId) : null;
       if (resolver?.active) return;   // that GM is resolving it
