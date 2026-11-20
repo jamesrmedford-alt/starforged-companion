@@ -65,12 +65,21 @@ export function siteDisplayName(site) {
  * expedition was linked to no site, and its finish charted nothing (issue
  * #364 EXPEDITION-JOURNEY-WORDS-SITE-LINK).
  *
+ * `placeId` — the place the label names to the place resolver (index.js
+ * resolveCurrentLocationName), where an expedition for it docks: of several
+ * unexplored sites whose names the label begins, the one whose location it
+ * is (precursorSites.selectSectorSite's `placeId`). The ladder named neither
+ * while the resolver picked one of their locations: an expedition for "the
+ * Sunk" with "The Sunken Vaults" and "The Sunken Spire" unexplored was
+ * linked to neither, and its finish docked at one and charted neither (issue
+ * #364 RESOLVER-AMBIGUOUS-PREFIX).
+ *
  * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
  * @param {string|null} label — the expedition's label
- * @param {{ siteId?: string|null, journeyWords?: boolean }} [opts] — the track's link
+ * @param {{ siteId?: string|null, journeyWords?: boolean, placeId?: string|null }} [opts] — the track's link
  * @returns {{ sector: Object, site: Object }|null}
  */
-export function selectExpeditionSite(state, label, { siteId = null, journeyWords = false } = {}) {
+export function selectExpeditionSite(state, label, { siteId = null, journeyWords = false, placeId = null } = {}) {
   const sectors = Array.isArray(state?.sectors) ? state.sectors : [];
   if (siteId) {
     for (const sector of sectors) {
@@ -82,6 +91,7 @@ export function selectExpeditionSite(state, label, { siteId = null, journeyWords
     requireLabelMatch: true,
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
+    placeId,
   });
   const found = named(label);
   if (found || !journeyWords || typeof label !== "string") return found;
@@ -235,6 +245,11 @@ function newSiteId() {
  *   the label names, never the sole-site guess: a Finish an Expedition's
  *   reveal (an expedition to a settlement charted the sector's last unexplored
  *   site — issue #342 D7). `!reveal-site` keeps the guess.
+ * @param {string|null} [opts.placeId] — with `requireLabelMatch`, the place
+ *   the label names to the place resolver, where the expedition docked: of
+ *   several unexplored sites whose names the label begins, the one at it is
+ *   revealed (selectSectorSite's `placeId`; issue #364
+ *   RESOLVER-AMBIGUOUS-PREFIX — the finish docked at one and charted neither)
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise — the state with the
  *   flag set, a copy; the move pipeline's seam folds its sectors into the
@@ -257,6 +272,7 @@ export async function revealSectorSite(label, opts = {}) {
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
     requireLabelMatch: opts.requireLabelMatch === true,
+    placeId:           opts.placeId ?? null,
   });
   if (!found) return null;
   const { sector, site: match } = found;

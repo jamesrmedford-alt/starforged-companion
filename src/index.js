@@ -2140,7 +2140,11 @@ function currentLocationForEntityId(id) {
  *     unexplored site in their own words, so the arrival by the label alone
  *     resolved to no place and left the ship, its token and CURRENT LOCATION
  *     at the settlement they had left while the same move charted the site
- *     (issue #342 Z14).
+ *     (issue #342 Z14). A label that begins several unexplored sites' names
+ *     is for the one at the place it names to the resolver, where the
+ *     arrival docks by name — the reveal asks the same way (movePipeline):
+ *     the site ladder named neither, so a track with no link docked at one
+ *     and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX).
  *   - `label` — the expedition's label, the place an expedition for no site
  *     is named after; null for one begun with no destination named. A line
  *     that names no destination, or names it in words of its own, still
@@ -2157,7 +2161,9 @@ async function expeditionArrival(interpretation, campaignState) {
     const track = selectExpeditionTrack(await listProgressTracks(), said,
       { trackId: interpretation?.moveTargetId ?? null });
     const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
-    const found = selectExpeditionSite(campaignState, track?.label ?? said, { siteId: track?.siteId ?? null });
+    const asked = track?.label ?? said;
+    const place = resolveCurrentLocationName(asked ?? "", campaignState, { journeyWords: true });
+    const found = selectExpeditionSite(campaignState, asked, { siteId: track?.siteId ?? null, placeId: place?.id ?? null });
     const label = typeof track?.label === "string" ? track.label.trim() : "";
     return {
       siteActorId: found?.site?.actorId ?? null,
@@ -2452,11 +2458,22 @@ async function applyOutcomeEffects({
           try {
             const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
+            const journeyWords = !resolution.courseRerouted;
+            // The tracked place the label names (below: asked as for a
+            // destination) — the one its finish docks at by name.
+            const place  = label && label !== UNNAMED_EXPEDITION_LABEL
+              ? resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords })
+              : null;
             // A typed expedition's label may say it is a journey there: the
             // site ladder asks it without those words too (issue #364
             // EXPEDITION-JOURNEY-WORDS-SITE-LINK); a course's asks as the
-            // course did.
-            let   linked = selectExpeditionSite(campaignState, label, { journeyWords: !resolution.courseRerouted });
+            // course did. A label that begins several unexplored sites' names
+            // is for the one at that place, where its finish docks: the
+            // ladder named neither while the resolver picked one of their
+            // locations, so nothing was linked or recorded, and the finish
+            // docked there and charted neither (issue #364
+            // RESOLVER-AMBIGUOUS-PREFIX).
+            let   linked = selectExpeditionSite(campaignState, label, { journeyWords, placeId: place?.id ?? null });
             // A destination that is no site and no tracked place — the
             // coordinates an NPC gave, "the gap" — becomes an uncharted site of
             // the active sector under the expedition's working label, with its
@@ -2469,9 +2486,9 @@ async function applyOutcomeEffects({
             // A Set a Course read as this expedition has asked already, as
             // for a destination, and the answer was "no charted place" —
             // "Archer's rendezvous — the gap" is not the settlement Archer.
-            // The same question is asked here: asked the looser way, the
-            // label named Archer, no site was recorded, and the finish docked
-            // at the settlement (issue #364
+            // The same question is asked here (`place`, above): asked the
+            // looser way, the label named Archer, no site was recorded, and
+            // the finish docked at the settlement (issue #364
             // COURSE-NEW-LABEL-CONTAINS-SETTLEMENT). An expedition typed as
             // one is asked by the same rule — it was asked the looser way,
             // and one for "the wreck beyond Bleakhold" was for Bleakhold —
@@ -2481,8 +2498,7 @@ async function applyOutcomeEffects({
             // the start and fragment rungs: "the expedition to Bleak" is for
             // Bleakhold, as "Bleak" is (issue #364
             // EXPEDITION-JOURNEY-WORDS-FRAGMENT).
-            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL
-              && !resolveCurrentLocationName(label, campaignState, { asDestination: true, journeyWords: !resolution.courseRerouted })) {
+            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !place) {
               linked = siteNamedBy(campaignState, label);
               const recorded = linked ? null : await recordUnchartedDestination(label, campaignState);
               // The pipeline's persist saves its working copy — when the world

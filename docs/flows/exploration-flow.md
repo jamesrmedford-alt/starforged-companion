@@ -91,7 +91,16 @@ ask it too): "the Sunk", "Sunk" and "the expedition to the Sunk" are for "The
 Sunken Vaults". The ladder took no word cut short, so "the Sunk" — a place to
 the resolver — linked nothing and recorded nothing, and its finish docked at
 the vault and charted nothing; "Sunk" recorded a second destination for it
-(issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH).
+(issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH). A label that begins
+several unexplored sites' names is for the one at the place the resolver
+reads it as — its start rung's pick, the active sector's first location, else
+storage order: the one the finish docks at (`selectExpeditionSite`'s
+`placeId`). The ladder named neither while the resolver picked one of their
+locations, so "the Sunk", with "The Sunken Vaults" and "The Sunken Spire"
+unexplored, linked nothing and recorded nothing, and its finish docked at one
+and charted neither (issue #364 RESOLVER-AMBIGUOUS-PREFIX). A place that is
+neither site's location — a settlement "The Sunken Hold" — names neither: the
+finish docks there and charts nothing.
 
 ## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
 
@@ -489,7 +498,11 @@ site had been recorded since, or docked at another sector's namesake: issue
 pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored
 Site"), so the label alone resolved to no place and all three stayed on the
-settlement they had left (issue #342 Z14). An expedition for no site arrives
+settlement they had left (issue #342 Z14). A label that begins several
+unexplored sites' names is for the one at the place the resolver reads it as
+(§0; `placeId`), which §4's reveal charts: a track with no link — begun before
+that fix, or in the Progress Tracks panel — docked at one and charted neither
+(issue #364 RESOLVER-AMBIGUOUS-PREFIX). An expedition for no site arrives
 at the place its label names — the label of the expedition the move
 completes, the track ladder's pick (`expeditionArrival`), then the line's own
 words when the label names no tracked place (an expedition begun with no
@@ -523,7 +536,9 @@ pin's own "Unexplored Site" names the active sector's one unexplored site, so
 an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
 `!reveal-site` keeps the guess; with it a name the label begins names the
 one site it begins, after the whole-word rung, as at the expedition's start —
-§0, issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH),
+§0, issue #364 EXPEDITION-PREFIX-SITE-LADDER-MISMATCH; of several, the one at
+the place the resolver reads the label as, where the arrival docked —
+`placeId`, issue #364 RESOLVER-AMBIGUOUS-PREFIX),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung
