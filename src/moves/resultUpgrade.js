@@ -518,7 +518,13 @@ export async function retryUpgradeStep(s) {
   // id, so no later press finds one — `final`, told once with no further
   // Retry (index.js retryPayoffSteps; issue #364 PAYOFF-RETRY-VEHICLE-GONE-LOOP).
   const vehicleGone = s.effect === "assetTrack" && typeof s.vehicleActorId === "string" && failures[0]?.reason === "no-vehicle";
-  return { ok: false, ...failures[0], ...(vehicleGone ? { final: true } : {}) };
+  // A support vehicle's or a companion's asset Item gone from its character's
+  // sheet (the character still there): the step names it by its Item's id —
+  // `final` too. It went on a fresh Retry card each time (issue #364
+  // PAYOFF-RETRY-UPGRADE-ASSET-GONE).
+  const assetGone = s.effect === "assetTrack" && !(typeof s.vehicleActorId === "string" && s.vehicleActorId)
+    && typeof s.itemId === "string" && ["no-vehicle", "no-companion"].includes(failures[0]?.reason);
+  return { ok: false, ...failures[0], ...(vehicleGone || assetGone ? { final: true } : {}) };
 }
 
 /** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
