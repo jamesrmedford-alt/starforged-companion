@@ -478,7 +478,6 @@ async function writeTokenDerivedPosition(scene, x, y) {
   }
 }
 
-/** Shared gating for the two token→position handlers. */
 /**
  * Recognise the command-vehicle token by flag OR by actor identity. The
  * module stamps `flags[MODULE].commandVehicle` on tokens it auto-places, but
@@ -503,6 +502,7 @@ export function isCommandVehicleToken(tokenDoc) {
   }
 }
 
+/** Shared gating for the two token→position handlers. */
 function tokenPositionWriteApplies(tokenDoc, options) {
   if (!isCommandVehicleToken(tokenDoc)) return false;
   if (options?.[POSITION_SYNC_OPTION]) return false;   // fiction→token sync echo
