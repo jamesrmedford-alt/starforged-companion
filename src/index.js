@@ -6860,6 +6860,7 @@ const PAYOFF_REASONS = {
   "no-pc":     "no player character to receive it",
   "superseded": "the move's result was upgraded since, and its new outcome stands",
   "card-gone": "the move card is no longer in chat",
+  "place-gone": "the place is no longer in the world",
   "victory-card-gone": "the victory card is no longer in chat, and its ⚑ was never pressed",
   "vow-completed": "the vow is fulfilled — nothing to mark",
   "vow-gone":  "the vow is on no character's sheet any more",
@@ -7288,7 +7289,17 @@ async function runPayoffStep(s, card, copies) {
       // A move's arrival whose record the world refused (issue #331 X18):
       // the place it reached, written onto the latest store (on the client's
       // campaignState write chain — CAMPSTATE-CHAIN-REST).
-      const located = currentLocationForEntityId(typeof s.locationId === "string" ? s.locationId : null);
+      const placeId = typeof s.locationId === "string" && s.locationId ? s.locationId : null;
+      const located = currentLocationForEntityId(placeId);
+      // The place deleted since — its record named a document that is gone,
+      // or no longer a settlement, location or planet: nowhere to arrive, on
+      // this press or a later one. `final`, told once with no Retry. It
+      // answered "invalid step", and before that answer was read as final it
+      // went on a fresh Retry card each time; as an unreadable record it was
+      // then told as one to apply by hand, which nobody can (issue #364
+      // PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP). A record that names its place
+      // under another type is still not valid.
+      if (placeId && !located) return { ok: false, final: true, reason: "place-gone" };
       if (!located || located.type !== s.locationType) return { ok: false, reason: "invalid step" };
       try {
         await serialiseCampaignStateWrite(() => {

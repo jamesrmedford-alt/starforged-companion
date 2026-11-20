@@ -644,7 +644,9 @@ PAYOFF-RETRY-CHARACTER-GONE-LOOP; and a `reward` or `rewardUpgrade` step
 whose vow is on no character's sheet any more — "no-vow" (`VOW_GONE`): no
 copy by the card's vow id nor its exact name, fulfilled copies counting as
 there, so a vow fulfilled since is still paid — issue #364
-PAYOFF-RETRY-VOW-GONE-REWARD-LOOP).
+PAYOFF-RETRY-VOW-GONE-REWARD-LOOP; and an `arrival` step whose place was
+deleted since — "place-gone": nowhere to arrive — issue #364
+PAYOFF-RETRY-ARRIVAL-PLACE-GONE-LOOP).
 A step the Retry answers "invalid step" for — its record on the card fails
 the runner's check (a value out of range, a shape, a step name nothing
 runs), and the record never changes — goes on no Retry card either, but is
