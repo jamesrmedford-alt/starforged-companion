@@ -19,6 +19,12 @@
  * The Sojourn's keep now resolves the told vows' Sojourns once its narration
  * is written and its card's claim released (heldResult.js keepHeldResult).
  *
+ * Since issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS the pick's own keep is
+ * waited for — the need card is posted once the miss is told — so the swear
+ * is told during the miss's narration here by another keep: the world
+ * refuses the pick's keep its close of the wait (the miss stays held, and
+ * nothing is narrated), and the roller's next line keeps it.
+ *
  * End to end on a booted GM / player table (tests/helpers/multiClient.js)
  * through the real cards and relays: the miss's narration is held at the
  * Claude boundary (scriptClaude().hold) while the vow is written and sworn.
@@ -96,10 +102,11 @@ const missNarration = (call) => call.model === NARRATION_MODEL && /Narrate the c
 
 /**
  * Kira's Sojourn missed, held for Burn / Keep; "Community needs help" is
- * picked, which keeps it — and its narration is held at Claude. The need
- * card is posted meanwhile; the vow is written from it and sworn (⚔ Swear it
- * (roll)), and its swear is told while the miss's narration is still being
- * written.
+ * picked, and the world refuses its keep the close of the wait: the need card
+ * is posted with the miss still held and untold. Kira's next line keeps it —
+ * and its narration is held at Claude. Meanwhile the vow is written from the
+ * need card and sworn (⚔ Swear it (roll)), and its swear is told while the
+ * miss's narration is still being written.
  */
 async function swearToldWhileSojournIsNarrated() {
   pc.system.momentum.value = 9;
@@ -109,12 +116,22 @@ async function swearToldWhileSojournIsNarrated() {
   const sojourn = sojournCard();
   expect(flagsOf(sojourn).awaitingUpgrade, "setup: the miss is held").toMatchObject({ open: true });
 
+  const refuse = table.interceptWrites(w => (w.kind === "message.update" && w.id === sojourn._id
+    && w.changes?.[`flags.${MODULE_ID}.awaitingUpgrade.resolvedBy`] === "choice" ? new Error("refused") : undefined));
+  try {
+    await table.client("pl-1").click(choice()._id, NEED);
+    await table.settle(); await table.drain();
+  } finally {
+    refuse();
+  }
+  const need = needCard();
+  expect(need, "setup: the need card is posted").toBeTruthy();
+  expect(flagsOf(sojourn).awaitingUpgrade, "setup: the miss is still held").toMatchObject({ open: true });
+
   const held = claude.hold(missNarration);
-  await table.client("pl-1").click(choice()._id, NEED);
+  table.client("pl-1").chat("I wait for the elders' answer.", { speaker: { actor: pc.id } });
   await held.arrived;
   await table.settle();
-  const need = needCard();
-  expect(need, "setup: the need card is posted while the miss is narrated").toBeTruthy();
   expect(narratorCardsOf(flagsOf(sojourn).resolutionId), "setup: the miss's narration is not posted yet").toHaveLength(0);
 
   table.client("pl-1").render(need._id).querySelector(".sf-sojourn-need-vow-name").value = "Clear the reactor of raiders";

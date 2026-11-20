@@ -494,7 +494,11 @@ SOJOURN-VOW-OPTION-REMINDER-ONLY — the pick posted only a "Trigger:
 swear_an_iron_vow" reminder, and nothing resolved the Sojourn as the strong
 hit the rule gives). The option carries `resolvesAs: "strong_hit"`; its
 route call's executor (`sufferDialog.runSufferCall`, the canonical GM) posts
-**the community's need** card for the choice card's own resolution
+**the community's need** card for the choice card's own resolution —
+once the held miss the pick kept has been told (`sufferCard.handleSufferPick`
+awaits `closeUpgradesForChoice`'s `keeping`; issue #364
+SOJOURN-OATH-NARRATED-BEFORE-MISS: posted at once, its vow could be sworn
+and told before the miss)
 (`postSojournNeedCard` — flags `sojournNeedCard`, `resolutionId`, `actorId`,
 the stakes shown before the roll; a pick applied from no choice card keeps
 the reminder; a card the world refuses hands the pick back,

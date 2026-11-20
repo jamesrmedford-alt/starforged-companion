@@ -1598,12 +1598,21 @@ export function upgradeOpenFor(resolutionId) {
  * offers it *instead* of the ordinary choice, and it stacked on top (issue
  * #316 T06). Best effort.
  *
+ * A free-flow result held for Burn / Improve / Keep is kept by the choice —
+ * its price paid and its narration posted — and that keep is handed back,
+ * not awaited (`keeping`): the choice being applied does not wait on a
+ * narration, save the pick whose answer is a card of its own — Sojourn's
+ * "Community needs help", whose card waits for the miss to be told
+ * (sufferCard.js handleSufferPick; issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS).
+ *
  * @param {string|null} resolutionId
+ * @returns {Promise<{ keeping: Promise<{ applied: boolean, reason?: string }>|null }>} the keep the
+ *   choice started (it never rejects), or null when the result was not held
  */
 export async function closeUpgradesForChoice(resolutionId) {
   const card = moveCardFor(resolutionId);
   const f    = card?.flags?.[MODULE_ID];
-  if (!f) return;
+  if (!f) return { keeping: null };
   const update = Object.fromEntries(["burn", "improve"]
     .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
     .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
@@ -1617,12 +1626,16 @@ export async function closeUpgradesForChoice(resolutionId) {
   }
   // A free-flow result held for Burn / Improve / Keep (issue #354 P2-10):
   // choosing its consequence keeps it — its price and narration follow now.
-  // Not awaited: the choice being applied does not wait on a narration.
-  if (f.awaitingUpgrade?.open) {
-    void import("./heldResult.js")
-      .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
-      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err));
-  }
+  // Not awaited here: the choice being applied does not wait on a narration
+  // (its caller may, for the one pick that must — the docblock says which).
+  if (!f.awaitingUpgrade?.open) return { keeping: null };
+  const keeping = import("./heldResult.js")
+    .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
+    .catch(err => {
+      console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err);
+      return { applied: false, reason: "error" };
+    });
+  return { keeping };
 }
 
 /**

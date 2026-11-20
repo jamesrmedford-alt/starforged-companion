@@ -192,7 +192,9 @@ Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward off
 **A vow sworn to see a community's need done.** A Sojourn miss's "Community
 needs help" is answered on the community's need card
 (`src/moves/sojournNeed.js`; combat-flow.md, issue #364
-SOJOURN-VOW-OPTION-REMINDER-ONLY). Its **⚔ Swear an Iron Vow** (relayed
+SOJOURN-VOW-OPTION-REMINDER-ONLY), posted once a held miss the pick kept
+has been told, so the oath never comes before the trouble it answers
+(issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS). Its **⚔ Swear an Iron Vow** (relayed
 `sojourn.need`, the roller's player or a GM, one press at a time and one
 vow per card) writes the vow on the roller's sheet through
 `createCharacterVowItem` (no `vowId`; `sojournNeedCard`: the card's chat

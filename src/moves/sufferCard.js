@@ -859,7 +859,14 @@ async function handleSufferPick(message, dataset) {
     return { applied: false, reason: "no-follow-up" };
   }
 
-  await closeUpgrades();
+  const closed = await closeUpgrades();
+  // Sojourn's "Community needs help" is answered on a card of its own — a vow
+  // sworn on it answers the trouble the miss tells — so that card waits for
+  // the narration of the held miss this pick kept: posted at once, the vow
+  // could be sworn and told before the miss was, the oath before the trouble
+  // it answers (issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS). A miss that was
+  // not held has nothing to wait for; any other pick applies at once.
+  if (closed?.keeping && answeredOnItsOwnCard(calls)) await closed.keeping;
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
@@ -910,6 +917,19 @@ async function handleSufferPick(message, dataset) {
     if (missed.length) await reportRefusedCalls(actor, calls, results, executorOpts);
   }
   return { applied: true };
+}
+
+/**
+ * Whether a pick's calls are answered on a card of their own: one route call
+ * that resolves its move as another outcome (Sojourn's "Community needs help"
+ * — `resolvesAs`, sufferDialog.js; its executor posts the community's need
+ * card, sojournNeed.js).
+ *
+ * @param {Array<Object>} calls — resolveSufferSelection's
+ * @returns {boolean}
+ */
+function answeredOnItsOwnCard(calls) {
+  return calls.length === 1 && calls[0]?.kind === "route" && calls[0].resolvesAs === "strong_hit";
 }
 
 // What a resist card handed back after the world refused its roll's post says

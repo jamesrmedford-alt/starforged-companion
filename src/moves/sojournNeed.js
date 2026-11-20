@@ -12,7 +12,11 @@
  * SOJOURN-VOW-OPTION-REMINDER-ONLY; decided by the maintainer: resolve it).
  *
  * The pick now posts **the community's need** card (postSojournNeedCard, from
- * the choice's executor — sufferDialog.js, the canonical GM), which answers
+ * the choice's executor — sufferDialog.js, the canonical GM) — once a miss
+ * held for Burn / Improve / Keep that the pick kept has been told: posted at
+ * once, its vow could be sworn and told before the miss, the oath before the
+ * trouble it answers (sufferCard.js handleSufferPick; issue #364
+ * SOJOURN-OATH-NARRATED-BEFORE-MISS) — which answers
  * the need one of two ways, each relayed to the canonical GM
  * (gmRelay "sojourn.need" → applySojournNeedFromRelay; the roller's player or
  * a GM may press):
@@ -236,8 +240,8 @@ export function needResolutionOf(choiceCardId) {
 /**
  * Post the community's need card for a Sojourn miss whose "Community needs
  * help" was picked (sufferDialog.js runSufferCall — the canonical GM, where
- * a pick is applied). Null when the world refused it: the pick is then
- * handed back (sufferCard.js).
+ * a pick is applied; a held miss the pick kept is told first, sufferCard.js).
+ * Null when the world refused it: the pick is then handed back (sufferCard.js).
  *
  * @param {{ actor: Actor, resolutionId: string, stakes?: Object|null }} args — the roller, the
  *   Sojourn's resolution, and the stakes its player saw before the roll
