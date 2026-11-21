@@ -985,7 +985,7 @@ class SimClient {
         has: (key) => key in table.i18n,
       },
       world: { id: "test-world", title: "Test World" },
-      system: { id: "foundry-ironsworn", version: "1.27.0" },
+      system: { id: "foundry-ironsworn", version: "1.28.4" },
       version: "13.351",
       release: { generation: 13 },
       ready: false,

@@ -15,7 +15,7 @@ supports browser CORS natively (see `src/art/openRouterImage.js`). The same
 code runs on Foundry desktop and on The Forge — no setup difference, no
 local Node process required.
 
-**System dependency:** foundry-ironsworn v1.27.0. Actor schema confirmed:
+**System dependency:** foundry-ironsworn v1.28.4. Actor schema confirmed:
 stats flat on `system` (not nested), meters at `system.health.value` etc,
 debilities at `system.debility` (singular), xp flat at `system.xp` (the
 classic sheet's — the Starforged sheet derives XP from

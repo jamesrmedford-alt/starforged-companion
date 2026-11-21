@@ -96,10 +96,10 @@ export const ZONE_STARSHIP = [
 export const ZONE_SETTLEMENT = [
   { min: 1,  max: 20,  result: "Community" },
   { min: 21, max: 30,  result: "Engineering" },
-  { min: 31, max: 50,  result: "Living" },
-  { min: 51, max: 60,  result: "Medical" },
-  { min: 61, max: 70,  result: "Operations" },
-  { min: 71, max: 90,  result: "Production" },
+  { min: 31, max: 55,  result: "Living" },
+  { min: 56, max: 65,  result: "Medical" },
+  { min: 66, max: 75,  result: "Operations" },
+  { min: 76, max: 90,  result: "Production" },
   { min: 91, max: 100, result: "Research" },
 ];
 

@@ -261,7 +261,7 @@ Both retain for 14 days, then expire.
 
 | Script | What it does |
 |---|---|
-| `scripts/install-deps.sh` | Pre-populates `./data/Data/{systems,modules}` with foundry-ironsworn v1.27.0, latest Quench, and Starforged Companion (copied from the working tree). Re-run any time you change module source. |
+| `scripts/install-deps.sh` | Pre-populates `./data/Data/{systems,modules}` with foundry-ironsworn v1.28.4, latest Quench, and Starforged Companion (copied from the working tree). Re-run any time you change module source. |
 | `scripts/setup-test-world.sh` | Copies the world template into `./data/Data/worlds/starforged-ci-world/`. Idempotent — pass `--force` to wipe and reinstall. |
 | `scripts/credentials.sh` | Manage Keychain entries (`set`, `status`, `clear`, `export`). |
 | `scripts/start.sh` | Loads creds from Keychain (prompts on first run), `docker compose up -d`, tails logs. Ctrl+C detaches; the server keeps running. |
@@ -306,7 +306,7 @@ test/ci/data/
 │   │   ├── quench/                      # latest release from Ethaks/FVTT-Quench
 │   │   └── starforged-companion/        # copied from working tree
 │   ├── systems/
-│   │   └── foundry-ironsworn/           # v1.27.0 release from ben/foundry-ironsworn
+│   │   └── foundry-ironsworn/           # v1.28.4 release from ben/foundry-ironsworn
 │   └── worlds/
 │       └── starforged-ci-world/         # from test/ci/world-template/
 ├── Logs/
@@ -415,7 +415,7 @@ fires if both Quench and the module loaded cleanly.
 | Component | Version policy |
 |---|---|
 | Foundry VTT | v13 (image tag `:13`) |
-| foundry-ironsworn | pinned to `1.27.0` in `install-deps.sh` |
+| foundry-ironsworn | pinned to `1.28.4` in `install-deps.sh` |
 | Quench | latest release at install time |
 | Starforged Companion | current working tree |
 
