@@ -26,7 +26,7 @@ WORLDS_DIR="${USER_DATA_DIR}/worlds"
 
 # ---- pinned versions ------------------------------------------------------
 
-IRONSWORN_VERSION="1.27.0"
+IRONSWORN_VERSION="1.28.4"
 IRONSWORN_REPO="ben/foundry-ironsworn"
 QUENCH_REPO="Ethaks/FVTT-Quench"
 
@@ -133,7 +133,7 @@ mkdir -p "${SYSTEMS_DIR}" "${MODULES_DIR}" "${WORLDS_DIR}"
 # ---- 1. foundry-ironsworn system -----------------------------------------
 
 log "installing foundry-ironsworn v${IRONSWORN_VERSION}"
-# ben/foundry-ironsworn uses unprefixed tags (1.27.0, not v1.27.0).
+# ben/foundry-ironsworn uses unprefixed tags (1.28.4, not v1.28.4).
 ironsworn_url="$(github_release_zip_url "${IRONSWORN_REPO}" "${IRONSWORN_VERSION}")"
 download_and_extract "${ironsworn_url}" "${SYSTEMS_DIR}/foundry-ironsworn"
 [[ -f "${SYSTEMS_DIR}/foundry-ironsworn/system.json" ]] \
