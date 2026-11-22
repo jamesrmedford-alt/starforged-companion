@@ -522,8 +522,10 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
 **hit — strong or weak** (BOND-WEAK-FORGE fix; the weak hit forges too, with
 their request in the fiction) the pipeline branch flips the record
-(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry,
-and every PC's bond Item marked forged — `setBondItemForged`),
+(`forgeBond`: `bonded`, a history entry, and every PC's bond Item marked
+forged — `setBondItemForged`; its `secondRole` option is passed by no
+caller, and the `allyFlag` it once set was retired with the other
+context-injection flags, issue #274),
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
@@ -558,7 +560,7 @@ GMs a payoff failure card with a Retry (issue #306 R04). A PC's box XP that
 is refused once the ticks land goes on that card too, as an `xp` step whose
 Retry gives that PC's XP alone (issue #309 N06). The Bolster (+2) / Expand (second role, +1) influence
 choice is card text, tracked manually. Once
-`bonded`: always context-injected (`allyFlag`), develop switches to the
+`bonded`: develop switches to the
 bond-legacy branch, `selectConnection` prefers it as the sole-bonded
 fallback, and forge affordances exclude it. Forge a Bond's own resolution —
 enrichment and the forge branch alike — never falls back to a bonded
@@ -576,7 +578,11 @@ the canonical GM (`applyFightVowDeepenBond`, one-shot via
 `combat-flow.md` §4; it replaced the raw `connection.deepen` socket emit).
 `deepenLinkedConnection` reports `{ ok }`: a refused write, or a connection
 no longer found by that name (renamed or deleted), goes to the GMs instead
-of being swallowed (issue #306 R04).
+of being swallowed (issue #306 R04). The link is the connection's **name**
+(`linkedConnectionName`, written at the swearing): deleting the NPC card
+clears it, renaming the card does not follow it — so a renamed connection is
+not found, and another card given its old name is marked in its place
+(known-issues VOW-CONNECTION-LINK-BY-NAME, open).
 Bonds-legacy ticks accrue on
 `campaignState.legacyTracks.bonds`, and every newly filled box now awards XP
 to each PC with an earned-XP card (LEGACY-XP-DEAD fix — `addLegacyTicks`

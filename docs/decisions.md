@@ -6,6 +6,122 @@ rejected.
 
 ---
 
+## Generated command sequences against an independent model (issue #302 slice C) (2026-11)
+
+**Decision:** (issue #302 slice C. The maintainer asked for it on 2026-11-21,
+in three steps — the harness's documents and dice, a model with commands for
+vows and connections, then sessions and reloads with a measured budget; the
+choices below were made while building them.)
+
+- **The expected answers come from the game's text, never from `src/`.**
+  `tests/helpers/sequence/rules.js` and `model.js` are transcribed from the
+  move text the system ships and from this file; a source scan in
+  `sequenceRules.test.js` fails if either imports from `src/`, and the same
+  file reads the reward sentence, the weak-hit rule, the recommit rule and
+  the session moves' "+1 momentum" out of the vendored moves and compares. An
+  expectation computed with the function under test agrees with it whatever
+  it does — the #301 audit found two tests that asserted the defect.
+- **fast-check is a dev dependency.** It generates the sequences, reduces a
+  failing one to its shortest reproduction, and gives the seed and path that
+  replay it. The alternative was a generator and a minimiser of our own. The
+  maintainer went ahead on that recommendation.
+- **A thing is the document made for it, not its name.** The model names a
+  vow or a connection by its own ref; the table side (`world.js`) keeps each
+  ref against the Item or Actor it created and reads documents back by id
+  only. A name can change, collide or be reused; if the table then marks the
+  wrong one, the right one reads unchanged and the wrong one changed, each
+  under its own ref (`rules/reachability.md` §6).
+- **Commands act through the paths a table uses**: a vow added on the
+  player's own sheet (with the rank as the sheet stores it, 1–5), a move
+  posted with the flags a card button posts, a picker pressed by the roller's
+  player, a draft confirmed by the GM, an NPC card renamed in the sidebar,
+  `!begin-session` and `!end-session` with their dialogs answered, a page
+  reloaded, a connection dropped.
+- **No module is mocked.** Booted-table tests mock three things on the move
+  pipeline — the confirmation dialog, the ability scan, the dice. A mocked
+  module is one object for every simulated client, built in the module graph
+  of whichever client loaded it first; reload that client's page and the mock
+  still reads the closed tab's state (known-issues
+  HARNESS-MOCK-OUTLIVES-RELOAD — the settings panel's mock refused every
+  Private Lines sync on a fresh GM page). So the real dialog is accepted on
+  the GM's page, the real scan finds no assets, and the dice are answered at
+  `Math.random` to the module's own `rollDie`, told by the stack as the
+  scripted playthroughs do (`tests/helpers/scriptedDice.js`
+  `installMoveDice`), under a fixed seed for every other read.
+- **Selections are explicit; ambiguity is out of scope.** One character does
+  not hold two vows of one name, and a connection made in play takes a name
+  not in use. What is tested is that an explicit selection reaches its target
+  whatever shares its name — not what the table should do when asked
+  something ambiguous, which nothing here rules on.
+- **A repeated press is two people, not one person twice.** A card disables
+  its own button, so the same client cannot press it again; the claim on the
+  canonical GM is reachable only from a second client. "Pressed by two at
+  once" is the roller's player and the GM (for a draft, the GM and the
+  player; for a session command, two seats) in the same moment. The first
+  corpus had only "the same button again, later", and missed a picker that
+  was never claimed.
+- **The model keeps to the recorded contract for a dropped connection.** A GM
+  page whose connection dropped stands down until it reloads, and with one GM
+  the table waits ("A GM page whose connection dropped stands down until it
+  reloads", below): while her page is stale no command that needs a GM is
+  generated, and one sequence written out posts a move meanwhile and checks
+  that nothing resolves it. The generator's first failure was this contract,
+  reduced to two commands.
+- **Embedded Items and journals are live documents on a table that asks for
+  them** (`tests/helpers/liveDocuments.js`, `withLiveDocuments(table)`), not
+  by default: over six hundred test files boot a table, and their stand-ins
+  keep working.
+  An update that changes nothing is not sent, as in Foundry — the shared
+  vow's sync and the bond mirror stop on that.
+- **A corpus that exercised nothing has passed nothing.** Each fixed corpus
+  counts every kind of command, each roll's outcome and each press by two,
+  and fails if a kind never ran.
+- **Two fixed-seed corpora on a pull request; broader ones on demand.** Seed
+  302: 100 sequences of vows and connections, and 25 with sessions, reloads
+  and dropped connections among them (a reload boots a page, a quarter of a
+  second each). `SEQUENCE_RUNS`, `SEQUENCE_TABLE_RUNS`, `SEQUENCE_SEED`,
+  `SEQUENCE_PATH` and `SEQUENCE_MAX_COMMANDS` widen them or replay a failure.
+  A reduced failure is written out as an ordinary test in the same file; the
+  corpus only finds.
+- **A command prints as its picks.** fast-check runs the same command objects
+  again while it reduces, against other starting worlds, so a description
+  stored on the command names whatever its last run resolved to. The
+  counterexample lists the picks (which replay); the assertion under "Caused
+  by" is labelled with what they resolved to in the failing run.
+- **A sequence that fails part-way must not fail the next.** It can leave a
+  move waiting at its confirmation dialog, which `reset()` does not end; the
+  next sequence's table is checked first, the dialog closed, and the table
+  replaced if something is still blocked (`usableTable`) — otherwise every
+  sequence fast-check tries while reducing fails for that reason.
+- **The corpora are shown to catch defects put back on purpose**
+  (`scripts/defects/seq-*.patch`, `docs/testing/fix-sensitivity.md`): the vow
+  resolver forgetting the roller (#301 B02's defect), the picked connection's
+  id dropped (#301 B01's), a picker never claimed, Begin a Session's start
+  effects unguarded (#300 F11's), and every world load starting a new
+  session. The first version of the commands caught one of the first three;
+  namesake connections in the starting world and the press by two came from
+  the two it missed.
+- **A defect the sequences' probes find is recorded and keyed, not fixed
+  here.** VOW-CONNECTION-LINK-BY-NAME (known-issues) is open, with a check
+  that passes while it reproduces and fails once it is fixed
+  (`expectKnownIssue`).
+
+**Rejected:**
+- *Making live documents the harness default* — hooks that never fired on a
+  table would start firing in six hundred files at once (the sheet-made vow's card,
+  the shared-vow sync); each would need reading. Opt-in now, file by file
+  later if wanted.
+- *Reading expected values from the module's own constants* (`RANK_TICKS`,
+  `LEGACY_REWARD`) — it would have saved a table of ten numbers and made the
+  model unable to see either of them wrong.
+- *One long random walk per run* — a failure 400 commands in cannot be read;
+  many short sequences from a varied starting world reduce to one or two
+  commands.
+- *Keeping the three pipeline mocks* — every other booted-table test has
+  them, and they are sound until a page reloads; a sequence reloads pages.
+
+---
+
 ## Issue #364's third round of open items: a truth the X-Card took back stays out, a kept NPC gets a fresh agenda, the ship's position reads on to the place (2026-11)
 
 **Decision:** (the eighteen items left open by the second round's fixes — `known-issues.md` → "Found while settling issue #364's second round of open items" — settled on 2026-11-20 at the maintainer's request, "Go with your recommendation on all of the new ones, and any others you find, then open a pr": the maintainer took the recommendation on the six that were decisions, and on the items found while settling them.)

@@ -91,7 +91,7 @@ export class SequenceWorld {
    * connections of `fixture` as play would have left them.
    *
    * @param {Object} table
-   * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number }>,
+   * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number, swornTo?: string }>,
    *   connections?: Array<{ ref: string, name: string, rank: string, ticks: number, holder: string }> }} [fixture]
    */
   static async start(table, fixture = {}) {
@@ -180,11 +180,15 @@ export class SequenceWorld {
 
   #hostIdFor(ref) { return `conn-${ref}`; }
 
-  /** A vow as a sheet holds it once the module has seen it made: its own id as its vowId. */
-  #seedVow({ ref, pc, name, rank, ticks }) {
+  /**
+   * A vow as a sheet holds it once the module has seen it made: its own id as
+   * its vowId — and, sworn to a connection, that connection's name as the
+   * swearing writes it (`linkedConnectionName`).
+   */
+  #seedVow({ ref, pc, name, rank, ticks, swornTo = null }) {
     const id = `vow-${ref}`;
     this.table.addItem(pc, { id, name, type: "progress", system: { subtype: "vow", rank: sheetRank(rank), current: ticks, completed: false },
-      flags: { [MODULE_ID]: { vowId: id, vowSetupOffered: true } } });
+      flags: { [MODULE_ID]: { vowId: id, vowSetupOffered: true, ...(swornTo ? { linkedConnectionName: swornTo } : {}) } } });
     this.vowIds.set(ref, id);
   }
 

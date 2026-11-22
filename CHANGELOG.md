@@ -6,6 +6,11 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Internal: **Generated play sequences are checked against the rules** (issue #302 slice C). The test suite now makes up sequences of things a table does — vows and connections added, renamed, marked, rolled and recommitted, a button pressed by two people at once, sessions ended and begun, pages reloaded, connections dropped — plays each on a simulated three-person table, and after every step compares the table with a model written from the game's own text. A failing sequence is cut down to its shortest form and can be replayed. Two fixed sets run on every pull request (about 18 seconds); broader ones run on demand. They found no defect in these flows; one found beside them is listed as open (a vow sworn to a connection loses its link when that NPC card is renamed).
+- Internal: **The simulated table models Items and journals** (issue #302 slice C). A vow, a bond or a journal page made on a simulated table can now be updated, flagged and deleted, with every client seeing the change as Foundry delivers it. Until now such a document could not be changed once made, so those flows were tested with hand-built stand-ins.
+
+## [1.8.3] — 2026-11-21
+
 - Fixed: **The Derelict Zone (Settlement) oracle uses the rulebook's ranges.** Living ended five short, so Medical, Operations and Production each started five too early: a roll of 51–55 gave Medical where the book gives Living, 61–65 gave Operations for Medical, and 71–75 gave Production for Operations. The table now reads Living 31–55, Medical 56–65, Operations 66–75, Production 76–90. It is the notable zone rolled for a derelict settlement in a newly generated sector, and `!oracle derelict_zone_settlement`.
 - Changed: **Tested against Ironsworn system 1.28.4** (was 1.27.0) — the release that moved the system's sheets and dialogs to Foundry's current window framework.
 

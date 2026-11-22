@@ -32,13 +32,21 @@
  * A reduced failure becomes an ordinary test in "sequences that once failed",
  * below — the corpus only finds; those keep.
  *
- * The corpus is fixed-seed, so a pull request runs the same sequences every
- * time. A broader run is on demand: SEQUENCE_RUNS=2000 SEQUENCE_SEED=$RANDOM.
+ * Two corpora, both fixed-seed, so a pull request runs the same sequences
+ * every time: vows and connections, and "the table" — the same commands with
+ * sessions ended and begun, pages reloaded and connections dropped among
+ * them. A broader run is on demand:
+ *
+ *   SEQUENCE_RUNS=2000 SEQUENCE_TABLE_RUNS=400 SEQUENCE_SEED=$RANDOM npx vitest run tests/unit/generatedSequences.test.js
+ *
+ * Nothing here is mocked (tests/helpers/sequence/world.js says why): the
+ * modules on every simulated page are the real ones.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fc from 'fast-check';
 import { bootSequenceTable, usableTable, SequenceWorld, PCS } from '../helpers/sequence/world.js';
+import { expectKnownIssue } from '../helpers/faults.js';
 import * as M from '../helpers/sequence/model.js';
 import {
   AddConnection, AddVow, BeginSession, DevelopRelationship, DropAndRejoin, EndSession, ForgeBond, FulfilVow, ReachMilestone,
@@ -246,5 +254,47 @@ describe('the sequences the properties are about, written out', () => {
       await command.run(model, world);
     }
     expect(world.observe().pcs['pc-kira'].vows[0].ticks).toBe(8);
+  });
+});
+
+// Found beside the generated flows, by reading the vow's payoff while mapping
+// it: none of the commands above swears a vow to a connection. Kept as keyed
+// checks (decisions.md → "A known, open defect is a keyed check, not a
+// skip"): each asserts what should happen, passes while the defect answers as
+// recorded, and fails the day it is fixed — make it an ordinary test then.
+describe('known and open: a vow sworn to a connection is linked by the connection\'s name (VOW-CONNECTION-LINK-BY-NAME)', () => {
+  const SWORN = {
+    vows: [{ ref: 'v1', pc: 'pc-kira', name: 'Find Kade', rank: 'dangerous', ticks: 40, swornTo: 'Sable' }],
+    connections: [
+      { ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 8, holder: 'pc-kira' },
+      { ref: 'c3', name: 'Orrin', rank: 'dangerous', ticks: 0, holder: 'pc-ash' },
+    ],
+  };
+
+  /** Kira's vow to Sable (c2) fulfilled on a strong hit, after the NPC cards are renamed as given: each connection's ticks, as "c2 16, c3 0". */
+  async function relationshipsAfter(renames) {
+    table = await usableTable(table);
+    const world = await SequenceWorld.start(table, SWORN);
+    for (const [ref, name] of renames) await world.renameConnection(ref, { name });
+    await world.fulfilVow('v1', { pc: 'pc-kira', name: 'Find Kade', challenge: [1, 2] });
+    const seen = world.observe();
+    expect(seen.pcs['pc-kira'].vows[0].fulfilled).toBe(true);
+    return seen.connections.map(c => `${c.ref} ${c.ticks}`).join(', ');
+  }
+
+  it('control: fulfilled, the vow develops the relationship it was sworn to — a mark on Sable\'s track, none on Orrin\'s', async () => {
+    expect(await relationshipsAfter([])).toBe('c2 16, c3 0');
+  });
+
+  it('with her card renamed, the progress is not applied to her', async () => {
+    await expectKnownIssue('VOW-CONNECTION-LINK-BY-NAME', /expected 'c2 8, c3 0' to be 'c2 16, c3 0'/, async () => {
+      expect(await relationshipsAfter([['c2', 'Vega']])).toBe('c2 16, c3 0');
+    });
+  });
+
+  it('with her card renamed and another given her old name, the other connection is marked in her place', async () => {
+    await expectKnownIssue('VOW-CONNECTION-LINK-BY-NAME', /expected 'c2 8, c3 8' to be 'c2 16, c3 0'/, async () => {
+      expect(await relationshipsAfter([['c2', 'Vega'], ['c3', 'Sable']])).toBe('c2 16, c3 0');
+    });
   });
 });

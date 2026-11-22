@@ -11,6 +11,28 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Generated sequences (issue #302 slice C) — one product defect, open; three limits of the test harness, one of them fixed
+
+Found while building the generated command sequences
+(`tests/unit/generatedSequences.test.js`, 2026-11-21 — `decisions.md` →
+"Generated command sequences against an independent model"). Across the
+commands it has — vows and connections added, renamed, marked, rolled and
+recommitted, buttons pressed by two people at once, sessions ended and begun,
+pages reloaded, connections dropped — a run of 2,000 sequences of vows and
+connections and 400 of the table's, on a seed of their own (about 15,000
+commands; some 4,900 sequences more on earlier versions of the commands)
+found no product defect: every comparison of the table with the rules' model
+held. The one below was found
+by reading the flow while mapping it, and confirmed by a probe on the
+sequences' table; none of the commands swears a vow to a connection yet.
+
+| ID | Kind | Status |
+|---|---|---|
+| VOW-CONNECTION-LINK-BY-NAME | IDENTITY-BY-NAME (rules/reachability.md §6) | open — reproduced, and kept as a keyed check (`generatedSequences.test.js`, `expectKnownIssue`). A vow sworn to a connection keeps the connection's name (`linkedConnectionName`, written at the swearing; cleared when the NPC card is deleted), and a rename of the card does not follow it there. Fulfilling the vow then (a) finds no connection of that name: the relationship progress is not applied, and the GMs' "Vow payoff incomplete" card says so — its Retry cannot land until the card is renamed back; or (b) when another NPC card has taken the old name, marks that connection — the wrong one, with no card. The won-fight card's 🤝 reads the same link. Recommendation: stamp the connection's Actor id beside the name at the swearing and resolve by it first, the name as fallback — as the vow's own `vowId` and a site's `siteId` do — or follow the rename as the bond Items do (`renameBondItems`). |
+| HARNESS-MOCK-OUTLIVES-RELOAD | test harness | open — worked around in the sequences, which mock no module. `vi.mock` gives every simulated client one module object, built — with everything it imports — in the module graph of the client that loaded it first (the canonical GM, booted first). After that client's page reloads or its connection drops, the mock still reads the closed tab's state: with `settingsPanel.js` mocked for its confirmation dialog, a fresh GM page refused every Private Lines sync as "this page lost its connection to the server". 356 of the 616 booted-table files mock that module or the resolver; the 40 of them that also reload a page or drop a connection are the ones to check — none was (not done here). `multiClient.js`'s header already says "mock stateless leaves"; the settings panel is not one. Recommendation: accept the confirmation dialog in the harness, per client, and script dice at `Math.random` (`scriptedDice.js` `installMoveDice`), so those two mocks can be retired file by file. |
+| HARNESS-CONSOLE-CHAIN | test harness | open — worked around in the sequences' reload (`world.js` puts the console back). Booting, the module wraps `console.warn` / `console.error` to mirror its messages to the Error Log; the simulated pages share one console, so each page booted inside a test wraps the one before and holds it — its whole module graph, about 66 MB — until the test ends. A test that reloads three times does not notice; a run of 500 generated sequences ran out of memory at 8 GB. A reloaded page's wrapper is also live for the rest of that test, while the pages booted in `beforeAll` have theirs under the test's console spy. Recommendation: give each simulated client its own console object. |
+| HARNESS-TRACE-REFUSED-UPDATE | test harness | fixed — `traceTable` (`tests/helpers/faults.js`) called `.map` on a refused actor update's changes, which are an object: a test tracing a refused actor write got that TypeError in the refusal's place. No test traced one. A row in `multiClientHarness.test.js`. |
+
 ### Bug audit at 22bdbeb (issue #344) — all four fixed in the v1.8.2 cycle
 
 Found by a bug audit of `22bdbeb` (2026-11-06, the merge of PR #343) — a
