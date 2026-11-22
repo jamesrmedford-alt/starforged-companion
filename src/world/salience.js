@@ -34,6 +34,30 @@ export const SALIENCE_ORDER = Object.fromEntries(SALIENCE_TIERS.map((t, i) => [t
 /** Conservative default floor (D5) — records "significant" and "defining" only. */
 export const DEFAULT_THRESHOLD = "significant";
 
+/**
+ * Each channel's own default floor — the one place it is said (the settings'
+ * registration and the panel read it from here). Lore and Threats keep the
+ * conservative floor. The Chronicle's is "notable": at "significant" a live
+ * scribe rated every beat of a whole session lower — a strong hit that named
+ * an NPC and a witness among them — so nothing was stored, the session ended
+ * with an empty Chronicle and no campaign recap could be made (known-issues
+ * CHRONICLE-EMPTY-AFTER-LIVE-SESSION, 2026-11). The Chronicle is the PC's
+ * record, and its below-floor beats go nowhere else (D7).
+ */
+export const DEFAULT_THRESHOLDS = Object.freeze({
+  lore:      DEFAULT_THRESHOLD,
+  threats:   DEFAULT_THRESHOLD,
+  chronicle: "notable",
+});
+
+/**
+ * @param {"lore"|"threats"|"chronicle"} channel
+ * @returns {string} that channel's default floor
+ */
+export function defaultSalienceThreshold(channel) {
+  return DEFAULT_THRESHOLDS[channel] ?? DEFAULT_THRESHOLD;
+}
+
 /** channel → world-setting key. The three keys live in one place. */
 export const SALIENCE_SETTING_KEYS = {
   lore:      "loreSalienceThreshold",
@@ -71,8 +95,8 @@ export function passesSalience(itemSalience, thresholdSalience) {
 }
 
 /**
- * Read a channel's configured floor from world settings, defaulting to
- * "significant". Defensive: unregistered settings (unit tests) and any read
+ * Read a channel's configured floor from world settings, defaulting to the
+ * channel's own default (defaultSalienceThreshold). Defensive: unregistered settings (unit tests) and any read
  * failure (non-GM, early boot) fall back to the default.
  *
  * @param {"lore"|"threats"|"chronicle"} channel
@@ -81,10 +105,11 @@ export function passesSalience(itemSalience, thresholdSalience) {
 export function getSalienceThreshold(channel) {
   const key = SALIENCE_SETTING_KEYS[channel];
   if (!key) return DEFAULT_THRESHOLD;
+  const fallback = defaultSalienceThreshold(channel);
   try {
     const v = globalThis.game?.settings?.get?.(MODULE_ID, key);
-    return normalizeSalience(v) ?? DEFAULT_THRESHOLD;
+    return normalizeSalience(v) ?? fallback;
   } catch {
-    return DEFAULT_THRESHOLD;
+    return fallback;
   }
 }

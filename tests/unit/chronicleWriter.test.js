@@ -294,7 +294,38 @@ describe('writeChronicleEntry()', () => {
 
   // ── salience gate (T2: F20) ───────────────────────────────────────────────
 
-  it('drops a beat below the default "significant" chronicle floor (F20)', async () => {
+  // The Chronicle's own default floor is "notable" (known-issues
+  // CHRONICLE-EMPTY-AFTER-LIVE-SESSION): at "significant" a live scribe's
+  // whole session — every beat rated "notable" or "scene" — stored nothing.
+  it('records a "notable" beat at the default floor — a session of them no longer leaves the Chronicle empty', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'revelation', salience: 'notable',
+      text: 'Vance Oduya, the dock clerk, recalled a grey-coated courier who cleared dock four before the second bell.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'Vance thumbs a page over. "Grey coat, one case. She cleared dock four before the second bell."',
+      campaignState: BASE_STATE,
+      moveId:        'gather_information',
+      outcome:       'strong_hit',
+      kind:          'move',
+    });
+
+    expect(entry?.text).toContain('grey-coated courier');
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a GM who sets the floor back to "significant" drops that beat', async () => {
+    game.settings._store.set(`${MODULE_ID}.chronicleSalienceThreshold`, 'significant');
+    apiPost.mockResolvedValue(makeApiResponse({ type: 'revelation', salience: 'notable', text: 'A beat that may echo later.' }));
+
+    const entry = await writeChronicleEntry({ narrationText: 'Something that may matter.', campaignState: BASE_STATE, kind: 'paced' });
+
+    expect(entry).toBeNull();
+    expect(requestChronicleEdit).not.toHaveBeenCalled();
+  });
+
+  it('drops a beat below the default "notable" chronicle floor (F20)', async () => {
     apiPost.mockResolvedValue(makeApiResponse({
       type: 'revelation', salience: 'scene',
       text: 'Someone is cycling through the airlock sequence.',

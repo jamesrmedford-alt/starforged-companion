@@ -6,6 +6,40 @@ rejected.
 
 ---
 
+## A low pacing dial holds in code: an unsure move is offered, not rolled (2026-11)
+
+**Decision:** At an effective dial of 0–2 for the line's category, a MOVE the
+classifier returns with confidence under 0.7 is routed as
+NARRATIVE_WITH_MOVE_AVAILABLE (`router.js` `decidePacing`): the narrator
+answers the line and its card carries the Roll for the move the classifier
+named. The classifier's prompt also says that who a line is spoken to is not
+a stake (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION; the
+maintainer's decision, 2026-11-22).
+
+**Reason:** the dial's lowest band is the table saying "narrate unless the
+player asks for a roll or the stakes are plain". Recorded from the live
+model, a plain question to a connection was called a Compel at 0.6 with the
+social dial at 1 in two runs of three — the classifier overrode the dial
+because the other speaker was a connection. A prompt rule alone is a
+request; the dial is a setting, and a setting is kept in code, as the
+combat-active backstop already keeps the opposite one (a fight never hedges).
+
+- Not during a fight, and not the fallback decision for a call that failed or
+  a reply that could not be read: that one keeps the move pipeline running.
+- A sure move still rolls at any dial — explicit intent ("I try to…") comes
+  back well above the floor.
+- The default downtime dial is 1, so this reaches unsure downtime moves on a
+  table that changed nothing: they are offered where they were rolled.
+
+**Rejected:**
+- *The same floor at every dial.* At the default dials a 0.6 MOVE is what the
+  table asked for more often than not; offering every one of them is the
+  suggestion loop the dials were raised to end (remediation §B3).
+- *Temperature or a second classifier call to settle a 0.6.* Costs a call per
+  line to make an unsure reading look sure.
+
+---
+
 ## The test stack in a cloud session, and recordings made from live runs (2026-11)
 
 **Decision:** `test/ci/scripts/cloud.sh` runs the Foundry test stack inside a
@@ -7448,6 +7482,18 @@ not an overload of `confidence`.
 **Per-channel, not a single dial (D4):** each channel owns its floor so the GM
 can, e.g., keep Threats strict while loosening the Chronicle. Matches the
 existing per-feature world-settings style.
+
+**The Chronicle's default floor is `notable` (2026-11-22, the maintainer's
+decision; known-issues CHRONICLE-EMPTY-AFTER-LIVE-SESSION).** D5 below still
+holds for Lore and Threats. For the Chronicle it under-captured to nothing:
+recorded from the live model, a whole first session's beats were rated
+`notable` or `scene`, none was stored, and the campaign recap had nothing to
+be made from. The Chronicle is the PC's record and its below-floor beats go
+nowhere else (D7), so its default now keeps a beat "that may echo later".
+Each channel's default is said once, in `salience.js` (`DEFAULT_THRESHOLDS`);
+the settings' registration and the panel read it from there. A world that has
+stored a floor keeps it — the panel writes the control on every save, and a
+stored `significant` cannot be told from a choice, so there is no migration.
 
 **Conservative default (D5):** the floor is `significant`, so only durable
 world/character facts are recorded and the GM promotes scene texture up. Under-

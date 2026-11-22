@@ -349,7 +349,8 @@ scenario written against hand-made replies meets what the model does:
   flipped. A scenario pins its `pacing.dial.*` settings — 10 for the category
   of a line that must be a move, 1 for the category of one that must not —
   and even at social 1 a pointed question to a connection was read as Compel
-  two runs in three (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION):
+  two runs in three (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION —
+  since fixed: at a dial of 0–2 an unsure move is offered, not rolled):
   where a line must stay narrative, the character tells, and does not ask.
 - A check on what the model wrote cannot name what the model will call it.
   `journalPage` takes `pageMatches` and a list of journals for that; a
@@ -357,12 +358,13 @@ scenario written against hand-made replies meets what the model does:
   holds something (the recap's `CAMPAIGN CHRONICLE` holds a dated entry), not
   a name (the live scribe wrote "Oduya" where the placeholder wrote "Vance
   Oduya").
-- **The Chronicle's floor.** The scribe's replies are stored only at
+- **The Chronicle's floor.** The scribe's replies were stored only at
   "significant" or above by default, and a live scribe rated a whole session
   below that: no chronicle, so no campaign recap call, and the step that
-  requires one reports it MISSING. first-session pins
-  `chronicleSalienceThreshold` to "scene" (known-issues
-  CHRONICLE-EMPTY-AFTER-LIVE-SESSION).
+  requires one reports it MISSING. The default is "notable" now (known-issues
+  CHRONICLE-EMPTY-AFTER-LIVE-SESSION); first-session still pins
+  `chronicleSalienceThreshold` to "scene", so its recap does not depend on
+  how a scribe rates four beats.
 - The step's wait for its required calls is five times longer in record mode:
   a session's end makes its calls one after another, and each live reply
   takes seconds.

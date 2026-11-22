@@ -101,7 +101,9 @@ scale:
   - 0–2:  classify as NARRATIVE unless the player has signalled explicit
           intent ("I try to", "I attempt", "I roll to") or stakes are
           unambiguous. At this dial, prefer NARRATIVE even when the outcome
-          could matter — let the fiction breathe.
+          could matter — let the fiction breathe. Who the line is spoken to
+          is not a stake: a question put to a connection, a bonded ally or a
+          rival is still a question.
 
 TIE-BREAK: if you have identified a clear suggestedMove AND the input's
 category dial is 9 or 10, the answer is MOVE — not NARRATIVE_WITH_MOVE_AVAILABLE.
@@ -182,7 +184,8 @@ suggestedMove set_a_course (or MOVE at dial 6+). NOT plain NARRATIVE.
 If recent move density in the scene is high, lean toward NARRATIVE to allow
 pacing recovery — don't stack rolls.
 
-TALKING IS NOT A MOVE — plain conversation is narration, whoever it is with:
+TALKING IS NOT A MOVE — plain conversation is narration, whoever it is with
+(a connection or a bonded ally does not raise the stakes of a question):
 asking a question, answering one, agreeing or refusing, choosing between
 options someone offered, saying a name, telling someone what happened. Classify
 it NARRATIVE — or NARRATIVE_WITH_MOVE_AVAILABLE when the answer could cost or

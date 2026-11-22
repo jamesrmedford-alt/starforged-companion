@@ -26,6 +26,7 @@ import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 import { stakesShown } from '../moves/stakes.js';
 import { registerSpotlightDefaultSetting } from '../narration/spotlightDefault.js';
+import { defaultSalienceThreshold } from '../world/salience.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -138,13 +139,15 @@ const PACING_DEFAULTS = {
 };
 
 // Per-channel auto-capture floors (lore / threats / chronicle). Ordered least →
-// most durable; see src/world/salience.js. Conservative default is "significant"
-// so transient scene beats are dropped (findings F15 / F17 / F20 / F21).
+// most durable; see src/world/salience.js, which also holds each channel's
+// default (defaultSalienceThreshold): "significant" for Lore and Threats, so
+// transient scene beats are dropped (findings F15 / F17 / F20 / F21);
+// "notable" for the Chronicle.
 const SALIENCE_CHOICES = {
   trivial:     'Everything (no filtering)',
   scene:       'Scene and above',
   notable:     'Notable and above',
-  significant: 'Significant and above (recommended)',
+  significant: 'Significant and above',
   defining:    'Campaign-defining only',
 };
 
@@ -394,12 +397,12 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.CHRONICLE_SALIENCE, {
     name:    'Chronicle Capture Threshold',
-    hint:    'Minimum salience for an automatic chronicle entry to be recorded. Conservative by default — fleeting scene beats are skipped; the player can still add smaller notes by hand. One of: trivial, scene, notable, significant, defining.',
+    hint:    'Minimum salience for an automatic chronicle entry to be recorded. By default a beat that may echo later is kept (notable and above) and fleeting scene beats are skipped; the player can still add smaller notes by hand. One of: trivial, scene, notable, significant, defining.',
     scope:   'world',
     config:  false,
     type:    String,
     choices: SALIENCE_CHOICES,
-    default: 'significant',
+    default: defaultSalienceThreshold('chronicle'),
   });
 
   // ── Scene interrogation settings ──────────────────────────────────────────
@@ -511,7 +514,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: SALIENCE_CHOICES,
-    default: 'significant',
+    default: defaultSalienceThreshold('lore'),
   });
 
   game.settings.register(MODULE_ID, SETTING.WJ_SKELETONS, {
@@ -539,7 +542,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: SALIENCE_CHOICES,
-    default: 'significant',
+    default: defaultSalienceThreshold('threats'),
   });
 
   // ── Pacing classifier ────────────────────────────────────────────────────
@@ -1307,7 +1310,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       // the console (issue #326 W78).
       apiTransactionLog:     readSetting(SETTING.API_TX_LOG, true),
       chronicleAutoEntry:    readSetting(SETTING.CHRONICLE_AUTO_ENTRY, true),
-      chronicleSalience:     readSetting(SETTING.CHRONICLE_SALIENCE, 'significant'),
+      chronicleSalience:     readSetting(SETTING.CHRONICLE_SALIENCE, defaultSalienceThreshold('chronicle')),
       salienceChoices:       SALIENCE_CHOICES,
       worldJournal: {
         privateChannel:             readSetting(PRIVATE_CHANNEL_ENABLED, true),
@@ -1316,8 +1319,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         factionInContext:           readSetting(SETTING.WJ_FACTION_IN_CONTEXT, true),
         contradictionNotifications: readSetting(SETTING.WJ_CONTRADICTION_NOTIFY, true),
         sessionLogAutoWrite:        readSetting(SETTING.WJ_SESSION_LOG_AUTOWRITE, true),
-        loreSalience:               readSetting(SETTING.WJ_LORE_SALIENCE, 'significant'),
-        threatSalience:             readSetting(SETTING.WJ_THREAT_SALIENCE, 'significant'),
+        loreSalience:               readSetting(SETTING.WJ_LORE_SALIENCE, defaultSalienceThreshold('lore')),
+        threatSalience:             readSetting(SETTING.WJ_THREAT_SALIENCE, defaultSalienceThreshold('threats')),
         narrativeSkeletons:         readSetting(SETTING.WJ_SKELETONS, true),
         skeletonRollsShown:         readSetting(SETTING.WJ_SKELETON_ROLLS, false),
       },
@@ -2240,9 +2243,9 @@ export class SettingsPanelApp extends ApplicationV2 {
         const n = Math.round(Number(el.querySelector(`[name="${name}"]`)?.value));
         return Number.isFinite(n) && n > 0 ? Math.max(min, Math.min(max, n)) : fallback;
       };
-      const salience = (name) => {
+      const salience = (name, channel) => {
         const v = el.querySelector(`[name="${name}"]`)?.value;
-        return Object.hasOwn(SALIENCE_CHOICES, v ?? '') ? v : 'significant';
+        return Object.hasOwn(SALIENCE_CHOICES, v ?? '') ? v : defaultSalienceThreshold(channel);
       };
       const maxTokens = number('narrationMaxTokens', NARRATION_MAX_TOKENS_MIN, NARRATION_MAX_TOKENS_MAX, 16000);
 
@@ -2269,15 +2272,15 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH,  number('sceneResponseLength', 1, 4, 2)),
         game.settings.set(MODULE_ID, SETTING.SCENE_CONTEXT_CARDS,    number('sceneContextCards', 1, 6, 3)),
         game.settings.set(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY,   checked('chronicleAutoEntry', true)),
-        game.settings.set(MODULE_ID, SETTING.CHRONICLE_SALIENCE,     salience('chronicleSalienceThreshold')),
+        game.settings.set(MODULE_ID, SETTING.CHRONICLE_SALIENCE,     salience('chronicleSalienceThreshold', 'chronicle')),
         game.settings.set(MODULE_ID, PRIVATE_CHANNEL_ENABLED,        checked('privateChannel.enabled', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_LORE_IN_CONTEXT,     checked('loreInContext', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_THREATS_IN_CONTEXT,  checked('threatsInContext', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_FACTION_IN_CONTEXT,  checked('factionLandscapeInContext', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_CONTRADICTION_NOTIFY, checked('contradictionNotifications', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_SESSION_LOG_AUTOWRITE, checked('sessionLogAutoWrite', true)),
-        game.settings.set(MODULE_ID, SETTING.WJ_LORE_SALIENCE,       salience('loreSalienceThreshold')),
-        game.settings.set(MODULE_ID, SETTING.WJ_THREAT_SALIENCE,     salience('threatSalienceThreshold')),
+        game.settings.set(MODULE_ID, SETTING.WJ_LORE_SALIENCE,       salience('loreSalienceThreshold', 'lore')),
+        game.settings.set(MODULE_ID, SETTING.WJ_THREAT_SALIENCE,     salience('threatSalienceThreshold', 'threats')),
         game.settings.set(MODULE_ID, SETTING.WJ_SKELETONS,           checked('narrativeSkeletons', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_SKELETON_ROLLS,      checked('narrativeSkeletonsShowRolls', false)),
       ]);
