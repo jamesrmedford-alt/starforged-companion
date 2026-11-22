@@ -42,8 +42,7 @@ live world from a session.
   CHRONICLE-EMPTY-AFTER-LIVE-SESSION).
 - **What the live runs showed about the product is recorded, not fixed**
   (known-issues, "The cloud playtest and the first real recordings"): the
-  empty Chronicle, the classifier at a low dial, the writes after
-  `game.ready`.
+  empty Chronicle and the classifier at a low dial.
 
 **Rejected:**
 - *Changing `install-deps.sh` / `e2e.sh` to work in both places* — they are

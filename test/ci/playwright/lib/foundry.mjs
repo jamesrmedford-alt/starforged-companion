@@ -32,13 +32,18 @@ export async function openClient(browser, label, { prepare } = {}) {
   // carries on: a step that waits for that pass's call then times out with
   // nothing in the errors. Its own warnings are kept for the failure report.
   const warnings = [];
+  // Its debug lines say which branch a flow took ("… has already begun —
+  // start effects not repeated"): the last of them go in the report too.
+  const debug = [];
   page.on("console", (msg) => {
+    const own = msg.text().startsWith(`${MODULE_ID} |`);
     if (msg.type() === "error") errors.push(msg.text());
-    else if (msg.type() === "warning" && msg.text().startsWith(`${MODULE_ID} |`)) warnings.push(msg.text());
+    else if (msg.type() === "warning" && own) warnings.push(msg.text());
+    else if (msg.type() === "debug" && own) { debug.push(msg.text()); if (debug.length > 200) debug.shift(); }
   });
   page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
   if (prepare) await prepare(page);
-  return { label, context, page, errors, warnings };
+  return { label, context, page, errors, warnings, debug };
 }
 
 /** Join the running world as `userName` (blank password) and wait for game.ready. */
@@ -117,7 +122,8 @@ export async function logPageState(clients, log = console.log) {
       const text = (el) => String(el?.textContent ?? "").replace(/\s+/g, " ").trim();
       return {
         route: location.pathname, user: game.user?.name ?? null, ready: game.ready === true,
-        session: { active: cs.sessionActive ?? null, number: cs.sessionNumber ?? null, pendingMove: !!cs.pendingMove },
+        session: { active: cs.sessionActive ?? null, number: cs.sessionNumber ?? null, pendingMove: !!cs.pendingMove,
+          id: cs.currentSessionId ?? null, startedId: cs.sessionStartedId ?? null, endedId: cs.sessionEndedId ?? null },
         windows: [...document.querySelectorAll("dialog, .application")]
           .map(el => text(el.querySelector(".window-title, header h1, header h4")) || el.id).filter(Boolean).slice(0, 12),
         notifications: [...document.querySelectorAll("#notifications .notification")].map(el => text(el).slice(0, 140)).slice(-4),
@@ -139,5 +145,10 @@ export function logConsoleErrors(clients, log = console.log) {
     if (!c.warnings?.length) continue;
     log(`${c.label} module warnings (last 40):`);
     for (const w of c.warnings.slice(-40)) log(`  ${w.slice(0, 400)}`);
+  }
+  for (const c of clients) {
+    if (!c.debug?.length) continue;
+    log(`${c.label} module debug lines (last 25):`);
+    for (const d of c.debug.slice(-25)) log(`  ${d.slice(0, 300)}`);
   }
 }

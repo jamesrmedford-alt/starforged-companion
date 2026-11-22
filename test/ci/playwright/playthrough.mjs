@@ -98,11 +98,10 @@ function diceQueue(dice) {
  * Wait until the GM's world has stopped changing. `game.ready` is where the
  * module's world-load work starts, not where it ends: its repairs, a stale
  * move lock's release and the session check write for a while after it — on a
- * slow runner, for seconds. A world seeded under that work loses to its late
- * writes: the cards it posts land in the cleared chat, and the campaign state
- * it wrote back was read before the reset (a session already "begun", so
- * Begin a Session opened no vignette — seen in 3 of 11 runs in a cloud
- * session, never where the runner is fast).
+ * slow runner, for seconds. A world cleared under that work has its cards in
+ * the chat just cleared and its repairs failing on actors just deleted. And
+ * the module answers the runner's own deletions with writes of its own, so
+ * the same wait is made again after clearing (setUpWorld).
  */
 async function waitForQuietWorld(gm, { quietMs = 3000, capMs = 60_000 } = {}) {
   await gm.page.evaluate(({ quietMs, capMs }) => new Promise((resolve) => {
@@ -123,20 +122,56 @@ async function waitForQuietWorld(gm, { quietMs = 3000, capMs = 60_000 } = {}) {
   }), { quietMs, capMs });
 }
 
+/**
+ * PLAYTHROUGH_TRACE_STATE=1: log every campaign-state write this page makes —
+ * the session fields it writes and the module frames it came from — as debug
+ * lines, which the failure report prints. For the question "who wrote that
+ * back?" (known-issues PLAYTHROUGH-SEED-UNDER-MODULE-WRITES).
+ */
+async function traceStateWrites(client) {
+  if (process.env.PLAYTHROUGH_TRACE_STATE !== "1") return;
+  await client.page.evaluate((MODULE_ID) => {
+    const settings = game.settings;
+    const original = settings.set.bind(settings);
+    settings.set = function tracedSet(namespace, key, value, ...rest) {
+      if (namespace === MODULE_ID && key === "campaignState") {
+        const frames = (new Error().stack || "").split("\n").slice(2)
+          .map(l => l.trim().replace(/^at /, "").replace(/\(?https?:\/\/[^/]+\/modules\/[^/]+\/src\//, "(").replace(/\(?https?:\/\/[^)]*\)?/, "(foundry)"))
+          .filter(l => !l.includes("(foundry)")).slice(0, 5).join(" < ");
+        console.debug(`${MODULE_ID} | TRACE state write: id=${value?.currentSessionId || "-"} started=${value?.sessionStartedId || "-"} active=${value?.sessionActive} n=${value?.sessionNumber} via ${frames || "(page script)"}`);
+      }
+      return original(namespace, key, value, ...rest);
+    };
+  }, MODULE_ID);
+}
+
 /** Clear what earlier suites left behind, pin the scenario's settings, seed its world. */
 async function setUpWorld(gm, scenario) {
-  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario }) => {
+  // A fresh world: no chat, actors or journals from earlier suites (the help
+  // journal stays).
+  await gm.page.evaluate(async ({ MODULE_ID }) => {
     if (!game.modules.get(MODULE_ID)?.active) throw new Error(`${MODULE_ID} is not active in this world — did the Cypress run enable it?`);
-
-    // A fresh world: no chat, actors or journals from earlier suites (the help
-    // journal stays), and the campaign state's registered default.
     const drop = async (cls, docs) => { if (docs.length) await cls.deleteDocuments(docs.map(d => d.id)); };
     await drop(CONFIG.ChatMessage.documentClass, game.messages.contents);
     await drop(CONFIG.Actor.documentClass, game.actors.contents);
     await drop(CONFIG.JournalEntry.documentClass, game.journal.contents.filter(j => !/help/i.test(j.name)));
     await drop(CONFIG.Scene.documentClass, game.scenes.contents.filter(sc => sc.flags?.[MODULE_ID]?.sectorScene));
+  }, { MODULE_ID });
+  // The module answers those deletions — a hidden plan whose NPC card or
+  // journal went retires its clock (world/secrets.js → clocks.retireClock) —
+  // and each answer writes the whole campaign state from this client's cache.
+  // The reset below, written while one was in flight, was written over by it:
+  // the state came back with the last scenario's session, already begun, and
+  // Begin a Session opened no dialog (CI run 45050276295). So the answers
+  // land first, and the reset goes on the module's own write chain.
+  await waitForQuietWorld(gm, { quietMs: 2000 });
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario }) => {
+    const { serialiseCampaignStateWrite } = await import(`${MODULE_SRC}/multiplayer/campaignStateChain.js`);
+    const writeState = (state, label) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState", state), label);
+
+    // The campaign state's registered default.
     const fresh = game.settings.settings.get(`${MODULE_ID}.campaignState`)?.default ?? {};
-    await game.settings.set(MODULE_ID, "campaignState", foundry.utils.deepClone(fresh));
+    await writeState(foundry.utils.deepClone(fresh), "playthrough reset");
     // No Batch Mode round from an earlier suite (issue #340).
     if (game.settings.settings.has(`${MODULE_ID}.batchMode.round`)) await game.settings.set(MODULE_ID, "batchMode.round", null);
 
@@ -210,7 +245,7 @@ async function setUpWorld(gm, scenario) {
         cs.currentLocationType = "settlement";
       }
     }
-    await game.settings.set(MODULE_ID, "campaignState", cs);
+    await writeState(cs, "playthrough seed");
 
     // The sector map: a pin per settlement and the command vehicle's token
     // on `seed.map.shipAt` — placing it records where the ship is (the
@@ -293,7 +328,9 @@ async function eventually(fn, timeout = CHECK_MS) {
 
 async function submitDialog(client, title, fill) {
   const open = (t) => [...document.querySelectorAll("dialog, .application.dialog")].some(d => d.textContent.includes(t));
-  await client.page.waitForFunction(open, title, { timeout: STEP_MS });
+  await client.page.waitForFunction(open, title, { timeout: STEP_MS }).catch(() => {
+    throw new Error(`the "${title}" dialog never opened on ${client.label}'s screen`);
+  });
   await client.page.evaluate(({ title, fill }) => {
     const dialog = [...document.querySelectorAll("dialog, .application.dialog")].find(d => d.textContent.includes(title));
     for (const [name, value] of Object.entries(fill)) {
@@ -879,6 +916,7 @@ async function runScenario(browser, scenario) {
 
   try {
     await join(gm, GM_NAME, log);
+    await traceStateWrites(gm);
     await waitForQuietWorld(gm);
     ctx.ids = await setUpWorld(gm, scenario);
     log(`${scenario.name}: world seeded ${JSON.stringify(ctx.ids)}`);

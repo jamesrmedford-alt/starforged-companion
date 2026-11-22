@@ -368,13 +368,28 @@ scenario written against hand-made replies meets what the model does:
   takes seconds.
 - **Start only when the world is ready for it.** `game.ready` is where the
   module's world-load work starts. The runner waits for the world to stop
-  changing before it resets it (`waitForQuietWorld`), and for the GM to be in
+  changing before it clears it (`waitForQuietWorld`), and for the GM to be in
   `keyedGmUserIds` before the first step (30 s, failing by name): started
   earlier, the session begins with no narrator and the first step times out
   waiting for a vignette nothing was asked to write.
+- **The seed is a writer like any other.** The module answers the runner's
+  deletions (a plan whose NPC card went retires its clock) with whole-state
+  writes read from the page's cache, and a bare `game.settings.set` of the
+  campaign state made while one is in flight is written over by it — the
+  last scenario's session came back, already begun, and Begin a Session
+  opened no dialog (CI run 45050276295; known-issues
+  PLAYTHROUGH-SEED-UNDER-MODULE-WRITES). After clearing, the runner waits
+  for quiet again, and its reset and its seed go on the module's write chain
+  (`serialiseCampaignStateWrite`, imported from the module in the page). A
+  page script that writes `campaignState` any other way races the module.
+- **`PLAYTHROUGH_TRACE_STATE=1`** logs every campaign-state write the GM's
+  page makes — the session fields written and the module frames it came from
+  — into the failure report. It answers "who wrote that back?" in one run.
 - A run that fails writes nothing to `recordings/`; expect to run it again —
-  after reading why. The failure report has each page's session state, open
-  windows and last chat lines (`logPageState`) and the module's own warnings.
+  after reading why. The failure report has each page's session state (with
+  the session's ids), open windows and last chat lines (`logPageState`), and
+  the module's own warnings and last debug lines; a dialog that never opened
+  is named.
 - **A failed run's capture replays for free.** `artifacts/recordings/
   <scenario>.rejected.json` put in place of the recording (with `passed`
   set) reproduces a content-dependent failure with no key; the staged copy of
