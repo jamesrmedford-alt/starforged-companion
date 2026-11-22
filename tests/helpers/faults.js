@@ -200,6 +200,13 @@ const clip = (text, n = 48) => {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 };
 
+// An applied write lists the keys it changed; a refused one carries the
+// changes it was refused (an object) — a trace of a refused actor or Item
+// update threw on `.map` here, and the caller saw that TypeError in the
+// refusal's place.
+const changedLeaves = (changes) =>
+  (Array.isArray(changes) ? changes : Object.keys(changes ?? {})).map(c => String(c).split(".").pop()).join(", ");
+
 function describe(e) {
   switch (e.type) {
     case "claude.call":  return `claude #${e.n} → ${e.client} ${e.model ?? "?"} "${clip(e.userText)}"`;
@@ -207,9 +214,11 @@ function describe(e) {
     case "write": {
       const what = e.kind === "setting" ? `setting ${e.key.split(".").pop()}`
         : e.kind === "message.create" ? `card ${e.id ?? ""} [${(e.flags ?? []).join(", ")}]`
-        : e.kind === "message.update" ? `card update ${e.id} {${(e.changes ?? []).map(c => c.split(".").pop()).join(", ")}}`
+        : e.kind === "message.update" ? `card update ${e.id} {${changedLeaves(e.changes)}}`
         : e.kind === "actor.create" ? `actor create "${e.name}"`
-        : `actor update "${e.name}" {${(e.changes ?? []).map(c => c.split(".").pop()).join(", ")}}`;
+        : e.kind === "actor.update" ? `actor update "${e.name}" {${changedLeaves(e.changes)}}`
+        // tests/helpers/liveDocuments.js: "item.update", "journal.create", "page.delete", "actor.delete"…
+        : `${e.kind.replace(".", " ")} "${e.name}"${e.changes ? ` {${changedLeaves(e.changes)}}` : ""}`;
       return `${e.outcome === "rejected" ? "✗ REFUSED " : ""}${what} by ${e.client ?? "?"}${e.error ? ` — ${e.error}` : ""}`;
     }
     case "notify": return `notify ${e.client} ${e.level}: "${clip(e.message, 90)}"`;
