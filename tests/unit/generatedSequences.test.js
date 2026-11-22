@@ -36,33 +36,21 @@
  * time. A broader run is on demand: SEQUENCE_RUNS=2000 SEQUENCE_SEED=$RANDOM.
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fc from 'fast-check';
-
-const control = vi.hoisted(() => ({ dice: [], recommitDice: null, unread: [] }));
-
-vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  confirmInterpretation: async () => true,
-}));
-vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  scanForApplicableAbilities: async () => [],
-}));
-vi.mock('../../src/moves/resolver.js', async (importOriginal) =>
-  (await import('../helpers/sequence/pipelineMocks.js')).scriptedResolver(await importOriginal(), control));
-
-import { bootSequenceTable, SequenceWorld, PCS } from '../helpers/sequence/world.js';
+import { bootSequenceTable, usableTable, SequenceWorld, PCS } from '../helpers/sequence/world.js';
 import * as M from '../helpers/sequence/model.js';
 import {
-  AddConnection, AddVow, DevelopRelationship, ForgeBond, FulfilVow, ReachMilestone, RecommitVow, RenameConnection,
-  RepeatLastPress, applyFixture, compare, resetTally, startingWorld, tally, vowAndConnectionCommands,
+  AddConnection, AddVow, BeginSession, DevelopRelationship, DropAndRejoin, EndSession, ForgeBond, FulfilVow, ReachMilestone,
+  RecommitVow, Reload, RenameConnection,
+  RepeatLastPress, applyFixture, compare, resetTally, startingWorld, tableCommands, tally, vowAndConnectionCommands,
 } from '../helpers/sequence/commands.js';
 
 // The fixed corpus a pull request runs. Chosen once; changing it changes which
 // sequences run, so change it on purpose.
 const CORPUS_SEED = 302;
-const RUNS         = Number(process.env.SEQUENCE_RUNS) || 50;
+const RUNS         = Number(process.env.SEQUENCE_RUNS) || 100;
+const TABLE_RUNS   = Number(process.env.SEQUENCE_TABLE_RUNS) || 25;
 const MAX_COMMANDS = Number(process.env.SEQUENCE_MAX_COMMANDS) || 20;
 const SEED         = process.env.SEQUENCE_SEED ? Number(process.env.SEQUENCE_SEED) : CORPUS_SEED;
 const PATH         = process.env.SEQUENCE_PATH || undefined;
@@ -75,14 +63,22 @@ const EVERY_KIND = [
   'RecommitConnection', 'RenameConnection', 'RepeatLastPress', 'ReorderActors', 'pressed by two at once',
 ];
 
+/** What the table corpus adds: a session ended and begun each way, a reload and a dropped connection at each seat. */
+const TABLE_KINDS = [
+  'EndSession:focus', 'EndSession:no focus', 'BeginSession:vignette', 'BeginSession:no vignette',
+  'Reload:the GM', 'Reload:a player', 'DropAndRejoin:the GM', 'DropAndRejoin:a player',
+  'ReachMilestone', 'FulfilVow', 'DevelopRelationship', 'ForgeBond', 'pressed by two at once',
+];
+
 let table;
 beforeAll(async () => { table = await bootSequenceTable(); }, 30_000);
-afterAll(() => table?.teardown());
+afterAll(async () => { SequenceWorld.release(); await table?.teardown(); });
 
 /** A fresh model and world for one sequence, the fixture in both. */
 async function begin(fixture = {}) {
   const model = M.createModel(PCS);
-  const world = await SequenceWorld.start(table, control, applyFixture(model, fixture));
+  table = await usableTable(table);
+  const world = await SequenceWorld.start(table, applyFixture(model, fixture));
   compare(model, world, 'the start');
   return { model, real: world };
 }
@@ -109,7 +105,24 @@ describe('generated sequences: vows and connections', () => {
     console.info(`generated sequences (seed ${SEED}, ${RUNS} runs): ${[...tally].sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);
     // A corpus whose commands never ran, or whose rolls never hit, passed
     // nothing. The fixed corpus must have done every kind of thing.
-    if (!PATH && SEED === CORPUS_SEED && RUNS >= 50) expect(EVERY_KIND.filter(kind => !tally.get(kind)), 'kinds the corpus never ran').toEqual([]);
+    if (!PATH && SEED === CORPUS_SEED && RUNS >= 100) expect(EVERY_KIND.filter(kind => !tally.get(kind)), 'kinds the corpus never ran').toEqual([]);
+  }, 600_000);
+});
+
+describe('generated sequences: the table — sessions, reloads, dropped connections', () => {
+  it(`${TABLE_RUNS} sequences of up to ${MAX_COMMANDS} commands, among them sessions ended and begun and pages reloaded`, async () => {
+    const property = fc.asyncProperty(
+      startingWorld,
+      fc.commands(tableCommands(), { maxCommands: MAX_COMMANDS, size: 'max' }),
+      async (fixture, commands) => { await fc.asyncModelRun(() => begin(fixture), commands); },
+    );
+    // A GM page that lived through a dropped connection refuses what is
+    // relayed to it, and says so in its console: the stand-down, working.
+    expectConsoleError(/this page lost its connection to the server/);
+    resetTally();
+    await fc.assert(property, { seed: SEED, path: PATH, numRuns: TABLE_RUNS, endOnFailure: !!PATH });
+    console.info(`generated table sequences (seed ${SEED}, ${TABLE_RUNS} runs): ${[...tally].sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);
+    if (!PATH && SEED === CORPUS_SEED && TABLE_RUNS >= 25) expect(TABLE_KINDS.filter(kind => !tally.get(kind)), 'kinds the table corpus never ran').toEqual([]);
   }, 600_000);
 });
 
@@ -182,5 +195,56 @@ describe('the sequences the properties are about, written out', () => {
     ]);
     expect(world.observe().pcs['pc-ash'].bonds).toEqual([{ connection: 'c1', name: 'Thess', rank: 'dangerous', ticks: 8, forged: false }]);
     expect(world.observe().pcs['pc-kira'].bonds).toEqual([]);
+  });
+
+  it('a session ended and begun by two people at once ends and begins once: its momentum is paid once each way', async () => {
+    const { world } = await play([
+      new EndSession(1, true, true),                 // Pat and Quinn both end it, each noting a focus: +1 momentum, once
+      new BeginSession(0, true, true),               // the GM and Pat both begin the next, with a vignette: +1, once
+      new ReachMilestone(0, 0, true),                // and play goes on in it
+    ], { vows: [[{ name: 'Find Kade', rank: 'dangerous', boxes: 0 }], []] });
+    const seen = world.observe();
+    expect(seen.sessionOpen).toBe(true);
+    expect([seen.pcs['pc-kira'].momentum, seen.pcs['pc-ash'].momentum]).toEqual([4, 4]);
+    expect(seen.pcs['pc-kira'].vows).toEqual([{ ref: 'v1', name: 'Find Kade', rank: 'dangerous', ticks: 8, fulfilled: false }]);
+  });
+
+  it('the GM\'s page reloads, then a player\'s: the session stays open, what was marked is kept and not marked again, and play goes on', async () => {
+    const { world } = await play([
+      new ReachMilestone(0, 0, true),                // v1: 0 → 8
+      new DevelopRelationship(0, 0),                 // c2: 8 → 16
+      new Reload(0),                                 // the GM's page
+      new Reload(1),                                 // Pat's page
+      new RepeatLastPress(),                         // Pat's fresh page shows the picker spent
+      new ReachMilestone(0, 0, false),               // v1: 8 → 16, resolved by the GM's fresh page
+      new ForgeBond(0, 0, [1, 2]),                   // c2: 4 boxes vs 1,2 — a strong hit, picked on Pat's fresh page
+    ], {
+      vows: [[{ name: 'Find Kade', rank: 'dangerous', boxes: 0 }], []],
+      connections: [{ name: 'Sable', rank: 'dangerous', boxes: 2, holderPick: 0 }],
+    });
+    const seen = world.observe();
+    expect(seen.sessionOpen).toBe(true);
+    expect(seen.pcs['pc-kira'].vows).toEqual([{ ref: 'v1', name: 'Find Kade', rank: 'dangerous', ticks: 16, fulfilled: false }]);
+    expect(seen.connections).toEqual([{ ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 16, bonded: true }]);
+    expect(seen.legacy.bonds).toBe(2);
+  });
+
+  it('the GM\'s connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back', async () => {
+    expectConsoleError(/this page lost its connection to the server/);
+    const { model, world } = await play([
+      new DropAndRejoin(0),                          // the GM: the same page, a dropped connection behind it
+    ], { vows: [[{ name: 'Find Kade', rank: 'dangerous', boxes: 0 }], []] });
+    // decisions.md → "A GM page whose connection dropped stands down until it
+    // reloads": with no other GM the table waits. Pat's move is posted, and
+    // nothing resolves it — no mark, no lock left behind.
+    await world.reachMilestone('v1', { pc: 'pc-kira', name: 'Find Kade', byName: true });
+    compare(model, world, 'a move posted while the GM\'s page stands down');
+    expect(world.observe().pcs['pc-kira'].vows[0].ticks).toBe(0);
+
+    for (const command of [new Reload(0), new ReachMilestone(0, 0, true)]) {
+      expect(command.check(model)).toBe(true);
+      await command.run(model, world);
+    }
+    expect(world.observe().pcs['pc-kira'].vows[0].ticks).toBe(8);
   });
 });

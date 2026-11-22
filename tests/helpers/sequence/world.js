@@ -17,16 +17,26 @@
  * ref.
  *
  * Cast: Gina (GM, canonical), Pat playing Kira, Quinn playing Ash. Claude is
- * answered by tests/helpers/faults.js's default script; the dice are the
- * command's own, handed to the pipeline through the test file's `control`
- * (pipelineMocks.js).
+ * answered by tests/helpers/faults.js's default script.
+ *
+ * No module is mocked. Booted-table tests usually mock three things on the
+ * move pipeline — the confirmation dialog, the ability scan, the dice — and a
+ * mocked module is one object for every simulated client, built in the
+ * module graph of whichever client loaded it first. Reload that client's page
+ * and the mock still reads its closed tab's state: the settings panel's mock
+ * then refused every Private Lines sync as "this page lost its connection",
+ * on a fresh GM page that had lost nothing. So here the real dialog is
+ * accepted on the GM's page (`quiet`), the real ability scan finds no assets,
+ * and the dice are answered at Math.random to the module's own rollDie
+ * (tests/helpers/scriptedDice.js `installMoveDice`), under a fixed seed for
+ * everything else that reads it.
  */
 
 import { simulateTable, USERS, MODULE_ID } from "../multiClient.js";
+import { parseHTML } from "../cardDom.js";
 import { withLiveDocuments } from "../liveDocuments.js";
 import { scriptClaude } from "../faults.js";
-import { progressDice } from "../scriptedDice.js";
-import { resetControl } from "./pipelineMocks.js";
+import { installMoveDice, installSeededRandom, progressDice } from "../scriptedDice.js";
 import { rankOf, sheetRank, TRACK_TICKS } from "./rules.js";
 import { CampaignStateSchema } from "../../../src/schemas.js";
 
@@ -49,18 +59,44 @@ export async function bootSequenceTable() {
   return withLiveDocuments(await simulateTable({ users: [USERS.GM, USERS.P1, USERS.P2] }));
 }
 
+/**
+ * The table for the next sequence: this one, or a fresh one when the last
+ * sequence failed part-way and left it unusable. A sequence that stops at a
+ * failed comparison can leave a move waiting at its confirmation dialog;
+ * `reset()` does not end a blocked handler, and every later `drain()` would
+ * time out on it — so each sequence fast-check tries while it reduces the
+ * failure would fail too, for that reason and not its own. The dialog is
+ * closed (the move is not rolled); if something is still blocked after that,
+ * the table is replaced.
+ */
+export async function usableTable(table) {
+  try {
+    await table.settle();
+    for (const client of table.connectedClients) {
+      const panel = await client.import("../../src/ui/settingsPanel.js");
+      const dialog = panel.MoveConfirmDialog.pending;
+      if (dialog) await client.run(() => dialog.close());
+    }
+    await table.drain(1000);
+    return table;
+  } catch {
+    await table.teardown().catch(() => {});
+    return bootSequenceTable();
+  }
+}
+
 export class SequenceWorld {
   /**
    * A fresh world on `table`: the cast, an open session, and the vows and
    * connections of `fixture` as play would have left them.
    *
    * @param {Object} table
-   * @param {Object} control  the test file's vi.hoisted dice control (pipelineMocks.js)
    * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number }>,
    *   connections?: Array<{ ref: string, name: string, rank: string, ticks: number, holder: string }> }} [fixture]
    */
-  static async start(table, control, fixture = {}) {
-    const world = new SequenceWorld(table, control);
+  static async start(table, fixture = {}) {
+    SequenceWorld.#random?.restore();
+    const world = new SequenceWorld(table);
     const seeded = fixture.connections ?? [];
     await table.reset({ world: { settings: {
       // Background passes a narration schedules 2 s later; a sequence asserts
@@ -68,11 +104,20 @@ export class SequenceWorld {
       chronicleAutoEntry: false, autoSeedConnection: false, narratorSessionSummary: false,
       campaignState: {
         ...CampaignStateSchema,
-        sessionActive: true, currentSessionId: "sess-1", sessionNumber: 1, currentSceneId: "sc-1", sceneTruths: [],
+        // A session begun a moment ago. With no time of last play it reads as
+        // idle, and the GM's next world load would start a new one, closed
+        // until Begin a Session (src/session/lifecycle.js sessionNeedsMint).
+        sessionActive: true, currentSessionId: "sess-1", sessionStartedId: "sess-1", sessionNumber: 1,
+        sessionActiveStartedAt: new Date().toISOString(), lastSessionTimestamp: new Date().toISOString(),
+        currentSceneId: "sc-1", sceneTruths: [],
         connectionIds: seeded.map(c => world.#hostIdFor(c.ref)),
       },
     } } });
-    resetControl(control);
+    // The same reads for the same sequence: ids and oracle rolls from a fixed
+    // seed, the module's dice from the command.
+    const stream = installSeededRandom(302);
+    const dice = installMoveDice(world.dice);
+    SequenceWorld.#random = { restore() { dice.restore(); stream.restore(); } };
     await table.setClaudeKey(GM, "sk-ant-gina");
     scriptClaude(table);
     for (const { pc, name, player } of CAST) table.addActor({ id: pc, name, ownership: { [player]: 3 } });
@@ -82,9 +127,17 @@ export class SequenceWorld {
     return world;
   }
 
-  constructor(table, control) {
+  static #random = null;   // the last world's Math.random, to put back
+
+  /** Put Math.random back (the test file's afterAll). */
+  static release() {
+    SequenceWorld.#random?.restore();
+    SequenceWorld.#random = null;
+  }
+
+  constructor(table) {
     this.table = table;
-    this.control = control;
+    this.dice = [];                 // Math.random reads for the module's next dice (installMoveDice)
     this.vowIds = new Map();        // ref → Item id
     this.connections = new Map();   // ref → { hostId, recordId }
     this.lastPress = null;          // { client, messageId, selector } — the last card button pressed
@@ -97,11 +150,32 @@ export class SequenceWorld {
   actor(id) { return this.table.actors.get(id); }
   state() { return this.table.world.campaignState(); }
 
-  /** Until nothing is in flight: every hook delivered, every handler settled. */
+  /**
+   * Until nothing is in flight: every hook delivered, every handler settled.
+   * A move stops at its confirmation dialog on the GM's page; the GM accepts
+   * it as it stands, and the move goes on.
+   */
   async quiet() {
-    await this.table.settle();
+    for (let round = 0; round < 10; round++) {
+      await this.table.settle();
+      if (!(await this.#acceptConfirmation())) break;
+    }
     await this.table.drain();
     await this.table.settle();
+  }
+
+  /** The GM presses "Accept — Roll" on the move confirmation dialog her page is showing, if it is. */
+  async #acceptConfirmation() {
+    const gm = this.client(GM);
+    if (!gm.connected) return false;
+    const panel = await gm.import("../../src/ui/settingsPanel.js");
+    const dialog = panel.MoveConfirmDialog.pending;
+    if (!dialog) return false;
+    // Accept reads the dialog's ability checkboxes from its element. The
+    // characters here hold no assets, so the form has none to read.
+    dialog.element = parseHTML("");
+    await gm.run(() => panel.MoveConfirmDialog.DEFAULT_OPTIONS.actions.accept.call(dialog));
+    return true;
   }
 
   #hostIdFor(ref) { return `conn-${ref}`; }
@@ -187,7 +261,7 @@ export class SequenceWorld {
 
   /** Fulfill Your Vow, as 🏁 posts it: the vow by its Item id. */
   async fulfilVow(ref, { pc, name, challenge }) {
-    this.control.dice = progressDice(challenge);
+    this.dice.push(...progressDice(challenge));
     await this.forcedMove(pc, "fulfill_your_vow", "Attempt to fulfill your vow.", { target: name, targetId: this.vowItem(ref).id });
   }
 
@@ -196,7 +270,7 @@ export class SequenceWorld {
     const item = this.vowItem(ref);
     const offer = this.card(f => f.vowRecommitOfferCard && f.itemId === item.id && !f.recommitted && !f.offerRetired);
     if (!offer) throw new Error(`sequence: no open recommit offer for vow ${ref}`);
-    this.control.recommitDice = [...challenge];
+    this.dice.push(...progressDice(challenge));
     await this.press(playerOf(pc), offer._id, '[data-action="sf-vow-recommit"]', { also: doubled ? GM : null });
   }
 
@@ -246,7 +320,7 @@ export class SequenceWorld {
   }
 
   async forgeBond(ref, { pc, challenge, doubled = false }) {
-    this.control.dice = progressDice(challenge);
+    this.dice.push(...progressDice(challenge));
     await this.#pickConnection(ref, pc, "forge", doubled);
   }
 
@@ -254,7 +328,7 @@ export class SequenceWorld {
     const hostId = this.hostId(ref);
     const offer = this.card(f => f.bondRecommitOfferCard && f.hostId === hostId && !f.recommitted && !f.offerRetired);
     if (!offer) throw new Error(`sequence: no open recommit offer for connection ${ref}`);
-    this.control.recommitDice = [...challenge];
+    this.dice.push(...progressDice(challenge));
     await this.press(playerOf(pc), offer._id, '[data-action="sf-bond-recommit"]', { also: doubled ? GM : null });
   }
 
@@ -265,12 +339,63 @@ export class SequenceWorld {
     await this.quiet();
   }
 
+  // ── sessions ──────────────────────────────────────────────────────────────
+
+  /** A session command typed by `by` — and by `also` in the same moment — each answering the dialog with `values`. */
+  async #sessionCommand(command, values, by, also) {
+    const typed = [by, also].filter(Boolean).map(id => {
+      const client = this.client(id);
+      client.answerDialogs(d => d.submit(values));
+      return client.chat(command);
+    });
+    await Promise.all(typed);
+    await this.quiet();
+  }
+
+  /** `!end-session`; the dialog submitted with a quest focus for next time, or with none. */
+  async endSession({ by, also = null, focus }) {
+    await this.#sessionCommand("!end-session", { 'input[name="questFocus"]': focus ? "See it through" : "", 'input[name="connectionFocus"]': "" }, by, also);
+  }
+
+  /** `!begin-session`; the dialog submitted with the vignette spotlighted, or not. */
+  async beginSession({ by, also = null, vignette }) {
+    await this.#sessionCommand("!begin-session", { 'input[name="vignette"]': vignette, 'input[name="galleyVignette"]': false }, by, also);
+  }
+
   // ── disturbances ──────────────────────────────────────────────────────────
+
+  /**
+   * The user's page reloads: what the old page had in flight is cut off, and
+   * a fresh page boots.
+   *
+   * The console is put back as it was. Booting, the module wraps
+   * console.warn / console.error to mirror its messages to the Error Log
+   * (src/logging/errorLog.js) — each page its own console, in a browser. The
+   * simulated pages share one, so a reloaded page's wrapper lands on top of
+   * the page before it and holds that page, with its whole module graph
+   * (about 66 MB), until the test ends. A test that reloads three times does
+   * not notice; a run of several hundred sequences ran out of memory.
+   */
+  async reload(clientId) {
+    await this.quiet();
+    const { warn, error } = console;
+    await this.table.reload(clientId);
+    console.warn = warn;
+    console.error = error;
+    await this.quiet();
+  }
+
+  /** The user's connection drops and comes back on the same page. */
+  async dropAndRejoin(clientId) {
+    await this.quiet();
+    await this.table.leave(clientId);
+    await this.table.join(clientId);
+    await this.quiet();
+  }
 
   /** The last card button, pressed again by the same player. */
   async repeatLastPress() {
     const { client, messageId, selector } = this.lastPress;
-    this.control.dice = [];
     try { this.client(client).click(messageId, selector); } catch { /* the button is gone from the card: nothing to press */ }
     await this.quiet();
   }
@@ -324,6 +449,7 @@ export class SequenceWorld {
       legacy: { quests: legacyTotal(state.legacyTracks?.quests), bonds: legacyTotal(state.legacyTracks?.bonds) },
       pcs,
       connections,
+      sessionOpen: state.sessionActive === true,
       moveInFlight: !!state.pendingMove,
     };
   }

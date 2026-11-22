@@ -25,6 +25,10 @@
  *   - The legacy tracks are the crew's, one set for the table, shown on
  *     every sheet (decisions.md → "Legacy XP pays at the tick write, to
  *     every player character").
+ *   - A session: Begin a Session with a vignette spotlighted, "all players
+ *     take +1 momentum"; End a Session with a focus noted for next time,
+ *     "make note of it and take +1 momentum". Momentum is never above +10
+ *     (docs/rules-reference/rulebook-summary.md, "Momentum (–6 to +10)").
  */
 
 export const RANKS = Object.freeze(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
@@ -52,6 +56,12 @@ export const LEGACY_REWARD_TICKS = Object.freeze({
 });
 
 export const MOMENTUM_START = 2;
+export const MOMENTUM_MAX   = 10;
+
+/** Momentum gained, never past the maximum. */
+export function gainMomentum(momentum, gain = 1) {
+  return Math.min(MOMENTUM_MAX, momentum + gain);
+}
 
 /** The vendor sheet stores a rank as 1–5; the module writes its name. Either reads as the name. */
 export function rankOf(value) {

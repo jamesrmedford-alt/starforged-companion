@@ -2,15 +2,17 @@
  * STARFORGED COMPANION
  * tests/unit/scriptedDice.test.js
  *
- * Issue #302 slice C, step 1 — dice a test chooses and a seed for the rest
+ * Issue #302 slice C — dice a test chooses and a seed for the rest
  * (tests/helpers/scriptedDice.js). A generated sequence replays only if the
  * same commands roll the same dice and every other random read on the way
- * (an id, an oracle roll) is a function of the seed.
+ * (an id, an oracle roll) is a function of the seed — and it runs on a table
+ * whose modules are all real only if the dice can be scripted without mocking
+ * the resolver.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  actionDice, installSeededRandom, progressDice, seededGenerator, uniformFor, withScriptedDice,
+  installMoveDice, installSeededRandom, progressDice, seededGenerator, uniformFor,
 } from '../helpers/scriptedDice.js';
 import { rollActionDie, rollChallengeDice, rollDie } from '../../src/moves/resolver.js';
 import { rollOracle } from '../../src/oracles/roller.js';
@@ -20,43 +22,45 @@ afterEach(() => { Math.random = realRandom; });
 
 describe('scripted dice', () => {
   it('uniformFor gives the read that rolls each face, on the module\'s own rollDie', () => {
+    const queue = [];
+    installMoveDice(queue);
     for (const faces of [6, 10, 100]) {
       for (let face = 1; face <= faces; face++) {
-        expect(withScriptedDice([uniformFor(face, faces)], () => rollDie(faces)), `d${faces} → ${face}`).toBe(face);
+        queue.push(uniformFor(face, faces));
+        expect(rollDie(faces), `d${faces} → ${face}`).toBe(face);
       }
     }
     expect(() => uniformFor(0, 6)).toThrow(/not a face of a d6/);
     expect(() => uniformFor(11, 10)).toThrow(/not a face of a d10/);
   });
 
-  it('an action roll is read challenge, challenge, action — the order the resolver rolls in', () => {
-    const rolled = withScriptedDice(actionDice({ challenge: [3, 9], action: 5 }), () => {
-      const challenge = rollChallengeDice();
-      return { challenge, action: rollActionDie() };
-    });
-    expect(rolled).toEqual({ challenge: [3, 9], action: 5 });
+  it('a progress roll, and a recommit, is the two challenge dice', () => {
+    const queue = progressDice([10, 1]);
+    installMoveDice(queue);
+    expect(rollChallengeDice()).toEqual([10, 1]);
+    expect(queue).toEqual([]);
   });
 
-  it('a progress roll is the two challenge dice', () => {
-    expect(withScriptedDice(progressDice([10, 1]), () => rollChallengeDice())).toEqual([10, 1]);
+  it('the script answers the module\'s dice and nobody else: a read between two dice leaves both for the dice', () => {
+    Math.random = () => 0.999;
+    const queue = [uniformFor(3, 10), uniformFor(2, 6)];
+    installMoveDice(queue);
+    const first = rollDie(10);
+    const between = Math.random();                       // an id, an oracle roll: not rollDie asking
+    const id = foundry.utils.randomID();                 // 16 more reads that are not dice
+    const second = rollActionDie();
+    expect({ first, between, second }).toEqual({ first: 3, between: 0.999, second: 2 });
+    expect(id).toHaveLength(16);
+    expect(queue).toEqual([]);
   });
 
-  it('reads past the script fall through, Math.random is put back, and unread values are reported', () => {
+  it('with the script empty the dice fall through, and restore puts Math.random back', () => {
     Math.random = () => 0.999;
     const before = Math.random;
-    let unread = null;
-    const out = withScriptedDice([uniformFor(2, 6)], () => [rollDie(6), rollDie(6)]);
-    expect(out).toEqual([2, 6]);
-    expect(Math.random).toBe(before);
-
-    withScriptedDice(progressDice([4, 7]), () => rollDie(10), { leftover: (rest) => { unread = rest; } });
-    expect(unread).toEqual([uniformFor(7, 10)]);
-    expect(Math.random).toBe(before);
-  });
-
-  it('Math.random is put back when the call throws', () => {
-    const before = Math.random;
-    expect(() => withScriptedDice([0.5], () => { throw new Error('boom'); })).toThrow('boom');
+    const dice = installMoveDice([]);
+    expect(rollDie(6)).toBe(6);
+    expect(Math.random).not.toBe(before);
+    dice.restore();
     expect(Math.random).toBe(before);
   });
 });
@@ -88,8 +92,11 @@ describe('seeded randomness', () => {
   it('scripted dice come first; what the script does not cover comes from the seed', () => {
     const seeded = installSeededRandom(99);
     const expectedNext = seededGenerator(99)();
-    const out = withScriptedDice(progressDice([2, 8]), () => [...rollChallengeDice(), Math.random()]);
+    const dice = installMoveDice(progressDice([2, 8]));
+    const out = [...rollChallengeDice(), Math.random()];
+    dice.restore();
     seeded.restore();
     expect(out).toEqual([2, 8, expectedNext]);
+    expect(Math.random).toBe(realRandom);
   });
 });

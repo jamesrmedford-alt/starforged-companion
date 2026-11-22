@@ -21,8 +21,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  LEGACY_REWARD_TICKS, PROGRESS_TICKS, RANKS, TICKS_PER_BOX, bondReward, fulfilReward, markProgress, outcomeOf,
-  progressScore, rankAbove, rankBelow, rankOf, recommit, sheetRank,
+  LEGACY_REWARD_TICKS, MOMENTUM_MAX, PROGRESS_TICKS, RANKS, TICKS_PER_BOX, bondReward, fulfilReward, gainMomentum,
+  markProgress, outcomeOf, progressScore, rankAbove, rankBelow, rankOf, recommit, sheetRank,
 } from '../helpers/sequence/rules.js';
 import * as M from '../helpers/sequence/model.js';
 
@@ -72,6 +72,15 @@ describe('the rules are the game\'s, read from its text', () => {
   it.skipIf(!HAVE_VENDOR)('Reach a Milestone and Develop Your Relationship mark progress per the rank, and roll nothing', () => {
     expect(moveText('Reach_a_Milestone_0d7f13818c1c19ed.json')).toMatch(/you may mark progress per the rank of the vow/);
     expect(moveText('Develop_Your_Relationship_141aec8b92efd14b.json')).toMatch(/you may mark progress per the rank of the connection/);
+  });
+
+  it.skipIf(!HAVE_VENDOR)('a session: a vignette at its beginning, or a focus noted at its end, is +1 momentum to every player — never past +10', () => {
+    expect(moveText('Begin_a_Session_bb0a732e3b1c7ea1.json')).toMatch(/envision a brief vignette[^.]*\. Then, all players take \+1 momentum/);
+    expect(moveText('End_a_Session_005fa1851e72ab46.json')).toMatch(/you would like to give focus in your next session, make note of it and take \+1 momentum/);
+    const summary = fs.readFileSync(path.join(ROOT, 'docs/rules-reference/rulebook-summary.md'), 'utf8');
+    expect(summary).toMatch(/Momentum \([–-]6 to \+10\)/);
+    expect(MOMENTUM_MAX).toBe(10);
+    expect([2, 9, 10].map(m => gainMomentum(m))).toEqual([3, 10, 10]);
   });
 
   it('progress per mark is the play kit\'s: 3 boxes, 2 boxes, 1 box, 2 ticks, 1 tick', () => {
@@ -134,6 +143,29 @@ describe('the model moves by those rules', () => {
     expect(model.legacy.bonds).toBe(2);
   });
 
+  it('a session: ended with a focus and begun with a vignette, every character gains one momentum each time; with neither, none', () => {
+    const model = fresh();
+    expect(M.canPlay(model)).toBe(true);
+    M.endSession(model, { focus: true });
+    expect(model.session.active).toBe(false);
+    expect(M.canPlay(model)).toBe(false);                       // between sessions no move is made
+    expect(model.momentum).toEqual({ 'pc-kira': 3, 'pc-ash': 3 });
+    M.beginSession(model, { vignette: true });
+    expect(model.momentum).toEqual({ 'pc-kira': 4, 'pc-ash': 4 });
+    M.endSession(model, { focus: false });
+    M.beginSession(model, { vignette: false });
+    expect(model.momentum).toEqual({ 'pc-kira': 4, 'pc-ash': 4 });
+    expect(M.expected(model)).toMatchObject({ sessionOpen: true });
+  });
+
+  it('the GM\'s page: after a dropped connection nothing that needs her happens until it reloads', () => {
+    const model = fresh();
+    M.gmDropped(model);
+    expect(M.canPlay(model)).toBe(false);
+    M.gmReloaded(model);
+    expect(M.canPlay(model)).toBe(true);
+  });
+
   it('expected() shows every sheet the crew\'s legacy, each character their own vows, and a holder their bond', () => {
     const model = fresh();
     const vow = M.addVow(model, { pc: 'pc-kira', name: 'Find Kade', rank: 'troublesome' });
@@ -157,6 +189,7 @@ describe('the model moves by those rules', () => {
         },
       },
       connections: [{ ref: 'c3', name: 'Sable', rank: 'epic', ticks: 0, bonded: false }],
+      sessionOpen: true,
       moveInFlight: false,
     });
   });

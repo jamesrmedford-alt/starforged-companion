@@ -17,11 +17,13 @@
  *   - each connection: its name, rank, ticks, whether a bond is forged, and
  *     which characters hold it;
  *   - the crew's quests and bonds legacy tracks, in ticks ever marked;
- *   - each character's momentum, which nothing here should move.
+ *   - whether a session is open, and whether the GM's page can act;
+ *   - each character's momentum, which only a session's beginning and end
+ *     move here.
  */
 
 import {
-  MOMENTUM_START, bondReward, fulfilReward, markProgress, outcomeOf, progressScore, recommit,
+  MOMENTUM_START, bondReward, fulfilReward, gainMomentum, markProgress, outcomeOf, progressScore, recommit,
 } from "./rules.js";
 
 export function createModel(pcs) {
@@ -29,6 +31,8 @@ export function createModel(pcs) {
     pcs: [...pcs],
     momentum: Object.fromEntries(pcs.map(pc => [pc, MOMENTUM_START])),
     legacy: { quests: 0, bonds: 0 },
+    session: { active: true },
+    gmStale: false,   // the GM's page lived through a dropped connection and has not reloaded
     vows: [],
     connections: [],
     refs: 0,
@@ -114,6 +118,35 @@ export function renameConnection(model, connection, name) {
   connection.name = name;
 }
 
+// ── the GM's page ───────────────────────────────────────────────────────────
+//
+// decisions.md → "A GM page whose connection dropped stands down until it
+// reloads": from the drop it is never the canonical GM and writes no campaign
+// state; with no other GM the table waits for the reload. This table has one
+// GM, so while her page is stale nothing that needs a GM happens — no move is
+// resolved, no card button acts, no session begins or ends.
+
+export function gmDropped(model) { model.gmStale = true; }
+export function gmReloaded(model) { model.gmStale = false; }
+/** A move can be made: a session is open and the GM's page can act. */
+export const canPlay = (model) => model.session.active && !model.gmStale;
+
+// ── sessions ────────────────────────────────────────────────────────────────
+
+const everyoneGains = (model) => { for (const pc of model.pcs) model.momentum[pc] = gainMomentum(model.momentum[pc]); };
+
+/** End a Session: the session closes; a focus noted for next time is +1 momentum to every player. */
+export function endSession(model, { focus }) {
+  model.session.active = false;
+  if (focus) everyoneGains(model);
+}
+
+/** Begin a Session: a session opens; a vignette spotlighted is +1 momentum to every player. */
+export function beginSession(model, { vignette }) {
+  model.session.active = true;
+  if (vignette) everyoneGains(model);
+}
+
 // ── what the table should hold ──────────────────────────────────────────────
 
 /**
@@ -136,6 +169,7 @@ export function expected(model) {
     legacy: { ...model.legacy },
     pcs,
     connections: model.connections.map(c => ({ ref: c.ref, name: c.name, rank: c.rank, ticks: c.ticks, bonded: c.bonded })),
+    sessionOpen: model.session.active,
     moveInFlight: false,
   };
 }

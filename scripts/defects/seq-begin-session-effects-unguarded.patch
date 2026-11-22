@@ -1,0 +1,18 @@
+Defect: issue #302 slice C — Begin a Session no longer checks that the session has begun (issue #300 F11's defect): a second Begin for the same session applies its start effects again, so two people beginning at once pay the vignette's momentum twice
+Tests: tests/unit/generatedSequences.test.js
+Catches: among them sessions ended and begun and pages reloaded
+Catches: a session ended and begun by two people at once ends and begins once
+
+diff --git a/src/safety/sessionLifecycleDialogs.js b/src/safety/sessionLifecycleDialogs.js
+index 29858203..cf561d6a 100644
+--- a/src/safety/sessionLifecycleDialogs.js
++++ b/src/safety/sessionLifecycleDialogs.js
+@@ -341,7 +341,7 @@ async function beginSessionOnce(payload) {
+     await sessionMintsSettled();
+     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+     await rollSessionIfDue(cs);
+-    if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
++    if (false) {
+       console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
+       await postSessionAlreadyBegunCard(cs.currentSessionId);
+       return;
