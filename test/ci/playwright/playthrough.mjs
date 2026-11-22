@@ -39,7 +39,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   MODULE_ID, MODULE_SRC, GM_NAME, ARTIFACTS, STEP_MS,
-  sleep, assert, openClient, join, chat, snapshot, logConsoleErrors,
+  sleep, assert, openClient, join, chat, snapshot, logConsoleErrors, logPageState,
 } from "./lib/foundry.mjs";
 import {
   createClaudeHarness, PAGE_KEY, SETUP_STEP, AFTER_STEP,
@@ -94,6 +94,35 @@ function diceQueue(dice) {
 
 // ── GM-side world setup ──────────────────────────────────────────────────────
 
+/**
+ * Wait until the GM's world has stopped changing. `game.ready` is where the
+ * module's world-load work starts, not where it ends: its repairs, a stale
+ * move lock's release and the session check write for a while after it — on a
+ * slow runner, for seconds. A world seeded under that work loses to its late
+ * writes: the cards it posts land in the cleared chat, and the campaign state
+ * it wrote back was read before the reset (a session already "begun", so
+ * Begin a Session opened no vignette — seen in 3 of 11 runs in a cloud
+ * session, never where the runner is fast).
+ */
+async function waitForQuietWorld(gm, { quietMs = 3000, capMs = 60_000 } = {}) {
+  await gm.page.evaluate(({ quietMs, capMs }) => new Promise((resolve) => {
+    const started = Date.now();
+    let last = started;
+    const bump = () => { last = Date.now(); };
+    const names = ["updateSetting", "createSetting", "createChatMessage", "updateChatMessage", "createActor", "updateActor",
+      "deleteActor", "createItem", "updateItem", "createJournalEntry", "updateJournalEntry", "deleteJournalEntry",
+      "createFolder", "updateFolder", "updateScene"];
+    const ids = names.map(name => [name, Hooks.on(name, bump)]);
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (now - last < quietMs && now - started < capMs) return;
+      clearInterval(timer);
+      for (const [name, id] of ids) Hooks.off(name, id);
+      resolve();
+    }, 250);
+  }), { quietMs, capMs });
+}
+
 /** Clear what earlier suites left behind, pin the scenario's settings, seed its world. */
 async function setUpWorld(gm, scenario) {
   return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario }) => {
@@ -121,9 +150,13 @@ async function setUpWorld(gm, scenario) {
     // harness) — the keyed canonical GM runs the narrator.
     restore.claudeApiKey = game.settings.get(MODULE_ID, "claudeApiKey");
     await game.settings.set(MODULE_ID, "claudeApiKey", PAGE_KEY);
-    for (let i = 0; i < 50 && !(game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []).includes(game.user.id); i++) {
-      await new Promise(r => setTimeout(r, 100));
-    }
+    // The registry follows the key a moment later — on a slow runner, more
+    // than a moment. A scenario started before it has the GM in it narrates
+    // nothing, silently (its first step then waits for a card that never
+    // comes): wait for it, and say so if it never arrives.
+    const keyed = () => (game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []).includes(game.user.id);
+    for (let i = 0; i < 300 && !keyed(); i++) await new Promise(r => setTimeout(r, 100));
+    if (!keyed()) throw new Error("the GM was not registered as the key-holding GM within 30 s — the narrator would not run");
     window.__sfcRestore = restore;
 
     // The seed: a player owning a PC, the command vehicle, where they are.
@@ -663,15 +696,28 @@ const CHECKS = {
   },
 
   /** A World Journal page exists and its body isn't empty (v1.6.1 F15). */
+  /**
+   * A page with a body in a World Journal. `page` names it exactly. A reply
+   * recorded from the live model names its own entries and files them where
+   * it judges (a faction, or a threat): `pageMatches` (a pattern, any case)
+   * finds the page by what it is about, and `journal` may list the journals
+   * it could be in.
+   */
   async journalPage(ctx, c) {
-    const page = await ctx.gm.page.evaluate(({ journal, page }) => {
-      const j = game.journal.find(x => x.name === journal);
-      const p = j?.pages?.contents?.find(x => x.name === page) ?? null;
-      return p ? { text: String(p.text?.content ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() } : null;
-    }, { journal: c.journal, page: c.page });
-    assert(page, `no "${c.page}" page in ${c.journal}`);
-    assert(page.text.replace(c.page, "").trim().length > 0, `the "${c.page}" page in ${c.journal} has an empty body`);
-    for (const text of c.bodyIncludes ?? []) assert(page.text.includes(text), `the "${c.page}" page should say "${text}"`);
+    const journals = [].concat(c.journal);
+    const wanted = c.pageMatches ? `a page matching /${c.pageMatches}/i` : `"${c.page}" page`;
+    const page = await ctx.gm.page.evaluate(({ journals, name, pattern }) => {
+      const re = pattern ? new RegExp(pattern, "i") : null;
+      for (const journal of journals) {
+        const j = game.journal.find(x => x.name === journal);
+        const p = j?.pages?.contents?.find(x => (re ? re.test(x.name) : x.name === name)) ?? null;
+        if (p) return { journal, name: p.name, text: String(p.text?.content ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() };
+      }
+      return null;
+    }, { journals, name: c.page ?? null, pattern: c.pageMatches ?? null });
+    assert(page, `no ${wanted} in ${journals.join(" or ")}`);
+    assert(page.text.replace(page.name, "").trim().length > 0, `the "${page.name}" page in ${page.journal} has an empty body`);
+    for (const text of c.bodyIncludes ?? []) assert(page.text.includes(text), `the "${page.name}" page should say "${text}"`);
   },
 
   /**
@@ -833,6 +879,7 @@ async function runScenario(browser, scenario) {
 
   try {
     await join(gm, GM_NAME, log);
+    await waitForQuietWorld(gm);
     ctx.ids = await setUpWorld(gm, scenario);
     log(`${scenario.name}: world seeded ${JSON.stringify(ctx.ids)}`);
     await join(player, PLAYER_NAME, log);
@@ -852,7 +899,9 @@ async function runScenario(browser, scenario) {
       // counted once they have all started. A slow runner fires those timers
       // late (CI run 245), so a strict step first waits for the calls it
       // expects to start.
-      if (strict) await harness.waitForCalls(id, step, optional, { timeoutMs: CHECK_MS });
+      // A live reply takes seconds where a recorded one takes none, and a step's
+      // calls run one after another (a session's end: summary, vignette, recap).
+      if (strict) await harness.waitForCalls(id, step, optional, { timeoutMs: MODE === "record" ? CHECK_MS * 5 : CHECK_MS });
       await harness.idle({ quietMs: 4000 });
       const report = strict ? checkCalls(id, step) : null;
       for (const check of step.then ?? []) await runCheck(ctx, check);
@@ -900,6 +949,7 @@ async function runScenario(browser, scenario) {
     results.push({ name: scenario.name, ok: false, failure, error: failed, verdict, ms: Date.now() - started });
     log(`FAIL  ${scenario.name} (${failure})\n      ${failed}`);
     await snapshot(clients, `playthrough-${scenario.name}`, log);
+    await logPageState(clients, log);
     logConsoleErrors(clients, log);
     writeArtifact(`playthrough-${scenario.name}-requests.json`, {
       summary, verdict, variations, findings: ctx.findings,

@@ -28,10 +28,17 @@ export async function openClient(browser, label, { prepare } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   const errors = [];
-  page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
+  // The module reports a pass it gave up on as a warning ("… failed: …") and
+  // carries on: a step that waits for that pass's call then times out with
+  // nothing in the errors. Its own warnings are kept for the failure report.
+  const warnings = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+    else if (msg.type() === "warning" && msg.text().startsWith(`${MODULE_ID} |`)) warnings.push(msg.text());
+  });
   page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
   if (prepare) await prepare(page);
-  return { label, context, page, errors };
+  return { label, context, page, errors, warnings };
 }
 
 /** Join the running world as `userName` (blank password) and wait for game.ready. */
@@ -98,11 +105,39 @@ export async function snapshot(clients, name, log = console.log) {
   }
 }
 
-/** The last 30 console errors of every client that logged any. */
+/**
+ * What each client's page holds at a failure — the session's state, the open
+ * windows, the last chat lines. A step that waited for a dialog or a card that
+ * never came says nothing about why; this does.
+ */
+export async function logPageState(clients, log = console.log) {
+  for (const c of clients) {
+    const state = await c.page.evaluate((id) => {
+      const cs = game.settings?.get?.(id, "campaignState") ?? {};
+      const text = (el) => String(el?.textContent ?? "").replace(/\s+/g, " ").trim();
+      return {
+        route: location.pathname, user: game.user?.name ?? null, ready: game.ready === true,
+        session: { active: cs.sessionActive ?? null, number: cs.sessionNumber ?? null, pendingMove: !!cs.pendingMove },
+        windows: [...document.querySelectorAll("dialog, .application")]
+          .map(el => text(el.querySelector(".window-title, header h1, header h4")) || el.id).filter(Boolean).slice(0, 12),
+        notifications: [...document.querySelectorAll("#notifications .notification")].map(el => text(el).slice(0, 140)).slice(-4),
+        chat: game.messages.contents.slice(-6).map(m => `${m.author?.name ?? "?"}: ${String(m.content ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 90)}`),
+      };
+    }, MODULE_ID).catch(err => ({ error: String(err?.message ?? err).split("\n")[0] }));
+    log(`${c.label} page: ${JSON.stringify(state)}`);
+  }
+}
+
+/** The last 30 console errors of every client that logged any, and the module's own last warnings. */
 export function logConsoleErrors(clients, log = console.log) {
   for (const c of clients) {
     if (!c.errors.length) continue;
     log(`${c.label} console errors (last 30):`);
     for (const e of c.errors.slice(-30)) log(`  ${e}`);
+  }
+  for (const c of clients) {
+    if (!c.warnings?.length) continue;
+    log(`${c.label} module warnings (last 40):`);
+    for (const w of c.warnings.slice(-40)) log(`  ${w.slice(0, 400)}`);
   }
 }

@@ -33,7 +33,7 @@
         { "check": "round", "number": 1, "phase": "collecting" }
       ] },
     { "id": "mira-acts", "do": "roundSubmit", "as": "player",
-      "text": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "text": "With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.",
       "reads": "move", "move": "gather_information",
       "calls": [
         { "kind": "callClassifierAPI>classifyInput" },

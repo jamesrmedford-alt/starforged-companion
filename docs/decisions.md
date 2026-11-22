@@ -6,6 +6,57 @@ rejected.
 
 ---
 
+## The test stack in a cloud session, and recordings made from live runs (2026-11)
+
+**Decision:** `test/ci/scripts/cloud.sh` runs the Foundry test stack inside a
+Claude Code cloud session, beside `e2e.sh` and not in place of it: CI's
+Cypress and Playwright containers stay the gate. The cloud run exists to
+record the scripted playthroughs from the live model (issue #302 slice A's
+last open item — both recordings are real since 2026-11-22) and to look at a
+live world from a session.
+
+- **Host network, the session's proxy, a patched copy of the image's
+  launcher.** A container on Docker's bridge cannot reach the proxy on the
+  session's loopback, and the image starts Foundry with a clean environment
+  that drops the proxy address — so the licence signature never leaves. The
+  launcher is copied out of the image, its pass-list extended by the four
+  proxy variables, and mounted back; the script stops if the line it extends
+  is gone. Nothing of Foundry's is changed.
+- **The session's own Playwright and Chromium** instead of the Cypress and
+  Playwright images (Docker Hub rate-limits them there). `first-launch.mjs`
+  and `quench.mjs` are the Cypress spec's two halves for that browser. Two
+  implementations of the first-launch ritual is the cost; the spec stays
+  CI's.
+- **One pin of the system's version.** `cloud.sh` reads `IRONSWORN_VERSION`
+  from `install-deps.sh`.
+- **Credentials from the environment, never printed.** Passed to Docker by
+  name; the log is filtered for the account name and the licence key, which
+  the image prints.
+- **A recording is made from a run that passed, and a scenario is written to
+  be recordable.** Its lines sit away from the pacing classifier's
+  boundaries and its dials are pinned in its settings; a check on what the
+  model wrote looks for what it is about (`journalPage` `pageMatches`), and a
+  contract pins structure where the words are the model's. The Chronicle's
+  floor is pinned to "scene" in first-session so the session leaves a
+  chronicle whatever the scribe rates its beats (known-issues
+  CHRONICLE-EMPTY-AFTER-LIVE-SESSION).
+- **What the live runs showed about the product is recorded, not fixed**
+  (known-issues, "The cloud playtest and the first real recordings"): the
+  empty Chronicle, the classifier at a low dial, the writes after
+  `game.ready`.
+
+**Rejected:**
+- *Changing `install-deps.sh` / `e2e.sh` to work in both places* — they are
+  CI's, and every difference (curl in a container, the GitHub API, compose's
+  bridge network) is one CI relies on.
+- *Retrying a recording until the placeholder scenario happened to pass* —
+  it passed about one run in five at best, and a scenario that only records
+  by luck cannot be re-recorded after the next prompt change.
+- *Fixing the classifier and the Chronicle's default in the same change* —
+  both are behaviour the table sees; each is a decision of its own.
+
+---
+
 ## A vow's link to a connection is the NPC card, by its id (2026-11)
 
 **Decision:** A vow sworn to a connection is linked to that connection's NPC

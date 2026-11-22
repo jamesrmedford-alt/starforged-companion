@@ -163,6 +163,61 @@ Playwright process; the Foundry world only ever holds a placeholder. Check
 the run passed before committing the recordings — a live model can drift
 from what the scenario's checks expect.
 
+A live model also varies from one run to the next. A recording is written
+only from a run whose checks all passed, so a scenario that is to be recorded
+is written to survive that: its lines sit well away from the pacing
+classifier's boundaries (a move is an action with stakes, never a plain
+question; conversation is plainly conversation) and its settings pin the
+pacing dials and the Chronicle's floor; a check on what the model wrote
+looks for what it is about, not for a name the model chose (`journalPage`
+with `pageMatches`). Expect to run a recording more than once — and read why
+a run failed before running it again: `rules/ci-e2e.md` → "Recording from a
+live model".
+
+### Running in a cloud session
+
+`scripts/cloud.sh` runs the same stack inside a sandboxed Linux session — a
+Claude Code cloud session — where `e2e.sh` cannot: outbound traffic leaves
+through a proxy the Docker bridge cannot reach, Docker Hub rate-limits the
+curl / Cypress / Playwright images, and the GitHub API is closed to other
+repositories. It starts Foundry on the host network through the session's
+proxy and drives it from the session's own Playwright and Chromium.
+
+```bash
+./scripts/cloud.sh up --fresh                 # Foundry, the world, the modules
+./scripts/cloud.sh playthroughs               # replay — no key
+ANTHROPIC_API_KEY=… ./scripts/cloud.sh playthroughs --record
+./scripts/cloud.sh multiplayer
+./scripts/cloud.sh quench
+./scripts/cloud.sh down
+```
+
+It needs `FOUNDRY_USERNAME` and `FOUNDRY_PASSWORD` in the session's
+environment (your foundryvtt.com account; an admin key is generated), and the
+environment's network must allow, besides package registries: `ghcr.io`,
+`pkg-containers.githubusercontent.com`, `foundryvtt.com`, `r2.foundryvtt.com`
+and `api.foundryvtt.com`. Nothing it prints carries the account name, the
+licence key or a key. `PLAYTHROUGH=<name>` runs one scenario.
+
+What to expect there:
+
+- **The machine restarts between commands now and then.** Docker stops and
+  the proxy's port changes; run `up` again (about a minute — the Foundry
+  download and the signed licence are kept in `./data`).
+- **It is slow.** The browser has no hardware acceleration (Foundry says so
+  on every page), and a step can take several times what it takes in CI.
+- **Quench is not a gate there.** A dozen tests time out that pass in CI,
+  on released code as well (known-issues CLOUD-QUENCH-TIMEOUTS). The Cypress
+  run in GitHub Actions is still the check.
+- **Keep CI's order.** `multiplayer` before `playthroughs`, on a fresh world
+  (`up --fresh`): run after the playthroughs, its Begin a Session case times
+  out; first, all seven cases pass.
+
+`playwright/first-launch.mjs` is the Cypress spec's first-launch ritual
+(licence, admin key, world launch, migration, module enablement) for that
+browser; `playwright/quench.mjs` runs the Quench batches with the spec's
+guards. See `rules/ci-e2e.md` → "Cloud sessions".
+
 ### Cypress artifacts
 
 A failing run drops screenshots under `test/ci/cypress/artifacts/screenshots/`.
@@ -269,6 +324,7 @@ Both retain for 14 days, then expire.
 | `scripts/reset.sh --yes` | Destroys the container and `./data/`. Does **not** touch Keychain — use `scripts/credentials.sh clear` for that. |
 | `scripts/e2e.sh` | Phase 2 orchestrator — fresh-world Cypress run. Same as `npm run test:e2e`. |
 | `scripts/wait-for-foundry.sh` | Polls `http://localhost:30000/` until it responds 2xx/3xx. Used by `e2e.sh` after `docker compose up`. |
+| `scripts/cloud.sh` | The stack in a sandboxed Linux (Claude Code cloud) session: `up [--fresh]`, `playthroughs [--record]`, `multiplayer`, `quench`, `status`, `down`. See "Running in a cloud session". |
 
 ## Refreshing the module under test
 

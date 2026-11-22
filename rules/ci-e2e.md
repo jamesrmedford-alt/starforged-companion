@@ -189,7 +189,9 @@ fact block, detection and draft cards, End and Begin a Session.
   commit the rewritten file. A recording run stores each reply with the
   entity ids the model echoed (`(id: …)` record headers) replaced by the
   entity's name — ids differ in every fresh world, and the readers that take
-  an id accept the name. A file with `"source": "hand-written"` is a
+  an id accept the name. Both scenarios' recordings are from the live model
+  (`"source": "recorded"`, since 2026-11-22). A file with `"source":
+  "hand-written"` is a
   placeholder written to the parsers' formats; the log says so when it
   replays one.
 - **Permissive scenarios report drift; strict ones fail it** (issue #302
@@ -272,6 +274,112 @@ fact block, detection and draft cards, End and Begin a Session.
   first step), `replay` or `integration`. On failure, the screenshots and
   `playthrough-<scenario>-requests.json` (every call's step, kind, source
   and user message) land in `test/ci/playwright/artifacts/`.
+
+## Cloud sessions (`test/ci/scripts/cloud.sh`)
+
+The stack also runs inside a Claude Code cloud session — `cloud.sh up`, then
+`playthroughs [--record]`, `multiplayer`, `quench` — with the session's own
+Playwright and Chromium in place of the Cypress and Playwright images. CI is
+unchanged and is still the gate; this is for recording playthroughs and for
+looking at a live world from a session. What it took, each of which fails
+silently or misleadingly when it is missing:
+
+- **Host network, not the bridge.** The session's outbound HTTPS goes through
+  a proxy on its loopback (`HTTPS_PROXY`), re-signed by its own CA. A
+  container on Docker's bridge cannot reach it. Foundry runs with
+  `--network host`, the CA bundle mounted, and `HTTPS_PROXY` /
+  `NODE_EXTRA_CA_CERTS` / `NODE_USE_ENV_PROXY=1` set (Node ≥ 22.21 routes
+  `fetch` through the proxy with that flag).
+- **The image's launcher drops the proxy address.** felddy's `launcher.sh`
+  starts Foundry with `env -i`, carrying only `HOME`, `NODE_*` and `TZ`. The
+  entrypoint's own steps (sign-in, download) keep the proxy; Foundry does not,
+  and its licence signature fails as "License signature server was unable to
+  be reached" — which it also says for any HTTP error. `cloud.sh` mounts a
+  copy of the launcher with the proxy variables added to that pass-list, and
+  stops if the pass-list line is no longer in the image.
+- **Four Foundry hosts, not one.** `foundryvtt.com` (sign-in),
+  `r2.foundryvtt.com` (the download), `api.foundryvtt.com` (the licence
+  signature — a different host, and an allow-list is exact), plus
+  `pkg-containers.githubusercontent.com` for the image's layers (`ghcr.io`
+  alone answers the manifest and then fails on the first blob).
+- **No Docker Hub, no GitHub API.** Anonymous Docker Hub pulls are
+  rate-limited (429) from shared addresses, so nothing there is used; and the
+  GitHub API answers 403 for any repository the session was not given, so the
+  system and Quench come from their release download addresses (the system's
+  version is read from `install-deps.sh` — one pin).
+- **Restarts.** The machine restarts between commands now and then: Docker is
+  down, the proxy has a new port, and `/var/run` still holds the old pid
+  files — once another process has taken one of those numbers `dockerd`
+  waits for "its" containerd and exits after 15 s. `cloud.sh` clears them
+  when neither daemon is running. `./data` (the Foundry zip, the signed
+  licence) survives, so `up` again takes about a minute.
+- **The first-launch ritual, in Playwright** (`playwright/first-launch.mjs`):
+  the onboarding tour's overlay fades out over the world tile, so a click
+  made at the tile's coordinates lands on the overlay — wait for it to be
+  gone and click the control itself (`el.click()`); and no Escape after the
+  launch click, which closes the World Data Migration dialog the launch
+  opens (the world then never starts, with no error).
+- **`runBatches` can resolve before the run** (`playwright/quench.mjs`): the
+  promise came back at once with a runner whose stats were all zero. A run
+  counts only once the runner's `end` has fired — the spec's stale-run guard.
+- **Slow, and Quench is not a gate there.** No hardware acceleration (1 FPS
+  on the canvas). Tests with Mocha's default 2 s budget and the batch-mode
+  window's waits time out — on released code too (known-issues
+  CLOUD-QUENCH-TIMEOUTS). The multiplayer suite passes (7 of 7) on a fresh
+  world, and the playthroughs replay; run them in CI's order — the
+  multiplayer suite's Begin a Session case times out on a world the
+  playthroughs have used.
+- **Nothing printed carries a secret.** The credentials are passed to
+  `docker run` by name (`-e FOUNDRY_PASSWORD`), never by value; the admin key
+  is generated into `./data/cloud/`; Foundry's log is shown through a filter
+  that takes out the account name and the licence key (the image prints
+  both).
+
+**Recording from a live model** (`playthroughs --record`) is where a
+scenario written against hand-made replies meets what the model does:
+
+- A line near the pacing classifier's boundary is read differently from one
+  run to the next. "I ask the dockmaster who saw the courier leave" is
+  conversation by the classifier's own rule (talking is not a move); "I press
+  him hard" is Compel, not Gather Information; "I lean on the counter and
+  ask" was conversation in three runs and a move in the fourth. Write a move
+  as an action with stakes that fits one move only, and conversation as
+  plainly conversation.
+- Wording alone did not settle it: at the default dials the same line still
+  flipped. A scenario pins its `pacing.dial.*` settings — 10 for the category
+  of a line that must be a move, 1 for the category of one that must not —
+  and even at social 1 a pointed question to a connection was read as Compel
+  two runs in three (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION):
+  where a line must stay narrative, the character tells, and does not ask.
+- A check on what the model wrote cannot name what the model will call it.
+  `journalPage` takes `pageMatches` and a list of journals for that; a
+  contract on a section whose words are the model's pins that the section
+  holds something (the recap's `CAMPAIGN CHRONICLE` holds a dated entry), not
+  a name (the live scribe wrote "Oduya" where the placeholder wrote "Vance
+  Oduya").
+- **The Chronicle's floor.** The scribe's replies are stored only at
+  "significant" or above by default, and a live scribe rated a whole session
+  below that: no chronicle, so no campaign recap call, and the step that
+  requires one reports it MISSING. first-session pins
+  `chronicleSalienceThreshold` to "scene" (known-issues
+  CHRONICLE-EMPTY-AFTER-LIVE-SESSION).
+- The step's wait for its required calls is five times longer in record mode:
+  a session's end makes its calls one after another, and each live reply
+  takes seconds.
+- **Start only when the world is ready for it.** `game.ready` is where the
+  module's world-load work starts. The runner waits for the world to stop
+  changing before it resets it (`waitForQuietWorld`), and for the GM to be in
+  `keyedGmUserIds` before the first step (30 s, failing by name): started
+  earlier, the session begins with no narrator and the first step times out
+  waiting for a vignette nothing was asked to write.
+- A run that fails writes nothing to `recordings/`; expect to run it again —
+  after reading why. The failure report has each page's session state, open
+  windows and last chat lines (`logPageState`) and the module's own warnings.
+- **A failed run's capture replays for free.** `artifacts/recordings/
+  <scenario>.rejected.json` put in place of the recording (with `passed`
+  set) reproduces a content-dependent failure with no key; the staged copy of
+  the module under `./data` can be instrumented for it. That is how the empty
+  Chronicle was found. Put the recording back afterwards.
 
 ## Quench batch coupling — shared defaults and hooks
 
