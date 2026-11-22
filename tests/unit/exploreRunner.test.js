@@ -19,7 +19,9 @@
  *   - the reviewer: a flag that does not quote the transcript is dropped;
  *   - a rehearsal's stand-in for the model API: the charter's script through
  *     the player's own tool, a narrator that keeps the fact or keeps nothing;
- *   - the memory charter and the config that ship: runnable, and priced.
+ *   - the memory charter and the config that ship: runnable, and priced;
+ *   - the first live run, kept as a replay: that the file is one the runner
+ *     can take again, and that it holds what its result claims.
  *
  * The run itself — two browsers at a live Foundry table — is on demand
  * (test/ci/scripts/cloud.sh explore).
@@ -634,6 +636,46 @@ describe('a rehearsal\'s stand-in for the model API', () => {
     expect(stand.asked).toEqual([{ model: 'claude-sonnet-5-5', tool: null }]);
     stand.restore();
     expect(globalThis.fetch).toBe(real);
+  });
+});
+
+// ── the live run kept as a replay ────────────────────────────────────────────
+
+describe('the first live run of the memory charter, kept as a replay (explorations/memory-live-20261122)', () => {
+  const FILE = path.join(PLAYWRIGHT, 'explorations/memory-live-20261122/replay.json');
+  const RUN  = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+  const compass = RUN.charter.facts.find(f => f.id === 'compass');
+  const actions = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` }));
+  const says = actions.filter(a => a.action === 'say');
+  const secondBegin = says.filter(a => a.text === '!begin-session')[1];
+  const secondSession = says.filter(a => Number(a.step.slice(1)) > Number(secondBegin.step.slice(1)));
+  const replies = (step, kind) => RUN.recording.exchanges.filter(x => x.step === step && x.kind === kind)
+    .map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+
+  it('is a run the runner can take again: its actions carry no document id, and every recorded reply belongs to one of them', () => {
+    expect(RUN.expected).toMatchObject({ status: 'achieved', failingLayer: null, healthFailed: false });
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    expect(actions.map(a => a.action)).toEqual(['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop']);
+    for (const a of actions) expect(Object.keys(a), a.step).not.toContain('messageId');
+    const steps = new Set(actions.map(a => a.step));
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(RUN.dice, 'one move rolled: two challenge dice and the action die').toHaveLength(3);
+  });
+
+  it('holds what its result claims: the fact stated in the first session, never named in the second, and in the narrator\'s replies there', () => {
+    expect(says.filter(a => Number(a.step.slice(1)) < Number(secondBegin.step.slice(1))).some(a => factIn(a.text, compass)), 'established in the first session').toBe(true);
+    expect(secondSession.filter(a => factIn(a.text, compass)).map(a => a.text), 'the player\'s lines of the second session').toEqual([]);
+    const ask = secondSession.at(-1);
+    expect(RUN.charter.ask.cues.some(cue => ask.text.toLowerCase().includes(cue)), 'the last line is the question').toBe(true);
+    expect(factIn(replies(ask.step, 'callNarratorAPI>narratePacedInput'), compass), 'the narrator\'s answer').toBe(true);
+    // The better evidence: the second session's opening had it before anyone asked.
+    const opened = actions.find(a => a.action === 'dialog' && Number(a.step.slice(1)) > Number(secondBegin.step.slice(1)));
+    expect(factIn(replies(opened.step, 'callNarratorAPI>narrateSessionVignette'), compass), 'the second session\'s opening vignette').toBe(true);
+  });
+
+  it('carries no key, and every model it recorded has a price', () => {
+    expect(fs.readFileSync(FILE, 'utf8')).not.toMatch(/sk-ant-/);
+    expect(Object.keys(CONFIG.prices.usdPerMillionTokens)).toEqual(expect.arrayContaining(RUN.recording.provenance.models));
   });
 });
 

@@ -64,6 +64,12 @@ maintainer's go-ahead for the slice: 2026-11-22.
 - **The key stays in the runner.** It is sent in a header by the runner's
   process, never enters the world (the page holds a placeholder), is in no
   log the runner keeps, and is blanked from anything written.
+- **A live run that went the whole way is kept as a replay** (the
+  maintainer, 2026-11-22): `playwright/explorations/memory-live-20261122/`.
+  It is evidence that can be run again, not a gate — CI does not replay it
+  (it needs Foundry, and a workflow change is its own decision); a unit test
+  holds the file to what it claims on every PR. It is replaced by a new live
+  run, never edited.
 - **The GM is an autopilot that answers only what the module asks of a GM
   before a roll, with the answer that steers least** — the move accepted as
   proposed, "Who are you interacting with?" answered "No specific entity" —

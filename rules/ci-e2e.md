@@ -500,6 +500,21 @@ observer's finding — the goal's status and layer, and whether health failed
 — is the same. The reviewer is a model and is not asked again, so the run's
 class may differ where only its flags coloured it.
 
+**A run worth keeping is committed under `playwright/explorations/`** — its
+`replay.json`, with `run.json` and `transcript.md` for a reader — and is then
+a regression anyone can run without a key (`cloud.sh explore --replay
+playwright/explorations/<run>`). `memory-live-20261122` is the first: real
+narrator replies, the memory goal achieved. `exploreRunner.test.js` checks on
+every PR that the file is one the runner can take again and that it holds
+what its result claims (the fact stated in the first session, not named by
+the player in the second, and in the narrator's replies there); the replay
+itself needs Foundry and is on demand — adding it to the e2e workflow is the
+maintainer's call. A replay matches a reply to a call by its step and kind,
+so it survives a reworded prompt, and diverges when a step makes different
+calls than it did: after a change that was meant to do that, make a new live
+run and replace the files; after one that was not, the divergence is the
+finding. Never edit a kept `replay.json` by hand.
+
 **Rehearse before you pay.** `--rehearse` runs the whole live path with the
 Messages API stood in for in the runner's own process (`lib/rehearsal.mjs`):
 the charter's `rehearsal` script comes back through the player's tool, the

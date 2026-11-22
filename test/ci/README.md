@@ -282,6 +282,20 @@ in none of them. The folder is not committed; to keep a finding, turn its
 | `budget-exhausted` | A cap ended the run before the goal was put to the test. |
 | `infrastructure-error` | The run could not be made: Foundry, the browser, or the model API failed. |
 
+**A live run kept.** `playwright/explorations/memory-live-20261122/` is the
+first live run of the memory charter that went the whole way (12 actions, 40
+model calls, $0.34): its `replay.json`, with its `run.json` and
+`transcript.md` beside it for a reader. Anyone can play it again with no key:
+
+```bash
+./scripts/cloud.sh explore --replay playwright/explorations/memory-live-20261122
+```
+
+It ends `REPRODUCED` while the module still carries what the first session
+established into the second. When it diverges after a change that was meant
+to alter the narrator's calls, make a new live run and put its files there
+(about 35 cents). CI does not run it.
+
 In a Claude Code cloud session, store the key on the environment as
 `PLAYTEST_ANTHROPIC_API_KEY` — a variable named `ANTHROPIC_API_KEY` did not
 reach the session's shell (2026-11-22). `cloud.sh` reads either. See
