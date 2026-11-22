@@ -1883,7 +1883,8 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
     const res = await deepenVowConnectionOnce({
       vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
       actorId: typeof f.actorId === "string" ? f.actorId : null,
-      connectionName: f.connectionName, marks,
+      connectionName: f.connectionName,
+      connectionId: typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null, marks,
     });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });
@@ -1900,21 +1901,23 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
  * card is stamped `deepenRetired`: the update re-renders it on every client,
  * where the button is disabled and says why (index.js wireFightVowButtons),
  * and the relay handler above deepens nothing for it. A card whose deepen
- * already landed is left as it is. The card names its connection by name
- * only, as the vow's link does. A refused stamp leaves that card's button
- * live — pressed, it reports "not found" as before. Never throws.
+ * already landed is left as it is. A card names its connection as its vow's
+ * link does (`namesDeletedConnection`): by the NPC card's id, else by name
+ * alone. A refused stamp leaves that card's button live — pressed, it
+ * reports "not found" as before. Never throws.
  *
  * @param {string} connectionName — the deleted NPC's name
+ * @param {{ connectionId?: string|null, byName?: boolean }} [which] — the
+ *   deleted card's Actor id; whether what names it by name alone goes too
  * @returns {Promise<number>} the cards stamped
  */
-export async function retireFightVowDeepenFor(connectionName) {
-  const wanted = String(connectionName ?? "").trim().toLowerCase();
-  if (!wanted || !isCanonicalGM()) return 0;
+export async function retireFightVowDeepenFor(connectionName, which = {}) {
+  if (!isCanonicalGM()) return 0;
   let retired = 0;
   for (const message of globalThis.game?.messages?.contents ?? []) {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.fightVowCard || f.deepenRetired || f.resolvedActions?.deepenBond) continue;
-    if (String(f.connectionName ?? "").trim().toLowerCase() !== wanted) continue;
+    if (!namesDeletedConnection(f, connectionName, which)) continue;
     try {
       await message.update({ [`flags.${MODULE_ID}.deepenRetired`]: true });
       retired += 1;
@@ -1937,23 +1940,24 @@ export async function retireFightVowDeepenFor(connectionName) {
  * the positions in its `steps` a Retry leaves out (applyPayoffRetry) and its
  * render strikes through (index.js wirePayoffRetryButton); with every step
  * retired the Retry renders disabled and says why. A step names its
- * connection by name only, as the vow's link does. Cards already retried, and
- * reports with no Retry, are left as they are. A refused stamp leaves the
- * step live — retried, it fails again as before. Never throws.
+ * connection as its vow's link does (`namesDeletedConnection`). Cards already
+ * retried, and reports with no Retry, are left as they are. A refused stamp
+ * leaves the step live — retried, it fails again as before. Never throws.
  *
  * @param {string} connectionName — the deleted NPC's name
+ * @param {{ connectionId?: string|null, byName?: boolean }} [which] — the
+ *   deleted card's Actor id; whether what names it by name alone goes too
  * @returns {Promise<number>} the steps retired
  */
-export async function retirePayoffDeepenStepsFor(connectionName) {
-  const wanted = String(connectionName ?? "").trim().toLowerCase();
-  if (!wanted || !isCanonicalGM()) return 0;
+export async function retirePayoffDeepenStepsFor(connectionName, which = {}) {
+  if (!isCanonicalGM()) return 0;
   let retired = 0;
   for (const message of globalThis.game?.messages?.contents ?? []) {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.payoffFailureCard || f.resolved || f.retryable === false || !Array.isArray(f.steps)) continue;
     const already = retiredPayoffSteps(f);
     const hits = f.steps.map((s, i) => i).filter(i => !already.has(i) && f.steps[i]?.step === "deepen"
-      && String(f.steps[i].connectionName ?? "").trim().toLowerCase() === wanted);
+      && namesDeletedConnection(f.steps[i], connectionName, which));
     if (!hits.length) continue;
     try {
       await message.update({ [`flags.${MODULE_ID}.retiredSteps`]: [...already, ...hits].sort((a, b) => a - b) });
@@ -1963,6 +1967,24 @@ export async function retirePayoffDeepenStepsFor(connectionName) {
     }
   }
   return retired;
+}
+
+/**
+ * Whether a card's (or a payoff step's) connection is the deleted one. What
+ * carries the NPC card's id (`connectionId` — a vow linked by id) is its
+ * card's and no namesake's; what has a name alone is the name's, and goes
+ * only when the caller says no other card of that name is left (`byName`,
+ * the default for a caller with a name only).
+ *
+ * @param {{ connectionId?: string|null, connectionName?: string|null }} ref
+ * @param {string} connectionName — the deleted NPC's name
+ * @param {{ connectionId?: string|null, byName?: boolean }} [which]
+ * @returns {boolean}
+ */
+function namesDeletedConnection(ref, connectionName, { connectionId = null, byName = true } = {}) {
+  if (typeof ref?.connectionId === "string" && ref.connectionId) return ref.connectionId === connectionId;
+  const wanted = String(connectionName ?? "").trim().toLowerCase();
+  return byName && !!wanted && String(ref?.connectionName ?? "").trim().toLowerCase() === wanted;
 }
 
 /** The positions in a payoff failure card's `steps` that were retired (retirePayoffDeepenStepsFor). */

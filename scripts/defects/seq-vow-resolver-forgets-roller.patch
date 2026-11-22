@@ -1,0 +1,18 @@
+Defect: issue #302 slice C — the vow resolver forgets the roller and the scored Item (issue #301 B02's defect): a vow is found by its name across every character, so with two vows of one name the first character's is completed and paid
+Tests: tests/unit/generatedSequences.test.js
+Catches: sequences of up to
+Catches: two characters' vows of one name
+
+diff --git a/src/index.js b/src/index.js
+index 7086fe0e..81ae176d 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -6327,7 +6327,7 @@ export function resolveVowItemCopies(vowName, { actorId = null, itemId = null, o
+   const all  = collectPlayerVowItems();
+   const open = all.filter(e => e.item.system?.completed !== true);
+   const lo   = String(vowName ?? "").trim().toLowerCase();
+-  let primary = rollerVowEntry(all, lo, { actorId, itemId });
++  let primary = null;
+   if (!primary && ownOnly) return { primary: null, copies: [] };
+   const completedMatch = (score) => !!lo && all.some(e =>
+     e.item.system?.completed === true && vowNameMatch(e, lo) >= score);

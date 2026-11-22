@@ -339,6 +339,19 @@ describe('fault boundaries (issue #302)', () => {
     ]);
   });
 
+  it('a refused actor update is traced as refused — the trace threw on its changes, and the caller got that TypeError', async () => {
+    const trace = traceTable(table);
+    const gm = table.client('gm-1');
+    const kira = table.addActor({ id: 'pc-kira', name: 'Kira' });
+    failWrites(table, w => w.kind === 'actor.update');
+    await expect(gm.run(() => kira.update({ 'system.momentum.value': 4 }))).rejects.toThrow(/refused/i);
+    await gm.run(() => kira.update({ 'system.momentum.value': 4 }));
+    expect(trace.entries).toEqual([
+      expect.stringMatching(/^✗ REFUSED actor update "Kira" \{value\} by gm-1 — /),
+      'actor update "Kira" {value} by gm-1',
+    ]);
+  });
+
   it('expectKnownIssue passes while its check fails as described, and fails otherwise', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     await expectKnownIssue('ISSUE-X', /expected 1 to be 2/, async () => { expect(1).toBe(2); });

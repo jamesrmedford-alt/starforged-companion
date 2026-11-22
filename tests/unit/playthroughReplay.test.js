@@ -161,7 +161,10 @@ describe('strict replay fails what a permissive replay only reported', () => {
     const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
     const reports = await play(harness, SCENARIO, RECORDING, (step, call, request) =>
       (step === 'gather' && call.kind === 'callNarratorAPI>narrateResolution'
-        ? { ...request, system: request.system.replace('## MOVE OUTCOME', '## SOMETHING ELSE') }
+        // From both halves: a recording made from a real run keeps the user
+        // message as it was sent, and that is where the section is.
+        ? { system: request.system.replace('## MOVE OUTCOME', '## SOMETHING ELSE'),
+            user: request.user.replaceAll('## MOVE OUTCOME', '## SOMETHING ELSE') }
         : undefined));
     const narration = harness.requests.find(r => r.step === 'gather' && r.kind === 'callNarratorAPI>narrateResolution');
     expect(narration.source).toMatch(/^recording #/);
@@ -311,7 +314,11 @@ describe('matching by step and kind', () => {
       const user = `## VANCE ODUYA — Connection (id: ${id})\n\nI lean on the counter.`;
       replies.push((await harness.send('callHaiku>defaultCallTierAPI', { user })).text);
     }
-    expect(replies[0]).toContain('eleven years of tithe');
+    // The step's recorded reply, whatever the recording run's model wrote in it.
+    const recorded = RECORDING.exchanges.find(x => x.step === 'ask-vance' && x.kind === 'callHaiku>defaultCallTierAPI');
+    const detail = JSON.parse(recorded.response.content.map(c => c.text ?? '').join('')).updates[0].detail;
+    expect(detail.length).toBeGreaterThan(20);
+    expect(replies[0]).toContain(detail);
     expect(replies[1]).toBe(replies[0]);
   });
 });

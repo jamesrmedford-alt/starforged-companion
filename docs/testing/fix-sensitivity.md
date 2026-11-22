@@ -35,7 +35,10 @@ found while fixing issue #364 — fixed at the maintainer's request the same
 day — on 2026-11-19, and for the second round — the sixteen found while fixing those,
 and the ones found while settling them — on 2026-11-20, and for the third
 round — the eighteen those left, and the ones found while settling them —
-the same day.
+the same day, and for issue #302 slice C — five defects put back to show that
+the generated sequences catch them — on 2026-11-22 (injected into `72d9ebe`),
+and for known-issues VOW-CONNECTION-LINK-BY-NAME — the defect found beside
+those sequences, fixed at the maintainer's request — the same day.
 To reproduce:
 
 ```bash
@@ -343,6 +346,17 @@ node scripts/fix-sensitivity.mjs \
   a5a10a9 2393aff a0129cf 63e05eb \
   --md details.md
 node scripts/fix-sensitivity.mjs --inject scripts/defects/snapshot-causes-by-clock.patch --md details.md
+
+# issue #302 slice C — the generated sequences, by five defects put back
+node scripts/fix-sensitivity.mjs \
+  --inject scripts/defects/seq-vow-resolver-forgets-roller.patch \
+  --inject scripts/defects/seq-connection-pick-id-dropped.patch \
+  --inject scripts/defects/seq-connection-picker-not-claimed.patch \
+  --inject scripts/defects/seq-begin-session-effects-unguarded.patch \
+  --inject scripts/defects/seq-world-load-always-new-session.patch --md details.md
+
+# VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
+node scripts/fix-sensitivity.mjs d87125d --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -400,6 +414,34 @@ temporary git worktree; the checkout it is run from is not touched.
 | XCARD-UNSAVED-CLAIMED, XCARD-UNSAVED-RELAYED | cdb8c80 | revert | 4 — `faultMatrix.test.js` (the GM's own X-Card; a player's relayed one) and `safety.test.js` (the "could not be saved" wording; the canonical GM's failed write) |
 | DRAFT-CONFIRM-TWICE | e572ebd | revert | 1 — `faultMatrix.test.js` (a double-click on Confirm) |
 | SUFFER-PICK-TWICE | ec08eb4 | revert | 4 — `faultMatrix.test.js` (two picks on one client; the player and the GM; the pick-two control, which fails because a player's pick could not be recorded on the GM's card) and `gmRelay.test.js` (the kind is declared); 4 more in `sufferCard.test.js` fail only on the missing export |
+
+### Issue #302 slice C — the generated sequences, by defects put back
+
+Slice C fixed nothing in `src/`: its tests are a generator, a model and two
+fixed corpora (`tests/unit/generatedSequences.test.js`). What is shown here
+is that they catch a defect of each kind they are for — the wrong target
+among namesakes, an effect applied twice, state lost on a reload — when one
+is put back. Each row's patch is injected into HEAD; "corpus" is a generated
+one, reduced by fast-check to the shortest failing sequence.
+
+| Defect put back | Patch | Assertions that fail with it |
+| --- | --- | --- |
+| The vow resolver forgets the roller and the scored Item (#301 B02's defect) | `seq-vow-resolver-forgets-roller.patch` | 4 — both corpora; "two characters' vows of one name"; "a button two people press in the same moment" (its recommit) |
+| The picked connection's Actor id is dropped on the way to the move (#301 B01's defect) | `seq-connection-pick-id-dropped.patch` | 3 — both corpora (reduced to two connections of one name and one Develop Your Relationship); "a picked connection is the one developed and bonded" |
+| A connection picker's resolved stamp is not checked | `seq-connection-picker-not-claimed.patch` | 3 — both corpora (reduced to one Develop Your Relationship pressed by two at once); "a button two people press in the same moment" |
+| Begin a Session's start effects are not guarded (#300 F11's defect) | `seq-begin-session-effects-unguarded.patch` | 2 — the table corpus; "a session ended and begun by two people at once" |
+| Every world load starts a new session | `seq-world-load-always-new-session.patch` | 4 — the table corpus (reduced to one reload of the GM's page); the three written-out sequences that reload it or begin a session |
+
+The first version of the commands caught the first of these and missed the
+next two: it had no connections sharing a name at the start, and its only
+repeated press was the same client's, later, which a card's own disabled
+button stops. Both gaps were closed before anything else was built on them.
+
+### VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| VOW-CONNECTION-LINK-BY-NAME | d87125d | revert | 14 — `generatedSequences.test.js` (the Link ties the vow to the card's id; the card renamed; renamed with another given the old name; a link from before the fix tied to its card at world load; a rename made with no GM there) — the two that were keyed checks while the defect was open among them; `vowConnectionLinkById.test.js` (the won-fight card's 🤝, with the id on the card and read off the vow; a payoff card's Retry; the card deleted with a namesake left, and the namesake deleted; the crew's opening vow; the module's own rename; a severed connection); `xcardDeletedNpcReferencesCleared.test.js` (a link by id is cleared with its card though a namesake is left) |
 
 ### Issue #306 — the post-fix audit
 
@@ -2076,6 +2118,12 @@ place asked only on the tie-break's rung; a journey label that holds a site's
 whole name, and `!reveal-site`'s whole-label question, read as before; a miss
 that was not held posting its need card at once; a GM's edit lifting the
 withholding with its label; and a player's client building no Secrets section.
+
+*VOW-CONNECTION-LINK-BY-NAME:* 3 new tests pass both ways, and each is a
+case the fix must leave as it was — a link by name alone: one made before
+the fix still develops the connection its name names; a name two cards
+share is not given either card's id at world load; and with a namesake left,
+the X-Card's delete keeps such a link.
 
 ## Details
 
@@ -18949,3 +18997,103 @@ Test files: `tests/unit/wonFightNoVowIdFulfilAsksWhichVow.test.js`. Source resto
 | (new) tests/unit/wonFightNoVowIdFulfilAsksWhichVow.test.js › issue #364 ATTEMPT-FULFIL-NO-ID-CARD — 🏁 on a victory card with no vow id, its vow deleted the roller's only open vow, another PC holding one too: the press rolls nothing on it — it asks with Fulfill Your Vow's "Which vow?" card | AssertionError: the other vow is not fulfilled by itself: expected true to be false // Object.is equality |
 
 - New test passing with and without the fix (a control?): tests/unit/wonFightNoVowIdFulfilAsksWhichVow.test.js › issue #364 ATTEMPT-FULFIL-NO-ID-CARD — 🏁 on a victory card with no vow id, its vow deleted control: a card whose name names its vow rolls that vow, with no picker
+
+### `scripts/defects/seq-vow-resolver-forgets-roller.patch` — issue #302 slice C — the vow resolver forgets the roller and the scored Item (issue #301 B02's defect): a vow is found by its name across every character, so with two vows of one name the first character's is completed and paid
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 9 passed, 0 failed.
+- With the defect: 4 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 4 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 6 tests |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 23 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out two characters' vows of one name: each is marked, fulfilled and paid as its own | AssertionError: after FulfilVow(v2 "Find Kade" of pc-ash, 24 ticks vs 1,2 → strong_hit): expected { …(5) } to deeply equal { …(5) } |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a button two people press in the same moment acts once: a pick, a milestone, a recommit, a Confirm | AssertionError: after RecommitVow(v1 "Find Kade" of pc-kira, formidable 12 ticks, dice 2,6, pressed by two at once): expected { …(5) } to deeply equal { …(5) } |
+
+### `scripts/defects/seq-connection-pick-id-dropped.patch` — issue #302 slice C — the picked connection's Actor id is dropped on the way to the move (issue #301 B01's defect): the move resolves its target by name, so with two connections of one name the first is developed or bonded
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 9 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 6 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 24 tests |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 23 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a picked connection is the one developed and bonded, with a namesake beside it and its own name changed | AssertionError: after DevelopRelationship(c2 "Sable", picked by pc-ash): expected { …(5) } to deeply equal { …(5) } |
+
+### `scripts/defects/seq-connection-picker-not-claimed.patch` — issue #302 slice C — a connection picker's resolved stamp is not checked: a second press that arrives after the first has posted its move posts another (issue #336 Y24's defect, from the other side)
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 9 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 6 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 1 tests |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 2 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a button two people press in the same moment acts once: a pick, a milestone, a recommit, a Confirm | Error: multiClient: drain() timed out with 1 pending handler(s) |
+
+### `scripts/defects/seq-begin-session-effects-unguarded.patch` — issue #302 slice C — Begin a Session no longer checks that the session has begun (issue #300 F11's defect): a second Begin for the same session applies its start effects again, so two people beginning at once pay the vignette's momentum twice
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 9 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 19 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a session ended and begun by two people at once ends and begins once: its momentum is paid once each way | AssertionError: after BeginSession(by gm-1 and pl-1 at once, a vignette): expected { …(5) } to deeply equal { …(5) } |
+
+### `scripts/defects/seq-world-load-always-new-session.patch` — issue #302 slice C — every world load reads the session as over and starts a new one: a GM who reloads the page mid-session closes it, and no move is made until Begin a Session
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 9 passed, 0 failed.
+- With the defect: 4 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 4 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 2 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a session ended and begun by two people at once ends and begins once: its momentum is paid once each way | AssertionError: after BeginSession(by gm-1 and pl-1 at once, a vignette): expected { …(5) } to deeply equal { …(5) } |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's page reloads, then a player's: the session stays open, what was marked is kept and not marked again, and play goes on | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
+
+### d87125d — fix: a vow sworn to a connection is linked to its NPC card by id, not by name (VOW-CONNECTION-LINK-BY-NAME)
+
+Test files: `tests/unit/generatedSequences.test.js`, `tests/unit/vowConnectionLinkById.test.js`, `tests/unit/xcardDeletedNpcReferencesCleared.test.js`. Source restored: 6 file(s).
+
+- With the fix: 31 passed, 0 failed.
+- Without it: 14 failed (14 new; 0 only for a missing export); 17 still pass (3 new).
+- Verdict: **sensitive** — 14 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) the vow card's Link ties the vow to the connection's card, by its id | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Sable', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) with her card renamed, the progress is still hers — and the vow shows her new name | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Vega', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) with her card renamed and another given her old name, the other connection is not marked in her place | AssertionError: expected 'c2 8, c3 8' to be 'c2 16, c3 0' // Object.is equality |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a link made before the fix is tied to its card when the GM's world next loads — renames after that do not lose it | AssertionError: expected { vowId: 'vow-v1', …(2) } to match object { linkedConnectionName: 'Sable', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a card renamed while no GM was at the table: the vow takes its name at the next world load | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Vega', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the won-fight card's 🤝 Deepen (VOW-CONNECTION-LINK-BY-NAME) carries the connection's card id, and deepens that card's bond after the names are swapped | AssertionError: expected { fightVowCard: true, …(6) } to match object { connectionName: 'Sable', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the won-fight card's 🤝 Deepen (VOW-CONNECTION-LINK-BY-NAME) a card posted before links carried an id reads it off the vow | AssertionError: expected [ 8, 8 ] to deeply equal [ 16, +0 ] |
+| (new) tests/unit/vowConnectionLinkById.test.js › a "Vow payoff incomplete" card's Retry (VOW-CONNECTION-LINK-BY-NAME) its deepen step carries the card id: retried after the names are swapped, it lands on the vow's connection | AssertionError: expected { step: 'deepen', …(2) } to match object { connectionName: 'Sable', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › deleting the NPC card (VOW-CONNECTION-LINK-BY-NAME) clears the vow's link though another card has the name it was linked under — that card is somebody else | AssertionError: expected { name: 'Sable', id: null } to deeply equal { name: null, id: null } |
+| (new) tests/unit/vowConnectionLinkById.test.js › deleting the NPC card (VOW-CONNECTION-LINK-BY-NAME) deleting the namesake leaves the vow's link, and its victory card, as they are | AssertionError: expected { name: null, id: null } to deeply equal { name: 'Vega', id: 'conn-c2' } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the crew's opening vow, sworn to the person it names (VOW-CONNECTION-LINK-BY-NAME) every PC's copy is linked to the NPC card the swearing makes for them, by its id | AssertionError: pc-kira's copy: expected { vowId: 'smsg000000000066', …(2) } to match object { linkedConnectionName: 'Vance', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the other ways a connection changes (VOW-CONNECTION-LINK-BY-NAME) renamed through the module's own update, the vow takes the new name | AssertionError: expected { name: 'Sable', id: null } to deeply equal { name: 'Vega', id: 'conn-c2' } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the other ways a connection changes (VOW-CONNECTION-LINK-BY-NAME) severed, she is not found — and a namesake is not developed in her place; the GMs' card says she is gone, not renamed | AssertionError: expected [ 8, 8 ] to deeply equal [ 8, +0 ] |
+| (new) tests/unit/xcardDeletedNpcReferencesCleared.test.js › issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card's delete of an NPC clears what names them a namesake is left: the vow was linked to the removed card, not to the name — it loses its link | AssertionError: the Link stamped the narration's card (setup): expected undefined to be truthy |
+
+- New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a link made before the fix still develops the connection its name names
+- New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a name two cards share cannot say which card: a link made before the fix stays by its name
+- New test passing with and without the fix (a control?): tests/unit/xcardDeletedNpcReferencesCleared.test.js › issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card's delete of an NPC clears what names them a namesake is left, and the vow's link is by name alone (made before links carried a card's id): the name still means someone, so it keeps its link

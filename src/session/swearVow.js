@@ -278,6 +278,18 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
     }
   }
 
+  // The vow is linked to its target's NPC card, by the card's id — the card
+  // made just above, or the one that was already in the world (known-issues
+  // VOW-CONNECTION-LINK-BY-NAME: by the name alone, a rename lost the link).
+  if (meta?.target?.name && isPersonTarget(meta.target)) {
+    try {
+      const { reconcileVowLinks } = await import("../entities/connection.js");
+      await reconcileVowLinks();
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: the vow's link to ${meta.target.name} keeps their name only:`, err?.message ?? err);
+    }
+  }
+
   await postSwornConfirmation({ plan, actors: sworn, connection, crisis });
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
@@ -1287,9 +1299,11 @@ export function registerPlayerVowLinkHook() {
 /**
  * gmRelay handler for "vow.link" — runs on the canonical GM (issue #325 W11).
  * Links the player-vow card's vow (`vowId`) to a connection the world has —
- * by name, as the card's picker lists them — once per card: the card is
- * claimed (`linkedConnection`) before the write. Any user may link, as the
- * card is the table's.
+ * picked by name, as the card's picker lists them — once per card: the card
+ * is claimed (`linkedConnection`) before the write. Any user may link, as the
+ * card is the table's. The vow is linked to that connection's NPC card, by
+ * its id, when the name names one card (known-issues
+ * VOW-CONNECTION-LINK-BY-NAME); a name two cards share links by name alone.
  *
  * @param {{ messageId?: string, connectionName?: string }} payload
  * @param {Object} [_ctx]
@@ -1305,10 +1319,13 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
   if (f.vowGone) return { applied: false, reason: "no-copy" };
   const wanted = typeof payload.connectionName === "string" ? payload.connectionName.trim() : "";
   let connectionName = null;
+  let connectionId   = null;
   try {
     const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
     const { getConnection } = await import("../entities/connection.js");
-    connectionName = (cs.connectionIds ?? []).map(id => getConnection(id)?.name).find(n => n && n === wanted) ?? null;
+    const named = (cs.connectionIds ?? []).filter(id => { const n = getConnection(id)?.name; return n && n === wanted; });
+    connectionName = named.length ? wanted : null;
+    connectionId   = named.length === 1 ? named[0] : null;
   } catch (err) {
     console.warn(`${MODULE_ID} | playerVow: connection lookup failed:`, err?.message ?? err);
   }
@@ -1324,7 +1341,7 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
   // no character holds can take no link: the Link is closed (`vowGone`, the
   // claim on a name the vow does not carry released) and the presser told
   // why (issue #336 Y27).
-  const linked = await setVowLinkedConnection(f.vowId, connectionName);
+  const linked = await setVowLinkedConnection(f.vowId, connectionName, connectionId);
   if (!linked.ok && linked.reason === "no-copy") {
     await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null, [`flags.${MODULE_ID}.vowGone`]: true })
       .catch(err => console.warn(`${MODULE_ID} | playerVow: closing card ${messageId} failed:`, err?.message ?? err));

@@ -1,0 +1,18 @@
+Defect: issue #302 slice C — a connection picker's resolved stamp is not checked: a second press that arrives after the first has posted its move posts another (issue #336 Y24's defect, from the other side)
+Tests: tests/unit/generatedSequences.test.js
+Catches: sequences of up to
+Catches: a button two people press in the same moment acts once
+
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 14de39e0..b79579af 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -258,7 +258,7 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
+     return { posted: false, reason: "not-a-picker" };
+   }
+   const key = `${messageId}:pick`;
+-  if (f.resolved || _inFlight.has(key)) {
++  if (_inFlight.has(key)) {
+     console.debug(`${MODULE_ID} | connection pick: picker card ${messageId} already resolved — ignoring repeat click.`);
+     return { posted: false, reason: "already-resolved" };
+   }

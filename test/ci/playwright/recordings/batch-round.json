@@ -1,189 +1,479 @@
 {
   "scenario": "batch-round",
-  "source": "hand-written",
-  "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Each exchange names the scenario step that makes its call (strict replay, issue #302). Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
+  "scenarioFile": "batch-round.json",
+  "scenarioRevision": "eeecf7948b94",
+  "source": "recorded",
+  "passed": true,
+  "strict": true,
+  "provenance": {
+    "recordedAt": "2026-11-22T16:21:57.880Z",
+    "commit": "5965e87d27154d89a3d14d4e10deaab166fd56ee",
+    "models": [
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5"
+    ],
+    "runner": "test/ci/playwright/playthrough.mjs"
+  },
   "exchanges": [
     {
       "step": "begin",
       "kind": "prewarmNarratorCache>warmNarratorCacheAfterBegin",
+      "model": "claude-sonnet-5-5",
+      "sections": [
+        "NARRATOR ROLE AND VOICE",
+        "RESPONSE FORMAT — MANDATORY SIDECAR",
+        "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+        "WORLD SNAPSHOT"
+      ],
+      "fingerprint": "f7b4dce005bd",
       "user": "Session start.",
       "response": {
+        "model": "claude-sonnet-5-5",
         "content": [],
         "stop_reason": "max_tokens",
         "usage": {
-          "input_tokens": 0,
+          "input_tokens": 10,
+          "cache_creation_input_tokens": 801,
+          "cache_read_input_tokens": 3595,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 801
+          },
           "output_tokens": 0,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
         }
       }
     },
     {
       "step": "mira-acts",
       "kind": "callClassifierAPI>classifyInput",
-      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "model": "claude-haiku-5-5",
+      "sections": [
+        "OUTPUT",
+        "DECISION GUIDANCE",
+        "CATEGORY DEFINITIONS",
+        "MOVE CATALOG (shallow)"
+      ],
+      "fingerprint": "4760ebc13a5e",
+      "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 0 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nCharted places: Hollow Spire\n\n## PLAYER INPUT\n\"With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.\"",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"decision\": \"MOVE\", \"suggestedMove\": \"gather_information\", \"category\": \"investigation\", \"confidence\": 0.86, \"reasoning\": \"Questioning a witness for specific information is Gather Information.\"}"
+            "text": "```json\n{\n  \"decision\": \"MOVE\",\n  \"suggestedMove\": \"gather_information\",\n  \"sceneChallenge\": null,\n  \"category\": \"investigation\",\n  \"confidence\": 0.85,\n  \"reasoning\": \"Player explicitly searches records for an answer with time pressure and an uncertain outcome at investigation dial 6, a clear commitment to the search.\"\n}\n```"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 276,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 4246,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 128,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "mira-acts",
       "kind": "callClaudeAPI>interpretMove",
-      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "model": "claude-haiku-5-5",
+      "sections": [
+        "YOUR TASK",
+        "MOVE REFERENCE",
+        "STAT GUIDE",
+        "INTERPRETATION RULES",
+        "RESPONSE FORMAT"
+      ],
+      "fingerprint": "6ab2f1c3cda5",
+      "user": "The character speaking and acting this turn is Mira Kestrel. No active tracks yet. Session active.\n\nPACING READ (a hint, not a ruling — rule 9): the stage before you read this line as gather_information in a investigation scene — \"Player explicitly searches records for an answer with time pressure and an uncertain outcome at investigation dial 6, a clear commitment to the search.\".\n\nINTERPRETATION NOTE: You are allowed to occasionally interpret this narration in a slightly unexpected but still plausible way. If there is a move that is less obvious but more dramatically interesting than the most literal reading — and it still fits the fiction — you may prefer it. Stay inside what the line is doing: a different stat, or a neighbouring move of the same kind (another way of pressing someone for a line of dialogue, another way of meeting the danger for an action). Never turn a line of dialogue into a travel, fate or suffer move, and never invent a move for a line that makes none. This should feel like a natural misread, not a forced one. Set mischiefApplied to true if you do this.\n\nPlayer narration: \"With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.\"",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"moveId\": \"gather_information\", \"moveName\": \"Gather Information\", \"statUsed\": \"wits\", \"statValue\": 0, \"adds\": 0, \"isProgressMove\": false, \"progressTicks\": 0, \"moveTarget\": null, \"expeditionRank\": null, \"combatRank\": null, \"rationale\": \"Mira is questioning the dockmaster for specific information about the courier.\", \"mischiefApplied\": false, \"confidence\": \"high\"}"
+            "text": "{\n  \"moveId\": \"gather_information\",\n  \"moveName\": \"Gather Information\",\n  \"statUsed\": \"wits\",\n  \"statValue\": 0,\n  \"isProgressMove\": false,\n  \"progressTicks\": 0,\n  \"moveTarget\": null,\n  \"expeditionRank\": null,\n  \"combatRank\": null,\n  \"healSituation\": null,\n  \"rationale\": \"Mira actively searches the dockmaster's berth logs for a witness to the courier's departure, under time pressure, with a clear commitment to the search. Wits fits the careful records work, and the pacing read agrees with gather_information.\",\n  \"stakes\": {\n    \"hit\": \"The logs name who saw the courier leave the Hollow Spire, and you have the lead before the trail goes cold.\",\n    \"miss\": \"The logs are a jumble of partial entries, and the trail goes cold while Vance Oduya watches you fumble.\",\n    \"missSuffer\": { \"move\": \"lose_momentum\", \"amount\": 1, \"target\": null }\n  },\n  \"mischiefApplied\": false,\n  \"confidence\": \"high\"\n}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 415,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 5700,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 359,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "ren-acts",
       "kind": "callClassifierAPI>classifyInput",
-      "user": "I keep watch on the docking ring while Mira talks.",
+      "model": "claude-haiku-5-5",
+      "sections": [
+        "OUTPUT",
+        "DECISION GUIDANCE",
+        "CATEGORY DEFINITIONS",
+        "MOVE CATALOG (shallow)"
+      ],
+      "fingerprint": "4760ebc13a5e",
+      "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 1 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Ren Adeyemi\nRen Adeyemi's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nCharted places: Hollow Spire\n\n## PLAYER INPUT\n\"I keep watch on the docking ring while Mira talks.\"",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"decision\": \"NARRATIVE\", \"suggestedMove\": null, \"category\": \"exploration\", \"confidence\": 0.8, \"reasoning\": \"Keeping watch with no threat in play needs no roll.\"}"
+            "text": "{\"decision\":\"NARRATIVE_WITH_MOVE_AVAILABLE\",\"suggestedMove\":\"secure_an_advantage\",\"sceneChallenge\":null,\"category\":\"investigation\",\"confidence\":0.6,\"reasoning\":\"Ren is deliberately positioning to watch the docking ring during a conversation, a light action with no clear outcome at stake, so it is borderline at dial 6 and could bolster position if danger arises.\"}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 241,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 4246,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 147,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-1",
       "kind": "callNarratorAPI>narrateRound",
-      "user": "THIS ROUND 2 characters acted at once Mira Kestrel Gather Information strong hit dockmaster Vance Oduya courier Ren Adeyemi no roll keep watch docking ring",
+      "model": "claude-sonnet-5-5",
+      "sections": [
+        "NARRATOR ROLE AND VOICE",
+        "RESPONSE FORMAT — MANDATORY SIDECAR",
+        "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+        "WORLD SNAPSHOT",
+        "THIS NARRATION",
+        "NARRATOR PERMISSIONS — DISCOVERY MODE",
+        "CONTEXT FOR THIS NARRATION",
+        "IN PLAY NOW",
+        "CHARACTER",
+        "CHARACTER",
+        "PARTY",
+        "THIS BEAT'S PROSE",
+        "RESPOND NOW"
+      ],
+      "fingerprint": "5843cc7aef3e",
+      "user": "## THIS ROUND — 2 characters acted at once, in this order\n\n### 1. Mira Kestrel — Gather Information (+wits): strong hit\n[MOVE: Gather Information +wits] [ROLL: Action: 5 + 3 = 8 vs Challenge: 2, 5] [OUTCOME: Strong Hit] [CONSEQUENCE: Path or action to make progress is clear. Take +2 momentum.]\n#### STAKES STATED BEFORE THE ROLL\n\nThe player saw these before rolling:\n- On a hit: The logs name who saw the courier leave the Hollow Spire, and you have the lead before the trail goes cold.\n- On a miss: The logs are a jumble of partial entries, and the trail goes cold while Vance Oduya watches you fumble. (Lose Momentum −1)\n\nThis is a strong hit: deliver the hit as stated.\n#### ORACLE SEEDS (use as inspiration — you may develop or adapt)\n\nWhat you learn — Story Clue: Suggests a looming event or deadline\n\nThese seeds define the starting outline. Add voice, specific detail, and atmosphere. The campaign record will be built from your narration.\nMira Kestrel: \"With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.\"\nLatitude: something new may enter the fiction.\n\n### 2. Ren Adeyemi — no roll\nRen Adeyemi: \"I keep watch on the docking ring while Mira talks.\"\n\nNarrate the round as one scene in about 110 words — never more than 140 — in at most 8 sentences. This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. Narrate each action and its outcome in the order given, and attribute each to its own character only — let the actions meet where the fiction allows. Do not explain a mechanical outcome — embody it. An action with no roll happens as described, with no success or failure decided. Only the characters listed above act this round: invent no action for anyone else, and do not remark on who did not act. Close on a beat the whole party can answer, not a question to one character.",
       "response": {
+        "model": "claude-sonnet-5-5",
         "content": [
           {
             "type": "text",
-            "text": "Vance Oduya doesn't look up from the departure ledger when Mira leans into the dock office. He runs one oil-black finger down the column of berths as if she'd asked him about the weather.\n\n<npc>\"Courier left two days back,\"</npc> he says. <npc>\"Unregistered skiff out of berth nine. Paid the departure tax in Ascendancy scrip.\"</npc> He turns the ledger so she can read it: no name, a berth number, a stamp neither of them recognises.\n\nOut on the docking ring Ren keeps his back to the bulkhead, counting the dockhands who have stopped working to watch the office door — three of them, and one is already walking away.\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya is the Hollow Spire's dockmaster and keeps the departure ledger.\"}, {\"subject\": \"scene\", \"fact\": \"The courier left the Hollow Spire two days ago on an unregistered skiff from berth nine.\"}], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Questioning the dockmaster about the courier\"}}\n```"
+            "text": "Vance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n<npc>\"You've found something,\"</npc> Vance says. <npc>\"Say it now, or I'll read it off your face.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Vance Oduya\", \"fact\": \"dockmaster of Hollow Spire (he/him); watching Mira's search of his berth logs\" },\n    { \"subject\": \"berth logs\", \"fact\": \"a dock hand's margin note records the courier leaving Hollow Spire and the direction taken; the entry is flagged for removal at the next shift-change inspection sweep\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"at the dockmaster's berth console, Hollow Spire\" },\n    { \"subject\": \"Ren Adeyemi\", \"attribute\": \"location\", \"value\": \"at the rail of the docking ring, Hollow Spire\" },\n    { \"subject\": \"cargo lifter\", \"attribute\": \"status\", \"value\": \"idling at Berth Nine, its pilot watching Mira\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Hollow Spire docking ring\",\n    \"present\": [\"Mira Kestrel\", \"Ren Adeyemi\", \"Vance Oduya\"],\n    \"situation\": \"Mira has found a witness note on the courier's departure in the berth logs while Vance presses her and Ren watches the ring\",\n    \"question\": \"Will the lead hold until the shift-change sweep?\"\n  },\n  \"countdown\": { \"label\": \"shift-change inspection sweep\", \"about\": \"berth logs\" }\n}\n```"
           }
         ],
-        "stop_reason": "end_turn"
-      }
-    },
-    {
-      "step": "round-1",
-      "kind": "callHaiku>defaultCallDetectionAPI",
-      "user": "Vance Oduya departure ledger dock office berth nine unregistered skiff Ascendancy scrip Ren docking ring dockhands",
-      "response": {
-        "content": [
-          {
-            "type": "text",
-            "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
-          }
-        ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 1629,
+          "cache_creation_input_tokens": 1250,
+          "cache_read_input_tokens": 4396,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1250
+          },
+          "output_tokens": 732,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-1",
       "kind": "callHaiku>defaultCallTierAPI",
-      "user": "Vance Oduya dockmaster ledger berth nine Ren Adeyemi docking ring keeps watch",
+      "model": "claude-haiku-5-5",
+      "sections": [],
+      "fingerprint": "e3b0c44298fc",
+      "user": "Given the following established entity records and a passage of narration,\ncapture any SIGNIFICANT new development about each entity that is NOT already\nin the record below — what the character did, decided, or revealed; how their\ndisposition, allegiance, or relationship to the player character shifted; a\ndurable new trait or piece of history. Record consequential beats, not\nincidental motion, passing scenery, or restatements of what is already known.\n\n## Hollow Spire — settlement  (id: Wr04Y1yUAGHs07VQ)\n\nRate each update with a \"salience\" — one of trivial, scene, notable,\nsignificant, defining — for how much it matters to that entity's ongoing\nstory. Be conservative: most narration is \"scene\" or \"trivial\" and should be\nomitted entirely.\n\nReturn a single JSON object (no prose):\n{ \"updates\": [ { \"entityId\": string, \"detail\": string, \"salience\": string } ] }\n\nentityId must match the id shown in the record header (e.g. \"id: ABC123\").\ndetail should be one short sentence — the new development only.\n\nNarration:\nVance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n<npc>\"You've found something,\"</npc> Vance says. <npc>\"Say it now, or I'll read it off your face.\"</npc>",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"updates\": []}"
+            "text": "{\"updates\": [{\"entityId\": \"Hollow Spire\", \"detail\": \"A dock hand's margin note in the berth logs records which way the courier went, and an inspection sweep at the next shift change threatens to erase it.\", \"salience\": \"notable\"}]}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 608,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 95,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-1",
       "kind": "callChronicleAPI>writeChronicleEntry",
-      "user": "## CONTEXT Context: one round in which several characters acted at once ## NARRATION Vance Oduya departure ledger berth nine",
+      "model": "claude-sonnet-5-5",
+      "sections": [
+        "OUTPUT",
+        "GUIDANCE"
+      ],
+      "fingerprint": "7ed7a1b79606",
+      "user": "## CONTEXT\n\nContext: one round in which several characters acted at once — capture the beat that changed the most.\nCharacters: Mira Kestrel, Ren Adeyemi\nAdd \"character\": the name, exactly as listed, of the character this beat is about.\n\n## NARRATION\n\nVance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n<npc>\"You've found something,\"</npc> Vance says. <npc>\"Say it now, or I'll read it off your face.\"</npc>",
       "response": {
+        "model": "claude-sonnet-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"type\": \"discovery\", \"salience\": \"notable\", \"text\": \"Vance Oduya told Mira the courier fled two days ago on an unregistered skiff from berth nine, while Ren watched the dockhands watching them.\"}"
+            "text": "{\n  \"type\": \"revelation\",\n  \"salience\": \"notable\",\n  \"text\": \"Mira found a margin note in the berth logs: a dock hand saw the courier leave and which way he went, but an inspection sweep will erase it at shift change.\",\n  \"character\": \"Mira Kestrel\"\n}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 343,
+          "cache_creation_input_tokens": 724,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 724,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 97,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
+      }
+    },
+    {
+      "step": "round-1",
+      "kind": "callHaiku>defaultCallDetectionAPI",
+      "model": "claude-haiku-5-5",
+      "sections": [],
+      "fingerprint": "e3b0c44298fc",
+      "user": "You are analysing an Ironsworn: Starforged narration.\nMove: gather_information.\nOutcome: strong_hit.\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Ren Adeyemi, Hollow Spire, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\n(none)\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: (none)\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nVance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n<npc>\"You've found something,\"</npc> Vance says. <npc>\"Say it now, or I'll read it off your face.\"</npc>",
+      "response": {
+        "model": "claude-haiku-5-5",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"entities\":[{\"type\":\"connection\",\"name\":\"Vance Oduya\",\"description\":\"Leans against the berth console, arms folded, watching Mira work; speaks to the party about what Mira has found.\",\"pronouns\":null,\"role\":null,\"goal\":null,\"confidence\":\"high\"},{\"type\":\"connection\",\"name\":\"Berth Nine cargo lifter pilot\",\"description\":\"Pilot of a cargo lifter idling at Berth Nine who has not looked away from Mira's console.\",\"pronouns\":null,\"role\":\"pilot\",\"goal\":null,\"confidence\":\"low\"},{\"type\":\"connection\",\"name\":\"Dock hand\",\"description\":\"Unnamed-in-prose dock hand noted in a logbook margin as having seen the courier leave and which way it went.\",\"pronouns\":null,\"role\":\"dock hand\",\"goal\":null,\"confidence\":\"low\"}],\"renames\":[],\"worldJournal\":{\"lore\":[{\"title\":\"Courier departure witnessed in logs\",\"category\":\"event\",\"text\":\"A margin note in the berth logs records a dock hand who saw the courier leave and the direction it took; the entry's timestamp is flagged for an inspection sweep at the next shift change.\",\"salience\":\"notable\",\"narratorAsserted\":true,\"confirmed\":false,\"entityName\":null}],\"threats\":[{\"name\":\"Shift-change inspection sweep\",\"type\":\"inspection\",\"severity\":\"looming\",\"summary\":\"An inspection sweep of the docking ring at the next shift change will likely remove the margin note about the courier.\",\"salience\":\"notable\"}],\"factionUpdates\":[],\"locationUpdates\":[],\"stateTransitions\":[]}}"
+          }
+        ],
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 3177,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 529,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "ren-acts-2",
       "kind": "callClassifierAPI>classifyInput",
-      "user": "I lean in the hatchway and watch the dockmaster's hands.",
+      "model": "claude-haiku-5-5",
+      "sections": [
+        "OUTPUT",
+        "DECISION GUIDANCE",
+        "CATEGORY DEFINITIONS",
+        "MOVE CATALOG (shallow)"
+      ],
+      "fingerprint": "4760ebc13a5e",
+      "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 1 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Ren Adeyemi\nRen Adeyemi's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Hollow Spire docking ring\nScene frame — present: Mira Kestrel, Ren Adeyemi, Vance Oduya\nScene frame — now: Mira has found a witness note on the courier's departure in the berth logs while Vance presses her and Ren watches the ring\nCharted places: Hollow Spire\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nPLAYER — Mira Kestrel wrote: \"With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.\"\nPLAYER — Ren Adeyemi wrote: \"I keep watch on the docking ring while Mira talks.\"\nVance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n<npc>\"You've found something,\"</npc> Vance says. <npc>\"Say it now, or I'll read it off your face.\"</npc>\n\n## PLAYER INPUT\n\"I lean in the hatchway and watch the dockmaster's hands.\"",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"decision\": \"NARRATIVE\", \"suggestedMove\": null, \"category\": \"social\", \"confidence\": 0.78, \"reasoning\": \"Watching someone closely with nothing at stake is narration.\"}"
+            "text": "{\"decision\":\"NARRATIVE_WITH_MOVE_AVAILABLE\",\"suggestedMove\":\"gather_information\",\"sceneChallenge\":null,\"category\":\"investigation\",\"confidence\":0.6,\"reasoning\":\"Leaning in to watch Vance's hands is observation with mild intent toward reading him, borderline at investigation dial 6, with no explicit ask or stakes yet.\"}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 742,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 4246,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 134,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-2",
       "kind": "callNarratorAPI>narrateRound",
-      "user": "THIS ROUND 1 character acted at once Ren Adeyemi no roll lean in the hatchway watch the dockmaster's hands",
+      "model": "claude-sonnet-5-5",
+      "sections": [
+        "NARRATOR ROLE AND VOICE",
+        "RESPONSE FORMAT — MANDATORY SIDECAR",
+        "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+        "WORLD SNAPSHOT",
+        "THIS NARRATION",
+        "NARRATOR PERMISSIONS — INTERACTION MODE",
+        "CONTEXT FOR THIS NARRATION",
+        "CLOCKS",
+        "IN PLAY NOW",
+        "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+        "UNREVEALED — FOR THE NARRATOR ONLY",
+        "CHARACTER",
+        "THIS BEAT'S PROSE",
+        "RESPOND NOW"
+      ],
+      "fingerprint": "1711fc21397e",
+      "user": "## RECENT SCENE\n\nPLAYER — Mira Kestrel wrote: \"With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.\"\nPLAYER — Ren Adeyemi wrote: \"I keep watch on the docking ring while Mira talks.\"\nVance Oduya leans against the berth console, arms folded, and lets Mira work. The logs scroll past, mostly water-rationing chits and fuel tallies. Then one entry holds. A dock hand named in the margin saw the courier leave, and saw which way the courier went.\n\nThe timestamp is the problem. The entry is flagged for an inspection sweep at the next shift change, and whoever walks that ring will not leave the margin note standing.\n\nRen stands at the rail of the docking ring and watches the gantries. A cargo lifter idles at Berth Nine. Its pilot has not looked away from Mira's console once.\n\n\"You've found something,\" Vance says. \"Say it now, or I'll read it off your face.\"\n\n## THIS ROUND — 1 character acted at once, in this order\n\n### 1. Ren Adeyemi — no roll\nRen Adeyemi: \"I lean in the hatchway and watch the dockmaster's hands.\"\n\nNarrate the round as one scene in about 65 words — never more than 85 — in at most 5 sentences. This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. Narrate each action and its outcome in the order given, and attribute each to its own character only — let the actions meet where the fiction allows. Do not explain a mechanical outcome — embody it. An action with no roll happens as described, with no success or failure decided. Only the characters listed above act this round: invent no action for anyone else, and do not remark on who did not act. Close on a beat the whole party can answer, not a question to one character.",
       "response": {
+        "model": "claude-sonnet-5-5",
         "content": [
           {
             "type": "text",
-            "text": "Ren leans into the hatchway, arms folded, and watches Vance's hands instead of his face. The dockmaster's fingers keep straying to the ledger's spine, squaring it against the counter's edge, tapping the place where berth nine is written. When he notices Ren noticing, he folds his hands and leaves them very still.\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya fidgets with the departure ledger when berth nine comes up.\"}], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Watching the dockmaster\"}}\n```"
+            "text": "Vance's hands stay folded against his arm, then one slides to the console's edge. The thumb taps twice. Someone else has been watching Mira work, and Vance knows it.\n\nYou lean in the hatchway and watch those hands. His thumb drifts toward the purge key, the one that clears an entry before any sweep. He stops short and rests it flat.\n\n\"Well?\" Vance says. The lifter's pilot has not looked away once.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Vance Oduya\", \"fact\": \"keeps a thumb near the console's purge key while Mira reads the logs; tapped the console edge twice\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Ren Adeyemi\", \"attribute\": \"location\", \"value\": \"in the hatchway beside the dockmaster's berth console, Hollow Spire\" },\n    { \"subject\": \"Vance Oduya\", \"attribute\": \"posture\", \"value\": \"arms folded, thumb resting by the console purge key\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Hollow Spire docking ring\",\n    \"present\": [\"Mira Kestrel\", \"Ren Adeyemi\", \"Vance Oduya\"],\n    \"situation\": \"Ren watches Vance's hands from the hatchway while Mira holds the courier lead and Vance demands to know what she found\",\n    \"question\": \"Will the lead hold until the shift-change sweep?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-AHDl8oASKq23gffs\",\n      \"subject\": \"the berth log sweep\",\n      \"truth\": \"The shift-change sweep is not routine. A device wired into the dockmaster's console purges flagged entries on a timer, and Vance has quietly been feeding it the entries someone paid him to lose.\",\n      \"wants\": \"To erase the dock hand's margin note, and every record of the courier's heading, before anyone can act on it.\",\n      \"knows\": \"Vance knows who paid to bury the courier's trail, and that the purge device is already armed.\",\n      \"escalation\": [\n        \"Vance stalls and steers Mira away from the margin note.\",\n        \"Vance triggers the purge early, by hand, and claims a console fault.\",\n        \"The pilot at Berth Nine moves to silence the dock hand who wrote the note.\"\n      ],\n      \"clues\": [\n        \"Vance's thumb keeps returning to the purge key.\",\n        \"The lifter pilot watches the console, not the ring.\",\n        \"The flagged entry carries a sweep timestamp that matches no inspection schedule.\"\n      ],\n      \"resolutions\": [\n        \"The party copies the note and finds the dock hand before the purge.\",\n        \"The purge runs and the trail goes cold, leaving only the dock hand's memory.\"\n      ]\n    }\n  ]\n}\n```"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 2667,
+          "cache_creation_input_tokens": 2134,
+          "cache_read_input_tokens": 3595,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2134
+          },
+          "output_tokens": 924,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-2",
       "kind": "callHaiku>defaultCallDetectionAPI",
-      "user": "Ren leans hatchway watches Vance's hands ledger spine berth nine",
+      "model": "claude-haiku-5-5",
+      "sections": [],
+      "fingerprint": "e3b0c44298fc",
+      "user": "You are analysing an Ironsworn: Starforged narration.\nMove: (paced narration — no move was rolled).\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Ren Adeyemi, Hollow Spire, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\nVance Oduya\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: (none)\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nVance's hands stay folded against his arm, then one slides to the console's edge. The thumb taps twice. Someone else has been watching Mira work, and Vance knows it.\n\nYou lean in the hatchway and watch those hands. His thumb drifts toward the purge key, the one that clears an entry before any sweep. He stops short and rests it flat.\n\n\"Well?\" Vance says. The lifter's pilot has not looked away once.",
       "response": {
+        "model": "claude-haiku-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+            "text": "{\"entities\":[{\"type\":\"connection\",\"name\":\"Vance\",\"description\":\"A man at the console whose hands and behaviour suggest he has been watching Mira work and is hiding something; he hovers near the purge key.\",\"pronouns\":\"he/him\",\"role\":null,\"goal\":null,\"confidence\":\"medium\"}],\"renames\":[],\"worldJournal\":{\"lore\":[],\"threats\":[],\"factionUpdates\":[],\"locationUpdates\":[],\"stateTransitions\":[]}}"
           }
         ],
-        "stop_reason": "end_turn"
-      }
-    },
-    {
-      "step": "round-2",
-      "kind": "callHaiku>defaultCallTierAPI",
-      "user": "Ren Adeyemi hatchway Vance Oduya hands ledger spine berth nine",
-      "response": {
-        "content": [
-          {
-            "type": "text",
-            "text": "{\"updates\": []}"
-          }
-        ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 3068,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 159,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     },
     {
       "step": "round-2",
       "kind": "callChronicleAPI>writeChronicleEntry",
-      "user": "## CONTEXT Context: one round in which several characters acted at once ## NARRATION Ren hatchway Vance's hands ledger",
+      "model": "claude-sonnet-5-5",
+      "sections": [
+        "OUTPUT",
+        "GUIDANCE"
+      ],
+      "fingerprint": "7ed7a1b79606",
+      "user": "## CONTEXT\n\nContext: one round in which several characters acted at once — capture the beat that changed the most.\n\n## NARRATION\n\nVance's hands stay folded against his arm, then one slides to the console's edge. The thumb taps twice. Someone else has been watching Mira work, and Vance knows it.\n\nYou lean in the hatchway and watch those hands. His thumb drifts toward the purge key, the one that clears an entry before any sweep. He stops short and rests it flat.\n\n\"Well?\" Vance says. The lifter's pilot has not looked away once.",
       "response": {
+        "model": "claude-sonnet-5-5",
         "content": [
           {
             "type": "text",
-            "text": "{\"type\": \"moment\", \"salience\": \"scene\", \"text\": \"Ren watched Vance Oduya's hands stray to the ledger whenever berth nine came up.\"}"
+            "text": "{\"type\":\"moment\",\"salience\":\"scene\",\"text\":\"From the hatchway, you watched Vance's thumb drift toward the purge key, then stop short and rest flat as the lifter's pilot kept staring.\"}"
           }
         ],
-        "stop_reason": "end_turn"
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 186,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 724,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 70,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "speed": "standard"
+        }
       }
     }
   ]

@@ -1,0 +1,17 @@
+Defect: issue #302 slice C — the picked connection's Actor id is dropped on the way to the move (issue #301 B01's defect): the move resolves its target by name, so with two connections of one name the first is developed or bonded
+Tests: tests/unit/generatedSequences.test.js
+Catches: sequences of up to
+Catches: a picked connection is the one developed and bonded
+
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 14de39e0..83f51bc9 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -298,7 +298,6 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
+     // bonded one).
+     const target = {
+       ...(choice.name   ? { forcedMoveTarget:   choice.name }   : {}),
+-      ...(choice.hostId ? { forcedMoveTargetId: choice.hostId } : {}),
+     };
+     // Claimed before the post (issue #336 Y24; decisions #309 "claims before
+     // effects"): the move was posted first and the stamp's refusal swallowed,

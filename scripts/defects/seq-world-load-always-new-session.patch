@@ -1,0 +1,18 @@
+Defect: issue #302 slice C — every world load reads the session as over and starts a new one: a GM who reloads the page mid-session closes it, and no move is made until Begin a Session
+Tests: tests/unit/generatedSequences.test.js
+Catches: among them sessions ended and begun and pages reloaded
+Catches: the GM's page reloads, then a player's
+
+diff --git a/src/session/lifecycle.js b/src/session/lifecycle.js
+index 47530e05..7d70e6d7 100644
+--- a/src/session/lifecycle.js
++++ b/src/session/lifecycle.js
+@@ -246,7 +246,7 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
+   const id = campaignState?.currentSessionId;
+   if (!id) return true;
+   if (campaignState.sessionEndedId === id) return true;
+-  return idleMs(campaignState, now) >= SESSION_IDLE_HOURS * 3_600_000;
++  return true;
+ }
+ 
+ // The session the canonical GM's world load is replacing (issue #342 Z24):

@@ -1398,8 +1398,17 @@ export async function setSharedVowReward(vowId, reward) {
  * player characters), so fulfilling/advancing it deepens that bond (#248
  * B-link). GM-only (Item flag write). No-op when the vow or name is missing.
  *
+ * The link is the connection's NPC card, by its Actor id
+ * (`linkedConnectionId`); `linkedConnectionName` is its name as the vow shows
+ * it, kept in step with the card (renameVowLinksToConnection). By the name
+ * alone a renamed connection was no longer found, and another card given the
+ * old name was deepened in its place (known-issues
+ * VOW-CONNECTION-LINK-BY-NAME; rules/reachability.md §6). A link made with no
+ * id — the name named several cards, or none yet — is by its name, as before.
+ *
  * @param {string} vowId
  * @param {string} connectionName
+ * @param {string|null} [connectionId] — the connection's host Actor id
  * @returns {Promise<{ ok: boolean, reason?: "refused"|"no-copy"|"no-name" }>}
  *   whether the link landed (issue #329 X07 — a refusal was a console
  *   warning, and the card said "Linked"). "refused": a copy's write was
@@ -1407,9 +1416,10 @@ export async function setSharedVowReward(vowId, reward) {
  *   found — told apart from a refusal, which a press can retry (issue #336
  *   Y27). "no-name": no connection named.
  */
-export async function setVowLinkedConnection(vowId, connectionName) {
+export async function setVowLinkedConnection(vowId, connectionName, connectionId = null) {
   if (!vowId) return { ok: false, reason: "no-copy" };
   if (!connectionName) return { ok: false, reason: "no-name" };
+  const cardId = typeof connectionId === "string" && connectionId ? connectionId : null;
   let refused = false;
   let copies = 0;
   for (const actor of getPlayerActors()) {
@@ -1417,10 +1427,17 @@ export async function setVowLinkedConnection(vowId, connectionName) {
     for (const item of items) {
       if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
-        await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", connectionName)).catch(err => {
+        try {
+          await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", connectionName));
+          // With no card id the link is by this name alone: an id left from
+          // an earlier link would go on naming that link's card.
+          if (cardId || vowLinkedConnectionId(item)) {
+            await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionId", cardId));
+          }
+        } catch (err) {
           refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
-        });
+        }
       }
     }
   }
@@ -1430,38 +1447,136 @@ export async function setVowLinkedConnection(vowId, connectionName) {
 
 /**
  * Take the link to a connection that no longer exists off every player
- * character's vow (issue #364 DELETED-NPC-NAME-REFERENCES). A vow's link is
- * the connection's name (`linkedConnectionName` — setVowLinkedConnection, the
- * inciting vow's target), so the vow of an NPC whose card a GM deleted went
- * on naming them: a won fight's card still offered "🤝 Deepen your bond with
- * …", and the vow's fulfilment listed a deepen that could never land, with a
- * Retry. Cleared, the vow serves no connection. Every copy that names them,
- * open or closed. The caller decides the connection is gone (no card of that
- * name is left — connection.tearDownDeletedConnection). GM-side (Item flag
- * writes); never throws — a refused write is logged and counted.
+ * character's vow (issue #364 DELETED-NPC-NAME-REFERENCES). The vow of an NPC
+ * whose card a GM deleted went on naming them: a won fight's card still
+ * offered "🤝 Deepen your bond with …", and the vow's fulfilment listed a
+ * deepen that could never land, with a Retry. Cleared, the vow serves no
+ * connection. Every copy linked to them, open or closed.
+ *
+ * A link that carries its card's id (`linkedConnectionId`) is cleared by
+ * that id — that card's, whatever it is named and whoever else has the name.
+ * A link by name alone is cleared by the name, and only when the caller says
+ * the name now names nobody (`byName` — no card of that name is left,
+ * connection.tearDownDeletedConnection). GM-side (Item flag writes); never
+ * throws — a refused write is logged and counted.
  *
  * @param {string} connectionName — the deleted connection's name
+ * @param {{ connectionId?: string|null, byName?: boolean }} [opts] — the
+ *   deleted card's Actor id; whether links by name alone are cleared too
  * @returns {Promise<{ cleared: Array<{ actorName: string, vowName: string }>, refused: number }>}
  *   the vows whose link was cleared, each once per PC
  */
-export async function clearVowLinksToConnection(connectionName) {
+export async function clearVowLinksToConnection(connectionName, { connectionId = null, byName = true } = {}) {
   const out = { cleared: [], refused: 0 };
   const wanted = String(connectionName ?? "").trim().toLowerCase();
-  if (!wanted) return out;
+  const wantedId = typeof connectionId === "string" && connectionId ? connectionId : null;
+  if (!wantedId && !(byName && wanted)) return out;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (item?.type !== "progress" || typeof item.setFlag !== "function") continue;
-      const linked = item.flags?.[MODULE_ID]?.linkedConnectionName;
-      if (typeof linked !== "string" || linked.trim().toLowerCase() !== wanted) continue;
+      const linked   = item.flags?.[MODULE_ID]?.linkedConnectionName;
+      const linkedId = vowLinkedConnectionId(item);
+      const hit = linkedId
+        ? linkedId === wantedId
+        : (byName && !!wanted && typeof linked === "string" && linked.trim().toLowerCase() === wanted);
+      if (!hit) continue;
       try {
         await staleChecked('clearVowLinksToConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", null));
+        if (linkedId) await staleChecked('clearVowLinksToConnection', () => item.setFlag(MODULE_ID, "linkedConnectionId", null));
         out.cleared.push({ actorName: String(actor.name ?? ""), vowName: String(item.name ?? "") });
       } catch (err) {
         out.refused++;
         console.warn(`${MODULE_ID} | clearVowLinksToConnection: "${item.name ?? item.id}" on ${actor.name ?? actor.id} kept its link to ${connectionName}:`, err?.message ?? err);
       }
       invalidateActorCache(actor.id);
+    }
+  }
+  return out;
+}
+
+/**
+ * The NPC card a vow is linked to, by its Actor id — or null for a vow linked
+ * by name alone (made before the link carried an id, or to a name several
+ * cards answered to) and for one linked to nobody.
+ *
+ * @param {Item} item
+ * @returns {string|null}
+ */
+export function vowLinkedConnectionId(item) {
+  const id = item?.flags?.[MODULE_ID]?.linkedConnectionId;
+  return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * A connection was renamed: every vow linked to its card takes the new name
+ * (`linkedConnectionName` is the card's name as the vow shows it — the won
+ * fight's "🤝 Deepen your bond with …", the payoff's lines). The link itself
+ * is the card's id and did not move. GM-side; never throws.
+ *
+ * @param {string} connectionId — the connection's host Actor id
+ * @param {string} name — its name now
+ * @returns {Promise<number>} the vow copies renamed
+ */
+export async function renameVowLinksToConnection(connectionId, name) {
+  let renamed = 0;
+  if (typeof connectionId !== "string" || !connectionId || typeof name !== "string" || !name) return renamed;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || typeof item.setFlag !== "function") continue;
+      if (vowLinkedConnectionId(item) !== connectionId || item.flags?.[MODULE_ID]?.linkedConnectionName === name) continue;
+      try {
+        await staleChecked('renameVowLinksToConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", name));
+        renamed += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | renameVowLinksToConnection: "${item.name ?? item.id}" on ${actor.name ?? actor.id} kept the old name:`, err?.message ?? err);
+      }
+      invalidateActorCache(actor.id);
+    }
+  }
+  return renamed;
+}
+
+/**
+ * Bring every vow's link to a connection up to date at world load (known-
+ * issues VOW-CONNECTION-LINK-BY-NAME):
+ *   - a vow linked by name alone — made before the link carried an id — is
+ *     given the card's id, when `idNamed` says one card answers to the name;
+ *   - a vow linked by id whose name is not its card's now (the card was
+ *     renamed while no GM's page could follow it) takes the card's name.
+ * The caller reads the connections (connection.reconcileVowLinks): this file
+ * imports no entity module. GM-side; never throws.
+ *
+ * @param {{ idNamed: (name: string) => string|null, nameOf: (id: string) => string|null }} cards
+ * @returns {Promise<{ stamped: number, renamed: number, refused: number }>}
+ */
+export async function reconcileVowConnectionLinks({ idNamed, nameOf }) {
+  const out = { stamped: 0, renamed: 0, refused: 0 };
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || typeof item.setFlag !== "function") continue;
+      const name = item.flags?.[MODULE_ID]?.linkedConnectionName;
+      if (typeof name !== "string" || !name.trim()) continue;
+      const linkedId = vowLinkedConnectionId(item);
+      try {
+        if (!linkedId) {
+          const id = idNamed(name);
+          if (!id) continue;
+          await staleChecked('reconcileVowConnectionLinks', () => item.setFlag(MODULE_ID, "linkedConnectionId", id));
+          out.stamped += 1;
+        } else {
+          const now = nameOf(linkedId);
+          if (!now || now === name) continue;
+          await staleChecked('reconcileVowConnectionLinks', () => item.setFlag(MODULE_ID, "linkedConnectionName", now));
+          out.renamed += 1;
+        }
+        invalidateActorCache(actor.id);
+      } catch (err) {
+        out.refused += 1;
+        console.warn(`${MODULE_ID} | reconcileVowConnectionLinks: "${item.name ?? item.id}" on ${actor.name ?? actor.id} was not brought up to date:`, err?.message ?? err);
+      }
     }
   }
   return out;

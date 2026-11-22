@@ -15,7 +15,11 @@
     "factContinuity.shipPositioning": true,
     "factContinuity.shipAutoMoveOnCourse": true,
     "factContinuity.shipTokenEnabled": true,
-    "factContinuity.shipTokenSnapRadius": 1
+    "factContinuity.shipTokenSnapRadius": 1,
+    "pacing.dial.investigation": 10,
+    "pacing.dial.exploration": 10,
+    "pacing.dial.social": 1,
+    "chronicleSalienceThreshold": "scene"
   },
   "seed": {
     "pc": { "name": "Mira Kestrel", "pronouns": "she/her", "stats": { "edge": 2, "heart": 1, "iron": 1, "shadow": 2, "wits": 3 } },
@@ -40,7 +44,7 @@
         { "check": "noMarkup" }
       ] },
     { "id": "gather", "do": "move", "as": "player",
-      "text": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "text": "The dockmaster, Vance Oduya, pulls his berth logs for me, and I comb them with him for who saw the courier leave the Hollow Spire, before the trail goes cold.",
       "dice": { "challenge": [2, 5], "action": 5 },
       "move": "gather_information", "outcome": "strong_hit",
       "calls": [
@@ -64,7 +68,7 @@
         { "check": "ledgerTruth", "about": "Vance Oduya", "entityKeyed": true }
       ] },
     { "id": "ask-vance", "do": "say", "as": "player",
-      "text": "I lean on the counter and ask Vance what the Ascendancy wants with him.",
+      "text": "I tell Vance what I heard on the way in — that the Ascendancy has been buying up berths all along the ring — and leave it at that.",
       "calls": [
         { "kind": "callClassifierAPI>classifyInput" },
         { "kind": "callNarratorAPI>narratePacedInput",
@@ -76,14 +80,14 @@
       ],
       "then": [
         { "check": "npcCard", "name": "Vance Oduya", "details": 1 },
-        { "check": "journalPage", "journal": "World Journal — Threats", "page": "Ascendancy debt collectors" }
+        { "check": "journalPage", "journal": ["World Journal — Threats", "World Journal — Factions"], "pageMatches": "Ascendancy" }
       ] },
     { "id": "private-aside", "do": "privateChannel", "as": "player", "npc": "Vance Oduya",
       "message": "I wonder whether Vance Oduya was lying about the courier.",
       "expectCard": true, "carries": ["ENTITIES IN SCENE", "ACTIVE SCENE"],
       "calls": [] },
     { "id": "course-bleakhold", "do": "move", "as": "player",
-      "text": "We set a course for Bleakhold Station.",
+      "text": "We set a course for Bleakhold Station and burn hard — the courier has a head start on us.",
       "dice": { "challenge": [2, 3], "action": 5 },
       "move": "set_a_course", "outcome": "strong_hit",
       "calls": [
@@ -117,7 +121,7 @@
       "calls": [
         { "kind": "callNarratorAPI>getRollingSessionSummary", "carries": ["SESSION NARRATION"] },
         { "kind": "callNarratorAPI>narrateSessionVignette" },
-        { "kind": "callNarratorAPI>getCampaignRecap", "section": { "CAMPAIGN CHRONICLE": "Vance Oduya" } }
+        { "kind": "callNarratorAPI>getCampaignRecap", "section": { "CAMPAIGN CHRONICLE": "[" } }
       ],
       "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [

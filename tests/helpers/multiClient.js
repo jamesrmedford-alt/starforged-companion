@@ -107,7 +107,11 @@
  *   - Whispers are delivered to every client (Foundry restricts them to the
  *     recipients and GMs); actors are one shared object per actor (updates
  *     still fire updateActor on every client); journals, scenes and folders
- *     are plain shared collections.
+ *     are plain shared collections. Embedded Items, journal entries and
+ *     pages, and actor deletion are not modelled here: `Item.create` is the
+ *     tests/setup.js stub (no update, no hooks). tests/helpers/
+ *     liveDocuments.js `withLiveDocuments(table)` makes them live documents
+ *     with Foundry's hook fan-out and permissions — opt-in, per table.
  *   - Outside a client context `game` / `Hooks` / `ui` are tests/setup.js's
  *     single-client stubs. Assert on `table.world` and the clients, or wrap
  *     the code in `client.run(…)`.
@@ -1407,7 +1411,8 @@ class SimTable {
 
   /**
    * Fan a document hook out the way Foundry does for a document type the
-   * harness does not model (journal entries / pages, items, tokens…):
+   * harness does not model (journal entries / pages, items, tokens… — on a
+   * table without tests/helpers/liveDocuments.js, which fires these itself):
    * synchronously on `fromUserId`'s client, on a later macrotask on every
    * other connected client — each in its own context. The userId argument
    * Foundry appends is added for you: fireDocumentHook("gm-2",
