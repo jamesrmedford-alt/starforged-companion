@@ -1,0 +1,18 @@
+Defect: issue #302 slice C — a sworn vow's connection is found by its name again, not by its card's id (VOW-CONNECTION-LINK-BY-NAME's defect, from the reader's side): with two cards of one name the fulfilment deepens the wrong one, or neither
+Tests: tests/unit/generatedSequences.test.js
+Catches: leave the table as the rules say
+
+diff --git a/src/index.js b/src/index.js
+index ac924e9f..707cda15 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -6301,9 +6301,6 @@ async function findOpenConnection(connectionName, connectionId = null) {
+   const connections = (campaignState.connectionIds ?? [])
+     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+     .filter(Boolean);
+-  if (typeof connectionId === "string" && connectionId) {
+-    return selectConnection(connections, null, { hostId: connectionId, strict: true });
+-  }
+   if (!connectionName) return null;
+   return selectConnection(connections, connectionName, { strict: true });
+ }

@@ -284,9 +284,10 @@ function messageJson(text, model, n) {
 // ── the harness ──────────────────────────────────────────────────────────────
 
 /**
- * @param {{ mode: "replay"|"record", recording?: object, apiKey?: string, strict?: boolean, log?: Function }} options
+ * @param {{ mode: "replay"|"record", recording?: object, apiKey?: string, strict?: boolean, log?: Function,
+ *   gate?: { before: (call: object) => Promise<{ ok: boolean, id?: number, reason?: string }>|object, after: (id: number, result: object) => void } }} options
  */
-export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log }) {
+export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log, gate = null }) {
   if (mode === "record" && !apiKey) throw new Error("record mode needs ANTHROPIC_API_KEY");
   const exchanges = Array.isArray(recording?.exchanges) ? recording.exchanges : [];
   const used      = new Set();
@@ -335,16 +336,38 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
   }
 
   async function forward({ url, headers, body }, live, entry) {
+    // A run with a spending cap (explore.mjs) passes a gate: it reserves the
+    // call's worst cost before the request leaves, and is told what the call
+    // used. A call it refuses is not sent — the page gets the neutral stub, so
+    // nothing hangs, and the entry says why.
+    const pass = gate ? await gate.before({ model: live.model, maxTokens: live.maxTokens, promptChars: body?.length ?? 0, kind: entry.kind }) : { ok: true };
+    if (!pass.ok) {
+      entry.source = `refused (${pass.reason})`;
+      log(`REFUSED ${entry.kind} (${entry.client}, step "${entry.step}") — ${pass.reason}; answered with the neutral stub`);
+      return { status: 200, body: messageJson(stubText(live), live.model, entry.n) };
+    }
+    let settled = false;
+    const settle = (usage) => { if (!settled) { settled = true; gate?.after(pass.id, { model: live.model, usage }); } };
+    try {
+      return await forwardNow({ url, headers, body }, live, entry, settle);
+    } finally {
+      settle(null);          // a call that failed or was not parsed keeps its reservation
+    }
+  }
+
+  async function forwardNow({ url, headers, body }, live, entry, settle) {
     const res = await fetch(url, {
       method:  "POST",
       headers: { ...headers, "x-api-key": apiKey },
       body,
     });
     const text = await res.text();
+    entry.status = res.status;
     if (res.ok) {
       let data = null;
       try { data = JSON.parse(text); } catch { data = null; }
       if (data) {
+        settle(data.usage ?? null);
         const ids = idNames(`${live.system}\n${live.user}`);
         const sections = sectionHeadings(live.system);
         recorded.push({
@@ -446,6 +469,9 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
       return started();
     },
 
+    /** How long no call has been in flight or started: 0 while one is. */
+    quietMs() { return pending > 0 ? 0 : Date.now() - lastActivity; },
+
     /** Wait until no call is in flight and none started for `quietMs`. */
     async idle({ quietMs = 2500, timeoutMs = 60_000 } = {}) {
       const deadline = Date.now() + timeoutMs;
@@ -503,7 +529,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
     },
 
     /** The recording a record run produced, with where it came from. */
-    recordingOut({ scenario, scenarioFile, revision, passed, commit = null } = {}) {
+    recordingOut({ scenario, scenarioFile, revision, passed, commit = null, runner = "test/ci/playwright/playthrough.mjs" } = {}) {
       return {
         scenario,
         scenarioFile,
@@ -515,7 +541,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
           recordedAt: new Date().toISOString(),
           commit,
           models:     [...new Set(recorded.map(x => x.response?.model ?? x.model).filter(Boolean))],
-          runner:     "test/ci/playwright/playthrough.mjs",
+          runner,
         },
         exchanges:  recorded,
       };

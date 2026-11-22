@@ -183,6 +183,12 @@ describe('classifier system prompt — dial-driven decision guidance', () => {
     pacingConfig: BASE_PACING_CFG,
   });
 
+  it('says that who a line is spoken to is not a stake — a connection does not raise a question into a move', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toContain('Who the line is spoken to');
+    expect(systemPrompt).toContain('a connection or a bonded ally does not raise the stakes of a question');
+  });
+
   it('does not reference the mischief dial or interpretation posture', () => {
     const { systemPrompt } = buildClassifierContext(baseArgs());
     expect(systemPrompt).not.toMatch(/mischief/i);
@@ -781,6 +787,61 @@ describe('decidePacing()', () => {
 
   afterEach(() => {
     resetRecentDensity();
+  });
+
+  // Known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION: with the social dial
+  // at 1, a plain question to a connection was called a Compel at 0.6 in two
+  // live runs of three. At a dial of 0–2 a move the classifier is unsure of
+  // is offered with the narration, not rolled.
+  describe('a low dial holds: an unsure MOVE is offered, not rolled', () => {
+    const decide = (reply, dials = {}, pacing = { sceneOverride: null, forceNextAsMove: false }) => {
+      for (const [cat, value] of Object.entries({ combat: 9, investigation: 6, exploration: 6, social: 5, downtime: 1, ...dials })) {
+        game.settings._store.set(`starforged-companion.pacing.dial.${cat}`, value);
+      }
+      apiPost.mockResolvedValue(makeApiResponse(reply));
+      return decidePacing({
+        playerText: 'I lean on the counter and ask Vance what the Ascendancy wants with him.',
+        campaignState: { ...BASE_STATE, pacing }, character: { name: 'Mira' }, apiKey: 'sk-ant-test',
+      });
+    };
+    const COMPEL = { decision: 'MOVE', suggestedMove: 'compel', category: 'social', confidence: 0.6, reasoning: 'Vance is a connection.' };
+
+    it('social dial 1, MOVE at 0.6: narrated, with Compel on offer', async () => {
+      const result = await decide(COMPEL, { social: 1 });
+      expect(result).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'compel' });
+      expect(result.reasoning).toMatch(/^\[low dial: an unsure move is offered, not rolled\]/);
+    });
+
+    it('the same reading at the default dial (5) is rolled', async () => {
+      expect(await decide(COMPEL)).toMatchObject({ runMove: true, decision: 'MOVE', nominatedMove: 'compel' });
+    });
+
+    it('a sure MOVE at a low dial is rolled — explicit intent, plain stakes', async () => {
+      expect(await decide({ ...COMPEL, confidence: 0.9 }, { social: 1 })).toMatchObject({ runMove: true, decision: 'MOVE' });
+      expect(await decide({ ...COMPEL, confidence: 0.7 }, { social: 2 })).toMatchObject({ runMove: true, decision: 'MOVE' });
+    });
+
+    it('a dial of 3 is not low', async () => {
+      expect(await decide(COMPEL, { social: 3 })).toMatchObject({ runMove: true, decision: 'MOVE' });
+    });
+
+    it('the dial is the effective one: a scene override that lowers it to 2 holds too', async () => {
+      const result = await decide(COMPEL, { social: 5 }, { sceneOverride: { modifier: -3, label: 'quiet' }, forceNextAsMove: false });
+      expect(result).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE' });
+    });
+
+    it('not the fallback for a reply that could not be read: the move pipeline still runs', async () => {
+      for (const [cat, value] of Object.entries({ social: 1, exploration: 1 })) game.settings._store.set(`starforged-companion.pacing.dial.${cat}`, value);
+      apiPost.mockResolvedValue({ content: [{ type: 'text', text: 'not json at all' }] });
+      const result = await decidePacing({ playerText: 'I ask Vance.', campaignState: { ...BASE_STATE, pacing: {} }, character: null, apiKey: 'sk-ant-test' });
+      expect(result).toMatchObject({ runMove: true, decision: 'MOVE', classifierRead: false });
+    });
+
+    it('not in a fight: an unsure combat move at any dial is rolled', async () => {
+      listProgressTracks.mockResolvedValue([{ id: 't1', type: 'combat', label: 'Raiders', completed: false }]);
+      const result = await decide({ decision: 'MOVE', suggestedMove: 'strike', category: 'downtime', confidence: 0.5, reasoning: 'mid-fight' }, { downtime: 1 });
+      expect(result).toMatchObject({ runMove: true, decision: 'MOVE' });
+    });
   });
 
   it('decides NARRATIVE_WITH_MOVE_AVAILABLE without narrating — the round shows it in the window', async () => {

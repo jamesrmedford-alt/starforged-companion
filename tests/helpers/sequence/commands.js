@@ -21,6 +21,17 @@
  * still be edited and the cards renamed. What is being tested is that an explicit selection reaches its target
  * whatever else shares its name, sits beside it or was pressed before — not
  * what the table should do when asked something ambiguous.
+ *
+ * A vow sworn to a connection comes with the starting world (the link as the
+ * vow card's 🤝 Link makes it: the connection's card, by its id), and the
+ * commands then act around it — the card renamed, another given its old
+ * name, the pages reloaded, the vow recommitted and fulfilled. Swearing one
+ * mid-sequence is not a command: the vow card lists the connections there
+ * were when it was posted and follows its vow's sheet until it is sworn, and
+ * neither the rules nor the decisions say enough about that card for a model
+ * of it that is not the code's own (known-issues SEQUENCE-LINK-NOT-GENERATED).
+ * And a vow sworn to a connection already bonded is not fulfilled here:
+ * nothing written says what a bonded relationship takes from it.
  */
 
 import fc from "fast-check";
@@ -116,14 +127,20 @@ export class FulfilVow extends Command {
   constructor(pcPick, vowPick, challenge) { super(); Object.assign(this, { pcPick, vowPick, challenge }); }
   pending() { return `FulfilVow(pc#${this.pcPick}, vow#${this.vowPick}, dice ${dice(this.challenge)})`; }
   #vow(model) { return M.pick(M.openVows(model, M.pick(model.pcs, this.pcPick)), this.vowPick); }
-  check(model) { return M.canPlay(model) && !!this.#vow(model); }
+  check(model) {
+    const vow = this.#vow(model);
+    return M.canPlay(model) && !!vow && !M.swornConnection(model, vow)?.bonded;
+  }
   async run(model, world) {
     const vow = this.#vow(model);
     const before = vow.ticks;
+    const sworn = M.swornConnection(model, vow);
     const outcome = M.fulfilVow(model, vow, this.challenge);
-    this.described = `FulfilVow(${vow.ref} "${vow.name}" of ${vow.pc}, ${before} ticks vs ${dice(this.challenge)} → ${outcome})`;
+    const deepened = !!sworn && outcome !== "miss";
+    this.described = `FulfilVow(${vow.ref} "${vow.name}" of ${vow.pc}, ${before} ticks vs ${dice(this.challenge)} → ${outcome}${sworn ? `; sworn to ${sworn.ref} "${sworn.name}"` : ""})`;
     await world.fulfilVow(vow.ref, { pc: vow.pc, name: vow.name, challenge: this.challenge });
     await this.finish(model, world, outcome);
+    if (deepened) count("FulfilVow:deepened its connection");
   }
 }
 
@@ -387,7 +404,8 @@ export function tableCommands() {
  * the two sheets within reach of a short one.
  */
 const startingVows = fc.uniqueArray(
-  fc.record({ name: fc.constantFrom(...VOW_NAMES), rank, boxes: fc.nat({ max: TRACK_BOXES }) }),
+  // swornTo: a pick among the starting connections — the vow is sworn to that one — or null.
+  fc.record({ name: fc.constantFrom(...VOW_NAMES), rank, boxes: fc.nat({ max: TRACK_BOXES }), swornTo: fc.option(pcPick, { nil: null }) }),
   { maxLength: 2, selector: v => v.name },
 );
 export const startingWorld = fc.record({
@@ -402,12 +420,14 @@ export const startingWorld = fc.record({
 /** Put a generated fixture into a fresh model; returns it in world.js's fixture shape. */
 export function applyFixture(model, { vows = [], connections = [] } = {}) {
   const out = { vows: [], connections: [] };
+  const sworn = [];   // [vow, its entry in `out`, the pick] — resolved once the connections exist
   vows.forEach((list, i) => {
     const pc = model.pcs[i];
-    for (const { name, rank: r, boxes } of list ?? []) {
+    for (const { name, rank: r, boxes, swornTo = null } of list ?? []) {
       const vow = M.addVow(model, { pc, name, rank: r });
       vow.ticks = boxes * TICKS_PER_BOX;
       out.vows.push({ ref: vow.ref, pc, name, rank: r, ticks: vow.ticks });
+      if (swornTo !== null) sworn.push([vow, out.vows.at(-1), swornTo]);
     }
   });
   for (const { name, rank: r, boxes, holderPick } of connections) {
@@ -415,6 +435,12 @@ export function applyFixture(model, { vows = [], connections = [] } = {}) {
     const connection = M.addConnection(model, { name, rank: r, holder });
     connection.ticks = boxes * TICKS_PER_BOX;
     out.connections.push({ ref: connection.ref, name, rank: r, ticks: connection.ticks, holder });
+  }
+  for (const [vow, entry, pick] of sworn) {
+    const connection = M.pick(model.connections, pick);
+    if (!connection) continue;                       // a world with no connections: sworn to no one
+    M.swearTo(model, vow, connection);
+    entry.swornToRef = connection.ref;
   }
   return out;
 }

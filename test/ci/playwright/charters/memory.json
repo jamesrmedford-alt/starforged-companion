@@ -1,0 +1,163 @@
+{
+  "description": "Memory (issue #302 §5, charter 3; #290 part 3): the player establishes a possession in play, travels, ends the session, begins the next one and asks about it without naming it. The observer checks the possession at three layers when the question is asked — stored, in the narrator's prompt, in the answer — so a miss says where the memory was lost.",
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter flying the Kobayashi IV. You are new to this game and to this table: you write short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play two short sessions, in this order. (1) Begin the session: type !begin-session and press Begin in the window that opens. (2) In your first or second line of play, establish that you carry a brass star-compass that belonged to your sister Ilse — say it in character, in one line. (3) Play two or three more lines so the story moves on. (4) Travel: set a course for Bleakhold Station. (5) End the session: type !end-session and press End Session in the window that opens. (6) Begin a new session: !begin-session again, and Begin. (7) Ask the narrator, in character, what you still carry that belonged to your sister. If the answer does not say, ask once more in other words. (8) Then stop.",
+  "playerNotes": [
+    "In the second session, never write the words compass or Ilse yourself: the point is to learn whether the narrator remembers them.",
+    "If a card offers buttons after a roll, you may press one or leave them; do not let them keep you from the goal."
+  ],
+  "facts": [
+    {
+      "id": "compass",
+      "statement": "Mira Kestrel carries a brass star-compass that belonged to her sister.",
+      "variants": [
+        "star-compass",
+        "star compass",
+        "compass"
+      ],
+      "required": true
+    },
+    {
+      "id": "sister-name",
+      "statement": "Mira's sister, whose star-compass it was, is named Ilse.",
+      "variants": [
+        "Ilse"
+      ],
+      "required": false
+    }
+  ],
+  "ask": {
+    "cues": [
+      "sister",
+      "sister's",
+      "carry",
+      "carrying",
+      "keepsake",
+      "belonged"
+    ]
+  },
+  "canon": [
+    "The player's character is Mira Kestrel (she/her).",
+    "Her ship is the Kobayashi IV.",
+    "The first session opens at Hollow Spire, a lawless settlement in the Cinder Expanse; Bleakhold Station is a corporate settlement in the same sector.",
+    "In the first session Mira establishes that she carries a brass star-compass that belonged to her sister Ilse."
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 1,
+        "iron": 1,
+        "shadow": 2,
+        "wits": 3
+      }
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes"
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsal": [
+    {
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin"
+    },
+    {
+      "action": "say",
+      "text": "On the Hollow Spire dock I turn the brass star-compass over in my palm — it was my sister Ilse's, and it is the one thing of hers I still carry."
+    },
+    {
+      "action": "say",
+      "text": "I ask the dockmaster who saw the courier leave."
+    },
+    {
+      "action": "wait",
+      "seconds": 2
+    },
+    {
+      "action": "say",
+      "text": "!end-session"
+    },
+    {
+      "action": "dialog",
+      "title": "End a Session",
+      "fields": [
+        {
+          "name": "questFocus",
+          "value": "Find the courier"
+        }
+      ],
+      "press": "End Session"
+    },
+    {
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin"
+    },
+    {
+      "action": "say",
+      "text": "Before we cast off — what do I still carry that belonged to my sister?"
+    },
+    {
+      "action": "stop",
+      "reason": "the rehearsal script is done"
+    }
+  ]
+}

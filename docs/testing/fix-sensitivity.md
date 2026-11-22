@@ -355,6 +355,12 @@ node scripts/fix-sensitivity.mjs \
   --inject scripts/defects/seq-begin-session-effects-unguarded.patch \
   --inject scripts/defects/seq-world-load-always-new-session.patch --md details.md
 
+# issue #302 slice C — vows sworn to a connection in the sequences' starting world, by three more
+node scripts/fix-sensitivity.mjs \
+  --inject scripts/defects/seq-vow-link-found-by-name.patch \
+  --inject scripts/defects/seq-vow-link-name-not-renamed.patch \
+  --inject scripts/defects/seq-vow-deepen-one-mark.patch --md details.md
+
 # VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
 node scripts/fix-sensitivity.mjs d87125d --md details.md
 ```
@@ -431,6 +437,9 @@ one, reduced by fast-check to the shortest failing sequence.
 | A connection picker's resolved stamp is not checked | `seq-connection-picker-not-claimed.patch` | 3 — both corpora (reduced to one Develop Your Relationship pressed by two at once); "a button two people press in the same moment" |
 | Begin a Session's start effects are not guarded (#300 F11's defect) | `seq-begin-session-effects-unguarded.patch` | 2 — the table corpus; "a session ended and begun by two people at once" |
 | Every world load starts a new session | `seq-world-load-always-new-session.patch` | 4 — the table corpus (reduced to one reload of the GM's page); the three written-out sequences that reload it or begin a session |
+| A sworn vow's connection is found by its name, not its card's id (VOW-CONNECTION-LINK-BY-NAME's defect, the reader's half) | `seq-vow-link-found-by-name.patch` | 1 — the vows-and-connections corpus, and nothing else: with the name kept current by the rename, every hand-written test still passes; it takes two cards of one name at the fulfilment, which the corpus reaches |
+| A renamed card no longer renames the vows sworn to it | `seq-vow-link-name-not-renamed.patch` | 4 — both corpora; "a vow sworn to a connection deepens that one"; "with her card renamed, the progress is still hers" |
+| A fulfilled vow deepens its connection by one mark whatever its rank | `seq-vow-deepen-one-mark.patch` | 3 — the vows-and-connections corpus; "a vow sworn to a connection deepens that one"; "missed and recommitted" |
 
 The first version of the commands caught the first of these and missed the
 next two: it had no connections sharing a name at the start, and its only
@@ -19068,6 +19077,47 @@ Test files: `tests/unit/generatedSequences.test.js`.
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a session ended and begun by two people at once ends and begins once: its momentum is paid once each way | AssertionError: after BeginSession(by gm-1 and pl-1 at once, a vignette): expected { …(5) } to deeply equal { …(5) } |
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's page reloads, then a player's: the session stays open, what was marked is kept and not marked again, and play goes on | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
+
+### `scripts/defects/seq-vow-link-found-by-name.patch` — issue #302 slice C — a sworn vow's connection is found by its name again, not by its card's id (VOW-CONNECTION-LINK-BY-NAME's defect, from the reader's side): with two cards of one name the fulfilment deepens the wrong one, or neither
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 18 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 17 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 34 tests |
+
+### `scripts/defects/seq-vow-link-name-not-renamed.patch` — issue #302 slice C — renaming a connection's card no longer renames the vows sworn to it: the vow goes on showing a name the card does not have (the write-through mirror of VOW-CONNECTION-LINK-BY-NAME, dropped)
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 18 passed, 0 failed.
+- With the defect: 4 failed (0 only for a missing export); 14 still pass.
+- Verdict: **sensitive** — 4 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 13 tests |
+| tests/unit/generatedSequences.test.js › generated sequences: the table — sessions, reloads, dropped connections 25 sequences of up to 20 commands, among them sessions ended and begun and pages reloaded | Error: Property failed after 7 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a vow sworn to a connection deepens that one when it is fulfilled — renamed, with her old name given to another, across a reload | AssertionError: after RenameConnection(c2: "Sable" → "Vega"): expected { …(6) } to deeply equal { …(6) } |
+| tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) with her card renamed, the progress is still hers — and the vow shows her new name | AssertionError: expected { vowSetupOffered: true, …(3) } to match object { linkedConnectionName: 'Vega', …(1) } |
+
+### `scripts/defects/seq-vow-deepen-one-mark.patch` — issue #302 slice C — a fulfilled vow deepens its connection by one mark whatever the vow's rank (decisions.md: the vow's rank sets the mark count — formidable and extreme two, epic three)
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 18 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 15 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: vows and connections 100 sequences of up to 20 commands leave the table as the rules say | Error: Property failed after 19 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a vow sworn to a connection deepens that one when it is fulfilled — renamed, with her old name given to another, across a reload | AssertionError: after FulfilVow(v1 "Find Kade" of pc-kira, 40 ticks vs 3,9 → strong_hit; sworn to c2 "Vega"): expected { …(6) } to deeply equal { …(6) } |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a vow sworn to a connection, missed and recommitted: nothing is deepened until it is fulfilled, and then by its raised rank | AssertionError: after FulfilVow(v1 "Pay the debt" of pc-kira, 12 ticks vs 1,2 → strong_hit; sworn to c2 "Thess"): expected { …(6) } to deeply equal { …(6) } |
 
 ### d87125d — fix: a vow sworn to a connection is linked to its NPC card by id, not by name (VOW-CONNECTION-LINK-BY-NAME)
 

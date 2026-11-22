@@ -65,7 +65,7 @@ const PATH         = process.env.SEQUENCE_PATH || undefined;
 /** Every command, each roll's three outcomes, each way a milestone's vow is chosen, and a press by two at once. */
 const EVERY_KIND = [
   'AddVow', 'ReachMilestone', 'ReachMilestone:named', 'ReachMilestone:sole', 'ReachMilestone:picked',
-  'FulfilVow', 'FulfilVow:strong_hit', 'FulfilVow:weak_hit', 'FulfilVow:miss', 'RecommitVow', 'RenameVow',
+  'FulfilVow', 'FulfilVow:strong_hit', 'FulfilVow:weak_hit', 'FulfilVow:miss', 'FulfilVow:deepened its connection', 'RecommitVow', 'RenameVow',
   'AddConnection', 'DevelopRelationship', 'ForgeBond', 'ForgeBond:strong_hit', 'ForgeBond:weak_hit', 'ForgeBond:miss',
   'RecommitConnection', 'RenameConnection', 'RepeatLastPress', 'ReorderActors', 'pressed by two at once',
 ];
@@ -74,7 +74,7 @@ const EVERY_KIND = [
 const TABLE_KINDS = [
   'EndSession:focus', 'EndSession:no focus', 'BeginSession:vignette', 'BeginSession:no vignette',
   'Reload:the GM', 'Reload:a player', 'DropAndRejoin:the GM', 'DropAndRejoin:a player',
-  'ReachMilestone', 'FulfilVow', 'DevelopRelationship', 'ForgeBond', 'pressed by two at once',
+  'ReachMilestone', 'FulfilVow', 'FulfilVow:deepened its connection', 'DevelopRelationship', 'ForgeBond', 'pressed by two at once',
 ];
 
 let table;
@@ -234,6 +234,42 @@ describe('the sequences the properties are about, written out', () => {
     expect(seen.pcs['pc-kira'].vows).toEqual([{ ref: 'v1', name: 'Find Kade', rank: 'dangerous', ticks: 16, fulfilled: false }]);
     expect(seen.connections).toEqual([{ ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 16, bonded: true }]);
     expect(seen.legacy.bonds).toBe(2);
+  });
+
+  it('a vow sworn to a connection deepens that one when it is fulfilled — renamed, with her old name given to another, across a reload', async () => {
+    const { world } = await play([
+      new RenameConnection(0, 1),                    // c2 "Sable" → "Vega": the vow's link shows her new name
+      new RenameConnection(1, 0),                    // c3 "Orrin" → "Sable": the name the vow was sworn under is another's
+      new Reload(0),                                 // the GM's page
+      new ReachMilestone(0, 0, true),                // v1: 36 → 40
+      new FulfilVow(0, 0, [3, 9]),                   // v1: 10 boxes vs 3,9 — a strong hit; formidable: two marks
+    ], {
+      vows: [[{ name: 'Find Kade', rank: 'formidable', boxes: 9, swornTo: 0 }], []],
+      connections: [
+        { name: 'Sable', rank: 'dangerous', boxes: 1, holderPick: 0 },
+        { name: 'Orrin', rank: 'dangerous', boxes: 0, holderPick: 1 },
+      ],
+    });
+    const seen = world.observe();
+    expect(seen.links).toEqual({ v1: { connection: 'c2', name: 'Vega' } });
+    expect(seen.connections).toEqual([
+      { ref: 'c2', name: 'Vega',  rank: 'dangerous', ticks: 20, bonded: false },    // 4 + two marks of 8
+      { ref: 'c3', name: 'Sable', rank: 'dangerous', ticks: 0,  bonded: false },
+    ]);
+    expect(seen.pcs['pc-kira'].bonds, 'her bond on Kira\'s sheet follows').toEqual([{ connection: 'c2', name: 'Vega', rank: 'dangerous', ticks: 20, forged: false }]);
+  });
+
+  it('a vow sworn to a connection, missed and recommitted: nothing is deepened until it is fulfilled, and then by its raised rank', async () => {
+    const { world } = await play([
+      new FulfilVow(0, 0, [10, 10]),                 // v1: 4 boxes vs 10,10 — a miss
+      new RecommitVow(0, [1, 5]),                    // one box cleared; dangerous → formidable
+      new FulfilVow(0, 0, [1, 2]),                   // 3 boxes vs 1,2 — a strong hit; formidable now: two marks
+      new RepeatLastPress(),
+    ], {
+      vows: [[{ name: 'Pay the debt', rank: 'dangerous', boxes: 4, swornTo: 0 }], []],
+      connections: [{ name: 'Thess', rank: 'formidable', boxes: 2, holderPick: 1 }],
+    });
+    expect(world.observe().connections).toEqual([{ ref: 'c2', name: 'Thess', rank: 'formidable', ticks: 16, bonded: false }]);
   });
 
   it('the GM\'s connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back', async () => {

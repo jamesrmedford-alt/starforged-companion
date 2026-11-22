@@ -1,0 +1,19 @@
+Defect: issue #302 slice C — a fulfilled vow deepens its connection by one mark whatever the vow's rank (decisions.md: the vow's rank sets the mark count — formidable and extreme two, epic three)
+Tests: tests/unit/generatedSequences.test.js
+Catches: leave the table as the rules say
+Catches: a vow sworn to a connection deepens that one
+Catches: missed and recommitted
+
+diff --git a/src/index.js b/src/index.js
+index ac924e9f..1a249a57 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -6685,7 +6685,7 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
+   // The connection's card, by its id — whose bond deepens; the name is what
+   // the cards say (known-issues VOW-CONNECTION-LINK-BY-NAME).
+   const connectionId   = connectionName ? vowLinkedConnectionId(item) : null;
+-  const marks          = marksForSourceRank(rank);
++  const marks          = 1; void rank;
+   // A step the vow's ledger records as landed is never paid again — the
+   // ledger a Retry reads (issue #309 N05: a fulfilment that ran after a Retry,
+   // or after a refused claim, paid every step again).

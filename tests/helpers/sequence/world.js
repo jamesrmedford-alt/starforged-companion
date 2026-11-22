@@ -91,7 +91,7 @@ export class SequenceWorld {
    * connections of `fixture` as play would have left them.
    *
    * @param {Object} table
-   * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number, swornTo?: string }>,
+   * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number, swornTo?: string, swornToRef?: string }>,
    *   connections?: Array<{ ref: string, name: string, rank: string, ticks: number, holder: string }> }} [fixture]
    */
   static async start(table, fixture = {}) {
@@ -121,7 +121,7 @@ export class SequenceWorld {
     await table.setClaudeKey(GM, "sk-ant-gina");
     scriptClaude(table);
     for (const { pc, name, player } of CAST) table.addActor({ id: pc, name, ownership: { [player]: 3 } });
-    for (const v of fixture.vows ?? []) world.#seedVow(v);
+    for (const v of fixture.vows ?? []) world.#seedVow(v, seeded);
     for (const c of seeded) world.#seedConnection(c);
     await world.quiet();
     return world;
@@ -183,13 +183,18 @@ export class SequenceWorld {
   /**
    * A vow as a sheet holds it once the module has seen it made: its own id as
    * its vowId. `swornTo` is a connection's name, as a link made before v1.8.4
-   * holds it — the name alone (`linkedConnectionName`), with no card id. A
-   * link as the module makes it now is made by `linkVow`.
+   * holds it — the name alone (`linkedConnectionName`), with no card id.
+   * `swornToRef` is one of the fixture's connections, linked as the vow
+   * card's 🤝 Link leaves it now: that connection's card id, and its name
+   * beside it (`linkVow` presses the Link itself).
    */
-  #seedVow({ ref, pc, name, rank, ticks, swornTo = null }) {
+  #seedVow({ ref, pc, name, rank, ticks, swornTo = null, swornToRef = null }, connections = []) {
     const id = `vow-${ref}`;
+    const target = swornToRef ? connections.find(c => c.ref === swornToRef) : null;
+    const link = target ? { linkedConnectionName: target.name, linkedConnectionId: this.#hostIdFor(target.ref) }
+      : swornTo ? { linkedConnectionName: swornTo } : {};
     this.table.addItem(pc, { id, name, type: "progress", system: { subtype: "vow", rank: sheetRank(rank), current: ticks, completed: false },
-      flags: { [MODULE_ID]: { vowId: id, vowSetupOffered: true, ...(swornTo ? { linkedConnectionName: swornTo } : {}) } } });
+      flags: { [MODULE_ID]: { vowId: id, vowSetupOffered: true, ...link } } });
     this.vowIds.set(ref, id);
   }
 
@@ -443,9 +448,18 @@ export class SequenceWorld {
     const legacyTotal = (track) => (Number(track?.cycles) || 0) * TRACK_TICKS + (Number(track?.ticks) || 0);
 
     const pcs = {};
+    const links = {};
     for (const pc of PCS) {
       const actor = this.actor(pc);
       const items = actor?.items.contents ?? [];
+      // A vow's link: the card its id names, and the name the vow shows for it.
+      for (const item of items.filter(isVow)) {
+        const { linkedConnectionId: cardId = null, linkedConnectionName: shown = null } = flagsOf(item);
+        if (!cardId && !shown) continue;
+        links[vowRefs.get(item.id) ?? `unknown vow ${item.id}`] = {
+          connection: cardId ? hostRefs.get(cardId) ?? `unknown card ${cardId}` : "by its name alone", name: shown,
+        };
+      }
       pcs[pc] = {
         momentum: actor?.system?.momentum?.value,
         legacyOnSheet: { quests: actor?.system?.legacies?.quests, bonds: actor?.system?.legacies?.bonds },
@@ -470,6 +484,7 @@ export class SequenceWorld {
     return {
       legacy: { quests: legacyTotal(state.legacyTracks?.quests), bonds: legacyTotal(state.legacyTracks?.bonds) },
       pcs,
+      links,
       connections,
       sessionOpen: state.sessionActive === true,
       moveInFlight: !!state.pendingMove,

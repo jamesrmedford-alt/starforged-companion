@@ -6,6 +6,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   SALIENCE_TIERS,
   DEFAULT_THRESHOLD,
+  DEFAULT_THRESHOLDS,
+  defaultSalienceThreshold,
   SALIENCE_SETTING_KEYS,
   normalizeSalience,
   passesSalience,
@@ -96,9 +98,22 @@ describe('getSalienceThreshold', () => {
     expect(getSalienceThreshold('threats')).toBe(DEFAULT_THRESHOLD);
   });
 
-  it('falls back to the default when the stored value is invalid', () => {
+  it('falls back to the channel\'s default when the stored value is invalid', () => {
     game.settings._store.set(`${MODULE_ID}.chronicleSalienceThreshold`, 'epic');
-    expect(getSalienceThreshold('chronicle')).toBe(DEFAULT_THRESHOLD);
+    expect(getSalienceThreshold('chronicle')).toBe('notable');
+    game.settings._store.set(`${MODULE_ID}.loreSalienceThreshold`, 'epic');
+    expect(getSalienceThreshold('lore')).toBe(DEFAULT_THRESHOLD);
+  });
+
+  // One place says each channel's default (known-issues
+  // CHRONICLE-EMPTY-AFTER-LIVE-SESSION): the Chronicle's is "notable".
+  it('each channel has its own default: Lore and Threats "significant", the Chronicle "notable"', () => {
+    expect(DEFAULT_THRESHOLDS).toEqual({ lore: 'significant', threats: 'significant', chronicle: 'notable' });
+    expect(getSalienceThreshold('lore')).toBe('significant');
+    expect(getSalienceThreshold('threats')).toBe('significant');
+    expect(getSalienceThreshold('chronicle')).toBe('notable');
+    expect(defaultSalienceThreshold('chronicle')).toBe('notable');
+    expect(defaultSalienceThreshold('bogus')).toBe(DEFAULT_THRESHOLD);
   });
 
   it('returns the default for an unknown channel', () => {

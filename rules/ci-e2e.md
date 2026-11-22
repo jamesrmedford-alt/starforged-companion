@@ -349,7 +349,8 @@ scenario written against hand-made replies meets what the model does:
   flipped. A scenario pins its `pacing.dial.*` settings — 10 for the category
   of a line that must be a move, 1 for the category of one that must not —
   and even at social 1 a pointed question to a connection was read as Compel
-  two runs in three (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION):
+  two runs in three (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION —
+  since fixed: at a dial of 0–2 an unsure move is offered, not rolled):
   where a line must stay narrative, the character tells, and does not ask.
 - A check on what the model wrote cannot name what the model will call it.
   `journalPage` takes `pageMatches` and a list of journals for that; a
@@ -357,12 +358,13 @@ scenario written against hand-made replies meets what the model does:
   holds something (the recap's `CAMPAIGN CHRONICLE` holds a dated entry), not
   a name (the live scribe wrote "Oduya" where the placeholder wrote "Vance
   Oduya").
-- **The Chronicle's floor.** The scribe's replies are stored only at
+- **The Chronicle's floor.** The scribe's replies were stored only at
   "significant" or above by default, and a live scribe rated a whole session
   below that: no chronicle, so no campaign recap call, and the step that
-  requires one reports it MISSING. first-session pins
-  `chronicleSalienceThreshold` to "scene" (known-issues
-  CHRONICLE-EMPTY-AFTER-LIVE-SESSION).
+  requires one reports it MISSING. The default is "notable" now (known-issues
+  CHRONICLE-EMPTY-AFTER-LIVE-SESSION); first-session still pins
+  `chronicleSalienceThreshold` to "scene", so its recap does not depend on
+  how a scribe rates four beats.
 - The step's wait for its required calls is five times longer in record mode:
   a session's end makes its calls one after another, and each live reply
   takes seconds.
@@ -395,6 +397,143 @@ scenario written against hand-made replies meets what the model does:
   set) reproduces a content-dependent failure with no key; the staged copy of
   the module under `./data` can be instrumented for it. That is how the empty
   Chronicle was found. Put the recording back afterwards.
+
+## AI exploration: a model plays, an observer scores (Playwright, on demand)
+
+`test/ci/playwright/explore.mjs` (issue #302 slice D; #290 part 3) is the
+scripted playthroughs' sibling: the same two browsers and the same Claude
+harness, with the script replaced by a model that is given a goal. Run it
+with `test/ci/scripts/cloud.sh explore [--rehearse | --replay <run folder>]`.
+**Nothing in CI runs it, and nothing may** — a live run spends money and its
+result is one sample.
+
+Three roles, and what each may do — keep them apart:
+
+- **The player** (`lib/player.mjs`) gets a persona, a goal and its own
+  screen: the chat as rendered, the buttons on its cards, an open window's
+  fields and buttons, its own character's meters. It acts through one strict
+  tool — say, click, dialog, wait, stop — and every action is checked against
+  the screen it was chosen on (`validateAction`) before it is taken. It never
+  reads world state, never calls a module function, and never says whether
+  its goal was met.
+- **The observer** (`lib/observer.mjs`) reads — the GM's world, the chat,
+  the requests the harness saw — and never writes. Its verdict is arithmetic
+  (`scoreMemory`, `healthOf`, `classifyRun`, all pure and unit-tested): no
+  model is asked whether the goal was met.
+- **The reviewer** (`lib/reviewer.mjs`) is a model's opinion with evidence.
+  A flag must quote the transcript word for word or it is dropped
+  (`keepQuotedFlags`); nothing it says outranks the observer.
+
+The GM's client is on autopilot for what the module asks of the GM before a
+move rolls, answered without steering the story (`GM_AUTOPILOT` in
+`explore.mjs`): a proposed move's confirmation is accepted as proposed, and
+"Who are you interacting with?" is answered "No specific entity", which is
+what closing it means. Nothing else is answered.
+
+**The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
+Every model call of a run goes through it — the module's (the harness's
+`gate`), the player's and the reviewer's (`lib/anthropic.mjs`), each retry —
+and a call's worst cost is reserved *before* it is sent. A call the budget
+refuses is not sent: a module call gets the neutral stub so the page does not
+hang, and the run ends as `budget-exhausted` (if the goal had not been put to
+the test) with its evidence written. A model with no price is refused. When
+you add a model anywhere in the module, add its price to the config
+(`exploreRunner.test.js` checks the models the first-session recording used).
+
+**What the runner had to learn about this table** — keep these when you add a
+charter or touch the runner:
+
+- **"The table is done" is counted from the action.** `settle` waits for the
+  move lock to be free, no confirmation open, and nothing new for 3.5 s — no
+  model call in flight or just started, no write in the GM's world — with the
+  quiet clock started at the action itself. Counted from the last call, a
+  table that had not begun to answer was taken for one that had finished: the
+  session's opening vignette was filed under the player's next line. A dialog
+  open on the player's own screen ends the wait sooner.
+- **The module asks the GM things, and holds the move while it waits.** The
+  first live run sat for three minutes behind "Who are you interacting
+  with?" and called it a product failure. A window on the GM's screen that
+  the autopilot does not answer ends the wait after 20 s and the run as
+  `not-exercised`, naming the window; the lock that question holds is not a
+  health failure (`healthOf` → `waitingOnGm`). When the module gains a prompt
+  for the GM, add it to `GM_AUTOPILOT` with the answer that steers least.
+  The module's own windows are `.application.sf-window`, not Foundry
+  dialogs: look for both, on both screens. A rehearsal never rolls, so it
+  cannot find a prompt on the move path — only a live run does.
+- **A player's line is what they typed.** Cards the player's client posts
+  (Begin a Session's, a move's) are authored by the player too; they carry
+  the module's flags, a typed line carries none.
+- **A narrator card's prose is `flags.narrationText`.** Its content also
+  holds the card's chrome ("◈ Narrator", the audio buttons).
+- **The screen is the rendered text** (`innerText`): `textContent` runs
+  blocks together and includes a stylesheet's source.
+- **A store that kept the player's line is not memory.** The Pacing Telemetry
+  journal logs every line; no narration is built from it
+  (`explore.config.json` → `notMemory`). Add a diagnostic store there when
+  you add one to the module.
+- **The game system's first-start window** is open on a new player's screen;
+  the player is not shown it (`ignoreWindows`).
+
+**The run's class** (`classifyRun`): an infrastructure error first, then a
+failed health check (`product-failure`), then a goal never put to the test
+(`not-exercised` — also when the table was left waiting on the GM — or
+`budget-exhausted` when a cap caused it), then a goal not
+achieved or a reviewer's flag (`suspected-quality-issue`), else `pass`. A
+memory goal that was not achieved is *suspected* at every layer — which
+stored facts a prompt owes is a design rule the observer does not know (a
+Chronicle entry reaches every narration only when pinned) — so `retrieval` is
+evidence to read, not a verdict.
+
+**A presence test is not comprehension.** A fact is "held" when one of its
+accepted variants occurs in the text: "you lost the compass" holds "compass".
+Pick a fact whose words are unlikely to appear by accident, tell the player
+not to name it when it asks, and read the answer in `observer.json` before
+calling a run a pass. Structured facts and negation belong to slice E's
+benchmark.
+
+**Replay.** Every run writes `replay.json`: the player's actions with no
+document ids in them (a click is its button's label and which message
+offering it, counted from the newest), the dice as they fell, and the
+module's replies filed under the action each belonged to. A replay takes the
+actions again in a fresh world and scores it again; it `REPRODUCED` when the
+observer's finding — the goal's status and layer, and whether health failed
+— is the same. The reviewer is a model and is not asked again, so the run's
+class may differ where only its flags coloured it.
+
+**A run worth keeping is committed under `playwright/explorations/`** — its
+`replay.json`, with `run.json` and `transcript.md` for a reader — and is then
+a regression anyone can run without a key (`cloud.sh explore --replay
+playwright/explorations/<run>`). `memory-live-20261122` is the first: real
+narrator replies, the memory goal achieved. `exploreRunner.test.js` checks on
+every PR that the file is one the runner can take again and that it holds
+what its result claims (the fact stated in the first session, not named by
+the player in the second, and in the narrator's replies there); the replay
+itself needs Foundry and is on demand — adding it to the e2e workflow is the
+maintainer's call. A replay matches a reply to a call by its step and kind,
+so it survives a reworded prompt, and diverges when a step makes different
+calls than it did: after a change that was meant to do that, make a new live
+run and replace the files; after one that was not, the divergence is the
+finding. Never edit a kept `replay.json` by hand.
+
+**Rehearse before you pay.** `--rehearse` runs the whole live path with the
+Messages API stood in for in the runner's own process (`lib/rehearsal.mjs`):
+the charter's `rehearsal` script comes back through the player's tool, the
+module's calls get replies that keep the charter's fact once it is in front
+of them, and the reviewer returns one flag that quotes nothing (so it must be
+dropped). A remembering rehearsal scores `achieved` only because the module's
+own memory path carried the fact from one session to the next — it is a real
+check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
+scores `not-achieved` at `storage`. Run both after a change to the runner.
+
+**Adding a charter.** A charter is `charters/<name>.json`: `persona`, `goal`
+and `playerNotes` (what the player model is told), `facts` (each with the
+`variants` that count as holding it; `required: false` for one that is
+reported and does not decide), `ask.cues` (words one of which marks a line as
+the question), `canon` (what the reviewer is told is true), `settings` and
+`seed` (the scripted playthroughs' format), and `rehearsal` (the player's
+actions for a rehearsal). The observer scores the memory goal only: a charter
+with a different goal needs its own pure scoring function beside
+`scoreMemory`, with tests, before it is run.
 
 ## Quench batch coupling — shared defaults and hooks
 

@@ -28,7 +28,7 @@
  * (src/pacing/telemetry.js) so dials can be tuned from real session data.
  */
 
-import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
+import { classifyInput, effectiveDial, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
 import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated, lineIsToAFellowPlayerCharacter } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
@@ -151,6 +151,11 @@ function defaultDial(category) {
 }
 
 
+/** The dials at which "narrate unless asked" holds (the classifier's 0–2 band). */
+const LOW_DIAL_MAX = 2;
+/** Below this, a MOVE read at a low dial is an offer, not a roll. */
+const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ROUTER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,6 +247,22 @@ export async function decidePacing({
     result.decision      = PACING_DECISION.NARRATIVE;
     result.suggestedMove = null;
     result.reasoning     = `[spoken to a fellow player character: roleplay, not a roll] ${result.reasoning ?? ""}`.trim();
+  }
+
+  // The dial holds. At 0–2 the table has said "narrate unless the player
+  // asks for a roll or the stakes are plain", and a MOVE the classifier is
+  // not sure of is neither: with the social dial at 1, "I lean on the counter
+  // and ask Vance what the Ascendancy wants with him" was called a Compel at
+  // 0.6 in two live runs of three, because Vance is a connection (known-issues
+  // PACING-LOW-DIAL-QUESTION-TO-CONNECTION). Such a move is offered, not
+  // rolled: the narration answers, and its card carries the Roll. Not in a
+  // fight (the backstop above), and not the fallback for a call that failed,
+  // which keeps the move pipeline running.
+  if (!combatActive && result.decision === PACING_DECISION.MOVE && result.fallback !== true
+      && effectiveDial(result.category, pacingConfig) <= LOW_DIAL_MAX
+      && result.confidence < LOW_DIAL_MOVE_CONFIDENCE) {
+    result.decision  = PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE;
+    result.reasoning = `[low dial: an unsure move is offered, not rolled] ${result.reasoning ?? ""}`.trim();
   }
 
   // Record the decision for both the in-memory density window and the

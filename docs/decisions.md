@@ -6,6 +6,131 @@ rejected.
 
 ---
 
+## AI exploration: a player that only plays, an observer that only reads (2026-11)
+
+**Decision:** Issue #302 slice D (with #290 part 3) is
+`test/ci/playwright/explore.mjs`: an AI player with a goal at a live Foundry
+table, an observer that scores the goal without a model, a reviewer whose
+flags must quote the transcript, and a budget every model call passes
+through. On demand only (`cloud.sh explore`); nothing in CI runs it. The
+maintainer's go-ahead for the slice: 2026-11-22.
+
+- **Three roles with separate authority.** The player sees its own screen
+  and acts through one strict tool (say, click, dialog, wait, stop), each
+  action checked against the screen it was chosen on. The observer reads the
+  world, the chat and the requests and writes nothing; its score is pure
+  functions. The reviewer's opinion never changes the observer's finding.
+  The player is never asked whether its goal was met.
+- **The memory goal is scored at three layers** when the question is asked:
+  stored (in a store a narration is built from), in the prompt for that
+  question, in the answer. The first miss names where the fact was lost:
+  storage, retrieval, generation.
+- **A goal not achieved is `suspected-quality-issue` at every layer;
+  `product-failure` is for what holds whatever the charter** — the move lock
+  free at the end, no error of the module's on a page, every step settled.
+  Storage and the answer are a model's output. Retrieval is code, but which
+  stored facts a prompt owes is a design rule the observer does not know (a
+  Chronicle entry reaches every narration only when pinned): the first
+  version classed a stored-and-not-sent fact as a product failure and
+  convicted the module on the strength of a diagnostic log
+  (known-issues EXPLORE-STORED-IS-FOUND).
+- **Caps: 30 player actions, 100 model calls, 20 minutes, $10** — the
+  issue's proposed ceilings, in `explore.config.json`. A call's worst cost
+  (its prompt as a cache write, its `max_tokens` as output) is reserved
+  before it is sent and replaced by what it used. A model with no price is
+  refused.
+- **Models: `claude-opus-5-5` for the player (effort low) and the reviewer
+  (effort medium).** The module's own calls use the models its settings
+  name. Chosen as the current default model; a config line each, the
+  maintainer's to change.
+- **No server-side refusal fallback.** A declined call is reported as a
+  refusal. A rescued call bills at the fallback model's rates, which the
+  reservation made before dispatch did not cover — and the dollar cap is a
+  promise.
+- **Plain `fetch`, no SDK.** The Playwright suites carry no SDK and the
+  harness already speaks the Messages API; a dependency is not added for
+  two call sites (CLAUDE.md → "Never do without explicit instruction").
+- **A rehearsal, not a dry run.** `--rehearse` runs the live code path with
+  the Messages API stood in for in-process (`lib/rehearsal.mjs`): the path
+  that costs money is the one that most needs checking for free. A first
+  "dry" mode fed a script past the player's tool and answered the module
+  with neutral stubs; it exercised none of the budget, the tool call, the
+  reviewer or the recording, and was replaced.
+- **Every run is replayable, and a replay is compared on the observer's
+  finding** — the goal's status and layer, and whether health failed. The
+  actions are kept with no document ids, the dice as they fell
+  (`installDiceScript` keeps them), the module's replies under the action
+  each belonged to. The reviewer is not asked again.
+- **The key stays in the runner.** It is sent in a header by the runner's
+  process, never enters the world (the page holds a placeholder), is in no
+  log the runner keeps, and is blanked from anything written.
+- **A live run that went the whole way is kept as a replay** (the
+  maintainer, 2026-11-22): `playwright/explorations/memory-live-20261122/`.
+  It is evidence that can be run again, not a gate — CI does not replay it
+  (it needs Foundry, and a workflow change is its own decision); a unit test
+  holds the file to what it claims on every PR. It is replaced by a new live
+  run, never edited.
+- **The GM is an autopilot that answers only what the module asks of a GM
+  before a roll, with the answer that steers least** — the move accepted as
+  proposed, "Who are you interacting with?" answered "No specific entity" —
+  and a table left waiting on any other GM window is `not-exercised`, never
+  a product failure: the module holds a move behind such a question by
+  design (issue #347 D1). Learned from the first live run, which stalled
+  there and blamed the module (known-issues EXPLORE-GM-PROMPT-UNANSWERED).
+- **Findings are exported, not acted on.** A run files no issue, changes no
+  code and rewrites no recording.
+
+**Rejected:**
+- *Letting the player declare its goal complete, or asking a model to judge
+  it.* Then the test of the narrator's memory is another model's impression
+  of it.
+- *A substring's presence as a pass without reading.* Kept as the layer
+  test because it is checkable and replayable, and recorded as a limit
+  (known-issues EXPLORE-PRESENCE-NOT-COMPREHENSION): structured facts are
+  slice E.
+- *Running it in CI on a schedule.* A live run is one sample of a model's
+  behaviour and costs money each time.
+- *An allow-list of "narrator sources" for the stored layer.* It would need
+  the module's whole injection map kept true in a test config; a short
+  deny-list of diagnostic stores errs toward calling a miss retrieval, which
+  is then read, not ruled on.
+
+---
+
+## A low pacing dial holds in code: an unsure move is offered, not rolled (2026-11)
+
+**Decision:** At an effective dial of 0–2 for the line's category, a MOVE the
+classifier returns with confidence under 0.7 is routed as
+NARRATIVE_WITH_MOVE_AVAILABLE (`router.js` `decidePacing`): the narrator
+answers the line and its card carries the Roll for the move the classifier
+named. The classifier's prompt also says that who a line is spoken to is not
+a stake (known-issues PACING-LOW-DIAL-QUESTION-TO-CONNECTION; the
+maintainer's decision, 2026-11-22).
+
+**Reason:** the dial's lowest band is the table saying "narrate unless the
+player asks for a roll or the stakes are plain". Recorded from the live
+model, a plain question to a connection was called a Compel at 0.6 with the
+social dial at 1 in two runs of three — the classifier overrode the dial
+because the other speaker was a connection. A prompt rule alone is a
+request; the dial is a setting, and a setting is kept in code, as the
+combat-active backstop already keeps the opposite one (a fight never hedges).
+
+- Not during a fight, and not the fallback decision for a call that failed or
+  a reply that could not be read: that one keeps the move pipeline running.
+- A sure move still rolls at any dial — explicit intent ("I try to…") comes
+  back well above the floor.
+- The default downtime dial is 1, so this reaches unsure downtime moves on a
+  table that changed nothing: they are offered where they were rolled.
+
+**Rejected:**
+- *The same floor at every dial.* At the default dials a 0.6 MOVE is what the
+  table asked for more often than not; offering every one of them is the
+  suggestion loop the dials were raised to end (remediation §B3).
+- *Temperature or a second classifier call to settle a 0.6.* Costs a call per
+  line to make an unsure reading look sure.
+
+---
+
 ## The test stack in a cloud session, and recordings made from live runs (2026-11)
 
 **Decision:** `test/ci/scripts/cloud.sh` runs the Foundry test stack inside a
@@ -166,6 +291,19 @@ choices below were made while building them.)
   keep working.
   An update that changes nothing is not sent, as in Foundry — the shared
   vow's sync and the bond mirror stop on that.
+- **A vow sworn to a connection comes with the starting world, not from a
+  command** (2026-11-22). The fixture links a vow to one of its connections
+  as the vow card's 🤝 Link leaves it — the card's id, its name beside it —
+  and the model follows the recorded rule: fulfilled, the vow deepens that
+  connection once, by its own rank's marks (1, 1, 2, 2, 3), each mark at the
+  connection's rank; the link is the connection whatever it is called, and
+  shows its name as it is now. The "one fewer on a weak hit" beside those
+  numbers is written for a won fight's marks on its vow and is not applied
+  here. Swearing mid-sequence stays out: the vow card's own lifecycle is not
+  written down anywhere but the code, and a model of it would be the code's
+  (known-issues SEQUENCE-LINK-NOT-GENERATED). A vow sworn to a connection
+  already bonded is not fulfilled in a sequence — nothing says what a bonded
+  relationship takes from it (SEQUENCE-COMMANDS-LEFT).
 - **A corpus that exercised nothing has passed nothing.** Each fixed corpus
   counts every kind of command, each roll's outcome and each press by two,
   and fails if a kind never ran.
@@ -7448,6 +7586,18 @@ not an overload of `confidence`.
 **Per-channel, not a single dial (D4):** each channel owns its floor so the GM
 can, e.g., keep Threats strict while loosening the Chronicle. Matches the
 existing per-feature world-settings style.
+
+**The Chronicle's default floor is `notable` (2026-11-22, the maintainer's
+decision; known-issues CHRONICLE-EMPTY-AFTER-LIVE-SESSION).** D5 below still
+holds for Lore and Threats. For the Chronicle it under-captured to nothing:
+recorded from the live model, a whole first session's beats were rated
+`notable` or `scene`, none was stored, and the campaign recap had nothing to
+be made from. The Chronicle is the PC's record and its below-floor beats go
+nowhere else (D7), so its default now keeps a beat "that may echo later".
+Each channel's default is said once, in `salience.js` (`DEFAULT_THRESHOLDS`);
+the settings' registration and the panel read it from there. A world that has
+stored a floor keeps it — the panel writes the control on every save, and a
+stored `significant` cannot be told from a choice, so there is no migration.
 
 **Conservative default (D5):** the floor is `significant`, so only durable
 world/character facts are recorded and the GM promotes scene texture up. Under-
