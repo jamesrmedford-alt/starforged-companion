@@ -21,7 +21,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  LEGACY_REWARD_TICKS, MOMENTUM_MAX, PROGRESS_TICKS, RANKS, TICKS_PER_BOX, bondReward, fulfilReward, gainMomentum,
+  DEEPEN_MARKS, LEGACY_REWARD_TICKS, MOMENTUM_MAX, PROGRESS_TICKS, RANKS, TICKS_PER_BOX, bondReward, deepen, fulfilReward, gainMomentum,
   markProgress, outcomeOf, progressScore, rankAbove, rankBelow, rankOf, recommit, sheetRank,
 } from '../helpers/sequence/rules.js';
 import * as M from '../helpers/sequence/model.js';
@@ -41,6 +41,17 @@ function rewardSentence(text) {
 }
 
 describe('the rules are the game\'s, read from its text', () => {
+  it('a vow sworn to a connection deepens it by the vow\'s rank, each mark at the connection\'s — the recorded decision says so', () => {
+    const decisions = fs.readFileSync(path.join(ROOT, 'docs/decisions.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(decisions).toContain('(troublesome/dangerous 1, formidable/extreme 2, epic 3;');
+    expect(decisions).toContain('vow→connection = (vow rank → marks, connection rank → ticks)');
+    expect(decisions).toContain('One reward: whichever lands first pays');
+    expect(RANKS.map(r => DEEPEN_MARKS[r])).toEqual([1, 1, 2, 2, 3]);
+    expect(deepen(4, 'dangerous', 'formidable'), 'two marks of two boxes').toBe(20);
+    expect(deepen(0, 'epic', 'epic'), 'three marks of one tick').toBe(3);
+    expect(deepen(36, 'troublesome', 'dangerous'), 'never past the tenth box').toBe(40);
+  });
+
   it.skipIf(!HAVE_VENDOR)('the legacy reward by rank is the sentence in Fulfill Your Vow and in Forge a Bond', () => {
     expect(rewardSentence(moveText('Fulfill_Your_Vow_985a5415860a99e9.json'))).toEqual(LEGACY_REWARD_TICKS);
     expect(rewardSentence(moveText('Forge_a_Bond_287bb4c2b53ea847.json'))).toEqual(LEGACY_REWARD_TICKS);
@@ -166,16 +177,18 @@ describe('the model moves by those rules', () => {
     expect(M.canPlay(model)).toBe(true);
   });
 
-  it('expected() shows every sheet the crew\'s legacy, each character their own vows, and a holder their bond', () => {
+  it('expected() shows every sheet the crew\'s legacy, each character their own vows, a holder their bond, and a sworn vow its connection', () => {
     const model = fresh();
     const vow = M.addVow(model, { pc: 'pc-kira', name: 'Find Kade', rank: 'troublesome' });
     M.addVow(model, { pc: 'pc-ash', name: 'Find Kade', rank: 'epic' });
     const vega = M.addConnection(model, { name: 'Vega', rank: 'epic', holder: 'pc-ash' });
+    M.swearTo(model, vow, vega);                                // Kira's vow, sworn to Ash's connection
     for (let i = 0; i < 4; i++) M.reachMilestone(model, vow);
-    M.fulfilVow(model, vow, [1, 1]);
-    M.renameConnection(model, vega, 'Sable');
+    M.fulfilVow(model, vow, [1, 1]);                            // fulfilled: one mark for a troublesome vow, one tick on an epic track
+    M.renameConnection(model, vega, 'Sable');                   // the link is the connection, and shows its name now
     expect(M.expected(model)).toEqual({
       legacy: { quests: 1, bonds: 0 },
+      links: { v1: { connection: 'c3', name: 'Sable' } },
       pcs: {
         'pc-kira': {
           momentum: 2, legacyOnSheet: { quests: 1, bonds: 0 },
@@ -185,10 +198,10 @@ describe('the model moves by those rules', () => {
         'pc-ash': {
           momentum: 2, legacyOnSheet: { quests: 1, bonds: 0 },
           vows: [{ ref: 'v2', name: 'Find Kade', rank: 'epic', ticks: 0, fulfilled: false }],
-          bonds: [{ connection: 'c3', name: 'Sable', rank: 'epic', ticks: 0, forged: false }],
+          bonds: [{ connection: 'c3', name: 'Sable', rank: 'epic', ticks: 1, forged: false }],
         },
       },
-      connections: [{ ref: 'c3', name: 'Sable', rank: 'epic', ticks: 0, bonded: false }],
+      connections: [{ ref: 'c3', name: 'Sable', rank: 'epic', ticks: 1, bonded: false }],
       sessionOpen: true,
       moveInFlight: false,
     });

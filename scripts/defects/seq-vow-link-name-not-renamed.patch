@@ -1,0 +1,20 @@
+Defect: issue #302 slice C — renaming a connection's card no longer renames the vows sworn to it: the vow goes on showing a name the card does not have (the write-through mirror of VOW-CONNECTION-LINK-BY-NAME, dropped)
+Tests: tests/unit/generatedSequences.test.js
+Catches: leave the table as the rules say
+Catches: among them sessions ended and begun
+Catches: a vow sworn to a connection deepens that one
+Catches: the progress is still hers
+
+diff --git a/src/entities/connection.js b/src/entities/connection.js
+index bd10c531..a4ef9537 100644
+--- a/src/entities/connection.js
++++ b/src/entities/connection.js
+@@ -236,7 +236,7 @@ export async function renameBondItems(record, name) {
+ export async function renameVowLinks(actorId, name) {
+   try {
+     const { renameVowLinksToConnection } = await import("../character/actorBridge.js");
+-    await renameVowLinksToConnection(actorId, name);
++    void renameVowLinksToConnection; void actorId; void name;
+   } catch (err) {
+     console.warn(`${MODULE_ID} | vow link rename mirror failed:`, err?.message ?? err);
+   }

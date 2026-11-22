@@ -12,8 +12,8 @@
  * comparison shows when the table did.
  *
  * What it tracks
- *   - each vow: whose it is, its name, rank, ticks, and whether it is
- *     fulfilled;
+ *   - each vow: whose it is, its name, rank, ticks, whether it is
+ *     fulfilled, and the connection it was sworn to, if any;
  *   - each connection: its name, rank, ticks, whether a bond is forged, and
  *     which characters hold it;
  *   - the crew's quests and bonds legacy tracks, in ticks ever marked;
@@ -23,7 +23,7 @@
  */
 
 import {
-  MOMENTUM_START, bondReward, fulfilReward, gainMomentum, markProgress, outcomeOf, progressScore, recommit,
+  MOMENTUM_START, bondReward, deepen, fulfilReward, gainMomentum, markProgress, outcomeOf, progressScore, recommit,
 } from "./rules.js";
 
 export function createModel(pcs) {
@@ -53,10 +53,18 @@ export const pick = (list, n) => (list.length ? list[n % list.length] : null);
 // ── vows ────────────────────────────────────────────────────────────────────
 
 export function addVow(model, { pc, name, rank }) {
-  const vow = { ref: nextRef(model, "v"), pc, name, rank, ticks: 0, status: "open", offer: false };
+  const vow = { ref: nextRef(model, "v"), pc, name, rank, ticks: 0, status: "open", offer: false, swornTo: null };
   model.vows.push(vow);
   return vow;
 }
+
+/** The vow is sworn to a connection: the connection itself, whatever it is called later. */
+export function swearTo(model, vow, connection) {
+  vow.swornTo = connection.ref;
+}
+
+/** The connection a vow is sworn to, or null. */
+export const swornConnection = (model, vow) => (vow?.swornTo ? model.connections.find(c => c.ref === vow.swornTo) ?? null : null);
 
 export function reachMilestone(model, vow) {
   vow.ticks = markProgress(vow.ticks, vow.rank);
@@ -72,6 +80,9 @@ export function fulfilVow(model, vow, challenge) {
   vow.status = "fulfilled";
   vow.offer = false;
   model.legacy.quests += fulfilReward(vow.rank, outcome);
+  // Sworn to a connection: the fulfilment deepens that relationship, once.
+  const connection = swornConnection(model, vow);
+  if (connection) connection.ticks = deepen(connection.ticks, connection.rank, vow.rank);
   return outcome;
 }
 
@@ -165,9 +176,17 @@ export function expected(model) {
         .map(c => ({ connection: c.ref, name: c.name, rank: c.rank, ticks: c.ticks, forged: c.bonded })),
     };
   }
+  // A vow's link: the connection it was sworn to, and that connection's name
+  // as the vow shows it — which is the card's name now, whatever it was.
+  const links = {};
+  for (const vow of model.vows) {
+    const connection = swornConnection(model, vow);
+    if (connection) links[vow.ref] = { connection: connection.ref, name: connection.name };
+  }
   return {
     legacy: { ...model.legacy },
     pcs,
+    links,
     connections: model.connections.map(c => ({ ref: c.ref, name: c.name, rank: c.rank, ticks: c.ticks, bonded: c.bonded })),
     sessionOpen: model.session.active,
     moveInFlight: false,

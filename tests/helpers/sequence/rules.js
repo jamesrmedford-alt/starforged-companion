@@ -25,6 +25,14 @@
  *   - The legacy tracks are the crew's, one set for the table, shown on
  *     every sheet (decisions.md → "Legacy XP pays at the tick write, to
  *     every player character").
+ *   - A vow sworn to a connection: fulfilled, it deepens that connection —
+ *     "a milestone on its relationship track" — and "the source challenge's
+ *     rank sets the mark count, the target track's rank sets ticks/mark":
+ *     "troublesome/dangerous 1, formidable/extreme 2, epic 3" (decisions.md →
+ *     "Vow ↔ combat ↔ bond stakes & rewards"). The "weak-hit win N−1" beside
+ *     those numbers is written for a won fight's marks on its vow; nothing
+ *     says a weak hit on the vow itself deepens less, so it does not here.
+ *     Once per vow (decisions.md → "A vow deepens its connection once").
  *   - A session: Begin a Session with a vignette spotlighted, "all players
  *     take +1 momentum"; End a Session with a focus noted for next time,
  *     "make note of it and take +1 momentum". Momentum is never above +10
@@ -110,6 +118,16 @@ export function fulfilReward(rank, outcome) {
 /** Legacy ticks for a forged bond: the connection's rank on any hit. */
 export function bondReward(rank, outcome) {
   return outcome === "miss" ? 0 : LEGACY_REWARD_TICKS[rank];
+}
+
+/** Marks a fulfilled vow puts on the relationship of the connection it was sworn to, by the vow's rank. */
+export const DEEPEN_MARKS = Object.freeze({ troublesome: 1, dangerous: 1, formidable: 2, extreme: 2, epic: 3 });
+
+/** A sworn-to connection's relationship after its vow is fulfilled: the vow's marks, each at the connection's own rank. */
+export function deepen(ticks, connectionRank, vowRank) {
+  let out = ticks;
+  for (let i = 0; i < DEEPEN_MARKS[vowRank]; i++) out = markProgress(out, connectionRank);
+  return out;
 }
 
 /** A recommit: the lower challenge die's boxes cleared, the rank raised by one. */

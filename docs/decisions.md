@@ -278,6 +278,19 @@ choices below were made while building them.)
   keep working.
   An update that changes nothing is not sent, as in Foundry — the shared
   vow's sync and the bond mirror stop on that.
+- **A vow sworn to a connection comes with the starting world, not from a
+  command** (2026-11-22). The fixture links a vow to one of its connections
+  as the vow card's 🤝 Link leaves it — the card's id, its name beside it —
+  and the model follows the recorded rule: fulfilled, the vow deepens that
+  connection once, by its own rank's marks (1, 1, 2, 2, 3), each mark at the
+  connection's rank; the link is the connection whatever it is called, and
+  shows its name as it is now. The "one fewer on a weak hit" beside those
+  numbers is written for a won fight's marks on its vow and is not applied
+  here. Swearing mid-sequence stays out: the vow card's own lifecycle is not
+  written down anywhere but the code, and a model of it would be the code's
+  (known-issues SEQUENCE-LINK-NOT-GENERATED). A vow sworn to a connection
+  already bonded is not fulfilled in a sequence — nothing says what a bonded
+  relationship takes from it (SEQUENCE-COMMANDS-LEFT).
 - **A corpus that exercised nothing has passed nothing.** Each fixed corpus
   counts every kind of command, each roll's outcome and each press by two,
   and fails if a kind never ran.
