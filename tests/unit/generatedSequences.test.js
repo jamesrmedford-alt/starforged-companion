@@ -46,7 +46,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fc from 'fast-check';
 import { bootSequenceTable, usableTable, SequenceWorld, PCS } from '../helpers/sequence/world.js';
-import { expectKnownIssue } from '../helpers/faults.js';
 import * as M from '../helpers/sequence/model.js';
 import {
   AddConnection, AddVow, BeginSession, DevelopRelationship, DropAndRejoin, EndSession, ForgeBond, FulfilVow, ReachMilestone,
@@ -258,43 +257,96 @@ describe('the sequences the properties are about, written out', () => {
 });
 
 // Found beside the generated flows, by reading the vow's payoff while mapping
-// it: none of the commands above swears a vow to a connection. Kept as keyed
-// checks (decisions.md → "A known, open defect is a keyed check, not a
-// skip"): each asserts what should happen, passes while the defect answers as
-// recorded, and fails the day it is fixed — make it an ordinary test then.
-describe('known and open: a vow sworn to a connection is linked by the connection\'s name (VOW-CONNECTION-LINK-BY-NAME)', () => {
-  const SWORN = {
-    vows: [{ ref: 'v1', pc: 'pc-kira', name: 'Find Kade', rank: 'dangerous', ticks: 40, swornTo: 'Sable' }],
-    connections: [
-      { ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 8, holder: 'pc-kira' },
-      { ref: 'c3', name: 'Orrin', rank: 'dangerous', ticks: 0, holder: 'pc-ash' },
-    ],
-  };
+// it, and fixed: a vow sworn to a connection was linked by the connection's
+// name, so a renamed NPC card was no longer found, and another card given the
+// old name was marked in its place. The link is the card now, by its id.
+describe('a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME)', () => {
+  const CONNECTIONS = [
+    { ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 8, holder: 'pc-kira' },
+    { ref: 'c3', name: 'Orrin', rank: 'dangerous', ticks: 0, holder: 'pc-ash' },
+  ];
+  const linkOf = (world) => world.vowItem('v1').flags['starforged-companion'] ?? {};
+  const relationships = (world) => world.observe().connections.map(c => `${c.ref} ${c.ticks}`).join(', ');
 
-  /** Kira's vow to Sable (c2) fulfilled on a strong hit, after the NPC cards are renamed as given: each connection's ticks, as "c2 16, c3 0". */
-  async function relationshipsAfter(renames) {
+  /** Kira swears "Find Kade" on her sheet, links it to Sable (c2) with the vow card's 🤝 Link, and fills its track. */
+  async function swornWithTheCard() {
     table = await usableTable(table);
-    const world = await SequenceWorld.start(table, SWORN);
-    for (const [ref, name] of renames) await world.renameConnection(ref, { name });
-    await world.fulfilVow('v1', { pc: 'pc-kira', name: 'Find Kade', challenge: [1, 2] });
-    const seen = world.observe();
-    expect(seen.pcs['pc-kira'].vows[0].fulfilled).toBe(true);
-    return seen.connections.map(c => `${c.ref} ${c.ticks}`).join(', ');
+    const world = await SequenceWorld.start(table, { connections: CONNECTIONS });
+    await world.addVow('v1', { pc: 'pc-kira', name: 'Find Kade', rank: 'dangerous' });
+    await world.linkVow('v1', 'c2', { pc: 'pc-kira' });
+    await world.setVowTicks('v1', { pc: 'pc-kira', ticks: 40 });
+    return world;
   }
 
-  it('control: fulfilled, the vow develops the relationship it was sworn to — a mark on Sable\'s track, none on Orrin\'s', async () => {
-    expect(await relationshipsAfter([])).toBe('c2 16, c3 0');
+  /** A world from before the fix: the vow holds Sable's name, and no card's id. */
+  async function swornBeforeTheFix() {
+    table = await usableTable(table);
+    return SequenceWorld.start(table, {
+      vows: [{ ref: 'v1', pc: 'pc-kira', name: 'Find Kade', rank: 'dangerous', ticks: 40, swornTo: 'Sable' }],
+      connections: CONNECTIONS,
+    });
+  }
+
+  /** Fulfilled on a strong hit: each connection's ticks after it, as "c2 16, c3 0". */
+  async function fulfilled(world) {
+    await world.fulfilVow('v1', { pc: 'pc-kira', name: 'Find Kade', challenge: [1, 2] });
+    expect(world.observe().pcs['pc-kira'].vows[0].fulfilled).toBe(true);
+    return relationships(world);
+  }
+
+  it('the vow card\'s Link ties the vow to the connection\'s card, by its id', async () => {
+    const world = await swornWithTheCard();
+    expect(linkOf(world)).toMatchObject({ linkedConnectionName: 'Sable', linkedConnectionId: world.hostId('c2') });
+    expect(await fulfilled(world)).toBe('c2 16, c3 0');
   });
 
-  it('with her card renamed, the progress is not applied to her', async () => {
-    await expectKnownIssue('VOW-CONNECTION-LINK-BY-NAME', /expected 'c2 8, c3 0' to be 'c2 16, c3 0'/, async () => {
-      expect(await relationshipsAfter([['c2', 'Vega']])).toBe('c2 16, c3 0');
-    });
+  it('with her card renamed, the progress is still hers — and the vow shows her new name', async () => {
+    const world = await swornWithTheCard();
+    await world.renameConnection('c2', { name: 'Vega' });
+    expect(linkOf(world)).toMatchObject({ linkedConnectionName: 'Vega', linkedConnectionId: world.hostId('c2') });
+    expect(await fulfilled(world)).toBe('c2 16, c3 0');
+    expect(world.card(f => f.payoffFailureCard), 'no "Vow payoff incomplete" card').toBe(null);
   });
 
-  it('with her card renamed and another given her old name, the other connection is marked in her place', async () => {
-    await expectKnownIssue('VOW-CONNECTION-LINK-BY-NAME', /expected 'c2 8, c3 8' to be 'c2 16, c3 0'/, async () => {
-      expect(await relationshipsAfter([['c2', 'Vega'], ['c3', 'Sable']])).toBe('c2 16, c3 0');
+  it('with her card renamed and another given her old name, the other connection is not marked in her place', async () => {
+    const world = await swornWithTheCard();
+    await world.renameConnection('c2', { name: 'Vega' });
+    await world.renameConnection('c3', { name: 'Sable' });
+    expect(await fulfilled(world)).toBe('c2 16, c3 0');
+  });
+
+  it('a link made before the fix still develops the connection its name names', async () => {
+    expect(await fulfilled(await swornBeforeTheFix())).toBe('c2 16, c3 0');
+  });
+
+  it('a link made before the fix is tied to its card when the GM\'s world next loads — renames after that do not lose it', async () => {
+    const world = await swornBeforeTheFix();
+    expect(linkOf(world).linkedConnectionId ?? null).toBe(null);
+    await world.reload('gm-1');
+    expect(linkOf(world)).toMatchObject({ linkedConnectionName: 'Sable', linkedConnectionId: world.hostId('c2') });
+    await world.renameConnection('c2', { name: 'Vega' });
+    await world.renameConnection('c3', { name: 'Sable' });
+    expect(await fulfilled(world)).toBe('c2 16, c3 0');
+  });
+
+  it('a card renamed while no GM was at the table: the vow takes its name at the next world load', async () => {
+    const world = await swornWithTheCard();
+    // The name changed on the card and its record with no page there to follow it.
+    const card = world.actor(world.hostId('c2'));
+    card.name = 'Vega';
+    card.flags['starforged-companion'].connection.name = 'Vega';
+    await world.reload('gm-1');
+    expect(linkOf(world)).toMatchObject({ linkedConnectionName: 'Vega', linkedConnectionId: world.hostId('c2') });
+  });
+
+  it('a name two cards share cannot say which card: a link made before the fix stays by its name', async () => {
+    table = await usableTable(table);
+    const world = await SequenceWorld.start(table, {
+      vows: [{ ref: 'v1', pc: 'pc-kira', name: 'Find Kade', rank: 'dangerous', ticks: 40, swornTo: 'Sable' }],
+      connections: [CONNECTIONS[0], { ...CONNECTIONS[1], name: 'Sable' }],
     });
+    await world.reload('gm-1');
+    expect(linkOf(world).linkedConnectionId ?? null).toBe(null);
+    expect(linkOf(world).linkedConnectionName).toBe('Sable');
   });
 });

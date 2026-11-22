@@ -84,7 +84,7 @@ import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDe
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
 import { logPacingDecision } from "./pacing/telemetry.js";
-import { invalidateActorCache, recalculateMomentumBounds, getActor, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getActor, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, vowLinkedConnectionId, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -3546,9 +3546,12 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
       // (issue #345 AA55): dismissed, it kept the card out of the narrator.
       .then(() => undismissRecordName(newName))
       // A connection's PCs' bond Items take the new name too
-      // (BOND-ITEM-NAME-STALE), found as it was named.
+      // (BOND-ITEM-NAME-STALE), found as it was named — and so does every
+      // vow sworn to it, found by this card's id
+      // (VOW-CONNECTION-LINK-BY-NAME).
       .then(() => (entityType === "connection"
-        ? import("./entities/connection.js").then(m => m.renameBondItems(record, newName)) : null))
+        ? import("./entities/connection.js").then(m => m.renameBondItems(record, newName)
+          .then(() => m.renameVowLinks(actor.id, newName))) : null))
       .catch(err =>
         console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {
@@ -6055,6 +6058,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
   // vow is fulfilled or gone (issue #364 NO-VOW-ID-CARD-MARKS-WRONG-VOW).
   const vowId          = vowCopyId(item) ?? (linked ? linkedId : null);
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+  // The connection's card, by its id: the name is what the button says, the
+  // id is whose bond it deepens (known-issues VOW-CONNECTION-LINK-BY-NAME).
+  const connectionId   = connectionName ? vowLinkedConnectionId(item) : null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
     ? ` <button type="button" class="entity-btn" data-action="sf-deepen-bond">🤝 Deepen your bond with ${escapeChatHtml(connectionName)}</button>`
@@ -6071,6 +6077,7 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null, 
       // resolutionId: the move whose win this is — an upgrade of it to a
       // strong hit raises this card's marks (issue #362 D7).
       flags: { [MODULE_ID]: { fightVowCard: true, vowName, vowId, marks, connectionName, vowRank, actorId,
+        ...(connectionId ? { connectionId } : {}),
         ...(resolutionId ? { resolutionId } : {}) } },
     });
   } catch (err) {
@@ -6180,16 +6187,22 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 // its relationship track. Exported for the won-fight card's relay handler
 // (src/moves/cardActions.js applyFightVowDeepenBond); a fulfilment's payoff
 // and its Retry run it too. Reports, never throws: a refused write, and a
-// connection no longer found by that name (renamed or deleted), used to be
-// swallowed here — the bond silently not deepened (issue #306 R04).
+// connection no longer found (severed or deleted), used to be swallowed here
+// — the bond silently not deepened (issue #306 R04).
+//
+// `connectionId` is the connection's card (the vow's `linkedConnectionId`):
+// given, it is the one deepened, whatever it is named now, and a card that
+// is gone deepens nobody — never another card of that name. Without one (a
+// link made by name alone) the name finds it, as before.
 //
 // @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
-export async function deepenLinkedConnection(connectionName, marks) {
+export async function deepenLinkedConnection(connectionName, marks, { connectionId = null } = {}) {
   try {
-    const target = await findOpenConnection(connectionName);
+    const target = await findOpenConnection(connectionName, connectionId);
     if (!target?.__hostId) {
-      console.warn(`${MODULE_ID} | deepen connection: no connection matched "${connectionName ?? "?"}" — nothing deepened.`);
-      return { ok: false, reason: "not-found" };
+      console.warn(`${MODULE_ID} | deepen connection: no connection matched "${connectionName ?? connectionId ?? "?"}" — nothing deepened.`);
+      // By its card's id, a rename is not why: the card is gone or severed.
+      return { ok: false, reason: connectionId ? "connection-gone" : "not-found" };
     }
     const conn = await import("./entities/connection.js");
     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
@@ -6212,16 +6225,17 @@ export async function deepenLinkedConnection(connectionName, marks) {
  * connection once").
  *
  * @param {{ vowName?: string|null, vowId?: string|null, actorId?: string|null,
- *   connectionName?: string|null, marks?: number }} card
+ *   connectionName?: string|null, connectionId?: string|null, marks?: number }} card
  * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
  */
-export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, marks = 1 } = {}) {
+export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, connectionId = null, marks = 1 } = {}) {
   const copies = payoffVowCopies({ vowId, vowName, actorId });
   if (payoffStepLanded(copies, "deepen")) {
     await postDeepenAlreadyPaidCard(connectionName, vowName);
     return { ok: true, skipped: true, reason: "already-deepened" };
   }
-  const res = await deepenLinkedConnection(connectionName, marks);
+  // A card posted before its vow's link carried the card's id reads it off the vow.
+  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: connectionId ?? linkedConnectionIdOf(copies) });
   if (res?.ok) await recordPayoffStep(copies, "deepen");
   return res;
 }
@@ -6253,6 +6267,15 @@ export async function markFightVowMilestoneOnce({ cardId = null, vowName = null,
   return res;
 }
 
+/** The connection card a vow's copies are linked to, by its id — null for a link by name alone, and for none. */
+function linkedConnectionIdOf(copies) {
+  for (const { item } of copies ?? []) {
+    const id = vowLinkedConnectionId(item);
+    if (id) return id;
+  }
+  return null;
+}
+
 async function postDeepenAlreadyPaidCard(connectionName, vowName) {
   try {
     await ChatMessage.create({
@@ -6264,17 +6287,23 @@ async function postDeepenAlreadyPaidCard(connectionName, vowName) {
   }
 }
 
-// The campaign's open connection a vow's link names (selectConnection's
-// `strict` ladder), as its record plus `__hostId`; null when none does. A link
-// whose connection was severed or renamed names nothing — never the sole
-// bonded or active connection in its place (DEEPEN-LINK-FALLBACK: that one
-// was deepened); the deepen reports it not found, on the GMs' card.
-async function findOpenConnection(connectionName) {
+// The campaign's open connection a vow is linked to, as its record plus
+// `__hostId`; null when there is none. By the link's card id when it has one
+// (`connectionId` — the card itself, under any name; a card that is gone or
+// severed is nobody, never a namesake: known-issues
+// VOW-CONNECTION-LINK-BY-NAME), else by its name (selectConnection's `strict`
+// ladder). A link whose connection was severed names nothing — never the
+// sole bonded or active connection in its place (DEEPEN-LINK-FALLBACK: that
+// one was deepened); the deepen reports it not found, on the GMs' card.
+async function findOpenConnection(connectionName, connectionId = null) {
   const conn = await import("./entities/connection.js");
   const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const connections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(Boolean);
+  if (typeof connectionId === "string" && connectionId) {
+    return selectConnection(connections, null, { hostId: connectionId, strict: true });
+  }
   if (!connectionName) return null;
   return selectConnection(connections, connectionName, { strict: true });
 }
@@ -6653,6 +6682,9 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
   const legacyTicks    = skipLegacy ? 0 : legacyRewardTicks(rank, ranksDown);
   const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+  // The connection's card, by its id — whose bond deepens; the name is what
+  // the cards say (known-issues VOW-CONNECTION-LINK-BY-NAME).
+  const connectionId   = connectionName ? vowLinkedConnectionId(item) : null;
   const marks          = marksForSourceRank(rank);
   // A step the vow's ledger records as landed is never paid again — the
   // ledger a Retry reads (issue #309 N05: a fulfilment that ran after a Retry,
@@ -6666,7 +6698,7 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
   if (!claimed) {
     // Unclaimed, nothing is applied: the GMs' Retry applies the steps, once.
     if (legacyTicks > 0 && owed("legacy")) failures.push({ step: "legacy", track: "quests", ticks: legacyTicks, reason: "unclaimed" });
-    if (connectionName && owed("deepen"))  failures.push({ step: "deepen", connectionName, marks, reason: "unclaimed" });
+    if (connectionName && owed("deepen"))  failures.push({ step: "deepen", connectionName, connectionId, marks, reason: "unclaimed" });
     const promised = allCopies.find(({ item: i }) => i?.flags?.[MODULE_ID]?.reward?.status === "promised");
     if (promised && owed("reward")) {
       failures.push({ step: "reward", reason: "unclaimed", rewardDescription: promised.item.flags[MODULE_ID].reward.description ?? null });
@@ -6691,7 +6723,7 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
 
     // Deepen the linked connection (scaled by the vow's rank).
     if (connectionName && owed("deepen")) {
-      await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
+      await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId }), { connectionName, connectionId, marks });
     }
 
     // Grant the promised reward (one-time; scaled by outcome). The fulfil path
@@ -6972,6 +7004,7 @@ const PAYOFF_REASONS = {
   "sector-no-map": "its sector's map is not stored yet",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
+  "connection-gone": "that connection is no longer open — severed or deleted?",
   "no-vow":    "no open vow by that name",
   "no-pc":     "no player character to receive it",
   "superseded": "the move's result was upgraded since, and its new outcome stands",
@@ -7099,7 +7132,9 @@ export async function postPayoffFailureCard({ source, vowName = null, vowId = nu
 function payoffStepRecord(f) {
   switch (f?.step) {
     case "legacy":      return { step: "legacy", track: f.track ?? null, ticks: f.ticks ?? 0 };
-    case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1 };
+    // connectionId: the connection's NPC card, when the vow's link carries it — whose bond the Retry deepens.
+    case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1,
+      ...(typeof f.connectionId === "string" && f.connectionId ? { connectionId: f.connectionId } : {}) };
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "rewardUpgrade": return { step: "rewardUpgrade", rewardDescription: f.rewardDescription ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
@@ -7141,9 +7176,10 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
         return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now${track?.cleared ? " (cleared)" : ""}.`;
       }
       case "deepen": {
-        const target = await findOpenConnection(f.connectionName);
+        const target = await findOpenConnection(f.connectionName, f.connectionId ?? null);
         const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
-        return `Your bond with ${escapeChatHtml(f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
+        // Named as its card is called now: found by its id, it may have been renamed since.
+        return `Your bond with ${escapeChatHtml(target?.name ?? f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
       }
       case "suffer": {
         // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
@@ -7449,7 +7485,9 @@ async function runPayoffStep(s, card, copies) {
       return runLegacyStep(s.track, ticks);
     }
     case "deepen":
-      return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1));
+      // A step recorded before the link carried its card's id reads it off the vow.
+      return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1),
+        { connectionId: (typeof s.connectionId === "string" && s.connectionId ? s.connectionId : null) ?? linkedConnectionIdOf(copies) });
     case "reward":
       if (!copies.length) return VOW_GONE;
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
@@ -10119,6 +10157,19 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | entity name sync failed:`, err?.message ?? err);
+      }
+      try {
+        // Known-issues VOW-CONNECTION-LINK-BY-NAME — a vow linked to a
+        // connection before the link carried its NPC card's id is given it,
+        // and a link whose card was renamed takes the card's name. After the
+        // name sync above, which settles what each card is called.
+        const { reconcileVowLinks } = await import("./entities/connection.js");
+        const links = await reconcileVowLinks();
+        if (links.stamped || links.renamed) {
+          console.log(`${MODULE_ID} | vow links: ${links.stamped} linked to their connection's card, ${links.renamed} renamed after it`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | vow link upkeep failed:`, err?.message ?? err);
       }
       try {
         // Known-issues NOTES-PROMOTED-BEFORE — a detail promoted to an NPC

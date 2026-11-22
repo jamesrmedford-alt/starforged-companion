@@ -199,12 +199,34 @@ describe('issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card\'s delete of
     expect(ChatMessage._created.slice(before)).toEqual([]);
   });
 
-  it('a namesake is left: the name still means someone, so the vow keeps its link', async () => {
-    await makeAConnection();
-    await linkTheVowToVex();
+  /** Another NPC card that goes by Vex — not the narration's. */
+  function addAnotherVex() {
     game.actors._set('conn-vex-2', makeTestActor({ id: 'conn-vex-2', name: 'Vex', type: 'character',
       flags: { [MODULE_ID]: { entityType: 'connection', connection: { _id: 'rec-vex-2', name: 'Vex', active: true, history: [] } } } }));
     game.settings._store.set(KEY, { ...stored(), connectionIds: [...stored().connectionIds, 'conn-vex-2'] });
+  }
+
+  // The Link stamps the NPC card's id on the vow (known-issues
+  // VOW-CONNECTION-LINK-BY-NAME): the vow was sworn to the narration's Vex,
+  // and another card of that name is not her.
+  it('a namesake is left: the vow was linked to the removed card, not to the name — it loses its link', async () => {
+    await makeAConnection();
+    await linkTheVowToVex();
+    expect(vow.flags[MODULE_ID].linkedConnectionId, 'the Link stamped the narration\'s card (setup)').toBeTruthy();
+    addAnotherVex();
+
+    await xCard();
+
+    expect(npcCards().map(a => a.id), 'the narration\'s Vex is gone, the other is not').toEqual(['conn-vex-2']);
+    expect(linkOf()).toBe(null);
+    expect(vow.flags[MODULE_ID].linkedConnectionId ?? null).toBe(null);
+    expect(notices()).toHaveLength(1);
+  });
+
+  it('a namesake is left, and the vow\'s link is by name alone (made before links carried a card\'s id): the name still means someone, so it keeps its link', async () => {
+    await makeAConnection();
+    vow.flags[MODULE_ID].linkedConnectionName = 'Vex';
+    addAnotherVex();
 
     await xCard();
 

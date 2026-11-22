@@ -6,6 +6,49 @@ rejected.
 
 ---
 
+## A vow's link to a connection is the NPC card, by its id (2026-11)
+
+**Decision:** A vow sworn to a connection is linked to that connection's NPC
+card by the card's Actor id — `flags[MODULE].linkedConnectionId` on the vow
+Item. `linkedConnectionName`, which was the whole link, stays beside it as
+the card's name as the vow's cards show it, and is written through on every
+rename (known-issues VOW-CONNECTION-LINK-BY-NAME; rules/reachability.md §6,
+"resolve by stable id").
+
+- **The id is canonical; the name is its mirror.** Writers: the vow card's 🤝
+  Link (`applyPlayerVowLinkFromRelay` → `setVowLinkedConnection`) and the
+  crew's opening vow (`swearSharedVowForAll`, once its target's card exists).
+  The mirror is kept by both rename paths — the sidebar rename's hook
+  (`syncEntityRecordNameOnUpdate`) and `updateConnection` — through
+  `connection.renameVowLinks`, and re-checked at world load.
+- **With an id there is no fallback to the name.** A card that is deleted or
+  severed deepens nobody: the GMs' card says "severed or deleted", and no
+  namesake is marked in its place. The same rule as a victory card's vow id
+  and a site's `siteId`.
+- **Deleting a card clears the links that carry its id, whoever else has the
+  name.** The namesake rule ("another card of that name is left, which the
+  name then means") now applies only to links by name alone. The chat cards
+  that name the connection (a won fight's 🤝, a payoff card's deepen step)
+  carry the id too and are retired by it.
+- **Existing links are brought over at world load**, on the canonical GM
+  (`connection.reconcileVowLinks`): a link by name alone is given the id of
+  the one card that has that name. A name two cards share, or none has,
+  stays a link by name — the pass does not guess.
+
+**Rejected:**
+- *Following the rename only (keeping the name as the link).* It fixes the
+  common case and keeps the other: two cards of one name, and a rename made
+  while no GM's page was there to follow it.
+- *Falling back to the name when the id finds nothing.* That is the defect:
+  the name then means whoever has it now.
+- *Putting card ids in the vow card's list.* The list is rendered into the
+  card's stored HTML when the vow is made; ids there would tell two
+  connections of one name apart, at the cost of a second format for every
+  card already in chat. Left for when it is asked for (known-issues, "left
+  as they are").
+
+---
+
 ## Generated command sequences against an independent model (issue #302 slice C) (2026-11)
 
 **Decision:** (issue #302 slice C. The maintainer asked for it on 2026-11-21,
@@ -102,9 +145,10 @@ choices below were made while building them.)
   namesake connections in the starting world and the press by two came from
   the two it missed.
 - **A defect the sequences' probes find is recorded and keyed, not fixed
-  here.** VOW-CONNECTION-LINK-BY-NAME (known-issues) is open, with a check
-  that passes while it reproduces and fails once it is fixed
-  (`expectKnownIssue`).
+  here.** VOW-CONNECTION-LINK-BY-NAME (known-issues) was recorded open, with
+  a check that passed while it reproduced (`expectKnownIssue`); it was fixed
+  on request afterwards, and the check became ordinary tests (the entry
+  above).
 
 **Rejected:**
 - *Making live documents the harness default* — hooks that never fired on a

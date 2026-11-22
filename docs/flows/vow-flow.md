@@ -110,8 +110,9 @@ alone; only for a **person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
-— issue #326 W70; the link is the connection's name, and a GM deleting that
-NPC's card clears it from every copy unless a namesake card is left —
+— issue #326 W70; the link is the connection's NPC card, by its id —
+`linkedConnectionId`, stamped once the card exists — and a GM deleting that
+card clears it from every copy —
 `connection.tearDownDeletedConnection` → `actorBridge.clearVowLinksToConnection`,
 the GMs whispered which vows: the won-fight card kept offering 🤝 Deepen with
 the deleted NPC and the fulfilment listed a deepen that could not land,
@@ -538,7 +539,11 @@ roller and the same `itemId` (quests legacy is paid on
 the pipeline's own campaignState object, whose marks `persistResolution`
 applies to the stored track — `legacyTracksWithCopyMarks`, LEGACY-SHEET-DECREASE) — connection
 deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`; the
-vow's linked connection by name alone, `strict` — a link severed or renamed
+vow's linked connection by its NPC card's id (`linkedConnectionId`), under
+whatever name the card has now — or, for a link with a name alone, by that
+name, `strict` (known-issues VOW-CONNECTION-LINK-BY-NAME; the link's
+writers, mirror and readers are mapped in `connection-flow.md` §4). A link
+whose connection is severed or deleted
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
 bonded or active connection, DEEPEN-LINK-FALLBACK) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,

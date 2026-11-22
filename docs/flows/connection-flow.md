@@ -273,7 +273,8 @@ recorded under its name promoted to it; its bond is §2's.
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
   the connection, a bond Item on every PC who swore the vow — issue #321 U23 —
-  and stamps `linkedConnectionName` on the shared vow items).
+  and stamps `linkedConnectionName` on the shared vow items, then
+  `linkedConnectionId` once the connection's card exists).
 
 The `createActor` seed hook (canonical GM, `autoSeedConnection` on) is not a
 fifth path: it populates a card one of the four made (`connectionNeedsSeed`:
@@ -301,11 +302,13 @@ a forged bond) is kept and marked lost instead, as a severed one is
 is the card, by its id, are retired as a GM's Retire does
 (`retirePlansAboutDeletedConnection` → `secrets.retireSkeleton`). What named
 the NPC goes too (issue #364 DELETED-NPC-NAME-REFERENCES): the vows linked to them lose
-the link — a vow's link is the connection's **name**
-(`linkedConnectionName`), so a fight won for the vow still offered
+the link — a vow's link is the NPC card's **id** (`linkedConnectionId`; a
+link made before v1.8.4, or to a name two cards shared, is the **name**
+alone, `linkedConnectionName`), so a fight won for the vow still offered
 "🤝 Deepen your bond with …" and the vow's fulfilment listed a deepen no
-Retry could land: `actorBridge.clearVowLinksToConnection(name)` clears it on
-every PC's copy, open or closed, unless another NPC card of that name is
+Retry could land: `actorBridge.clearVowLinksToConnection(name, { connectionId, byName })`
+clears it on every PC's copy, open or closed — a link that carries the
+deleted card's id always; a link by name alone unless another NPC card of that name is
 left (`connectionNamedRemains` — the name then means them), and the GMs are
 whispered once which vows no longer serve a connection
 (`postVowLinksClearedNotice`, flag `vowLinkClearedNotice`). Under the same
@@ -337,8 +340,8 @@ PAYOFF-CARD-DEEPEN-DELETED-NPC), as the Deepen button is retired — canonical
 GM, a flag on the card, the button rendered disabled with its reason, the
 GM-side handler applying nothing:
 - a **payoff failure card's deepen step** for that name
-  (`cardActions.retirePayoffDeepenStepsFor`, under the namesake test — a step
-  names its connection by name): the card is stamped `retiredSteps`, the
+  (`cardActions.retirePayoffDeepenStepsFor` — a step that carries the card's
+  id, always; one with a name alone, under the namesake test): the card is stamped `retiredSteps`, the
   positions in its `steps` a Retry leaves out (`applyPayoffRetry`) and its
   render strikes through (`index.js` `wirePayoffRetryButton`). Only that step:
   the card's other steps keep their Retry; with every step retired the Retry
@@ -569,20 +572,32 @@ no matching name it takes the sole un-bonded connection, else nothing.
 
 ## 4. Payoffs and interplay
 
-Vow↔connection linkage lives on the vow item (`linkedConnectionName`, set at
-inciting swear or via the vow card's picker). Fulfilment and won-linked-fight
+Vow↔connection linkage lives on the vow item (`linkedConnectionId` — the NPC
+card's Actor id — with `linkedConnectionName` beside it, set at inciting
+swear or via the vow card's picker). Fulfilment and won-linked-fight
 paths deepen the bond (`deepenLinkedConnection`) and grant the vow's promised
 reward; the victory card's 🤝 Deepen button relays `fightVow.deepenBond` to
 the canonical GM (`applyFightVowDeepenBond`, one-shot via
 `resolvedActions.deepenBond`, values from the GM-authored card — see
 `combat-flow.md` §4; it replaced the raw `connection.deepen` socket emit).
 `deepenLinkedConnection` reports `{ ok }`: a refused write, or a connection
-no longer found by that name (renamed or deleted), goes to the GMs instead
-of being swallowed (issue #306 R04). The link is the connection's **name**
-(`linkedConnectionName`, written at the swearing): deleting the NPC card
-clears it, renaming the card does not follow it — so a renamed connection is
-not found, and another card given its old name is marked in its place
-(known-issues VOW-CONNECTION-LINK-BY-NAME, open).
+no longer found (severed or deleted), goes to the GMs instead
+of being swallowed (issue #306 R04). **The link is the NPC card, by its id**
+(known-issues VOW-CONNECTION-LINK-BY-NAME, fixed v1.8.4; decisions.md → "A
+vow's link to a connection is the NPC card, by its id"):
+
+| | |
+|---|---|
+| canonical | `flags[MODULE].linkedConnectionId` on the vow Item — the connection's host Actor id |
+| mirror | `flags[MODULE].linkedConnectionName` — the card's name, as the vow's cards say it |
+| writers | the vow card's 🤝 Link (`swearVow.applyPlayerVowLinkFromRelay` → `actorBridge.setVowLinkedConnection(vowId, name, id)`); the crew's opening vow (`swearSharedVowForAll` → `connection.reconcileVowLinks` once the target's card exists) |
+| mirror upkeep | a rename of the card, both paths (`index.js syncEntityRecordNameOnUpdate`, `connection.updateConnection`) → `connection.renameVowLinks` → `actorBridge.renameVowLinksToConnection`; the world-load pass (`connection.reconcileVowLinks`, canonical GM) gives a link by name alone its card's id when one card has the name, and a link whose card was renamed its name |
+| readers | the fulfilment's payoff (`payFulfilledVowCopies`), the won-fight card (`postFightVowMilestoneCard` puts `connectionId` on the card; `deepenVowConnectionOnce`), a payoff card's Retry (`runPayoffStep`, the step's `connectionId`) — all through `deepenLinkedConnection(name, marks, { connectionId })` → `findOpenConnection`: by id when there is one, never falling back to the name; by name (`strict`) for a link with a name alone |
+| teardown | deleting the card: `clearVowLinksToConnection` and the two chat-card retirements, by the card's id (and by name for name-only links when no namesake is left) |
+
+Left by name: a link whose name named two cards (or none) when it was made
+or at the world-load pass; `swearToConnection`'s +1, looked up at the
+swearing.
 Bonds-legacy ticks accrue on
 `campaignState.legacyTracks.bonds`, and every newly filled box now awards XP
 to each PC with an earned-XP card (LEGACY-XP-DEAD fix — `addLegacyTicks`

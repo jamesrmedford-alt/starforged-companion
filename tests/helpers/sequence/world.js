@@ -182,8 +182,9 @@ export class SequenceWorld {
 
   /**
    * A vow as a sheet holds it once the module has seen it made: its own id as
-   * its vowId — and, sworn to a connection, that connection's name as the
-   * swearing writes it (`linkedConnectionName`).
+   * its vowId. `swornTo` is a connection's name, as a link made before v1.8.4
+   * holds it — the name alone (`linkedConnectionName`), with no card id. A
+   * link as the module makes it now is made by `linkVow`.
    */
   #seedVow({ ref, pc, name, rank, ticks, swornTo = null }) {
     const id = `vow-${ref}`;
@@ -276,6 +277,23 @@ export class SequenceWorld {
     if (!offer) throw new Error(`sequence: no open recommit offer for vow ${ref}`);
     this.dice.push(...progressDice(challenge));
     await this.press(playerOf(pc), offer._id, '[data-action="sf-vow-recommit"]', { also: doubled ? GM : null });
+  }
+
+  /** 🤝 Link on the vow's card: its player picks the connection in the card's list and presses Link. */
+  async linkVow(ref, connectionRef, { pc }) {
+    const item = this.vowItem(ref);
+    const card = this.card(f => f.playerVowCard && f.vowId === item.id);
+    if (!card) throw new Error(`sequence: vow ${ref} has no card to link from`);
+    const player = playerOf(pc);
+    this.client(player).render(card._id).querySelector(".sf-vow-connection").value = this.actor(this.hostId(connectionRef)).name;
+    await this.press(player, card._id, '[data-action="sf-player-vow-link"]');
+  }
+
+  /** The vow's player fills its track on the sheet, to `ticks`. */
+  async setVowTicks(ref, { pc, ticks }) {
+    const item = this.vowItem(ref);
+    await this.client(playerOf(pc)).run(() => item.update({ "system.current": ticks }));
+    await this.quiet();
   }
 
   async renameVow(ref, { pc, name }) {

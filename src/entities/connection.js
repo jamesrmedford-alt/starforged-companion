@@ -196,6 +196,8 @@ export async function updateConnection(actorId, updates) {
   // of truth. Dynamic import avoids an actorBridge cycle.
   if (typeof updates.name === "string" && updates.name && updates.name !== current.name) {
     await renameBondItems(current, updates.name);
+    // …and every vow sworn to it, found by this card's id.
+    await renameVowLinks(actorId, updates.name);
   }
 
   return updated;
@@ -217,6 +219,56 @@ export async function renameBondItems(record, name) {
     await setBondItemName({ connectionId: record?._id ?? null, name: record?.name ?? null }, name);
   } catch (err) {
     console.warn(`${MODULE_ID} | bond item rename mirror failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Give every vow sworn to a connection its card's new name (known-issues
+ * VOW-CONNECTION-LINK-BY-NAME). The vow is linked to the card by its Actor id
+ * (`linkedConnectionId`); the name beside it is what the vow's cards say, and
+ * follows the card as the bond Items do. Never throws. Exported for the NPC
+ * card's sidebar rename (index.js syncEntityRecordNameOnUpdate).
+ *
+ * @param {string} actorId — the connection's host Actor id
+ * @param {string} name — its new name
+ * @returns {Promise<void>}
+ */
+export async function renameVowLinks(actorId, name) {
+  try {
+    const { renameVowLinksToConnection } = await import("../character/actorBridge.js");
+    await renameVowLinksToConnection(actorId, name);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | vow link rename mirror failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * At world load, on the canonical GM: bring the vows' links to connections up
+ * to date (known-issues VOW-CONNECTION-LINK-BY-NAME). A vow linked before the
+ * link carried its card's id is given it — when exactly one of the campaign's
+ * connection cards has that name; a name two cards share, or none has, stays
+ * a link by name, as it was. A link whose card was renamed while no GM's page
+ * could follow takes the card's name. Never throws.
+ *
+ * @returns {Promise<{ stamped: number, renamed: number, refused: number }>}
+ */
+export async function reconcileVowLinks() {
+  const none = { stamped: 0, renamed: 0, refused: 0 };
+  try {
+    const ids = game.settings.get(MODULE_ID, "campaignState")?.connectionIds ?? [];
+    const cards = ids.map(id => ({ id, name: getConnection(id)?.name ?? null })).filter(c => typeof c.name === "string" && c.name);
+    const norm = (s) => String(s ?? "").trim().toLowerCase();
+    const { reconcileVowConnectionLinks } = await import("../character/actorBridge.js");
+    return await reconcileVowConnectionLinks({
+      idNamed: (name) => {
+        const hits = cards.filter(c => norm(c.name) === norm(name));
+        return hits.length === 1 ? hits[0].id : null;
+      },
+      nameOf: (id) => cards.find(c => c.id === id)?.name ?? null,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | vow links were not brought up to date:`, err?.message ?? err);
+    return none;
   }
 }
 
@@ -617,12 +669,13 @@ async function retirePlansAboutDeletedConnection(deletedId) {
  * Link writes the vow, not the NPC's record, so the NPC was still "unused"
  * and deleted) kept its link (issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN).
  *
- * The vows linked to it — a vow's link is the connection's name, so a won
- * fight still offered to deepen the bond with the deleted NPC and the vow's
- * fulfilment listed a deepen no Retry could land. The links are cleared
- * (actorBridge.clearVowLinksToConnection) unless another card of that name is
- * left, which the name then means; the GMs are told which vows no longer
- * serve a connection. With the links, the won-fight cards already in chat
+ * The vows linked to it — a won fight still offered to deepen the bond with
+ * the deleted NPC and the vow's fulfilment listed a deepen no Retry could
+ * land. The links are cleared (actorBridge.clearVowLinksToConnection): a
+ * link that carries this card's id, always — another card of the same name
+ * is not who the vow was sworn to (known-issues VOW-CONNECTION-LINK-BY-NAME);
+ * a link by name alone, unless another card of that name is left, which the
+ * name then means. The GMs are told which vows no longer serve a connection. With the links, the won-fight cards already in chat
  * lose their "🤝 Deepen your bond with …" (cardActions.retireFightVowDeepenFor,
  * issue #364 WON-FIGHT-CARD-DELETED-NPC — a press reported "not found"), and
  * the payoff failure cards in chat lose the deepen step their Retry would run
@@ -642,14 +695,17 @@ async function clearDeletedConnectionReferences(name, deletedId) {
   const { retireFightVowDeepenFor, retirePayoffDeepenStepsFor, retireBondRecommitOffersFor } = await import("../moves/cardActions.js");
   // The bond recommit offers in chat name the card by its id: this card's, namesake or not.
   await retireBondRecommitOffersFor(deletedId);
-  if (!name || connectionNamedRemains(name, deletedId)) return;
+  // What names this card by its id goes with it; what names it by name alone
+  // goes only when no other card of that name is left.
+  const which = { connectionId: deletedId ?? null, byName: !!name && !connectionNamedRemains(name, deletedId) };
+  if (!which.connectionId && !which.byName) return;
   const { clearVowLinksToConnection } = await import("../character/actorBridge.js");
-  const { cleared } = await clearVowLinksToConnection(name);
+  const { cleared } = await clearVowLinksToConnection(name, which);
   if (cleared.length) await postVowLinksClearedNotice(name, cleared);
   // The victory cards already in chat that offer to deepen that bond, and
   // the payoff failure cards whose Retry would deepen it.
-  await retireFightVowDeepenFor(name);
-  await retirePayoffDeepenStepsFor(name);
+  await retireFightVowDeepenFor(name, which);
+  await retirePayoffDeepenStepsFor(name, which);
 }
 
 /**
