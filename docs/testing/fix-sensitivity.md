@@ -36,7 +36,9 @@ day — on 2026-11-19, and for the second round — the sixteen found while fixi
 and the ones found while settling them — on 2026-11-20, and for the third
 round — the eighteen those left, and the ones found while settling them —
 the same day, and for issue #302 slice C — five defects put back to show that
-the generated sequences catch them — on 2026-11-22 (injected into `72d9ebe`).
+the generated sequences catch them — on 2026-11-22 (injected into `72d9ebe`),
+and for known-issues VOW-CONNECTION-LINK-BY-NAME — the defect found beside
+those sequences, fixed at the maintainer's request — the same day.
 To reproduce:
 
 ```bash
@@ -352,6 +354,9 @@ node scripts/fix-sensitivity.mjs \
   --inject scripts/defects/seq-connection-picker-not-claimed.patch \
   --inject scripts/defects/seq-begin-session-effects-unguarded.patch \
   --inject scripts/defects/seq-world-load-always-new-session.patch --md details.md
+
+# VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
+node scripts/fix-sensitivity.mjs d87125d --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -431,6 +436,12 @@ The first version of the commands caught the first of these and missed the
 next two: it had no connections sharing a name at the start, and its only
 repeated press was the same client's, later, which a card's own disabled
 button stops. Both gaps were closed before anything else was built on them.
+
+### VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| VOW-CONNECTION-LINK-BY-NAME | d87125d | revert | 14 — `generatedSequences.test.js` (the Link ties the vow to the card's id; the card renamed; renamed with another given the old name; a link from before the fix tied to its card at world load; a rename made with no GM there) — the two that were keyed checks while the defect was open among them; `vowConnectionLinkById.test.js` (the won-fight card's 🤝, with the id on the card and read off the vow; a payoff card's Retry; the card deleted with a namesake left, and the namesake deleted; the crew's opening vow; the module's own rename; a severed connection); `xcardDeletedNpcReferencesCleared.test.js` (a link by id is cleared with its card though a namesake is left) |
 
 ### Issue #306 — the post-fix audit
 
@@ -2107,6 +2118,12 @@ place asked only on the tie-break's rung; a journey label that holds a site's
 whole name, and `!reveal-site`'s whole-label question, read as before; a miss
 that was not held posting its need card at once; a GM's edit lifting the
 withholding with its label; and a player's client building no Secrets section.
+
+*VOW-CONNECTION-LINK-BY-NAME:* 3 new tests pass both ways, and each is a
+case the fix must leave as it was — a link by name alone: one made before
+the fix still develops the connection its name names; a name two cards
+share is not given either card's id at world load; and with a namesake left,
+the X-Card's delete keeps such a link.
 
 ## Details
 
@@ -19051,3 +19068,32 @@ Test files: `tests/unit/generatedSequences.test.js`.
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a session ended and begun by two people at once ends and begins once: its momentum is paid once each way | AssertionError: after BeginSession(by gm-1 and pl-1 at once, a vignette): expected { …(5) } to deeply equal { …(5) } |
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's page reloads, then a player's: the session stays open, what was marked is kept and not marked again, and play goes on | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out the GM's connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back | AssertionError: after Reload(gm-1): expected { …(5) } to deeply equal { …(5) } |
+
+### d87125d — fix: a vow sworn to a connection is linked to its NPC card by id, not by name (VOW-CONNECTION-LINK-BY-NAME)
+
+Test files: `tests/unit/generatedSequences.test.js`, `tests/unit/vowConnectionLinkById.test.js`, `tests/unit/xcardDeletedNpcReferencesCleared.test.js`. Source restored: 6 file(s).
+
+- With the fix: 31 passed, 0 failed.
+- Without it: 14 failed (14 new; 0 only for a missing export); 17 still pass (3 new).
+- Verdict: **sensitive** — 14 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) the vow card's Link ties the vow to the connection's card, by its id | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Sable', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) with her card renamed, the progress is still hers — and the vow shows her new name | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Vega', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) with her card renamed and another given her old name, the other connection is not marked in her place | AssertionError: expected 'c2 8, c3 8' to be 'c2 16, c3 0' // Object.is equality |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a link made before the fix is tied to its card when the GM's world next loads — renames after that do not lose it | AssertionError: expected { vowId: 'vow-v1', …(2) } to match object { linkedConnectionName: 'Sable', …(1) } |
+| (new) tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a card renamed while no GM was at the table: the vow takes its name at the next world load | AssertionError: expected { vowSetupOffered: true, …(2) } to match object { linkedConnectionName: 'Vega', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the won-fight card's 🤝 Deepen (VOW-CONNECTION-LINK-BY-NAME) carries the connection's card id, and deepens that card's bond after the names are swapped | AssertionError: expected { fightVowCard: true, …(6) } to match object { connectionName: 'Sable', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the won-fight card's 🤝 Deepen (VOW-CONNECTION-LINK-BY-NAME) a card posted before links carried an id reads it off the vow | AssertionError: expected [ 8, 8 ] to deeply equal [ 16, +0 ] |
+| (new) tests/unit/vowConnectionLinkById.test.js › a "Vow payoff incomplete" card's Retry (VOW-CONNECTION-LINK-BY-NAME) its deepen step carries the card id: retried after the names are swapped, it lands on the vow's connection | AssertionError: expected { step: 'deepen', …(2) } to match object { connectionName: 'Sable', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › deleting the NPC card (VOW-CONNECTION-LINK-BY-NAME) clears the vow's link though another card has the name it was linked under — that card is somebody else | AssertionError: expected { name: 'Sable', id: null } to deeply equal { name: null, id: null } |
+| (new) tests/unit/vowConnectionLinkById.test.js › deleting the NPC card (VOW-CONNECTION-LINK-BY-NAME) deleting the namesake leaves the vow's link, and its victory card, as they are | AssertionError: expected { name: null, id: null } to deeply equal { name: 'Vega', id: 'conn-c2' } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the crew's opening vow, sworn to the person it names (VOW-CONNECTION-LINK-BY-NAME) every PC's copy is linked to the NPC card the swearing makes for them, by its id | AssertionError: pc-kira's copy: expected { vowId: 'smsg000000000066', …(2) } to match object { linkedConnectionName: 'Vance', …(1) } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the other ways a connection changes (VOW-CONNECTION-LINK-BY-NAME) renamed through the module's own update, the vow takes the new name | AssertionError: expected { name: 'Sable', id: null } to deeply equal { name: 'Vega', id: 'conn-c2' } |
+| (new) tests/unit/vowConnectionLinkById.test.js › the other ways a connection changes (VOW-CONNECTION-LINK-BY-NAME) severed, she is not found — and a namesake is not developed in her place; the GMs' card says she is gone, not renamed | AssertionError: expected [ 8, 8 ] to deeply equal [ 8, +0 ] |
+| (new) tests/unit/xcardDeletedNpcReferencesCleared.test.js › issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card's delete of an NPC clears what names them a namesake is left: the vow was linked to the removed card, not to the name — it loses its link | AssertionError: the Link stamped the narration's card (setup): expected undefined to be truthy |
+
+- New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a link made before the fix still develops the connection its name names
+- New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a name two cards share cannot say which card: a link made before the fix stays by its name
+- New test passing with and without the fix (a control?): tests/unit/xcardDeletedNpcReferencesCleared.test.js › issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card's delete of an NPC clears what names them a namesake is left, and the vow's link is by name alone (made before links carried a card's id): the name still means someone, so it keeps its link
