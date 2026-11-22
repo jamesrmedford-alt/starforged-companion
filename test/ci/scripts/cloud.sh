@@ -32,12 +32,20 @@
 #   foundryvtt.com, r2.foundryvtt.com               (sign-in, the download)
 #   api.foundryvtt.com                              (the licence signature)
 #   github.com and its release-asset hosts          (the system, Quench)
-#   api.anthropic.com                               (--record only)
+#   api.anthropic.com                               (--record and a live
+#                                                   `explore` only)
 #
 # Credentials come from the environment and are never printed:
 #   FOUNDRY_USERNAME, FOUNDRY_PASSWORD   your foundryvtt.com account
 #   FOUNDRY_ADMIN_KEY                    optional; one is generated per data dir
-#   ANTHROPIC_API_KEY                    `playthroughs --record` only
+#   ANTHROPIC_API_KEY                    `playthroughs --record` and a live
+#                                        `explore` only. In a Claude Code cloud
+#                                        session, store it on the environment
+#                                        as PLAYTEST_ANTHROPIC_API_KEY instead:
+#                                        a variable named ANTHROPIC_API_KEY did
+#                                        not reach the session's shell
+#                                        (2026-11-22), and this script reads
+#                                        either name.
 #
 # Usage:
 #   ./scripts/cloud.sh up [--fresh]            start Foundry, launch the world,
@@ -45,6 +53,21 @@
 #                                              resets the world to its template
 #   ./scripts/cloud.sh playthroughs [--record] the scripted playthroughs
 #                                              (PLAYTHROUGH=<name> runs one)
+#   ./scripts/cloud.sh explore [--rehearse | --replay <run folder>]
+#                                              an AI player at the table, an
+#                                              observer scoring its goal
+#                                              (issue #302 slice D). Live by
+#                                              default: real models, spend
+#                                              capped by playwright/
+#                                              explore.config.json. --rehearse:
+#                                              the same path with the model API
+#                                              stood in for — no key, no spend
+#                                              (EXPLORE_REHEARSAL_FORGET=1: a
+#                                              narrator that keeps nothing).
+#                                              --replay: an earlier run's
+#                                              actions, dice and replies again,
+#                                              no key. EXPLORE_CHARTER picks
+#                                              the charter (memory).
 #   ./scripts/cloud.sh multiplayer             the second-client suite
 #   ./scripts/cloud.sh quench                  the Quench batches
 #   ./scripts/cloud.sh status                  what is running
@@ -276,15 +299,41 @@ cmd_up() {
   log "ready: ${BASE_URL} (world ${WORLD_ID})"
 }
 
+# The Claude key for a run that calls a model, under either name (see the header).
+claude_key() { printf '%s' "${ANTHROPIC_API_KEY:-${PLAYTEST_ANTHROPIC_API_KEY:-}}"; }
+
 cmd_playthroughs() {
   local mode=replay
   [[ "${1:-}" == "--record" ]] && mode=record
-  if [[ "${mode}" == record && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-    die "--record answers Claude for real: set ANTHROPIC_API_KEY first"
+  if [[ "${mode}" == record && -z "$(claude_key)" ]]; then
+    die "--record answers Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first"
   fi
   log "running the playthroughs (${mode} Claude replies)"
+  if [[ "${mode}" == record ]]; then export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"; fi
   PLAYTHROUGH_MODE="${mode}" PLAYTHROUGH_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)" \
     run_suite playthrough.mjs
+}
+
+cmd_explore() {
+  local mode=live replay=""
+  case "${1:-}" in
+    "")       ;;
+    --rehearse) mode=rehearsal ;;
+    --replay) mode=replay
+              [[ -n "${2:-}" && -f "${2}/replay.json" ]] || die "--replay needs the folder of the run to replay (playwright/artifacts/explore/<run>, with its replay.json)"
+              replay="$(cd "${2}" && pwd)" ;;
+    *)        die "explore takes --rehearse, --replay <run folder>, or nothing (a live run)" ;;
+  esac
+  if [[ "${mode}" == live ]]; then
+    [[ -n "$(claude_key)" ]] || die "a live run calls Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first — or rehearse it (--rehearse)"
+    export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"
+    log "running the ${EXPLORE_CHARTER:-memory} charter LIVE — real models, spend capped by playwright/explore.config.json"
+  else
+    unset ANTHROPIC_API_KEY
+    log "running the ${EXPLORE_CHARTER:-memory} charter (${mode}: no key, no model call)"
+  fi
+  EXPLORE_MODE="${mode}" EXPLORE_REPLAY="${replay}" EXPLORE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)" \
+    run_suite explore.mjs
 }
 
 cmd_status() {
@@ -296,10 +345,11 @@ cmd_status() {
 case "${1:-}" in
   up)           shift; cmd_up "$@" ;;
   playthroughs) shift; cmd_playthroughs "$@" ;;
+  explore)      shift; cmd_explore "$@" ;;
   multiplayer)  log "running the multiplayer suite"; run_suite multiplayer.mjs ;;
   quench)       log "running the Quench batches"; run_suite quench.mjs ;;
   status)       cmd_status ;;
   down)         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true; log "container removed (./data is kept)" ;;
-  -h|--help|"") sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|"") sed -n '2,76p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)            die "unknown command: $1 (try --help)" ;;
 esac

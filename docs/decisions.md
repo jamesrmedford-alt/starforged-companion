@@ -6,6 +6,84 @@ rejected.
 
 ---
 
+## AI exploration: a player that only plays, an observer that only reads (2026-11)
+
+**Decision:** Issue #302 slice D (with #290 part 3) is
+`test/ci/playwright/explore.mjs`: an AI player with a goal at a live Foundry
+table, an observer that scores the goal without a model, a reviewer whose
+flags must quote the transcript, and a budget every model call passes
+through. On demand only (`cloud.sh explore`); nothing in CI runs it. The
+maintainer's go-ahead for the slice: 2026-11-22.
+
+- **Three roles with separate authority.** The player sees its own screen
+  and acts through one strict tool (say, click, dialog, wait, stop), each
+  action checked against the screen it was chosen on. The observer reads the
+  world, the chat and the requests and writes nothing; its score is pure
+  functions. The reviewer's opinion never changes the observer's finding.
+  The player is never asked whether its goal was met.
+- **The memory goal is scored at three layers** when the question is asked:
+  stored (in a store a narration is built from), in the prompt for that
+  question, in the answer. The first miss names where the fact was lost:
+  storage, retrieval, generation.
+- **A goal not achieved is `suspected-quality-issue` at every layer;
+  `product-failure` is for what holds whatever the charter** — the move lock
+  free at the end, no error of the module's on a page, every step settled.
+  Storage and the answer are a model's output. Retrieval is code, but which
+  stored facts a prompt owes is a design rule the observer does not know (a
+  Chronicle entry reaches every narration only when pinned): the first
+  version classed a stored-and-not-sent fact as a product failure and
+  convicted the module on the strength of a diagnostic log
+  (known-issues EXPLORE-STORED-IS-FOUND).
+- **Caps: 30 player actions, 100 model calls, 20 minutes, $10** — the
+  issue's proposed ceilings, in `explore.config.json`. A call's worst cost
+  (its prompt as a cache write, its `max_tokens` as output) is reserved
+  before it is sent and replaced by what it used. A model with no price is
+  refused.
+- **Models: `claude-opus-5-5` for the player (effort low) and the reviewer
+  (effort medium).** The module's own calls use the models its settings
+  name. Chosen as the current default model; a config line each, the
+  maintainer's to change.
+- **No server-side refusal fallback.** A declined call is reported as a
+  refusal. A rescued call bills at the fallback model's rates, which the
+  reservation made before dispatch did not cover — and the dollar cap is a
+  promise.
+- **Plain `fetch`, no SDK.** The Playwright suites carry no SDK and the
+  harness already speaks the Messages API; a dependency is not added for
+  two call sites (CLAUDE.md → "Never do without explicit instruction").
+- **A rehearsal, not a dry run.** `--rehearse` runs the live code path with
+  the Messages API stood in for in-process (`lib/rehearsal.mjs`): the path
+  that costs money is the one that most needs checking for free. A first
+  "dry" mode fed a script past the player's tool and answered the module
+  with neutral stubs; it exercised none of the budget, the tool call, the
+  reviewer or the recording, and was replaced.
+- **Every run is replayable, and a replay is compared on the observer's
+  finding** — the goal's status and layer, and whether health failed. The
+  actions are kept with no document ids, the dice as they fell
+  (`installDiceScript` keeps them), the module's replies under the action
+  each belonged to. The reviewer is not asked again.
+- **The key stays in the runner.** It is sent in a header by the runner's
+  process, never enters the world (the page holds a placeholder), is in no
+  log the runner keeps, and is blanked from anything written.
+- **Findings are exported, not acted on.** A run files no issue, changes no
+  code and rewrites no recording.
+
+**Rejected:**
+- *Letting the player declare its goal complete, or asking a model to judge
+  it.* Then the test of the narrator's memory is another model's impression
+  of it.
+- *A substring's presence as a pass without reading.* Kept as the layer
+  test because it is checkable and replayable, and recorded as a limit
+  (known-issues EXPLORE-PRESENCE-NOT-COMPREHENSION): structured facts are
+  slice E.
+- *Running it in CI on a schedule.* A live run is one sample of a model's
+  behaviour and costs money each time.
+- *An allow-list of "narrator sources" for the stored layer.* It would need
+  the module's whole injection map kept true in a test config; a short
+  deny-list of diagnostic stores errs toward calling a miss retrieval, which
+  is then read, not ruled on.
+
+---
+
 ## A low pacing dial holds in code: an unsure move is offered, not rolled (2026-11)
 
 **Decision:** At an effective dial of 0–2 for the line's category, a MOVE the

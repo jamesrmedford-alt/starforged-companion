@@ -11,6 +11,23 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### AI exploration (issue #302 slice D) — built and rehearsed; no live run yet
+
+`test/ci/playwright/explore.mjs` puts an AI player at a live table, scores its
+goal with an observer that asks no model, and holds every model call to the
+run's caps (rules/ci-e2e.md → "AI exploration"; decisions.md → "AI exploration:
+a player that only plays, an observer that only reads"). Built 2026-11-22.
+
+| ID | Area | Status |
+| --- | --- | --- |
+| EXPLORE-LIVE-RUN-PENDING | exploration | open. No live run has been made: the session it was built in had no Claude key in its shell (CLOUD-ANTHROPIC-KEY-NAME). The live path was run whole against a local stand-in for the model API instead (`cloud.sh explore --rehearse`): the budget's gate on the module's 18 calls, 11 player turns through the strict tool, the reviewer and its quote filter, the recording, and a keyless replay that reproduced the observer's finding — with a stand-in that keeps the fact (`pass`) and one that keeps nothing (`suspected-quality-issue`, `storage`). What a rehearsal cannot show is what a real model does with the player's prompt and tool (does it reach the question in 30 actions; does it name the fact when told not to) and what the real narrator stores. The first live run is the test of those; read its `actions.json` before trusting its class. |
+| EXPLORE-MEMORY-PATH-REHEARSED | narrator memory | a finding, not a defect. With a narrator that states the fact when it is in front of it, a possession established in one session reached the next session's narration: at the question it was in the campaign state (`previousSessionSummary`, `campaignRecapCache`, `sessionSummary`), the character's Chronicle, a World Journal Lore page, the Session Log and the narrator's world snapshot, and the prompt carried it in WORLD SNAPSHOT (and, the opening vignette having restated it, in ACTIVE SCENE and RECENT SCENE). The module's carry from session to session works when the fact is given a home; whether a live narrator gives it one is what the live run measures. |
+| CLOUD-ANTHROPIC-KEY-NAME | environment | open, worked around. In a Claude Code cloud session a variable named `ANTHROPIC_API_KEY`, set on the environment and listed by it, was not in the session's shell after a restart, while the environment's other variables were — and the same key under a misspelt name had arrived earlier the same day. `cloud.sh` reads `PLAYTEST_ANTHROPIC_API_KEY` as well; store the key under that name there. Not seen outside a cloud session: `e2e.sh` and CI are unchanged. |
+| EXPLORE-PRESENCE-NOT-COMPREHENSION | exploration | limit. A fact is "held" by a text when one of its accepted variants occurs in it. "You lost the compass years ago" holds "compass": the observer would score the answer as holding the fact. The charter's player is told not to name the fact when it asks, a question that names it is not counted, and the reviewer reads the answer for sense — but an `achieved` is a claim about words until the answer's excerpt in `observer.json` is read. Structured facts with accepted and refused answers are slice E (issue #302 §6). |
+| EXPLORE-STORED-IS-FOUND | exploration | limit. "Stored" means found in the campaign state, a world setting, an Actor's flags, sheet or Items, or a journal page — less the stores listed as not memory (`explore.config.json` → `notMemory`: the Pacing Telemetry journal, which logs every line). The observer does not know which of those stores a given prompt owes, so a `retrieval` miss (stored, not sent) is classed as suspected, with the stores named, and not as a product failure. A diagnostic store added to the module and not to that list would turn a `storage` miss into a `retrieval` one. |
+| EXPLORE-ONE-CHARTER | exploration | limit. One charter (memory), one player, a desktop viewport; the GM's autopilot accepts a proposed move and does nothing else (no draft confirmed, no GM dialog answered — a run that needs one stalls and is reported as a stall). The other charters of issue #302 §5, two players and a phone-sized viewport are slice E. `scoreMemory` is the only scoring function: a charter with another goal needs its own. |
+| EXPLORE-PRICES-BY-HAND | exploration | limit. A run's cost is computed from the price table in `explore.config.json` (as of 2026-11-03), not read from a bill. A price that changes is wrong there until it is corrected; a model with no row is refused, so a new model fails closed. |
+
 ### The cloud playtest and the first real recordings (2026-11-22) — four findings open; two fixed in the module, four in the playthrough runner
 
 The scripted playthroughs' placeholder replies were replaced by replies
