@@ -424,8 +424,11 @@ Three roles, and what each may do — keep them apart:
   A flag must quote the transcript word for word or it is dropped
   (`keepQuotedFlags`); nothing it says outranks the observer.
 
-The GM's client is on autopilot for one thing only: a proposed move's
-confirmation is accepted as proposed.
+The GM's client is on autopilot for what the module asks of the GM before a
+move rolls, answered without steering the story (`GM_AUTOPILOT` in
+`explore.mjs`): a proposed move's confirmation is accepted as proposed, and
+"Who are you interacting with?" is answered "No specific entity", which is
+what closing it means. Nothing else is answered.
 
 **The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
 Every model call of a run goes through it — the module's (the harness's
@@ -447,6 +450,16 @@ charter or touch the runner:
   table that had not begun to answer was taken for one that had finished: the
   session's opening vignette was filed under the player's next line. A dialog
   open on the player's own screen ends the wait sooner.
+- **The module asks the GM things, and holds the move while it waits.** The
+  first live run sat for three minutes behind "Who are you interacting
+  with?" and called it a product failure. A window on the GM's screen that
+  the autopilot does not answer ends the wait after 20 s and the run as
+  `not-exercised`, naming the window; the lock that question holds is not a
+  health failure (`healthOf` → `waitingOnGm`). When the module gains a prompt
+  for the GM, add it to `GM_AUTOPILOT` with the answer that steers least.
+  The module's own windows are `.application.sf-window`, not Foundry
+  dialogs: look for both, on both screens. A rehearsal never rolls, so it
+  cannot find a prompt on the move path — only a live run does.
 - **A player's line is what they typed.** Cards the player's client posts
   (Begin a Session's, a move's) are authored by the player too; they carry
   the module's flags, a typed line carries none.
@@ -463,7 +476,8 @@ charter or touch the runner:
 
 **The run's class** (`classifyRun`): an infrastructure error first, then a
 failed health check (`product-failure`), then a goal never put to the test
-(`not-exercised`, or `budget-exhausted` when a cap caused it), then a goal not
+(`not-exercised` — also when the table was left waiting on the GM — or
+`budget-exhausted` when a cap caused it), then a goal not
 achieved or a reviewer's flag (`suspected-quality-issue`), else `pass`. A
 memory goal that was not achieved is *suspected* at every layer — which
 stored facts a prompt owes is a design rule the observer does not know (a

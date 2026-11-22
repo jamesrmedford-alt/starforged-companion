@@ -496,6 +496,18 @@ describe('health, and the run\'s class', () => {
     expect(known).toMatchObject({ failures: [], knownFailures: ['KNOWN-1'] });
   });
 
+  it('a table left waiting on a question put to the GM is the run\'s limit, not the module\'s failure — the lock it holds is the question\'s', () => {
+    // The module asks the GM "Who are you interacting with?" before the dice
+    // and holds the move until it is answered (decisions.md, issue #347 D1).
+    const waiting = healthOf({ endSession: { pendingMove: true }, clients: clients(), stalls: [{ step: 'a4', detail: 'waiting', waitingOnGm: ['Who are you interacting with?'] }] });
+    expect(waiting).toMatchObject({ failures: [], waitingOnGm: ['Who are you interacting with?'] });
+    const outcome = { status: 'not-exercised', reason: 'the first session was never ended', failingLayer: null };
+    expect(classifyRun({ outcome, health: waiting })).toMatchObject({ classification: 'not-exercised', because: expect.stringContaining('"Who are you interacting with?", which the run\'s GM autopilot does not answer') });
+    expect(classifyRun({ outcome, health: waiting, budgetStop: { cap: 'minutes', detail: '20' } }).classification, 'the unanswered question, not the clock, is why').toBe('not-exercised');
+    // With no window to explain it, a held lock and a stall are failures.
+    expect(healthOf({ endSession: { pendingMove: true }, clients: clients(), stalls: [{ step: 'a4', detail: 'still busy', waitingOnGm: [] }] }).failures).toHaveLength(2);
+  });
+
   it.each([
     ['pass', { outcome: achieved }],
     ['infrastructure-error', { outcome: achieved, infrastructure: 'the player model could not be reached', health: { failures: ['x'] } }],

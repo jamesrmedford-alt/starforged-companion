@@ -64,6 +64,13 @@ maintainer's go-ahead for the slice: 2026-11-22.
 - **The key stays in the runner.** It is sent in a header by the runner's
   process, never enters the world (the page holds a placeholder), is in no
   log the runner keeps, and is blanked from anything written.
+- **The GM is an autopilot that answers only what the module asks of a GM
+  before a roll, with the answer that steers least** — the move accepted as
+  proposed, "Who are you interacting with?" answered "No specific entity" —
+  and a table left waiting on any other GM window is `not-exercised`, never
+  a product failure: the module holds a move behind such a question by
+  design (issue #347 D1). Learned from the first live run, which stalled
+  there and blamed the module (known-issues EXPLORE-GM-PROMPT-UNANSWERED).
 - **Findings are exported, not acted on.** A run files no issue, changes no
   code and rewrites no recording.
 

@@ -152,7 +152,7 @@ export function readWorld(gm, facts, notMemory = []) {
         pendingMove: cs.pendingMove === true, sceneId: cs.currentSceneId ?? null, locationId: cs.currentLocationId ?? null,
       },
       messages, stores,
-      gmWindows: [...document.querySelectorAll("dialog[open], .application.dialog")]
+      gmWindows: [...document.querySelectorAll("dialog[open], .application.dialog, .application.sf-window")]
         .map(el => clean(el.querySelector(".window-title, header h1, header h4")?.textContent)).filter(Boolean).slice(0, 6),
     };
   }, { MODULE_ID, wanted, notMemory });
@@ -295,6 +295,12 @@ export function scoreMemory({ facts, askCues = [], marks, messages, requests }) 
 /**
  * What must hold whatever the charter: the move lock free at the end, no
  * error of the module's on any page, no step that never settled.
+ *
+ * A step that did not settle because the GM's screen was showing a window
+ * nobody answered is not one of them. The module asks the GM things before a
+ * move rolls, and holds the move while it waits — by design; a table whose
+ * GM is an autopilot that does not know the question is a limit of the run
+ * (`waitingOnGm`), and the lock it holds is the question's.
  */
 export function healthOf({ endSession, clients, stalls = [], knownErrors = [] }) {
   const errors = [];
@@ -306,11 +312,12 @@ export function healthOf({ endSession, clients, stalls = [], knownErrors = [] })
     }
   }
   const failures = [];
-  if (endSession?.pendingMove) failures.push("the move lock was still held when the run ended (campaignState.pendingMove)");
+  const waitingOnGm = [...new Set(stalls.flatMap(s => s.waitingOnGm ?? []))];
+  if (endSession?.pendingMove && !waitingOnGm.length) failures.push("the move lock was still held when the run ended (campaignState.pendingMove)");
   const fresh = errors.filter(e => e.module && !e.known);
   if (fresh.length) failures.push(`${fresh.length} error(s) of the module's on a page — the first: ${fresh[0].text.slice(0, 160)}`);
-  for (const s of stalls) failures.push(`step ${s.step} never settled: ${s.detail}`);
-  return { failures, errors, knownFailures: [...new Set(errors.filter(e => e.known).map(e => e.known))] };
+  for (const s of stalls) if (!s.waitingOnGm?.length) failures.push(`step ${s.step} never settled: ${s.detail}`);
+  return { failures, waitingOnGm, errors, knownFailures: [...new Set(errors.filter(e => e.known).map(e => e.known))] };
 }
 
 /**
@@ -329,6 +336,9 @@ export function healthOf({ endSession, clients, stalls = [], knownErrors = [] })
 export function classifyRun({ infrastructure = null, budgetStop = null, outcome, health, review = null }) {
   if (infrastructure) return { classification: "infrastructure-error", because: infrastructure };
   if (health?.failures?.length) return { classification: "product-failure", because: health.failures[0] };
+  if (outcome.status === "not-exercised" && health?.waitingOnGm?.length) {
+    return { classification: "not-exercised", because: `the GM's screen was waiting on ${health.waitingOnGm.map(t => `"${t}"`).join(", ")}, which the run's GM autopilot does not answer — ${outcome.reason}` };
+  }
   if (outcome.status === "not-exercised") {
     return budgetStop
       ? { classification: "budget-exhausted", because: `${budgetStop.cap} cap reached (${budgetStop.detail}) before the goal was put to the test — ${outcome.reason}` }

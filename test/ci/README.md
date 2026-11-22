@@ -225,7 +225,8 @@ guards. See `rules/ci-e2e.md` → "Cloud sessions".
 #290 part 3). It is given a persona and a goal — a *charter*,
 `playwright/charters/*.json` — and plays as a logged-in player does: it reads
 its own screen and types, clicks and fills dialogs. The GM's client runs the
-real pipeline and accepts the moves it proposes. An **observer** reads the
+real pipeline, and an autopilot answers what the module asks of the GM before
+a roll (the move's confirmation; "Who are you interacting with?"). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model; a **narrative reviewer** reads the transcript and flags what
 it suspects, quoting it. Nothing in CI runs this, and it never files an issue,
@@ -277,7 +278,7 @@ in none of them. The folder is not committed; to keep a finding, turn its
 | `pass` | The goal was achieved, nothing failed, the reviewer flagged nothing. |
 | `product-failure` | A check that holds whatever the charter failed: the move lock still held at the end, an error of the module's on a page, a step the table never finished. |
 | `suspected-quality-issue` | The goal was not achieved (the layer is named), or the reviewer flagged a passage. For a person to read. |
-| `not-exercised` | The player never put the goal to the test — it stopped early, or named the fact itself. Not a pass. |
+| `not-exercised` | The goal was never put to the test — the player stopped early or named the fact itself, or the GM's screen was left waiting on a question the run's GM autopilot does not answer (the window is named). Not a pass. |
 | `budget-exhausted` | A cap ended the run before the goal was put to the test. |
 | `infrastructure-error` | The run could not be made: Foundry, the browser, or the model API failed. |
 

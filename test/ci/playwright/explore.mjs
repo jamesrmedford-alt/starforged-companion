@@ -105,27 +105,43 @@ function charterProblem(charter) {
 
 // ── the table ────────────────────────────────────────────────────────────────
 
+/** Windows that ask something of whoever sees them: Foundry's dialogs and the module's own. */
+const ASKING = "dialog[open], .application.dialog, .application.sf-window";
+
 /**
- * The GM's half of the table, on autopilot: a move the pipeline proposes is
- * accepted as proposed. The GM does nothing else — the run is the player's.
+ * The GM's half of the table, on autopilot. What the module asks of the GM
+ * before a move rolls is answered without steering the story: the proposed
+ * move is accepted as proposed, and "Who are you interacting with?" — asked
+ * of the GM before the dice, where it holds the move (decisions.md, issue
+ * #347 D1) — is answered "No specific entity", which is what closing it
+ * means. The GM does nothing else: the run is the player's. A window on the
+ * GM's screen that is not listed here is left open, and the run says so.
  */
-function startGmAutopilot(gm, onAccept) {
+const GM_AUTOPILOT = [
+  { window: ".move-confirm-dialog", press: '[data-action="accept"]', did: "accepted the proposed move", note: { selector: ".confirm-move-id", attribute: "data-move-id" } },
+  { window: ".sf-clarification-dialog", press: '[data-action="none"]', did: 'answered "Who are you interacting with?" with "No specific entity"', note: null },
+];
+
+function startGmAutopilot(gm, onAnswer) {
   let busy = false;
   let warned = false;
   const timer = setInterval(async () => {
     if (busy) return;
     busy = true;
     try {
-      const accepted = await gm.page.evaluate(() => {
-        const dialog = [...document.querySelectorAll(".move-confirm-dialog")].at(-1);
-        const button = dialog?.querySelector('[data-action="accept"]');
-        if (!button || button.dataset.sfcAccepted) return null;
-        button.dataset.sfcAccepted = "1";
-        const moveId = dialog.querySelector(".confirm-move-id")?.getAttribute("data-move-id") ?? null;
-        button.click();
-        return { moveId };
-      });
-      if (accepted) onAccept(accepted);
+      const answered = await gm.page.evaluate((rules) => {
+        for (const rule of rules) {
+          const asking = [...document.querySelectorAll(rule.window)].at(-1);
+          const button = asking?.querySelector(rule.press);
+          if (!button || button.dataset.sfcAnswered) continue;
+          button.dataset.sfcAnswered = "1";
+          const note = rule.note ? asking.querySelector(rule.note.selector)?.getAttribute(rule.note.attribute) ?? null : null;
+          button.click();
+          return { did: rule.did, note };
+        }
+        return null;
+      }, GM_AUTOPILOT);
+      if (answered) onAnswer(answered);
     } catch (err) {
       // The page is navigating or closing; said once, not every 400 ms.
       if (!warned) { warned = true; log(`  (GM) the autopilot could not read the page: ${String(err?.message ?? err).split("\n")[0]}`); }
@@ -143,23 +159,30 @@ const trackWorldWrites = (gm) => gm.page.evaluate(() => {
     "createJournalEntryPage", "updateJournalEntryPage", "updateScene", "updateToken", "updateUser"]) Hooks.on(name, bump);
 });
 
-/** Is the table still working on the last action — or waiting on the player? */
+/** Is the table still working on the last action — or waiting on someone? */
 const tableState = (gm, player, ignore = []) => Promise.all([
-  gm.page.evaluate((id) => {
+  gm.page.evaluate(({ id, asking, answered }) => {
     const cs = game.settings.get(id, "campaignState") ?? {};
-    const titles = [...document.querySelectorAll("dialog[open], .application.dialog")]
-      .map(el => String(el.querySelector(".window-title, header h1, header h4")?.textContent ?? "").trim()).filter(Boolean);
+    const title = (el) => String(el.querySelector(".window-title, header h1, header h4")?.textContent ?? "").trim();
     return {
-      pendingMove: cs.pendingMove === true, confirmOpen: !!document.querySelector(".move-confirm-dialog"),
-      worldQuietMs: Date.now() - (window.__sfcLastWrite ?? 0), gmWindows: titles,
+      pendingMove: cs.pendingMove === true,
+      // A prompt the autopilot is about to answer: the table is still moving.
+      beingAnswered: answered.some(selector => !!document.querySelector(selector)),
+      gmWindows: [...document.querySelectorAll(asking)].filter(el => !answered.some(selector => el.matches(selector))).map(title).filter(Boolean),
+      worldQuietMs: Date.now() - (window.__sfcLastWrite ?? 0),
     };
-  }, MODULE_ID),
-  player.page.evaluate(() => [...document.querySelectorAll("dialog[open], .application.dialog")]
-    .map(el => String(el.querySelector(".window-title, header h1, header h4")?.textContent ?? "").trim()).filter(Boolean)),
-]).then(([gmSide, playerDialogs]) => ({ ...gmSide, playerDialogs: playerDialogs.filter(t => !ignore.includes(t)) }));
+  }, { id: MODULE_ID, asking: ASKING, answered: GM_AUTOPILOT.map(rule => rule.window) }),
+  player.page.evaluate((asking) => [...document.querySelectorAll(asking)]
+    .map(el => String(el.querySelector(".window-title, header h1, header h4")?.textContent ?? "").trim()).filter(Boolean), ASKING),
+]).then(([gmSide, playerDialogs]) => ({
+  ...gmSide,
+  gmWindows: gmSide.gmWindows.filter(t => !ignore.includes(t)),
+  playerDialogs: playerDialogs.filter(t => !ignore.includes(t)),
+}));
 
 const QUIET_MS        = 3500;   // the passes a narration schedules start two seconds after it
 const DIALOG_QUIET_MS = 1500;
+const WAITING_ON_GM_MS = 20_000;
 
 /**
  * Wait for the table to finish with an action: the move lock free, no
@@ -167,7 +190,8 @@ const DIALOG_QUIET_MS = 1500;
  * just started, no write in the GM's world — counted from the action itself,
  * so a table that has not begun to answer is not taken for one that is done.
  * A dialog open on the player's own screen ends the wait sooner: the table is
- * waiting on them.
+ * waiting on them. A window on the GM's screen that the autopilot does not
+ * answer ends it too, unsettled: the table is waiting on a GM who is not there.
  */
 async function settle({ gm, player, harness, ignoreWindows }, actedAt) {
   const started = Date.now();
@@ -176,17 +200,25 @@ async function settle({ gm, player, harness, ignoreWindows }, actedAt) {
     state = await tableState(gm, player, ignoreWindows);
     const calls = harness.quietMs();
     const quiet = Math.min(calls, state.worldQuietMs, Date.now() - actedAt);
-    const busy = state.pendingMove || state.confirmOpen || calls === 0;
+    const busy = state.pendingMove || state.beingAnswered || calls === 0;
     if (!busy && quiet >= QUIET_MS) return { settled: true, ms: Date.now() - started };
-    if (state.playerDialogs.length && !state.confirmOpen && calls > 0 && quiet >= DIALOG_QUIET_MS) {
+    if (state.playerDialogs.length && !state.beingAnswered && calls > 0 && quiet >= DIALOG_QUIET_MS) {
       return { settled: true, waitingOnPlayer: state.playerDialogs, ms: Date.now() - started };
+    }
+    // A window on the GM's screen the autopilot does not answer: the table is
+    // waiting on a GM who is not there. No point in waiting out the cap.
+    if (state.gmWindows.length && !state.beingAnswered && calls > 0 && quiet >= WAITING_ON_GM_MS) {
+      return {
+        settled: false, ms: Date.now() - started, waitingOnGm: state.gmWindows,
+        detail: `the GM's screen is waiting on ${state.gmWindows.map(t => `"${t}"`).join(", ")}, which the GM's autopilot does not answer`,
+      };
     }
     await sleep(300);
   }
   return {
-    settled: false, ms: Date.now() - started,
-    detail: `after ${Math.round(SETTLE_MS / 1000)} s the table was still busy (move lock ${state?.pendingMove ? "held" : "free"}, `
-      + `confirmation ${state?.confirmOpen ? "open" : "closed"}; GM windows: ${state?.gmWindows?.join(", ") || "none"})`,
+    settled: false, ms: Date.now() - started, waitingOnGm: state?.gmWindows ?? [],
+    detail: `after ${Math.round(SETTLE_MS / 1000)} s the table was still busy (move lock ${state?.pendingMove ? "held" : "free"}; `
+      + `GM windows: ${state?.gmWindows?.join(", ") || "none"})`,
   };
 }
 
@@ -232,7 +264,7 @@ async function main() {
   const runnerRequests = [];     // the player's and the reviewer's calls
   const actions = [];
   const stalls = [];
-  const accepted = [];           // the GM autopilot's acceptances
+  const accepted = [];           // what the GM's autopilot answered
   let stepNow = SETUP_STEP;
   let infrastructure = null;
   let stopped = null;            // why the player's turns ended
@@ -282,7 +314,7 @@ async function main() {
 
     // The dice: kept as they fall, and in a replay scripted from the run replayed.
     await gm.page.evaluate((queue) => { window.__sfcRolled = []; if (queue) window.__sfcDice = queue; }, earlier?.dice ?? null);
-    stopAutopilot = startGmAutopilot(gm, (a) => { accepted.push({ step: stepNow, ...a }); log(`  (GM) accepted the proposed move${a.moveId ? ` — ${a.moveId}` : ""}`); });
+    stopAutopilot = startGmAutopilot(gm, (a) => { accepted.push({ step: stepNow, ...a }); log(`  (GM) ${a.did}${a.note ? ` — ${a.note}` : ""}`); });
 
     await trackWorldWrites(gm);
     observer = createObserver({ gm, facts: charter.facts, playerId: ids.playerId, notMemory: config.notMemory ?? [] });
@@ -346,7 +378,7 @@ async function main() {
       const outcome = await executeAction(player, action);
       const settled = action.action === "wait" || !outcome.ok ? { settled: true, ms: 0 } : await settle({ gm, player, harness, ignoreWindows: config.ignoreWindows ?? [] }, Date.now());
       if (!outcome.ok) log(`      the action did not land: ${outcome.detail}`);
-      if (!settled.settled) { stalls.push({ step: stepNow, detail: settled.detail }); log(`      STALL ${settled.detail}`); }
+      if (!settled.settled) { stalls.push({ step: stepNow, detail: settled.detail, waitingOnGm: settled.waitingOnGm ?? [] }); log(`      STALL ${settled.detail}`); }
       const mark = await observer.observe(stepNow);
       actions.push({
         step: stepNow, action, scripted: scriptedForm(action, screen), outcome, settled,
@@ -433,7 +465,7 @@ async function main() {
         : undefined,
       playerStopped: stopped,
       goal: { status: outcome.status, reason: outcome.reason, failingLayer: outcome.failingLayer, milestones: outcome.milestones },
-      health: { failures: health.failures, knownFailures: health.knownFailures, errors: health.errors.length },
+      health: { failures: health.failures, waitingOnGm: health.waitingOnGm, knownFailures: health.knownFailures, errors: health.errors.length },
       review: review ? { ok: review.ok, flags: review.flags.length, dropped: review.dropped, summary: review.summary, problem: review.problem } : "not run",
       budget: spend,
       replay: MODE === "replay"
@@ -446,6 +478,7 @@ async function main() {
       for (const f of ask.facts) log(`  ${ask.step} "${ask.line.slice(0, 60)}" · ${f.id}: stored ${f.stored ? "yes" : "no"}, in the prompt ${f.inPrompt ? "yes" : "no"}, in the answer ${f.inAnswer ? "yes" : "no"}`);
     }
     for (const failure of health.failures) log(`health: ${failure}`);
+    if (health.waitingOnGm.length) log(`the GM's screen was left waiting on: ${health.waitingOnGm.join(", ")}`);
     if (review?.ok) log(`reviewer: ${review.flags.length} flag(s)${review.dropped ? `, ${review.dropped} dropped for a quote not in the transcript` : ""}`);
     if (CALLS) log(`${MODE === "live" ? "spent" : "priced at"} $${spend.usd.toFixed(4)} of $${config.caps.usd} — ${spend.calls} model calls, ${spend.actions} actions, ${spend.minutes} minutes`);
     log(`RESULT ${verdict.classification} — ${verdict.because}`);
