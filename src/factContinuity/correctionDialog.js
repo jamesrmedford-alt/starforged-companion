@@ -26,6 +26,7 @@ import {
 import { resolveEntityById } from '../entities/registry.js';
 import { propagateRetraction, markSummaryForRegen } from './retractions.js';
 import { persistSceneLedgerFields } from './sceneLifecycle.js';
+import { nameSwapOf, withNameChange } from './nameChanges.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -228,7 +229,16 @@ async function handleRowAction(button, ctx) {
       const replaced = replaceTruth(truth.id, { fact: next }, working, ctx);
       if (!replaced) return;
       await propagateRetraction(replaced.struck, working);
-      await persistCorrection(working, 'sceneTruths', { regenSummary: true });
+      // A Replace that corrects a name is a name change (issue #377 item 1):
+      // the struck original is named nowhere once its scene ends.
+      const swap = nameSwapOf(replaced.struck.fact, replaced.replacement.fact);
+      const about = replaced.struck.subject?.kind === 'text' ? replaced.struck.subject.text
+        : replaced.struck.subject?.kind === 'entity' ? (resolveEntityById(replaced.struck.subject.entityId)?.data?.name ?? null)
+          : null;
+      await persistCorrection(working, 'sceneTruths', {
+        regenSummary: true,
+        nameChange: swap ? { ...swap, kind: 'corrected', about } : null,
+      });
       return;
     }
     case 'strike-state': {
@@ -356,9 +366,16 @@ function escape(s) {
  * @param {{ regenSummary?: boolean }} [opts]
  * @returns {Promise<void>}
  */
-async function persistCorrection(working, field, { regenSummary = false } = {}) {
+async function persistCorrection(working, field, { regenSummary = false, nameChange = null } = {}) {
   await persistSceneLedgerFields(working, [field], 'correction dialog', {
-    onto: regenSummary ? markSummaryForRegen : null,
+    onto: (regenSummary || nameChange) ? (latest) => {
+      if (regenSummary) markSummaryForRegen(latest);
+      // The name a Replace corrected, in the same write (issue #377 item 1).
+      if (nameChange) {
+        latest.nameChanges = withNameChange(latest.nameChanges,
+          { ...nameChange, sessionId: latest.currentSessionId ?? working.currentSessionId ?? null });
+      }
+    } : null,
   });
 }
 

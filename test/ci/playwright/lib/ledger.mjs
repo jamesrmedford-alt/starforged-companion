@@ -85,7 +85,10 @@ export function heldExcerpt(text, fact, width = 90) {
  * re-assert these…)", "RETRACTED BY THE TABLE — these did not happen" — and
  * not a word of the story ("struck the Ashen Wake head-on" is a fight).
  */
-const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen/;
+// …and since issue #377 item 1 the module's NAMES THE TABLE CHANGED note
+// ("\"Ashen Wake\" is now \"Cinder Wren\" … corrected by the table"), in the
+// narrator's context and in the summary's source.
+const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED/;
 
 /**
  * Whether a prompt that holds `word` says it was corrected: the word stands

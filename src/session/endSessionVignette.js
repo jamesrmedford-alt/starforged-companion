@@ -28,6 +28,7 @@
 import { listConnections } from "../entities/connection.js";
 import { getActiveThreats } from "../world/worldJournal.js";
 import { proseToHtml } from "../audio/segments.js";
+import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -135,13 +136,23 @@ function composeConnectionHint(c) {
  * @param {Object} campaignState
  * @returns {string}
  */
-export function buildEndSessionVignetteUserMessage(npc, campaignState) {
+export function buildEndSessionVignetteUserMessage(npc, campaignState, { earlier = null } = {}) {
   const sectorName = campaignState?.sectors?.find?.(s => s?.id === campaignState?.activeSectorId)?.name
                  ?? "an unspecified sector";
 
   const npcLine = npc.kind === "fallback"
     ? `Featured NPC: ${npc.name}.`
     : `Featured NPC (${npc.kind}): ${npc.name}.${npc.hint ? ` Context: ${npc.hint}` : ""}`;
+
+  // What the earlier closings showed, as already used (issue #377 item 5,
+  // CLOSING-SCENE-REPEATS): with one NPC of weight in the campaign, the long
+  // haul's three closings were one scene three times — her ledger stall, a
+  // meal eaten standing, the condensate filter.
+  const earlierBlock = formatEarlierVignettes(
+    "EARLIER CLOSINGS",
+    Array.isArray(earlier) ? earlier : earlierVignettes(["npc_end"]),
+    "Whoever is featured, show them somewhere else, at something else: not the same place, task, food or objects.",
+  );
 
   return [
     "CLOSING VIGNETTE — end-session NPC slice-of-life.",
@@ -164,6 +175,7 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState) {
     "off, looking out a window — that closes the session without underlining.",
     "Do not describe a move, do not propose a mechanical action.",
     "",
+    ...(earlierBlock ? [earlierBlock, ""] : []),
     // Issue #354 P2-26: asked for 3-5 sentences in its opening line only, the
     // vignette ran to about eight. The limit is the last thing it reads.
     "Length: three to five sentences, about 90 words — never more than five",
@@ -195,6 +207,9 @@ export async function postEndSessionVignetteCard({ text, npcName, sessionId = nu
       [MODULE_ID]: {
         sessionVignetteCard: true,
         vignetteKind:        "npc_end",
+        // Who it featured — the next closing's EARLIER CLOSINGS names them
+        // (vignetteHistory.js earlierVignettes, issue #377 item 5).
+        vignetteNpc:         npcName ?? "",
         sessionId:           sessionId ?? "",
         narratorCard:        true,
         narrationText:       text,

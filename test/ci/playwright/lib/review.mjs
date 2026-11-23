@@ -284,6 +284,37 @@ export function spokenFor(messages = []) {
   return out;
 }
 
+/** A sentence that is one of the narrator's own instructions written as prose (issue #377 item 2). */
+const DIRECTIVE_SLIP = /^\s*[*_]*(?:Open on\b|Shape:|How this narration is built\b|Its first sentence\b)/i;
+/** A game stat said with its number (issue #374 A11): "Wits 3", "iron 1". */
+const STAT_ALOUD = /\b(?:edge|heart|iron|shadow|wits)\s+[0-5]\b/i;
+/** A crew role, for the openings of a campaign whose character flies alone (issue #377 item 4). */
+const CREW_ROLE = /\b(?:engineer|navigator|cook|mechanic|medic|quartermaster|co-?pilot|first mate|crewmates?|crew)\b/i;
+
+/**
+ * What the narrator was told and wrote anyway, sentence by sentence: an
+ * instruction written as prose ("Open on the hatch, not you." — issue #377
+ * item 2), a game stat read aloud (#374 A11), and the sentences of an opening
+ * that name a crew role (item 4 — for a character who flies alone, each is to
+ * be read: "no crew" is no invented one). Counts to start the reading from.
+ *
+ * @param {Array<{ step: string, narrator?: boolean, vignette?: string|null, text: string }>} messages
+ * @returns {{ directives: object[], statsAloud: object[], crewInOpenings: object[] }}
+ */
+export function slipsOf(messages = []) {
+  const out = { directives: [], statsAloud: [], crewInOpenings: [] };
+  for (const m of messages) {
+    if (!m.narrator) continue;
+    for (const s of sentencesOf(m.text)) {
+      const at = { step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) };
+      if (DIRECTIVE_SLIP.test(s)) out.directives.push(at);
+      if (STAT_ALOUD.test(s)) out.statsAloud.push(at);
+      if (m.vignette === "galley_begin" && CREW_ROLE.test(s)) out.crewInOpenings.push(at);
+    }
+  }
+  return out;
+}
+
 /** Actions per beat and per line of play, what the GM was asked, and the steps that went nowhere. */
 export function frictionOf({ actions = [], beats = [], autopilot = [], messages = [] }) {
   const lines = actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!")).length;
@@ -331,6 +362,7 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       repetition: repetitionOf(messages),
       friction: frictionOf({ actions, beats, autopilot, messages }),
       agency: spokenFor(messages),
+      slips: slipsOf(messages),
     },
   };
 }
@@ -424,7 +456,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [] }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [], slips = null }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -442,6 +474,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Continuity — the narrator", t ? `${t.recalled} recalled, ${t.carriedUnasked} carried unasked, ${t.lost} lost, ${t.refused} refused, ${t.notProbed} not probed of ${t.facts}` : "not scored", "fact × probe × layer; refusals; leaks", "medium: presence of words, not comprehension — read each excerpt"],
       ["Continuity — the helpers", ledger ? `${helperRows.length} refusal(s) in summaries, Chronicle entries and recaps` : "not scored", "each helper's writing against the ledger", "medium: a refusal is a contradiction that was thought of"],
       ["Agency", `${agency.length} sentence(s) that speak for the character`, "quoted speech given to \"you\"", "low: a count to start reading from"],
+      ...(slips ? [["Told, and written anyway", `${slips.directives.length} instruction(s) written as prose; ${slips.statsAloud.length} stat(s) read aloud; ${slips.crewInOpenings.length} opening sentence(s) naming a crew role`, "each narrated sentence against the instructions' own words, a stat with its number, a crew role in an opening", "medium for the first two; the third is to be read"]] : []),
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ["Speed", speed ? `a line to its reply: p50 ${secs(speed.lineToReply.p50)}, p95 ${secs(speed.lineToReply.p95)} (${speed.lineToReply.n} lines)` : "not recorded", "each call's latency; the time from a line to the first narration after it", "high"],
@@ -501,6 +534,12 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       r.pairs.map(p => [p.earlier, p.later, `${p.shared} of ${p.words} (${pct(p.sharedShare)})`, p.repeatedActs.map(a => `${a.who}: ${a.doing.join(" ")}`).join("; ")])), "");
   }
   if (agency.length) out.push("## Spoken for the character", "", table(["At", "Scene", "Sentence"], agency.map(a => [a.step, a.scene ?? "", a.sentence])), "");
+  const slipRows = slips ? [
+    ...slips.directives.map(s => ["an instruction written as prose", s.step, s.scene ?? "", s.sentence]),
+    ...slips.statsAloud.map(s => ["a stat read aloud", s.step, s.scene ?? "", s.sentence]),
+    ...slips.crewInOpenings.map(s => ["a crew role in an opening", s.step, s.scene ?? "", s.sentence]),
+  ] : [];
+  if (slipRows.length) out.push("## Told, and written anyway — each to be read", "", table(["What", "At", "Scene", "Sentence"], slipRows), "");
   if (friction) {
     out.push("## Friction", "", `${friction.actions} actions, ${friction.lines} lines of play, ${friction.waits} waits, ${friction.draftCards} draft card(s).`, "");
     if (Object.keys(friction.gmAsked).length) out.push(table(["What the GM's rules answered", "Times"], Object.entries(friction.gmAsked)), "");

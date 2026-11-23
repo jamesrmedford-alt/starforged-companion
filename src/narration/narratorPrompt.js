@@ -10,6 +10,7 @@ import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
+import { formatNameChangesBlock } from '../factContinuity/nameChanges.js';
 import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
@@ -1160,11 +1161,13 @@ const ROLE_DESCRIPTIONS = {
     `a session-bookend vignette — a short atmospheric scene that brackets the play ` +
     `session itself.\n\n` +
     `Two flavours, distinguished by the user message:\n\n` +
-    `BEGIN — active PCs together in a quiet downtime moment (the ship's galley, etc.), ` +
-    `bantering about what the absent crewmates might be up to. TONE OVERRIDE for ` +
-    `BEGIN: WRY AND ABSURD. Affectionate ribbing about absent crewmates, vivid specific ` +
-    `food or activity for the present ones, weird little crew-life details. Not ` +
-    `cynical, not sneering — fond, observed, a little odd.\n\n` +
+    `BEGIN — the active PCs in a quiet downtime moment aboard their ship (the galley, ` +
+    `etc.). With crewmates registered elsewhere aboard, the PCs banter about what those ` +
+    `crewmates might be up to; with none, the character is alone with the ship, and the ` +
+    `humour is the ship's and the solitude's — no crew is invented, present or absent. ` +
+    `TONE OVERRIDE for BEGIN: WRY AND ABSURD. Vivid specific food or activity, weird ` +
+    `little details of life aboard. Not cynical, not sneering — fond, observed, a little ` +
+    `odd.\n\n` +
     `END — a single important NPC (an established connection, a recurring threat, a ` +
     `faction figurehead) caught doing something trivial and mundane, in a place the ` +
     `players are NOT. TONE OVERRIDE for END: WRY AND OBSERVED, slice-of-life. The ` +
@@ -1322,6 +1325,9 @@ const LEVITY_BEAT_LINES = {
 /** The modes whose beats are built to a shape and checked against the images already used. */
 const BEAT_PROSE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
+/** What leads the beat's shape in THIS BEAT'S PROSE (was "Shape:" — issue #377 item 2). */
+export const BEAT_SHAPE_LABEL = 'How this narration is built:';
+
 /**
  * [8d] THIS BEAT'S PROSE — what varies from one beat to the next (issue #354
  * P2-21, P2-22, P2-27): the comparisons the recent narrations used
@@ -1342,7 +1348,10 @@ export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity
 
   const lines = ["## THIS BEAT'S PROSE"];
   if (hint) {
-    lines.push('', `Shape: ${hint} (A way to build this beat so it does not read like the last one — it changes nothing about what happens.)`);
+    // Said as an instruction to the narrator, about the narration — the line
+    // that read "Shape: Open on …" was written into the story as "Open on the
+    // hatch, not you." (issue #377 item 2).
+    lines.push('', `${BEAT_SHAPE_LABEL} ${hint} This changes nothing about what happens; it keeps the beat from reading like the last one. It is an instruction to you — never write it, quote it or describe it in the narration.`);
   }
   if (levityLine) lines.push('', levityLine);
   if (images.length) {
@@ -2114,6 +2123,10 @@ export function buildNarratorSystemBlocks(
   //       scene that happens to be open is not its to honour: told, as
   //       binding, the frame of End a Session's closing cutaway, it set the
   //       whole campaign there (issue #374 A1).
+  // [6.4] NAMES THE TABLE CHANGED (issue #377 item 1) goes here, just above
+  //       the scene's truths, once the rest of the prompt is built (below):
+  //       it is told only where an old name still reaches the call.
+  const namesAt = parts.length;
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
   }, { matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode });
@@ -2176,6 +2189,24 @@ export function buildNarratorSystemBlocks(
     const beatProse = formatBeatProseBlock({ usedImages, beatShape, levity: narrationLevity });
     if (beatProse) parts.push(beatProse);
   }
+
+  // [6.4] The names the table changed (issue #377 item 1,
+  //       CORRECTION-AND-RENAME-DO-NOT-REACH-THE-RECORD): a GM's rename, or a
+  //       table's correction of a name, leaves the old name in the snapshot's
+  //       lore, plans and earlier sessions, in clocks and in the scene's own
+  //       truths — and, told nothing, the narrator made both names true. A
+  //       change is told while it is this session's, or while its old name is
+  //       anywhere in what this call sends (the cached blocks included, and
+  //       what a caller adds — the recap's Chronicle). Per-beat: it changes
+  //       as the stores do.
+  const namesBlock = formatNameChangesBlock(extras?.nameChanges ?? campaignState?.nameChanges, {
+    sessionId: campaignState?.currentSessionId ?? null,
+    texts: [
+      ...standing, snapshot?.text ?? '', ...modeParts, ...parts,
+      ...(Array.isArray(extras?.nameChangeTexts) ? extras.nameChangeTexts : []),
+    ],
+  });
+  if (namesBlock) parts.splice(namesAt, 0, namesBlock);
 
   // [9b] The pointer back to the response format — last, so it is the most
   // recent guidance the narrator reads, as the instruction itself used to be.
@@ -2942,7 +2973,11 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     parts.push(
       `## SUGGESTED MOVE\n\n` +
       `The pacing classifier nominated ${suggestedMove} as a move the player could ` +
-      `make if they want to push this moment. End your narration with ONE italicized ` +
+      `make if they want to push this moment. It has not been made, and nothing it ` +
+      `would decide has happened: narrate up to the point where it would begin and stop ` +
+      `there — a course laid in is not yet flown, a wound bared is not yet treated, a ` +
+      `question put is not yet answered. The prose never performs the move; the closing ` +
+      `sentence offers it. End your narration with ONE italicized ` +
       `sentence inviting this move, in the narrator's voice. Do not announce it ` +
       `mechanically. Examples:\n\n` +
       `  *If you want to read him for tells, this could be a Gather Information.*\n` +
@@ -2970,7 +3005,10 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     `${sentenceRule(target, lengthOpts)} ` +
     `No move was rolled — stay in narration. Do not announce mechanics. Do not decide ` +
     `what a move would decide: no risky action succeeds or fails, no fight is won, no ` +
-    `danger is escaped. Within that, let the scene move: small developments, and the ` +
+    `danger is escaped. Nor does anything on a character's sheet change — no wound is ` +
+    `treated or healed, no harm taken, no supplies gained or spent, no damage repaired, ` +
+    `no bond or progress made: a line that sets about one of those has begun it, and the ` +
+    `move that decides it is still to be made. Within that, let the scene move: small developments, and the ` +
     `time the player's line implies passing, are yours to narrate. When the player skips ` +
     `time ("wake me when we get there", "we wait for nightfall"), cut to the next moment ` +
     `that needs them, not to the middle of the wait.`

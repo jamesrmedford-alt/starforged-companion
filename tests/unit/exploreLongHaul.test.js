@@ -46,7 +46,7 @@ import {
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import {
-  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, speedOf, spokenFor,
+  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, slipsOf, speedOf, spokenFor,
 } from '../../test/ci/playwright/lib/review.mjs';
 import { burnedOutcome, outcomeOf, rolledScore } from '../helpers/sequence/rules.js';
 
@@ -270,6 +270,18 @@ describe('the ledger, scored layer by layer', () => {
     // Said of something else, it marks nothing.
     expect(markedCorrected('## RECENT SCENE\n\nThe course was corrected twice.\n\nThe Ashen Wake cuts across your bow.\n', 'Ashen Wake')).toBe(false);
     expect(markedCorrected('## RECENT SCENE\nNothing of it here.\n', 'Ashen Wake')).toBe(false);
+
+    // Issue #377 item 1: the module's own note says it, in every later prompt
+    // the old name reaches — the snapshot's plan, a clock, lore.
+    const noted = [
+      '#### Threat — Ashen Wake (id sk-Enye9o8yVxQGTh8x)', '',
+      '## CLOCKS', '', '- Tension: Ashen Wake — 0/4', '',
+      '## NAMES THE TABLE CHANGED', '', 'Each of these is one person, place or ship with one name.', '',
+      '- "Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.', '',
+    ].join('\n');
+    expect(markedCorrected(noted, 'Ashen Wake')).toBe(true);
+    // …and the summary's source note.
+    expect(markedCorrected('## SESSION NARRATION (oldest first)\n\nThe Ashen Wake burns.\n\n## NAMES THE TABLE CHANGED — one name each\n\n- "Ashen Wake" is now "Cinder Wren".\n', 'Ashen Wake')).toBe(true);
   });
 
   it('a probe is looked for among the lines of the beat that asks it: a short question\'s words elsewhere are not the question', () => {
@@ -1021,6 +1033,24 @@ describe('what a run counts for its review', () => {
     expect(answered[0].sentence).toContain('You answer the hatch. "Before the next cargo tide.');
     expect(spokenFor([{ step: 'a60', narrator: true, text: 'The visitor is listening. "Careful what you tell her," the voice says. "I know that compass."' }]), 'the voice speaks, not you').toEqual([]);
     expect(spokenFor([{ step: 'a51', narrator: true, text: '"Tamsin\'s," you say, and the plating gives back a short pause.' }])).toHaveLength(1);
+  });
+
+  it('counts what the narrator was told and wrote anyway — the first live run\'s own sentences (issue #377 items 2, 4)', () => {
+    const slips = slipsOf([
+      { step: 'a57', narrator: true, text: 'Open on the hatch, not you. The handle turns its quarter inch and stops.' },
+      { step: 'a79', narrator: true, text: '*Open on Tamsin, not the hatch.* Her answer comes over the comm.' },
+      { step: 'a15', narrator: true, vignette: 'galley_begin', text: 'You eat slowly, because Wits 3 is a lot of thinking to do on bland food. So you have invented a crew: the engineer is teaching the coolant pump to hum.' },
+      { step: 'a20', narrator: true, text: 'Iron rings on iron. The open door waits.' },
+      { step: 'a48', narrator: true, vignette: 'npc_end', text: 'The cook at the next stall burns the lentils again.' },
+    ]);
+    expect(slips.directives.map(s => s.step)).toEqual(['a57', 'a79']);
+    expect(slips.statsAloud.map(s => s.sentence)).toEqual(['You eat slowly, because Wits 3 is a lot of thinking to do on bland food.']);
+    expect(slips.crewInOpenings.map(s => s.sentence)).toEqual(['So you have invented a crew: the engineer is teaching the coolant pump to hum.']);
+    // A closing's cook is no opening's crew; "iron rings on iron" is no stat.
+    expect(slips.crewInOpenings.some(s => s.step === 'a48')).toBe(false);
+    const card = scorecard({ charter: { name: 'long-haul' }, run: { id: 'r', mode: 'live' }, slips });
+    expect(card).toContain('2 instruction(s) written as prose; 1 stat(s) read aloud; 1 opening sentence(s) naming a crew role');
+    expect(card).toContain('## Told, and written anyway — each to be read');
   });
 });
 

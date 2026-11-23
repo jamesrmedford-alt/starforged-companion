@@ -70,7 +70,7 @@ const flagsOf = (m) => m?.flags?.[MODULE_ID] ?? {};
 
 /** The shape a narration request was told to use, by its hint in the prompt. */
 function shapeOf(system) {
-  const shape = BEAT_SHAPES.find(s => system.includes(JSON.stringify(`Shape: ${s.hint}`).slice(1, -1)));
+  const shape = BEAT_SHAPES.find(s => system.includes(JSON.stringify(`How this narration is built: ${s.hint}`).slice(1, -1)));
   expect(shape, 'the request names a shape').toBeTruthy();
   return shape.id;
 }

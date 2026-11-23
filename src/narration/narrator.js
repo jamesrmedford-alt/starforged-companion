@@ -43,6 +43,7 @@ import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock 
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
+import { formatNameChangesForSource } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -398,6 +399,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // Advances the per-scene pointer as a side effect; '' when not applicable.
     // The acting PC is never the one named next (issue #330 D8).
     spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState, character?.actorId ?? null),
+    // The names the table changed (issue #377 item 1), from the store: told
+    // wherever the old name still reaches the prompt (NAMES THE TABLE CHANGED).
+    nameChanges:        storedCampaignState()?.nameChanges ?? campaignState?.nameChanges ?? [],
   };
 
   // What keeps this beat from reading like the last (issue #354 P2-22,
@@ -3476,6 +3480,9 @@ export async function getCampaignRecap(campaignState, options = {}) {
   const settings    = getNarratorSettings();
   const character   = getActiveCharacter(campaignState);
   const extras      = await buildNarratorExtras('campaign_recap', campaignState, { character });
+  // The Chronicle may name someone by a name the table has since changed
+  // (issue #377 item 1): the recap is told the new one where it does.
+  extras.nameChangeTexts = chronicleEntries;
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
   const userMessage  = buildCampaignRecapUserMessage(chronicleEntries);
 
@@ -3620,6 +3627,12 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     ? `\n\n## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n` +
       struck.map(f => `- ${f.label} — ${f.fact}`).join('\n')
     : '';
+  // …and names the table has changed since (issue #377 item 1): the session's
+  // summary was written with the old surname after the GM's rename.
+  const renamed = formatNameChangesForSource(
+    storedCampaignState()?.nameChanges ?? campaignState.nameChanges,
+    { texts: [sourceProse], sessionId });
+  const namesNote = renamed ? `\n\n${renamed}` : '';
 
   // An X-Card played while the call is out removes a narration this summary
   // was made from: its reply is never stored (issue #325 W06). So does one
@@ -3642,7 +3655,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       label: 'getRollingSessionSummary',
       apiKey,
       systemPrompt: ROLLING_SUMMARY_SYSTEM_PROMPT,
-      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}`,
+      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}${namesNote}`,
       model:        ROLLING_SUMMARY_MODEL,
       maxTokens:    ROLLING_SUMMARY_MAX_TOK,
     });

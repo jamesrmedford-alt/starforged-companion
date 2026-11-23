@@ -179,11 +179,14 @@ describe('P2-22 / P2-27 — the images already used, and a shape for the beat', 
     expect(formatBeatProseBlock({ usedImages: [], beatShape: null, levity: 'default' })).toBe('');
     const block = formatBeatProseBlock({
       usedImages: ['the way an usher waits for a latecomer', 'like a swimmer surfacing'],
-      beatShape:  { hint: 'Open on what someone does. Any speech comes after it.' },
+      beatShape:  { hint: 'Its first sentence shows what someone does; any speech comes after.' },
     });
     expect(block.startsWith("## THIS BEAT'S PROSE")).toBe(true);
-    expect(block).toContain('Shape: Open on what someone does. Any speech comes after it.');
-    expect(block).toMatch(/it changes nothing about what happens/);
+    expect(block).toContain('How this narration is built: Its first sentence shows what someone does; any speech comes after.');
+    expect(block).toMatch(/changes nothing about what happens/);
+    // Issue #377 item 2: the line is said as the narrator's instruction, never prose to write.
+    expect(block).toMatch(/never write it, quote it or describe it in the narration/);
+    expect(block).not.toMatch(/^Shape:/m);
     expect(block).toContain('### IMAGES ALREADY USED');
     expect(block).toContain('- the way an usher waits for a latecomer');
     expect(block).toContain('- like a swimmer surfacing');
@@ -228,7 +231,7 @@ describe('P2-22 / P2-27 — the images already used, and a shape for the beat', 
     for (let i = 0; i < 6; i += 1) {
       const extras = await buildNarratorExtras(i % 2 ? 'move_resolution' : 'paced_narrative', state(), opts);
       expect(BEAT_SHAPES.map(s => s.id)).toContain(extras.beatShape.id);
-      expect(buildNarratorSystemPrompt({}, {}, null, '', extras)).toContain(`Shape: ${extras.beatShape.hint}`);
+      expect(buildNarratorSystemPrompt({}, {}, null, '', extras)).toContain(`How this narration is built: ${extras.beatShape.hint}`);
       shapes.push(extras.beatShape.id);
       // The narration posts its beat's card (a move's or a paced line's —
       // beats are counted by their own cards, issue #362 AC72); the next beat follows it.

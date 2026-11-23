@@ -156,6 +156,14 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   vignette (every post site) and the inciting incident, which no one PC's
   line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
   rule — issue #362 AC75).
+  The galley's user message (`buildGalleyVignetteUserMessage`) sends no stat
+  line, and with no other PC registered says nobody else is aboard — no crew is
+  invented, present or absent (issue #377 item 4: told to "invent generic
+  absurd crew", it gave a solo pilot three crewmates, and a helper recorded her
+  as a crew member of her own ship). Each bookend's message lists the earlier
+  ones of its kind as already used — the newest three, read from the chat's
+  cards (`vignetteHistory.js earlierVignettes`; a closing's card names whom it
+  featured, `vignetteNpc`) — issue #377 item 5.
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -733,7 +741,15 @@ its card shows them — `formatSettlementPlanet`, issue #321 U51; the sector's
 connections as reuse-first cast, and a lost one apart, its line saying how it
 was lost — issue #325 W37) · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
-C5) · [6.5] active-scene ledger
+C5) · **[6.4] NAMES THE TABLE CHANGED** (issue #377 item 1: the changes on
+`campaignState.nameChanges` — a GM's rename of a card, a table's correction of a
+name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
+each told while it is this session's or while its old name, whole or the part
+the new one does not share, is in what the call sends: the cached blocks, the
+context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the recap's
+included; per-beat. Nothing in the stores is rewritten — the note is what says
+which name is current; the session summary's source carries the same note,
+`formatNameChangesForSource`) · [6.5] active-scene ledger
 (SCENE FRAME — with the scene's question, kept for the scene and marked
 when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
@@ -778,7 +794,9 @@ CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 entries, each clipped, `extras.pinnedChronicle`: the Chronicle panel's pin
 was saved onto a flag nothing read, issue #345 AA07) · [8b]
 party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
-P2-21, P2-22, P2-27 — the move, paced and round modes only:
+P2-21, P2-22, P2-27 — the move, paced and round modes only; its shape is
+said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
+never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
 ring's own source, and sets `extras.beatShape` — a way to build the beat,
 the one after the newest written beat's so two in a row never share one.

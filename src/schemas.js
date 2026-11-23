@@ -657,6 +657,18 @@ export const CampaignStateSchema = {
   //     narrated: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
   sessionRetractions: { sessionId: null, facts: [], blocked: [], narrated: [] },
 
+  // The names the table changed (issue #377 item 1,
+  // CORRECTION-AND-RENAME-DO-NOT-REACH-THE-RECORD): a GM's rename of a card
+  // (index.js syncEntityRecordNameOnUpdate / the journal rename sync) and a
+  // table's correction of a name (`!truth` strike + set, a Replace). Written
+  // only there, on the GM (factContinuity/nameChanges.js withNameChange —
+  // a name changed again carries its earlier names, an undone change drops);
+  // read by the narrator's NAMES THE TABLE CHANGED (narratorPrompt.js — told
+  // while the change is this session's or its old name is in the call) and
+  // the session summary's source note. Campaign-long, the newest 40.
+  //   [{ from, to, kind: "renamed"|"corrected", about, entityId, sessionId, at }]
+  nameChanges: [],
+
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
   // naming the PC the narrator last drew into an open prompting beat, so the
   // next beat rotates to another player. Reset on scene start/end.

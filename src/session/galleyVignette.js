@@ -13,11 +13,12 @@
  * connected — a player's own PC, or the GM's (one no player has) — see
  * collectGalleyParticipants.
  *
- * Solo-GM mode (only one user, who is the GM): the vignette describes
- * the lone PC in the galley narrating absurd theories about the
- * (always-absent) co-pilot. Same code path, same tone — the absent
- * list just falls back to a generic "the rest of the crew" framing
- * when no other PCs are registered in the world.
+ * Solo play (no other PC registered): the vignette is the lone PC alone with
+ * the ship — its noises and habits are the company. No crew is invented,
+ * present or absent (issue #377 item 4: told to "invent generic absurd crew",
+ * the narrator gave a solo pilot an engineer, a navigator and a cook, and a
+ * helper recorded her as a crew member of her own ship). Earlier openings are
+ * listed as already used (item 5), and no stat line is sent (#374 A11).
  *
  * Tone override: regardless of the configured narrator tone, galley
  * vignettes always render `wry + absurd`. The configured tone resumes
@@ -27,6 +28,7 @@
 import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { proseToHtml } from "../audio/segments.js";
+import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -108,9 +110,12 @@ export function collectGalleyParticipants(campaignState = null) {
  * @param {Object} campaignState
  * @returns {string}
  */
-export function buildGalleyVignetteUserMessage(participants, campaignState) {
+export function buildGalleyVignetteUserMessage(participants, campaignState, { earlier = null } = {}) {
   const { active, absent } = participants;
 
+  // No stat line (issue #377 item 4, #374 A11): told "Stats: … wits 3" and to
+  // "stay anchored to the PCs' established traits", the opening read a stat
+  // aloud — "because Wits 3 is a lot of thinking to do on bland food".
   const summariseActor = (actor) => {
     const snap = readCharacterSnapshot(actor);
     if (!snap) return `- ${actor?.name ?? "Unknown"}`;
@@ -118,10 +123,7 @@ export function buildGalleyVignetteUserMessage(participants, campaignState) {
     const pronouns  = snap.pronouns ? ` [${snap.pronouns}]` : "";
     const bio       = (snap.biography ?? "").trim();
     const bioLine   = bio ? `\n    Bio: ${truncate(bio, 220)}` : "";
-    const stats     = snap.stats
-      ? `\n    Stats: edge ${snap.stats.edge} · heart ${snap.stats.heart} · iron ${snap.stats.iron} · shadow ${snap.stats.shadow} · wits ${snap.stats.wits}`
-      : "";
-    return `- ${snap.name}${callsign}${pronouns}${bioLine}${stats}`;
+    return `- ${snap.name}${callsign}${pronouns}${bioLine}`;
   };
 
   const summariseAbsent = (actor) => {
@@ -142,12 +144,49 @@ export function buildGalleyVignetteUserMessage(participants, campaignState) {
     ? active.map(p => summariseActor(p.actor)).join("\n")
     : "- (No active players have a character set on their Foundry user.)";
 
-  const absentList = absent.length
-    ? absent.map(p => summariseAbsent(p.actor)).join("\n")
-    : "- (No absent crewmates registered — invent generic absurd crew.)";
-
   const sectorName = campaignState?.sectors?.find?.(s => s?.id === campaignState?.activeSectorId)?.name
                  ?? "an unspecified sector";
+
+  // With nobody else registered, nobody else is aboard (issue #377 item 4,
+  // NARRATOR-ADDS-TO-THE-PREMISE; #374 A4): the instruction used to read "(No
+  // absent crewmates registered — invent generic absurd crew.)", so a solo
+  // pilot's galley got an engineer, a navigator and a cook — and a helper
+  // then recorded her as "a crew member" of her own ship. The PCs are alone
+  // with the ship, and its company is the joke.
+  const crewLines = absent.length
+    ? [
+      "Absent crewmates (referenced in banter, not present):",
+      absent.map(p => summariseAbsent(p.actor)).join("\n"),
+      "",
+      `Ship is currently in: ${sectorName}.`,
+      "",
+      "Render a 4-6 sentence opening vignette set in the ship's galley.",
+      "The active PCs are eating, drinking, or otherwise hanging out — pick a",
+      "specific food or drink that fits them. They banter, humorously and",
+      "absurdly, about what each of the absent crewmates is doing elsewhere on",
+      "the ship or out in the sector — specific and weird, true to what is",
+      "known of each.",
+    ]
+    : [
+      `Nobody else is aboard: no other crewmate is registered, so there is none. Do not invent one, present or absent, and do not have ${active.length > 1 ? "the characters" : "the character"} imagine or pretend one.`,
+      "",
+      `Ship is currently in: ${sectorName}.`,
+      "",
+      "Render a 4-6 sentence opening vignette set in the ship's galley:",
+      `${active.length > 1 ? "the characters, the only people aboard, are" : "the character, the only person aboard, is"} eating, drinking or`,
+      "otherwise passing the time — pick a specific food or drink that fits",
+      "them — with the ship itself as the absurd company: its noises, its",
+      "habits, its small failures. The humour is the ship's and the solitude's.",
+    ];
+
+  // What the earlier openings showed, as already used (issue #377 item 5,
+  // GALLEY-VIGNETTE-REPEATS): four openings of one campaign repeated a quarter
+  // of their content — the kettle "that has outlasted three owners" twice.
+  const earlierBlock = formatEarlierVignettes(
+    "EARLIER OPENINGS",
+    Array.isArray(earlier) ? earlier : earlierVignettes(["galley_begin"]),
+    "This one must be different from each: not the same food or drink, objects, noises, jokes or business.",
+  );
 
   return [
     "OPENING VIGNETTE — begin-session ship's galley.",
@@ -155,19 +194,10 @@ export function buildGalleyVignetteUserMessage(participants, campaignState) {
     "Active players (their PCs are physically in the galley together):",
     activeList,
     "",
-    "Absent crewmates (referenced in banter, not present):",
-    absentList,
-    "",
-    `Ship is currently in: ${sectorName}.`,
-    "",
-    "Render a 4-6 sentence opening vignette set in the ship's galley.",
-    "The active PCs are eating, drinking, or otherwise hanging out — pick a",
-    "specific food/drink that fits their character traits. They banter,",
-    "humorously and absurdly, about what each of the absent crewmates is",
-    "doing elsewhere on the ship or out in the sector. Be specific and",
-    "weird (e.g. 'rewiring her own escape pod from the inside again',",
-    "'recalibrating the gravity in the laundry'), but stay anchored to",
-    "the PCs' established traits.",
+    ...crewLines,
+    "Stay anchored to what the bios establish, and never state a game stat or",
+    "any number from a character sheet.",
+    ...(earlierBlock ? ["", earlierBlock] : []),
     "",
     "TONE OVERRIDE: regardless of any tone configured elsewhere, this",
     "vignette is WRY + ABSURD. Affectionate ribbing, not sneering.",

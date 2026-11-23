@@ -160,13 +160,20 @@ export function recentImages(narrations, { cards = IMAGE_SOURCE_CARDS, limit = I
 // A shape for each beat (P2-27)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The ways a beat can be built. `hint` is what the narrator reads. */
+/**
+ * The ways a beat can be built. `hint` is what the narrator reads — said of
+ * the narration ("its first sentence…"), never as a director's imperative:
+ * "Open on someone other than the acting character" came back as prose,
+ * "Open on the hatch, not you." (issue #377 item 2,
+ * NARRATION-WRITES-ITS-SHAPE-DIRECTIVE — two of 28 narrated lines in the long
+ * haul's first live run).
+ */
 export const BEAT_SHAPES = Object.freeze([
-  Object.freeze({ id: 'action',   hint: 'Open on what someone does. Any speech comes after it.' }),
-  Object.freeze({ id: 'dialogue', hint: 'Open on a line of speech, and let what happens follow from it.' }),
-  Object.freeze({ id: 'brief',    hint: 'Keep this one brief: two or three short sentences, well under the length budget, no scene-setting.' }),
-  Object.freeze({ id: 'detail',   hint: 'Build the beat around one concrete thing a character sees, hears or feels — one, not a list.' }),
-  Object.freeze({ id: 'other',    hint: 'Open on someone other than the acting character — what they are doing as this lands — if someone else is in the scene; otherwise on the place.' }),
+  Object.freeze({ id: 'action',   hint: 'Its first sentence shows what someone does; any speech comes after.' }),
+  Object.freeze({ id: 'dialogue', hint: 'Its first sentence is a line someone speaks, and what happens follows from it.' }),
+  Object.freeze({ id: 'brief',    hint: 'It is brief: two or three short sentences, well under the length budget, with no scene-setting.' }),
+  Object.freeze({ id: 'detail',   hint: 'It is built around one concrete thing a character sees, hears or feels — one, not a list.' }),
+  Object.freeze({ id: 'other',    hint: 'Its first sentence is about someone other than the acting character — what they are doing as this lands — if someone else is in the scene; otherwise about the place.' }),
 ]);
 
 // A step that visits every shape before any repeats (coprime with the count).

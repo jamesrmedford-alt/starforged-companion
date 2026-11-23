@@ -132,6 +132,20 @@ longer special-cases them).
   nothing writes nothing — and posts the result card. Before
   the 2026-10 audit the command ran on every client, so a player's correction
   only landed via the GM client's re-run — with GM permissions.
+- **A correction of a name outlives its scene** (issue #377 item 1,
+  CORRECTION-AND-RENAME-DO-NOT-REACH-THE-RECORD). A `!truth set` that gives a
+  struck name's correction — "is named the Ashen Wake" struck, "is named the
+  Cinder Wren" set, in either order, on the same subject — and a dialog Replace
+  that does, record a name change (`nameChanges.js` `nameCorrectionOf` /
+  `nameSwapOf`, on `campaignState.nameChanges` in the same write as the ledger;
+  only where the words before the name say it is one). So does a GM's rename of
+  a card in the sidebar (index.js `syncEntityRecordNameOnUpdate`). CORRECTED is
+  its scene's (and its place's); the change is told past both — NAMES THE TABLE
+  CHANGED in the narrator's context, every mode, and in the session summary's
+  source — wherever the old name still reaches a prompt. In the long haul's
+  first live run the old cutter name stayed in 37 later prompts with nothing
+  saying it was corrected, and the narrator made a renamed NPC's old surname an
+  alias.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)
   posts the same card WITHOUT the retract button — WJ lore's correction
   affordance is the `!journal` command family (reaffirmed 2026-07).
