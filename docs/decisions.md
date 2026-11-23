@@ -6090,7 +6090,8 @@ long-running writer is the one that has to yield.
   the static policy losing data.
 
 **Trade-offs accepted (no baseline):** two concurrent adds to the same legacy
-track keep the larger tick count; `sceneState` / `sceneFrame` / `spotlight` /
+track keep the larger tick count (no longer: since v1.8.1 both adds count —
+see LEGACY-SHEET-DECREASE, above); `sceneState` / `sceneFrame` / `spotlight` /
 `currentLocation*` / `sectors` changed by a relay mid-pipeline are overwritten
 by the pipeline's copy; an entity id removed from the store mid-pipeline can
 return via the id-list union (readers filter missing documents).

@@ -2821,19 +2821,24 @@ each step declares its Claude calls, and a required call the recording doesn't
 answer, a prompt that breaks its contract, or an undeclared call fails the
 step (decisions.md → "Strict replay for critical playthroughs"). Open:
 
-- **PLAYTHROUGH-PLACEHOLDERS.** `recordings/first-session.json` is
-  hand-written (`"source": "hand-written"`), in each parser's format. The
-  parsers have not yet seen a real reply in this suite — the truncation,
-  fence and markup quirks the issue wants exercised — until someone records
-  it with a key: `ANTHROPIC_API_KEY=… npm run test:e2e -- --record-playthroughs`.
+- ~~**PLAYTHROUGH-PLACEHOLDERS.**~~ Closed 2026-11-22: both recordings are
+  made from the live model (`"source": "recorded"`;
+  `test/ci/scripts/cloud.sh playthroughs --record`). It was:
+  `recordings/first-session.json` hand-written, in each parser's format, so
+  the parsers had not seen a real reply in this suite. A new scenario still
+  starts with hand-written placeholders until it is recorded.
 - **PLAYTHROUGH-SHIP-MISS.** The ship moves only on strong hits: a Set a
   Course miss rolls Pay the Price, whose result can open a suffer dialog at
   random, and a weak hit opens the suffer choice. So the drag's "a miss leaves
   the token where it was" path is not played; the token staying put while the
   move is pending is.
 
-Part 3 (live QA with an AI playtester) is not started; its open questions
-are in the issue's "To settle before building".
+Part 3 (live QA with an AI playtester): its first charter is built, as
+issue #302's slice D — an AI player and an observer at a live table, on
+demand (`test/ci/playwright/explore.mjs`; see "AI exploration (issue #302
+slice D)" at the top of this file). The model judge it proposed was built and
+deleted on 2026-11-23. The rest — contradiction and strike probes, the other
+charters, two players — is scoped in issue #373.
 
 ### Phone play on The Forge (issue #293) — fixed in the v1.7.34 and v1.7.35 cycles
 
@@ -2884,8 +2889,11 @@ reads the shared story, and a published reflection is canon (decisions.md →
 canon").
 
 **Open — moved to #287** (issue #286 is closed):
-- **§F steps 2–6** — the tiered, cached request layout and larger budgets
-  wait on the Narrator Usage numbers and a playtest.
+- **§F steps 2–6** — the tiered, cached request layout was built by the
+  world snapshot (issue #357, v1.8.2), with the cache written ahead at Begin
+  a Session; larger budgets (F3), the scene transcript (tier C), the
+  scene-end rollup and streaming are not built and wait on the measurements
+  issue #360 holds (SNAPSHOT-UNMEASURED).
 - ~~**CREATE-PERSIST-WHOLE**~~ — fixed by issue #300 F14 (below): creators
   register their id onto the latest store (`registerEntityIdInStore`).
 
@@ -3060,7 +3068,9 @@ lives in the matching `docs/flows/*-flow.md` maps.
   `fightVow.*` action is stamped applied only when its step reports it
   landed; one that didn't is reported to the GMs and its button re-arms.
 - **The persist merge has no baseline:** two concurrent adds to the same
-  legacy track keep the larger; `sceneState` / `sceneFrame` / `spotlight` /
+  legacy track keep the larger (no longer: since v1.8.1 a copy's own marks
+  are applied to the stored track, so both count — LEGACY-SHEET-DECREASE);
+  `sceneState` / `sceneFrame` / `spotlight` /
   `currentLocation*` / `sectors` changed by a relay mid-pipeline are overwritten
   by the pipeline's copy; an entity id removed mid-pipeline can come back via
   the id-list union (readers filter missing documents).
