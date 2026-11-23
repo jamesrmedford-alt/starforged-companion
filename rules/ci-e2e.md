@@ -532,6 +532,13 @@ charter or touch the runner:
   somebody else's.
 - **The game system's first-start window** is open on a new player's screen;
   the player is not shown it (`ignoreWindows`).
+- **Not yet learned — a card that waits on the player.** The third live run's
+  player left two "Resolve consequence" cards unanswered and typed on; the
+  table does not hold a move for them, so two weak hits' costs went unpaid
+  and the run still passed. The player's instructions do not say such a card
+  is waiting on it, and the observer has no check for a cost left owed
+  (known-issues WEAK-HIT-COST-UNPAID). Until both are built, read a run's
+  cards for an unanswered choice before trusting its mechanics.
 
 **The run's class** (`classifyRun`): an infrastructure error first, then a
 failed health check (`product-failure`), then a goal never put to the test
@@ -668,14 +675,18 @@ coloured by the flags of the API reviewer the runner then had.
 (`annotated-transcript.md`, `scorecard.md`) for a reader — and is then
 a regression anyone can run without a key (`cloud.sh explore --replay
 playwright/explorations/<run>`). `memory-live-20261122` is the first: real
-narrator replies, the memory goal achieved; `memory-live-20261123` is the
-same charter after issue #374's two fixes, kept beside it — a second kept run
-is added, not swapped in, while the first still reproduces.
-`long-haul-live-20261123` is the first live long haul (87 actions; its
-`replay.json` is 1.6 MB), kept as re-scored;
+narrator replies, the memory goal achieved, one move rolled.
+`memory-live-20261123` is the re-run after issue #374's fixes: the same goal
+with four moves rolled, and no prompt older than its recording.
+`memory-live-20261123-0436` is the same re-run made a second time that day,
+by a session that did not know of the first (below): one move, a miss with
+its price, and the first campaign recap written from the corrected prompt.
+A later run is kept beside an earlier one whose review an issue cites; say
+which is the current one. `long-haul-live-20261123` is the first live long
+haul (87 actions; its `replay.json` is 1.6 MB), kept as re-scored;
 `exploreLongHaul.test.js` checks it the same way and holds its review to the
 narrator's recorded words. `exploreRunner.test.js` checks on
-every PR that the file is one the runner can take again and that it holds
+every PR that each file is one the runner can take again and that it holds
 what its result claims (the fact stated in the first session, not named by
 the player in the second, and in the narrator's replies there); the replay
 itself needs Foundry and is on demand — adding it to the e2e workflow is the
@@ -785,7 +796,11 @@ Do the free checks first — a rehearsal, and a read-through of the prompts it
 produces: what each helper is and is not sent is visible there for nothing.
 Do not run while a finding with a fix ready is open on the path the run
 would walk. Do not buy the same session twice except to verify a fix against
-it. After each run of a round, say whether the next is worth making. And
+it — **and look before you pay: `git fetch origin`, then read
+`playwright/explorations/` and known-issues on `main`.** On 2026-11-23 two
+sessions each made the memory charter's re-run after issue #374's fixes, an
+hour apart, neither knowing of the other; the second found out when its
+kept folder collided with the first's in a merge. After each run of a round, say whether the next is worth making. And
 every run leaves something that costs nothing to use again: a replay, and a
 regression for each defect it found.
 

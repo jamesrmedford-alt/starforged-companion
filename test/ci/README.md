@@ -362,12 +362,23 @@ exploration"). Anyone can play it again with no key:
 ./scripts/cloud.sh explore --replay playwright/explorations/memory-live-20261122
 ```
 
+`playwright/explorations/memory-live-20261123/` is the re-run made after
+issue #374's fixes (12 actions, 41 model calls, $0.22, the player on
+`claude-sonnet-5-5`): four moves rolled, the same goal achieved, and no prompt
+older than its recording. Its review is beside it and its findings extend
+issue #374. It is the current one to replay:
+
+```bash
+./scripts/cloud.sh explore --replay playwright/explorations/memory-live-20261123
+```
+
 It ends `REPRODUCED` while the module still carries what the first session
-established into the second. `playwright/explorations/memory-live-20261123/`
-is the same charter run again after issue #374's two fixes, by the Sonnet
-player (12 actions, 40 model calls, $0.25), with a miss and its price in it;
-its review found a move that was offered and narrated as made. It replays
-the same way. When it diverges after a change that was meant
+established into the second.
+`playwright/explorations/memory-live-20261123-0436/` is that re-run made a
+second time the same day, by a session that did not know of the first (12
+actions, 40 model calls, $0.25): one move, a miss with its price, the first
+campaign recap written from the corrected prompt, and a move that was offered
+and narrated as made. It replays the same way. When it diverges after a change that was meant
 to alter the narrator's calls, make a new live run and put its files there
 (about 35 cents). CI does not run it.
 

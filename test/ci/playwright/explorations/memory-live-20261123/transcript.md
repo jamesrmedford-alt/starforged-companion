@@ -16,44 +16,37 @@ Begin a Session Flagged content reviewed; scene set. No character has a vow in p
 
 **NARRATOR — Gamemaster**
 
-The galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine. Nobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it. The navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish. The deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, "Mira? Does anyone know where we keep the second sandwich?"
+The galley on the *Kobayashi IV* is a table bolted to the deck, two benches, and a kettle that has outlived three owners. You sit with a mug of something brown and bitter that the label swears is tea, and a heel of flatbread you have been meaning to finish since yesterday. Wits 3 means you have already worked out that the thumping from the aft corridor is not the engines. Nobody else is here to confirm it. "Somebody's been in the laundry bay for six hours," you say to the empty bench, "and I'd like to think they're recalibrating the gravity, and not that they've lost an argument with the dryer." The kettle ticks as it cools, which is the only reply it gives. You count the crew you don't have: the one who is surely rewiring an escape pod from the inside again, the one who claims to be taking inventory and is certainly asleep on the crates, the one who swore they would be back before the tea went cold. The tea went cold twenty minutes ago. The thumping stops. In the silence a distant voice, muffled by two bulkheads, calls out, "Nobody panic, it's only a little bit on fire!" You set down the mug and wait to see whether anyone else is going to.
 
 ---
 *a3 · session-1*
 
 **PLAYER — Playthrough Player**
 
-I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. "Galley here. No idea about the sandwich — who's asking?"
-
-**NARRATOR — Gamemaster**
-
-The intercom hisses, then the voice comes back, closer to the speaker now. "Just me. I'm in the cold locker, and the door has decided it likes me." A pause. Something heavy shifts behind the words. "Also, I was told you'd be the one who knows where Ilse's compass went." The compass sits warm in your palm.
+I rub my thumb over the brass star-compass that belonged to my sister Ilse, then head aft toward the smoke to see what's burning.
 
 **TABLE — Gamemaster**
 
-◈ New Entities Detected [⬡ Connection] Ilse — Person whose compass is referenced; the speaker asks where it went. Confirm — whose connection? Mira Kestrel No one Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person is added as a connection on the sheet of the character you pick — or pick No one to add them with no connection on any sheet.
+Face Danger +edge (2) Action: 3 + 2 = 5 | Challenge: 4, 10 Weak Hit Success with a cost. Make a suffer move (-1).
+
+**NARRATOR — Gamemaster**
+
+You thumb the brass compass once, pocket it, and go aft at a jog. Smoke leaks along the ceiling of the corridor, thin and grey. You reach it ahead of the flames and see the source: a dryer door glowing orange, laundry curling black inside. Then the vent coughs and the smoke drops. It fills your lungs before you can cover your mouth. Someone farther down shouts that it is definitely more than a little bit.
+
+**TABLE — Gamemaster**
+
+◈ Resolve consequence Make a suffer move (-1): Endure Harm (-1) Endure Stress (-1) Lose Momentum (-1) Sacrifice Resources (-1) Withstand Damage (-1) Companion Takes a Hit (-1) (unavailable)
 
 ---
 *a4 · session-1*
 
 **PLAYER — Playthrough Player**
 
-"It's right here with me. Hang tight — I'm coming to get the locker open." I pocket it and head aft toward the cold locker.
-
-**NARRATOR — Gamemaster**
-
-You leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: "That compass. Does it still point at anything?" The needle in your pocket has shifted its aim. *If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*
-
----
-*a5 · session-1*
-
-**PLAYER — Playthrough Player**
-
-I brace my boot against the frame and heave on the handle. "Stand back from the door!"
+I cough, cover my mouth with my sleeve, and yank the dryer's power cutoff while shouting for whoever's down the corridor to grab the extinguisher.
 
 **TABLE — Gamemaster**
 
-Pay the Price Face Danger As stated before the roll: The handle wrenches loose in your grip and you strike your shoulder hard against the frame. Routes to Endure Harm (-1).
+Pay the Price Face Danger As stated before the roll: The cutoff sparks and the fire races along the ceiling, and you are forced back choking as the smoke thickens. Routes to Endure Harm (-1).
 
 **TABLE — Gamemaster**
 
@@ -61,22 +54,53 @@ Endure Harm (-1) Health: 5 → 4
 
 **TABLE — Gamemaster**
 
-Face Danger +iron (1) Action: 2 + 1 = 3 | Challenge: 3, 7 Miss Fail or momentary success undermined. Pay the Price.
+Face Danger +wits (3) Action: 2 + 3 = 5 | Challenge: 7, 9 Miss Fail or momentary success undermined. Pay the Price.
 
 **NARRATOR — Gamemaster**
 
-The handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved. Behind it, a long breath. "That sounded expensive," the voice says. "Is the compass still pointing?"
+You grab the cutoff and haul it down. It answers with a spit of blue sparks, and the fire doesn't care. Flame runs the ceiling seam above you, quick and orange. The smoke comes down in a wall, and you back away with your sleeve jammed against your face, eyes streaming. "That did not help!" the voice shouts from farther aft, closer now.
+
+---
+*a5 · session-1*
+
+**PLAYER — Playthrough Player**
+
+I drop low under the smoke, crawl to the bulkhead locker, and pull out the fire suppressant to blast the dryer.
+
+**TABLE — Gamemaster**
+
+Face Danger +iron (1) Action: 4 + 1 = 5 | Challenge: 3, 5 Weak Hit Success with a cost. Make a suffer move (-1).
+
+**NARRATOR — Gamemaster**
+
+Aft, a boot scrapes steel, and the voice stops shouting to cough instead. You stay low, where the air is still mostly air, and crawl to the locker. The suppressant comes out heavy. You blast the dryer, and the foam smothers the fire at the seam. It does not go quietly: the discharge kicks back, and your lungs pay for it. Through the white haze, a figure rounds the aft corner and asks, "Is it dead?"
+
+**TABLE — Gamemaster**
+
+◈ Resolve consequence Make a suffer move (-1): Endure Harm (-1) Endure Stress (-1) Lose Momentum (-1) Sacrifice Resources (-1) Withstand Damage (-1) Companion Takes a Hit (-1) (unavailable)
 
 ---
 *a6 · session-1*
 
 **PLAYER — Playthrough Player**
 
-I rub my shoulder and check the needle. "Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock."
+I wave away the foam, coughing. "It's dead. Whose laundry was that? Get the vents open, then I'm setting a course for Bleakhold Station."
+
+**TABLE — Gamemaster**
+
+Set a Course +supply (5) Action: 5 + 5 = 10 | Challenge: 3, 8 Strong Hit Arrived, situation favors you. Take +1 momentum.
+
+**TABLE — Gamemaster**
+
+Set a Course resolved Arrived at Bleakhold Station . Course held cleanly (+1 momentum). Token moved to Bleakhold Station .
 
 **NARRATOR — Gamemaster**
 
-The voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. "Bleakhold? That's days. I don't think the frost gives me days." Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door. *Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*
+"Bleakhold, then," the figure says, wiping foam from their visor. "Vents are cracking now." The ceiling seam hisses as it cools, and the haze begins to thin toward the aft grille. You work the nav console with one hand and cough into your sleeve with the other. The plot comes out clean, which is more than the corridor can say. Through the viewport, Bleakhold Station swells up, docking lights blinking. A comm chirps from the console, asking who is requesting a berth.
+
+**TABLE — Gamemaster**
+
+Mira Kestrel: +1 momentum (now 3)
 
 ---
 *a7 · session-1*
@@ -94,7 +118,7 @@ End a Session No focus set — no momentum bonus.
 
 **NARRATOR — Gamemaster**
 
-Somewhere far from the lanes your ship is crawling along, a man sits at a galley table with a cold mug and a ledger. He is adding a column of figures for the third time, and the third total disagrees with the first two. He taps the pencil against his teeth, then crosses out the middle answer, since two out of three is a majority. Out past the viewport, a raiding skiff idles on the dark, its running lights blinking in an uneven rhythm he has stopped hearing. He reaches over and switches off the lamp.
+The raider quartermaster of the Cinder Expanse sits on an upturned ration crate in a cold hangar bay, picking the burnt crust off a flatbread with a thumbnail. Someone has stolen her good fork again, so she uses the lid of a hydraulic canister, and it works well enough. Down the lanes, the hold is full of other people's cargo, and the manifests are stacked beside her in an order only she understands. She finishes the flatbread, wipes her fingers on her knee, and reaches up to flick the hangar light off.
 
 ---
 *a9 · after-session-1*
@@ -112,16 +136,20 @@ Begin a Session Flagged content reviewed; scene set. No character has a vow in p
 
 **NARRATOR — Gamemaster**
 
-You hold a mug of reconstituted barley tea in both hands, and the steam smells faintly of the ship's coolant loop. Across the galley table, the brass star-compass lies beside your plate of crackers and rehydrated cheese, its needle swung stubbornly toward the cold locker door. Somewhere aft, the engineer is arguing with a pipe, and you can hear the pipe winning. The navigator, by the sound of it, is still teaching the loader drone to say good morning, and the drone has settled on a greeting that is mostly a long, hopeful whirr. You turn the compass a quarter turn with one finger, and the needle drifts back to the locker, patient as a cat at a closed door. From behind the frost-rimed steel comes a thin, tired voice. "I can hear the tea, you know. Some of us have been in here a while."
+You sit at the galley table with a bowl of reconstituted noodles gone slightly gluey, your sister's brass compass resting beside it where you can see it. The tea has been steeping for twenty minutes and now tastes like a decision you regret. Somewhere aft, a muffled clunk repeats at even intervals, and you decide, with the practiced calm of a long-haul crew, that someone else is responsible for it. The cook is, as far as you know, re-labelling the spice rack in a system only she understands, and the engineer has been inside the coolant housing since breakfast, narrating his progress to nobody. The navigator is likely asleep upright in the cockpit again, one hand on the console, ready to deny it. The clunk comes again, followed by a faint, cheerful voice from the corridor that says, "Nobody panic, it's only a little bit on fire!"
 
 ---
 *a11 · session-2*
 
 **PLAYER — Playthrough Player**
 
-I set down the tea and look at the locker door. "Before anything else — remind me, what do I still have on me that was my sister's?"
+I push the noodles aside and look at what's left on the table. Remind me, what do I still carry that belonged to my sister?
 
 **NARRATOR — Gamemaster**
 
-The voice pauses. Then, careful, almost kind: "The compass. Brass, a dent near the ring. Ilse wore it on a cord until the cord wore through." You glance down. The dent is there, under your thumb. "Ask me what's engraved on the back," the voice says. "I'll wait. I'm good at waiting." The needle trembles against its glass and holds on the door.
+The compass sits by the bowl where it has sat all meal. Brass, palm-sized, the glass on its face scratched from some hand that was not yours. Ilse's thumbnail left that scar. The needle drifts, then swings aft and holds there, steady as a pointing finger. Down the corridor the clunk comes again, and the cheerful voice adds, "Actually, a medium bit on fire. Mira? Is that you I smell eating?"
+
+**TABLE — Gamemaster**
+
+◈ New Entities Detected [⬡ Connection] Ilse — Mira's sister; the brass star-compass belonged to her and her thumbnail scarred its glass. Confirm — whose connection? Mira Kestrel No one Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person is added as a connection on the sheet of the character you pick — or pick No one to add them with no connection on any sheet.
 

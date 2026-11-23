@@ -287,9 +287,20 @@ decided in making and reading it:
 - **The round stops at one run.** A second run would walk the same session
   into the same four causes, and the spending rules do not buy a session
   twice except to verify a fix. Three runs were the cap, not the plan.
-- **A second kept run is added beside the first, not swapped in**, while
-  the first still reproduces: `memory-live-20261122` (issue #374's findings)
-  and `memory-live-20261123` (its fixes read in a real session).
+- **A kept run is added beside the earlier ones, not swapped in**, while
+  they still reproduce: `memory-live-20261122` (issue #374's findings),
+  `memory-live-20261123` (its fixes read in a real session — made by
+  another session and merged with PR #376 while this branch was open) and
+  `memory-live-20261123-0436`, this session's own re-run of the same thing
+  an hour later.
+- **The memory charter's re-run was bought twice, and is recorded as that.**
+  Issue #373's slice 0 and issue #374's next spend were the same run; two
+  sessions each made it, neither able to see the other's branch. This one's
+  is kept under its own name for what the first has not — a recap written
+  from the corrected prompt, the offered move narrated as done, a miss
+  whose price was a suffer move — and the rule gains a step: fetch `main`
+  and read `explorations/` before a run is paid for
+  (rules/ci-e2e.md → "A live run is paid for").
 - **The review's findings are not fixed in the branch that found them.** The
   module's four causes — a corrected or renamed name that does not reach
   the record, the Shape directive written as prose, a declared move
@@ -468,6 +479,13 @@ maintainer's go-ahead for the slice: 2026-11-22.
 - **The key stays in the runner.** It is sent in a header by the runner's
   process, never enters the world (the page holds a placeholder), is in no
   log the runner keeps, and is blanked from anything written.
+- **A later kept run sits beside an earlier one whose review is cited**
+  (2026-11-23). The re-run after issue #374's fixes is
+  `playwright/explorations/memory-live-20261123/`; the first run's folder
+  stays, because that issue's evidence is its annotated transcript and
+  scorecard. The newer one is the current replay — the older still
+  reproduces, with two prompts newer than its recording. Deleting the older
+  replay is the maintainer's call.
 - **A live run that went the whole way is kept as a replay** (the
   maintainer, 2026-11-22): `playwright/explorations/memory-live-20261122/`.
   It is evidence that can be run again, not a gate — CI does not replay it
@@ -6330,7 +6348,8 @@ long-running writer is the one that has to yield.
   the static policy losing data.
 
 **Trade-offs accepted (no baseline):** two concurrent adds to the same legacy
-track keep the larger tick count; `sceneState` / `sceneFrame` / `spotlight` /
+track keep the larger tick count (no longer: since v1.8.1 both adds count —
+see LEGACY-SHEET-DECREASE, above); `sceneState` / `sceneFrame` / `spotlight` /
 `currentLocation*` / `sectors` changed by a relay mid-pipeline are overwritten
 by the pipeline's copy; an entity id removed from the store mid-pipeline can
 return via the id-list union (readers filter missing documents).

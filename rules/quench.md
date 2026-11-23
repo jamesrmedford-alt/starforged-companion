@@ -56,6 +56,12 @@ quench.runBatches(["starforged-companion.actorBridge"]);    // specific batch
 - Chai assert/expect, NOT Vitest's expect — different assertion API
 - No `vi.spyOn` — use vanilla JS patterns for spying if needed
 - No `beforeAll`/`afterAll` — use `before`/`after` (Mocha naming)
+- **A test's Mocha timeout is 2 seconds unless it says otherwise.** A test
+  that polls (`waitFor`, `waitForCampaignState`) or waits on server round
+  trips sets `this.timeout(…)` longer than the sum of its own polls, as its
+  first line. Two "draft entity card" tests polled for up to 6 s under the
+  2 s default and one was stopped mid-poll on a slow CI runner, on a commit
+  that had changed nothing under `src/` (run 45105510061).
 
 **Guard pattern — confirmed correct approach (from live testing):**
 ```js

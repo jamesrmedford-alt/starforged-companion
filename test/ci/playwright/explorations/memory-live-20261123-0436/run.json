@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "charter": "memory",
+  "mode": "live",
+  "questions": [
+    "After the fix for issue #374 A1, does the campaign recap written at End a Session place the campaign where the character is, and not in the closing scene's cutaway?",
+    "After the fix for issue #374 A2, do the Chronicle entries name Mira Kestrel (not \"the character\") and keep the possession the player established in her own line?",
+    "Can the Sonnet 5.5 player walk the memory goal end to end — two sessions, the question asked without naming the fact — inside the caps?",
+    "Does the second session's opening scene restate the fact before it is asked about, as it did in the run of 2026-11-22?",
+    "What does the run cost with the Sonnet player and cache writes priced by their lifetime, split between the module and the player?"
+  ],
+  "startedAt": "2026-11-23T04:36:23.042Z",
+  "finishedAt": "2026-11-23T04:40:13.225Z",
+  "commit": "ffa6be4b48f1150a959b20178f59c26a1e75e618",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1
+  },
+  "classification": "pass",
+  "because": "the narrator's answer in the second session holds what was established in the first",
+  "playerStopped": "the player stopped: Narrator remembered the brass compass and Ilse in session 2; goal complete.",
+  "goal": {
+    "status": "achieved",
+    "reason": "the narrator's answer in the second session holds what was established in the first",
+    "failingLayer": null,
+    "milestones": {
+      "sessionBegun": true,
+      "factEstablished": true,
+      "narratedAfter": true,
+      "sceneChanged": false,
+      "sessionEnded": true,
+      "sessionBegunAgain": true,
+      "askedLater": true
+    }
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "knownFailures": [],
+    "errors": 0,
+    "uncaught": [],
+    "refused": []
+  },
+  "budget": {
+    "caps": {
+      "actions": 30,
+      "calls": 100,
+      "minutes": 20,
+      "usd": 10
+    },
+    "stopped": null,
+    "actions": 12,
+    "calls": 40,
+    "minutes": 3.78,
+    "usd": 0.2489,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 12,
+        "usd": 0.0797,
+        "input": 19516,
+        "output": 3424,
+        "cacheRead": 19712,
+        "cacheWrite": 1792
+      },
+      "module": {
+        "calls": 28,
+        "usd": 0.1692,
+        "input": 40065,
+        "output": 7041,
+        "cacheRead": 50194,
+        "cacheWrite": 28275
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/memory-live-20261123-043623 node explore.mjs"
+}

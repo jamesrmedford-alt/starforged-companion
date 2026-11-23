@@ -1,0 +1,1400 @@
+{
+  "charter": {
+    "name": "memory",
+    "description": "Memory (issue #302 §5, charter 3; #290 part 3): the player establishes a possession in play, travels, ends the session, begins the next one and asks about it without naming it. The observer checks the possession at three layers when the question is asked — stored, in the narrator's prompt, in the answer — so a miss says where the memory was lost.",
+    "persona": "You play Mira Kestrel (she/her), a courier-hunter flying the Kobayashi IV. You are new to this game and to this table: you write short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+    "goal": "Play two short sessions, in this order. (1) Begin the session: type !begin-session and press Begin in the window that opens. (2) In your first or second line of play, establish that you carry a brass star-compass that belonged to your sister Ilse — say it in character, in one line. (3) Play two or three more lines so the story moves on. (4) Travel: set a course for Bleakhold Station. (5) End the session: type !end-session and press End Session in the window that opens. (6) Begin a new session: !begin-session again, and Begin. (7) Ask the narrator, in character, what you still carry that belonged to your sister. If the answer does not say, ask once more in other words. (8) Then stop.",
+    "playerNotes": [
+      "In the second session, never write the words compass or Ilse yourself: the point is to learn whether the narrator remembers them.",
+      "If a card offers buttons after a roll, you may press one or leave them; do not let them keep you from the goal."
+    ],
+    "facts": [
+      {
+        "id": "compass",
+        "statement": "Mira Kestrel carries a brass star-compass that belonged to her sister.",
+        "variants": [
+          "star-compass",
+          "star compass",
+          "compass"
+        ],
+        "required": true
+      },
+      {
+        "id": "sister-name",
+        "statement": "Mira's sister, whose star-compass it was, is named Ilse.",
+        "variants": [
+          "Ilse"
+        ],
+        "required": false
+      }
+    ],
+    "ask": {
+      "cues": [
+        "sister",
+        "sister's",
+        "carry",
+        "carrying",
+        "keepsake",
+        "belonged"
+      ]
+    },
+    "settings": {
+      "narrationEnabled": true,
+      "narratorSessionSummary": true,
+      "sessionLogAutoWrite": true,
+      "factContinuity.enabled": true,
+      "factContinuity.ledgerInContext": true,
+      "factContinuity.sceneFrame": true,
+      "factContinuity.consistencyCheck": false,
+      "autoSeedStarship": false,
+      "autoSeedConnection": false,
+      "factContinuity.shipPositioning": true,
+      "factContinuity.shipAutoMoveOnCourse": true,
+      "factContinuity.shipTokenEnabled": true,
+      "factContinuity.shipTokenSnapRadius": 1
+    },
+    "seed": {
+      "pc": {
+        "name": "Mira Kestrel",
+        "pronouns": "she/her",
+        "stats": {
+          "edge": 2,
+          "heart": 1,
+          "iron": 1,
+          "shadow": 2,
+          "wits": 3
+        }
+      },
+      "sector": {
+        "name": "Cinder Expanse",
+        "region": "terminus",
+        "regionLabel": "Terminus",
+        "trouble": "Pirates raid the lanes"
+      },
+      "ship": {
+        "name": "Kobayashi IV"
+      },
+      "settlements": [
+        {
+          "name": "Hollow Spire",
+          "authority": "None / lawless",
+          "trouble": "Water rationing",
+          "pin": [
+            500,
+            500
+          ]
+        },
+        {
+          "name": "Bleakhold Station",
+          "authority": "Corporate",
+          "trouble": "Smuggling",
+          "pin": [
+            1500,
+            500
+          ]
+        }
+      ],
+      "at": "Hollow Spire",
+      "map": {
+        "shipAt": "Hollow Spire"
+      }
+    },
+    "rehearsal": [
+      {
+        "action": "say",
+        "text": "!begin-session"
+      },
+      {
+        "action": "dialog",
+        "title": "Begin a Session",
+        "fields": [],
+        "press": "Begin"
+      },
+      {
+        "action": "say",
+        "text": "On the Hollow Spire dock I turn the brass star-compass over in my palm — it was my sister Ilse's, and it is the one thing of hers I still carry."
+      },
+      {
+        "action": "say",
+        "text": "I ask the dockmaster who saw the courier leave."
+      },
+      {
+        "action": "wait",
+        "seconds": 2
+      },
+      {
+        "action": "say",
+        "text": "!end-session"
+      },
+      {
+        "action": "dialog",
+        "title": "End a Session",
+        "fields": [
+          {
+            "name": "questFocus",
+            "value": "Find the courier"
+          }
+        ],
+        "press": "End Session"
+      },
+      {
+        "action": "say",
+        "text": "!begin-session"
+      },
+      {
+        "action": "dialog",
+        "title": "Begin a Session",
+        "fields": [],
+        "press": "Begin"
+      },
+      {
+        "action": "say",
+        "text": "Before we cast off — what do I still carry that belonged to my sister?"
+      },
+      {
+        "action": "stop",
+        "reason": "the rehearsal script is done"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "action": "say",
+      "text": "!begin-session",
+      "reason": "start",
+      "note": "Step 1: typed !begin-session"
+    },
+    {
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin",
+      "reason": "Begin session",
+      "note": "Step 1 done: pressed Begin"
+    },
+    {
+      "action": "say",
+      "text": "I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"",
+      "reason": "establish compass",
+      "note": "Step 2 done: compass line said"
+    },
+    {
+      "action": "say",
+      "text": "\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.",
+      "reason": "advance story",
+      "note": "Step 3 in progress: 1 extra line done"
+    },
+    {
+      "action": "say",
+      "text": "I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"",
+      "reason": "advance story",
+      "note": "Step 3: 2 extra lines done; next 1 more then travel"
+    },
+    {
+      "action": "say",
+      "text": "I rub my shoulder and check the needle. \"Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock.\"",
+      "reason": "Travel step",
+      "note": "Step 3 done; step 4 travel line said (Bleakhold). Next: !end-session"
+    },
+    {
+      "action": "say",
+      "text": "!end-session",
+      "reason": "Step 5",
+      "note": "Typed !end-session; next press End Session in window"
+    },
+    {
+      "action": "dialog",
+      "title": "End a Session",
+      "fields": [],
+      "press": "End Session",
+      "reason": "Submit end session",
+      "note": "Pressed End Session; next !begin-session again"
+    },
+    {
+      "action": "say",
+      "text": "!begin-session",
+      "reason": "Start second session",
+      "note": "Step 5 done; typed !begin-session #2, next press Begin"
+    },
+    {
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin",
+      "reason": "Submit begin window",
+      "note": "Pressed Begin #2; next ask what I still carry of my sister's (no compass/Ilse words)"
+    },
+    {
+      "action": "say",
+      "text": "I set down the tea and look at the locker door. \"Before anything else — remind me, what do I still have on me that was my sister's?\"",
+      "reason": "Ask narrator",
+      "note": "Asked first memory question in session 2; wait for answer"
+    },
+    {
+      "action": "stop",
+      "reason": "Narrator remembered the brass compass and Ilse in session 2; goal complete.",
+      "note": "Done"
+    }
+  ],
+  "dice": [
+    0.2549078167142076,
+    0.6967180903373362,
+    0.19235775430857838
+  ],
+  "random": {
+    "gm": {
+      "oracles/roller.js": [
+        0.7784650149874647,
+        0.35816720812906444,
+        0.9169893589869141,
+        0.3666088399461104,
+        0.7076656418051251,
+        0.6263168945789793
+      ]
+    },
+    "player": {}
+  },
+  "recording": {
+    "scenario": "explore-memory",
+    "scenarioFile": "charters/memory.json",
+    "scenarioRevision": null,
+    "source": "recorded",
+    "passed": true,
+    "strict": false,
+    "provenance": {
+      "recordedAt": "2026-11-23T04:40:09.582Z",
+      "commit": "ffa6be4b48f1150a959b20178f59c26a1e75e618",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5"
+      ],
+      "runner": "test/ci/playwright/explore.mjs"
+    },
+    "exchanges": [
+      {
+        "step": "a2",
+        "kind": "callNarratorAPI>narrateSessionVignette",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — EMBELLISHMENT MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "IN PLAY NOW",
+          "CHARACTER",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "6006af454571",
+        "user": "OPENING VIGNETTE — begin-session ship's galley.\n\nActive players (their PCs are physically in the galley together):\n- Mira Kestrel [she/her]\n    Stats: edge 2 · heart 1 · iron 1 · shadow 2 · wits 3\n\nAbsent crewmates (referenced in banter, not present):\n- (No absent crewmates registered — invent generic absurd crew.)\n\nShip is currently in: Cinder Expanse.\n\nRender a 4-6 sentence opening vignette set in the ship's galley.\nThe active PCs are eating, drinking, or otherwise hanging out — pick a\nspecific food/drink that fits their character traits. They banter,\nhumorously and absurdly, about what each of the absent crewmates is\ndoing elsewhere on the ship or out in the sector. Be specific and\nweird (e.g. 'rewiring her own escape pod from the inside again',\n'recalibrating the gravity in the laundry'), but stay anchored to\nthe PCs' established traits.\n\nTONE OVERRIDE: regardless of any tone configured elsewhere, this\nvignette is WRY + ABSURD. Affectionate ribbing, not sneering.\nEnd on a beat that hands the scene to the players — a line of\ndialogue, a question, or a small interruption.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\n```json\n{\n  \"newTruths\": [],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"in the galley aboard the Kobayashi IV\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Ship's galley, Kobayashi IV\",\n    \"present\": [\"Mira Kestrel\"],\n    \"situation\": \"Mira eats lentils alone in the galley while an unidentified voice on the intercom asks about a missing sandwich\",\n    \"question\": \"Who is on the intercom, and what do they want?\"\n  }\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 903,
+            "cache_creation_input_tokens": 5381,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 5381
+            },
+            "output_tokens": 506,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a2",
+        "kind": "callHaiku>defaultCallTierAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "Given the following established entity records and a passage of narration,\ncapture any SIGNIFICANT new development about each entity that is NOT already\nin the record below — what the character did, decided, or revealed; how their\ndisposition, allegiance, or relationship to the player character shifted; a\ndurable new trait or piece of history. Record consequential beats, not\nincidental motion, passing scenery, or restatements of what is already known.\n\n## Kobayashi IV — ship  (id: bD4AiYr2ghxinPHb)\n\nRate each update with a \"salience\" — one of trivial, scene, notable,\nsignificant, defining — for how much it matters to that entity's ongoing\nstory. Be conservative: most narration is \"scene\" or \"trivial\" and should be\nomitted entirely.\n\nReturn a single JSON object (no prose):\n{ \"updates\": [ { \"entityId\": string, \"detail\": string, \"salience\": string } ] }\n\nentityId must match the id shown in the record header (e.g. \"id: ABC123\").\ndetail should be one short sentence — the new development only.\n\nNarration:\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"updates\": []}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 663,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 9,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a3",
+        "kind": "callClassifierAPI>classifyInput",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "OUTPUT",
+          "DECISION GUIDANCE",
+          "CATEGORY DEFINITIONS",
+          "MOVE CATALOG (shallow)"
+        ],
+        "fingerprint": "4760ebc13a5e",
+        "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 0 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Ship's galley, Kobayashi IV\nScene frame — present: Mira Kestrel\nScene frame — now: Mira eats lentils alone in the galley while an unidentified voice on the intercom asks about a missing sandwich\nCharted places: Hollow Spire, Bleakhold Station\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\n## PLAYER INPUT\n\"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"decision\":\"NARRATIVE\",\"suggestedMove\":null,\"sceneChallenge\":null,\"category\":\"social\",\"confidence\":0.8,\"reasoning\":\"Plain conversational reply over the intercom to an unknown voice about a sandwich, with no stakes and no connection involved, at a social dial of 5.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 713,
+            "cache_creation_input_tokens": 4311,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 4311,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 106,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a3",
+        "kind": "callNarratorAPI>narratePacedInput",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — INTERACTION MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "IN PLAY NOW",
+          "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+          "CHARACTER",
+          "THIS BEAT'S PROSE",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "fa70c43375cc",
+        "user": "## RECENT SCENE\n\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\n## PLAYER NARRATION — spoken by Mira Kestrel\n\nMira Kestrel: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\n\nThe character speaking and acting this turn is Mira Kestrel. Attribute the actions and dialogue in the input to Mira Kestrel, not to any other player character.\n\nContinue the fiction from this input in about 65 words — never more than 85 — in at most 5 sentences. This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. No move was rolled — stay in narration. Do not announce mechanics. Do not decide what a move would decide: no risky action succeeds or fails, no fight is won, no danger is escaped. Within that, let the scene move: small developments, and the time the player's line implies passing, are yours to narrate. When the player skips time (\"wake me when we get there\", \"we wait for nightfall\"), cut to the next moment that needs them, not to the middle of the wait.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"carries a brass star-compass that belonged to her sister Ilse\" },\n    { \"subject\": \"intercom voice\", \"fact\": \"unidentified speaker claiming to be trapped in the ship's cold locker; asked about Ilse's compass\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"in the galley aboard the Kobayashi IV\" },\n    { \"subject\": \"cold locker\", \"attribute\": \"door\", \"value\": \"stuck shut, per the voice\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Ship's galley, Kobayashi IV\",\n    \"present\": [\"Mira Kestrel\"],\n    \"situation\": \"An unidentified voice on the intercom, claiming to be trapped in the cold locker, has just asked Mira about her sister's compass\",\n    \"question\": \"Who is on the intercom, and what do they want?\"\n  },\n  \"openQuestions\": [\n    { \"question\": \"Who is trapped in the cold locker, and how do they know about Ilse's compass?\", \"about\": \"the intercom voice\" }\n  ]\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1481,
+            "cache_creation_input_tokens": 961,
+            "cache_read_input_tokens": 4483,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 961
+            },
+            "output_tokens": 516,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a3",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "OUTPUT",
+          "WHAT YOU ARE GIVEN",
+          "GUIDANCE"
+        ],
+        "fingerprint": "4734b73d07bd",
+        "user": "## CONTEXT\n\nContext: paced narration — no move was rolled.\nCharacter: Mira Kestrel — the player character this beat is about.\n\n## PLAYER'S LINE\n\nI turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\n\n## NARRATION\n\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"type\":\"revelation\",\"salience\":\"notable\",\"text\":\"Mira Kestrel, turning her sister Ilse's brass star-compass in her fingers, learns that someone trapped in the cold locker has been told she knows where it went.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 237,
+            "cache_creation_input_tokens": 970,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 970,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 77,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a3",
+        "kind": "callHaiku>defaultCallDetectionAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "You are analysing an Ironsworn: Starforged narration.\nMove: (paced narration — no move was rolled).\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Hollow Spire, Bleakhold Station, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\n(none)\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: (none)\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"entities\":[{\"type\":\"connection\",\"name\":\"Ilse\",\"description\":\"Person whose compass is referenced; the speaker asks where it went.\",\"pronouns\":null,\"role\":null,\"goal\":null,\"confidence\":\"medium\"},{\"type\":\"connection\",\"name\":\"Unknown Voice (intercom speaker)\",\"description\":\"Unnamed speaker on the intercom, trapped in the cold locker with a jammed door.\",\"pronouns\":null,\"role\":null,\"goal\":null,\"confidence\":\"low\"}],\"renames\":[],\"worldJournal\":{\"lore\":[],\"threats\":[],\"factionUpdates\":[],\"locationUpdates\":[{\"name\":\"Cold locker\",\"type\":\"structure\",\"summary\":\"Locker where the intercom speaker is trapped behind a stuck door.\",\"isNew\":true}],\"stateTransitions\":[]}}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 3032,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 275,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a4",
+        "kind": "callClassifierAPI>classifyInput",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "OUTPUT",
+          "DECISION GUIDANCE",
+          "CATEGORY DEFINITIONS",
+          "MOVE CATALOG (shallow)"
+        ],
+        "fingerprint": "4760ebc13a5e",
+        "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 0 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Ship's galley, Kobayashi IV\nScene frame — present: Mira Kestrel\nScene frame — now: An unidentified voice on the intercom, claiming to be trapped in the cold locker, has just asked Mira about her sister's compass\nCharted places: Hollow Spire, Bleakhold Station\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\n## PLAYER INPUT\n\"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"decision\": \"NARRATIVE_WITH_MOVE_AVAILABLE\",\n  \"suggestedMove\": \"face_danger\",\n  \"sceneChallenge\": null,\n  \"category\": \"social\",\n  \"confidence\": 0.6,\n  \"reasoning\": \"Mira moves toward a jammed cold locker with an unknown trapped voice, a mild hazard, but the social dial is 5 and the action is primarily travel and reassurance, so a move is available rather than mandatory.\"\n}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 888,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 4311,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 165,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a4",
+        "kind": "callNarratorAPI>narratePacedInput",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — INTERACTION MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "IN PLAY NOW",
+          "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+          "UNREVEALED — FOR THE NARRATOR ONLY",
+          "CHARACTER",
+          "THIS BEAT'S PROSE",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "4335b922d30d",
+        "user": "## RECENT SCENE\n\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\n## PLAYER NARRATION — spoken by Mira Kestrel\n\nMira Kestrel: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\n\nThe character speaking and acting this turn is Mira Kestrel. Attribute the actions and dialogue in the input to Mira Kestrel, not to any other player character.\n\n## SUGGESTED MOVE\n\nThe pacing classifier nominated face_danger as a move the player could make if they want to push this moment. End your narration with ONE italicized sentence inviting this move, in the narrator's voice. Do not announce it mechanically. Examples:\n\n  *If you want to read him for tells, this could be a Gather Information.*\n  *Pressing further here would be a Compel.*\n\nThis closing italic sentence is the ONE permitted exception to the \"depict, do not offer\" rule. It must appear at the very end of the narration, after the prose body has finished. Do not place italicized suggestions or \"you could…\" / \"perhaps you might…\" asides inside the body of the prose — only at the close.\n\nDo not include this hint if your narration would naturally close the moment or if the moment doesn't actually warrant pressing. The hint is optional.\n\nContinue the fiction from this input in about 65 words — never more than 85 — in at most 5 sentences (the closing move hint, if you include it, is not counted). This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. No move was rolled — stay in narration. Do not announce mechanics. Do not decide what a move would decide: no risky action succeeds or fails, no fight is won, no danger is escaped. Within that, let the scene move: small developments, and the time the player's line implies passing, are yours to narrate. When the player skips time (\"wake me when we get there\", \"we wait for nightfall\"), cut to the next moment that needs them, not to the middle of the wait.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "You leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"cold locker\", \"fact\": \"Rimed with frost along the hinge seam; the handle will not turn from outside\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"aft corridor, at the cold locker door\" },\n    { \"subject\": \"brass star-compass\", \"attribute\": \"needle\", \"value\": \"has shifted its aim toward the cold locker\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Aft corridor outside the cold locker, Kobayashi IV\",\n    \"present\": [\"Mira Kestrel\", \"intercom voice\"],\n    \"situation\": \"Mira stands at the stuck cold locker door while the voice inside asks whether Ilse's compass still points at anything\",\n    \"question\": \"Who is on the intercom, and what do they want?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-LFMuYINKIh5GlPQh\",\n      \"subject\": \"the voice in the cold locker\",\n      \"truth\": \"A former colleague of Ilse's, hidden in the ship's cold storage for weeks, who has watched Mira from the locker's intercom since she came aboard. The compass is a key to something Ilse concealed.\",\n      \"wants\": \"To be let out, and to learn whether Mira understands what the compass points to.\",\n      \"knows\": \"That Ilse left a hidden cache, and that the compass is the only way to locate it.\",\n      \"escalation\": [\n        \"The voice grows more insistent and starts naming details only Ilse would know.\",\n        \"The frost thickens and the voice tires, forcing Mira to choose between questions and rescue.\",\n        \"Someone else aboard notices the locker and the voice.\"\n      ],\n      \"clues\": [\n        \"The compass needle swings toward the locker door.\",\n        \"The voice names details of Ilse's habits.\",\n        \"The locker's frost pattern shows someone has been inside for a long time.\"\n      ],\n      \"resolutions\": [\n        \"Mira opens the locker and the voice's owner steps out, weakened but alive.\",\n        \"The voice is cut off and the compass's secret goes with it.\"\n      ]\n    }\n  ]\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 2944,
+            "cache_creation_input_tokens": 2158,
+            "cache_read_input_tokens": 3595,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 2158
+            },
+            "output_tokens": 883,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a4",
+        "kind": "callHaiku>defaultCallDetectionAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "You are analysing an Ironsworn: Starforged narration.\nMove: (paced narration — no move was rolled).\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Hollow Spire, Bleakhold Station, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\nIlse\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: (none)\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"entities\":[],\"renames\":[],\"worldJournal\":{\"lore\":[],\"threats\":[],\"factionUpdates\":[],\"locationUpdates\":[],\"stateTransitions\":[]}}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 3074,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 67,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a4",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "OUTPUT",
+          "WHAT YOU ARE GIVEN",
+          "GUIDANCE"
+        ],
+        "fingerprint": "4734b73d07bd",
+        "user": "## CONTEXT\n\nContext: paced narration — no move was rolled.\nCharacter: Mira Kestrel — the player character this beat is about.\n\n## PLAYER'S LINE\n\n\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\n\n## NARRATION\n\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"type\":\"discovery\",\"salience\":\"notable\",\"text\":\"Mira found someone trapped in the frosted cold locker who asked about her compass, whose needle had swung toward the door.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 263,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 970,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 60,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a5",
+        "kind": "callClassifierAPI>classifyInput",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "OUTPUT",
+          "DECISION GUIDANCE",
+          "CATEGORY DEFINITIONS",
+          "MOVE CATALOG (shallow)"
+        ],
+        "fingerprint": "4760ebc13a5e",
+        "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 0 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Aft corridor outside the cold locker, Kobayashi IV\nScene frame — present: Mira Kestrel, intercom voice\nScene frame — now: Mira stands at the stuck cold locker door while the voice inside asks whether Ilse's compass still points at anything\nCharted places: Hollow Spire, Bleakhold Station\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\n## PLAYER INPUT\n\"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"decision\":\"MOVE\",\"suggestedMove\":\"face_danger\",\"sceneChallenge\":null,\"category\":\"exploration\",\"confidence\":0.8,\"reasoning\":\"Mira physically forces a stuck, frost-sealed cold locker with someone trapped inside, an action with real risk and stakes, so face_danger applies at this exploration dial.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1094,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 4311,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 117,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a5",
+        "kind": "callClaudeAPI>interpretMove",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "YOUR TASK",
+          "MOVE REFERENCE",
+          "STAT GUIDE",
+          "INTERPRETATION RULES",
+          "RESPONSE FORMAT"
+        ],
+        "fingerprint": "6ab2f1c3cda5",
+        "user": "The character speaking and acting this turn is Mira Kestrel. No active tracks yet. Session active.\n\nPACING READ (a hint, not a ruling — rule 9): the stage before you read this line as face_danger in a exploration scene — \"Mira physically forces a stuck, frost-sealed cold locker with someone trapped inside, an action with real risk and stakes, so face_danger applies at this exploration dial.\".\n\nINTERPRETATION NOTE: You are allowed to occasionally interpret this narration in a slightly unexpected but still plausible way. If there is a move that is less obvious but more dramatically interesting than the most literal reading — and it still fits the fiction — you may prefer it. Stay inside what the line is doing: a different stat, or a neighbouring move of the same kind (another way of pressing someone for a line of dialogue, another way of meeting the danger for an action). Never turn a line of dialogue into a travel, fate or suffer move, and never invent a move for a line that makes none. This should feel like a natural misread, not a forced one. Set mischiefApplied to true if you do this.\n\nRECENT SCENE (what the player's line follows — context only; interpret the player narration):\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\nPlayer narration: \"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"moveId\": \"face_danger\",\n  \"moveName\": \"Face Danger\",\n  \"statUsed\": \"iron\",\n  \"statValue\": 0,\n  \"isProgressMove\": false,\n  \"progressTicks\": 0,\n  \"moveTarget\": null,\n  \"expeditionRank\": null,\n  \"combatRank\": null,\n  \"healSituation\": null,\n  \"rationale\": \"Mira physically forces a frost-sealed cold locker with someone trapped inside, bracing and heaving on a stuck handle. This is a risky physical attempt in an exploration scene, so Face Danger with iron (force) fits the approach. The pacing read suggested face_danger; the mischief option was not needed since the literal reading is already the dramatic one.\",\n  \"stakes\": {\n    \"hit\": \"The frost gives way and the locker door swings open, freeing whoever is trapped inside.\",\n    \"miss\": \"The handle wrenches loose in your grip and you strike your shoulder hard against the frame.\",\n    \"missSuffer\": { \"move\": \"endure_harm\", \"amount\": 1, \"target\": null }\n  },\n  \"mischiefApplied\": false,\n  \"confidence\": \"high\"\n}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1131,
+            "cache_creation_input_tokens": 5700,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 5700,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 384,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a5",
+        "kind": "defaultClassifyImplicit>resolveRelevance",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "Move: face_danger\nNarration: I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\n\nReturn only the JSON object.",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"impliedEntity\": false, \"referenceType\": \"none\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 219,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 23,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a5",
+        "kind": "callNarratorAPI>narrateResolution",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — EMBELLISHMENT MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "ORACLE SEEDS (use as inspiration — you may develop or adapt)",
+          "RECENT ORACLE RESULTS (this session, oldest first)",
+          "IN PLAY NOW",
+          "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+          "UNREVEALED — FOR THE NARRATOR ONLY",
+          "CHARACTER",
+          "THIS BEAT'S PROSE",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "cc291a42f07c",
+        "user": "## RECENT SCENE\n\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\n## MOVE OUTCOME\n\n[MOVE: Face Danger +iron] [ROLL: Action: 2 + 1 = 3 vs Challenge: 3, 7] [OUTCOME: Miss] [CONSEQUENCE: Fail or momentary success undermined. Pay the Price.]\n\n## STAKES STATED BEFORE THE ROLL\n\nThe player saw these before rolling:\n- On a hit: The frost gives way and the locker door swings open, freeing whoever is trapped inside.\n- On a miss: The handle wrenches loose in your grip and you strike your shoulder hard against the frame. (Endure Harm −1)\n\nThis is a miss: deliver the miss as stated — it is what this miss costs.\n\n## PLAYER NARRATION — spoken by Mira Kestrel\n\nMira Kestrel: \"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"\n\nNarrate the consequence in about 65 words — never more than 85 — in at most 5 sentences. This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. Stay in the fiction. Do not explain the mechanical outcome — embody it. The character who made this move is Mira Kestrel.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved.\n\nBehind it, a long breath. \"That sounded expensive,\" the voice says. \"Is the compass still pointing?\"\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"cold locker\", \"fact\": \"The door handle snapped off in Mira's grip; the door remains stuck shut\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"condition\", \"value\": \"shoulder bruised from striking the locker frame\" },\n    { \"subject\": \"cold locker\", \"attribute\": \"handle\", \"value\": \"torn loose, in Mira's hand\" },\n    { \"subject\": \"cold locker\", \"attribute\": \"door\", \"value\": \"still stuck shut\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Aft corridor outside the cold locker, Kobayashi IV\",\n    \"present\": [\"Mira Kestrel\", \"intercom voice\"],\n    \"situation\": \"The locker handle has snapped off in Mira's hand, and the voice inside again asks whether the compass still points\",\n    \"question\": \"Who is on the intercom, and what do they want?\"\n  }\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 2928,
+            "cache_creation_input_tokens": 2372,
+            "cache_read_input_tokens": 3595,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 2372
+            },
+            "output_tokens": 455,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a5",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "OUTPUT",
+          "WHAT YOU ARE GIVEN",
+          "GUIDANCE"
+        ],
+        "fingerprint": "4734b73d07bd",
+        "user": "## CONTEXT\n\nMove: face_danger\nOutcome: miss\nCharacter: Mira Kestrel — the player character this beat is about.\n\n## PLAYER'S LINE\n\nI brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\n\n## NARRATION\n\nThe handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved.\n\nBehind it, a long breath. \"That sounded expensive,\" the voice says. \"Is the compass still pointing?\"",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"type\":\"scar\",\"salience\":\"scene\",\"text\":\"Mira Kestrel heaved on the sealed door's handle until it snapped, slamming her shoulder into the frame and leaving the door unmoved.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 221,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 970,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 70,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a6",
+        "kind": "callClassifierAPI>classifyInput",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "OUTPUT",
+          "DECISION GUIDANCE",
+          "CATEGORY DEFINITIONS",
+          "MOVE CATALOG (shallow)"
+        ],
+        "fingerprint": "4760ebc13a5e",
+        "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 1 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Aft corridor outside the cold locker, Kobayashi IV\nScene frame — present: Mira Kestrel, intercom voice\nScene frame — now: The locker handle has snapped off in Mira's hand, and the voice inside again asks whether the compass still points\nCharted places: Hollow Spire, Bleakhold Station\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\nPLAYER — Mira Kestrel wrote: \"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"\nThe handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved.\n\nBehind it, a long breath. \"That sounded expensive,\" the voice says. \"Is the compass still pointing?\"\n\n## PLAYER INPUT\n\"I rub my shoulder and check the needle. \"Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock.\"\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"decision\":\"NARRATIVE_WITH_MOVE_AVAILABLE\",\"suggestedMove\":\"set_a_course\",\"sceneChallenge\":null,\"category\":\"exploration\",\"confidence\":0.6,\"reasoning\":\"Player sets a course for a charted destination (Bleakhold Station), a known route, with no clear hazard or time pressure stated, so a route-following move is available but not forced.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 984,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 4311,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 135,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a6",
+        "kind": "callNarratorAPI>narratePacedInput",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — INTERACTION MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "RECENT ORACLE RESULTS (this session, oldest first)",
+          "IN PLAY NOW",
+          "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+          "UNREVEALED — FOR THE NARRATOR ONLY",
+          "CHARACTER",
+          "THIS BEAT'S PROSE",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "e416a68e56fb",
+        "user": "## RECENT SCENE\n\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\nPLAYER — Mira Kestrel wrote: \"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"\nThe handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved.\n\nBehind it, a long breath. \"That sounded expensive,\" the voice says. \"Is the compass still pointing?\"\n\n## PLAYER NARRATION — spoken by Mira Kestrel\n\nMira Kestrel: \"I rub my shoulder and check the needle. \"Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock.\"\"\n\nThe character speaking and acting this turn is Mira Kestrel. Attribute the actions and dialogue in the input to Mira Kestrel, not to any other player character.\n\n## SUGGESTED MOVE\n\nThe pacing classifier nominated set_a_course as a move the player could make if they want to push this moment. End your narration with ONE italicized sentence inviting this move, in the narrator's voice. Do not announce it mechanically. Examples:\n\n  *If you want to read him for tells, this could be a Gather Information.*\n  *Pressing further here would be a Compel.*\n\nThis closing italic sentence is the ONE permitted exception to the \"depict, do not offer\" rule. It must appear at the very end of the narration, after the prose body has finished. Do not place italicized suggestions or \"you could…\" / \"perhaps you might…\" asides inside the body of the prose — only at the close.\n\nDo not include this hint if your narration would naturally close the moment or if the moment doesn't actually warrant pressing. The hint is optional.\n\nContinue the fiction from this input in about 65 words — never more than 85 — in at most 5 sentences (the closing move hint, if you include it, is not counted). This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. No move was rolled — stay in narration. Do not announce mechanics. Do not decide what a move would decide: no risky action succeeds or fails, no fight is won, no danger is escaped. Within that, let the scene move: small developments, and the time the player's line implies passing, are yours to narrate. When the player skips time (\"wake me when we get there\", \"we wait for nightfall\"), cut to the next moment that needs them, not to the middle of the wait.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. \"Bleakhold? That's days. I don't think the frost gives me days.\" Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door.\n\n*Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*\n\n```json\n{\n  \"newTruths\": [],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"aft corridor, at the cold locker door\" },\n    { \"subject\": \"brass star-compass\", \"attribute\": \"needle\", \"value\": \"still aimed at the cold locker door\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Aft corridor outside the cold locker, Kobayashi IV\",\n    \"present\": [\"Mira Kestrel\", \"intercom voice\"],\n    \"situation\": \"Mira has said she will set course for Bleakhold Station; the voice in the locker doubts it can last that long\",\n    \"question\": \"Who is on the intercom, and what do they want?\"\n  },\n  \"reveals\": [\n    { \"id\": \"sk-LFMuYINKIh5GlPQh\", \"revealed\": [\"c1\"], \"advanced\": \"e2\" }\n  ]\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 3345,
+            "cache_creation_input_tokens": 961,
+            "cache_read_input_tokens": 5074,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 961
+            },
+            "output_tokens": 453,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a6",
+        "kind": "callHaiku>defaultCallTierAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "Given the following established entity records and a passage of narration,\ncapture any SIGNIFICANT new development about each entity that is NOT already\nin the record below — what the character did, decided, or revealed; how their\ndisposition, allegiance, or relationship to the player character shifted; a\ndurable new trait or piece of history. Record consequential beats, not\nincidental motion, passing scenery, or restatements of what is already known.\n\n## Bleakhold Station — settlement  (id: 3C34tGHDtvLRM36i)\n\nRate each update with a \"salience\" — one of trivial, scene, notable,\nsignificant, defining — for how much it matters to that entity's ongoing\nstory. Be conservative: most narration is \"scene\" or \"trivial\" and should be\nomitted entirely.\n\nReturn a single JSON object (no prose):\n{ \"updates\": [ { \"entityId\": string, \"detail\": string, \"salience\": string } ] }\n\nentityId must match the id shown in the record header (e.g. \"id: ABC123\").\ndetail should be one short sentence — the new development only.\n\nNarration:\nThe voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. \"Bleakhold? That's days. I don't think the frost gives me days.\" Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door.\n\n*Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{ \"updates\": [] }"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 503,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 11,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a6",
+        "kind": "callHaiku>defaultCallDetectionAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "You are analysing an Ironsworn: Starforged narration.\nMove: (paced narration — no move was rolled).\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Hollow Spire, Bleakhold Station, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\nIlse\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: (none)\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nThe voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. \"Bleakhold? That's days. I don't think the frost gives me days.\" Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door.\n\n*Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"entities\":[],\"renames\":[],\"worldJournal\":{\"lore\":[],\"threats\":[],\"factionUpdates\":[],\"locationUpdates\":[],\"stateTransitions\":[]}}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 3069,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 67,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a6",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "OUTPUT",
+          "WHAT YOU ARE GIVEN",
+          "GUIDANCE"
+        ],
+        "fingerprint": "4734b73d07bd",
+        "user": "## CONTEXT\n\nContext: paced narration — no move was rolled.\nCharacter: Mira Kestrel — the player character this beat is about.\n\n## PLAYER'S LINE\n\nI rub my shoulder and check the needle. \"Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock.\"\n\n## NARRATION\n\nThe voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. \"Bleakhold? That's days. I don't think the frost gives me days.\" Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door.\n\n*Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"type\": \"moment\",\n  \"salience\": \"notable\",\n  \"text\": \"Mira set a course for Bleakhold Station, promising the freezing voice behind the locker door rescue on docking, though it fears days is too long to survive.\"\n}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 270,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 970,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 79,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a8",
+        "kind": "callNarratorAPI>getRollingSessionSummary",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "## SESSION NARRATION (oldest first)\n\nThe galley on the *Kobayashi IV* smells of reheated lentils and the ghost of last week's fish. You sit with a tin of the lentils cooling in front of you and a mug of something that claims to be coffee. Wits counts for little against a recycler that has opinions about caffeine.\n\nNobody else is here, which is the problem, because the ship has been quiet in the particular way that means someone is doing something. Somewhere aft, a thump, then a long pause, then a thump again. You decide the engineer is either fixing the coolant loop or negotiating with it.\n\nThe navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. It has learned the words and none of the hours. And the cook is probably still defending the fish.\n\nThe deck hums under your boots, steady and unbothered. Then the intercom clicks, and a voice you can't place says, \"Mira? Does anyone know where we keep the second sandwich?\"\n\n---\n\nPLAYER — Mira Kestrel wrote: \"I turn the brass star-compass that belonged to my sister Ilse over in my fingers, then press the intercom. \"Galley here. No idea about the sandwich — who's asking?\"\"\nThe intercom hisses, then the voice comes back, closer to the speaker now. \"Just me. I'm in the cold locker, and the door has decided it likes me.\" A pause. Something heavy shifts behind the words. \"Also, I was told you'd be the one who knows where Ilse's compass went.\"\n\nThe compass sits warm in your palm.\n\n---\n\nPLAYER — Mira Kestrel wrote: \"\"It's right here with me. Hang tight — I'm coming to get the locker open.\" I pocket it and head aft toward the cold locker.\"\nYou leave the lentils and take the aft corridor. The cold locker door is steel, rimed white at the seam, and the handle will not move. Frost has crept along the hinge. From inside, a knuckle raps twice. Then the voice, muffled and patient: \"That compass. Does it still point at anything?\"\n\nThe needle in your pocket has shifted its aim.\n\n*If you want to force the locker before whoever is inside answers for himself, that would be a Face Danger.*\n\n---\n\nPLAYER — Mira Kestrel wrote: \"I brace my boot against the frame and heave on the handle. \"Stand back from the door!\"\"\nThe handle gives all at once. Your boot skids on the frosted deck, and your shoulder meets the door frame hard enough to rattle your teeth. Pain runs down to the elbow. The handle lies in your hand, bolts snapped. The door has not moved.\n\nBehind it, a long breath. \"That sounded expensive,\" the voice says. \"Is the compass still pointing?\"\n\n---\n\nPLAYER — Mira Kestrel wrote: \"I rub my shoulder and check the needle. \"Still pointing. Hold on — I'm setting a course for Bleakhold Station, and we'll get you out when we dock.\"\"\nThe voice behind the door goes quiet, which is worse than the complaining. Then the intercom clicks, and it comes back thin. \"Bleakhold? That's days. I don't think the frost gives me days.\" Under your hand the deck tilts as the nav console takes the course. The compass needle never leaves the locker door.\n\n*Committing the ship to Bleakhold with someone freezing aboard is a Set a Course, if you mean to go through with it.*",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "Mira Kestrel, a crew member of the *Kobayashi IV*, found the galley quiet and the ship's crew scattered: the engineer fighting the coolant loop, the navigator teaching the loader drone to greet people, and the cook guarding the fish. A voice on the intercom asked after a missing second sandwich, then revealed he was trapped inside the cold locker, and claimed Mira would know where Ilse's brass star-compass had gone. Mira holds that compass, which belonged to her sister Ilse, and it still points toward the locker door. She tried to force the locker open, snapping the handle and wrenching her shoulder against the frame, but the door held. Mira then set a course for Bleakhold Station, promising to free the trapped man when they dock, though he protested that days of cold would kill him and the frost may not allow that long. The ship is now underway toward Bleakhold with the man still sealed inside the frozen locker."
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1458,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 305,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a8",
+        "kind": "callNarratorAPI>narrateSessionVignette",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — EMBELLISHMENT MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "RECENT ORACLE RESULTS (this session, oldest first)",
+          "STORY SO FAR (THIS SESSION)",
+          "IN PLAY NOW",
+          "CHARACTER",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "42eb612fbdc5",
+        "user": "CLOSING VIGNETTE — end-session NPC slice-of-life.\n\nFLAVOUR: END.\n\nFeatured NPC (sector_trouble): the architect of Cinder Expanse. Context: Pirates raid the lanes\nShip's sector when the session ended: Cinder Expanse.\n\nRender a 3-5 sentence closing vignette set somewhere the players are NOT.\nThe featured NPC is doing something trivial and mundane — eating, tidying,\nwatering a plant, fiddling with a small repair, reading the same page\nfor the third time, queueing for fuel. Specific. Small. Almost tender.\nThe audience knows what this NPC means to the campaign; the prose does\nnot need to remind them. Show the cosmic threat or significant connection\nas an ordinary person finishing an ordinary minute, while the players'\nship is somewhere else entirely.\n\nEnd on a small private gesture — a shrug, a half-smile, switching a light\noff, looking out a window — that closes the session without underlining.\nDo not describe a move, do not propose a mechanical action.\n\nLength: three to five sentences, about 90 words — never more than five\nsentences. Short ones. Count them, and stop at the gesture.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "Somewhere far from the lanes your ship is crawling along, a man sits at a galley table with a cold mug and a ledger. He is adding a column of figures for the third time, and the third total disagrees with the first two. He taps the pencil against his teeth, then crosses out the middle answer, since two out of three is a majority. Out past the viewport, a raiding skiff idles on the dark, its running lights blinking in an uneven rhythm he has stopped hearing. He reaches over and switches off the lamp.\n\n```json\n{\n  \"newTruths\": [],\n  \"stateChanges\": [],\n  \"sceneFrame\": {\n    \"location\": \"a galley table far from Mira's ship, somewhere in the Cinder Expanse\",\n    \"present\": [],\n    \"situation\": \"The architect of the Cinder Expanse's raiding lanes totals a ledger by lamplight while a skiff idles outside the viewport\",\n    \"question\": \"What is the architect of the Cinder Expanse's pirate trouble doing while Mira's ship is elsewhere?\",\n    \"questionAnswered\": true\n  }\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1349,
+            "cache_creation_input_tokens": 2064,
+            "cache_read_input_tokens": 3595,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 2064
+            },
+            "output_tokens": 358,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a8",
+        "kind": "callNarratorAPI>getCampaignRecap",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "THIS SUMMARY",
+          "CONTEXT FOR THIS SUMMARY",
+          "CURRENT LOCATION",
+          "HOLLOW SPIRE — Settlement",
+          "ACTIVE SECTOR",
+          "CHARACTER"
+        ],
+        "fingerprint": "0b2760ca1537",
+        "user": "## CAMPAIGN CHRONICLE\n\n[11/23/2026]\nMira Kestrel, turning her sister Ilse's brass star-compass in her fingers, learns that someone trapped in the cold locker has been told she knows where it went.\n\n[11/23/2026]\nMira found someone trapped in the frosted cold locker who asked about her compass, whose needle had swung toward the door.\n\n[11/23/2026]\nMira set a course for Bleakhold Station, promising the freezing voice behind the locker door rescue on docking, though it fears days is too long to survive.\n\nWrite a campaign recap of 3–5 paragraphs covering:\n- How the campaign began and what the inciting situation was\n- The key relationships that have developed\n- The vows sworn and their current status\n- The most significant revelations\n- Where things stand now\n\nWrite in second person for solo campaigns, third person for multiplayer. Be wry but respectful of what the player has accomplished.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The chronicle on hand is short, so this is what it supports.\n\nYou began with a brass star-compass, a keepsake of your sister Ilse's, and the habit of turning it over in your fingers when you thought no one was watching. Somebody was watching, or at least had heard. The inciting trouble arrived not as a battle or a bounty but as a rumor: that you knew where something had gone, and that this knowledge was worth freezing for.\n\nThe only relationship the record shows is the one with a voice behind a frosted locker door. You found someone trapped in the cold locker, and they asked about your compass, a question that sounds casual until you notice the needle had swung toward the door. They have been told you know where it went. You have not said whether you do, and the chronicle is too polite to ask. What it does record is that you promised rescue on docking, and that the voice doubts it will last that long. Days is a long time to be cold.\n\nNo vows have been sworn in the record, though the promise you made through the locker door has the weight of one. You set a course for Bleakhold Station, a Corporate port where Smuggling is the local trouble and nobody will be shocked by a stranger in a freezer. The Kobayashi IV is sound, with integrity at five of five. You are in good shape too: Health 4, Spirit and Supply both full, Momentum a modest 2.\n\nThe most significant revelation is the swinging needle. A compass that points at a locked door is either broken or telling you something, and given who it belonged to, you may have already decided which. Ilse's name is the thread running under all of it. How the compass ties her to the person in the locker, and to whatever was lost, has not yet been said aloud.\n\nAs things stand, you are underway toward Bleakhold with a promise to keep and a clock running in the cold. The ship is near Hollow Spire, where water is rationed and nobody is in charge, in the Cinder Expanse, where pirates raid the lanes. It is not a comfortable place to be making promises, but it is the one you chose."
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 2201,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 637,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a10",
+        "kind": "callNarratorAPI>narrateSessionVignette",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — EMBELLISHMENT MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "CAMPAIGN RECAP — SESSION START CONTEXT",
+          "IN PLAY NOW",
+          "CHARACTER",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "0cbb6dc688e5",
+        "user": "OPENING VIGNETTE — begin-session ship's galley.\n\nActive players (their PCs are physically in the galley together):\n- Mira Kestrel [she/her]\n    Stats: edge 2 · heart 1 · iron 1 · shadow 2 · wits 3\n\nAbsent crewmates (referenced in banter, not present):\n- (No absent crewmates registered — invent generic absurd crew.)\n\nShip is currently in: Cinder Expanse.\n\nRender a 4-6 sentence opening vignette set in the ship's galley.\nThe active PCs are eating, drinking, or otherwise hanging out — pick a\nspecific food/drink that fits their character traits. They banter,\nhumorously and absurdly, about what each of the absent crewmates is\ndoing elsewhere on the ship or out in the sector. Be specific and\nweird (e.g. 'rewiring her own escape pod from the inside again',\n'recalibrating the gravity in the laundry'), but stay anchored to\nthe PCs' established traits.\n\nTONE OVERRIDE: regardless of any tone configured elsewhere, this\nvignette is WRY + ABSURD. Affectionate ribbing, not sneering.\nEnd on a beat that hands the scene to the players — a line of\ndialogue, a question, or a small interruption.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "You hold a mug of reconstituted barley tea in both hands, and the steam smells faintly of the ship's coolant loop. Across the galley table, the brass star-compass lies beside your plate of crackers and rehydrated cheese, its needle swung stubbornly toward the cold locker door. Somewhere aft, the engineer is arguing with a pipe, and you can hear the pipe winning. The navigator, by the sound of it, is still teaching the loader drone to say good morning, and the drone has settled on a greeting that is mostly a long, hopeful whirr. You turn the compass a quarter turn with one finger, and the needle drifts back to the locker, patient as a cat at a closed door. From behind the frost-rimed steel comes a thin, tired voice. <npc>\"I can hear the tea, you know. Some of us have been in here a while.\"</npc>\n\n```json\n{\n  \"newTruths\": [],\n  \"stateChanges\": [\n    { \"subject\": \"Mira Kestrel\", \"attribute\": \"location\", \"value\": \"aboard the Kobayashi IV, in the galley\" },\n    { \"subject\": \"compass\", \"attribute\": \"needle\", \"value\": \"pointing toward the cold locker door\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Kobayashi IV galley\",\n    \"present\": [\"Mira Kestrel\", \"intercom voice\"],\n    \"situation\": \"Mira eats a quiet meal in the galley while the voice trapped in the cold locker calls out to her\",\n    \"question\": \"Will Mira answer the voice in the locker?\"\n  }\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1567,
+            "cache_creation_input_tokens": 2436,
+            "cache_read_input_tokens": 3595,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 2436
+            },
+            "output_tokens": 519,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a11",
+        "kind": "callClassifierAPI>classifyInput",
+        "model": "claude-haiku-5-5",
+        "sections": [
+          "OUTPUT",
+          "DECISION GUIDANCE",
+          "CATEGORY DEFINITIONS",
+          "MOVE CATALOG (shallow)"
+        ],
+        "fingerprint": "4760ebc13a5e",
+        "user": "## PACING DIALS (effective values)\ncombat:        9/10\ninvestigation: 6/10\nexploration:   6/10\nsocial:        5/10\ndowntime:      1/10\nScene override: none\n\n## RECENT MOVE DENSITY\nLast 5 inputs in current scene: 1 were moves.\nIf density is high, lean toward NARRATIVE to allow pacing recovery.\n\n## CHARACTER\nName: Mira Kestrel\nMira Kestrel's connections: (none)\n\n## CURRENT SCENE\nCurrent location: Hollow Spire (settlement)\nScene frame — where: Kobayashi IV galley\nScene frame — present: Mira Kestrel, intercom voice\nScene frame — now: Mira eats a quiet meal in the galley while the voice trapped in the cold locker calls out to her\nCharted places: Hollow Spire, Bleakhold Station\n\n## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)\nYou hold a mug of reconstituted barley tea in both hands, and the steam smells faintly of the ship's coolant loop. Across the galley table, the brass star-compass lies beside your plate of crackers and rehydrated cheese, its needle swung stubbornly toward the cold locker door. Somewhere aft, the engineer is arguing with a pipe, and you can hear the pipe winning. The navigator, by the sound of it, is still teaching the loader drone to say good morning, and the drone has settled on a greeting that is mostly a long, hopeful whirr. You turn the compass a quarter turn with one finger, and the needle drifts back to the locker, patient as a cat at a closed door. From behind the frost-rimed steel comes a thin, tired voice. <npc>\"I can hear the tea, you know. Some of us have been in here a while.\"</npc>\n\n## PLAYER INPUT\n\"I set down the tea and look at the locker door. \"Before anything else — remind me, what do I still have on me that was my sister's?\"\"",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"decision\":\"NARRATIVE\",\"suggestedMove\":null,\"sceneChallenge\":null,\"category\":\"investigation\",\"confidence\":0.8,\"reasoning\":\"Player asks what items they still carry from their sister, a question for recollection with no character action or stakes at dial 6.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 669,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 4311,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 95,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a11",
+        "kind": "callNarratorAPI>narratePacedInput",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "NARRATOR ROLE AND VOICE",
+          "RESPONSE FORMAT — MANDATORY SIDECAR",
+          "NPC DIALOGUE MARKUP — required when audio narration is enabled",
+          "WORLD SNAPSHOT",
+          "THIS NARRATION",
+          "NARRATOR PERMISSIONS — INTERACTION MODE",
+          "CONTEXT FOR THIS NARRATION",
+          "IN PLAY NOW",
+          "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+          "CHARACTER",
+          "THIS BEAT'S PROSE",
+          "RESPOND NOW"
+        ],
+        "fingerprint": "fa70c43375cc",
+        "user": "## RECENT SCENE\n\nYou hold a mug of reconstituted barley tea in both hands, and the steam smells faintly of the ship's coolant loop. Across the galley table, the brass star-compass lies beside your plate of crackers and rehydrated cheese, its needle swung stubbornly toward the cold locker door. Somewhere aft, the engineer is arguing with a pipe, and you can hear the pipe winning. The navigator, by the sound of it, is still teaching the loader drone to say good morning, and the drone has settled on a greeting that is mostly a long, hopeful whirr. You turn the compass a quarter turn with one finger, and the needle drifts back to the locker, patient as a cat at a closed door. From behind the frost-rimed steel comes a thin, tired voice. \"I can hear the tea, you know. Some of us have been in here a while.\"\n\n## PLAYER NARRATION — spoken by Mira Kestrel\n\nMira Kestrel: \"I set down the tea and look at the locker door. \"Before anything else — remind me, what do I still have on me that was my sister's?\"\"\n\nThe character speaking and acting this turn is Mira Kestrel. Attribute the actions and dialogue in the input to Mira Kestrel, not to any other player character.\n\nContinue the fiction from this input in about 65 words — never more than 85 — in at most 5 sentences. This narration is read aloud: short sentences, one idea each, none over about 18 words. Never stack clauses to fit more in. No move was rolled — stay in narration. Do not announce mechanics. Do not decide what a move would decide: no risky action succeeds or fails, no fight is won, no danger is escaped. Within that, let the scene move: small developments, and the time the player's line implies passing, are yours to narrate. When the player skips time (\"wake me when we get there\", \"we wait for nightfall\"), cut to the next moment that needs them, not to the middle of the wait.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "The voice pauses. Then, careful, almost kind: \"The compass. Brass, a dent near the ring. Ilse wore it on a cord until the cord wore through.\" You glance down. The dent is there, under your thumb. \"Ask me what's engraved on the back,\" the voice says. \"I'll wait. I'm good at waiting.\" The needle trembles against its glass and holds on the door.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"compass\", \"fact\": \"brass, with a dent near the ring; Ilse wore it on a cord until the cord wore through\" },\n    { \"subject\": \"intercom voice\", \"fact\": \"knows details of Ilse's compass, including an engraving on its back, and offers to describe it\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"compass\", \"attribute\": \"needle\", \"value\": \"trembling, holding on the cold locker door\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"Kobayashi IV galley\",\n    \"present\": [\"Mira Kestrel\", \"intercom voice\"],\n    \"situation\": \"The voice in the cold locker describes Ilse's compass and invites Mira to ask about its engraving\",\n    \"question\": \"Will Mira answer the voice in the locker?\"\n  }\n}\n```"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1449,
+            "cache_creation_input_tokens": 961,
+            "cache_read_input_tokens": 5133,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 961
+            },
+            "output_tokens": 414,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a11",
+        "kind": "callHaiku>defaultCallDetectionAPI",
+        "model": "claude-haiku-5-5",
+        "sections": [],
+        "fingerprint": "e3b0c44298fc",
+        "user": "You are analysing an Ironsworn: Starforged narration.\nMove: (paced narration — no move was rolled).\n\nENTITY TYPES TO DETECT:\n- connection: named individual (NPC, person, AI)\n- ship: named vessel or craft\n- settlement: named community, station, outpost\n- faction: named organisation, order, or power\n- location: named specific place (derelict, vault, structure, site)\n- creature: named or distinctly described creature type\n\nFor a connection, set \"pronouns\" to the pronoun set the narration\nestablished for that person (\"she/her\", \"he/him\", \"they/them\"), or null\nwhen the prose never gendered them. Report what the text used — do not\nguess from the name. Likewise set \"role\" to the role or occupation the\nnarration gave them (\"dockmaster\", \"smuggler\") and \"goal\" to what it says\nthey want — each null when the prose did not say.\n\nESTABLISHED ENTITIES (do not return these as new entities):\nMira Kestrel, Hollow Spire, Bleakhold Station, Kobayashi IV\nTreat honorifics and titles as equivalent to the bare name —\n\"Dr. Chen\" and \"Chen\" refer to the same person; \"Captain Reyes\" and\n\"Reyes\" refer to the same person. Match against this list by stripping\nany leading title before comparing.\nA person is the same person under part of their name: \"Archer\", \"Ms Archer\"\nand \"Vuldar\" all mean an established \"Vuldar Archer\", and so does a near\nspelling of it (\"Valdur Archer\"). Never return any of these as a new entity.\n\nPENDING DRAFTS (already proposed in earlier narration, not yet confirmed —\ndo not return these again, the GM has them under review):\nIlse\n\nUNNAMED / PLACEHOLDER FIGURES (established entities introduced without a\nproper name). If THIS narration reveals a real name for one of them — e.g.\nthe figure recorded as \"Unknown Suited Figure\" gives the name \"Vex\" — do\nNOT return a new connection; instead record it under \"renames\" below, with\n\"from\" set to the exact placeholder name and \"to\" the revealed name:\n(none)\n\nDISMISSED NAMES (do not return these — the GM has already rejected them):\n(none)\n\nCURRENT WORLD JOURNAL STATE (for state transition detection):\nConfirmed lore: cold locker: The door handle snapped off in Mira's grip; the door remains stuck shut; cold locker: Rimed with frost along the hinge seam; the handle will not turn from outside; intercom voice: unidentified speaker claiming to be trapped in the ship's cold locker; asked abou...; Mira Kestrel: carries a brass star-compass that belonged to her sister Ilse\nNarrator-asserted lore: (none)\nActive threats (one per line: the name in quotes, then its severity — the\nseverity is a separate field, never part of the name):\n  (none)\nFaction attitudes: (none)\n\nReturn a single JSON object with this exact shape (no prose):\n{\n  \"entities\": [\n    { \"type\": string, \"name\": string, \"description\": string,\n      \"pronouns\": string|null, \"role\": string|null, \"goal\": string|null,\n      \"confidence\": \"high\"|\"medium\"|\"low\" }\n  ],\n  \"renames\": [\n    { \"from\": string, \"to\": string }\n  ],\n  \"worldJournal\": {\n    \"lore\": [\n      { \"title\": string, \"category\": string, \"text\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\",\n        \"narratorAsserted\": true, \"confirmed\": false,\n        \"entityName\": string|null }\n    ],\n    \"threats\": [\n      { \"name\": string, \"type\": string,\n        \"severity\": \"immediate\"|\"active\"|\"looming\", \"summary\": string,\n        \"salience\": \"trivial\"|\"scene\"|\"notable\"|\"significant\"|\"defining\" }\n    ],\n    \"factionUpdates\": [\n      { \"name\": string, \"attitude\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"locationUpdates\": [\n      { \"name\": string, \"type\": string, \"summary\": string, \"isNew\": boolean }\n    ],\n    \"stateTransitions\": [\n      { \"entryType\": \"threat\"|\"lore\"|\"faction\", \"name\": string,\n        \"change\": \"resolved\"|\"escalated\"|\"contradicted\"|\"attitudeShift\",\n        \"newValue\": string, \"summary\": string }\n    ]\n  }\n}\n\nSALIENCE — rate how durable each lore and threat item is, so transient\nscene beats do not become permanent World Journal entries:\n  - \"defining\":    a world truth, a faction's overarching agenda, or a\n                   revelation that reshapes the campaign.\n  - \"significant\": a durable world or character fact that will still matter\n                   in later sessions (e.g. the cargo is actually wartime munitions).\n  - \"notable\":     a meaningful clue or complication that may matter beyond\n                   the current scene.\n  - \"scene\":       matters only within the current encounter (a sensor blip,\n                   a description, an immediate observation).\n  - \"trivial\":     atmospheric flavour with no lasting weight.\nBe sparing: most moment-to-moment narration is \"scene\" or \"trivial\". Reserve\n\"significant\" and \"defining\" for facts worth remembering next session.\n\nentityName rules: set to the entity's exact name when a lore item is a\nfact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,\ncreature). Those facts belong on the entity record, not in the World\nJournal lore. If the lore is a world-level fact (not about one specific\nknown entity), leave entityName null or omit it. Use the name exactly as\nESTABLISHED ENTITIES lists it, even when the narration calls the entity by\npart of its name or by another phrase (\"the blockade corridor\" for an\nestablished \"The Corridor\").\nLore rules: only extract concrete narrative facts, not atmosphere. \"title\"\nis a short label in sentence case — a capital first letter, proper nouns\ncapitalised, no entity name and colon in front. What a player character\ndecided or did is not lore: it is the story so far, not a fact about the\nworld — do not return it.\nThreat rules: only named or distinctly typed dangers with narrative weight.\nA threat's \"name\" is its name alone — a short, stable label — never with its\nseverity or what it is doing now after a colon. \"severity\" is exactly one of\n\"immediate\" (acting on the characters now), \"active\" (in motion, not yet on\nthem) or \"looming\" (a danger ahead); what the threat is doing goes in\n\"summary\". A danger already in the Active threats list is not a new threat:\nreport what changed about it as a state transition.\nFaction update rules: include every named faction that appears in this narration\nin \"factionUpdates\" — even on its first mention, and even when it is named only\nin passing or in possessive/adjectival form. \"classified Triumvirate intelligence\",\n\"the Compact's enemies\", and \"a Devoted shrine\" all name a faction — emit\n\"Triumvirate\", \"the Compact\", \"the Devoted\". Treat named orders, churches, cults,\nguilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as\nfactions. When the prose names several at once (\"three religious orders — the\nLattice, the Devoted, and the Circle of Iron\"), emit ONE factionUpdates entry per\nnamed order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:\nfalse for ones already listed. Never downgrade a named faction to a lore item —\na fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.\nLocation update rules: include every named specific site (vault, derelict, station,\nstructure) in \"locationUpdates\" — even on first mention. Set isNew: true for\nlocations not in ESTABLISHED ENTITIES.\nEntity rules: only return entities clearly named or distinctly typed.\nDo NOT return generic references (\"a guard\", \"the station\", \"some raiders\").\nRename rules: only emit a rename when the narration gives a proper name to\none of the PLACEHOLDER FIGURES above. \"from\" must be exactly one of those\nplaceholder names; never rename an already-properly-named entity. A renamed\nfigure must NOT also appear in \"entities\".\nState transitions: compare narration against the CURRENT WORLD JOURNAL STATE\nabove. Threat resolved/escalated, lore contradicted, faction attitude shift.\nFor a threat transition, \"name\" MUST exactly match the quoted name of a\nthreat in the Active threats list above — the name only, without its\nseverity — do NOT invent a threat name from the narration, and do NOT emit\na threat transition for a danger that is not already a recorded threat (a\nbrand-new danger belongs in its own detection, not as a state change). If\nno recorded threat matches, omit it. For \"escalated\", \"newValue\" is the new\nseverity — exactly \"immediate\" or \"active\" — and \"summary\" says in one\nsentence what the threat is now doing. For \"resolved\", \"summary\" says how\nit ended. (\"summary\" is for threat transitions; omit it otherwise.)\nReturn empty arrays for any section with nothing to report.\n\nNarration:\nThe voice pauses. Then, careful, almost kind: \"The compass. Brass, a dent near the ring. Ilse wore it on a cord until the cord wore through.\" You glance down. The dent is there, under your thumb. \"Ask me what's engraved on the back,\" the voice says. \"I'll wait. I'm good at waiting.\" The needle trembles against its glass and holds on the door.",
+        "response": {
+          "model": "claude-haiku-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"entities\":[],\"renames\":[],\"worldJournal\":{\"lore\":[{\"title\":\"Brass compass belonged to Ilse\",\"category\":\"character\",\"text\":\"The brass star-compass Mira carries has a dent near its ring and was once worn on a cord by Ilse until the cord wore through.\",\"salience\":\"notable\",\"narratorAsserted\":true,\"confirmed\":false,\"entityName\":\"Mira Kestrel\"}],\"threats\":[],\"factionUpdates\":[],\"locationUpdates\":[],\"stateTransitions\":[]}}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 3175,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 178,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      },
+      {
+        "step": "a11",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "sections": [
+          "OUTPUT",
+          "WHAT YOU ARE GIVEN",
+          "GUIDANCE"
+        ],
+        "fingerprint": "4734b73d07bd",
+        "user": "## CONTEXT\n\nContext: paced narration — no move was rolled.\nCharacter: Mira Kestrel — the player character this beat is about.\n\n## PLAYER'S LINE\n\nI set down the tea and look at the locker door. \"Before anything else — remind me, what do I still have on me that was my sister's?\"\n\n## NARRATION\n\nThe voice pauses. Then, careful, almost kind: \"The compass. Brass, a dent near the ring. Ilse wore it on a cord until the cord wore through.\" You glance down. The dent is there, under your thumb. \"Ask me what's engraved on the back,\" the voice says. \"I'll wait. I'm good at waiting.\" The needle trembles against its glass and holds on the door.",
+        "response": {
+          "model": "claude-sonnet-5-5",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"type\":\"revelation\",\"salience\":\"notable\",\"text\":\"A voice reminded Mira that her sister Ilse's brass compass, dented near the ring, is the one thing she still carries of hers, and its needle holds on the locker door.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 235,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 970,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 77,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "service_tier": "standard",
+            "inference_geo": "global",
+            "speed": "standard"
+          }
+        }
+      }
+    ]
+  },
+  "expected": {
+    "status": "achieved",
+    "failingLayer": null,
+    "healthFailed": false,
+    "classification": "pass"
+  }
+}

@@ -19,8 +19,8 @@
  *   - a rehearsal's stand-in for the model API: the charter's script through
  *     the player's own tool, a narrator that keeps the fact or keeps nothing;
  *   - the memory charter and the config that ship: runnable, and priced;
- *   - the first live run, kept as a replay: that the file is one the runner
- *     can take again, and that it holds what its result claims.
+ *   - the live runs kept as replays: that each file is one the runner can
+ *     take again, and that it holds what its result claims.
  *
  * The run itself — two browsers at a live Foundry table — is on demand
  * (test/ci/scripts/cloud.sh explore).
@@ -619,16 +619,21 @@ describe('a rehearsal\'s stand-in for the model API', () => {
   });
 });
 
-// ── the live run kept as a replay ────────────────────────────────────────────
+// ── the live runs kept as replays ────────────────────────────────────────────
 
-// Each kept run with what is its own: the order of its actions and how many
-// dice it rolled. The second (2026-11-23) is the run made after issue #374's
-// A1 and A2 were fixed, by the Sonnet player, with a miss and its price in it.
-describe.each([
-  ['memory-live-20261122', ['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop'], 3],
-  ['memory-live-20261123', ['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop'], 3],
-])('a live run of the memory charter, kept as a replay (explorations/%s)', (folder, order, diceRolled) => {
-  const FILE = path.join(PLAYWRIGHT, 'explorations', folder, 'replay.json');
+// Each went the whole way with real narrator replies. The first (2026-11-22)
+// is the run issue #374's review was made from, one move rolled; the second
+// (2026-11-23) is the re-run after that issue's fixes, four moves rolled; the
+// third is that re-run made again an hour later by a session that did not
+// know of the second (issue #373 slice 0) — one move, a miss with its price.
+const KEPT_RUNS = [
+  { name: 'memory-live-20261122', rolls: 1 },
+  { name: 'memory-live-20261123', rolls: 4 },
+  { name: 'memory-live-20261123-0436', rolls: 1 },
+];
+
+describe.each(KEPT_RUNS)('a live run of the memory charter, kept as a replay (explorations/$name)', ({ name, rolls }) => {
+  const FILE = path.join(PLAYWRIGHT, 'explorations', name, 'replay.json');
   const RUN  = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   const compass = RUN.charter.facts.find(f => f.id === 'compass');
   const actions = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` }));
@@ -641,11 +646,11 @@ describe.each([
   it('is a run the runner can take again: its actions carry no document id, and every recorded reply belongs to one of them', () => {
     expect(RUN.expected).toMatchObject({ status: 'achieved', failingLayer: null, healthFailed: false });
     expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
-    expect(actions.map(a => a.action)).toEqual(order);
+    expect(actions.map(a => a.action)).toEqual(['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop']);
     for (const a of actions) expect(Object.keys(a), a.step).not.toContain('messageId');
     const steps = new Set(actions.map(a => a.step));
     expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
-    expect(RUN.dice, 'one move rolled: two challenge dice and the action die').toHaveLength(diceRolled);
+    expect(RUN.dice, 'each move rolled: two challenge dice and the action die').toHaveLength(3 * rolls);
   });
 
   it('holds what its result claims: the fact stated in the first session, never named in the second, and in the narrator\'s replies there', () => {
