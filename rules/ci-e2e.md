@@ -476,6 +476,13 @@ charter or touch the runner:
   you add one to the module.
 - **The game system's first-start window** is open on a new player's screen;
   the player is not shown it (`ignoreWindows`).
+- **Not yet learned — a card that waits on the player.** The third live run's
+  player left two "Resolve consequence" cards unanswered and typed on; the
+  table does not hold a move for them, so two weak hits' costs went unpaid
+  and the run still passed. The player's instructions do not say such a card
+  is waiting on it, and the observer has no check for a cost left owed
+  (known-issues WEAK-HIT-COST-UNPAID). Until both are built, read a run's
+  cards for an unanswered choice before trusting its mechanics.
 
 **The run's class** (`classifyRun`): an infrastructure error first, then a
 failed health check (`product-failure`), then a goal never put to the test
@@ -508,8 +515,12 @@ coloured by the flags of the API reviewer the runner then had.
 `replay.json`, with `run.json` and `transcript.md` for a reader — and is then
 a regression anyone can run without a key (`cloud.sh explore --replay
 playwright/explorations/<run>`). `memory-live-20261122` is the first: real
-narrator replies, the memory goal achieved. `exploreRunner.test.js` checks on
-every PR that the file is one the runner can take again and that it holds
+narrator replies, the memory goal achieved, one move rolled.
+`memory-live-20261123` is the re-run after issue #374's fixes: the same goal
+with four moves rolled, and no prompt older than its recording. A later run
+is kept beside an earlier one whose review an issue cites; say which is the
+current one. `exploreRunner.test.js` checks on
+every PR that each file is one the runner can take again and that it holds
 what its result claims (the fact stated in the first session, not named by
 the player in the second, and in the narrator's replies there); the replay
 itself needs Foundry and is on demand — adding it to the e2e workflow is the

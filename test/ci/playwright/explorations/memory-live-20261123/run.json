@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "charter": "memory",
+  "mode": "live",
+  "startedAt": "2026-11-23T02:57:56.934Z",
+  "finishedAt": "2026-11-23T03:01:45.660Z",
+  "commit": "81f7fb1c965600eed3d6b8f90da8721c3bb2a77a",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-03",
+    "notes": "Standard rates. A cache write is charged at 1.25 times input (lib/budget.mjs). Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1
+  },
+  "classification": "pass",
+  "because": "the narrator's answer in the second session holds what was established in the first",
+  "playerStopped": "the player stopped: Goal complete: after the second session began, the narrator said the brass compass that was Ilse's sits by the bowl.",
+  "goal": {
+    "status": "achieved",
+    "reason": "the narrator's answer in the second session holds what was established in the first",
+    "failingLayer": null,
+    "milestones": {
+      "sessionBegun": true,
+      "factEstablished": true,
+      "narratedAfter": true,
+      "sceneChanged": true,
+      "sessionEnded": true,
+      "sessionBegunAgain": true,
+      "askedLater": true
+    }
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "knownFailures": [],
+    "errors": 0
+  },
+  "budget": {
+    "caps": {
+      "actions": 30,
+      "calls": 100,
+      "minutes": 20,
+      "usd": 10
+    },
+    "stopped": null,
+    "actions": 12,
+    "calls": 41,
+    "minutes": 3.76,
+    "usd": 0.2178,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 12,
+        "usd": 0.0984,
+        "input": 35544,
+        "output": 2735,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "module": {
+        "calls": 29,
+        "usd": 0.1193,
+        "input": 33280,
+        "output": 7168,
+        "cacheRead": 70421,
+        "cacheWrite": 24133
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/memory-live-20261123-025756 node explore.mjs"
+}

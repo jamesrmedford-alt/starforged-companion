@@ -229,6 +229,13 @@ maintainer's go-ahead for the slice: 2026-11-22.
 - **The key stays in the runner.** It is sent in a header by the runner's
   process, never enters the world (the page holds a placeholder), is in no
   log the runner keeps, and is blanked from anything written.
+- **A later kept run sits beside an earlier one whose review is cited**
+  (2026-11-23). The re-run after issue #374's fixes is
+  `playwright/explorations/memory-live-20261123/`; the first run's folder
+  stays, because that issue's evidence is its annotated transcript and
+  scorecard. The newer one is the current replay — the older still
+  reproduces, with two prompts newer than its recording. Deleting the older
+  replay is the maintainer's call.
 - **A live run that went the whole way is kept as a replay** (the
   maintainer, 2026-11-22): `playwright/explorations/memory-live-20261122/`.
   It is evidence that can be run again, not a gate — CI does not replay it
