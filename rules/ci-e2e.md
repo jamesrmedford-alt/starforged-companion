@@ -525,6 +525,19 @@ own memory path carried the fact from one session to the next — it is a real
 check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
 scores `not-achieved` at `storage`. Run both after a change to the runner.
 
+**When a live run completes, the maintainer gets its full transcript,
+annotated** (the maintainer's standing instruction, 2026-11-23). Not the
+run's `transcript.md` alone: every message in order, and at the step each
+concerns — what the player was trying to do and the reason it gave; what the
+table did with the line (the classifier's reading, the move, the dice, the
+effects, what the GM's autopilot answered); the observer's findings; the
+reviewer's flags; time and cost. Then your own notes on **what went right
+and what went wrong, and why**, written after reading `actions.json`,
+`observer.json` and the prompts — including where the fault was the
+runner's, as it was in the first live run. Write it beside the run's
+evidence as `annotated-transcript.md` and send it; do not wait to be asked.
+A rehearsal or a replay does not need one.
+
 **Adding a charter.** A charter is `charters/<name>.json`: `persona`, `goal`
 and `playerNotes` (what the player model is told), `facts` (each with the
 `variants` that count as holding it; `required: false` for one that is

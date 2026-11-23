@@ -6,6 +6,76 @@ rejected.
 
 ---
 
+## The long haul: one long AI playthrough for the narrator and the mechanics together (issue #373) (2026-11)
+
+**Decision:** Scope [#373](https://github.com/jamesrmedford-alt/starforged-companion/issues/373)
+(PLANNED) — the first part of issue #302 slice E. One three-session,
+~90-action playthrough through the real UI by the exploration runner's AI
+player: 26 beats with checkable results, a ledger of eight facts probed at
+three distances and three layers, mechanical checks from the game's text
+after every action, four interruptions. The five open questions were settled
+by the maintainer on 2026-11-23 ("Go with your recommendation on each open
+question"):
+
+1. **Caps per run: 100 player actions, 400 model calls, 60 minutes, $15.** A
+   round is three runs. (The memory run: 12 actions, $0.34.)
+2. **The GM is fixed rules, no model.** A second model would add variance to
+   the half of the table that must hold still, and a rule replays.
+3. **Six decisive rolls are scripted; the rest are real; all are recorded.**
+   Luck alone does not reach every outcome path in one run.
+4. **A bonded connection takes what the move's text gives it** — see the next
+   entry.
+5. **One player first.** Two players and a phone-sized viewport after the
+   solo run is reproducible.
+
+And one instruction that applies to every live exploration run from now on,
+not only this scope: **when a playthrough completes, the maintainer gets its
+full transcript, annotated** — what the player did and why, what the table
+did with it, the observer's findings and the reviewer's flags at the step
+each concerns, and the notes of the agent that ran it on what went right and
+what went wrong (rules/ci-e2e.md → "AI exploration").
+
+**Rejected:**
+- *An AI GM.* Twice the cost, and two models improvising at each other
+  cannot be told apart when the table goes wrong.
+- *All real dice.* A run could pass without ever missing in a fight.
+- *Starting with two players.* Attribution failures and length failures
+  would arrive together.
+
+---
+
+## A vow fulfilled for a bonded connection marks no progress: it offers the bonded roll (2026-11)
+
+**Decision:** (maintainer, 2026-11-23, with issue #373's decision 4.) When a
+vow sworn to a connection is fulfilled and the bond with that connection is
+already forged, the fulfilment's payoff marks nothing on the relationship
+track. Its card offers one bonded Develop Your Relationship roll — +their
+rank; strong hit 2 ticks on the bonds legacy, weak hit +2 momentum, miss
+nothing; a strong hit with a match may raise the rank — once per vow, on the
+vow's payoff ledger like the deepen it replaces ("A vow deepens its
+connection once").
+
+**Reason:** it is the move's text. Develop Your Relationship lists
+"completing a quest to their benefit" among its triggers and says: "If you
+already share a bond with the connection, do not mark progress. Instead,
+roll +their rank to learn the impact on your legacy." The pipeline's own
+Develop Your Relationship already takes that path
+(`src/moves/developRelationship.js`, play-kit reference §3.3.5); the
+fulfilment's payoff did not, and marked the track of a bonded connection
+(known-issues VOW-DEEPEN-BONDED-MARKS-TRACK). Offered, not rolled for the
+player: a roll is the player's move (the #241 decision's reasoning for the
+won-fight prompt).
+
+**Not built yet** — slice 0 of issue #373.
+
+**Rejected:**
+- *Leave it: the marks are harmless.* The card tells the table a milestone
+  was marked where the rules give a roll for legacy.
+- *Roll it automatically at the fulfilment.* It would spend a roll, and
+  possibly a rank raise, the player did not ask for.
+
+---
+
 ## AI exploration: a player that only plays, an observer that only reads (2026-11)
 
 **Decision:** Issue #302 slice D (with #290 part 3) is
