@@ -43,7 +43,7 @@ import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock 
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
-import { formatNameChangesForSource } from '../factContinuity/nameChanges.js';
+import { formatNameChangesForSource, formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -7077,8 +7077,39 @@ export async function prewarmNarratorCache(campaignState) {
   }
 }
 
-async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null, reply = null }) {
+/**
+ * A call's user message with NAMES THE TABLE CHANGED added at its end, when
+ * the user message names an old name and nothing in the call tells the new
+ * one yet (issue #377 item 1). The system prompt carries the note wherever its
+ * own text, or this session, calls for it (narratorPrompt.js [6.4]), but every
+ * path builds its user message after its system prompt — so an old name only
+ * the user message holds went untold: a player's line, the recent scene, or
+ * a closing scene's earlier bookends ("(Tamsin Vey) Tamsin closes her ledger
+ * stall", from a session before the rename — the long haul's rehearsal,
+ * 2026-11-23). The user message is per call, so the cached blocks stay as
+ * they are. Pure but for the store read; never throws.
+ *
+ * @param {string} systemPrompt
+ * @param {string} userMessage
+ * @returns {string}
+ */
+function withNameChangesNoted(systemPrompt, userMessage) {
+  try {
+    const text = typeof userMessage === 'string' ? userMessage : '';
+    if (!text || String(systemPrompt ?? '').includes(NAME_CHANGES_HEADING) || text.includes(NAME_CHANGES_HEADING)) return userMessage;
+    const changes = storedCampaignState()?.nameChanges;
+    if (!Array.isArray(changes) || !changes.length) return userMessage;
+    const note = formatNameChangesBlock(changes, { texts: [text] });
+    return note ? `${text}\n\n${note}` : userMessage;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the name-change note was not added:`, err?.message ?? err);
+    return userMessage;
+  }
+}
+
+async function callNarratorAPI({ apiKey, systemPrompt, userMessage: message, model, maxTokens, label = null, reply = null }) {
   const blocks = splitNarratorSystemPrompt(systemPrompt);
+  const userMessage = withNameChangesNoted(systemPrompt, message);
   const body = {
     model,
     max_tokens: maxTokens ?? 16000,

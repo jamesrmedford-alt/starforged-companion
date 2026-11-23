@@ -749,7 +749,10 @@ the new one does not share, is in what the call sends: the cached blocks, the
 context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the recap's
 included; per-beat. Nothing in the stores is rewritten — the note is what says
 which name is current; the session summary's source carries the same note,
-`formatNameChangesForSource`) · [6.5] active-scene ledger
+`formatNameChangesForSource`; and a call whose user message alone names an old
+name — a player's line, the recent scene, a bookend's EARLIER list — has it
+added at that message's end, `narrator.js callNarratorAPI` →
+`withNameChangesNoted`) · [6.5] active-scene ledger
 (SCENE FRAME — with the scene's question, kept for the scene and marked
 when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /

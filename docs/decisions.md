@@ -6,6 +6,90 @@ rejected.
 
 ---
 
+## A changed name is told wherever the old one still reaches; the narrator's instructions are said as instructions; a solo character is alone with the ship (issue #377 items 1–5) (2026-11)
+
+**Decision:** the long haul's first round's action items (issue
+[#377](https://github.com/jamesrmedford-alt/starforged-companion/issues/377);
+the maintainer, 2026-11-23: "Please implement issue 377"), each by the
+option the issue recommended.
+
+- **Item 1 — a correction or a rename reaches the record (option 1, not
+  option 2).** A change of name is recorded once, on
+  `campaignState.nameChanges` (`factContinuity/nameChanges.js`), by the
+  table's paths alone: a GM's rename of a card in the sidebar (the Actor and
+  journal rename syncs) and a correction of a name — `!truth strike` +
+  `!truth set` on one subject, in either order, or the correction dialog's
+  Replace. The narrator is told under NAMES THE TABLE CHANGED, just above the
+  scene's truths, in every mode — the recap's included — while the change is
+  this session's or while its old name, whole or the part the new one does
+  not share ("Vey"), is in what the call sends; the session summary's source
+  carries the same note. A call whose user message alone names an old name —
+  a player's line, the recent scene, a closing scene's earlier bookends — has
+  the note added at the end of that message (`callNarratorAPI`): every path
+  builds its user message after its system prompt, and the long haul's
+  rehearsal found a closing scene told "(Tamsin Vey) …" a session after the
+  rename, with nothing to say she was Okoro now. **Rejected: rewriting the old name in the stores**
+  (option 2) — snapshot lines, lore titles, truths' subjects, plan subjects,
+  clock labels, Chronicle entries. It touches every store, and a store missed
+  is the same defect again; the note is the mechanism a corrected truth
+  already had, carried past its scene. The stores still hold the old name —
+  a clock card the table reads still says "Ashen Wake" — and the issue's
+  option 3 (both) is open if the note alone does not hold.
+  - **Only a name said to be one is a name change.** A strike + set is read
+    as a rename only when the words before the name say so ("named",
+    "called", "known as", "goes by"…): "docked at Bleakhold" corrected to
+    "docked at Vigil Reach" is a correction of where, not a rename, and saying
+    "Bleakhold is now Vigil Reach" would be false. A name and a longer form of
+    it ("Tamsin", "Tamsin Vey") are one name.
+  - **Not recorded: a narration's reveal of a placeholder**, nor the X-Card's
+    take-back of one. The narrator named them itself, and the reveal is the
+    X-Card's to undo; both write the record before the card's name, so the
+    sidebar sync sees nothing to follow.
+  - **The old name is no alias, and no former name.** The note says so in
+    those words. A GM's rename is read as the table's correction of who
+    someone is, not an in-story change of name — the long haul's case. A
+    table that means an in-story change says so in play, where the narrator
+    reads it.
+  - The field is store-owned: a move's record keeps the stored value
+    (`persistResolution.js` STORE_OWNED_FIELDS), so a move begun before a
+    rename does not put the old list back.
+- **Item 2 — the beat's shape (option 1).** The five shapes are said of the
+  narration ("Its first sentence is about someone other than the acting
+  character…") under "How this narration is built:", and the line says it is
+  an instruction never to be written. "Shape: Open on…" read as a director's
+  note and came back as prose twice in 28 lines. Option 2 (strip a leading
+  "Open on…" before posting) is kept for if it recurs.
+- **Item 3 — an offered move (option 1).** SUGGESTED MOVE says the move has
+  not been made and nothing it would decide has happened — narrate to its
+  threshold. The no-move rule says nothing on a character's sheet changes in
+  narration (no wound treated, no supplies gained, no damage repaired, no
+  progress), which is the line the medkit crossed: no move was offered there,
+  and the old rule spoke only of "risky" actions.
+- **Item 4 — the opening scene (options 1 and 3; #374 A4's decision and
+  A11).** With no other PC registered the galley scene is the character alone
+  with the ship, whose noises and habits are the joke: no crew is invented,
+  present or absent, and the character does not imagine one. No stat line is
+  sent, and a stat is never to be stated. The mode's role text says the same.
+  #374 A4's other half — a line with the command vehicle that nobody aboard
+  outranks the player characters — is not built: no crew is invented now to
+  outrank them.
+- **Item 5 — scenes of one kind (a fix to try).** Each bookend's user message
+  lists the newest three earlier ones of its kind, as already used
+  (`session/vignetteHistory.js`, read from the chat's cards; a closing's card
+  names whom it featured, `vignetteNpc`), and the opening's fixed example
+  jokes are gone (#374 A3). The closing scene still picks its NPC by the same
+  priority: with one NPC of weight it is her again, at something else.
+- **Items 6–8 — not yet.** Each needs more samples, which the round's next
+  long haul supplies; none was changed.
+
+**The runner, with it.** The ledger's correction mark knows the new note (a
+prompt that carries "Ashen Wake" beside NAMES THE TABLE CHANGED says it was
+corrected), and the review counts what the narrator was told and wrote
+anyway — an instruction written as prose, a stat read aloud, a crew role in
+an opening (`slipsOf`).
+
+---
+
 ## What a session's turning points are kept by; a summary cut at its cap; a cost left owed is named; "combat" is any immediate physical danger (issue #374 A5, A12, A10, A9) (2026-11)
 
 **Decision:** four items the third live run left open (issue
