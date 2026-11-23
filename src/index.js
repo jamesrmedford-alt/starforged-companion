@@ -6195,8 +6195,18 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 // is gone deepens nobody — never another card of that name. Without one (a
 // link made by name alone) the name finds it, as before.
 //
-// @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
-export async function deepenLinkedConnection(connectionName, marks, { connectionId = null } = {}) {
+// A connection whose bond is already forged is not marked (issue #373
+// decision 4; decisions.md → "A vow fulfilled for a bonded connection marks no
+// progress: it offers the bonded roll"). Develop Your Relationship's own text:
+// "If you already share a bond with the connection, do not mark progress.
+// Instead, roll +their rank to learn the impact on your legacy." So the step
+// is the offer of that roll (offerBondedDevelopRoll), to `actorId` — the
+// vow's roller — and it lands when the offer is posted: every caller records
+// it on the vow's ledger then, so a vow offers it once. The payoff marked the
+// forged bond's track and said so (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK).
+//
+// @returns {Promise<{ ok: boolean, bonded?: boolean, reason?: string, error?: string }>}
+export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null } = {}) {
   try {
     const target = await findOpenConnection(connectionName, connectionId);
     if (!target?.__hostId) {
@@ -6204,6 +6214,7 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
       // By its card's id, a rename is not why: the card is gone or severed.
       return { ok: false, reason: connectionId ? "connection-gone" : "not-found" };
     }
+    if (target.bonded === true) return await offerBondedDevelopRoll(target, { actorId });
     const conn = await import("./entities/connection.js");
     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
     await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
@@ -6212,6 +6223,36 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: errText(err) };
   }
+}
+
+/**
+ * A vow's deepen for a connection already bonded: no progress, one roll
+ * (deepenLinkedConnection). The roll is the pipeline's own bonded Develop
+ * Your Relationship — +their rank; a strong hit 2 ticks on the bonds legacy,
+ * a weak hit +2 momentum, a strong hit with a match a rank raise
+ * (developRelationship.js) — offered, not rolled for the player: a roll is
+ * the player's move. The offer is a connection picker with this connection
+ * alone, naming the roller, so its pick is claimed once and rolled as them
+ * (cardActions.js applyConnectionPick). An offer that does not post is not
+ * given: it reports "refused", and the step goes on the GMs' payoff card,
+ * whose Retry offers it again.
+ *
+ * @param {Object} connection — findOpenConnection's record, with `__hostId`
+ * @param {{ actorId?: string|null }} [opts] — the vow's roller
+ * @returns {Promise<{ ok: boolean, bonded?: boolean, reason?: string }>}
+ */
+async function offerBondedDevelopRoll(connection, { actorId = null } = {}) {
+  const name = connection.name ?? "your connection";
+  const card = await postConnectionPickerCard([connection], "develop", {
+    actorId,
+    prompt: `Your vow served ${name}, and you already share a bond: no progress is marked. `
+      + `Roll Develop Your Relationship (+their rank) to learn the impact on your legacy.`,
+  });
+  if (!card) {
+    console.warn(`${MODULE_ID} | deepen connection: the Develop Your Relationship offer for "${name}" did not post — not recorded as given.`);
+    return { ok: false, reason: "refused" };
+  }
+  return { ok: true, bonded: true };
 }
 
 /**
@@ -6230,12 +6271,21 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
  */
 export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, connectionId = null, marks = 1 } = {}) {
   const copies = payoffVowCopies({ vowId, vowName, actorId });
+  // A card posted before its vow's link carried the card's id reads it off the vow.
+  const linkId = connectionId ?? linkedConnectionIdOf(copies);
   if (payoffStepLanded(copies, "deepen")) {
-    await postDeepenAlreadyPaidCard(connectionName, vowName);
+    // A bond forged by now may have had its roll offered, not its track
+    // marked: the note says neither.
+    const target = await findOpenConnection(connectionName, linkId).catch(err => {
+      console.debug(`${MODULE_ID} | deepen already paid: the connection could not be read — the note names it as the card does:`, err?.message ?? err);
+      return null;
+    });
+    await postDeepenAlreadyPaidCard(target?.name ?? connectionName, vowName, { bonded: target?.bonded === true });
     return { ok: true, skipped: true, reason: "already-deepened" };
   }
-  // A card posted before its vow's link carried the card's id reads it off the vow.
-  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: connectionId ?? linkedConnectionIdOf(copies) });
+  // A bond already forged is offered its roll instead, as the card's roller's
+  // (deepenLinkedConnection): recorded the same way, so the vow offers it once.
+  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId });
   if (res?.ok) await recordPayoffStep(copies, "deepen");
   return res;
 }
@@ -6276,10 +6326,14 @@ function linkedConnectionIdOf(copies) {
   return null;
 }
 
-async function postDeepenAlreadyPaidCard(connectionName, vowName) {
+async function postDeepenAlreadyPaidCard(connectionName, vowName, { bonded = false } = {}) {
+  const who = `<strong>${escapeChatHtml(connectionName ?? "your connection")}</strong>`;
+  const vow = `&ldquo;${escapeChatHtml(vowName ?? "this vow")}&rdquo;`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(connectionName ?? "your connection")}</strong> has already deepened for &ldquo;${escapeChatHtml(vowName ?? "this vow")}&rdquo; — a vow deepens it once.</p></div></div>`,
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 ${bonded
+        ? `${vow} has already counted for your bond with ${who} — a vow does so once.`
+        : `Your bond with ${who} has already deepened for ${vow} — a vow deepens it once.`}</p></div></div>`,
       flags:   { [MODULE_ID]: { deepenBondCard: true } },
     });
   } catch (err) {
@@ -6721,9 +6775,13 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
       await settle("legacy", await runLegacyStep("quests", legacyTicks), { track: "quests", ticks: legacyTicks });
     }
 
-    // Deepen the linked connection (scaled by the vow's rank).
+    // Deepen the linked connection (scaled by the vow's rank) — or, its bond
+    // already forged, offer the roller its Develop Your Relationship roll
+    // (deepenLinkedConnection; issue #373 decision 4). The roller, else the
+    // character holding the vow.
     if (connectionName && owed("deepen")) {
-      await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId }), { connectionName, connectionId, marks });
+      const rollerId = actorId ?? allCopies.find(({ item: i }) => i === item)?.actor?.id ?? null;
+      await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId, actorId: rollerId }), { connectionName, connectionId, marks });
     }
 
     // Grant the promised reward (one-time; scaled by outcome). The fulfil path
@@ -7177,9 +7235,15 @@ async function describePayoffFailure(f, { vowName, vowId = null, actorId }) {
       }
       case "deepen": {
         const target = await findOpenConnection(f.connectionName, f.connectionId ?? null);
-        const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
         // Named as its card is called now: found by its id, it may have been renamed since.
-        return `Your bond with ${escapeChatHtml(target?.name ?? f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
+        const who = escapeChatHtml(target?.name ?? f.connectionName ?? "your connection");
+        // A bond already forged takes no progress: the step is the offer of
+        // its Develop Your Relationship roll (deepenLinkedConnection).
+        if (target?.bonded === true) {
+          return `Your bond with ${who}: the offer of a Develop Your Relationship roll (the bond is already forged, so no progress is marked) — ${why}.`;
+        }
+        const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
+        return `Your bond with ${who}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
       }
       case "suffer": {
         // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
@@ -7486,8 +7550,10 @@ async function runPayoffStep(s, card, copies) {
     }
     case "deepen":
       // A step recorded before the link carried its card's id reads it off the vow.
+      // A bond forged by now is offered its roll, as the card's roller's.
       return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1),
-        { connectionId: (typeof s.connectionId === "string" && s.connectionId ? s.connectionId : null) ?? linkedConnectionIdOf(copies) });
+        { connectionId: (typeof s.connectionId === "string" && s.connectionId ? s.connectionId : null) ?? linkedConnectionIdOf(copies),
+          actorId: typeof card?.actorId === "string" && card.actorId ? card.actorId : null });
     case "reward":
       if (!copies.length) return VOW_GONE;
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
@@ -8026,13 +8092,16 @@ async function postMilestonePickerCard(vows, actorId, marks = 1) {
  * null when there was nothing to offer or the post failed. `actorId` is the
  * move card's roller: the pick is their follow-up, rolled as them (issue #342
  * Z56 — the picker named no roller, so the pick spoke as its presser).
+ * `prompt` replaces "Which connection?" — plain text, said as the card's
+ * reason: a vow's payoff offering a bonded connection its Develop Your
+ * Relationship roll says why no progress was marked (offerBondedDevelopRoll).
  *
  * @param {Array<Object>|null} connections — records with `__hostId`
  * @param {"develop"|"forge"} action
- * @param {{ actorId?: string|null }} [opts]
+ * @param {{ actorId?: string|null, prompt?: string|null }} [opts]
  * @returns {Promise<ChatMessage|null>}
  */
-export async function postConnectionPickerCard(connections, action, { actorId = null } = {}) {
+export async function postConnectionPickerCard(connections, action, { actorId = null, prompt = null } = {}) {
   if (!Array.isArray(connections)) connections = await activeConnectionRecords();
   const eligible = action === "forge"
     ? connections.filter(c => !c.bonded)
@@ -8049,7 +8118,8 @@ export async function postConnectionPickerCard(connections, action, { actorId = 
   try {
     return await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>${label}</strong>` +
-        `<p>Which connection?</p><div class="sf-milestone-picker">${rows}</div></div>`,
+        `<p>${typeof prompt === "string" && prompt.trim() ? escapeChatHtml(prompt.trim()) : "Which connection?"}</p>` +
+        `<div class="sf-milestone-picker">${rows}</div></div>`,
       // choices: what the GM-side "connection.pick" handler validates a
       // relayed click against (src/moves/cardActions.js).
       flags: { [MODULE_ID]: {

@@ -545,7 +545,10 @@ name, `strict` (known-issues VOW-CONNECTION-LINK-BY-NAME; the link's
 writers, mirror and readers are mapped in `connection-flow.md` §4). A link
 whose connection is severed or deleted
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
-bonded or active connection, DEEPEN-LINK-FALLBACK) +
+bonded or active connection, DEEPEN-LINK-FALLBACK; a connection **already
+bonded** is not marked — the step is the offer of its Develop Your
+Relationship roll, +their rank, to the roller, once per vow: see "A deepen for
+a connection already bonded" below) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`; the
 outcome it was granted at kept as `reward.grantedAt`, so a weak-hit win burned
@@ -640,6 +643,28 @@ flag, paid again). The native path, like a Retry, skips any step the vow's
 `fulfilPayoff` ledger records as landed. The native Forge a Bond payoff
 (`payForgedBondNative`) claims its connection the same way.
 
+**A deepen for a connection already bonded** (issue #373 decision 4;
+known-issues VOW-DEEPEN-BONDED-MARKS-TRACK; decisions.md → "A vow fulfilled
+for a bonded connection marks no progress: it offers the bonded roll").
+Develop Your Relationship lists "completing a quest to their benefit" among
+its triggers and says "If you already share a bond with the connection, do
+not mark progress. Instead, roll +their rank to learn the impact on your
+legacy." So `deepenLinkedConnection` — the one function all three deepen
+paths call (the fulfilment's payoff, the won-fight card's 🤝, a payoff card's
+Retry) — checks the connection it found:
+
+| | |
+|---|---|
+| not bonded | `markRelationshipProgress(hostId, marks)` + the "+N milestones of relationship progress" card (`postDeepenBondCard`), as before |
+| bonded | no mark and no such card: `offerBondedDevelopRoll` posts a **connection picker with that connection alone** (`postConnectionPickerCard([connection], "develop", { actorId, prompt })` — `flags.connectionPicker`, `choices: [{ hostId, name }]`, `actorId` = the vow's roller: the fulfilment's roller, else the character holding the vow; the won-fight card's or the payoff card's `actorId`), whose text says why no progress was marked. Returns `{ ok: true, bonded: true }` |
+| the roll | the picker's own path, unchanged: the roller's player (or a GM) presses the one choice → relay `connection.pick` → `cardActions.applyConnectionPick` claims the card (`resolved`) and posts the forced Develop Your Relationship as the roller, `forcedMoveTargetId` = the connection's card → `enrichBondedDevelop` makes it an action roll +rank → `applyDevelopRelationship`: strong hit 2 ticks on the bonds legacy, weak hit +2 momentum to the roller, a strong hit with a match raises the rank (`connection-flow.md` §2) |
+| once per vow | the step "lands" when the offer is posted: each caller records `fulfilPayoff.deepen` on every copy of the vow as it does for a mark, so the other deepen path finds it there and offers nothing (`deepenVowConnectionOnce`'s note then reads "has already counted for your bond with …"). The roll itself is once by the picker's claim |
+| the offer does not post | `{ ok: false, reason: "refused" }` — not recorded; the step goes on the GMs' payoff card (its line reads "the offer of a Develop Your Relationship roll (the bond is already forged, so no progress is marked)"), and its Retry runs `deepenLinkedConnection` again with the card's `actorId` |
+
+Offered, not rolled for the player: a roll is the player's move. Before the
+decision the bonded connection's track was marked (a dangerous connection at
+6 boxes went to 10 on a formidable vow) and the card said its bond deepened.
+
 **A payoff step that does not land** (issue #306 R04, option 2):
 `payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
 Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
@@ -650,7 +675,8 @@ PC's sheet on its own; one that is refused is an `xp` step of its own,
 for that PC alone, since re-running the legacy would add its ticks again,
 issue #309 N06; the pipeline's own fulfil marks its working copy, whose box
 XP is paid once `persistResolution`'s write lands — issue #326 W52), the connection deepen
-(`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
+(`deepenLinkedConnection` — for a connection already bonded, the offer of its
+roll: above), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is
 recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`) — the

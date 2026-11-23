@@ -1,0 +1,18 @@
+Defect: issue #373 slice 0 — a bonded Develop Your Relationship rolls the action die alone, without the connection's rank (issue #314 Q06's defect: the move's text is "roll +their rank … troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5")
+Tests: tests/unit/generatedSequences.test.js
+Catches: in a world with bonded connections
+Catches: a connection bonded in play: developed again it is a roll +her rank
+
+diff --git a/src/moves/statEnrichment.js b/src/moves/statEnrichment.js
+index 66b97eb0..3a131f8f 100644
+--- a/src/moves/statEnrichment.js
++++ b/src/moves/statEnrichment.js
+@@ -226,7 +226,7 @@
+   const roll = bondedDevelopRoll(target);
+   if (!roll) return { connection: target, bonded: false, adds: 0 };
+   interpretation.statUsed  = roll.statUsed;
+-  interpretation.statValue = roll.statValue;
++  interpretation.statValue = 0;   // the rank's adds dropped: the roll is the action die alone
+   // The schema lists no stat, so the move resolves with no roll (schemas.js
+   // moveRollKind "none"); bonded, it is an action roll +rank — said here, where
+   // the stat is made, for the resolver (issue #316 T05).

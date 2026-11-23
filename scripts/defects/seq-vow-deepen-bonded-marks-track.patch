@@ -1,0 +1,20 @@
+Defect: issue #373 decision 4 (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK) — a vow's deepen marks the relationship track of a connection whose bond is already forged, as it did before the decision; the move's text gives a bonded connection a roll +their rank and no progress
+Tests: tests/unit/generatedSequences.test.js tests/unit/vowDeepenBondedOffersRoll.test.js
+Catches: in a world with bonded connections
+Catches: a vow fulfilled for a connection already bonded marks nothing on her track
+Catches: marks nothing on the relationship track, and offers the roller one bonded Develop Your Relationship roll
+Catches: the won-fight card's 🤝 first offers the roll
+
+diff --git a/src/index.js b/src/index.js
+index d446457b..f2058d51 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -6214,7 +6214,7 @@
+       // By its card's id, a rename is not why: the card is gone or severed.
+       return { ok: false, reason: connectionId ? "connection-gone" : "not-found" };
+     }
+-    if (target.bonded === true) return await offerBondedDevelopRoll(target, { actorId });
++    void offerBondedDevelopRoll; void actorId;   // a bond already forged is marked like any other
+     const conn = await import("./entities/connection.js");
+     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
+     await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));

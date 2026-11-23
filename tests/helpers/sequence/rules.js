@@ -33,6 +33,30 @@
  *     those numbers is written for a won fight's marks on its vow; nothing
  *     says a weak hit on the vow itself deepens less, so it does not here.
  *     Once per vow (decisions.md → "A vow deepens its connection once").
+ *   - A connection already bonded — Develop Your Relationship's own text:
+ *     "If you already share a bond with the connection, do not mark progress.
+ *     Instead, roll +their rank to learn the impact on your legacy:
+ *     troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5. On a
+ *     strong hit, mark 2 ticks on your bonds legacy track. On a strong hit
+ *     with a match, you may also envision how recent events bolstered your
+ *     connection's standing and raise their rank by one (if not already
+ *     epic). On a weak hit, take +2 momentum. On a miss, take no lasting
+ *     benefit." The table raises the rank on a strong hit with a match
+ *     (decisions.md → "Develop Your Relationship bond legacy": "a strong hit
+ *     with a match raises the connection's rank by one").
+ *     tests/unit/sequenceRules.test.js reads those sentences from the
+ *     vendored move text and compares.
+ *   - "Completing a quest to their benefit" is one of that move's triggers,
+ *     so a vow fulfilled for a connection already bonded marks nothing on its
+ *     track: the table offers that roll instead, once per vow (decisions.md →
+ *     "A vow fulfilled for a bonded connection marks no progress: it offers
+ *     the bonded roll").
+ *   - An action roll: the action die plus what is added, against the two
+ *     challenge dice; "the action score caps at 10", "ties go to the
+ *     challenge dice", and two challenge dice showing one value are a match
+ *     (docs/rules-reference/rulebook-summary.md). Momentum below zero
+ *     cancels a matching action die; nothing here takes momentum below its
+ *     starting +2, so the model has no need of it.
  *   - A session: Begin a Session with a vignette spotlighted, "all players
  *     take +1 momentum"; End a Session with a focus noted for next time,
  *     "make note of it and take +1 momentum". Momentum is never above +10
@@ -128,6 +152,40 @@ export function deepen(ticks, connectionRank, vowRank) {
   let out = ticks;
   for (let i = 0; i < DEEPEN_MARKS[vowRank]; i++) out = markProgress(out, connectionRank);
   return out;
+}
+
+/** What a bonded Develop Your Relationship adds to its roll, by the connection's rank. */
+export const BOND_ROLL_ADDS = Object.freeze({ troublesome: 1, dangerous: 2, formidable: 3, extreme: 4, epic: 5 });
+
+/** What that roll pays: bonds legacy ticks on a strong hit, momentum on a weak hit. */
+export const BONDED_DEVELOP_LEGACY_TICKS = 2;
+export const BONDED_DEVELOP_MOMENTUM     = 2;
+
+export const ACTION_SCORE_MAX = 10;
+
+/** An action roll's score: the action die plus what is added, never above 10. */
+export function actionScore(actionDie, adds) {
+  return Math.min(ACTION_SCORE_MAX, actionDie + adds);
+}
+
+/** Both challenge dice show one value. */
+export const isMatch = (challenge) => challenge[0] === challenge[1];
+
+/**
+ * A bonded Develop Your Relationship: roll +their rank. No progress is
+ * marked whatever the dice say.
+ *
+ * @returns {{ outcome: "strong_hit"|"weak_hit"|"miss", bondsTicks: number, momentum: number, rank: string }}
+ *   what it marks on the bonds legacy, the momentum its roller takes, and the connection's rank after it
+ */
+export function bondedDevelop(rank, actionDie, challenge) {
+  const outcome = outcomeOf(actionScore(actionDie, BOND_ROLL_ADDS[rank]), challenge);
+  return {
+    outcome,
+    bondsTicks: outcome === "strong_hit" ? BONDED_DEVELOP_LEGACY_TICKS : 0,
+    momentum:   outcome === "weak_hit" ? BONDED_DEVELOP_MOMENTUM : 0,
+    rank:       outcome === "strong_hit" && isMatch(challenge) ? rankAbove(rank) : rank,
+  };
 }
 
 /** A recommit: the lower challenge die's boxes cleared, the rank raised by one. */

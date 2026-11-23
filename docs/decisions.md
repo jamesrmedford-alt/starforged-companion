@@ -148,7 +148,17 @@ fulfilment's payoff did not, and marked the track of a bonded connection
 player: a roll is the player's move (the #241 decision's reasoning for the
 won-fight prompt).
 
-**Not built yet** — slice 0 of issue #373.
+**Built (2026-11-23, slice 0 of issue #373).** The check is in
+`deepenLinkedConnection`, the one function every deepen calls, so the
+fulfilment's payoff, the won-fight card's 🤝 and a payoff card's Retry all
+take it: a connection already bonded is not marked, and the vow's roller is
+offered the roll on a connection picker that lists that connection alone and
+says why no progress was marked. The pick is the pipeline's own bonded
+Develop Your Relationship. The step is recorded on the vow's ledger when the
+offer is posted — whichever of the fulfilment and the won-fight card comes
+first offers it, the other offers nothing. An offer the world refuses is not
+recorded: it goes on the GMs' payoff card, whose Retry offers it. The
+won-fight card's button keeps its label.
 
 **Rejected:**
 - *Leave it: the marks are harmless.* The card tells the table a milestone
@@ -466,16 +476,23 @@ choices below were made while building them.)
   numbers is written for a won fight's marks on its vow and is not applied
   here. Swearing mid-sequence stays out: the vow card's own lifecycle is not
   written down anywhere but the code, and a model of it would be the code's
-  (known-issues SEQUENCE-LINK-NOT-GENERATED). A vow sworn to a connection
-  already bonded is not fulfilled in a sequence — nothing says what a bonded
-  relationship takes from it (SEQUENCE-COMMANDS-LEFT).
+  (known-issues SEQUENCE-LINK-NOT-GENERATED). A connection already bonded
+  is generated since 2026-11-23 (issue #373 slice 0): Develop Your
+  Relationship with it is a roll +their rank, and a vow fulfilled for it
+  marks no progress and leaves its roller that roll, once — both from the
+  move's text.
 - **A corpus that exercised nothing has passed nothing.** Each fixed corpus
   counts every kind of command, each roll's outcome and each press by two,
   and fails if a kind never ran.
-- **Two fixed-seed corpora on a pull request; broader ones on demand.** Seed
-  302: 100 sequences of vows and connections, and 25 with sessions, reloads
+- **Three fixed-seed corpora on a pull request; broader ones on demand.** Seed
+  302: 100 sequences of vows and connections, 25 with sessions, reloads
   and dropped connections among them (a reload boots a page, a quarter of a
-  second each). `SEQUENCE_RUNS`, `SEQUENCE_TABLE_RUNS`, `SEQUENCE_SEED`,
+  second each), and 100 in a world where half the connections start bonded,
+  with a bonded connection's roll, the roll a fulfilled vow leaves, and
+  reloads (`SEQUENCE_BONDED_RUNS`). It is a corpus of its own because adding
+  a command to the first two changes every sequence their seed makes — the
+  first attempt did, and one defect patch stopped being caught.
+  `SEQUENCE_RUNS`, `SEQUENCE_TABLE_RUNS`, `SEQUENCE_SEED`,
   `SEQUENCE_PATH` and `SEQUENCE_MAX_COMMANDS` widen them or replay a failure.
   A reduced failure is written out as an ordinary test in the same file; the
   corpus only finds.
@@ -493,8 +510,9 @@ choices below were made while building them.)
   (`scripts/defects/seq-*.patch`, `docs/testing/fix-sensitivity.md`): the vow
   resolver forgetting the roller (#301 B02's defect), the picked connection's
   id dropped (#301 B01's), a picker never claimed, Begin a Session's start
-  effects unguarded (#300 F11's), and every world load starting a new
-  session. The first version of the commands caught one of the first three;
+  effects unguarded (#300 F11's), every world load starting a new
+  session, a bonded connection's track marked by a fulfilled vow, and a
+  bonded roll made without the rank. The first version of the commands caught one of the first three;
   namesake connections in the starting world and the press by two came from
   the two it missed.
 - **A defect the sequences' probes find is recorded and keyed, not fixed
