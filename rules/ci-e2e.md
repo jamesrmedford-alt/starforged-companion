@@ -525,18 +525,54 @@ own memory path carried the fact from one session to the next — it is a real
 check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
 scores `not-achieved` at `storage`. Run both after a change to the runner.
 
-**When a live run completes, the maintainer gets its full transcript,
-annotated** (the maintainer's standing instruction, 2026-11-23). Not the
-run's `transcript.md` alone: every message in order, and at the step each
-concerns — what the player was trying to do and the reason it gave; what the
-table did with the line (the classifier's reading, the move, the dice, the
-effects, what the GM's autopilot answered); the observer's findings; the
-reviewer's flags; time and cost. Then your own notes on **what went right
-and what went wrong, and why**, written after reading `actions.json`,
-`observer.json` and the prompts — including where the fault was the
-runner's, as it was in the first live run. Write it beside the run's
-evidence as `annotated-transcript.md` and send it; do not wait to be asked.
-A rehearsal or a replay does not need one.
+**Every live run ends with a review** (the maintainer's standing instruction,
+2026-11-23; issue #373, modelled on issue #374). You made the run: you read
+it, when it completes, without being asked. A run whose evidence is not read
+has bought a verdict and little else — the first run that went the whole way
+reported "achieved" and one flag, and eleven of the twelve things learned
+from it came from reading its prompts and records afterwards. Four parts:
+
+1. **The annotated transcript** (`annotated-transcript.md`, beside the run's
+   evidence, and sent). Every message in order; at the step each concerns,
+   what the player was trying to do and the reason it gave, what the table
+   did with the line (the pacing read, the move, the dice, the effects, what
+   each helper wrote, what the GM's autopilot answered), the observer's
+   findings, the reviewer's flags, time and cost. Then your own notes on
+   **what went right and what went wrong, and why** — where the fault was the
+   runner's, as in the first live run, saying so.
+2. **The scorecard** (`scorecard.md`). One row per dimension with its result,
+   its basis and how far to trust it — goal, mechanics, continuity in what
+   the narrator said and in what the helpers wrote, agency, friction,
+   narrator quality, speed, length, cost — then the detail. Say what was
+   never exercised and what the run did not record.
+3. **The action items, as a GitHub issue**: one per round, extended after
+   each run of it, and one for a run made alone. Each item with its quote,
+   its cause as far as the code or a prompt shows it, the step and file that
+   show it, and whether there is **enough data to fix it** — *enough* (the
+   cause is readable: give options, a recommendation and what would prove
+   the fix), *a fix can be proposed and its effect must be measured* (say
+   what to measure), or *not yet* (say what would supply the samples). Every
+   finding also goes in `docs/known-issues.md`. The review fixes nothing.
+4. **What it cost and what it returned.** What was spent, split between the
+   module's own calls, the AI player and the reviewer; each thing learned,
+   of what kind, how it was found, and whether it needed a live model at
+   all; what could have been had for nothing; where the next dollar should
+   and should not go.
+
+Check your counts against the evidence before you send them: the first
+review reported three draft cards where the run had two.
+
+A rehearsal or a replay does not need a review.
+
+**A live run is paid for; these decide whether one is made** (issue #373,
+"Spending rules"). Say in writing what the run is to answer before it runs.
+Do the free checks first — a rehearsal, and a read-through of the prompts it
+produces: what each helper is and is not sent is visible there for nothing.
+Do not run while a finding with a fix ready is open on the path the run
+would walk. Do not buy the same session twice except to verify a fix against
+it. After each run of a round, say whether the next is worth making. And
+every run leaves something that costs nothing to use again: a replay, and a
+regression for each defect it found.
 
 **Adding a charter.** A charter is `charters/<name>.json`: `persona`, `goal`
 and `playerNotes` (what the player model is told), `facts` (each with the

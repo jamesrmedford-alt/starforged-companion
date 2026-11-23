@@ -26,10 +26,10 @@ None of these changed the run's result. The run's own class caught only the firs
 
 1. **The campaign recap written at End a Session misstates the story** (a8). It says the campaign is "set in a galley aboard a pirate ship idling at the edge of a dead beacon's range", calls a crewmate "an intruder", has lost that the compass was Ilse's, and says Bleakhold Station "sits nearby" when the ship had just docked there. The pirate ship is the closing vignette's cutaway to the sector's raider: that vignette's scene frame was saved as the campaign's active scene, and the recap, written straight after, was given it as binding fact. This recap is cached and was in the next session's opening prompt. **This is the finding I would look at first.**
 2. **The Chronicle's entries are weak, and they are all the recap is given** (a3, a4, a6). The scribe wrote "the character" for Mira, called a crewmate "a bootsteps-and-chewing intruder", recorded the narrator's invented quote instead of what the player established, and rated the session's only roll and arrival as "scene" — below the "notable" floor, so it was not kept.
-3. **The second session's opening repeats the first's** (a10) — the reviewer's flag. Same burnt sugar, same Dree in the laundry with her socks, same Okonkwo in the crawlspace with the coolant pump.
+3. **The second session's opening repeats the first's** (a10) — the reviewer's flag. Not the wording (2 of 164 five-word runs are shared) but the content: the same burnt sugar, and both invented crewmates doing the same thing — Dree in the laundry with her socks, Okonkwo in the aft crawlspace with the coolant pump. The instructions for this scene give "the laundry" as their own example, and carry last session's summary, which ends on exactly those two jokes.
 4. **The narrator put a captain over the player's own ship** (a4, a5). Mira flies the Kobayashi IV alone in this seed; by the second line there is a captain, a "she", who wants explanations.
 5. **The narrator spoke for the character and grew the keepsake into a plot device** (a3, a4): it gave Mira a line she did not say, made the compass point at Hollow Spire, and one line later there was a second compass "on the bridge console" doing the same.
-6. **Three draft cards in three lines** (a3–a5), one of them for "Unnamed crew voice". Each waits on a GM.
+6. **The GM is asked about people who are not there** (a3, a4): two draft cards in five lines of play — Ilse, an absent sister, and "Captain", a title with no name. (The detector also proposed "Unnamed crew voice"; the module did not post that one, which is right.)
 7. **The session summary muddles who cooked** (a8): "The crew's galley cook … invited the crew to dinner" — Mira made the toffee. It did keep the compass and whose it was, which is probably what carried the fact.
 8. **A weakness of the test itself** (a10, a11): because the opening scene restated the fact, the question's prompt had it from the scene just played as well as from memory. The opening scene is the real evidence; the question proves less than it looks.
 
@@ -136,7 +136,7 @@ Window **Begin a Session** — no fields changed; pressed **Begin**.
 - fact **compass** now also stored in: actor "Hollow Spire" → settlement; journal "Chronicle — Mira Kestrel" → page "Chronicle" (flags)
 
 
-**📝 Note.** **Wrong:** "Captain wants to know why the compass on the bridge console just swung toward Hollow Spire." Two inventions in one sentence: a captain who is not the player's character, and a second compass. The detector made lore of it ("Compass swings toward Hollow Spire") and the settlement's own record now mentions it.
+**📝 Note.** **Wrong:** "Captain wants to know why the compass on the bridge console just swung toward Hollow Spire." Two inventions in one sentence: a captain who is not the player's character, and a second compass. The detector made lore of it ("Compass swings toward Hollow Spire") and the settlement's own record now mentions it. Nothing the narrator was sent says who commands the Kobayashi IV: its instructions say "solo campaign" and name the ship, and the word captain appears nowhere in them.
 
 **📝 Note.** The scribe's "intruder" is the crewmate from the corridor. This entry was rated notable, so it is one of the two the recap was built from.
 

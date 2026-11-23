@@ -28,12 +28,23 @@ question"):
 5. **One player first.** Two players and a phone-sized viewport after the
    solo run is reproducible.
 
-And one instruction that applies to every live exploration run from now on,
-not only this scope: **when a playthrough completes, the maintainer gets its
-full transcript, annotated** — what the player did and why, what the table
-did with it, the observer's findings and the reviewer's flags at the step
-each concerns, and the notes of the agent that ran it on what went right and
-what went wrong (rules/ci-e2e.md → "AI exploration").
+6. **Every live run ends with a review**, made by the agent that ran it,
+   unasked: the full transcript annotated with what went right and wrong; a
+   scorecard across mechanics, continuity, agency, friction, narrator
+   quality, speed and cost; the action items as a GitHub issue, each with
+   its evidence and whether there is enough data to fix it; and what the run
+   cost and returned. This applies to every live exploration run from now
+   on, not only this scope (rules/ci-e2e.md → "AI exploration"). The first
+   is issue #374, of the memory charter's second live run.
+
+And because each run is paid for, **spending rules** (issue #373): a run is
+given its questions in writing before it runs; the free checks — a rehearsal
+and a read-through of its prompts — come first; no run is made while a
+finding with a fix ready is open on its path; the same session is not bought
+twice except to verify a fix; a round stops when a run's review says the
+next would not pay; the cost is always split between the module's calls and
+the test's own models (in the memory run the AI player was 57% of the cost,
+the module 31%); and every run leaves a keyless replay.
 
 **Rejected:**
 - *An AI GM.* Twice the cost, and two models improvising at each other
@@ -41,6 +52,11 @@ what went wrong (rules/ci-e2e.md → "AI exploration").
 - *All real dice.* A run could pass without ever missing in a fight.
 - *Starting with two players.* Attribution failures and length failures
   would arrive together.
+- *Trusting the run's own verdict.* The memory run's was "achieved"; its
+  recap had set the campaign aboard the wrong ship. The verdict is one line
+  of the review, not the review.
+- *A fixed three runs a round.* The second and third are bought only if the
+  first one's review says they would tell something new.
 
 ---
 
