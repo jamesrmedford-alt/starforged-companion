@@ -22,6 +22,7 @@
 // for sense; the benchmark of §6 (slice E) is where structured facts belong.
 
 import { MODULE_ID } from "./foundry.mjs";
+import { readTable, readCards } from "./table.mjs";
 
 /** The module calls that narrate in answer to a player's line. */
 const NARRATION_KIND = /^callNarratorAPI>narrate(?!SessionVignette)/;
@@ -92,7 +93,7 @@ export function readWorld(gm, facts, notMemory = []) {
       const f = m.flags?.[MODULE_ID] ?? {};
       return {
         id: m.id, authorId: m.author?.id ?? null, author: m.author?.name ?? null,
-        speaker: m.alias ?? m.author?.name ?? null,
+        speaker: m.alias ?? m.author?.name ?? null, timestamp: m.timestamp ?? null,
         // A narrator card keeps its prose apart from the card's own chrome.
         text: f.narratorCard === true && typeof f.narrationText === "string" && f.narrationText.trim()
           ? clean(strip(f.narrationText)) : clean(strip(m.content)),
@@ -164,7 +165,11 @@ export function readWorld(gm, facts, notMemory = []) {
  * Collects what the world looked like after each step. `observe` is called
  * once the step's work has settled; a message first seen then belongs to it.
  */
-export function createObserver({ gm, facts, playerId, notMemory = [] }) {
+export function createObserver({ gm, facts, playerId, notMemory = [], detail = false }) {
+  // `detail` (a long run, issue #373): each mark also holds the table as data
+  // (lib/table.mjs) and the cards that changed in the step — what the
+  // mechanical checks, the beats and the ledger's reading of the helpers need.
+  const cardState = new Map();   // card id → its last state, as JSON
   const marks = [];              // one per step: { step, phase, session, stores }
   const messages = [];           // chat order, each with the step and phase it was first seen in
   const known = new Set();
@@ -181,7 +186,7 @@ export function createObserver({ gm, facts, playerId, notMemory = [] }) {
   return {
     marks, messages,
 
-    async observe(step) {
+    async observe(step, extra = {}) {
       const world = await readWorld(gm, facts, notMemory);
       const phase = phaseOf(world.session);
       for (const m of world.messages) {
@@ -191,7 +196,17 @@ export function createObserver({ gm, facts, playerId, notMemory = [] }) {
         // (Begin a Session's, a move's) carries the module's flags.
         messages.push({ ...m, step, phase, fromPlayer: m.authorId === playerId && !m.card.length });
       }
-      const mark = { step, phase, session: world.session, stores: world.stores, gmWindows: world.gmWindows };
+      const mark = { step, phase, session: world.session, stores: world.stores, gmWindows: world.gmWindows, ...extra };
+      if (detail) {
+        mark.table = await readTable(gm);
+        mark.helpers = mark.table.helpers;
+        mark.cards = (await readCards(gm)).filter((card) => {
+          const json = JSON.stringify(card);
+          if (cardState.get(card.id) === json) return false;
+          cardState.set(card.id, json);
+          return true;
+        });
+      }
       marks.push(mark);
       return mark;
     },
@@ -302,12 +317,19 @@ export function scoreMemory({ facts, askCues = [], marks, messages, requests }) 
  * GM is an autopilot that does not know the question is a limit of the run
  * (`waitingOnGm`), and the lock it holds is the question's.
  */
-export function healthOf({ endSession, clients, stalls = [], knownErrors = [] }) {
+export function healthOf({ endSession, clients, stalls = [], knownErrors = [], refused = [] }) {
   const errors = [];
+  // A known error that names its `asker` is known only where a refused
+  // write with that message was asked for by code under that path, with no
+  // frame of the module's on the way: "lacks permission to create Item" from
+  // the game system's own hook is known, the same words from a call of the
+  // module's are not.
+  const askedBy = (k, text) => !k.asker || refused.some(r => r.message && text.includes(r.message)
+    && String(r.stack ?? "").split("\n")[0].includes(k.asker) && !String(r.stack ?? "").includes(`/modules/${MODULE_ID}/`));
   for (const c of clients) {
     for (const text of c.errors ?? []) {
       const own = text.includes(MODULE_ID) || text.startsWith("pageerror:");
-      const known = knownErrors.find(k => text.includes(k.match)) ?? null;
+      const known = knownErrors.find(k => text.includes(k.match) && askedBy(k, text)) ?? null;
       errors.push({ client: c.label, text: text.slice(0, 400), module: own, known: known?.id ?? null });
     }
   }

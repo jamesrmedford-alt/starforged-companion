@@ -12,8 +12,15 @@
 //
 // Pure: no network, no clock of its own (`now` is injected).
 
-/** A cache write costs this much more than plain input (5-minute cache). */
-const CACHE_WRITE_FACTOR = 1.25;
+/**
+ * A cache write costs more than plain input, by how long the entry is kept:
+ * 1.25 times for five minutes, twice for an hour. The module's narrator
+ * writes one-hour entries; the AI player's are five-minute ones. Every write
+ * was priced at 1.25 until the price table was checked before the long haul's
+ * first round (issue #373), which undercounted the narrator's writes — and
+ * made a reservation smaller than the call's worst cost.
+ */
+const CACHE_WRITE_FACTOR = Object.freeze({ fiveMinutes: 1.25, oneHour: 2 });
 /** Characters per token, low on purpose: an upper bound on a prompt's tokens, not a count. */
 const CHARS_PER_TOKEN_FLOOR = 2;
 
@@ -21,18 +28,27 @@ const CHARS_PER_TOKEN_FLOOR = 2;
  * Dollars for one call's usage at a model's prices.
  *
  * @param {{ input: number, output: number, cacheRead?: number }} price — dollars per million tokens
- * @param {{ input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }} usage
+ * @param {{ input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number,
+ *   cache_creation?: { ephemeral_5m_input_tokens?: number, ephemeral_1h_input_tokens?: number } }} usage — a
+ *   reply's `usage`. Its `cache_creation` says how much was written at each lifetime; without it the
+ *   whole write is priced as a one-hour one, the dearer, so a cost is never understated.
  * @returns {number}
  */
 export function costOf(price, usage = {}) {
   const per = (n, dollarsPerMillion) => (Number(n) || 0) * dollarsPerMillion / 1_000_000;
+  const split = usage.cache_creation && typeof usage.cache_creation === "object"
+    && (Number.isFinite(usage.cache_creation.ephemeral_5m_input_tokens) || Number.isFinite(usage.cache_creation.ephemeral_1h_input_tokens));
+  const written = split
+    ? per(usage.cache_creation.ephemeral_5m_input_tokens, price.input * CACHE_WRITE_FACTOR.fiveMinutes)
+      + per(usage.cache_creation.ephemeral_1h_input_tokens, price.input * CACHE_WRITE_FACTOR.oneHour)
+    : per(usage.cache_creation_input_tokens, price.input * CACHE_WRITE_FACTOR.oneHour);
   return per(usage.input_tokens, price.input)
-    + per(usage.cache_creation_input_tokens, price.input * CACHE_WRITE_FACTOR)
+    + written
     + per(usage.cache_read_input_tokens, price.cacheRead ?? price.input)
     + per(usage.output_tokens, price.output);
 }
 
-/** The most a call can cost: its prompt as a cache write, its `max_tokens` as output. */
+/** The most a call can cost: its prompt as a one-hour cache write, its `max_tokens` as output. */
 export function worstCost(price, { promptChars = 0, maxTokens = 0 } = {}) {
   return costOf(price, {
     cache_creation_input_tokens: Math.ceil(promptChars / CHARS_PER_TOKEN_FLOOR),

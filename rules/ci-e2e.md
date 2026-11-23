@@ -403,23 +403,36 @@ scenario written against hand-made replies meets what the model does:
 `test/ci/playwright/explore.mjs` (issue #302 slice D; #290 part 3) is the
 scripted playthroughs' sibling: the same two browsers and the same Claude
 harness, with the script replaced by a model that is given a goal. Run it
-with `test/ci/scripts/cloud.sh explore [--rehearse | --replay <run folder>]`.
+with `test/ci/scripts/cloud.sh explore [--rehearse | --replay <run folder>]`;
+`EXPLORE_CHARTER` picks the charter — `memory` (two short sessions, one fact)
+or `long-haul` (three sessions and twenty-six beats, issue #373; below).
 **Nothing in CI runs it, and nothing may** — a live run spends money and its
 result is one sample.
 
 Three roles, and what each may do — keep them apart:
 
 - **The player** (`lib/player.mjs`) gets a persona, a goal and its own
-  screen: the chat as rendered, the buttons on its cards, an open window's
-  fields and buttons, its own character's meters. It acts through one strict
-  tool — say, click, dialog, wait, stop — and every action is checked against
+  screen: the chat as rendered (its last twelve messages, and above them the
+  cards further up that can still be answered — a person scrolls up to a
+  vow's card; a view of the last lines alone hid it), the buttons and
+  dropdowns on its cards, an open window's fields and buttons, its own
+  character's meters. It acts through one strict
+  tool — say, click, choose (an option in a dropdown on a card), dialog, close
+  (a window, unanswered), wait, stop — and every action is checked against
   the screen it was chosen on (`validateAction`) before it is taken. It never
   reads world state, never calls a module function, and never says whether
-  its goal was met.
+  its goal was met. **Its prompt does not grow with the run**: its standing
+  instructions are fixed and sent as a cached block (`cache: true`), and what
+  changes — the current beat, its notebook (a `note` it may put on any
+  action; the last fourteen are kept), its last fifteen actions, its screen —
+  is the same size at action ninety as at action fifteen
+  (`playerTurnPrompt`). Do not put anything that changes between two actions
+  in `playerSystemPrompt`: it would be a cache write on every turn.
 - **The observer** (`lib/observer.mjs`) reads — the GM's world, the chat,
   the requests the harness saw — and never writes. Its verdict is arithmetic
-  (`scoreMemory`, `healthOf`, `classifyRun`, all pure and unit-tested): no
-  model is asked whether the goal was met.
+  (`scoreMemory`, `healthOf`, `classifyRun`; for a long run `lib/beats.mjs`,
+  `lib/mechanics.mjs`, `lib/ledger.mjs` and `classifyLongRun` — all pure and
+  unit-tested): no model is asked whether the goal was met.
 - **The review is yours** — the agent that made the run reads it afterwards
   (below). No model reviews a run. The runner had an API reviewer (a model
   shown the transcript alone); it was deleted on the maintainer's instruction
@@ -427,11 +440,15 @@ Three roles, and what each may do — keep them apart:
   where the first reviewed run's findings were. Do not add one back without
   being asked.
 
-The GM's client is on autopilot for what the module asks of the GM before a
-move rolls, answered without steering the story (`GM_AUTOPILOT` in
-`explore.mjs`): a proposed move's confirmation is accepted as proposed, and
-"Who are you interacting with?" is answered "No specific entity", which is
-what closing it means. Nothing else is answered.
+**The GM is fixed rules, no model** (`lib/gm.mjs`; issue #373, decision 2):
+a second model at the table would add variance to exactly the half that must
+hold still, and could not be replayed. The rules: a proposed move's
+confirmation is accepted as proposed; "Who are you interacting with?" is
+answered with the charter's named NPC when the player's line names them and
+the window offers them, else "No specific entity", which is what closing it
+means; a draft whose name is in the charter's `cast` is confirmed, as the
+player character's connection, and every other draft is left. Nothing else is
+answered.
 
 **The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
 Every model call of a run goes through it — the module's (the harness's
@@ -442,6 +459,11 @@ hang, and the run ends as `budget-exhausted` (if the goal had not been put to
 the test) with its evidence written. A model with no price is refused. When
 you add a model anywhere in the module, add its price to the config
 (`exploreRunner.test.js` checks the models the first-session recording used).
+**Check the price table against Anthropic's price list before a paid run**
+(`prices.asOf`): a cache write costs 1.25 times input kept five minutes and
+twice input kept an hour, and the budget prices it by the split a reply's
+usage reports — every write was priced at 1.25 until that check was made
+(2026-11-23), and the module's narrator writes one-hour entries.
 
 **What the runner had to learn about this table** — keep these when you add a
 charter or touch the runner:
@@ -456,13 +478,41 @@ charter or touch the runner:
 - **The module asks the GM things, and holds the move while it waits.** The
   first live run sat for three minutes behind "Who are you interacting
   with?" and called it a product failure. A window on the GM's screen that
-  the autopilot does not answer ends the wait after 20 s and the run as
+  the GM's rules do not answer ends the wait after 20 s and the run as
   `not-exercised`, naming the window; the lock that question holds is not a
   health failure (`healthOf` → `waitingOnGm`). When the module gains a prompt
-  for the GM, add it to `GM_AUTOPILOT` with the answer that steers least.
+  for the GM, add it to `startGmRules` (`lib/gm.mjs`, and its selector to
+  `GM_ANSWERS`) with the answer that steers least.
   The module's own windows are `.application.sf-window`, not Foundry
-  dialogs: look for both, on both screens. A rehearsal never rolls, so it
-  cannot find a prompt on the move path — only a live run does.
+  dialogs: look for both, on both screens. The memory charter's rehearsal
+  never rolls, so it cannot find a prompt on the move path; the long haul's
+  does (below).
+- **A line of play is settled when it has been answered, not when the table
+  goes quiet.** The module pauses between reading a line and narrating it —
+  several seconds with no call and no write, longer on a session's first
+  line. The first rehearsal that rolled took that pause for the end of the
+  turn: the next line arrived while the first was still being resolved, and
+  the module answered "Not rolled — another move was being resolved". `settle`
+  now waits, for a line of play in an open session, until something answers
+  it — a narration, a move's card, a card that asks for a choice
+  (`answeredSince`) — and only then for quiet; a line nothing answers in
+  `REPLY_WAIT_MS` settles as `unanswered`, which the `answered-once` check
+  reports.
+- **A result momentum could improve is held.** With momentum high enough to
+  burn, a weak hit or a miss is posted with "🔥 Burn Momentum" and "Keep the
+  result", and nothing is paid or narrated until one is pressed — or until
+  the roller's next line keeps it. A beat that wants the miss paid says to
+  press Keep; a check that reads a move's effects reads them where the result
+  became final, not where the dice fell.
+- **A move card's dice are in its text, not its flags** (`.sf-move-dice`:
+  "Action: 4 + 3 = 7 | Challenge: 2, 9", "Progress: 6 | Challenge: 1, 2").
+  `parseDiceLine` reads them; the move's id and outcome are on the narrator
+  card that shares its `resolutionId`.
+- **A miss's price is a d100 the dice script does not see.** Pay the Price
+  rolls in `oracles/roller.js`; only one price in four names a suffer move. A
+  run keeps the module's other randomness by file (`window.__sfcRandomKept`)
+  and a replay hands it back (`__sfcRandomQueue`) — without it a replay
+  rolled a different price for the same miss.
 - **A player's line is what they typed.** Cards the player's client posts
   (Begin a Session's, a move's) are authored by the player too; they carry
   the module's flags, a typed line carries none.
@@ -474,6 +524,12 @@ charter or touch the runner:
   journal logs every line; no narration is built from it
   (`explore.config.json` → `notMemory`). Add a diagnostic store there when
   you add one to the module.
+- **A refused write says nothing of who asked.** "User … lacks permission to
+  create Item […] in parent Actor […]" reaches the page with the server's
+  stack. `installRefusalTrace` (`lib/world.mjs`) keeps the stack of the code
+  that asked for every create, update and delete the server refuses
+  (`run.json` → `health.refused`): read it before calling an error on a page
+  somebody else's.
 - **The game system's first-start window** is open on a new player's screen;
   the player is not shown it (`ignoreWindows`).
 
@@ -494,6 +550,85 @@ Pick a fact whose words are unlikely to appear by accident, tell the player
 not to name it when it asks, and read the answer in `observer.json` before
 calling a run a pass. Structured facts and negation belong to slice E's
 benchmark.
+
+**A long run** (`charters/long-haul.json`; issue #373, the first part of
+#302 slice E) is a charter with `beats`: three sessions, about ninety player
+actions, the narrator's memory and the mechanics loaded at once. What it adds,
+and the rules that go with each:
+
+- **Beats, and a pointer the observer moves** (`lib/beats.mjs`). A beat is
+  something the player is asked to bring about, with a result checked in the
+  world (`BEAT_CHECKS`, by `check.type`). The player is told every beat in its
+  standing instructions and, each turn, which one is current and what the
+  observer sees of it. **The player is never asked whether a beat is done.** A
+  beat that makes no progress in eight actions (`STALL_ACTIONS`; a beat with
+  parts — four facts to plant, a track to fill — counts from the last time it
+  moved), or that `needs` a beat never done, is `not-exercised` and the run
+  goes on. Never call an unreached beat a pass. What happened in the step
+  that finished a beat belongs to that beat: the next one's window opens after
+  it.
+- **Six decisive rolls are scripted, the rest are real, all are recorded**
+  (decision 3; a beat's `dice`). They are armed at the GM's confirmation, by
+  the move it names — never by whichever roll comes first — and used once.
+  `scriptedDice` gives a miss (10, 9, action 1), a weak hit (1, 10, action 6)
+  or a strong hit (1, 2, action 6; progress 1, 2) whatever the stat;
+  `burnable` is a weak hit that burning momentum improves, worked out in the
+  page from the character's momentum and stat, and not scripted at all when
+  momentum is too low for one. The scripted miss scripts its price too
+  (`price`: Pay the Price's d100), so that the suffer card is reached every
+  time and not one time in four. A replay scripts nothing: its dice are the
+  run's, as they fell.
+- **Four interruptions are the runner's own actions** (a beat's
+  `interruption`; `lib/gm.mjs`): the GM's page reloads mid-fight, End a
+  Session is opened and closed unanswered, the X-Card is played on one
+  narration and the GM resumes, the GM renames the connection's card. Each is
+  a step of its own (`x<beat>`), followed by a check that compares the world
+  with what it was. A reload carries across what the runner keeps on the page
+  (the dice it recorded, the settings to restore); re-install anything else
+  you hang on `window`.
+- **Mechanical checks after every action** (`lib/mechanics.mjs`, `CHECKS`):
+  each roll recomputed from the dice on its own card, meters and tracks in
+  bounds, a mark of progress the size its rank gives, legacy and experience by
+  rank and by box, the two mirrors (bond Item ↔ card, vow link ↔ card's name),
+  an effect landing once on the roller (a move's momentum, a milestone, a
+  suffer cost, a recovery, a burn), a session's momentum once each way, the
+  lock free once settled, every line answered once. **Their expectations come
+  from `tests/helpers/sequence/rules.js` — the game's text — and import
+  nothing from `src/`**: an expectation computed with the module's own
+  function agrees with the module whatever it does. A check that could not be
+  made is counted as not made, never as passed. When you add a check, add the
+  defect that it catches to `exploreMechanics.test.js`.
+- **The fact ledger** (`lib/ledger.mjs`): each fact with the `variants` a
+  right answer holds, an `anchor` where the variant alone is in every prompt,
+  the `refusals` that contradict it (a word beside it in one sentence, or a
+  phrase anywhere), and `probes` — questions in the charter's own words, never
+  naming the fact, asked again in each session. A probe is scored stored / in
+  the prompt / in the answer, and fails outright on a refusal. Two rules from
+  the first reviewed run are built in: **what the helpers wrote is read
+  against the ledger too** (every summary, Chronicle entry and recap; a
+  refusal there fails the fact at the stored layer whatever the narrator
+  answers), and **a scene that restates a fact before it is asked about is
+  recorded, its own prompt scored, and the question after it is not counted
+  as recall**. A hidden plan's truth stated before its reveal is a suspected
+  leak (`scoreLeaks`, by content). Every refusal and leak is reported with its
+  sentence: it is a presence test, to be read. **A corrected fact's old value
+  in a later prompt refuses only when the prompt does not say it was
+  corrected** (`markedCorrected`): the module names a corrected value to the
+  narrator so that it is not asserted again, and a summary's input lists what
+  the table retracted — the old value there is the module doing its work.
+  Every prompt that carries it is listed (`carried`; the scorecard's "A
+  corrected value in later prompts"); in an answer, or in what a helper
+  wrote, it refuses outright. A probe is looked for among the lines of the
+  beat that asks it: a short question's words turn up in play.
+- **Its class** (`classifyLongRun`): an infrastructure error, then
+  `product-failure` for a failed health check, a violated mechanical check or
+  a beat brought about wrongly — each with its step, and the check may be the
+  one at fault — then `not-exercised` / `budget-exhausted` when more than a
+  quarter of the beats were never exercised (the run is not counted in its
+  round), then `suspected-quality-issue` for a fact lost or refused, else
+  `pass`.
+- **Its caps are the charter's** (`caps`: 100 actions, 400 calls, 60 minutes,
+  $15 — issue #373 decision 1), over the config's.
 
 **Replay.** Every run writes `replay.json`: the player's actions with no
 document ids in them (a click is its button's label and which message
@@ -528,6 +663,27 @@ own memory path carried the fact from one session to the next — it is a real
 check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
 scores `not-achieved` at `storage`. Run both after a change to the runner.
 
+**The long haul's rehearsal rolls** (`createRollingRehearsal`). The memory
+charter's stand-in narrates every line, so it reaches nothing on the move
+path — and the first live run stalled on a question the module puts to the GM
+before the dice. A charter with beats is rehearsed by a stand-in whose
+classifier calls a move where the script makes the line one (`move: { id,
+stat, target }` on a `say` or a `click`) and whose interpreter names it; the
+resolver then rolls for real, so the confirmation, the held result, the price,
+the suffer card, the victory card and every prompt on the way are reached with
+no key. Its scripted player finds a button by its label, a dropdown by its
+option and a window by its title on the screen its prompt shows; waits a few
+turns for one that is not there yet; skips what the table never offered; and
+drops an entry whose `beat` the pointer has passed. `rehearsalDice` scripts
+the rolls the six do not, so that a rehearsal walks the same road every time.
+**Walk every beat in a rehearsal, and read the prompts it produced
+(`requests.json`), before a live run is paid for** (issue #373, spending rule
+2). Four rehearsals found, for nothing: the runner taking a pause for the end
+of a turn, a result held where a price was expected, a vow card with no Link
+(a defect of the module's, fixed), a view that hid a card thirteen messages
+up, a renamed connection looked for under its old name, and a ledger rule
+that failed the module for telling the narrator a value was corrected.
+
 **Every live run ends with a review** (the maintainer's standing instruction,
 2026-11-23; issue #373, modelled on issue #374). You made the run: you read
 it, when it completes, without being asked. A run whose evidence is not read
@@ -536,14 +692,22 @@ reported "achieved" and one flag, and eleven of the twelve things learned
 from it came from reading its prompts and records afterwards. Four parts:
 
 1. **The annotated transcript** (`annotated-transcript.md`, beside the run's
-   evidence, and sent). Every message in order; at the step each concerns,
+   evidence, and sent). A long run generates its layers (`lib/review.mjs`) —
+   each step's beat, the player's reason and note, the calls and how long
+   they took, the roll and its dice, the GM's answers, the interruptions, the
+   checks violated, time and cost — and leaves a marked place under every
+   step for your notes: the judgement is not generated. Every message in order; at the step each concerns,
    what the player was trying to do and the reason it gave, what the table
    did with the line (the pacing read, the move, the dice, the effects, what
    each helper wrote, what the GM's autopilot answered), the observer's
    findings, time and cost. Then your own notes on
    **what went right and what went wrong, and why** — where the fault was the
    runner's, as in the first live run, saying so.
-2. **The scorecard** (`scorecard.md`). One row per dimension with its result,
+2. **The scorecard** (`scorecard.md`; for a long run its arithmetic rows are
+   generated from `review-data.json` — speed by call kind and from a line to
+   its reply, caching and cost by call kind, prompt length against the action
+   number, repetition by content between scenes of one kind — and "The
+   reading" is left to write). One row per dimension with its result,
    its basis and how far to trust it — goal, mechanics, continuity in what
    the narrator said and in what the helpers wrote, agency, friction,
    narrator quality, speed, length, cost — then the detail. Say what was
@@ -567,7 +731,9 @@ review reported three draft cards where the run had two.
 A rehearsal or a replay does not need a review.
 
 **A live run is paid for; these decide whether one is made** (issue #373,
-"Spending rules"). Say in writing what the run is to answer before it runs.
+"Spending rules"). Say in writing what the run is to answer before it runs:
+`EXPLORE_QUESTIONS`, one question to a line — a live run is refused without
+them, and they head its scorecard, each with a place for its answer.
 Do the free checks first — a rehearsal, and a read-through of the prompts it
 produces: what each helper is and is not sent is visible there for nothing.
 Do not run while a finding with a fix ready is open on the path the run
@@ -582,9 +748,18 @@ and `playerNotes` (what the player model is told), `facts` (each with the
 reported and does not decide), `ask.cues` (words one of which marks a line as
 the question), `settings` and
 `seed` (the scripted playthroughs' format), and `rehearsal` (the player's
-actions for a rehearsal). The observer scores the memory goal only: a charter
-with a different goal needs its own pure scoring function beside
-`scoreMemory`, with tests, before it is run.
+actions for a rehearsal). A charter without `beats` is scored as the memory
+goal (`scoreMemory`). A charter with `beats` is a long run: `caps`, `cast`
+(the NPCs the GM's rules know), `facts` with `refusals` and `probes`, `baits`,
+`beats` (`id`, `n`, `session`, `title`, `tell` — what the player is told —
+`check`, and where they apply `needs`, `dice`, `interruption`, `after`), and
+`rehearsalDice`. A beat whose result nothing in `BEAT_CHECKS` can see needs a
+new check there, pure and tested, before it is run — and
+`exploreLongHaul.test.js` holds the charter that ships to itself: every
+question told apart from every other, none naming what it asks about, every
+beat scripted in the rehearsal. A check that concerns the cast's connection
+finds it by the name the charter made it under and follows it by its card's
+id (`castConnection`): the charter renames it in beat 18.
 
 ## Quench batch coupling — shared defaults and hooks
 

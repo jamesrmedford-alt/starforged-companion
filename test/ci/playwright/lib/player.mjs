@@ -6,12 +6,23 @@
 // in chat, a click on a card's button, a dialog filled and submitted, a wait.
 // It never reads world state, never calls a module function, and never
 // decides whether its goal was met: the observer does (lib/observer.mjs).
+//
+// A long run (issue #373) adds two actions — choosing an option in a dropdown
+// on a card (the vow card's Link) and closing a window — and bounds what the
+// player is sent: its standing instructions are fixed for the run and cached,
+// and its memory is its last fifteen actions and a short notebook it writes
+// itself. The prompt does not grow with the run: sent every action so far, a
+// ninety-action run's player alone would pass the cost of everything else.
 
 import { chat } from "./foundry.mjs";
 import { callClaude } from "./anthropic.mjs";
 
 export const MAX_WAIT_SECONDS = 20;
-export const PLAYER_ACTIONS = ["say", "click", "dialog", "wait", "stop"];
+export const PLAYER_ACTIONS = ["say", "click", "choose", "dialog", "close", "wait", "stop"];
+/** How much of its own past the player is shown: its last actions, and its notebook's last lines. */
+export const HISTORY_ACTIONS = 15;
+export const NOTEBOOK_LINES  = 14;
+export const NOTE_CHARS      = 220;
 
 /** The one tool the player model is given. Every field is always present: the unused ones are empty. */
 export const ACTION_TOOL = {
@@ -21,18 +32,20 @@ export const ACTION_TOOL = {
   input_schema: {
     type: "object",
     additionalProperties: false,
-    required: ["action", "text", "message", "button", "window", "fields", "seconds", "reason"],
+    required: ["action", "text", "message", "button", "option", "window", "fields", "seconds", "note", "reason"],
     properties: {
       action: { type: "string", enum: PLAYER_ACTIONS,
-        description: "say: type `text` into chat (in-character play, or a chat command). click: press button number `button` on chat message `message`. dialog: in open window number `window`, set `fields`, then press the button whose label is `text`. wait: do nothing for `seconds`. stop: you are finished, or stuck — say which in `reason`." },
+        description: "say: type `text` into chat (in-character play, or a chat command). click: press button number `button` on chat message `message`. choose: on chat message `message`, set dropdown number `button` to `option` (then click the button beside it). dialog: in open window number `window`, set `fields`, then press the button whose label is `text`. close: close open window number `window` without answering it. wait: do nothing for `seconds`. stop: you are finished, or stuck — say which in `reason`." },
       text: { type: "string", description: "For say: the line to type. For dialog: the label of the button to press. Otherwise empty." },
-      message: { type: "string", description: "For click: the message's reference as shown, e.g. m7. Otherwise empty." },
-      button: { type: "integer", description: "For click: the button's number as shown. Otherwise 0." },
-      window: { type: "integer", description: "For dialog: the window's number as shown. Otherwise 0." },
+      message: { type: "string", description: "For click and choose: the message's reference as shown, e.g. m7, or e2 for a card further up the chat. Otherwise empty." },
+      button: { type: "integer", description: "For click: the button's number as shown. For choose: the dropdown's number as shown. Otherwise 0." },
+      option: { type: "string", description: "For choose: the option to select, exactly as shown. Otherwise empty." },
+      window: { type: "integer", description: "For dialog and close: the window's number as shown. Otherwise 0." },
       fields: { type: "array", description: "For dialog: fields to set first, by name. Otherwise empty.",
         items: { type: "object", additionalProperties: false, required: ["name", "value"],
           properties: { name: { type: "string" }, value: { type: "string", description: "The text to enter; for a checkbox, true or false." } } } },
       seconds: { type: "integer", description: "For wait: 1 to 20. Otherwise 0." },
+      note: { type: "string", description: "Optional: one short line to keep in your notebook — a name, what you have established, what is done. You are shown only your last few actions; the notebook is what you remember. Otherwise empty." },
       reason: { type: "string", description: "One sentence: why this action. For stop: whether you are done or what blocks you." },
     },
   },
@@ -42,8 +55,8 @@ export const ACTION_TOOL = {
  * What the player's page shows, as data. Runs in the page.
  * @returns {Promise<object>} { character, windows, messages }
  */
-export function snapshotScreen(client, { chatTail = 12, ignoreWindows = [] } = {}) {
-  return client.page.evaluate(({ chatTail, ignoreWindows }) => {
+export function snapshotScreen(client, { chatTail = 12, openEarlier = 6, ignoreWindows = [] } = {}) {
+  return client.page.evaluate(({ chatTail, openEarlier, ignoreWindows }) => {
     const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
     const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
     // What a person reads: the rendered text (line breaks between blocks, no
@@ -72,16 +85,33 @@ export function snapshotScreen(client, { chatTail = 12, ignoreWindows = [] } = {
           .map(b => clean(b.textContent).slice(0, 60)),
       }));
 
-    const messages = game.messages.contents.filter(m => m.visible !== false).slice(-chatTail).map((m, i) => {
+    const describe = (m, ref, chars) => {
       const el = document.querySelector(`#chat [data-message-id="${m.id}"], .chat-log [data-message-id="${m.id}"]`);
       const body = el?.querySelector(".message-content") ?? null;
       const text = body ? read(body) : clean(String(m.content ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
       const buttons = el ? [...el.querySelectorAll(".message-content button, .message-content a[data-action]")]
         .map((b, n) => ({ n: n + 1, label: clean(b.textContent).slice(0, 70), disabled: !!b.disabled })) : [];
-      return { ref: `m${i + 1}`, id: m.id, speaker: clean(m.alias ?? m.author?.name ?? "?"), text: text.slice(0, 1400), buttons };
-    });
+      const selects = el ? [...el.querySelectorAll(".message-content select")].filter(sel => !sel.disabled)
+        .map((sel, n) => ({
+          n: n + 1,
+          label: clean(sel.closest("label")?.textContent?.replace(sel.textContent, "") || sel.getAttribute("aria-label") || sel.name || "").slice(0, 60),
+          value: clean(sel.selectedOptions?.[0]?.textContent ?? ""),
+          options: [...sel.options].map(o => clean(o.textContent)).filter(Boolean).slice(0, 14),
+        })) : [];
+      return { ref, id: m.id, speaker: clean(m.alias ?? m.author?.name ?? "?"), text: text.slice(0, chars), buttons, selects };
+    };
+    const visible = game.messages.contents.filter(m => m.visible !== false);
+    const tail = visible.slice(-chatTail).map((m, i) => describe(m, `m${i + 1}`, 1400));
+    // A card further up that can still be answered — a vow's card, a choice
+    // left open. A person scrolls up to it; a view of the last lines alone
+    // hides it (the long haul's third rehearsal: the vow card was thirteen
+    // messages up when its Link was wanted).
+    const earlier = visible.slice(0, -chatTail).map(m => describe(m, "", 320))
+      .filter(m => m.selects.length || m.buttons.some(b => !b.disabled))
+      .slice(-openEarlier).map((m, i) => ({ ...m, ref: `e${i + 1}`, earlier: true }));
+    const messages = [...earlier, ...tail];
     return { character, windows, messages };
-  }, { chatTail, ignoreWindows });
+  }, { chatTail, openEarlier, ignoreWindows });
 }
 
 /** The snapshot as the text the player model reads. Pure. */
@@ -99,12 +129,23 @@ export function describeScreen(snapshot) {
     if (w.buttons.length) lines.push(`  buttons: ${w.buttons.map(b => `"${b}"`).join(", ")}`);
   });
   lines.push("");
-  lines.push(snapshot.messages.length ? "CHAT (oldest first; the last is the newest):" : "CHAT: empty");
-  for (const m of snapshot.messages) {
+  const message = (m) => {
     lines.push(`[${m.ref}] ${m.speaker}: ${m.text}`);
     const live = m.buttons.filter(b => !b.disabled);
     if (live.length) lines.push(`     buttons: ${live.map(b => `(${b.n}) "${b.label}"`).join("  ")}`);
+    for (const sel of m.selects ?? []) {
+      lines.push(`     dropdown (${sel.n})${sel.label ? ` "${sel.label}"` : ""} = ${JSON.stringify(sel.value)} options: ${sel.options.join(" | ")}`);
+    }
+  };
+  const earlier = snapshot.messages.filter(m => m.earlier);
+  const tail = snapshot.messages.filter(m => !m.earlier);
+  if (earlier.length) {
+    lines.push("FURTHER UP THE CHAT, STILL OPEN (older than the chat below; each can still be answered):");
+    earlier.forEach(message);
+    lines.push("");
   }
+  lines.push(tail.length ? "CHAT (oldest first; the last is the newest):" : "CHAT: empty");
+  tail.forEach(message);
   return lines.join("\n");
 }
 
@@ -116,11 +157,32 @@ export function validateAction(input, snapshot) {
   const a = input && typeof input === "object" ? input : {};
   if (!PLAYER_ACTIONS.includes(a.action)) return { ok: false, problem: `unknown action ${JSON.stringify(a.action)}` };
   const reason = String(a.reason ?? "").slice(0, 300);
+  const checked = validateKind(a, snapshot, reason);
+  // A line for the notebook rides on any action.
+  const note = String(a.note ?? "").replace(/\s+/g, " ").trim().slice(0, NOTE_CHARS);
+  return checked.ok && note ? { ok: true, action: { ...checked.action, note } } : checked;
+}
+
+function validateKind(a, snapshot, reason) {
   switch (a.action) {
     case "say": {
       const text = String(a.text ?? "").trim();
       if (!text) return { ok: false, problem: "say needs text" };
       return { ok: true, action: { action: "say", text: text.slice(0, 600), reason } };
+    }
+    case "choose": {
+      const message = snapshot.messages.find(m => m.ref === a.message);
+      if (!message) return { ok: false, problem: `no message ${JSON.stringify(a.message)} on screen` };
+      const select = (message.selects ?? []).find(s => s.n === Number(a.button));
+      if (!select) return { ok: false, problem: `message ${message.ref} has no dropdown ${a.button}` };
+      const option = String(a.option ?? "").replace(/\s+/g, " ").trim();
+      if (!select.options.includes(option)) return { ok: false, problem: `dropdown ${select.n} on ${message.ref} has no option "${option}" (it has: ${select.options.join(", ")})` };
+      return { ok: true, action: { action: "choose", messageId: message.id, message: message.ref, select: select.n, option, reason } };
+    }
+    case "close": {
+      const window = snapshot.windows[Number(a.window) - 1];
+      if (!window) return { ok: false, problem: `no open window ${a.window}` };
+      return { ok: true, action: { action: "close", title: window.title, reason } };
     }
     case "click": {
       const message = snapshot.messages.find(m => m.ref === a.message);
@@ -154,10 +216,15 @@ export function validateAction(input, snapshot) {
  * the messages offering that label it was, counted from the newest. Pure.
  */
 export function scriptedForm(action, snapshot) {
+  if (action.action === "choose") {
+    const offering = snapshot.messages.filter(m => (m.selects ?? []).some(s => s.options.includes(action.option)));
+    const at = offering.findIndex(m => m.id === action.messageId);
+    return { action: "choose", select: action.select, option: action.option, fromNewest: at < 0 ? 0 : offering.length - 1 - at, reason: action.reason ?? "", ...(action.note ? { note: action.note } : {}) };
+  }
   if (action.action !== "click") return { ...action };
   const offering = snapshot.messages.filter(m => m.buttons.some(b => !b.disabled && b.label === action.label));
   const at = offering.findIndex(m => m.id === action.messageId);
-  return { action: "click", label: action.label, fromNewest: at < 0 ? 0 : offering.length - 1 - at, reason: action.reason ?? "" };
+  return { action: "click", label: action.label, fromNewest: at < 0 ? 0 : offering.length - 1 - at, reason: action.reason ?? "", ...(action.note ? { note: action.note } : {}) };
 }
 
 /**
@@ -171,6 +238,17 @@ export function resolveScripted(scripted, snapshot) {
     if (!message) return { ok: false, problem: `no message on screen offers "${scripted.label}"` };
     const button = message.buttons.find(b => !b.disabled && b.label === scripted.label);
     return { ok: true, action: { action: "click", messageId: message.id, message: message.ref, button: button.n, label: button.label, reason: scripted.reason ?? "" } };
+  }
+  if (scripted.action === "choose") {
+    const offering = snapshot.messages.filter(m => (m.selects ?? []).some(s => s.options.includes(scripted.option)));
+    const message = offering[offering.length - 1 - (scripted.fromNewest ?? 0)];
+    if (!message) return { ok: false, problem: `no message on screen has a dropdown offering "${scripted.option}"` };
+    const select = message.selects.find(s => s.n === scripted.select && s.options.includes(scripted.option)) ?? message.selects.find(s => s.options.includes(scripted.option));
+    return { ok: true, action: { action: "choose", messageId: message.id, message: message.ref, select: select.n, option: scripted.option, reason: scripted.reason ?? "" } };
+  }
+  if (scripted.action === "close") {
+    if (!snapshot.windows.some(w => w.title === scripted.title)) return { ok: false, problem: `the window "${scripted.title}" is not open` };
+    return { ok: true, action: { action: "close", title: scripted.title, reason: scripted.reason ?? "" } };
   }
   if (scripted.action === "dialog") {
     const window = snapshot.windows.find(w => w.title === scripted.title);
@@ -200,6 +278,31 @@ export async function executeAction(client, action) {
         button.click();
         return { ok: true };
       }, { id: action.messageId, n: action.button });
+    case "choose":
+      return client.page.evaluate(({ id, n, option }) => {
+        const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+        const el = document.querySelector(`#chat [data-message-id="${id}"], .chat-log [data-message-id="${id}"]`);
+        const select = el ? [...el.querySelectorAll(".message-content select")].filter(sel => !sel.disabled)[n - 1] : null;
+        if (!select) return { ok: false, detail: "the dropdown is no longer on screen" };
+        const wanted = [...select.options].find(o => clean(o.textContent) === option);
+        if (!wanted) return { ok: false, detail: `the dropdown no longer offers "${option}"` };
+        select.value = wanted.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return { ok: true };
+      }, { id: action.messageId, n: action.select, option: action.option });
+    case "close":
+      return client.page.evaluate(async ({ title }) => {
+        const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+        const el = [...document.querySelectorAll("dialog[open], .application")].find(w => clean(w.querySelector(".window-title, header h1, header h4")?.textContent) === title);
+        if (!el) return { ok: false, detail: `the window "${title}" is no longer open` };
+        // As its own close control does: the header's ✕, else the app's close().
+        const control = el.querySelector('header [data-action="close"], header .close, .header-control.close');
+        if (control) { control.click(); return { ok: true }; }
+        const app = foundry.applications?.instances?.get?.(el.id) ?? Object.values(ui.windows ?? {}).find(w => w.element?.[0] === el || w.element === el);
+        if (app?.close) { await app.close(); return { ok: true }; }
+        return { ok: false, detail: `the window "${title}" has no close control` };
+      }, { title: action.title });
     case "dialog":
       return client.page.evaluate(({ title, fields, press }) => {
         const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
@@ -227,8 +330,14 @@ export async function executeAction(client, action) {
   }
 }
 
-/** The player's standing instructions: who it is, what it wants, and the rules of the table. */
+/**
+ * The player's standing instructions: who it is, what it wants, the rules of
+ * the table and — in a charter with beats — every beat in order. Fixed for
+ * the run, so it is sent as a cached block: nothing that changes between two
+ * actions may be written here.
+ */
 export function playerSystemPrompt(charter) {
+  const beats = Array.isArray(charter.beats) ? charter.beats : [];
   return [
     `You are playtesting a tabletop role-playing game (Ironsworn: Starforged) run in Foundry VTT with an AI narrator. You are a player at the table, not the game master.`,
     ``,
@@ -242,9 +351,46 @@ export function playerSystemPrompt(charter) {
     `- Chat commands exist: !begin-session opens the session, !end-session closes it. Each opens a window you fill in and submit.`,
     `- After you act, the table needs time: if the narrator has not answered yet, wait rather than repeat yourself.`,
     `- You know only what your screen shows. Do not invent what the narrator said.`,
+    `- You are shown your last ${HISTORY_ACTIONS} actions and your notebook, nothing older. When something will matter later — a name, a thing you established, what you have finished — put one short line in \`note\`.`,
     `- When you have done everything your goal asks, or you cannot go on, use stop and say which. Someone else judges whether the goal was met.`,
     ...(charter.playerNotes ?? []).map(n => `- ${n}`),
+    ...(beats.length ? [
+      ``,
+      `THE BEATS, IN ORDER. Each turn you are told which beat is current. Work on that one only. You do not decide when a beat is done: an observer does, and moves you on — to the next beat when it is done, or past it when it has not been reached after several actions. Never announce that a beat is done; never skip ahead.`,
+      ...beats.map(b => `${b.n}. [session ${b.session}] ${b.title}${b.tell ? ` — ${b.tell}` : ""}`),
+    ] : []),
   ].join("\n");
+}
+
+/** The player's notebook after an action: its note added, the oldest lines dropped. Pure. */
+export function keepNote(notebook, action) {
+  const note = String(action?.note ?? "").trim();
+  return note ? [...notebook, note].slice(-NOTEBOOK_LINES) : notebook;
+}
+
+/**
+ * What changes between two actions: the current beat, the notebook, the last
+ * few actions, the screen. Pure. Its size does not depend on how long the run
+ * has gone on.
+ *
+ * @param {{ history: object[], snapshot: object, notebook?: string[], beat?: object|null, nudge?: string }} o
+ */
+export function playerTurnPrompt({ history, snapshot, notebook = [], beat = null, nudge = "" }) {
+  const shown = history.slice(-HISTORY_ACTIONS);
+  const first = history.length - shown.length;
+  const past = shown.length
+    ? `YOUR LAST ${shown.length === history.length ? "" : `${shown.length} `}ACTIONS${first > 0 ? ` (of ${history.length} so far)` : ""}:\n${shown.map((h, i) => `${first + i + 1}. ${h.action ? summariseAction(h.action) : `(no action: ${h.problem ?? "?"})`}${h.outcome?.ok === false ? ` — FAILED: ${h.outcome.detail}` : ""}`).join("\n")}`
+    : "YOUR ACTIONS SO FAR: none";
+  const parts = [];
+  if (beat) {
+    parts.push(`CURRENT BEAT: ${beat.n} of ${beat.of} [session ${beat.session}] — ${beat.title}${beat.tell ? `\n${beat.tell}` : ""}`
+      + `\n(${beat.actions} action${beat.actions === 1 ? "" : "s"} spent on this beat so far${beat.note ? `; ${beat.note}` : ""}.)`);
+  }
+  parts.push(notebook.length ? `YOUR NOTEBOOK:\n${notebook.map(n => `- ${n}`).join("\n")}` : "YOUR NOTEBOOK: empty");
+  parts.push(past);
+  parts.push(`YOUR SCREEN NOW:\n${describeScreen(snapshot)}${nudge}`);
+  parts.push("Choose your next action with take_action.");
+  return parts.join("\n\n");
 }
 
 /**
@@ -253,19 +399,19 @@ export function playerSystemPrompt(charter) {
  *
  * @returns {Promise<{ action: object|null, problem?: string, kind?: "budget"|"api"|"refusal"|"reply", attempts: number }>}
  */
-export async function chooseAction({ apiKey, model, effort, maxTokens, charter, history, snapshot, budget, requestLog, fetchImpl }) {
-  const screen = describeScreen(snapshot);
-  const past = history.length
-    ? `YOUR ACTIONS SO FAR:\n${history.map((h, i) => `${i + 1}. ${summariseAction(h.action)}${h.outcome?.ok === false ? ` — FAILED: ${h.outcome.detail}` : ""}`).join("\n")}`
-    : "YOUR ACTIONS SO FAR: none";
+export async function chooseAction({ apiKey, model, effort, maxTokens, charter, history, snapshot, notebook = [], beat = null, budget, requestLog, fetchImpl }) {
   let nudge = "";
   let last = { action: null, problem: "no answer", kind: "reply", attempts: 0 };
   for (let attempt = 1; attempt <= 2; attempt++) {
     const reply = await callClaude({
       apiKey, model, effort, maxTokens, role: "player", budget, requestLog, fetchImpl,
       system: playerSystemPrompt(charter),
-      user: `${past}\n\nYOUR SCREEN NOW:\n${screen}${nudge}\n\nChoose your next action with take_action.`,
+      user: playerTurnPrompt({ history, snapshot, notebook, beat, nudge }),
       tool: ACTION_TOOL,
+      // The instructions and the tool are the same every turn: read from
+      // cache after the first. Uncached, they were the largest cost of the
+      // first reviewed run (issue #374 A7).
+      cache: true,
     });
     if (!reply.ok) return { action: null, problem: reply.problem, kind: reply.kind, attempts: attempt };
     const checked = reply.toolInput ? validateAction(reply.toolInput, snapshot) : { ok: false, problem: "the reply did not use take_action" };
@@ -281,6 +427,8 @@ export function summariseAction(a) {
   switch (a?.action) {
     case "say":    return `say: ${a.text}`;
     case "click":  return `click "${a.label}" on ${a.message}`;
+    case "choose": return `choose "${a.option}" in dropdown ${a.select} on ${a.message ?? "a card"}`;
+    case "close":  return `close the window "${a.title}"`;
     case "dialog": return `in "${a.title}"${a.fields?.length ? ` set ${a.fields.map(f => `${f.name}=${f.value}`).join(", ")} and` : ""} press "${a.press}"`;
     case "wait":   return `wait ${a.seconds}s`;
     case "stop":   return `stop: ${a.reason}`;

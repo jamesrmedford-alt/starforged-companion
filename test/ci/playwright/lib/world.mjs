@@ -12,12 +12,52 @@ export const PLAYER_NAME = "Playthrough Player";
 // ── page hooks ───────────────────────────────────────────────────────────────
 
 /**
+ * A refused write's caller (any page, before any script). The server's
+ * refusal comes back with the server's stack — "User … lacks permission to
+ * create Item […] in parent Actor […]" at ServerDatabaseBackend — and says
+ * nothing of who asked. Every create, update and delete a client asks for is
+ * given the stack of its asker, kept in window.__sfcRefused when the write is
+ * refused. Nothing else changes: the same call, the same result, the same
+ * error thrown on.
+ */
+export function installRefusalTrace() {
+  const wrap = () => {
+    const Document = globalThis.foundry?.abstract?.Document;
+    if (!Document || Document.__sfcTraced) return !!Document;
+    Document.__sfcTraced = true;
+    for (const method of ["createDocuments", "updateDocuments", "deleteDocuments"]) {
+      const original = Document[method];
+      if (typeof original !== "function") continue;
+      Document[method] = async function sfcRefusalTrace(...args) {
+        const asked = new Error("asked here").stack;
+        try { return await original.apply(this, args); }
+        catch (err) {
+          const parent = args[1]?.parent ?? null;
+          (window.__sfcRefused ??= []).push({
+            method, document: this.documentName ?? this.name ?? "?", message: String(err?.message ?? err),
+            parent: parent ? `${parent.documentName} "${parent.name}" (${parent.type ?? "?"})` : null,
+            data: (Array.isArray(args[0]) ? args[0] : [args[0]]).slice(0, 3).map(d => ({ type: d?.type ?? null, name: d?.name ?? null, id: d?._id ?? null, keys: Object.keys(d ?? {}).slice(0, 8) })),
+            stack: String(asked).split("\n").slice(2, 16).join("\n"),
+          });
+          throw err;
+        }
+      };
+    }
+    return true;
+  };
+  if (!wrap()) { const timer = setInterval(() => { if (wrap()) clearInterval(timer); }, 25); }
+}
+
+/**
  * Scripted dice (GM page, before any script). The resolver rolls with
  * Math.random inside rollDie (src/moves/resolver.js) — challenge dice first,
  * then the action die. While window.__sfcDice holds values, a call made
  * directly from rollDie takes the next one; every other caller (ids, oracle
  * tables) gets real randomness. While window.__sfcRolled is an array, every
- * value rollDie is given — scripted or real — is appended to it.
+ * value rollDie is given — scripted or real — is appended to it. While
+ * window.__sfcRandomKept is an object, every other value a file of the
+ * module's draws is appended to it under that file's name, and taken from
+ * window.__sfcRandomQueue first when it holds values for that file.
  */
 export function installDiceScript() {
   const realRandom = Math.random;
@@ -35,6 +75,25 @@ export function installDiceScript() {
       if (/\brollDie\b/.test(caller) && caller.includes("/moves/resolver.js")) {
         const value = queued ? queue.shift() : realRandom();
         if (kept) kept.push(value);
+        return value;
+      }
+    }
+    // A long exploration run (issue #373) keeps the module's other randomness
+    // too — an oracle's d100, a price paid — by the file that asked for it
+    // (window.__sfcRandomKept), and a replay hands each file its values back
+    // in order (window.__sfcRandomQueue). Without it a replay rolled a
+    // different price for the same miss and was no replay.
+    const others = window.__sfcRandomKept;
+    if (others && typeof others === "object") {
+      const limit = Error.stackTraceLimit;
+      Error.stackTraceLimit = 4;
+      const caller = (new Error().stack || "").split("\n")[2] || "";
+      Error.stackTraceLimit = limit;
+      const file = /\/modules\/starforged-companion\/src\/([^?:)\s]+)/.exec(caller)?.[1] ?? null;
+      if (file) {
+        const queue = window.__sfcRandomQueue?.[file];
+        const value = Array.isArray(queue) && queue.length ? queue.shift() : realRandom();
+        (others[file] ??= []).push(value);
         return value;
       }
     }

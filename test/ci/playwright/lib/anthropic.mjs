@@ -23,11 +23,16 @@ const RETRYABLE   = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 const TIMEOUT_MS  = 180_000;
 
 /** The request body of one call. Pure. */
-export function buildRequest({ model, effort, maxTokens, system, user, tool = null }) {
+export function buildRequest({ model, effort, maxTokens, system, user, tool = null, cache = false }) {
   const body = {
     model,
     max_tokens: maxTokens,
-    system,
+    // `cache`: the system prompt closes on a cache breakpoint. Tools come
+    // before the system prompt in what is cached, so the tool is read from
+    // cache with it. For a prompt that is the same on every call of a run
+    // (the AI player's standing instructions); one below the model's minimum
+    // cacheable size is simply not cached.
+    system: cache ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] : system,
     messages: [{ role: "user", content: user }],
     // The current models think adaptively and take no sampling parameters;
     // effort is the one control, set explicitly.
@@ -75,10 +80,10 @@ export function readReply(data, { toolName = null } = {}) {
  *   stopReason?: string|null, text?: string, toolInput?: object|null, usage?: object|null }>}
  */
 export async function callClaude({
-  apiKey, model, effort = "medium", maxTokens, system, user, tool = null, role, budget,
+  apiKey, model, effort = "medium", maxTokens, system, user, tool = null, cache = false, role, budget,
   requestLog = null, fetchImpl = fetch, retries = 2, pause = (ms) => new Promise(r => setTimeout(r, ms)),
 }) {
-  const body = JSON.stringify(buildRequest({ model, effort, maxTokens, system, user, tool }));
+  const body = JSON.stringify(buildRequest({ model, effort, maxTokens, system, user, tool, cache }));
   let last = { ok: false, kind: "api", problem: "the call was never sent" };
   for (let attempt = 0; attempt <= retries; attempt++) {
     const held = budget.reserve({ model, maxTokens, promptChars: body.length, role });

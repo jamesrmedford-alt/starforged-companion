@@ -67,7 +67,14 @@
 #                                              --replay: an earlier run's
 #                                              actions, dice and replies again,
 #                                              no key. EXPLORE_CHARTER picks
-#                                              the charter (memory).
+#                                              the charter: memory (default),
+#                                              or long-haul (issue #373: three
+#                                              sessions, 26 beats; its
+#                                              rehearsal rolls and takes about
+#                                              fifteen minutes). A live run is
+#                                              refused without
+#                                              EXPLORE_QUESTIONS: what it is to
+#                                              answer, one question to a line.
 #   ./scripts/cloud.sh multiplayer             the second-client suite
 #   ./scripts/cloud.sh quench                  the Quench batches
 #   ./scripts/cloud.sh status                  what is running
@@ -326,6 +333,7 @@ cmd_explore() {
   esac
   if [[ "${mode}" == live ]]; then
     [[ -n "$(claude_key)" ]] || die "a live run calls Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first — or rehearse it (--rehearse)"
+    [[ -n "${EXPLORE_QUESTIONS:-}" ]] || die "a live run is given its questions first: set EXPLORE_QUESTIONS — what this run is to answer that a rehearsal cannot, one question to a line"
     export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"
     log "running the ${EXPLORE_CHARTER:-memory} charter LIVE — real models, spend capped by playwright/explore.config.json"
   else
@@ -350,6 +358,6 @@ case "${1:-}" in
   quench)       log "running the Quench batches"; run_suite quench.mjs ;;
   status)       cmd_status ;;
   down)         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true; log "container removed (./data is kept)" ;;
-  -h|--help|"") sed -n '2,76p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|"") sed -n '2,83p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)            die "unknown command: $1 (try --help)" ;;
 esac

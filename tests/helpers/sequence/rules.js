@@ -195,3 +195,120 @@ export function recommit(ticks, rank, challenge) {
     rank:  rankAbove(rank),
   };
 }
+
+// ── Play at a live table (issue #373: the long haul's mechanical checks) ────
+//
+// What test/ci/playwright/lib/mechanics.mjs holds a live run to, after every
+// action. Transcribed, like everything above, from the game's text —
+// docs/rules-reference/playkit-rules-and-coverage.md Part 1 — and importing
+// nothing from src/:
+//
+//   - "Action roll — d6 (action die) + a stat + any 'add +X' bonuses, compared
+//     against two d10 challenge dice. Final action score is capped at 10."
+//   - "Match — both challenge dice show the same value."
+//   - A negative momentum equal to the action die cancels the die (the
+//     rulebook's "Suffering negative momentum": the die counts as 0).
+//   - "Condition meters (0–5): health, spirit, supply." "Momentum (−6 to
+//     +10)." "Max momentum starts at +10 and is reduced by 1 per marked
+//     impact." "Momentum reset … 0 impacts → +2, 1 impact → +1, 2 or more
+//     impacts → 0."
+//   - "Burn momentum — on an action roll only … if your current momentum is
+//     positive and higher than your action die, you may replace the action
+//     die with your current momentum, then reset momentum": the burned score
+//     is the momentum itself, held against the same challenge dice.
+//   - Take Decisive Action: "If in bad spot, downgrade results one step" — a
+//     strong hit without a match counts as a weak hit, a weak hit as a miss.
+//   - "Earn Experience — +2 XP per legacy box filled (+1 once a track is
+//     cleared)."
+//   - Develop Your Relationship, bonded: "roll +their rank … On a strong hit,
+//     mark 2 ticks on your bonds legacy track. … On a weak hit, take +2
+//     momentum. On a miss, take no lasting benefit."
+//   - The momentum a move's outcome gives, where the text gives one number
+//     and no choice (the tables of §1.3): Gather Information "strong: +2
+//     momentum • weak: +1 momentum"; Set a Course "strong: arrive, +1
+//     momentum"; Enter the Fray "strong: +2 momentum and in control"; Take
+//     Decisive Action "strong: prevail +1 momentum"; Face Danger, React Under
+//     Fire and Check Your Gear "strong: +1 momentum"; Swear an Iron Vow
+//     "strong: +2 momentum • weak: +1 momentum".
+//   - Strike "strong: mark progress twice • weak: mark twice"; Clash "strong:
+//     mark progress twice • weak: mark once".
+//   - The suffer moves: Endure Harm "−1/−2/−3 health; at 0 also Lose Momentum
+//     by the remainder", Endure Stress "symmetric … against spirit", Lose
+//     Momentum, Sacrifice Resources "−1/−2/−3 supply".
+
+export const METER_MIN = 0;
+export const METER_MAX = 5;
+export const MOMENTUM_MIN = -6;
+
+/** A negative momentum equal to the action die cancels it. */
+export const dieCancelled = (actionDie, momentum) => momentum < 0 && actionDie === -momentum;
+
+/** A roll's score as its card shows it: the die (0 when cancelled) + the stat + the adds, never above 10. */
+export function rolledScore({ actionDie, stat, adds = 0, cancelled = false }) {
+  return actionScore(cancelled ? 0 : actionDie, stat + adds);
+}
+
+/** Max momentum and the reset value, by marked impacts. */
+export const momentumMaxFor = (impacts) => MOMENTUM_MAX - impacts;
+export const momentumResetFor = (impacts) => (impacts <= 0 ? MOMENTUM_START : impacts === 1 ? 1 : 0);
+
+/** Whether burning momentum can be chosen at all: positive, and higher than the action die. */
+export const canBurn = (momentum, actionDie) => momentum > 0 && momentum > actionDie;
+
+/** The outcome a burn gives: the momentum as the score, against the dice that fell. */
+export const burnedOutcome = (momentum, challenge) => outcomeOf(momentum, challenge);
+
+/** Take Decisive Action in a bad spot: one step down — except a strong hit with a match. */
+export function decisiveOutcome(outcome, { inBadSpot = false, match = false } = {}) {
+  if (!inBadSpot) return outcome;
+  if (outcome === "strong_hit") return match ? "strong_hit" : "weak_hit";
+  return "miss";
+}
+
+/** Experience for legacy boxes filled: 2 a box, 1 once the track has been cleared. */
+export const xpForBoxes = (boxes, cleared = false) => boxes * (cleared ? 1 : 2);
+
+/** Legacy boxes filled by going from one tick count to another. */
+export const boxesFilled = (before, after) => Math.max(0, Math.floor(after / TICKS_PER_BOX) - Math.floor(before / TICKS_PER_BOX));
+
+/** A bonded Develop Your Relationship: what each outcome leaves. */
+export const BONDED_DEVELOP = Object.freeze({
+  strong_hit: Object.freeze({ bondsTicks: BONDED_DEVELOP_LEGACY_TICKS, momentum: 0 }),
+  weak_hit:   Object.freeze({ bondsTicks: 0, momentum: BONDED_DEVELOP_MOMENTUM }),
+  miss:       Object.freeze({ bondsTicks: 0, momentum: 0 }),
+});
+
+/** The momentum an outcome gives, for the moves whose text names one number and offers no choice. */
+export const MOVE_MOMENTUM = Object.freeze({
+  gather_information:   Object.freeze({ strong_hit: 2, weak_hit: 1 }),
+  set_a_course:         Object.freeze({ strong_hit: 1 }),
+  enter_the_fray:       Object.freeze({ strong_hit: 2 }),
+  take_decisive_action: Object.freeze({ strong_hit: 1 }),
+  face_danger:          Object.freeze({ strong_hit: 1 }),
+  react_under_fire:     Object.freeze({ strong_hit: 1 }),
+  check_your_gear:      Object.freeze({ strong_hit: 1 }),
+  swear_an_iron_vow:    Object.freeze({ strong_hit: 2, weak_hit: 1 }),
+});
+
+/** Marks of progress on the fight's track, by move and outcome. */
+export const FIGHT_MARKS = Object.freeze({
+  strike: Object.freeze({ strong_hit: 2, weak_hit: 2, miss: 0 }),
+  clash:  Object.freeze({ strong_hit: 2, weak_hit: 1, miss: 0 }),
+});
+
+/** The meter each suffer move takes from. */
+export const SUFFER_METER = Object.freeze({
+  endure_harm: "health", endure_stress: "spirit", lose_momentum: "momentum", sacrifice_resources: "supply",
+});
+
+/**
+ * A meter after a cost: never below its floor. What the floor kept back is
+ * the `remainder` — for health and spirit, lost from momentum instead.
+ */
+export function sufferCost(value, amount, floor = METER_MIN) {
+  const after = Math.max(floor, value - amount);
+  return { after, remainder: amount - (value - after) };
+}
+
+/** A meter after a gain: never above its ceiling. */
+export const recover = (value, amount, ceiling = METER_MAX) => Math.min(ceiling, value + amount);

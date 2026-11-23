@@ -126,6 +126,125 @@ the module 31%); and every run leaves a keyless replay.
 
 ---
 
+## The long haul, built: beats the observer marks, checks from the game's text, a ledger read against the helpers too (issue #373 slices 1–5) (2026-11)
+
+**Decision:** The exploration runner (`test/ci/playwright/explore.mjs`) runs
+a charter with `beats` as a long run: `charters/long-haul.json`, the
+maintainer's go-ahead 2026-11-23 ("address issue 373"). How each part is
+built, and why:
+
+- **The observer marks a beat done; the player is never asked**
+  (`lib/beats.mjs`). The player is told every beat, which one is current, and
+  what the observer sees of it — never that it is done. A beat that makes no
+  progress in eight actions is `not-exercised`; a beat with several parts
+  (four facts to plant, a track to fill) counts the eight from the last time
+  it moved, because the issue's "not reached in eight actions" would
+  otherwise give up on filling a track that takes five marks. A beat that
+  `needs` one never done is not exercised at once, for nothing.
+- **The mechanical checks read the table as data and the rules from the
+  game's text** (`lib/mechanics.mjs`, `lib/table.mjs`,
+  `tests/helpers/sequence/rules.js`): nothing in them is computed with a
+  function of `src/` (the rule of "Generated command sequences against an
+  independent model"). A roll is recomputed from the dice line on its own
+  card — a move card carries its dice in its text, not its flags — and held
+  against the dice that fell. A check that could not be made is counted as
+  not made; a violated one makes the run a `product-failure` to be read,
+  since the check may be the one at fault.
+- **The fact ledger is a presence test with refusals, read three ways**
+  (`lib/ledger.mjs`): against the narrator's answers, against the narrator's
+  prompts for a corrected fact's old value, and against what the helpers
+  wrote. A probe is the charter's own question — the player is told to ask
+  it word for word, and a line is that probe when it holds most of its words
+  — because a question told apart by cue words stops being told apart at
+  seven facts; and it is looked for among the lines of the beat that asks
+  it, since a short question's words turn up in play. A scene that restates
+  a fact before the question makes the question uncounted and is itself
+  scored.
+- **A corrected fact's old value in a later prompt is a refusal only when
+  the prompt does not say it was corrected.** The issue's row reads "the old
+  value is in no later prompt or answer". It cannot hold as written, and the
+  third rehearsal showed why: the module names a corrected value to the
+  narrator so that it is not asserted again ("CORRECTED (retracted by the
+  table — do NOT re-assert these, even if earlier narration mentions
+  them)"), and a session summary is written from the session as it was
+  played, its retracted lines under a heading that says so. Every prompt
+  that carries the old value is listed with its sections (`carried`, and the
+  scorecard's "A corrected value in later prompts"); one that carries it and
+  marks it nowhere (`markedCorrected`) is the refusal — the narrator handed
+  the old value as if it stood. In an answer, or in what a helper wrote, it
+  refuses as the issue says.
+- **Six rolls are scripted at the GM's confirmation, by the move it names**
+  (`lib/gm.mjs`), and the scripted miss scripts its price too. Armed when the
+  beat begins, the dice would go to whichever move rolled first. The price is
+  a seventh number, said plainly: Pay the Price is a d100, one entry in four
+  names a suffer move, and the beat's check is the suffer card — so the miss
+  is given "You are harmed". Everything else rolls for real and all of it is
+  recorded, the module's other randomness by the file that asked for it, so a
+  replay rolls the same price.
+- **The burn is scripted from the table as it stands**: a weak hit that
+  momentum improves needs momentum above the higher challenge die, so the
+  dice are worked out in the page from the character's momentum and stat, and
+  no roll is scripted when momentum is too low for one. The beat is then not
+  exercised, and says why.
+- **A line of play is settled when it has been answered.** The first
+  rehearsal that rolled found the runner taking the module's pause between
+  reading a line and narrating it for the end of the turn.
+- **The player's prompt is bounded and its instructions cached**: the last
+  fifteen actions, a notebook of fourteen lines it writes itself, the current
+  beat; the beats and the rules in a system block that is the same on every
+  turn. Measured in rehearsal: +3 characters per action over eighty actions.
+- **The player sees the cards further up the chat that can still be
+  answered**, under their own heading and reference (`e1`…), with the chat's
+  last twelve messages below. A person scrolls up to a vow's card; a view of
+  the last lines alone hid it (the third rehearsal: the vow card was
+  thirteen messages up when its Link was wanted).
+- **The cast's connection is followed by its card's id.** A beat names the
+  connection as the charter made it; after the rename of beat 18 the bond of
+  beat 22 was looked for under a name nobody had.
+- **A live run is refused without its questions in writing**
+  (`EXPLORE_QUESTIONS`, one to a line): the first spending rule, held in
+  code. They head the run's scorecard, each with a place for its answer.
+- **A cache write is priced by how long it is kept** — 1.25 times input for
+  five minutes, twice for an hour, by the split a reply's usage reports
+  (`lib/budget.mjs`). Every write was priced at 1.25; the module's narrator
+  writes one-hour entries. Checked against Anthropic's price list on
+  2026-11-23, with Haiku's cache-read price added to the table.
+- **A write the server refuses is kept with the stack of the code that
+  asked for it** (`installRefusalTrace`): the refusal itself comes back with
+  the server's stack and says nothing of who asked.
+- **A rehearsal that rolls** (`createRollingRehearsal`): the script says
+  which lines are moves, the stand-in's classifier and interpreter say so to
+  the module, and the resolver rolls. `rehearsalDice` scripts the rolls the
+  six do not, so a rehearsal walks one road. Four of them found, for
+  nothing: the runner's settle, a result held where a price was expected, a
+  vow card with no Link ("A vow's card offers its Link…", below), that a strike's miss does not
+  offer a suffer card three times in four, the player's view, the cast
+  looked up by a name it no longer had, and the corrected value's rule
+  above.
+- **The review's arithmetic is generated; its judgement is not**
+  (`lib/review.mjs`): `annotated-transcript.md` with every step's facts and a
+  marked place for the reader's notes, `scorecard.md` with every row that is
+  a count. Repetition is counted by content — shared content words and a
+  name doing the same thing in two scenes of one kind.
+
+**Rejected:**
+- *Asking the player whether a beat is done, or letting it skip one.* Then a
+  model's impression is the result.
+- *Simulating each move's effects in full.* A weak hit is a choice more often
+  than a number; the checks hold the table to what the text fixes — a score,
+  an outcome, a bound, a mark's size, a reward's size, a cost — and count the
+  rest as not checked.
+- *Arming scripted dice when the beat begins.* The first roll of the beat is
+  not always the beat's roll.
+- *Leaving the price to chance.* The suffer check would run in one run of
+  four and the round has three.
+- *An allow-list of what counts as an answer to a probe.* The answer is read
+  for the fact's own words and its refusals; the reading is for the rest.
+- *Editing the kept memory replay to the new runner.* A kept run is replaced
+  by a new live run, never edited.
+
+---
+
 ## A vow fulfilled for a bonded connection marks no progress: it offers the bonded roll (2026-11)
 
 **Decision:** (maintainer, 2026-11-23, with issue #373's decision 4.) When a
