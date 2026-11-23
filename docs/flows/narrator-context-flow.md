@@ -1002,6 +1002,10 @@ each entry's text, timestamp and session number — `campaignRecapCacheKey`);
 matches, so a corrected entry is never recapped in its old form, and with no
 key to regenerate there is no recap rather than a stale one (issue #301 B04 —
 the check was the entry count alone, and the session-opening read had none).
+With no Chronicle entry there is no recap at all: what the Chronicle keeps is
+the scribe's rating against the floor, and — whatever the rating — a resolved
+move that changed something lasting (`chronicleKeeps.js`, issue #374 A5; a
+live session of four rolls had kept none and opened the next with no recap).
 
 **Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
 position line alone, never the frame, truths, corrections or state: it

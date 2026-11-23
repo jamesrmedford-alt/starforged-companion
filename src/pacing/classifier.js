@@ -211,7 +211,11 @@ offered as undertake_an_expedition, hazard or not.)
 
 Pick the category from the SITUATION, not the apparatus being used:
 
-- combat:        fighting or under direct attack right now.
+- combat:        fighting or under direct attack right now — and acting
+                 against any other immediate physical danger as it happens
+                 (a fire, a hull breach, a collapse). The category sets the
+                 dial only: a danger with no foe in it is still face_danger,
+                 not a combat move.
 - investigation: searching, studying, questioning, analysing for answers.
 - exploration:   travel, navigation, route-finding, scanning unknowns,
                  expedition work — including operating ship systems to move

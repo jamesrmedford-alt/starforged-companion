@@ -199,7 +199,11 @@ fact block, detection and draft cards, End and Begin a Session.
   prose with an empty fact block; `{}` for a JSON helper) and an
   `UNRECORDED <kind>` line. A recording whose system-prompt sections differ
   from the live request — entity ids and numbers normalised away — logs
-  `STALE <kind>`: re-record. The per-kind call counts, and any recording
+  `STALE <kind>`: re-record. The check compares section *headings*: a
+  sentence reworded inside a section, a line added to a context block, or a
+  call's parameters (its token cap) changes none, and nothing is logged —
+  the recording is older than the prompt and only the commit history says
+  so (issue #374 A9, A12 and A5 each changed a prompt this way). The per-kind call counts, and any recording
   nothing asked for, are logged after each scenario.
   A scenario marked `"strict": true` names every step (`id`) and declares
   its Claude calls: `calls` (each one required once, with an optional
@@ -532,19 +536,29 @@ charter or touch the runner:
   somebody else's.
 - **The game system's first-start window** is open on a new player's screen;
   the player is not shown it (`ignoreWindows`).
-- **Not yet learned — a card that waits on the player.** The third live run's
-  player left two "Resolve consequence" cards unanswered and typed on; the
-  table does not hold a move for them, so two weak hits' costs went unpaid
-  and the run still passed. The player's instructions do not say such a card
-  is waiting on it, and the observer has no check for a cost left owed
-  (known-issues WEAK-HIT-COST-UNPAID). Until both are built, read a run's
-  cards for an unanswered choice before trusting its mechanics.
+- **A card that waits on the player.** The third live run's player left two
+  "Resolve consequence" cards unanswered and typed on; the table does not
+  hold a move for them, so two weak hits' costs went unpaid and the run
+  still passed. Now the player's instructions say such a card is waiting on
+  it, the observer reads the cost cards left unanswered at the end
+  (`health.costsOwed` in `run.json`; the log's "left owed:" line), and a goal
+  achieved on a table that owes is not a `pass` (known-issues
+  WEAK-HIT-COST-UNPAID). A cost card is one that asks for a choice
+  (`sufferPrompt`): the cards that report a cost applied carry `sufferCard`
+  too, and the check's first form counted one of those as owed — the third
+  run's replay showed three for two. The instruction is a prompt line — whether a player
+  model follows it is read in the next live run; the check does not depend
+  on it. A replay of a run made before this still reproduces: what is
+  compared is the goal's status, its failing layer and the health checks,
+  not the class.
 
 **The run's class** (`classifyRun`): an infrastructure error first, then a
 failed health check (`product-failure`), then a goal never put to the test
 (`not-exercised` — also when the table was left waiting on the GM — or
 `budget-exhausted` when a cap caused it), then a goal not
-achieved (`suspected-quality-issue`), else `pass`. **`pass` is the run's own verdict, not the review's**: the first
+achieved (`suspected-quality-issue`), then a goal achieved with a cost card
+left unanswered (`suspected-quality-issue` — the player's omission, not a
+health failure), else `pass`. **`pass` is the run's own verdict, not the review's**: the first
 run that went the whole way had a wrong campaign recap behind it. A
 memory goal that was not achieved is *suspected* at every layer — which
 stored facts a prompt owes is a design rule the observer does not know (a

@@ -237,7 +237,13 @@ CLAUDE.md "audit consumers" rule):
   removes it (`retractNarrationChronicle`) and a scribe still running when
   the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
   session's automatic entries that state the struck fact
-  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE)
+  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE).
+  An entry is kept when the scribe rates it at or above the Chronicle's
+  floor — or, whatever its rating, when its move changed something lasting
+  (`chronicleKeeps.js` → `lastingChangeOf` / `roundLastingChange`: a progress
+  move, a vow sworn or forsaken, a brush with death, an arrival, a connection
+  made, a miss that paid its price — issue #374 A5). The campaign recap is
+  written from the Chronicle alone, so this is what a recap can know
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -689,7 +695,10 @@ regressions, all are known scope cuts:
    system-prompt §[4c] *STORY SO FAR (THIS
    SESSION)*, and written to the World Journal Session Log at End Session for
    subsequent use. GM-gated + fail-open; toggle `narratorSessionSummary`
-   (default on). Drop priority + the "not a fact store" invariant: decisions.md
+   (default on). A summary whose call stopped at its length cap
+   (`ROLLING_SUMMARY_MAX_TOK`, 700) keeps only its whole sentences
+   (`wholeSentences`); with none it is not stored and the earlier one stands
+   (issue #374 A12 — a recorded live call had stopped mid-word). Drop priority + the "not a fact store" invariant: decisions.md
    → "Rolling session summary: a debounced trailing memory tier".
 7. **Pacing interaction (F9) — shipped (Cluster D, 2026-06-10).** The
    pacing classifier now receives the scene frame in its context (the
