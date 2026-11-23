@@ -5094,6 +5094,10 @@ function registerChatCardActionsTests(quench) {
       // ───── draftEntityCard → Confirm + Dismiss ─────
       describe("draftEntityCard — Confirm creates the entity; Dismiss adds to dismissedEntities", function () {
         it("Confirm button calls createXxx and the new entity appears in the right ID list", async function () {
+          // Two waitFor polls of up to 3 s each: under Mocha's default 2 s the
+          // test was stopped while its own poll could still be waiting (CI run
+          // 45105510061, on a commit that changed nothing under src/).
+          this.timeout(10000);
           if (skipNotGM(this)) return;
           const stateBefore = game.settings.get(MODULE, "campaignState") ?? {};
           const beforeIds = new Set(stateBefore.factionIds ?? []);
@@ -5154,6 +5158,7 @@ function registerChatCardActionsTests(quench) {
         });
 
         it("Dismiss button appends the name to campaignState.dismissedEntities", async function () {
+          this.timeout(10000);   // two waitFor polls of up to 3 s each, as the Confirm test
           if (skipNotGM(this)) return;
           const stateBefore = game.settings.get(MODULE, "campaignState") ?? {};
           const dismissedBefore = new Set(stateBefore.dismissedEntities ?? []);

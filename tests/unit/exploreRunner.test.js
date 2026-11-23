@@ -19,8 +19,8 @@
  *   - a rehearsal's stand-in for the model API: the charter's script through
  *     the player's own tool, a narrator that keeps the fact or keeps nothing;
  *   - the memory charter and the config that ship: runnable, and priced;
- *   - the first live run, kept as a replay: that the file is one the runner
- *     can take again, and that it holds what its result claims.
+ *   - the live runs kept as replays: that each file is one the runner can
+ *     take again, and that it holds what its result claims.
  *
  * The run itself — two browsers at a live Foundry table — is on demand
  * (test/ci/scripts/cloud.sh explore).
@@ -591,10 +591,18 @@ describe('a rehearsal\'s stand-in for the model API', () => {
   });
 });
 
-// ── the live run kept as a replay ────────────────────────────────────────────
+// ── the live runs kept as replays ────────────────────────────────────────────
 
-describe('the first live run of the memory charter, kept as a replay (explorations/memory-live-20261122)', () => {
-  const FILE = path.join(PLAYWRIGHT, 'explorations/memory-live-20261122/replay.json');
+// Each went the whole way with real narrator replies. The first (2026-11-22)
+// is the run issue #374's review was made from, one move rolled; the second
+// (2026-11-23) is the re-run after that issue's fixes, four moves rolled.
+const KEPT_RUNS = [
+  { name: 'memory-live-20261122', rolls: 1 },
+  { name: 'memory-live-20261123', rolls: 4 },
+];
+
+describe.each(KEPT_RUNS)('a live run of the memory charter, kept as a replay (explorations/$name)', ({ name, rolls }) => {
+  const FILE = path.join(PLAYWRIGHT, 'explorations', name, 'replay.json');
   const RUN  = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   const compass = RUN.charter.facts.find(f => f.id === 'compass');
   const actions = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` }));
@@ -611,7 +619,7 @@ describe('the first live run of the memory charter, kept as a replay (exploratio
     for (const a of actions) expect(Object.keys(a), a.step).not.toContain('messageId');
     const steps = new Set(actions.map(a => a.step));
     expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
-    expect(RUN.dice, 'one move rolled: two challenge dice and the action die').toHaveLength(3);
+    expect(RUN.dice, 'each move rolled: two challenge dice and the action die').toHaveLength(3 * rolls);
   });
 
   it('holds what its result claims: the fact stated in the first session, never named in the second, and in the narrator\'s replies there', () => {
