@@ -36,7 +36,7 @@ const same = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").
  * What a check sees: the marks from the step the beat became current at
  * (`from`) to now, and the run so far.
  */
-function view({ marks, messages, actions, charter, from }) {
+export function beatView({ marks, messages, actions, charter, from }) {
   // `from` is the step the beat became current at: the world as that step
   // left it is where the beat starts (`entered`), and what happened in that
   // step belongs to the beat before — a roll that finished one beat is not
@@ -204,10 +204,20 @@ export const BEAT_CHECKS = {
     const prices = v.allCards.filter(k => k.price && v.inWindow(k)).map(k => ({ step: v.firstSeen.get(k.id), ...parsePriceLine(k.price.text) }));
     const routed = prices.find(p => p.route);
     if (routed) return done(`${miss.moveId} missed at ${miss.step}; its price (${routed.roll}: "${routed.entry}") was ${routed.route.move} (-${routed.route.amount}), taken at ${routed.step}`);
-    const suffer = v.allCards.filter(k => k.suffer && v.inWindow(k));
-    if (!suffer.length) return notYet(prices.length ? `${miss.moveId} missed at ${miss.step}; its price ("${prices[0].entry}") named no suffer move` : `${miss.moveId} missed at ${miss.step}; no price has been paid`, prices.length ? 2 : 1);
-    if (!suffer.some(k => k.suffer.resolved)) return notYet("a suffer card is offered and not answered", 2);
-    return done(`${miss.moveId} missed at ${miss.step}; the suffer card was offered and answered`);
+    // The suffer card of this miss — not one a later move brought (the first
+    // live run: a voluntary Endure Stress's choice was taken for the miss's).
+    const ofMiss = (k) => !k.suffer.moveId || k.suffer.moveId === miss.moveId || (k.suffer.resolutionId && k.suffer.resolutionId === miss.card.move.resolutionId);
+    const suffer = v.allCards.filter(k => k.suffer && v.inWindow(k) && ofMiss(k));
+    if (suffer.length) {
+      if (!suffer.some(k => k.suffer.resolved)) return notYet("a suffer card is offered and not answered", 2);
+      return done(`${miss.moveId} missed at ${miss.step}; the suffer card was offered and answered`);
+    }
+    // A price that names no suffer move — one stated before the roll, or a
+    // table entry that is a complication — is paid in the story. The miss
+    // was made and paid for; the suffer path was not walked, and the beat
+    // says so (the `suffer-cost` check then reads "never exercised").
+    if (prices.length) return done(`${miss.moveId} missed at ${miss.step}; its price named no suffer move and was paid in the story — the suffer path was not exercised`);
+    return notYet(`${miss.moveId} missed at ${miss.step}; no price has been paid`, 1);
   },
 
   /** Momentum was burned on a roll made while the beat was current. */
@@ -234,13 +244,21 @@ export const BEAT_CHECKS = {
     const fact = (v.charter.facts ?? []).find(f => f.id === c.fact);
     const old = (fact?.refusals ?? []).flatMap(r => r.anywhere ?? []);
     const truths = v.now?.scene?.truths ?? [];
-    const holds = (t, words) => words.some(w => factIn(`${t.subject} ${t.fact}`, { variants: [w] }));
-    const standingOld = truths.filter(t => !t.retracted && holds(t, old));
-    const standingNew = truths.filter(t => !t.retracted && holds(t, fact?.variants ?? []));
-    const struck = truths.filter(t => t.retracted && holds(t, old));
+    const states = (t, words) => words.some(w => factIn(t.fact, { variants: [w] }));
+    const filed = (t, words) => words.some(w => factIn(t.subject, { variants: [w] }));
+    // The correction is of the truth that stated the old value. Truths the
+    // narrator filed under the old name as their subject are not struck by
+    // it — the table has no command that renames a subject — so they are
+    // said, and they do not hold the beat (the first live run: the naming
+    // truth was struck, the new one set, and two others stayed filed under
+    // "Ashen Wake"). What becomes of the old name afterwards is the ledger's.
+    const standingOld = truths.filter(t => !t.retracted && states(t, old));
+    const standingNew = truths.filter(t => !t.retracted && states(t, fact?.variants ?? []));
+    const struck = truths.filter(t => t.retracted && states(t, old));
+    const under = truths.filter(t => !t.retracted && !states(t, old) && filed(t, old));
     if (!standingNew.length) return notYet(`no standing truth holds the corrected value${struck.length ? "; the old one is struck" : ""}`, struck.length ? 1 : 0);
     if (standingOld.length) return notYet(`the corrected value is set and the old one still stands ("${standingOld[0].fact}")`, 1);
-    return done(`the old value is struck${struck.length ? "" : " (or was never in the ledger)"} and "${standingNew[0].fact}" stands`);
+    return done(`the old value is struck${struck.length ? "" : " (or was never in the ledger)"} and "${standingNew[0].fact}" stands${under.length ? `; ${under.length} other truth(s) are still filed under the old name ("${under[0].subject} — ${under[0].fact.slice(0, 60)}")` : ""}`);
   },
 
   /** One oracle card. */
@@ -337,7 +355,9 @@ export const BEAT_CHECKS = {
     if (!carded.length) return notYet("the X-Card was played; no narration is marked as removed", 1);
     if (v.now.session.xCardActive) return notYet("the X-Card is still up", 2);
     const ids = new Set(carded.map(k => k.narration.narrationId));
-    const standing = v.window.flatMap(k => (k.table.scene?.truths ?? []).filter(t => ids.has(t.narrationId) && !t.retracted).map(t => `${k.step}: "${t.fact}"`));
+    // What stands now. The first live run was failed for a truth that stood
+    // in the step before the card was played, and was retracted by it.
+    const standing = (v.now.scene?.truths ?? []).filter(t => ids.has(t.narrationId) && !t.retracted).map(t => `"${t.fact}"`);
     const kept = (v.now.helpers?.chronicle ?? []).filter(e => ids.has(e.narrationId));
     if (standing.length || kept.length) return failed(`the removed narration still has ${standing.length} standing truth(s)${standing.length ? ` (${standing[0]})` : ""} and ${kept.length} Chronicle entr${kept.length === 1 ? "y" : "ies"}`);
     return done(`${carded.length} narration(s) removed; none of their facts stands, and play has resumed`);
@@ -407,7 +427,7 @@ export function createPointer(beats) {
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const result = check(view({ ...run, from: cur.enteredAt }), beat.check);
+        const result = check(beatView({ ...run, from: cur.enteredAt }), beat.check);
         cur.detail = result.detail;
         if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; }
         if (result.done) {

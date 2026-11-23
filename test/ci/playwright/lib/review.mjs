@@ -264,12 +264,22 @@ export function repetitionOf(messages = []) {
  */
 export function spokenFor(messages = []) {
   const out = [];
-  const said = /\byou\s+(?:say|said|tell|told|ask|asked|answer|answered|reply|replied|murmur|mutter|whisper|call|shout|add|admit|explain|snap|growl|hear yourself)\b/i;
+  const VERBS = "say|said|tell|told|ask|asked|answer|answered|reply|replied|murmur|mutter|whisper|call|shout|add|admit|explain|snap|growl|hear yourself";
+  // The speech is given to "you": «"…," you say», or «You answer the hatch.
+  // "…"» — the verb outside the quote. «"Careful what you tell her," the
+  // voice says» is somebody else speaking.
+  const tagged = new RegExp(`["”][,.]?\\s+you\\s+(?:${VERBS})\\b`, "i");
+  const leads = new RegExp(`^[^"“]*\\byou\\s+(?:${VERBS})\\b[^"“]*$`, "i");
+  const quote = /["“][^"”]{3,}["”]?/;
   for (const m of messages) {
     if (!m.narrator) continue;
-    for (const s of sentencesOf(m.text)) {
-      if (/["“][^"”]{3,}["”]/.test(s) && said.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
-    }
+    const sentences = sentencesOf(m.text);
+    sentences.forEach((s, i) => {
+      if (quote.test(s) && tagged.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
+      else if (leads.test(s) && /^\s*["“]/.test(sentences[i + 1] ?? "") && !new RegExp(`["”][,.]?\\s+(?!you\\b)\\S+(?:\\s+\\S+)?\\s+(?:says|said|asks|answers|replies)\\b`, "i").test(sentences[i + 1])) {
+        out.push({ step: m.step, scene: m.vignette ?? null, sentence: `${s} ${sentences[i + 1]}`.slice(0, 240) });
+      }
+    });
   }
   return out;
 }
@@ -293,6 +303,38 @@ export function frictionOf({ actions = [], beats = [], autopilot = [], messages 
   };
 }
 
+/**
+ * Every number of the review that is arithmetic, from a run's calls and
+ * actions: speed, caching, cost, prompt length, repetition, friction and
+ * the lines spoken for the character. Each action is given what its step
+ * cost (`usd`). Used by the runner when a run ends and by `rescore.mjs`.
+ *
+ * @param {{ moduleRequests: object[], runnerRequests: object[], actions: object[], messages: object[], beats?: object[],
+ *   autopilot?: object[], prices: object, spend: object }} run
+ * @returns {{ allCalls: object[], data: object }}
+ */
+export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions = [], messages = [], beats = [], autopilot = [], prices = {}, spend = null }) {
+  const allCalls = [
+    ...moduleRequests.map(r => ({ step: r.step, kind: r.kind, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
+    ...runnerRequests.map(r => ({ step: r.step ?? null, kind: `the AI ${r.role}`, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
+  ];
+  const usdAt = (step) => allCalls.filter(c => c.step === step && c.usage && prices[c.model]).reduce((n, c) => n + costOf(prices[c.model], c.usage), 0);
+  for (const a of actions) a.usd = Number(usdAt(a.step).toFixed(5));
+  const lines = actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!")).length;
+  return {
+    allCalls,
+    data: {
+      speed: speedOf({ requests: allCalls, actions }),
+      caching: cachingOf(allCalls, prices),
+      cost: costSplit(spend, { actions: actions.length, lines }),
+      length: lengthOf(allCalls),
+      repetition: repetitionOf(messages),
+      friction: frictionOf({ actions, beats, autopilot, messages }),
+      agency: spokenFor(messages),
+    },
+  };
+}
+
 // ── the generated layers ─────────────────────────────────────────────────────
 
 const usd = (n) => `$${Number(n ?? 0).toFixed(4)}`;
@@ -310,6 +352,10 @@ const table = (head, rows) => [`| ${head.join(" | ")} |`, `| ${head.map(() => "-
 export const questionsOf = (text) => String(text ?? "").split(/\r?\n/).map(q => q.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim()).filter(Boolean);
 
 const TO_WRITE = "_To write — the reader's notes: what went right, what went wrong, and why._";
+/** A re-scored run says so, and what its own verdict was. */
+const rescoredLine = (run) => (run.rescored
+  ? [`**Re-scored ${String(run.rescored.at ?? "").slice(0, 10)}** from this run's own evidence, by the checks as corrected after it (\`rescore.mjs\`). What the table did is unchanged. The run's own verdict was **${run.rescored.was?.classification ?? "?"}** — ${run.rescored.was?.because ?? ""}`, ""]
+  : []);
 const TO_ANSWER = "_To write — the answer to each, with its evidence, or that the run did not answer it._";
 
 /**
@@ -321,13 +367,21 @@ const TO_ANSWER = "_To write — the answer to each, with its evidence, or that 
  */
 export function annotatedTranscript({ charter, run, actions = [], messages = [], requests = [], autopilot = [], beats = [], mechanics = null, interruptions = [] }) {
   const out = [`# ${charter.name} — annotated transcript`, ""];
-  out.push(`Run \`${run.id ?? "?"}\` · ${run.mode} · ${run.startedAt ?? ""} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "");
+  out.push(`Run \`${run.id ?? "?"}\` · ${run.mode} · ${run.startedAt ?? ""} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "", ...rescoredLine(run));
   out.push("Generated layers: the beat, the player's reason, the table's calls, rolls, the GM's answers, the checks' findings, time and cost.",
     "The notes under each step are the reader's, and are not generated.", "");
   const byStep = (list, step) => list.filter(x => x.step === step);
   const beatAt = (step) => beats.find(b => b.steps?.includes(step)) ?? null;
   const violations = mechanics?.violations ?? [];
-  const steps = [...new Set([...messages.map(m => m.step), ...actions.map(a => a.step)])];
+  // In the order they happened. A step that posted nothing — a wait, a
+  // press that changed a card in place — has no message to place it by: it
+  // follows the action before it (they were listed after the last message).
+  const steps = [...new Set(messages.map(m => m.step))];
+  actions.forEach((a, i) => {
+    if (steps.includes(a.step)) return;
+    const before = actions.slice(0, i).reverse().map(x => steps.lastIndexOf(x.step)).find(n => n >= 0);
+    steps.splice(before === undefined ? 0 : before + 1, 0, a.step);
+  });
   let phase = null;
   for (const step of steps) {
     const said = byStep(messages, step);
@@ -378,7 +432,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
   const worstOpening = Object.values(repetition ?? {}).map(r => r.worst).filter(Boolean).sort((a, b) => b.sharedShare - a.sharedShare)[0] ?? null;
   const helperRows = (ledger?.facts ?? []).flatMap(f => f.refusals.filter(r => !/narration|answer/.test(r.where)).map(r => ({ fact: f.id, ...r })));
   const out = [`# ${charter.name} — scorecard`, "",
-    `Run \`${run.id ?? "?"}\` · ${run.mode} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "",
+    `Run \`${run.id ?? "?"}\` · ${run.mode} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "", ...rescoredLine(run),
     ...((run.questions ?? []).length ? ["## What this run was to answer", "", ...run.questions.map((q, i) => `${i + 1}. ${q}`), "", TO_ANSWER, ""] : []),
     table(["Dimension", "Result", "Basis", "Trust"], [
       goal

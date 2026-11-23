@@ -79,8 +79,13 @@ export function heldExcerpt(text, fact, width = 90) {
   return hit ? hit.slice(0, width * 3) : null;
 }
 
-/** What a prompt says of a value it lists as corrected, retracted or struck. */
-const CORRECTION_MARK = /\b(corrected|retracted|struck|did not happen|no longer (?:true|holds|stands))\b/i;
+/**
+ * What a prompt says of a value it lists as corrected or retracted: the
+ * module's own labels — "CORRECTED (retracted by the table — do NOT
+ * re-assert these…)", "RETRACTED BY THE TABLE — these did not happen" — and
+ * not a word of the story ("struck the Ashen Wake head-on" is a fight).
+ */
+const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen/;
 
 /**
  * Whether a prompt that holds `word` says it was corrected: the word stands
@@ -98,11 +103,63 @@ export function markedCorrected(prompt, word) {
   return text.split(/\n\s*\n/).some(block => holdsAny(block, [word]) && CORRECTION_MARK.test(block));
 }
 
+/** How many words may stand between a refusal's word and what it is said of. */
+export const NEAR_WORDS = 10;
+
+/** A sentence's clauses: what a comma, a semicolon, a colon or a dash sets apart. */
+export const clausesOf = (sentence) => String(sentence ?? "").split(/[,;:—–]|\s-\s/).map(c => c.trim()).filter(Boolean);
+
+/** Where each of `words` stands in a clause, counted in words: `{ from, to }` for every occurrence. */
+function placesOf(clause, words) {
+  const out = [];
+  for (const w of words ?? []) {
+    for (const m of clause.matchAll(new RegExp(variantPattern(w), "gi"))) {
+      const from = clause.slice(0, m.index).split(/\s+/).filter(Boolean).length;
+      out.push({ from, to: from + m[0].split(/\s+/).filter(Boolean).length - 1 });
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether one of `near` is said of one of `subject` in a clause: both stand
+ * in it, no more than NEAR_WORDS apart — and, where the refusal is `after`
+ * (a pronoun), the word follows the subject with no other name between.
+ * Returns the word, or null.
+ */
+function saidOf(clause, near, subject, { after = false } = {}) {
+  const subjects = placesOf(clause, subject);
+  if (!subjects.length) return null;
+  const words = clause.split(/\s+/).filter(Boolean);
+  const named = (i) => /^[A-Z][a-z]{2,}/.test(words[i].replace(/^[^A-Za-z]+/, ""));
+  for (const w of near ?? []) {
+    for (const at of placesOf(clause, [w])) {
+      for (const s of subjects) {
+        const gap = at.from > s.to ? at.from - s.to - 1 : s.from > at.to ? s.from - at.to - 1 : 0;
+        if (gap > NEAR_WORDS) continue;
+        if (!after) return w;
+        if (at.from <= s.to) continue;
+        let other = false;
+        for (let i = s.to + 1; i < at.from; i++) if (named(i)) other = true;
+        if (!other) return w;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * The refusals of a fact found in a text: each `{ refusal, sentence }`.
- * `near` words refuse in a sentence that also holds one of the refusal's
- * `subject` words (the fact's own variants when it names none); `anywhere`
- * phrases refuse wherever they stand.
+ * `near` words refuse when they are said of one of the refusal's `subject`
+ * words (the fact's own variants when it names none) — in one clause, within
+ * NEAR_WORDS of it; `anywhere` phrases refuse wherever they stand.
+ *
+ * The first live run's summaries and recap read "Juro, who sold the lanes'
+ * timings and who crossed the room to ask whether your sister Ilse's …
+ * star-compass was for sale", "the compass is still face-down in your
+ * pocket, the manifest is still under Tamsin's ledger" and "He also saw you
+ * hand the manifest to Tamsin" — each a refusal by the sentence, and none of
+ * them said of the fact.
  */
 export function refusalsIn(text, fact) {
   const out = [];
@@ -110,7 +167,7 @@ export function refusalsIn(text, fact) {
   for (const r of fact.refusals ?? []) {
     const subject = r.subject?.length ? r.subject : fact.variants;
     for (const s of sentences) {
-      const near = (r.near ?? []).find(w => holdsAny(s, [w]) && holdsAny(s, subject));
+      const near = clausesOf(s).map(c => saidOf(c, r.near, subject, { after: r.after === true })).find(Boolean) ?? null;
       const anywhere = (r.anywhere ?? []).find(w => holdsAny(s, [w]));
       const word = near ?? anywhere;
       if (word) out.push({ refusal: r.id ?? r.note ?? word, word, sentence: s.slice(0, 300) });
@@ -246,7 +303,10 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
       const prompts = requests.filter(r => r.step === line.step && NARRATION_KIND.test(r.kind));
       const priorMark = marks[markAt(line.step) - 1] ?? null;
       const found = priorMark?.stores?.[fact.id] ?? [];
-      const stores = found.filter(s => s.memory !== false && (!fact.anchor?.length || holdsAny(s.excerpt, fact.anchor)));
+      // A store's excerpt is a few words round the variant: the anchor may
+      // stand just outside it, so it is not asked of a store (the first live
+      // run read "not stored" for a fact that was in the scene's truths).
+      const stores = found.filter(s => s.memory !== false);
       const sections = [...new Set(prompts.flatMap(r => (fact.anchor?.length
         ? (factHeld(`${r.system}\n${r.user}`, fact) ? sectionsHolding(`${r.system}\n${r.user}`, fact) : [])
         : sectionsHolding(`${r.system}\n${r.user}`, fact))))];
@@ -351,8 +411,11 @@ export function scoreBaits({ baits = [], messages }) {
     const at = messages.indexOf(line);
     const next = messages.findIndex((m, i) => i > at && m.fromPlayer);
     const answer = messages.slice(at + 1, next < 0 ? undefined : next).filter(m => m.narrator && !m.vignette).map(m => m.text).join(" ");
-    const agrees = holdsAny(answer, bait.agrees ?? []);
-    const corrects = holdsAny(answer, bait.corrects ?? []);
+    // "You did not," she says — a denial corrects, and its "you did" is no
+    // agreement (the first live run's bait was scored taken on those words).
+    const denies = /^[\s"“'‘*_]*(?:no\b|you did not\b|you didn['’]t\b|not so\b|that(?: is|['’]s) not\b)/i.test(answer);
+    const agrees = (bait.agrees ?? []).some(p => new RegExp(`${variantPattern(p)}(?!\\s+not\\b|n['’]t\\b)`, "i").test(answer));
+    const corrects = denies || holdsAny(answer, bait.corrects ?? []);
     return {
       id: bait.id, ask: bait.ask, asked: true, step: line.step, line: line.text, answer: answer.slice(0, 400),
       result: !answer ? "unanswered" : corrects ? "corrected" : agrees ? "taken" : "unclear",

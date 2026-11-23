@@ -97,7 +97,8 @@
             "him",
             "his",
             "himself"
-          ]
+          ],
+          "after": true
         }
       ],
       "probes": [
@@ -487,7 +488,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack the cutter (Strike if you are in control, Clash if you are in a bad spot — say what you do). The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". The table then asks how you pay: choose a cost on the card it gives you — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it.",
+      "tell": "Attack the cutter (Strike if you are in control, Clash if you are in a bad spot — say what you do). The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
       "check": {
         "type": "sufferPaid",
         "moves": [

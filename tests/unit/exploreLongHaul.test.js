@@ -32,15 +32,16 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  containment, contentWords, distanceBand, factHeld, helperWritings, isProbeLine, refusalsIn, scoreBaits, scoreLedger, scoreLeaks, sentencesOf,
+  NEAR_WORDS, clausesOf, containment, contentWords, distanceBand, factHeld, helperWritings, isProbeLine, refusalsIn, scoreBaits, scoreLedger, scoreLeaks, sentencesOf,
   markedCorrected,
 } from '../../test/ci/playwright/lib/ledger.mjs';
 import { BEAT_CHECKS, STALL_ACTIONS, classifyLongRun, createPointer } from '../../test/ci/playwright/lib/beats.mjs';
 import { burnableDice, scriptedDice } from '../../test/ci/playwright/lib/gm.mjs';
+import { plansSeen, recheckBeats, scoreLongRun } from '../../test/ci/playwright/lib/longrun.mjs';
 import { faceOf, parseDiceLine, uniformFor } from '../../test/ci/playwright/lib/table.mjs';
 import {
-  ACTION_TOOL, HISTORY_ACTIONS, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, scriptedForm,
-  summariseAction, validateAction,
+  ACTION_TOOL, HISTORY_ACTIONS, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, sayWithoutIds, scriptedForm,
+  summariseAction, truthIdFor, validateAction,
 } from '../../test/ci/playwright/lib/player.mjs';
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
@@ -104,6 +105,36 @@ describe('a fact, held and refused', () => {
     expect(refusalsIn('Tamsin sets his ledger down.', tamsin)).toHaveLength(1);
     expect(refusalsIn('Tamsin sets her ledger down. The dockhand takes his time.', tamsin)).toEqual([]);
     expect(refusalsIn('She looks up, the broker.', tamsin), 'no sentence names her').toEqual([]);
+  });
+
+  it('a refusal is said of the fact — in its clause, near it — not merely in its sentence (the first live run\'s false alarms)', () => {
+    const compass = { id: 'F1', variants: ['star-compass', 'compass'], refusals: [{ id: 'lost, sold or given away', near: ['lost', 'sold', 'gave away'] }] };
+    expect(refusalsIn('That man was Juro, who sold the lanes\' timings and who crossed the room to ask whether your sister Ilse\'s scratched brass star-compass was for sale.', compass),
+      'sold is said of the timings, sixteen words off').toEqual([]);
+    expect(refusalsIn('You sold the compass years ago.', compass)).toHaveLength(1);
+    expect(refusalsIn('The compass was lost at Vigil Reach, she says.', compass)).toHaveLength(1);
+
+    const manifest = { id: 'F3', variants: ['Tamsin'], anchor: ['manifest'], refusals: [{ id: 'she still has it', subject: ['manifest'], near: ['in your pocket', 'you still have'] }] };
+    expect(refusalsIn('The compass is still face-down in your pocket, the manifest is still under Tamsin\'s ledger, and the promise is still owed.', manifest),
+      'the pocket is the compass\'s clause').toEqual([]);
+    expect(refusalsIn('The manifest is still in your pocket.', manifest)).toHaveLength(1);
+
+    const tamsin = { id: 'F2', variants: ['Tamsin'], refusals: [{ id: 'the wrong pronoun', subject: ['Tamsin'], near: ['he', 'him', 'his'], after: true }] };
+    for (const sentence of [
+      'He also saw you hand the manifest to Tamsin.',
+      'You give Tamsin what you have on Juro: the bright thread, the water-board end of the docks, the lane timings he sells by the hour.',
+      'Mira traded her knowledge of Juro for Tamsin\'s, and Tamsin answered with a warning: he wants a rival left behind, and the ledger moves tonight.',
+      'Juro signs for crates he never carries, per Tamsin Okoro.',
+      'Mira Kestrel proved to Tamsin that Juro signs for crates he never carries and sells the lane timings to the raiders.',
+    ]) expect(refusalsIn(sentence, tamsin), sentence).toEqual([]);
+    expect(refusalsIn('Tamsin sets his ledger down.', tamsin), 'said of her').toHaveLength(1);
+    expect(refusalsIn('Tamsin looks up, and he smiles.', tamsin), 'another clause').toEqual([]);
+
+    const berth = { id: 'F5', variants: ['Bleakhold'], refusals: [{ id: 'another settlement', subject: ['Kobayashi', 'your ship'], near: ['berthed at Hollow Spire', 'docked at Hollow Spire'] }] };
+    expect(refusalsIn('You believed you were berthed at Hollow Spire, but the dock log puts the Kobayashi IV at Bleakhold, cradle four, with you as captain.', berth)).toEqual([]);
+    expect(refusalsIn('The Kobayashi IV is still docked at Hollow Spire.', berth)).toHaveLength(1);
+    expect(clausesOf('One, two; three: four — five')).toEqual(['One', 'two', 'three', 'four', 'five']);
+    expect(NEAR_WORDS).toBe(10);
   });
 
   it('reads sentences, content words, and how much of a question a line holds', () => {
@@ -234,6 +265,8 @@ describe('the ledger, scored layer by layer', () => {
     // A summary's input: the retracted lines under a heading that says so.
     const summary = '## SESSION NARRATION (oldest first)\n\nThe hull turns.\n\n## RETRACTED BY THE TABLE — these did not happen; leave them out\n\nThe Ashen Wake burns.\n';
     expect(markedCorrected(summary, 'Ashen Wake')).toBe(true);
+    // A word of the story is no label: a Chronicle entry about the fight.
+    expect(markedCorrected('## CAMPAIGN CHRONICLE\n\n[11/23/2026]\nMira Kestrel swung the guns round and struck the Ashen Wake head-on, driving the cutter off.\n', 'Ashen Wake')).toBe(false);
     // Said of something else, it marks nothing.
     expect(markedCorrected('## RECENT SCENE\n\nThe course was corrected twice.\n\nThe Ashen Wake cuts across your bow.\n', 'Ashen Wake')).toBe(false);
     expect(markedCorrected('## RECENT SCENE\nNothing of it here.\n', 'Ashen Wake')).toBe(false);
@@ -274,6 +307,9 @@ describe('baits and hidden plans', () => {
     expect(scoreBaits({ baits: [bait], messages: asked('No — it was the manifest you left with her.') })[0]).toMatchObject({ result: 'corrected', step: 'a80' });
     expect(scoreBaits({ baits: [bait], messages: asked('You did, the night you left.') })[0].result).toBe('taken');
     expect(scoreBaits({ baits: [bait], messages: asked('Tamsin shrugs.') })[0].result).toBe('unclear');
+    // The first live run: scored "taken" on the "you did" of a denial.
+    expect(scoreBaits({ baits: [bait], messages: asked('"You did not," Tamsin says over the comm. "It\'s face-down on your galley table, where you keep leaving it."') })[0].result).toBe('corrected');
+    expect(scoreBaits({ baits: [bait], messages: asked('You didn\'t. It is on the table.') })[0].result).toBe('corrected');
     expect(scoreBaits({ baits: [bait], messages: asked(null) })[0].result).toBe('unanswered');
     expect(scoreBaits({ baits: [bait], messages: [] })[0]).toMatchObject({ asked: false, result: 'not-asked' });
   });
@@ -301,6 +337,66 @@ const tableOf = (over = {}) => ({
   legacy: {}, scene: { truths: [] }, helpers: {}, plans: [], ...over, pc: undefined,
 });
 const markOf = (step, table, cards = []) => ({ step, phase: 'session-1', table, cards });
+
+describe('a run\'s beats, checked again from its evidence', () => {
+  // The first live long haul, in small: the X-Card retracted the truth and
+  // the correction was made, and the checks as they then were said "failed"
+  // and "not reached". The evidence is the same; the checks are corrected.
+  const truth = (id, subject, fact, retracted, narrationId = null) => ({ id, subject, fact, retracted, narrationId });
+  const named = truth('t1', 'raider cutter', 'is named the Ashen Wake', false);
+  const drifting = (retracted) => truth('t2', 'Ashen Wake', 'a strip of its hull drifts in the bay mouth', retracted, 'N1');
+  const marks = [
+    markOf('a34', tableOf({ scene: { truths: [named] } })),
+    markOf('a35', tableOf({ scene: { truths: [named, drifting(false)] } }), [{ id: 'n1', xCarded: false, narration: { narrationId: 'N1' } }]),
+    markOf('x15', tableOf({ scene: { truths: [named, drifting(true)] } }), [{ id: 'n1', xCarded: true, narration: { narrationId: 'N1' } }, { id: 'x1', xcard: true }]),
+    markOf('a36', tableOf({ scene: { truths: [named, drifting(true)] } })),
+    markOf('a37', tableOf({ scene: { truths: [{ ...named, retracted: true }, drifting(true)] } })),
+    markOf('a38', tableOf({ scene: { truths: [{ ...named, retracted: true }, drifting(true), truth('t3', 'raider cutter', 'is named the Cinder Wren', false), truth('t4', 'Ashen Wake', 'closing fast', false)] } })),
+    markOf('a39', tableOf({ scene: { truths: [{ ...named, retracted: true }, drifting(true), truth('t3', 'raider cutter', 'is named the Cinder Wren', false), truth('t4', 'Ashen Wake', 'closing fast', false)] } })),
+  ];
+  const charter = {
+    facts: [{ ...CUTTER, plantedBy: 'b16' }],
+    beats: [
+      { id: 'b15', n: 15, session: 2, title: 'the X-Card', interruption: 'xCard', check: { type: 'xCarded' } },
+      { id: 'b16', n: 16, session: 2, title: 'Correct a fact', check: { type: 'corrected', fact: 'F6' } },
+    ],
+  };
+  const was = [
+    { id: 'b15', n: 15, status: 'failed', actions: 1, steps: ['a35', 'x15'], enteredAt: 'a34', doneAt: 'x15', detail: 'the removed narration still has 1 standing truth(s)' },
+    { id: 'b16', n: 16, status: 'not-exercised', actions: 4, steps: ['a36', 'a37', 'a38', 'a39'], enteredAt: 'x15', doneAt: 'a39', detail: 'not reached in 8 actions — the corrected value is set and the old one still stands' },
+  ];
+
+  it('each beat is checked over the steps it had, and is done at the first of them its check says so', () => {
+    const beats = recheckBeats({ charter, beats: was, marks, messages: [], actions: [] });
+    expect(beats[0]).toMatchObject({ status: 'done', doneAt: 'x15', enteredAt: 'a34', steps: ['a35', 'x15'] });
+    expect(beats[1]).toMatchObject({ status: 'done', doneAt: 'a38' });
+    expect(beats[1].detail).toContain('1 other truth(s) are still filed under the old name');
+    expect(was[0].status, 'the run\'s own record is not changed').toBe('failed');
+  });
+
+  it('a beat the corrected check still does not find done stays not exercised, with what the check sees', () => {
+    const never = recheckBeats({ charter, beats: was, marks: marks.slice(0, 5), messages: [], actions: [] });
+    expect(never[1]).toMatchObject({ status: 'not-exercised' });
+    expect(never[1].detail).toMatch(/^not reached in 4 actions — no standing truth holds the corrected value/);
+  });
+
+  it('a beat that needs one no longer done is not exercised; the score is made from the beats as re-checked', () => {
+    const needing = { ...charter, beats: [...charter.beats, { id: 'b17', n: 17, session: 2, title: 'after', needs: ['b99'], check: { type: 'oracleAsked' } }] };
+    const beats = recheckBeats({ charter: needing, beats: [...was, { id: 'b17', n: 17, status: 'done', actions: 1, steps: ['a39'], enteredAt: 'a38', doneAt: 'a39', detail: 'x' }], marks, messages: [], actions: [] });
+    expect(beats[2]).toMatchObject({ status: 'not-exercised', detail: 'it needs beat b99, which was not done' });
+
+    const long = scoreLongRun({ charter, beats: recheckBeats({ charter, beats: was, marks, messages: [], actions: [] }), marks, messages: [], actions: [], requests: [] });
+    expect(long.summary).toEqual({ beats: 2, done: 2, failed: 0, notExercised: 0 });
+    expect(long.ledger.facts[0], 'the corrected fact is planted where its beat was done').toMatchObject({ id: 'F6', plantedAt: 'a38' });
+    expect(long.mechanics.violations).toEqual([]);
+  });
+
+  it('the hidden plans seen over a run: when each was first seen, and when its truth was revealed', () => {
+    const plan = (truthRevealed) => ({ id: 'sk-1', kind: 'threat', subject: 'Ashen Wake', truth: 'flown by a bounty hunter', truthRevealed });
+    expect(plansSeen([{ step: 'a1', table: { plans: [] } }, { step: 'a2', table: { plans: [plan(false)] } }, { step: 'a3', table: { plans: [plan(true)] } }]))
+      .toEqual([{ id: 'sk-1', kind: 'threat', subject: 'Ashen Wake', truth: 'flown by a bounty hunter', firstSeen: 'a2', revealedAt: 'a3' }]);
+  });
+});
 
 describe('the pointer over the beats', () => {
   const beats = [
@@ -436,6 +532,15 @@ describe('each beat\'s check on the world', () => {
     const miss = moveCard('r1', 'Strike', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss');
     const offered = { id: 's1', suffer: { resolved: false, picked: [], moveId: 'strike' } };
     expect(check('sufferPaid', {}, [setup, markOf('a1', tableOf(), [miss, offered])]).detail).toBe('a suffer card is offered and not answered');
+    // The first live run: the price was stated before the roll and told in
+    // the story; a voluntary Endure Stress three actions later brought a
+    // choice card of its own, which was taken for the miss's.
+    const stated = { id: 'p1', price: { text: 'Pay the Price Strike As stated before the roll: Your rounds scatter wide and the raider cutter closes on the hull.', actorId: 'pc' } };
+    const told = check('sufferPaid', {}, [setup, markOf('a1', tableOf(), [miss, stated])]);
+    expect(told).toMatchObject({ status: 'done' });
+    expect(told.detail).toContain('named no suffer move and was paid in the story — the suffer path was not exercised');
+    const another = { id: 's2', suffer: { resolved: true, picked: [0], moveId: 'endure_stress', resolutionId: 'r9' } };
+    expect(check('sufferPaid', {}, [setup, markOf('a1', tableOf(), [miss, another])]).detail, 'another move\'s card is not this miss\'s').toBe('strike missed at a1; no price has been paid');
     expect(check('sufferPaid', {}, [setup, markOf('a1', tableOf(), [miss, offered]), markOf('a2', tableOf(), [{ ...offered, suffer: { ...offered.suffer, resolved: true, picked: [0] } }])])).toMatchObject({ status: 'done' });
     // A miss momentum could improve is held: nothing is paid until it is kept.
     const held = moveCard('r1', 'Strike', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss', { held: { open: true } });
@@ -487,6 +592,16 @@ describe('each beat\'s check on the world', () => {
     expect(check('corrected', { fact: 'F6' }, [setup, markOf('a1', truths(['is named the Ashen Wake', true], ['is named the Cinder Wren', false]))], { charter })).toMatchObject({ status: 'done' });
     expect(check('corrected', { fact: 'F6' }, [setup, markOf('a1', truths(['is named the Ashen Wake', false], ['is named the Cinder Wren', false]))], { charter }).detail).toContain('the old one still stands');
     expect(check('corrected', { fact: 'F6' }, [setup, markOf('a1', truths(['is named the Ashen Wake', true]))], { charter }).detail).toContain('the old one is struck');
+    // The first live run: the naming truth struck, the new one set — and two
+    // truths the narrator had filed under the old name as their subject.
+    const filed = tableOf({ scene: { truths: [
+      { id: 't0', subject: 'raider cutter', fact: 'is named the Ashen Wake', retracted: true },
+      { id: 't1', subject: 'raider cutter', fact: 'is named the Cinder Wren', retracted: false },
+      { id: 't2', subject: 'Ashen Wake', fact: 'raider cutter that has jumped the Kobayashi IV off Bleakhold Station', retracted: false },
+    ] } });
+    const corrected = check('corrected', { fact: 'F6' }, [setup, markOf('a1', filed)], { charter });
+    expect(corrected).toMatchObject({ status: 'done' });
+    expect(corrected.detail).toContain('1 other truth(s) are still filed under the old name ("Ashen Wake — raider cutter');
   });
 
   it('the interruptions: a reload that moved a fight, an X-Card that left a fact standing, a rename that left two people', () => {
@@ -509,6 +624,10 @@ describe('each beat\'s check on the world', () => {
     const start = markOf('a1', tableOf({ scene: { truths: [truth(false)] } }));
     expect(interruption('xCarded', {}, [start, markOf('x15', tableOf({ scene: { truths: [truth(true)] } }), [carded, xcard])])).toMatchObject({ status: 'done' });
     expect(interruption('xCarded', {}, [start, markOf('x15', tableOf({ scene: { truths: [truth(false)] } }), [carded, xcard])])).toMatchObject({ status: 'failed', detail: expect.stringContaining('1 standing truth') });
+    // The first live run: the truth stood in the step the narration was
+    // made, inside the beat, and the card then retracted it. Done.
+    const narrated = markOf('a35', tableOf({ scene: { truths: [truth(false)] } }), [{ id: 'n1', xCarded: false, narration: { narrationId: 'N1' } }]);
+    expect(interruption('xCarded', {}, [start, narrated, markOf('x15', tableOf({ scene: { truths: [truth(true)] } }), [carded, xcard])])).toMatchObject({ status: 'done' });
 
     const renamedTo = { hostId: 'A1', recordId: 'r1', name: 'Tamsin Okoro', rank: 'dangerous', bonded: false, active: true, ticks: 0 };
     const linkedVow = (name) => ({ id: 'v1', name: 'Find the raiders', rank: 'dangerous', ticks: 0, completed: false, linkedConnectionId: 'A1', linkedConnectionName: name });
@@ -609,6 +728,25 @@ const SCREEN = {
 };
 
 describe('the player\'s two new actions', () => {
+  it('a typed line that names a truth by its id is kept for a replay by what the id stood before — ids differ in every world', () => {
+    const list = (ids) => ({
+      ...SCREEN,
+      messages: [{ ref: 'm1', id: 'idL', speaker: 'Mira Kestrel', buttons: [], selects: [],
+        text: `◈ Fact Continuity Truths in this scene — strike one with !truth strike <id> : ${ids[0]} Tamsin Vey — is closing her ledger stall tonight ${ids[1]} raider cutter — is named the Ashen Wake ${ids[2]} Ashen Wake — raider cutter that has jumped the Kobayashi IV` }],
+    });
+    const struck = { action: 'say', text: '!truth strike tr-ca277', reason: 'strike old entry' };
+    const kept = scriptedForm(struck, list(['tr-a7f8f', 'tr-ca277', 'tr-dd719']));
+    expect(kept).toEqual({ action: 'say', text: '!truth strike {truth}', reason: 'strike old entry', truth: 'raider cutter — is named the Ashen Wake' });
+    // In another world the same truth has another id, and the line finds it.
+    expect(resolveScripted(kept, list(['tr-11111', 'tr-22222', 'tr-33333'])))
+      .toEqual({ ok: true, action: { action: 'say', text: '!truth strike tr-22222', reason: 'strike old entry' } });
+    expect(resolveScripted(kept, SCREEN)).toEqual({ ok: false, problem: 'no truth on screen reads "raider cutter — is named the Ashen Wake"' });
+    // A line with no id, or an id the screen does not show, is kept as typed.
+    expect(scriptedForm({ action: 'say', text: 'I look over the wreck.' }, SCREEN)).toEqual({ action: 'say', text: 'I look over the wreck.' });
+    expect(sayWithoutIds(struck, 'nothing listed')).toEqual(struck);
+    expect(truthIdFor('raider cutter — is named the Ashen Wake', 'tr-0aa11 raider cutter — is named the Ashen Wake tr-0bb22 other')).toBe('tr-0aa11');
+  });
+
   it('a card further up the chat that can still be answered is on its screen, under its own heading, and is clicked by its own reference', () => {
     const screen = {
       ...SCREEN,
@@ -877,6 +1015,12 @@ describe('what a run counts for its review', () => {
       messages: [{ card: ['draftEntityCard'] }],
     });
     expect(friction).toMatchObject({ actions: 3, lines: 1, actionsPerLine: 3, waits: 1, gmAnswers: 2, gmAsked: { 'accepted the proposed move': 2 }, draftCards: 1, didNotLand: [{ step: 'a3' }] });
+    // The first live run: the verb outside the quote, and somebody else's speech.
+    const answered = spokenFor([{ step: 'a52', narrator: true, text: 'The visitor shifts. You answer the hatch. "Before the next cargo tide. I told Tamsin that." Silence stretches.' }]);
+    expect(answered).toHaveLength(1);
+    expect(answered[0].sentence).toContain('You answer the hatch. "Before the next cargo tide.');
+    expect(spokenFor([{ step: 'a60', narrator: true, text: 'The visitor is listening. "Careful what you tell her," the voice says. "I know that compass."' }]), 'the voice speaks, not you').toEqual([]);
+    expect(spokenFor([{ step: 'a51', narrator: true, text: '"Tamsin\'s," you say, and the plating gives back a short pause.' }])).toHaveLength(1);
   });
 });
 
@@ -927,6 +1071,25 @@ describe('the generated layers of the review', () => {
     expect(text).toContain('## The goal, layer by layer');
     expect(text).toContain('| inPrompt | no |');
     expect(text).toContain('## The reading');
+  });
+
+  it('the annotated transcript keeps the order things happened in: a step that posted nothing stands where it was taken', () => {
+    const messages = [
+      { step: 'a1', phase: 'session-1', fromPlayer: true, who: 'player', text: 'I look.' },
+      { step: 'a3', phase: 'session-1', narrator: true, who: 'narrator', text: 'The dock is quiet.' },
+    ];
+    const actions = [
+      { step: 'a1', action: { action: 'say', text: 'I look.' } },
+      { step: 'a2', action: { action: 'wait', seconds: 5 } },
+      { step: 'a3', action: { action: 'say', text: 'I wait.' } },
+      { step: 'a4', action: { action: 'click', label: 'Link' } },
+    ];
+    const text = annotatedTranscript({ charter: { name: 'long-haul' }, run: { id: 'r', mode: 'live' }, actions, messages });
+    const at = (step) => text.indexOf(`### ${step}`);
+    expect([at('a1'), at('a2'), at('a3'), at('a4')].every(n => n >= 0)).toBe(true);
+    expect(at('a1')).toBeLessThan(at('a2'));
+    expect(at('a2'), 'the wait, between the lines it was taken between').toBeLessThan(at('a3'));
+    expect(at('a3')).toBeLessThan(at('a4'));
   });
 
   it('the scorecard: one row per dimension with its basis and how far to trust it; what was never exercised; the reading left to write', () => {
@@ -986,5 +1149,63 @@ describe('the long-haul charter', () => {
     for (const b of CHARTER.beats.filter(x => !x.interruption || x.after === 'line')) expect(scripted.has(b.n), `beat ${b.n}`).toBe(true);
     const moves = CHARTER.rehearsal.filter(e => e.move).map(e => e.move.id);
     for (const b of CHARTER.beats.filter(x => x.dice)) expect(b.dice.moves.some(m => moves.includes(m)), `beat ${b.n}'s roll`).toBe(true);
+  });
+});
+
+// ── the first live run, kept as a replay ─────────────────────────────────────
+
+describe('the first live run of the long haul, kept as a replay (explorations/long-haul-live-20261123)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261123');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const CONFIG = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explore.config.json'), 'utf8'));
+
+  it('is a run the runner can take again: 87 actions with no document id in them, its dice, and every recorded reply filed under a step of the run', () => {
+    expect(RUN.actions).toHaveLength(87);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.actions.filter(a => a.action === 'choose').map(a => a.option), 'the two choices it made in a card\'s dropdown').toEqual(['Tamsin Vey', 'Find who is raiding the Cinder Expanse lanes']);
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.actions.filter(a => /\btr-[a-z0-9]{4,}\b/.test(a.text ?? '')).map(a => a.text), 'a truth is named by its entry, not its id').toEqual([]);
+    expect(RUN.actions.find(a => a.truth)).toMatchObject({ action: 'say', text: '!truth strike {truth}', truth: 'raider cutter — is named the Ashen Wake' });
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(RUN.recording.exchanges.length).toBeGreaterThan(200);
+  });
+
+  it('expects what the corrected checks found in it: every beat done, no rule broken — and says it was scored again, and what the run first said', () => {
+    expect(Object.keys(RUN.expected.beats)).toHaveLength(26);
+    expect(Object.values(RUN.expected.beats).every(status => status === 'done')).toBe(true);
+    expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
+    expect(RUN.rescored.was).toMatchObject({ classification: 'product-failure' });
+    expect(RUN.rescored.was.because).toContain('beat 15');
+    // The scoring data it carries is the charter's as it is now.
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+  });
+
+  it('holds what its review says of it, in the narrator\'s own recorded words', () => {
+    const said = (step) => RUN.recording.exchanges.filter(x => x.step === step && /narrate/.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+    // The corrected name, used once more six actions after its correction.
+    expect(said('a44')).toContain('Ashen Wake');
+    // The renamed connection, made a woman of two names.
+    expect(said('a55')).toMatch(/Tamsin Okoro\. Though the docks swear she's Vey/);
+    // One of the prompt's own instructions, written as a sentence.
+    expect(said('a57')).toContain('Open on the hatch, not you.');
+    // And what held: the ship's berth, and the first bait refused.
+    expect(said('a53')).toContain('Berthed at Bleakhold');
+    expect(said('a82')).toMatch(/^"You did not,"/);
+  });
+
+  it('carries no key, every model it recorded has a price, and its review is written: no marked place is left', () => {
+    expect(RAW).not.toMatch(/sk-ant-/);
+    expect(Object.keys(CONFIG.prices.usdPerMillionTokens)).toEqual(expect.arrayContaining(RUN.recording.provenance.models));
+    for (const file of ['annotated-transcript.md', 'scorecard.md']) {
+      const text = fs.readFileSync(path.join(FOLDER, file), 'utf8');
+      expect(text, file).not.toContain('_To write');
+      expect(text, file).toContain('Re-scored');
+    }
   });
 });

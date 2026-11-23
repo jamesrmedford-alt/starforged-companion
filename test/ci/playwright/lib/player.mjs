@@ -210,12 +210,43 @@ function validateKind(a, snapshot, reason) {
   }
 }
 
+/** A truth's id as the table shows it ("tr-ca277"). */
+const TRUTH_ID = /\btr-[a-z0-9]{4,}\b/;
+/** How much of a truth's entry names it for a replay. */
+const TRUTH_KEY_CHARS = 80;
+const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A typed line with a truth's id in it, without the id: the id is replaced
+ * by `{truth}` and the entry it stood before on the screen is kept beside it
+ * ("tr-ca277 raider cutter — is named the Ashen Wake" → `truth: "raider
+ * cutter — is named the Ashen Wake"`). A line with no such id, or an id the
+ * screen does not show, is returned as it is. Pure.
+ *
+ * @param {{ action: string, text?: string }} action — a `say`
+ * @param {string} screenText — the screen it was typed on, a message to a line
+ */
+export function sayWithoutIds(action, screenText) {
+  const id = TRUTH_ID.exec(String(action.text ?? ""))?.[0];
+  if (!id) return { ...action };
+  const entry = new RegExp(`\\b${id}\\s+(.+?)(?=\\s+tr-[a-z0-9]{4,}\\b|$)`, "m").exec(String(screenText ?? ""))?.[1]?.trim();
+  if (!entry) return { ...action };
+  return { ...action, text: action.text.replace(id, "{truth}"), truth: entry.slice(0, TRUTH_KEY_CHARS).trim() };
+}
+
+/** The id a kept truth entry stands after on this screen, or null. Pure. */
+export function truthIdFor(entry, screenText) {
+  return new RegExp(`\\b(tr-[a-z0-9]{4,})\\s+${escapeRegExp(entry)}`).exec(String(screenText ?? ""))?.[1] ?? null;
+}
+
 /**
  * A taken action in the form a replay takes it again: no document ids — they
  * differ in every world. A click is kept as its button's label and which of
- * the messages offering that label it was, counted from the newest. Pure.
+ * the messages offering that label it was, counted from the newest; a typed
+ * line that names a truth by its id, by the entry the id stood before. Pure.
  */
 export function scriptedForm(action, snapshot) {
+  if (action.action === "say") return sayWithoutIds(action, snapshot.messages.map(m => m.text).join("\n"));
   if (action.action === "choose") {
     const offering = snapshot.messages.filter(m => (m.selects ?? []).some(s => s.options.includes(action.option)));
     const at = offering.findIndex(m => m.id === action.messageId);
@@ -257,6 +288,12 @@ export function resolveScripted(scripted, snapshot) {
     return { ok: true, action: { action: "dialog", title: scripted.title, fields: scripted.fields ?? [], press: scripted.press, reason: scripted.reason ?? "" } };
   }
   if (!PLAYER_ACTIONS.includes(scripted.action)) return { ok: false, problem: `unknown action ${JSON.stringify(scripted.action)}` };
+  if (scripted.action === "say" && scripted.truth) {
+    const id = truthIdFor(scripted.truth, snapshot.messages.map(m => m.text).join("\n"));
+    if (!id) return { ok: false, problem: `no truth on screen reads "${scripted.truth}"` };
+    const { truth: _entry, ...rest } = scripted;
+    return { ok: true, action: { ...rest, text: scripted.text.replace("{truth}", id) } };
+  }
   return { ok: true, action: { ...scripted } };
 }
 

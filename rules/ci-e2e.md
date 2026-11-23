@@ -600,8 +600,10 @@ and the rules that go with each:
   defect that it catches to `exploreMechanics.test.js`.
 - **The fact ledger** (`lib/ledger.mjs`): each fact with the `variants` a
   right answer holds, an `anchor` where the variant alone is in every prompt,
-  the `refusals` that contradict it (a word beside it in one sentence, or a
-  phrase anywhere), and `probes` — questions in the charter's own words, never
+  the `refusals` that contradict it (a `near` word said of it — in its clause,
+  within ten words; `after: true` for a pronoun, which must follow the name
+  with no other name between — or a phrase `anywhere`), and `probes` —
+  questions in the charter's own words, never
   naming the fact, asked again in each session. A probe is scored stored / in
   the prompt / in the answer, and fails outright on a refusal. Two rules from
   the first reviewed run are built in: **what the helpers wrote is read
@@ -620,6 +622,20 @@ and the rules that go with each:
   corrected value in later prompts"); in an answer, or in what a helper
   wrote, it refuses outright. A probe is looked for among the lines of the
   beat that asks it: a short question's words turn up in play.
+- **What a real narrator taught the checks** (the first live run; each is a
+  test in `exploreLongHaul.test.js`, in the run's own words). Check the
+  table as it is *after* the thing the beat is about — the X-Card's check
+  read a truth that stood before the card was played. A beat is what the
+  player was asked to do: the correction's beat is the truth struck and the
+  new one set, not the old name gone from everywhere — that is the ledger's,
+  and the finding. A refusal word in the fact's sentence is not said of the
+  fact: "he" was another man nine times in nine. "You did not" is a denial,
+  not "you did". A label of the module's is not a word of the story
+  ("struck the Ashen Wake head-on"). A miss's price may be told in the story
+  with nothing to choose: the beat's wording must not send the player
+  looking for a card, and the check must not take a later move's card for
+  it. When you add a check, write its test from a sentence a narrator
+  actually wrote.
 - **Its class** (`classifyLongRun`): an infrastructure error, then
   `product-failure` for a failed health check, a violated mechanical check or
   a beat brought about wrongly — each with its step, and the check may be the
@@ -632,20 +648,33 @@ and the rules that go with each:
 
 **Replay.** Every run writes `replay.json`: the player's actions with no
 document ids in them (a click is its button's label and which message
-offering it, counted from the newest), the dice as they fell, and the
-module's replies filed under the action each belonged to. A replay takes the
+offering it, counted from the newest; a typed line that names a truth by its
+id — `!truth strike tr-ca277` — is kept by the entry the id stood before, and
+finds that entry's id again on the replay's own screen), the dice as they
+fell, and the module's replies filed under the action each belonged to.
+**Anything a player types or presses that carries an id the world made is a
+replay that will not replay**: the first replay of a live long run diverged
+on one such line. A hidden plan's id is of that kind and cannot be helped —
+the narrator's recorded sidecar decides plans by id — so a replayed world's
+plans stay undecided and its clocks unmade; a replay compares beats, checks
+and health, which do not read them. A replay takes the
 actions again in a fresh world and scores it again; it `REPRODUCED` when the
 observer's finding — the goal's status and layer, and whether health failed
 — is the same. The run's class is not compared: the first kept run's was
 coloured by the flags of the API reviewer the runner then had.
 
 **A run worth keeping is committed under `playwright/explorations/`** — its
-`replay.json`, with `run.json` and `transcript.md` for a reader — and is then
+`replay.json`, with `run.json`, `transcript.md` and its review
+(`annotated-transcript.md`, `scorecard.md`) for a reader — and is then
 a regression anyone can run without a key (`cloud.sh explore --replay
 playwright/explorations/<run>`). `memory-live-20261122` is the first: real
 narrator replies, the memory goal achieved; `memory-live-20261123` is the
 same charter after issue #374's two fixes, kept beside it — a second kept run
-is added, not swapped in, while the first still reproduces. `exploreRunner.test.js` checks on
+is added, not swapped in, while the first still reproduces.
+`long-haul-live-20261123` is the first live long haul (87 actions; its
+`replay.json` is 1.6 MB), kept as re-scored;
+`exploreLongHaul.test.js` checks it the same way and holds its review to the
+narrator's recorded words. `exploreRunner.test.js` checks on
 every PR that the file is one the runner can take again and that it holds
 what its result claims (the fact stated in the first session, not named by
 the player in the second, and in the narrator's replies there); the replay
@@ -730,6 +759,21 @@ from it came from reading its prompts and records afterwards. Four parts:
 
 Check your counts against the evidence before you send them: the first
 review reported three draft cards where the run had two.
+
+**Read every alarm before you report it, and re-score when a check was
+wrong.** The first live long haul ended `product-failure` with eight alarms,
+and seven were the checks' own: a check that read the table from before the
+X-Card was played, a "refused" fact whose refusal word was said of somebody
+else. A real narrator writes sentences no rehearsal writes, so the first
+live run of a charter tests the checks as much as the module. When a check
+is wrong: fix it, pin it with a test made from the run's own words, and run
+`node rescore.mjs <run folder>` (`test/ci/playwright/`) — the run's evidence
+scored again by the checks as they are now, in a second or two, with no
+Foundry and no key. Its output says it is a re-score and what the run first
+said; keep those files, not hand-corrected ones. It needs the run's whole
+folder (`observer.json`, `requests.json`), which is not committed: re-score
+before the folder goes. Do not buy the run again to learn what the corrected
+check says of it.
 
 A rehearsal or a replay does not need a review.
 

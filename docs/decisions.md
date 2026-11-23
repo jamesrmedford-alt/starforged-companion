@@ -245,6 +245,71 @@ built, and why:
 
 ---
 
+## The long haul's first round: one live run, scored again by corrected checks; the round stops there (issue #373 slice 6) (2026-11)
+
+**Decision:** The first round of the long haul was one live run (2026-11-23,
+87 actions, $2.30), after the memory charter's re-run ($0.25). What was
+decided in making and reading it:
+
+- **A run's verdict can be made again from its evidence** (`rescore.mjs`,
+  `lib/longrun.mjs`). The run ended `product-failure` with eight alarms; read
+  against its records, seven were faults in the checks — the X-Card had
+  retracted its truth, the correction had been made, four "refused" facts
+  were words said of something else, a bait was refused in the answer's
+  first three words. Every verdict is arithmetic over what the observer
+  recorded, so the corrected checks are run over the same folder: 26 of 26
+  beats, no rule broken, two facts refused. The kept run's files are that
+  re-score, each saying so and what the run first said; its `replay.json`
+  expects what the corrected checks found. The beats keep the steps they
+  had — the player acted on the pointer as it stood — and the charter's own
+  scoring data (facts, baits, each beat's check) is taken as it is now.
+- **A refusal word must be said of the fact.** In its clause, within ten
+  words; a pronoun after the name with no other name between
+  (`refusalsIn`, a refusal's `after`). Anywhere in the sentence, live prose
+  set it off twelve times on five facts and never rightly.
+- **The correction's beat is the correction.** Done when the truth that
+  stated the old value is struck and the new one stands. Truths filed under
+  the old name as their subject are said, and do not hold the beat: the
+  table has no command that renames a subject. What becomes of the old name
+  is the ledger's to read — and it found it.
+- **A miss whose price is told in the story is a miss paid.** The beat is
+  done and says the suffer path was not exercised; a later move's choice
+  card is not the miss's.
+- **A replay carries no id the world made, in what is typed as in what is
+  pressed.** The live run's `!truth strike tr-ca277` struck nothing in its
+  first replay, and every beat after it ran out of step. A typed line that
+  names a truth by its id is kept by the entry the id stood before
+  (`sayWithoutIds`), and finds that entry's id on the replay's own screen.
+  A hidden plan's id cannot be helped this way — the narrator's recorded
+  sidecar decides plans by id — so a replayed world's plans stay undecided;
+  a replay compares beats, checks and health, which do not read them
+  (known-issues EXPLORE-REPLAY-PLANS-STAY-UNDECIDED).
+- **The round stops at one run.** A second run would walk the same session
+  into the same four causes, and the spending rules do not buy a session
+  twice except to verify a fix. Three runs were the cap, not the plan.
+- **A second kept run is added beside the first, not swapped in**, while
+  the first still reproduces: `memory-live-20261122` (issue #374's findings)
+  and `memory-live-20261123` (its fixes read in a real session).
+- **The review's findings are not fixed in the branch that found them.** The
+  module's four causes — a corrected or renamed name that does not reach
+  the record, the Shape directive written as prose, a declared move
+  narrated as done, the opening scene told to invent a crew — are issue
+  #377, with options and a recommendation each. The runner's own faults
+  are fixed here: they are the test's.
+
+**Rejected:**
+- *Reporting the run's own verdict and explaining it away in prose.* A
+  scorecard headed `product-failure` over a session in which no rule was
+  broken would be read by its heading.
+- *Editing the run's files by hand to the corrected numbers.* The re-score
+  is a program over the evidence, and says it is one.
+- *A second and third run to fill the round.* Each would cost what the
+  first did and return its findings again.
+- *Fixing the narrator's prompts here.* Four changes to what the narrator
+  is told, unmeasured, under a pull request for a test.
+
+---
+
 ## A vow fulfilled for a bonded connection marks no progress: it offers the bonded roll (2026-11)
 
 **Decision:** (maintainer, 2026-11-23, with issue #373's decision 4.) When a

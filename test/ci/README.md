@@ -291,6 +291,23 @@ Every run that calls a model — either charter — writes `review-data.json`
 and the generated layers of its review: `annotated-transcript.md` and
 `scorecard.md`, with the reader's notes left to write.
 
+**When a check turns out wrong**, a long run is not bought again: its
+evidence is scored again by the checks as they are now.
+
+```bash
+cd playwright && node rescore.mjs artifacts/explore/<run>     # writes <run>/rescored/, no Foundry, no key
+```
+
+`playwright/explorations/long-haul-live-20261123/` is the first live run of
+the long haul (87 actions, 345 model calls, $2.30), kept as re-scored — the
+run's own checks failed it for things the module had done right — with every
+step annotated and its ten questions answered. Its action items are issue
+#377. It replays like the memory runs:
+
+```bash
+./scripts/cloud.sh explore --replay playwright/explorations/long-haul-live-20261123
+```
+
 **Caps** (`playwright/explore.config.json`): 30 player actions, 100 model
 calls, 20 minutes, $10 — whichever comes first. Every call counts — the
 narrator's and the helpers', the player's, retries — and each

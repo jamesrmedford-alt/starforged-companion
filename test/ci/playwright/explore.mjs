@@ -75,13 +75,11 @@ import {
 import { createObserver, scoreMemory, healthOf, classifyRun } from "./lib/observer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
 import { BEAT_CHECKS, createPointer, classifyLongRun } from "./lib/beats.mjs";
-import { checkMechanics } from "./lib/mechanics.mjs";
-import { scoreLedger, scoreBaits, scoreLeaks } from "./lib/ledger.mjs";
+import { scoreLongRun } from "./lib/longrun.mjs";
 import { GM_ANSWERS, startGmRules, reloadGm, cancelEndSession, playXCard, renameConnection } from "./lib/gm.mjs";
 import {
-  annotatedTranscript, scorecard, speedOf, cachingOf, costSplit, lengthOf, repetitionOf, frictionOf, spokenFor, questionsOf,
+  annotatedTranscript, scorecard, reviewDataOf, questionsOf,
 } from "./lib/review.mjs";
-import { costOf } from "./lib/budget.mjs";
 
 const MODE        = ["rehearsal", "replay"].includes(process.env.EXPLORE_MODE) ? process.env.EXPLORE_MODE : "live";
 // A rehearsal runs the live code with a stand-in behind it.
@@ -263,19 +261,6 @@ function transcriptMarkdown(charter, messages) {
 // ── the run ──────────────────────────────────────────────────────────────────
 
 /** The hidden plans the marks saw: each with the step it first appeared at and the step its truth was revealed at. */
-function plansSeen(marks) {
-  const plans = new Map();
-  for (const mark of marks) {
-    for (const plan of mark.table?.plans ?? []) {
-      const known = plans.get(plan.id) ?? { id: plan.id, kind: plan.kind, subject: plan.subject, truth: plan.truth, firstSeen: mark.step, revealedAt: null };
-      known.truth = plan.truth || known.truth;
-      if (plan.truthRevealed && !known.revealedAt) known.revealedAt = mark.step;
-      plans.set(plan.id, known);
-    }
-  }
-  return [...plans.values()];
-}
-
 async function main() {
   const config = readJson(path.resolve("explore.config.json"));
   const earlier = MODE === "replay" ? (() => {
@@ -598,19 +583,9 @@ async function main() {
     let outcome = null;
     let long = null;
     if (LONG) {
-      // A fact the world makes true (where the ship is, a correction, a
-      // rename) is planted at the step its beat was done.
-      const doneAt = (beatId) => { const b = pointer.state.find(x => x.id === beatId); return b?.status === "done" ? b.doneAt : null; };
-      const planted = Object.fromEntries(charter.facts.filter(f => f.plantedBy).map(f => [f.id, doneAt(f.plantedBy)]).filter(([, step]) => step));
-      // A probe is looked for among the lines of the beat that asks its set.
-      const probeSteps = Object.fromEntries(charter.beats.filter(b => b.check?.type === "probesAsked")
-        .map(b => [b.check.set, pointer.state.find(x => x.id === b.id)?.steps ?? []]));
-      const ledger = scoreLedger({ facts: charter.facts, marks, messages, requests: moduleRequests, planted, probeSteps });
-      const mechanics = checkMechanics({ marks, messages, actions, dice: MODE === "replay" ? null : dice, scripted: scripted.filter(x => !x.rehearsalOnly) });
-      const baits = scoreBaits({ baits: charter.baits ?? [], messages });
-      const names = [charter.seed.pc.name, charter.seed.ship?.name, charter.seed.sector?.name, ...(charter.seed.settlements ?? []).map(x => x.name), ...Object.values(charter.cast ?? {}).map(c => c.name)].filter(Boolean);
-      const leaks = scoreLeaks({ plans: plansSeen(marks), messages, common: names });
-      long = { beats: pointer.state, summary: pointer.summary(), mechanics, ledger, baits, leaks };
+      // The ledger, the mechanical checks, the baits and the leaks — scored
+      // as rescore.mjs scores them again from this run's evidence.
+      long = scoreLongRun({ charter, beats: pointer.state, marks, messages, actions, requests: moduleRequests, dice: MODE === "replay" ? null : dice, scripted });
       outcome = { status: "walked", reason: `${long.summary.done} of ${long.summary.beats} beats done, ${long.summary.failed} failed, ${long.summary.notExercised} not exercised`, failingLayer: null, asks: [], milestones: long.summary };
     } else {
       outcome = scoreMemory({ facts: charter.facts, askCues: charter.ask?.cues ?? [], marks, messages, requests: moduleRequests });
@@ -646,23 +621,10 @@ async function main() {
     if (CALLS || LONG) {
       // What the review is written from: every number that is arithmetic. A
       // charter without beats has its goal where a long run has beats.
-      const prices = config.prices.usdPerMillionTokens;
-      const allCalls = [
-        ...moduleRequests.map(r => ({ step: r.step, kind: r.kind, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
-        ...runnerRequests.map(r => ({ step: r.step ?? null, kind: `the AI ${r.role}`, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
-      ];
-      const usdAt = (step) => allCalls.filter(c => c.step === step && c.usage && prices[c.model]).reduce((n, c) => n + costOf(prices[c.model], c.usage), 0);
-      for (const a of actions) a.usd = Number(usdAt(a.step).toFixed(5));
-      const lines = actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!")).length;
-      const data = {
-        speed: speedOf({ requests: allCalls, actions }),
-        caching: cachingOf(allCalls, prices),
-        cost: costSplit(spend, { actions: actions.length, lines }),
-        length: lengthOf(allCalls),
-        repetition: repetitionOf(messages),
-        friction: frictionOf({ actions, beats: long?.beats ?? [], autopilot: accepted, messages }),
-        agency: spokenFor(messages),
-      };
+      const { allCalls, data } = reviewDataOf({
+        moduleRequests, runnerRequests, actions, messages, beats: long?.beats ?? [], autopilot: accepted,
+        prices: config.prices.usdPerMillionTokens, spend,
+      });
       if (LONG) {
         out.json("beats.json", long.beats);
         out.json("mechanics.json", long.mechanics);
