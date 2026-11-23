@@ -45,7 +45,7 @@ import {
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import {
-  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, scorecard, speedOf, spokenFor,
+  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, speedOf, spokenFor,
 } from '../../test/ci/playwright/lib/review.mjs';
 import { burnedOutcome, outcomeOf, rolledScore } from '../helpers/sequence/rules.js';
 
@@ -855,6 +855,16 @@ describe('what a run counts for its review', () => {
     ]);
     expect(scenes.galley_begin.pairs).toMatchObject([{ earlier: 'a2', later: 'a30' }]);
     expect(scenes.galley_begin.worst.repeatedActs).toHaveLength(2);
+    // Somebody called by their role is somebody too (the live memory run of
+    // 2026-11-23: the names-only measure reported no repeated act here).
+    const opening = 'The galley smells of lentils. The navigator, you suspect, is in the cargo bay, teaching the loader drone to say good morning. The deck hums.';
+    const reopening = 'You hold a mug of barley tea. The navigator, by the sound of it, is still teaching the loader drone to say good morning. Across the galley table lies the compass.';
+    expect(rolesIn(reopening)).toEqual(expect.arrayContaining(['navigator', 'loader', 'galley']));
+    const acts = contentOverlap(opening, reopening).repeatedActs;
+    expect(acts.map(a => a.who)).toContain('the navigator');
+    expect(acts.find(a => a.who === 'the navigator').doing).toEqual(expect.arrayContaining(['teaching', 'drone', 'morning']));
+    expect(acts.map(a => a.who), 'the galley is in both, with nothing said of it twice').not.toContain('the galley');
+    expect(acts, 'one sentence said twice is one act').toHaveLength(1);
   });
 
   it('counts the sentences that speak for the character, and what the GM was asked', () => {

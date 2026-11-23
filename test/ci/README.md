@@ -346,7 +346,11 @@ exploration"). Anyone can play it again with no key:
 ```
 
 It ends `REPRODUCED` while the module still carries what the first session
-established into the second. When it diverges after a change that was meant
+established into the second. `playwright/explorations/memory-live-20261123/`
+is the same charter run again after issue #374's two fixes, by the Sonnet
+player (12 actions, 40 model calls, $0.25), with a miss and its price in it;
+its review found a move that was offered and narrated as made. It replays
+the same way. When it diverges after a change that was meant
 to alter the narrator's calls, make a new live run and put its files there
 (about 35 cents). CI does not run it.
 

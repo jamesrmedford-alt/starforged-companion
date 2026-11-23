@@ -621,8 +621,14 @@ describe('a rehearsal\'s stand-in for the model API', () => {
 
 // ── the live run kept as a replay ────────────────────────────────────────────
 
-describe('the first live run of the memory charter, kept as a replay (explorations/memory-live-20261122)', () => {
-  const FILE = path.join(PLAYWRIGHT, 'explorations/memory-live-20261122/replay.json');
+// Each kept run with what is its own: the order of its actions and how many
+// dice it rolled. The second (2026-11-23) is the run made after issue #374's
+// A1 and A2 were fixed, by the Sonnet player, with a miss and its price in it.
+describe.each([
+  ['memory-live-20261122', ['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop'], 3],
+  ['memory-live-20261123', ['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop'], 3],
+])('a live run of the memory charter, kept as a replay (explorations/%s)', (folder, order, diceRolled) => {
+  const FILE = path.join(PLAYWRIGHT, 'explorations', folder, 'replay.json');
   const RUN  = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   const compass = RUN.charter.facts.find(f => f.id === 'compass');
   const actions = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` }));
@@ -635,11 +641,11 @@ describe('the first live run of the memory charter, kept as a replay (exploratio
   it('is a run the runner can take again: its actions carry no document id, and every recorded reply belongs to one of them', () => {
     expect(RUN.expected).toMatchObject({ status: 'achieved', failingLayer: null, healthFailed: false });
     expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
-    expect(actions.map(a => a.action)).toEqual(['say', 'dialog', 'say', 'say', 'say', 'say', 'say', 'dialog', 'say', 'dialog', 'say', 'stop']);
+    expect(actions.map(a => a.action)).toEqual(order);
     for (const a of actions) expect(Object.keys(a), a.step).not.toContain('messageId');
     const steps = new Set(actions.map(a => a.step));
     expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
-    expect(RUN.dice, 'one move rolled: two challenge dice and the action die').toHaveLength(3);
+    expect(RUN.dice, 'one move rolled: two challenge dice and the action die').toHaveLength(diceRolled);
   });
 
   it('holds what its result claims: the fact stated in the first session, never named in the second, and in the narrator\'s replies there', () => {

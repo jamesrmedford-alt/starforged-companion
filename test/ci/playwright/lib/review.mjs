@@ -172,13 +172,29 @@ export function namesIn(text) {
 }
 
 /**
+ * Who a text speaks of by what they are, not by a name: the word after
+ * "the" ("the navigator", "the cook") — and, since "the galley" is found the
+ * same way, a subject counts as repeated only with what is said of it
+ * (contentOverlap). Lower case, four letters or more, no common word.
+ */
+export function rolesIn(text) {
+  const out = new Set();
+  for (const m of String(text ?? "").matchAll(/\b[Tt]he\s+([a-z]{4,})\b/g)) {
+    if (contentWords(m[1]).length) out.add(m[1]);
+  }
+  return [...out];
+}
+
+/**
  * How alike two scenes are in what they say, not in how they word it.
  *
  *   sharedWords  — content words of the later scene that the earlier one also
  *                  used, over the later scene's content words;
  *   repeatedActs — "who is doing what" said twice: a name both scenes use,
- *                  with at least two content words in common between the
- *                  sentences that name them.
+ *                  or somebody both call by their role ("the navigator"),
+ *                  with content words in common between the sentences that
+ *                  speak of them — two for a name, three for a role, the
+ *                  subject's own word not counted.
  *
  * Five-word runs in common scored a repeated opening scene at 1% (issue #374
  * A3): the wording was new, the content was not.
@@ -187,16 +203,25 @@ export function contentOverlap(earlier, later) {
   const a = new Set(contentWords(earlier));
   const b = [...new Set(contentWords(later))];
   const shared = b.filter(w => a.has(w));
-  const sentencesNaming = (text, name) => sentencesOf(text).filter(s => new RegExp(`\\b${name}\\b`).test(s));
+  const names = namesIn(later);
+  const namesNobody = (s) => !names.some(n => new RegExp(`\\b${n}\\b`).test(s));
   const repeatedActs = [];
-  for (const name of namesIn(later)) {
-    const before = sentencesNaming(earlier, name);
-    if (!before.length) continue;
-    const beforeWords = new Set(before.flatMap(contentWords).filter(w => w !== name.toLowerCase()));
-    const nowWords = [...new Set(sentencesNaming(later, name).flatMap(contentWords))].filter(w => w !== name.toLowerCase());
+  const said = (pattern, word, atLeast, who, keep = () => true) => {
+    const naming = (text) => sentencesOf(text).filter(s => pattern.test(s) && keep(s));
+    const before = naming(earlier);
+    if (!before.length) return;
+    const beforeWords = new Set(before.flatMap(contentWords).filter(w => w !== word));
+    const nowWords = [...new Set(naming(later).flatMap(contentWords))].filter(w => w !== word);
     const common = nowWords.filter(w => beforeWords.has(w));
-    if (common.length >= 2) repeatedActs.push({ who: name, doing: common.slice(0, 8) });
-  }
+    // One sentence said twice is one act: a subject that is only a word of
+    // an act already counted ("the loader" in the navigator's) is not another.
+    if (common.length >= atLeast && !repeatedActs.some(a => a.doing.includes(word))) repeatedActs.push({ who, doing: common.slice(0, 8) });
+  };
+  for (const name of names) said(new RegExp(`\\b${name}\\b`), name.toLowerCase(), 2, name);
+  // A role is a looser handle than a name: one more word in common is asked,
+  // and only in sentences that name nobody — what is said of a named person
+  // is already counted as theirs.
+  for (const role of rolesIn(later)) said(new RegExp(`\\b[Tt]he\\s+${role}\\b`), role, 3, `the ${role}`, namesNobody);
   return {
     words: b.length, shared: shared.length,
     sharedShare: b.length ? Number((shared.length / b.length).toFixed(3)) : 0,

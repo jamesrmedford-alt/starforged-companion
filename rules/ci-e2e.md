@@ -643,7 +643,9 @@ coloured by the flags of the API reviewer the runner then had.
 `replay.json`, with `run.json` and `transcript.md` for a reader — and is then
 a regression anyone can run without a key (`cloud.sh explore --replay
 playwright/explorations/<run>`). `memory-live-20261122` is the first: real
-narrator replies, the memory goal achieved. `exploreRunner.test.js` checks on
+narrator replies, the memory goal achieved; `memory-live-20261123` is the
+same charter after issue #374's two fixes, kept beside it — a second kept run
+is added, not swapped in, while the first still reproduces. `exploreRunner.test.js` checks on
 every PR that the file is one the runner can take again and that it holds
 what its result claims (the fact stated in the first session, not named by
 the player in the second, and in the narrator's replies there); the replay

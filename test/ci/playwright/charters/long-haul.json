@@ -13,7 +13,8 @@
     "Never say the answer to a question a beat has you ask: the point is to learn what the narrator remembers.",
     "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
     "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
-    "Do not press buttons no beat calls for (rewards, portraits, other offers) unless a card is in the way of play.",
+    "A beat that is a move needs its roll. If the narrator answers your line without a roll and its card offers \"Roll\" with the move the beat is about (\"Roll Gather Information\", \"Roll Set a Course\"), press that button. If nothing is offered, say the line again, plainly, as that move.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
     "Some beats are the table's and not yours — a page reloads, a window opens and closes, an X-Card is played, a card is renamed. Wait a few seconds; the observer moves you on.",
     "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way."
   ],
