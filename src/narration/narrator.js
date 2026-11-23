@@ -1347,7 +1347,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // improve re-narration carries in its place.
   const cardOptions = {
     matchedEntityIds: extras.matchedEntityIds ?? [],
-    playerText:       isPlayerWrittenInput(resolution) ? (resolution.playerNarration ?? '') : '',
+    playerText:       writtenLine(resolution),
     playerName:       character?.name ?? null,
     narrationId,
     beatShape:        extras.beatShape?.id ?? null,
@@ -1398,6 +1398,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       outcome:       resolution.outcome,
       kind:          'move',
       actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
+      playerText:    writtenLine(resolution),      // what the roller's player wrote (issue #374 A2)
       narrationId,
     });
     return narration;
@@ -1440,6 +1441,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
             outcome:       resolution.outcome,
             kind:          'move',
             actorId:       character?.actorId ?? null,
+            playerText:    writtenLine(resolution),
             narrationId,
           });
           return narration;
@@ -1833,7 +1835,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       // The acting character the beat is about (CHRONICLE-FIRST-PC).
       scheduleChronicleEntry({
         narrationText: narration, campaignState, kind: 'round', narrationId,
-        characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName })),
+        // Each with the line its player wrote (issue #374 A2).
+        characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName, text: e.text ?? '' })),
       });
       return { posted: 'card', narrationId, card };
     } catch (err) {
@@ -2424,13 +2427,15 @@ export async function postNarrationCard(narrationText, resolution, campaignState
 }
 
 /**
- * True when the resolution's playerNarration is what a player wrote — not
- * the marker a Burn Momentum / Improve Result re-narration carries, nor the
- * one a Sojourn miss resolved as a strong hit carries ('resolved' —
- * moves/sojournNeed.js).
+ * The line a player wrote for this move — '' when the resolution's
+ * playerNarration is not one: the marker a Burn Momentum / Improve Result
+ * re-narration carries, or the one a Sojourn miss resolved as a strong hit
+ * carries ('resolved' — moves/sojournNeed.js). What the narration card keeps
+ * as the player's line (B5), and what the Chronicle scribe reads with the
+ * prose (issue #374 A2).
  */
-function isPlayerWrittenInput(resolution) {
-  return !['burn', 'improve', 'resolved'].includes(resolution?.inputMethod);
+function writtenLine(resolution) {
+  return ['burn', 'improve', 'resolved'].includes(resolution?.inputMethod) ? '' : (resolution?.playerNarration ?? '');
 }
 
 /**
@@ -5306,6 +5311,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         campaignState,
         kind:          'paced',
         actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
+        playerText,                                  // what the speaker's player wrote (issue #374 A2)
         narrationId,
       });
       return text;
@@ -5337,6 +5343,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
               campaignState,
               kind:          'paced',
               actorId:       character?.actorId ?? null,
+              playerText,
               narrationId,
             });
             return text;

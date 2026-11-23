@@ -421,12 +421,11 @@ Three roles, and what each may do — keep them apart:
   (`scoreMemory`, `healthOf`, `classifyRun`, all pure and unit-tested): no
   model is asked whether the goal was met.
 - **The review is yours** — the agent that made the run reads it afterwards
-  (below). An API reviewer (`lib/reviewer.mjs`: a model shown the transcript
-  alone, whose flags must quote it word for word or are dropped) is **off by
-  default** (`explore.config.json` → `reviewer.enabled`): it never sees the
-  prompts or what the helpers wrote, which is where the first reviewed run's
-  findings were. Turn it on for a run nobody will read. A rehearsal always
-  runs it. Nothing it says outranks the observer.
+  (below). No model reviews a run. The runner had an API reviewer (a model
+  shown the transcript alone); it was deleted on the maintainer's instruction
+  (2026-11-23): it never saw the prompts or what the helpers wrote, which is
+  where the first reviewed run's findings were. Do not add one back without
+  being asked.
 
 The GM's client is on autopilot for what the module asks of the GM before a
 move rolls, answered without steering the story (`GM_AUTOPILOT` in
@@ -436,7 +435,7 @@ what closing it means. Nothing else is answered.
 
 **The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
 Every model call of a run goes through it — the module's (the harness's
-`gate`), the player's and the reviewer's (`lib/anthropic.mjs`), each retry —
+`gate`), the player's (`lib/anthropic.mjs`), each retry —
 and a call's worst cost is reserved *before* it is sent. A call the budget
 refuses is not sent: a module call gets the neutral stub so the page does not
 hang, and the run ends as `budget-exhausted` (if the goal had not been put to
@@ -482,8 +481,7 @@ charter or touch the runner:
 failed health check (`product-failure`), then a goal never put to the test
 (`not-exercised` — also when the table was left waiting on the GM — or
 `budget-exhausted` when a cap caused it), then a goal not
-achieved, or an API reviewer's flag when one ran (`suspected-quality-issue`),
-else `pass`. **`pass` is the run's own verdict, not the review's**: the first
+achieved (`suspected-quality-issue`), else `pass`. **`pass` is the run's own verdict, not the review's**: the first
 run that went the whole way had a wrong campaign recap behind it. A
 memory goal that was not achieved is *suspected* at every layer — which
 stored facts a prompt owes is a design rule the observer does not know (a
@@ -503,8 +501,8 @@ offering it, counted from the newest), the dice as they fell, and the
 module's replies filed under the action each belonged to. A replay takes the
 actions again in a fresh world and scores it again; it `REPRODUCED` when the
 observer's finding — the goal's status and layer, and whether health failed
-— is the same. The reviewer is a model and is not asked again, so the run's
-class may differ where only its flags coloured it.
+— is the same. The run's class is not compared: the first kept run's was
+coloured by the flags of the API reviewer the runner then had.
 
 **A run worth keeping is committed under `playwright/explorations/`** — its
 `replay.json`, with `run.json` and `transcript.md` for a reader — and is then
@@ -525,8 +523,7 @@ finding. Never edit a kept `replay.json` by hand.
 Messages API stood in for in the runner's own process (`lib/rehearsal.mjs`):
 the charter's `rehearsal` script comes back through the player's tool, the
 module's calls get replies that keep the charter's fact once it is in front
-of them, and the reviewer returns one flag that quotes nothing (so it must be
-dropped). A remembering rehearsal scores `achieved` only because the module's
+of them. A remembering rehearsal scores `achieved` only because the module's
 own memory path carried the fact from one session to the next — it is a real
 check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
 scores `not-achieved` at `storage`. Run both after a change to the runner.
@@ -543,7 +540,7 @@ from it came from reading its prompts and records afterwards. Four parts:
    what the player was trying to do and the reason it gave, what the table
    did with the line (the pacing read, the move, the dice, the effects, what
    each helper wrote, what the GM's autopilot answered), the observer's
-   findings, the reviewer's flags, time and cost. Then your own notes on
+   findings, time and cost. Then your own notes on
    **what went right and what went wrong, and why** — where the fault was the
    runner's, as in the first live run, saying so.
 2. **The scorecard** (`scorecard.md`). One row per dimension with its result,
@@ -560,8 +557,7 @@ from it came from reading its prompts and records afterwards. Four parts:
    what to measure), or *not yet* (say what would supply the samples). Every
    finding also goes in `docs/known-issues.md`. The review fixes nothing.
 4. **What it cost and what it returned.** What was spent, split between the
-   module's own calls, the AI player and the reviewer; each thing learned,
-   of what kind, how it was found, and whether it needed a live model at
+   module's own calls and the AI player; each thing learned, of what kind, how it was found, and whether it needed a live model at
    all; what could have been had for nothing; where the next dollar should
    and should not go.
 
@@ -584,7 +580,7 @@ regression for each defect it found.
 and `playerNotes` (what the player model is told), `facts` (each with the
 `variants` that count as holding it; `required: false` for one that is
 reported and does not decide), `ask.cues` (words one of which marks a line as
-the question), `canon` (what the reviewer is told is true), `settings` and
+the question), `settings` and
 `seed` (the scripted playthroughs' format), and `rehearsal` (the player's
 actions for a rehearsal). The observer scores the memory goal only: a charter
 with a different goal needs its own pure scoring function beside

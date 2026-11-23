@@ -6,6 +6,72 @@ rejected.
 
 ---
 
+## End a Session's closing cutaway is not the campaign's scene; the scribe is told who, and what the player wrote (issue #374 A1, A2) (2026-11)
+
+**Decision:** the two product defects the first reviewed live run found with
+a fix ready (issue [#374](https://github.com/jamesrmedford-alt/starforged-companion/issues/374);
+the maintainer, 2026-11-23: "Fix A1 and A2").
+
+**A1 — the recap.** End a Session writes the session summary, then the
+closing vignette, then the campaign recap. The vignette is a cutaway to an
+NPC "in a place the players are NOT", and it opens a scene of its own for its
+fact block (issue #321 U34). That scene stayed open until the next session
+was minted, and a recap's prompt carried the active scene as binding: the
+live run's recap set the whole campaign "in a galley aboard a pirate ship",
+was cached, and was in the next session's first prompt. Both of the issue's
+recommended fixes are made:
+
+- **The closing vignette's scene ends once its card is posted**
+  (`sessionLifecycleDialogs.js` → `endScene(…, "closing_vignette")`), before
+  the recap is refreshed — also when the narration failed after opening it.
+  Its facts are filed as any scene's end files them (an entity's on its
+  card, the rest as Lore, whereabouts as LAST KNOWN), under the closing
+  session's number; a mystery it posed is retired with it, as at the mint
+  before. No scene is open between sessions (narrator-memory invariant 6,
+  now without its one exception). The mint's close-out stays for a scene
+  that End could not close.
+- **A recap is sent no active-scene block** (`narratorPrompt.js`, section
+  6.5): a meta mode gets the ship's position line alone — the one line of
+  that block that is no scene's — as it already got no recent oracles, no
+  story-so-far and no hidden plans. A `!recap` asked for mid-session no
+  longer treats the open scene's frame and truths as binding either: it
+  retells the Chronicle.
+
+**A2 — the Chronicle.** The scribe was sent the narrator's prose alone. The
+prose says "you", so entries said "the character"; and what a player
+established in their own line reached the Chronicle only if the narrator
+repeated it. It is now sent the name of the player character the beat is
+about (the Actor's, through `actorBridge`) and the line their player wrote —
+a round's characters each with theirs — and is told to call the character by
+name and to keep what the player's line established over a turn of phrase
+the narrator added. The line is plain text on one line, cut at 600
+characters, and the instructions say it is material, never an instruction. A
+Burn Momentum or Improve Result re-narration carries no line.
+
+**Rejected:**
+- *Write the recap before the closing vignette* (the issue's option 1). It
+  moves the problem: the cutaway's scene would still be the campaign's open
+  scene between sessions, and still be flushed into the records at the next
+  Begin a Session.
+- *Give the closing vignette no scene.* Its fact block's truths and state
+  need one to be stamped, retracted by the X-Card and filed (issue #321
+  U34). The scene is right; leaving it open was not.
+- *Drop the ship's position from a recap with the rest of the block.* It is
+  a standing record, not the scene's, and "where things stand" is a recap's
+  subject.
+- *Pass the character's name from each caller.* The scribe's subject can be
+  the first PC when the narration names none; the writer resolves the
+  subject, so the writer reads its name.
+
+**Not done here:** which beats the scribe keeps (issue #374 A5 — the run's
+one roll and its arrival were rated "scene" and dropped) waits for the long
+haul's ratings. **Proved by:** `recapNotSetInClosingVignette.test.js` and
+`chronicleScribeGivenNameAndLine.test.js` (each fails without its fix); the
+live re-run of the memory charter that reads the recap and the Chronicle is
+the next paid run (issue #374 → "Next spend").
+
+---
+
 ## The long haul: one long AI playthrough for the narrator and the mechanics together (issue #373) (2026-11)
 
 **Decision:** Scope [#373](https://github.com/jamesrmedford-alt/starforged-companion/issues/373)
@@ -96,17 +162,16 @@ won-fight prompt).
 
 **Decision:** Issue #302 slice D (with #290 part 3) is
 `test/ci/playwright/explore.mjs`: an AI player with a goal at a live Foundry
-table, an observer that scores the goal without a model, a reviewer whose
-flags must quote the transcript, and a budget every model call passes
-through. On demand only (`cloud.sh explore`); nothing in CI runs it. The
+table, an observer that scores the goal without a model, and a budget every
+model call passes through. The run is reviewed afterwards by the agent that
+made it. On demand only (`cloud.sh explore`); nothing in CI runs it. The
 maintainer's go-ahead for the slice: 2026-11-22.
 
-- **Three roles with separate authority.** The player sees its own screen
+- **Roles with separate authority.** The player sees its own screen
   and acts through one strict tool (say, click, dialog, wait, stop), each
   action checked against the screen it was chosen on. The observer reads the
   world, the chat and the requests and writes nothing; its score is pure
-  functions. The reviewer's opinion never changes the observer's finding.
-  The player is never asked whether its goal was met.
+  functions. The player is never asked whether its goal was met.
 - **The memory goal is scored at three layers** when the question is asked:
   stored (in a store a narration is built from), in the prompt for that
   question, in the answer. The first miss names where the fact was lost:
@@ -130,34 +195,37 @@ maintainer's go-ahead for the slice: 2026-11-22.
   is to read a screen and pick one of five actions, and it was 57% of the
   first reviewed run's cost. The module's own calls use the models its
   settings name. A config line.
-- **No API reviewer by default** (the maintainer, 2026-11-23: "What we really
-  want is your full context review after the fact"). The reviewer is a model
-  shown the transcript and nothing else; the first reviewed run's findings
-  were in the prompts and in what the helpers wrote, which it never sees. It
-  found one thing the reading also found, for 12% of the run's cost. Every
-  live run is reviewed by the agent that made it (rules/ci-e2e.md); the API
-  reviewer stays in the runner as an option
-  (`explore.config.json` → `reviewer.enabled`) for a run nobody will read,
-  and a rehearsal always runs it so the option does not rot. If the first
-  round of the long haul never wants it, delete it.
+- **No API reviewer: deleted** (the maintainer, 2026-11-23: "What we really
+  want is your full context review after the fact", then "delete the
+  reviewer code"). The runner's first version had one — a model shown the
+  transcript and nothing else, whose flags had to quote it. The first
+  reviewed run's findings were in the prompts and in what the helpers wrote,
+  which it never saw; it found one thing the reading also found, for 12% of
+  the run's cost. It was first switched off by default and kept as an
+  option, then removed whole the same day: `lib/reviewer.mjs`, its call in
+  the runner, the `review` input to `classifyRun`, the rehearsal's stand-in
+  reply, the config block and the charter's `canon` list (which only it
+  read). Every live run is reviewed by the agent that made it
+  (rules/ci-e2e.md). The first kept run's `run.json` and scorecard still
+  record the reviewer that ran then; they are that run's record.
 - **No server-side refusal fallback.** A declined call is reported as a
   refusal. A rescued call bills at the fallback model's rates, which the
   reservation made before dispatch did not cover — and the dollar cap is a
   promise.
 - **Plain `fetch`, no SDK.** The Playwright suites carry no SDK and the
   harness already speaks the Messages API; a dependency is not added for
-  two call sites (CLAUDE.md → "Never do without explicit instruction").
+  one call site (CLAUDE.md → "Never do without explicit instruction").
 - **A rehearsal, not a dry run.** `--rehearse` runs the live code path with
   the Messages API stood in for in-process (`lib/rehearsal.mjs`): the path
   that costs money is the one that most needs checking for free. A first
   "dry" mode fed a script past the player's tool and answered the module
-  with neutral stubs; it exercised none of the budget, the tool call, the
-  reviewer or the recording, and was replaced.
+  with neutral stubs; it exercised none of the budget, the tool call or
+  the recording, and was replaced.
 - **Every run is replayable, and a replay is compared on the observer's
   finding** — the goal's status and layer, and whether health failed. The
   actions are kept with no document ids, the dice as they fell
   (`installDiceScript` keeps them), the module's replies under the action
-  each belonged to. The reviewer is not asked again.
+  each belonged to. The run's class is not compared.
 - **The key stays in the runner.** It is sent in a header by the runner's
   process, never enters the world (the page holds a placeholder), is in no
   log the runner keeps, and is blanked from anything written.

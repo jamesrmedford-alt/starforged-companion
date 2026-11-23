@@ -114,10 +114,15 @@ layers. This file is the never-break list.
    the scene ended at) and keeps each recorded character's whereabouts —
    location / vessel / condition — on their record as `lastKnown` (rendered
    on the card as LAST KNOWN). Scenes close at their fiction's
-   boundaries (2026-07): End Session (`session_close`), the close-out before
+   boundaries (2026-07): End Session (`session_close`), End a Session's
+   closing vignette once its card is posted (`closing_vignette` — a cutaway's
+   scene is its own, and left open it was the campaign's active scene between
+   sessions: issue #374 A1), the close-out before
    a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
    session that went idle) — do not add a session boundary
-   that leaves a scene open. A session is over at End Session or after four
+   that leaves a scene open, and do not leave a cutaway's scene open behind
+   it. A meta mode (the campaign recap) is sent none of the open scene's
+   frame, truths or state — of the ledger block, the ship's position alone. A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as
    `previousSessionSummary` (LAST SESSION) — the one prose surface that

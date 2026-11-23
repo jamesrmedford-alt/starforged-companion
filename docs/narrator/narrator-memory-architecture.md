@@ -28,8 +28,8 @@ skeleton, the one surface that holds what has *not* been stated):
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
 | **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
-| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
-| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
+| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone (system prompt §6.5; issue #374 A1) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
+| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call but the campaign recap's (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
 | **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
@@ -60,7 +60,9 @@ uniform across modes — only two things legitimately vary, because they are not
    (`DEFAULT_PERMISSION_CLASS_BY_MODE` — paced→interaction, scene/oracle/
    vignette→embellishment, inciting→discovery). Meta modes (`campaign_recap`)
    carry no latitude block, no sidecar instruction, and no audio markup — their
-   output is consumed verbatim, so a stray sidecar JSON block would leak.
+   output is consumed verbatim, so a stray sidecar JSON block would leak —
+   and none of the open scene's frame, truths or state (issue #374 A1: of
+   §6.5 a recap gets the ship's position line alone).
 
 ### Data flow per turn
 
@@ -714,8 +716,10 @@ regressions, all are known scope cuts:
       card includes the incident.
 - [ ] End Session closes the scene (truths migrated, `currentSceneId`
       null) and marks the session ended — when the closing vignette
-      narrates, it opens a scene of its own, which the next mint closes
-      (`session_close`; issue #321 U34); the next Begin Session mints a new
+      narrates, it opens a scene of its own (issue #321 U34), which ends
+      once its card is posted (`closing_vignette`; issue #374 A1), so
+      `currentSceneId` is null again between sessions and the campaign
+      recap written next names nothing of the cutaway; the next Begin Session mints a new
       one and begins it (the mint closes the session-active gate — issue
       #321 U12), and its first narration shows LAST SESSION and the CAMPAIGN
       RECAP. A reload after four idle hours re-mints the session AND closes

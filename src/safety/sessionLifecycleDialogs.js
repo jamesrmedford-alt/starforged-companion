@@ -838,13 +838,14 @@ async function endSessionOnce(payload, ctx = {}) {
   // when the Claude key is unset or narration is disabled. Runs here, on
   // the canonical GM, because that is the client holding the Claude key.
   setTimeout(async () => {
+    let cs = null;
     try {
       const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
         = await import("../session/endSessionVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
       // A working copy, as the galley's (issue #335 Y04): its scene opens on
       // the copy, never on the cache after End closed the real one.
-      const cs  = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+      cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
       const narrationId = newNarrationId();
@@ -859,6 +860,22 @@ async function endSessionOnce(payload, ctx = {}) {
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);
+    }
+    // The closing vignette is a cutaway — an NPC somewhere the players are
+    // not — and the scene it opened for its fact block (issue #321 U34) is
+    // its own: it ends here, with its card, its facts filed as any scene's
+    // end files them. Left open until the next session was minted, it was the
+    // campaign's active scene meanwhile, and the recap below was told, as
+    // binding, that the campaign stood where the cutaway did (issue #374 A1,
+    // RECAP-TAKES-CLOSING-VIGNETTE-AS-THE-SCENE). A narration that failed
+    // after opening its scene leaves none open either.
+    try {
+      if (cs?.currentSceneId) {
+        const { endScene } = await import("../factContinuity/sceneLifecycle.js");
+        await endScene(cs, { reason: "closing_vignette" });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | the closing vignette's scene was not ended:`, err?.message ?? err);
     }
     // The session's chronicle is complete: refresh the campaign recap now, so
     // the next session's first narration carries a current one from the cache

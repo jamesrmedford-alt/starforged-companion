@@ -1,5 +1,5 @@
 {
-  "about": "Caps, models and prices for AI exploration runs (explore.mjs; issue #302 slice D). A live run stops at whichever cap it reaches first, and a model with no price here is refused before it is called. Prices are dollars per million tokens; check them against Anthropic's price list before a run and correct them here when they change — the run's cost is computed from this table, not billed from it. notMemory: stores the observer finds a fact in and does not count as memory — diagnostic logs no narration is built from. ignoreWindows: windows on the player's screen the player is not shown — the game system's own first-start prompt. reviewer.enabled: off by default — a live run is reviewed by the agent that made it (rules/ci-e2e.md), which reads the prompts and records an API reviewer is never shown; turn it on for a run nobody will read.",
+  "about": "Caps, models and prices for AI exploration runs (explore.mjs; issue #302 slice D). A live run stops at whichever cap it reaches first, and a model with no price here is refused before it is called. Prices are dollars per million tokens; check them against Anthropic's price list before a run and correct them here when they change — the run's cost is computed from this table, not billed from it. notMemory: stores the observer finds a fact in and does not count as memory — diagnostic logs no narration is built from. ignoreWindows: windows on the player's screen the player is not shown — the game system's own first-start prompt.",
   "caps": {
     "actions": 30,
     "calls": 100,
@@ -10,12 +10,6 @@
     "model": "claude-sonnet-5-5",
     "effort": "low",
     "maxTokens": 6000
-  },
-  "reviewer": {
-    "enabled": false,
-    "model": "claude-opus-5-5",
-    "effort": "medium",
-    "maxTokens": 12000
   },
   "prices": {
     "asOf": "2026-11-03",

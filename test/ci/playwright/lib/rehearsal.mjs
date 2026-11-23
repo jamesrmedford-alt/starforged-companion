@@ -1,7 +1,7 @@
 // A rehearsal of an exploration run (explore.mjs, EXPLORE_MODE=rehearsal):
 // the whole live path — the budget's gate, the player's tool calls, the
-// reviewer, the recording — with the Messages API stood in for here. No key,
-// no network, no spend.
+// recording — with the Messages API stood in for here. No key, no network,
+// no spend.
 //
 // It is for the runner, not the narrator: after a change to the runner it
 // shows that a live run would still work, before a live run is paid for. What
@@ -68,12 +68,6 @@ export function createRehearsal({ charter, forget = false }) {
     const text = (t) => ({ content: [{ type: "text", text: t }], stop_reason: "end_turn" });
 
     if (tool === "take_action") return toolUse(playerInput(user));
-    if (tool === "report_review") {
-      // One flag, quoting nothing in the transcript: the runner must drop it.
-      return toolUse({ summary: "A rehearsal's review.", flags: [
-        { dimension: "continuity", severity: "high", quote: "A sentence the rehearsal made up, found nowhere in the transcript.", problem: "The rehearsal's flag: its quote is invented, so it must be dropped." },
-      ] });
-    }
     if (system.includes("pacing pre-classifier")) {
       return text(JSON.stringify({ decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));
     }

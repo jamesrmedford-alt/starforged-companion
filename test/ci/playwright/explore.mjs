@@ -9,11 +9,9 @@
 // (lib/budget.mjs, explore.config.json).
 //
 // The run is then read by whoever made it: every live run ends with a review
-// (rules/ci-e2e.md → "AI exploration"). An API reviewer — a model that reads
-// the transcript alone and flags passages, with quotes (lib/reviewer.mjs) —
-// is off unless explore.config.json turns it on: it sees none of the prompts
-// or the records the helpers write, which is where the first reviewed run's
-// findings were. A rehearsal always runs it, so the option does not rot.
+// (rules/ci-e2e.md → "AI exploration"). No model reviews a run: one shown
+// the transcript alone sees none of the prompts or the records the helpers
+// write, which is where the first reviewed run's findings were.
 //
 // On demand only: nothing in CI runs this, and it never files an issue,
 // changes code or rewrites a recording. It writes evidence, for a person.
@@ -22,7 +20,7 @@
 //   live      — the player and the narrator are real models.
 //               Needs ANTHROPIC_API_KEY; spends money, up to the caps.
 //   rehearsal — the live path, whole — the budget's gate, the player's tool
-//               calls, the reviewer, the recording — with the Messages API
+//               calls, the recording — with the Messages API
 //               stood in for in this process (lib/rehearsal.mjs). No key, no
 //               network, no spend. It proves the runner; its "narrator" is
 //               scripted, so its score says nothing about the real one.
@@ -44,9 +42,8 @@
 //   transcript.md   the chat, as the table saw it
 //   observer.json   the world after each action (session, where each fact is
 //                   stored), the goal's score layer by layer, health
-//   requests.json   every prompt and reply — the module's, the player's, the
-//                   reviewer's — with usage and no headers
-//   review.json     the API reviewer's flags, when it is on (advisory)
+//   requests.json   every prompt and reply — the module's and the player's —
+//                   with usage and no headers
 //   replay.json     the actions, dice and replies a replay needs
 //
 // Exit code: 0 when the run finished and its evidence is written — whatever
@@ -66,7 +63,6 @@ import {
   snapshotScreen, describeScreen, executeAction, chooseAction, summariseAction, scriptedForm, resolveScripted,
 } from "./lib/player.mjs";
 import { createObserver, scoreMemory, healthOf, classifyRun } from "./lib/observer.mjs";
-import { reviewTranscript } from "./lib/reviewer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
 
 const MODE        = ["rehearsal", "replay"].includes(process.env.EXPLORE_MODE) ? process.env.EXPLORE_MODE : "live";
@@ -263,12 +259,11 @@ async function main() {
     installRehearsal({ charter, forget: FORGETFUL });
   }
 
-  const REVIEWER = MODE === "rehearsal" || (MODE === "live" && config.reviewer?.enabled === true);
   const startedAt = new Date();
   const dir = path.join(ARTIFACTS, "explore", `${charter.name}-${MODE}-${stamp(startedAt)}`);
   const out = writer(dir);
   const budget = createBudget({ caps: config.caps, prices: config.prices.usdPerMillionTokens });
-  const runnerRequests = [];     // the player's and the reviewer's calls
+  const runnerRequests = [];     // the player's calls
   const actions = [];
   const stalls = [];
   const accepted = [];           // what the GM's autopilot answered
@@ -281,13 +276,12 @@ async function main() {
   let harness = null;
   let gm = null;
   let player = null;
-  let review = null;
   let world = null;
   let stopAutopilot = () => {};
 
   log(`${charter.name} charter, ${MODE} mode — evidence in ${path.relative(process.cwd(), dir)}`);
   if (MODE === "rehearsal") log(`a rehearsal: the model API is stood in for${FORGETFUL ? " — by a narrator that keeps nothing" : ""}`);
-  if (CALLS) log(`caps: ${config.caps.actions} actions, ${config.caps.calls} model calls, ${config.caps.minutes} minutes, $${config.caps.usd} — player ${config.player.model}, API reviewer ${REVIEWER ? config.reviewer.model : "off"}`);
+  if (CALLS) log(`caps: ${config.caps.actions} actions, ${config.caps.calls} model calls, ${config.caps.minutes} minutes, $${config.caps.usd} — player ${config.player.model}`);
 
   const browser = await chromium.launch();
   try {
@@ -421,17 +415,13 @@ async function main() {
     const outcome = scoreMemory({ facts: charter.facts, askCues: charter.ask?.cues ?? [], marks, messages, requests: moduleRequests });
     const health = healthOf({ endSession: marks.at(-1)?.session ?? null, clients: [gm, player].filter(Boolean), stalls, knownErrors: config.knownErrors ?? [] });
 
-    if (REVIEWER && !infrastructure && messages.some(m => m.narrator)) {
-      review = await reviewTranscript({ apiKey: API_KEY, ...config.reviewer, messages, canon: charter.canon ?? charter.facts.map(f => f.statement), budget, requestLog: runnerRequests });
-      if (!review.ok) log(`the reviewer did not report: ${review.problem}`);
-    }
-
     const spend = budget.report();
-    const verdict = classifyRun({ infrastructure, budgetStop: spend.stopped, outcome, health, review: review?.ok ? review : null });
+    const verdict = classifyRun({ infrastructure, budgetStop: spend.stopped, outcome, health });
     const expected = earlier?.expected ?? null;
     // A replay re-makes the observer's finding — the goal's score and the
-    // health checks. The reviewer is a model and is not asked again, so the
-    // run's class, which its flags can colour, is not what is compared.
+    // health checks — and that is what is compared, not the run's class: a
+    // run kept from when an API reviewer's flags could colour the class (the
+    // first, 2026-11-22) still reproduces.
     const reproduced = expected
       ? !diverged && expected.status === outcome.status && expected.failingLayer === outcome.failingLayer
         && expected.healthFailed === (health.failures.length > 0)
@@ -439,7 +429,6 @@ async function main() {
 
     out.json("observer.json", { outcome, health, marks, autopilot: accepted, messages });
     out.json("requests.json", { module: moduleRequests, runner: runnerRequests });
-    if (review) out.json("review.json", review);
     out.text("transcript.md", transcriptMarkdown(charter, messages));
     out.json("actions.json", actions);
     const replayable = MODE !== "replay" && actions.some(a => a.scripted);
@@ -461,7 +450,7 @@ async function main() {
       commit: process.env.EXPLORE_COMMIT || null,
       versions: world,
       models: MODE === "live"
-        ? { player: config.player, reviewer: REVIEWER ? config.reviewer : "off", module: [...new Set(moduleRequests.map(r => r.model).filter(Boolean))] }
+        ? { player: config.player, module: [...new Set(moduleRequests.map(r => r.model).filter(Boolean))] }
         : "none — no model was called",
       prices: CALLS ? config.prices : undefined,
       settings: charter.settings ?? {},
@@ -473,8 +462,6 @@ async function main() {
       playerStopped: stopped,
       goal: { status: outcome.status, reason: outcome.reason, failingLayer: outcome.failingLayer, milestones: outcome.milestones },
       health: { failures: health.failures, waitingOnGm: health.waitingOnGm, knownFailures: health.knownFailures, errors: health.errors.length },
-      review: review ? { ok: review.ok, flags: review.flags.length, dropped: review.dropped, summary: review.summary, problem: review.problem }
-        : "no API reviewer — the run is reviewed by whoever made it",
       budget: spend,
       replay: MODE === "replay"
         ? { of: path.relative(process.cwd(), REPLAY_FROM), expected, reproduced, diverged }
@@ -487,7 +474,6 @@ async function main() {
     }
     for (const failure of health.failures) log(`health: ${failure}`);
     if (health.waitingOnGm.length) log(`the GM's screen was left waiting on: ${health.waitingOnGm.join(", ")}`);
-    if (review?.ok) log(`reviewer: ${review.flags.length} flag(s)${review.dropped ? `, ${review.dropped} dropped for a quote not in the transcript` : ""}`);
     if (CALLS) log(`${MODE === "live" ? "spent" : "priced at"} $${spend.usd.toFixed(4)} of $${config.caps.usd} — ${spend.calls} model calls, ${spend.actions} actions, ${spend.minutes} minutes`);
     log(`RESULT ${verdict.classification} — ${verdict.because}`);
     if (expected) log(reproduced ? "REPRODUCED the run it replays" : `DIVERGED from the run it replays (that run: ${JSON.stringify(expected)}${diverged ? `; ${diverged.step}: ${diverged.problem}` : ""})`);

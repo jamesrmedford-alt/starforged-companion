@@ -16,7 +16,6 @@
  *     an action's id-free form for a replay;
  *   - the observer: a fact's variants, the memory goal scored layer by layer,
  *     health, and the run's class;
- *   - the reviewer: a flag that does not quote the transcript is dropped;
  *   - a rehearsal's stand-in for the model API: the charter's script through
  *     the player's own tool, a narrator that keeps the fact or keeps nothing;
  *   - the memory charter and the config that ship: runnable, and priced;
@@ -39,7 +38,6 @@ import {
 import {
   classifyRun, excerptOf, factIn, healthOf, scoreMemory, sectionsHolding, variantPattern,
 } from '../../test/ci/playwright/lib/observer.mjs';
-import { REVIEW_TOOL, keepQuotedFlags, reviewTranscript, transcriptText } from '../../test/ci/playwright/lib/reviewer.mjs';
 import { createRehearsal, installRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
@@ -120,13 +118,13 @@ describe('the run\'s budget', () => {
     expect(clock.reserve({ model: 'haiku' })).toMatchObject({ ok: false, reason: expect.stringContaining('minutes') });
   });
 
-  it('tallies by role: the module\'s calls, the player\'s, the reviewer\'s', () => {
+  it('tallies by role: the module\'s calls and the player\'s', () => {
     const budget = createBudget({ caps: { ...CAPS, calls: 10 }, prices: PRICES });
-    for (const role of ['module', 'player', 'player', 'reviewer']) {
+    for (const role of ['module', 'player', 'player']) {
       budget.settle(budget.reserve({ model: 'haiku', role }).id, { usage: { input_tokens: 10, output_tokens: 5 } });
     }
     const { byRole } = budget.report();
-    expect([byRole.module.calls, byRole.player.calls, byRole.reviewer.calls]).toEqual([1, 2, 1]);
+    expect([byRole.module.calls, byRole.player.calls]).toEqual([1, 2]);
     expect(byRole.player).toMatchObject({ input: 20, output: 10 });
   });
 });
@@ -207,7 +205,7 @@ describe('the Claude harness under a budget (a live run\'s module calls)', () =>
 
 // ── the runner's own model calls ─────────────────────────────────────────────
 
-describe('the runner\'s model calls (the player\'s and the reviewer\'s)', () => {
+describe('the runner\'s model calls (the player\'s)', () => {
   const ok = (content, extra = {}) => new Response(JSON.stringify({ content, stop_reason: 'tool_use', usage: { input_tokens: 500, output_tokens: 50 }, ...extra }), { status: 200 });
   const base = { apiKey: 'sk-test-key', model: 'opus', effort: 'low', maxTokens: 1000, system: 'S', user: 'U', role: 'player', pause: async () => {} };
 
@@ -218,7 +216,7 @@ describe('the runner\'s model calls (the player\'s and the reviewer\'s)', () => 
     for (const absent of ['temperature', 'top_p', 'thinking', 'fallbacks']) expect(body).not.toHaveProperty(absent);
   });
 
-  it.each([['the player\'s', ACTION_TOOL], ['the reviewer\'s', REVIEW_TOOL]])('%s tool is strict: every property required, nothing extra', (_who, tool) => {
+  it.each([['the player\'s', ACTION_TOOL]])('%s tool is strict: every property required, nothing extra', (_who, tool) => {
     const closed = (schema) => {
       if (schema.type === 'object') {
         expect(schema.additionalProperties).toBe(false);
@@ -513,54 +511,13 @@ describe('health, and the run\'s class', () => {
   it.each([
     ['pass', { outcome: achieved }],
     ['infrastructure-error', { outcome: achieved, infrastructure: 'the player model could not be reached', health: { failures: ['x'] } }],
-    ['product-failure', { outcome: achieved, health: { failures: ['the move lock was still held'] }, review: { flags: [{}] } }],
+    ['product-failure', { outcome: achieved, health: { failures: ['the move lock was still held'] } }],
     ['not-exercised', { outcome: { status: 'not-exercised', reason: 'never asked' } }],
     ['budget-exhausted', { outcome: { status: 'not-exercised', reason: 'never asked' }, budgetStop: { cap: 'usd', detail: '$10' } }],
     ['suspected-quality-issue', { outcome: { status: 'not-achieved', reason: 'lost', failingLayer: 'retrieval' } }],
-    ['suspected-quality-issue', { outcome: achieved, review: { flags: [{ quote: 'x' }] } }],
-    ['pass', { outcome: achieved, budgetStop: { cap: 'actions', detail: '30' }, review: { flags: [] } }],
+    ['pass', { outcome: achieved, budgetStop: { cap: 'actions', detail: '30' } }],
   ])('%s', (classification, input) => {
     expect(classifyRun({ health: { failures: [] }, ...input }).classification).toBe(classification);
-  });
-});
-
-// ── the reviewer ─────────────────────────────────────────────────────────────
-
-describe('the narrative reviewer', () => {
-  const messages = [
-    { fromPlayer: true, narrator: false, speaker: 'Mira Kestrel', text: 'I show the dockmaster my star-compass.' },
-    { fromPlayer: false, narrator: true, speaker: 'Gamemaster', text: 'The dockmaster squints at the “silver sextant” in your hand.' },
-    { fromPlayer: false, narrator: false, speaker: 'Gamemaster', text: 'Mira Kestrel: +1 momentum (now 3)' },
-  ];
-  const transcript = transcriptText(messages);
-
-  it('reads the chat as PLAYER, NARRATOR and TABLE lines', () => {
-    expect(transcript.split('\n\n').map(l => l.slice(0, 9))).toEqual(['[PLAYER —', '[NARRATOR', '[TABLE — ']);
-  });
-
-  it('keeps a flag that quotes the transcript — quote marks, case and spacing aside — and drops one that does not', () => {
-    const flag = (quote, dimension = 'continuity') => ({ dimension, severity: 'high', quote, problem: 'It was a star-compass.' });
-    const { flags, dropped } = keepQuotedFlags([
-      flag('squints at the "silver   sextant" in your hand'),
-      flag('The dockmaster drops the compass overboard.'),
-      flag('sextant'),
-      flag('squints at the “silver sextant” in your hand', 'taste'),
-    ], transcript);
-    expect(flags).toHaveLength(1);
-    expect(dropped).toBe(3);
-    expect(keepQuotedFlags(undefined, transcript)).toEqual({ flags: [], dropped: 0 });
-  });
-
-  it('reports the kept flags and how many it dropped; a failed call is reported, not thrown', async () => {
-    const budget = createBudget({ caps: { ...CAPS, calls: 10 }, prices: PRICES });
-    const input = { summary: 'One slip.', flags: [
-      { dimension: 'continuity', severity: 'high', quote: 'The dockmaster squints at the “silver sextant” in your hand.', problem: 'The player showed a star-compass.' },
-      { dimension: 'clarity', severity: 'low', quote: 'A line that was never written anywhere.', problem: 'Invented.' },
-    ] };
-    const fetchImpl = async () => new Response(JSON.stringify({ stop_reason: 'tool_use', usage: {}, content: [{ type: 'tool_use', name: 'report_review', input }] }), { status: 200 });
-    const args = { apiKey: 'k', model: 'opus', effort: 'medium', maxTokens: 1000, messages, canon: ['Mira carries a star-compass.'], budget };
-    expect(await reviewTranscript({ ...args, fetchImpl })).toMatchObject({ ok: true, flags: [{ dimension: 'continuity' }], dropped: 1, summary: 'One slip.' });
-    expect(await reviewTranscript({ ...args, fetchImpl: async () => new Response('{}', { status: 400 }) })).toMatchObject({ ok: false, flags: [], kind: 'api' });
   });
 });
 
@@ -615,11 +572,6 @@ describe('a rehearsal\'s stand-in for the model API', () => {
     expect(JSON.parse(textOf(ask(rehearsal, 'You are the pacing pre-classifier', 'a line')))).toMatchObject({ decision: 'NARRATIVE', confidence: 0.9 });
     expect(textOf(ask(rehearsal, 'Return only the JSON object — no prose.', 'detect'))).toBe('{}');
     expect(textOf(ask(rehearsal, '## NARRATOR ROLE AND VOICE', 'a recap, no fact block')), 'no fact block where none is asked for').not.toContain('```json');
-  });
-
-  it('its review flag quotes nothing in the transcript, so the runner must drop it', () => {
-    const input = ask(createRehearsal({ charter: CHARTER }), 'You review', 'TRANSCRIPT:\n[NARRATOR — Gamemaster] The dock hums.', REVIEW_TOOL).content[0].input;
-    expect(keepQuotedFlags(input.flags, '[NARRATOR — Gamemaster] The dock hums.')).toEqual({ flags: [], dropped: 1 });
   });
 
   it('installed, it answers api.anthropic.com in this process and leaves every other host alone', async () => {
@@ -686,18 +638,20 @@ describe('the memory charter and the run\'s config', () => {
     expect(CONFIG.caps).toEqual({ actions: 30, calls: 100, minutes: 20, usd: 10 });
   });
 
-  it('the player is the model the maintainer chose, and no API reviewer runs unless it is turned on', () => {
-    // 2026-11-23: the AI player on Sonnet 5.5; the run is reviewed by the agent
+  it('the player is the model the maintainer chose, and the run calls no model to review it', () => {
+    // 2026-11-23: the AI player on Sonnet 5.5; a run is reviewed by the agent
     // that made it, which reads the prompts and records a transcript-only
-    // reviewer is never shown (decisions.md → "AI exploration").
+    // reviewer was never shown — the API reviewer is deleted, not switched
+    // off (decisions.md → "AI exploration").
     expect(CONFIG.player).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' });
-    expect(CONFIG.reviewer.enabled).toBe(false);
-    expect(CONFIG.reviewer.model, 'still configured, for a run nobody will read').toBeTruthy();
+    expect(CONFIG).not.toHaveProperty('reviewer');
+    expect(fs.existsSync(path.join(PLAYWRIGHT, 'lib/reviewer.mjs'))).toBe(false);
+    expect(fs.readFileSync(path.join(PLAYWRIGHT, 'explore.mjs'), 'utf8')).not.toMatch(/reviewTranscript|review\.json/);
   });
 
-  it('every model the run calls has a price — the player\'s, the reviewer\'s, and the module\'s own', () => {
+  it('every model the run calls has a price — the player\'s and the module\'s own', () => {
     const priced = Object.keys(CONFIG.prices.usdPerMillionTokens);
-    expect(priced).toEqual(expect.arrayContaining([CONFIG.player.model, CONFIG.reviewer.model]));
+    expect(priced).toEqual(expect.arrayContaining([CONFIG.player.model]));
     const recorded = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'recordings/first-session.json'), 'utf8'));
     expect(priced, 'the models the module called when first-session was recorded').toEqual(expect.arrayContaining([...new Set(recorded.exchanges.map(x => x.model))]));
     for (const price of Object.values(CONFIG.prices.usdPerMillionTokens)) expect(price.output).toBeGreaterThan(price.input);
