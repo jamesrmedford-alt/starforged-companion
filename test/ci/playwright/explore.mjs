@@ -62,7 +62,7 @@ import { createBudget } from "./lib/budget.mjs";
 import {
   snapshotScreen, describeScreen, executeAction, chooseAction, summariseAction, scriptedForm, resolveScripted,
 } from "./lib/player.mjs";
-import { createObserver, scoreMemory, healthOf, classifyRun } from "./lib/observer.mjs";
+import { createObserver, scoreMemory, healthOf, classifyRun, costsOwedText } from "./lib/observer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
 
 const MODE        = ["rehearsal", "replay"].includes(process.env.EXPLORE_MODE) ? process.env.EXPLORE_MODE : "live";
@@ -461,7 +461,7 @@ async function main() {
         : undefined,
       playerStopped: stopped,
       goal: { status: outcome.status, reason: outcome.reason, failingLayer: outcome.failingLayer, milestones: outcome.milestones },
-      health: { failures: health.failures, waitingOnGm: health.waitingOnGm, knownFailures: health.knownFailures, errors: health.errors.length },
+      health: { failures: health.failures, waitingOnGm: health.waitingOnGm, costsOwed: health.costsOwed, knownFailures: health.knownFailures, errors: health.errors.length },
       budget: spend,
       replay: MODE === "replay"
         ? { of: path.relative(process.cwd(), REPLAY_FROM), expected, reproduced, diverged }
@@ -473,6 +473,7 @@ async function main() {
       for (const f of ask.facts) log(`  ${ask.step} "${ask.line.slice(0, 60)}" · ${f.id}: stored ${f.stored ? "yes" : "no"}, in the prompt ${f.inPrompt ? "yes" : "no"}, in the answer ${f.inAnswer ? "yes" : "no"}`);
     }
     for (const failure of health.failures) log(`health: ${failure}`);
+    if (health.costsOwed.length) log(`left owed: ${health.costsOwed.length} cost card(s) nobody answered — ${costsOwedText(health.costsOwed)}`);
     if (health.waitingOnGm.length) log(`the GM's screen was left waiting on: ${health.waitingOnGm.join(", ")}`);
     if (CALLS) log(`${MODE === "live" ? "spent" : "priced at"} $${spend.usd.toFixed(4)} of $${config.caps.usd} — ${spend.calls} model calls, ${spend.actions} actions, ${spend.minutes} minutes`);
     log(`RESULT ${verdict.classification} — ${verdict.because}`);

@@ -31,7 +31,7 @@ import { isUnprepared } from "./sufferExecutor.js";
 import { getActor, readCompanionHealth, readVehicleAssetBattered, listCompanionAssets, getCompanionAsset, companionGivenName, listSupportVehicleAssets } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered, isShipCursed } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { localizeMeter, localizeDebility } from "../system/i18n.js";
+import { localizeMeter, localizeDebility, moveDisplayName } from "../system/i18n.js";
 import { relayCardAction, applyWaypointOraclePick } from "./cardActions.js";
 import { requesterOwnsActor, resultUpgradeSettled } from "./burnMomentum.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
@@ -945,6 +945,56 @@ const RESIST_UNPOSTED_NOTE = "The roll could not be posted — the world did not
 // What a choice card says when the card its pick is answered on (Sojourn's
 // community's need — sojournNeed.js) could not be posted. Content only, as above.
 const NEED_UNPOSTED_NOTE = "The card to answer it on could not be posted — the world did not save it. Press it again.";
+
+/**
+ * The costs still owed: every cost card in the chat nobody has answered —
+ * live, not retired by an upgraded result, not removed by the X-Card. The
+ * card does not hold play for its answer (see the top of this file), so a
+ * cost can be typed past and left; End a Session names what is owed before a
+ * session closes on it (issue #374 A10 — a live test run ended two sessions
+ * with two weak hits' costs unpaid, and nothing had said so).
+ *
+ * @returns {Array<{ messageId: string|null, actorId: string|null, actorName: string, moveId: string|null, moveName: string }>}
+ */
+export function costsLeftOwed() {
+  const messages = globalThis.game?.messages?.contents ?? [];
+  const owed = [];
+  for (const message of messages) {
+    const f = message?.flags?.[MODULE_ID];
+    if (f?.sufferCard !== true || f.resolved === true || f.xCarded === true) continue;
+    const moveId = typeof f.moveId === "string" && f.moveId ? f.moveId : null;
+    owed.push({
+      messageId: message.id ?? null,
+      actorId:   f.actorId ?? null,
+      actorName: String(getActor(f.actorId)?.name ?? "").trim() || "Someone",
+      moveId,
+      moveName:  moveId ? moveDisplayName(moveId) : "a move",
+    });
+  }
+  return owed;
+}
+
+/**
+ * One plain sentence naming the costs still owed, by character and move —
+ * "2 costs are still owed — Mira Kestrel: Face Danger ×2. Each waits on its
+ * card in the chat." '' when nothing is owed.
+ *
+ * @param {ReturnType<typeof costsLeftOwed>} [owed]
+ * @returns {string}
+ */
+export function costsOwedSentence(owed = costsLeftOwed()) {
+  if (!owed.length) return "";
+  const byActor = new Map();
+  for (const o of owed) {
+    const moves = byActor.get(o.actorName) ?? new Map();
+    moves.set(o.moveName, (moves.get(o.moveName) ?? 0) + 1);
+    byActor.set(o.actorName, moves);
+  }
+  const who = [...byActor].map(([name, moves]) =>
+    `${name}: ${[...moves].map(([move, n]) => (n > 1 ? `${move} ×${n}` : move)).join(", ")}`).join("; ");
+  const count = owed.length === 1 ? "1 cost is still owed" : `${owed.length} costs are still owed`;
+  return `${count} — ${who}. ${owed.length === 1 ? "It waits" : "Each waits"} on its card in the chat.`;
+}
 
 /**
  * Re-open a suffer choice card — not resolved, not superseded, its buttons

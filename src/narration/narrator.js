@@ -72,6 +72,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
+import { lastingChangeOf, roundLastingChange } from '../character/chronicleKeeps.js';
 import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
@@ -1399,6 +1400,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       kind:          'move',
       actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
       playerText:    writtenLine(resolution),      // what the roller's player wrote (issue #374 A2)
+      lasting:       lastingChangeOf(resolution),  // kept whatever its rating (issue #374 A5)
       narrationId,
     });
     return narration;
@@ -1442,6 +1444,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
             kind:          'move',
             actorId:       character?.actorId ?? null,
             playerText:    writtenLine(resolution),
+            lasting:       lastingChangeOf(resolution),
             narrationId,
           });
           return narration;
@@ -1837,6 +1840,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         narrationText: narration, campaignState, kind: 'round', narrationId,
         // Each with the line its player wrote (issue #374 A2).
         characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName, text: e.text ?? '' })),
+        // Kept whatever its rating when one of its moves changed something lasting (issue #374 A5).
+        lasting: roundLastingChange(entries),
       });
       return { posted: 'card', narrationId, card };
     } catch (err) {
@@ -3528,7 +3533,13 @@ export async function getCampaignRecap(campaignState, options = {}) {
 // ---------------------------------------------------------------------------
 
 const ROLLING_SUMMARY_MODEL     = 'claude-haiku-5-5';
-const ROLLING_SUMMARY_MAX_TOK   = 420;   // was 320 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
+// The summary is asked for 4–8 sentences. At 420 tokens a live session's ran
+// to the cap and was kept cut off mid-word ("…which may be Reyes's. Unresol" —
+// the first-session recording of 2026-11-22; a later run used 405 of the 420):
+// issue #374 A12. The cap is a guess at a model's length, so there is room
+// above what was seen, and a reply that still reaches it loses its unfinished
+// sentence (wholeSentences) instead of being kept with it.
+const ROLLING_SUMMARY_MAX_TOK   = 700;   // was 420, and 320 before Haiku 5.5 (which counts the same text as about 30% more tokens)
 const ROLLING_SUMMARY_DEBOUNCE  = 1.5;
 
 const ROLLING_SUMMARY_SYSTEM_PROMPT =
@@ -3546,6 +3557,21 @@ const ROLLING_SUMMARY_SYSTEM_PROMPT =
   `This is narrative memory, not a recap card: do not address the player, do not ` +
   `propose actions, do not mention dice, moves, momentum, or any game mechanic. ` +
   `Summarise only what the session contains — never invent.`;
+
+/**
+ * A reply cut off mid-sentence, back to the end of its last whole sentence —
+ * '' when it holds none. A sentence ends at ., ! or ? (and any closing quote
+ * or bracket after it) followed by a space or the end.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function wholeSentences(text) {
+  const s = typeof text === 'string' ? text.trimEnd() : '';
+  let end = -1;
+  for (const m of s.matchAll(/[.!?…]["'”’)\]]*(?=\s|$)/g)) end = m.index + m[0].length;
+  return end > 0 ? s.slice(0, end) : '';
+}
 
 /**
  * Debounce threshold — how many new narrator cards must accrue before the
@@ -3637,6 +3663,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   });
 
   let text;
+  const reply = {};
   try {
     text = await callNarratorAPI({
       label: 'getRollingSessionSummary',
@@ -3645,11 +3672,17 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}`,
       model:        ROLLING_SUMMARY_MODEL,
       maxTokens:    ROLLING_SUMMARY_MAX_TOK,
+      reply,
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: rolling summary generation failed:`, err?.message ?? err);
     return cachedText;
   }
+  // Cut off at its length cap: the sentence it was in the middle of is not
+  // kept — the summary becomes LAST SESSION, the Session Log's story and the
+  // snapshot's EARLIER SESSIONS (issue #374 A12). With no whole sentence in
+  // it, the summary there was stands.
+  if (reply.stopReason === 'max_tokens') text = wholeSentences(text);
   if (!text?.trim()) return cachedText;
   if (xCardPlayCount() !== xCardPlaysAtStart || madeFromXCarded()) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
@@ -7031,7 +7064,7 @@ export async function prewarmNarratorCache(campaignState) {
   }
 }
 
-async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
+async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null, reply = null }) {
   const blocks = splitNarratorSystemPrompt(systemPrompt);
   const body = {
     model,
@@ -7074,6 +7107,10 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
       `Raise the narration length headroom if this recurs.`,
     );
   }
+
+  // Why the reply ended, for a caller that keeps its text as written (the
+  // rolling summary — issue #374 A12).
+  if (reply) reply.stopReason = data?.stop_reason ?? null;
 
   const text = (data.content ?? [])
     .filter(b => b.type === 'text')

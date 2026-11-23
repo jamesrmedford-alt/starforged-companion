@@ -241,6 +241,7 @@ export function playerSystemPrompt(charter) {
     `- You play by typing in chat as your character, in the first person, a sentence or two. The narrator answers in chat; a card may offer buttons.`,
     `- Chat commands exist: !begin-session opens the session, !end-session closes it. Each opens a window you fill in and submit.`,
     `- After you act, the table needs time: if the narrator has not answered yet, wait rather than repeat yourself.`,
+    `- A card that asks you to choose — "Resolve consequence", a cost to pick, with its choices as buttons — is waiting on you. Answer it with a click before you type anything else: a cost you owe stays owed until you do, and the table will not stop you from typing past it.`,
     `- You know only what your screen shows. Do not invent what the narrator said.`,
     `- When you have done everything your goal asks, or you cannot go on, use stop and say which. Someone else judges whether the goal was met.`,
     ...(charter.playerNotes ?? []).map(n => `- ${n}`),

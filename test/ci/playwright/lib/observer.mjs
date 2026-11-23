@@ -150,6 +150,11 @@ export function readWorld(gm, facts, notMemory = []) {
       session: {
         active: cs.sessionActive === true, number: cs.sessionNumber ?? null, id: cs.currentSessionId || null,
         pendingMove: cs.pendingMove === true, sceneId: cs.currentSceneId ?? null, locationId: cs.currentLocationId ?? null,
+        // Cost cards nobody has answered: a card waits on the player and holds
+        // nothing up, so a cost can be typed past (the third live run did, twice).
+        owed: game.messages.contents
+          .filter(m => m.flags?.[MODULE_ID]?.sufferCard === true && m.flags[MODULE_ID].resolved !== true && m.flags[MODULE_ID].xCarded !== true)
+          .map(m => ({ actor: game.actors.get(m.flags[MODULE_ID].actorId)?.name ?? null, move: m.flags[MODULE_ID].moveId ?? null })),
       },
       messages, stores,
       gmWindows: [...document.querySelectorAll("dialog[open], .application.dialog, .application.sf-window")]
@@ -292,6 +297,16 @@ export function scoreMemory({ facts, askCues = [], marks, messages, requests }) 
 
 // ── health and the run's class (pure) ────────────────────────────────────────
 
+/** "Mira Kestrel: face_danger ×2; Ren: compel" — the costs left owed, by character and move. */
+export function costsOwedText(owed) {
+  const by = new Map();
+  for (const o of owed ?? []) {
+    const key = `${o.actor ?? "someone"}: ${o.move ?? "a move"}`;
+    by.set(key, (by.get(key) ?? 0) + 1);
+  }
+  return [...by].map(([key, n]) => (n > 1 ? `${key} ×${n}` : key)).join("; ");
+}
+
 /**
  * What must hold whatever the charter: the move lock free at the end, no
  * error of the module's on any page, no step that never settled.
@@ -301,6 +316,11 @@ export function scoreMemory({ facts, askCues = [], marks, messages, requests }) 
  * move rolls, and holds the move while it waits — by design; a table whose
  * GM is an autopilot that does not know the question is a limit of the run
  * (`waitingOnGm`), and the lock it holds is the question's.
+ *
+ * Nor is a cost card left unanswered (`costsOwed`): the card waits on the
+ * player and the module holds nothing for it. It is the player's omission,
+ * and it means the run's mechanics are not what the rules give — reported,
+ * and the run is not a clean pass (classifyRun).
  */
 export function healthOf({ endSession, clients, stalls = [], knownErrors = [] }) {
   const errors = [];
@@ -317,7 +337,8 @@ export function healthOf({ endSession, clients, stalls = [], knownErrors = [] })
   const fresh = errors.filter(e => e.module && !e.known);
   if (fresh.length) failures.push(`${fresh.length} error(s) of the module's on a page — the first: ${fresh[0].text.slice(0, 160)}`);
   for (const s of stalls) if (!s.waitingOnGm?.length) failures.push(`step ${s.step} never settled: ${s.detail}`);
-  return { failures, waitingOnGm, errors, knownFailures: [...new Set(errors.filter(e => e.known).map(e => e.known))] };
+  const costsOwed = Array.isArray(endSession?.owed) ? endSession.owed : [];
+  return { failures, waitingOnGm, costsOwed, errors, knownFailures: [...new Set(errors.filter(e => e.known).map(e => e.known))] };
 }
 
 /**
@@ -346,6 +367,12 @@ export function classifyRun({ infrastructure = null, budgetStop = null, outcome,
   }
   if (outcome.status === "not-achieved") {
     return { classification: "suspected-quality-issue", because: `${outcome.failingLayer}: ${outcome.reason}` };
+  }
+  // The goal was met, on a table that owes: a cost card the player never
+  // answered. Not the module's failure and not a clean pass — for a person.
+  if (health?.costsOwed?.length) {
+    const n = health.costsOwed.length;
+    return { classification: "suspected-quality-issue", because: `the goal was achieved, but ${n} cost card${n === 1 ? " was" : "s were"} left unanswered — ${n === 1 ? "that cost was" : "those costs were"} never paid (${costsOwedText(health.costsOwed)})` };
   }
   return { classification: "pass", because: outcome.reason };
 }

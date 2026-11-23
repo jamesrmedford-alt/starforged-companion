@@ -2927,6 +2927,7 @@ function registerChatCommandsTests(quench) {
 
       describe("!x via chat hook — triggers suppressScene", function () {
         it("posting !x sets campaignState.xCardActive = true", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           try {
             await post("!x");
             const after = await waitForCampaignState(cs => cs?.xCardActive === true);
@@ -4699,6 +4700,7 @@ function registerPacingTests(quench) {
         // for it (waitForCampaignState) — a fixed number of ticks raced it,
         // and the !roll case lost the race on CI.
         it("!pace hot sets a +3 override and posts a confirmation card", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           const before = game.messages.size;
           await ChatMessage.create({ content: "!pace hot" }).then(m => cardIds.push(m.id));
@@ -4708,6 +4710,7 @@ function registerPacingTests(quench) {
         });
 
         it("!pace clear removes the override", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!pace clear" }).then(m => cardIds.push(m.id));
           const state = await waitForCampaignState(s => s.pacing?.sceneOverride == null);
@@ -4717,6 +4720,7 @@ function registerPacingTests(quench) {
 
       describe("!roll command — false-negative recovery", function () {
         it("sets pacing.forceNextAsMove on campaignState", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!roll" }).then(m => cardIds.push(m.id));
           const state = await waitForCampaignState(s => s.pacing?.forceNextAsMove === true);
@@ -12765,6 +12769,7 @@ function registerPromptContractTests(quench) {
 
       describe("composition: what one narration records, the next one is told", function () {
         it("a fact block's truth, state and scene frame reach the next request", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const fact = "Hid the beacon codes in his left boot";
           stub.prose.push("Vance limps to the hatch, one boot squelching.");
           stub.sidecars.push({
@@ -12798,6 +12803,7 @@ function registerPromptContractTests(quench) {
         });
 
         it("!narrator debug shows the request that was sent, without the Private Lines", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const request = await capture(PACED);
           const before  = new Set(game.messages.contents.map(m => m.id));
           await ChatMessage.create({ content: "!narrator debug" });
@@ -12827,6 +12833,7 @@ function registerPromptContractTests(quench) {
         });
 
         it("a price that reveals a new enemy asks the narration to decide it; the plan reaches the next request, a plan elsewhere does not", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const { withPayThePriceSeed } = await import(`${MODULE_PATH}/moves/resolver.js`);
           const secrets = await import(`${MODULE_PATH}/world/secrets.js`);
           // A plan out of play: another scene's, its name in nothing this turn.

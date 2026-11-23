@@ -22,6 +22,7 @@ import {
   finalizeSessionSummary,
   buildNarratorExtras,
   campaignRecapCacheKey,
+  wholeSentences,
 } from '../../src/narration/narrator.js';
 import { buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
 
@@ -389,5 +390,68 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
     await finalizeSessionSummary(pastVignette);
     expect(calls).toHaveLength(2);
     expect(pastVignette.sessionSummary.coveredCount).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #374 A12 — a summary cut off at its length cap
+// ---------------------------------------------------------------------------
+
+describe('a session summary cut off at its length cap (issue #374 A12)', () => {
+  /** A reply that ends the way the API says it did. */
+  function stubReply(text, stopReason) {
+    const calls = [];
+    global.fetch = vi.fn(async (_url, init) => {
+      calls.push(init?.body ? JSON.parse(init.body) : null);
+      return { ok: true, status: 200, text: async () => '',
+        json: async () => ({ content: [{ type: 'text', text }], stop_reason: stopReason }) };
+    });
+    return calls;
+  }
+  const CUT = 'Down the ring a single light came on above a tug berth and stayed lit, which may be Reyes\'s. Unresol';
+
+  beforeEach(() => {
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    game.settings._store.set(`${MODULE_ID}.narratorContextCards`, 3);   // K = 5, as the gating tests pin it
+  });
+
+  it('keeps the summary to its last whole sentence — the live recording kept "…Reyes\'s. Unresol"', async () => {
+    stubReply(CUT, 'max_tokens');
+    setCards(5);
+    const state = makeState();
+    const text = await getRollingSessionSummary(state);
+    expect(text).toBe('Down the ring a single light came on above a tug berth and stayed lit, which may be Reyes\'s.');
+    expect(state.sessionSummary.text).toBe(text);
+  });
+
+  it('a cut-off reply with no whole sentence in it leaves the summary there was', async () => {
+    stubReply('The crew chased the signal across three systems and then, at the edge of the Cinder Expanse, they', 'max_tokens');
+    setCards(5);
+    const state = makeState({ sessionSummary: { text: 'An earlier summary.', coveredCount: 0, sessionId: 'sess-1' } });
+    expect(await getRollingSessionSummary(state)).toBe('An earlier summary.');
+    expect(state.sessionSummary.text).toBe('An earlier summary.');
+  });
+
+  it('control: a reply that ended on its own is kept as written, last fragment and all', async () => {
+    stubReply('They reached Bleakhold. No sign of the courier', 'end_turn');
+    setCards(5);
+    expect(await getRollingSessionSummary(makeState())).toBe('They reached Bleakhold. No sign of the courier');
+  });
+
+  it('asks for room above what a live summary has used (405 and 420 tokens seen)', async () => {
+    const calls = stubReply('A whole summary.', 'end_turn');
+    setCards(5);
+    await getRollingSessionSummary(makeState());
+    expect(calls[0].max_tokens).toBe(700);
+  });
+
+  it.each([
+    ['One. Two is cut of', 'One.'],
+    ['She said "go." Then the', 'She said "go."'],
+    ['Whole. Sentences.', 'Whole. Sentences.'],
+    ['No end here', ''],
+    ['', ''],
+  ])('wholeSentences(%j) → %j', (cut, kept) => {
+    expect(wholeSentences(cut)).toBe(kept);
   });
 });

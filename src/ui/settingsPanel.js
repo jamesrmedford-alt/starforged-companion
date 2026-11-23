@@ -567,7 +567,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PACING_DIAL_COMBAT, {
     name:    'Pacing Dial — Combat',
-    hint:    'How move-leaning combat scenes should be. 10 = almost every input is a move. 0 = almost never.',
+    hint:    'How move-leaning combat scenes should be — a fight, and any other immediate physical danger (a fire, a hull breach, a collapse). 10 = almost every input is a move. 0 = almost never.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -1530,6 +1530,8 @@ export class SettingsPanelApp extends ApplicationV2 {
           When enabled, a small Haiku call decides whether each undecorated chat input should
           trigger a move, be handled as pure narration, or end with an inline move suggestion.
           Dials below set how move-leaning each scene type should be on a 0–10 scale.
+          <strong>Combat</strong> is a fight and any other immediate physical danger —
+          a fire, a hull breach, a collapse.
         </p>
         <div class="pacing-field">
           <label class="pacing-field-label">

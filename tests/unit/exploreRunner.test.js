@@ -33,10 +33,11 @@ import { costOf, worstCost, createBudget } from '../../test/ci/playwright/lib/bu
 import { createClaudeHarness } from '../../test/ci/playwright/lib/claude.mjs';
 import { buildRequest, readReply, callClaude } from '../../test/ci/playwright/lib/anthropic.mjs';
 import {
-  ACTION_TOOL, MAX_WAIT_SECONDS, chooseAction, describeScreen, resolveScripted, scriptedForm, summariseAction, validateAction,
+  ACTION_TOOL, MAX_WAIT_SECONDS, chooseAction, describeScreen, playerSystemPrompt, resolveScripted, scriptedForm, summariseAction,
+  validateAction,
 } from '../../test/ci/playwright/lib/player.mjs';
 import {
-  classifyRun, excerptOf, factIn, healthOf, scoreMemory, sectionsHolding, variantPattern,
+  classifyRun, costsOwedText, excerptOf, factIn, healthOf, scoreMemory, sectionsHolding, variantPattern,
 } from '../../test/ci/playwright/lib/observer.mjs';
 import { createRehearsal, installRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
 
@@ -286,6 +287,14 @@ const SCREEN = {
 };
 
 describe('the AI player', () => {
+  it('is told that a card with a cost to choose waits on it — the table does not stop a player typing past one', () => {
+    // The third live run: two weak hits' cost cards went unanswered, and nothing in the player's instructions said they were its to answer.
+    const prompt = playerSystemPrompt({ persona: 'Mira Kestrel, a courier.', goal: 'Plant a fact and end the session.', playerNotes: ['Stay in the first person.'] });
+    expect(prompt).toContain('- A card that asks you to choose — "Resolve consequence", a cost to pick, with its choices as buttons — is waiting on you. Answer it with a click before you type anything else');
+    expect(prompt).toContain('WHO YOU ARE: Mira Kestrel, a courier.');
+    expect(prompt.trimEnd().endsWith('- Stay in the first person.')).toBe(true);
+  });
+
   it('reads its screen as text: its character, open windows with their fields and buttons, the chat with live buttons only', () => {
     const text = describeScreen(SCREEN);
     expect(text).toContain('YOUR CHARACTER: Mira Kestrel — health 5, spirit 4, supply 5, momentum 2');
@@ -506,6 +515,24 @@ describe('health, and the run\'s class', () => {
     expect(classifyRun({ outcome, health: waiting, budgetStop: { cap: 'minutes', detail: '20' } }).classification, 'the unanswered question, not the clock, is why').toBe('not-exercised');
     // With no window to explain it, a held lock and a stall are failures.
     expect(healthOf({ endSession: { pendingMove: true }, clients: clients(), stalls: [{ step: 'a4', detail: 'still busy', waitingOnGm: [] }] }).failures).toHaveLength(2);
+  });
+
+  it('a cost card nobody answered is reported, and the run is not a clean pass — nor the module\'s failure', () => {
+    // The third live run: two weak hits' cost cards typed past, both unpaid at the end, and the run passed.
+    const owed = [{ actor: 'Mira Kestrel', move: 'face_danger' }, { actor: 'Mira Kestrel', move: 'face_danger' }];
+    const health = healthOf({ endSession: { pendingMove: false, owed }, clients: clients() });
+    expect(health).toMatchObject({ failures: [], costsOwed: owed });
+    expect(costsOwedText(owed)).toBe('Mira Kestrel: face_danger ×2');
+    expect(classifyRun({ outcome: achieved, health })).toEqual({
+      classification: 'suspected-quality-issue',
+      because: 'the goal was achieved, but 2 cost cards were left unanswered — those costs were never paid (Mira Kestrel: face_danger ×2)',
+    });
+    // A goal that was missed is still reported for itself, and a real failure still outranks it.
+    expect(classifyRun({ outcome: { status: 'not-achieved', reason: 'lost', failingLayer: 'storage' }, health }).because).toBe('storage: lost');
+    expect(classifyRun({ outcome: achieved, health: { ...health, failures: ['the move lock was still held'] } }).classification).toBe('product-failure');
+    // Nothing owed: as before.
+    expect(healthOf({ endSession: { pendingMove: false }, clients: clients() }).costsOwed).toEqual([]);
+    expect(classifyRun({ outcome: achieved, health: healthOf({ endSession: { pendingMove: false, owed: [] }, clients: clients() }) }).classification).toBe('pass');
   });
 
   it.each([
