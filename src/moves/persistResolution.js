@@ -234,6 +234,9 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //       campaignRecapCache          narrator getCampaignRecap (store-only write)
 //       dismissedEntities           entity panel / extractor dismiss
 //       undismissedByNarration      extractor undismiss / the X-Card's restore
+//       nameChanges                 the names the table changed — a card's rename sync
+//                                   (index.js), `!truth` and the correction dialog
+//                                   (factContinuity/nameChanges.js — issue #377 item 1)
 //       pendingMove, pendingMoveBy, pendingMoveClaim
 //                                   the concurrency lock, its claimant and the claim's
 //                                   token, claimed and released on the store (issue #325
@@ -321,6 +324,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'campaignRecapCache',
   'dismissedEntities',
   'undismissedByNarration',
+  'nameChanges',
   'pendingMove',
   'pendingMoveBy',
   'pendingMoveClaim',

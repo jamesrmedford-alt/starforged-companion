@@ -182,6 +182,7 @@ import { reportSnapshotEvent, registerSnapshotEventsSetting } from "./narration/
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
+import { recordNameChange } from "./factContinuity/nameChanges.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
 import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
@@ -2717,7 +2718,12 @@ async function applyOutcomeEffects({
       if (!existing || existing.completed) {
         const vowNames = (readVows(speakerActor) ?? [])
           .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
-        await postCombatThresholdCard({
+        // Posted after the Enter the Fray's roll card, which it follows
+        // (known-issues FIGHT-COMMIT-CARD-AFTER-THE-ROLL): above the roll, it
+        // read as a choice the roll had already made, and the long haul's
+        // second live run left it unpressed. Its weak hit's choice card,
+        // which names it, posts after both and reads it at the click.
+        out.afterMoveCard.push(() => postCombatThresholdCard({
           label:         moveTarget ?? "the enemy",
           suggestedRank: interpretation?.combatRank,
           vowNames,
@@ -2725,7 +2731,7 @@ async function applyOutcomeEffects({
           actorId:       speakerActor?.id ?? null,
           resolutionId:  resolution._id ?? null,
         }).catch(err =>
-          console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
+          console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err)));
         thresholdPosted = true;
         // The move's choice card names this card, by the resolution that
         // posted it: its weak hit's "You are in control" lands on the fight
@@ -3509,6 +3515,11 @@ function userOwnsActor(actor, user) {
 // journal-hosted: their rename sync is the updateJournalEntry hook below.
 const RENAME_SYNC_TYPES = new Set(["connection", "ship", "settlement", "planet", "location"]);
 const JOURNAL_RENAME_SYNC_TYPES = new Set(["faction", "creature"]);
+/** What a renamed record is, as the narrator's NAMES THE TABLE CHANGED says it. */
+const RENAMED_ABOUT = Object.freeze({
+  connection: "a person", ship: "a ship", settlement: "a settlement", planet: "a planet",
+  location: "a place", faction: "a faction", creature: "a creature",
+});
 
 /**
  * Keep entity flag records in sync with Actor renames (v1.7.10 playtest
@@ -3537,6 +3548,8 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
 
     const record = actor.flags?.[MODULE_ID]?.[entityType];
     if (!record || record.name === newName) return;
+    // Read now: the update below writes the new name onto this same record.
+    const oldName = record.name;
 
     actor.update({
       [`flags.${MODULE_ID}.${entityType}.name`]:      newName,
@@ -3552,6 +3565,16 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
       .then(() => (entityType === "connection"
         ? import("./entities/connection.js").then(m => m.renameBondItems(record, newName)
           .then(() => m.renameVowLinks(actor.id, newName))) : null))
+      // Everything else that named it keeps the old name — lore, earlier
+      // sessions, plans, clocks, the scene's truths. The change is recorded
+      // and told wherever the old name still reaches a prompt (issue #377
+      // item 1: told nothing, the narrator made the old surname an alias).
+      // A narration's reveal of a placeholder, and the X-Card's take-back of
+      // one, write the record first: `record.name` is already the new name
+      // and this hook returned above.
+      .then(() => recordNameChange({
+        from: oldName, to: newName, kind: "renamed", about: RENAMED_ABOUT[entityType] ?? null, entityId: actor.id,
+      }, "card rename"))
       .catch(err =>
         console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {
@@ -3578,9 +3601,15 @@ function syncJournalEntityRecordNameOnUpdate(journal, changes) {
     if (!isCanonicalGM()) return;
     const entityType = journal?.flags?.[MODULE_ID]?.entityType;
     if (!JOURNAL_RENAME_SYNC_TYPES.has(entityType)) return;
+    // The name the record had, read before it follows (issue #377 item 1).
+    const was = readEntityFlag(entityType, journal)?.name ?? null;
     followEntityJournalRename(entityType, journal)
       // A name once dismissed from a draft card is the record's now (issue #345 AA55).
-      .then(renamed => (renamed ? undismissRecordName(journal.name) : false))
+      .then(renamed => (renamed ? undismissRecordName(journal.name).then(() => renamed) : false))
+      // …and the old name, told wherever it still reaches a prompt.
+      .then(renamed => (renamed ? recordNameChange({
+        from: was, to: journal.name, kind: "renamed", about: RENAMED_ABOUT[entityType] ?? null, entityId: journal.id,
+      }, "journal rename") : false))
       .catch(err =>
         console.warn(`${MODULE_ID} | rename sync: ${entityType} record update failed for ${journal?.id}:`, err?.message ?? err));
   } catch (err) {

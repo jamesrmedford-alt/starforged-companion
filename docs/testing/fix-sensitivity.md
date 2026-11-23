@@ -1795,6 +1795,14 @@ SITE-LADDER-WHOLE-WORD-FIRST-MATCH and SHIP-SEED-SENTENCE-INITIAL-CAPITAL.
 | VOW-DEEPEN-BONDED-MARKS-TRACK | 5ee20522 | revert, and `seq-vow-deepen-bonded-marks-track.patch` | 9 — `vowDeepenBondedOffersRoll.test.js` (the fulfilment, the won-fight card's 🤝 and a payoff card's Retry mark nothing on a bonded connection's track and offer the roll once) and the generated sequences' bonded corpus with its written-out sequence |
 | VOW-CARD-LINK-ONLY-AT-POSTING | 8c6f1a11 | revert | 2 — `vowCardLinkAfterConnection.test.js` (a vow recorded before its connection is met gains its Link when one is made; a rename is followed); 3 more fail only for the missing export |
 
+### Issue #377 and the long haul's second round
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| CORRECTION-AND-RENAME-DO-NOT-REACH-THE-RECORD, NARRATION-WRITES-ITS-SHAPE-DIRECTIVE, OFFERED-MOVE-NARRATED-AS-DONE, NARRATOR-ADDS-TO-THE-PREMISE, GALLEY-VIGNETTE-REPEATS (#377 items 1–5) | 9b1e77c4 | revert | 22 — the beat-shape label (`beatShapeAfterDeletedCard`, `beatShapeClaimedWhileNarrating`, `narratorProseRules`), the opening scene's crew line (`galleyVignetteCharactersArePresentPcs`), the field's classification (`campaignStateKeyClassification`); the two new test files cannot load without the new modules |
+| the name note in a call's user message (#377 item 1) | c5d804e2 | revert | 1 — `nameChangeNotedInUserMessage.test.js` (the player names her by the old surname a session after the rename) |
+| FIGHT-COMMIT-CARD-AFTER-THE-ROLL, SHEET-MOVE-OFFERED-NOTHING, NAMED-MOVE-READ-AS-ANOTHER, NAME-CHANGE-TOLD-AS-A-STORY | a8699c8f | revert | 6 — the card after its roll and its label (`fightThresholdCardFollowsItsRoll`), the pacing reader's two rules (`classifierOffersSheetMovesAndNamedMoves`), the interpreter's connections line (`interpreterContext`), the note's table-not-story sentence (`nameChangesReachThePrompt`) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -19252,3 +19260,77 @@ Test files: `tests/unit/generatedSequences.test.js`.
 | --- | --- |
 | tests/unit/generatedSequences.test.js › generated sequences: bonds already forged 100 sequences of up to 20 commands in a world with bonded connections: their roll, and the roll a fulfilled vow leaves | Error: Property failed after 21 tests |
 | tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a connection bonded in play: developed again it is a roll +her rank — a weak hit is momentum to its roller, a miss nothing, and no progress either way | AssertionError: after DevelopBondedRelationship(c1 "Sable", picked by pc-kira, 2 +3 (formidable) vs 7,3 → weak_hit): expected { …(7) } to deeply equal { …(7) } |
+
+### 9b1e77c4 — fix: a changed name reaches every prompt that still holds the old one; the narrator's instructions are not written as story (issue #377 items 1-5)
+
+Test files: `tests/unit/beatShapeAfterDeletedCard.test.js`, `tests/unit/beatShapeClaimedWhileNarrating.test.js`, `tests/unit/campaignStateKeyClassification.test.js`, `tests/unit/exploreLongHaul.test.js`, `tests/unit/galleyVignetteCharactersArePresentPcs.test.js`, `tests/unit/nameChangesReachThePrompt.test.js`, `tests/unit/narratorDirectivesIssue377.test.js`, `tests/unit/narratorProseRules.test.js`. Source restored: 12 file(s).
+
+- With the fix: 233 passed, 0 failed.
+- Without it: 22 failed (0 new; 0 only for a missing export), 2 file(s) failed to load; 180 still pass (1 new).
+- Verdict: **sensitive** — 22 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat each beat's card carries the shape its narration was told to use | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat a GM deletes an earlier beat's card: the next beat is still shaped differently from the last one | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat a Clear Chat Log after the sixth beat: the next beat does not repeat the sixth's shape | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat the newest beat's card is deleted and the page reloads: the next beat still follows the deleted one | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat a "narration unavailable" card carries no shape, and the beat after it follows the last one written | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat a move's narration card and a round's card carry their shape too | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeAfterDeletedCard.test.js › issue #364 BEAT-SHAPE-AFTER-DELETED-CARD — a beat follows the one before it, whatever left chat control: a session whose cards carry no shape (written before they did) is still shaped by its beat count | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape two paced lines at once: two shapes, and neither is the last written beat's | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape a move beside a paced line, and a round beside a move: every caller that picks a shape claims it | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape three at once: three shapes | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — beats narrated at the same moment are not given the same shape a beat begun while another is still being written, after a third has posted: it shares a shape with neither | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends control: beats narrated one after another follow the cycle, as before | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends after two beats written together, the next follows the newest card | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a narration that fails beside one that is written leaves nothing claimed: the next beat follows the written one | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a narration that throws before its call leaves nothing claimed | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a round whose narration fails leaves nothing claimed | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends a paced line whose narration fails leaves nothing claimed | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/beatShapeClaimedWhileNarrating.test.js › issue #364 BEAT-SHAPE-SIMULTANEOUS — a claim ends with its narration, however it ends nothing is stored: no shape reaches campaignState | AssertionError: the request names a shape: expected undefined to be truthy |
+| tests/unit/campaignStateKeyClassification.test.js › issue #364 CAMPAIGNSTATE-KEY-CLASSIFICATION — every campaignState field says who writes it nothing is classified that is no longer a campaignState field | AssertionError: expected [ 'nameChanges' ] to deeply equal [] |
+| tests/unit/galleyVignetteCharactersArePresentPcs.test.js › issue #345 AA31 — the galley vignette's CHARACTER blocks are the PCs at the table both players at the table: each PC in the galley has its block, and the vignette is third person (Z40's rule) | AssertionError: expected 'OPENING VIGNETTE — begin-session ship…' to match /Active players[^\n]*\n- Kira[\s\S]*\n…/ |
+| tests/unit/narratorProseRules.test.js › P2-22 / P2-27 — the images already used, and a shape for the beat formatBeatProseBlock lists the images and the shape, and is empty with neither | AssertionError: expected '## THIS BEAT\'S PROSE\n\nShape: Its f…' to contain 'How this narration is built: Its firs…' |
+| tests/unit/narratorProseRules.test.js › P2-22 / P2-27 — the images already used, and a shape for the beat each beat is given a shape, and the next beat a different one | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to contain 'How this narration is built: Build th…' |
+
+- Failed to load: `tests/unit/nameChangesReachThePrompt.test.js` — Cannot find module '../../src/factContinuity/nameChanges.js' imported from '<tmp>/fix-sensitivity-9b1e77c
+- Failed to load: `tests/unit/narratorDirectivesIssue377.test.js` — Cannot find module '../../src/session/vignetteHistory.js' imported from '<tmp>/fix-sensitivity-9b1e77c4-z
+- New test passing with and without the fix (a control?): tests/unit/exploreLongHaul.test.js › what a run counts for its review counts what the narrator was told and wrote anyway — the first live run's own sentences (issue #377 items 2, 4)
+
+### c5d804e2 — fix: an old name only a call's user message holds is noted there too (issue #377 item 1)
+
+Test files: `tests/unit/nameChangeNotedInUserMessage.test.js`. Source restored: 2 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/nameChangeNotedInUserMessage.test.js › an old name only the user message holds is noted there (issue #377 item 1) the player names her by the old surname, a session after the rename | AssertionError: expected '## PLAYER NARRATION — spoken by Mira …' to match /## NAMES THE TABLE CHANGED[\s\S]*"Tam…/ |
+
+- New test passing with and without the fix (a control?): tests/unit/nameChangeNotedInUserMessage.test.js › an old name only the user message holds is noted there (issue #377 item 1) control: no old name anywhere — nothing is added
+- New test passing with and without the fix (a control?): tests/unit/nameChangeNotedInUserMessage.test.js › an old name only the user message holds is noted there (issue #377 item 1) control: a call whose system prompt carries the note already gets it once
+
+### a8699c8f — fix: what the long haul's second live run turned up — the fight's card, a move only a move can make, a named bond, a correction told as a story
+
+Test files: `tests/unit/classifierOffersSheetMovesAndNamedMoves.test.js`, `tests/unit/exploreLongHaul.test.js`, `tests/unit/fightThresholdCardFollowsItsRoll.test.js`, `tests/unit/interpreterContext.test.js`, `tests/unit/nameChangesReachThePrompt.test.js`. Source restored: 7 file(s).
+
+- With the fix: 124 passed, 0 failed.
+- Without it: 6 failed (5 new; 0 only for a missing export); 118 still pass (4 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/classifierOffersSheetMovesAndNamedMoves.test.js › the pacing reader offers what only a move changes, and takes a named move a line that sets about a sheet-changing move is never plain NARRATIVE, at any dial | AssertionError: expected 'You are the pacing pre-classifier for…' to contain 'WHAT ONLY A MOVE CHANGES IS ALWAYS OF…' |
+| (new) tests/unit/classifierOffersSheetMovesAndNamedMoves.test.js › the pacing reader offers what only a move changes, and takes a named move a line that names its move asks for that move | AssertionError: expected 'You are the pacing pre-classifier for…' to contain 'A LINE THAT NAMES ITS MOVE ASKS FOR IT' |
+| (new) tests/unit/fightThresholdCardFollowsItsRoll.test.js › the fight threshold card follows the Enter the Fray it answers (FIGHT-COMMIT-CARD-AFTER-THE-ROLL) is posted after the roll card, and its button is not the move's name | AssertionError: the threshold card stands below its roll: expected 1 to be greater than 2 |
+| (new) tests/unit/fightThresholdCardFollowsItsRoll.test.js › the card says the roll has not made the fight names its button, and offers the way out | AssertionError: expected '&lt;div class="sf-card sf-combat-thresho…' to contain 'data-action="sf-enter-fray">⚔ Begin t…' |
+| (new) tests/unit/interpreterContext.test.js › buildContextSummary — the roller's connections and their relationship tracks lists each connection with its track — full, partway, bonded — and leaves a severed one out | AssertionError: expected 'The character speaking and acting thi…' to contain 'Connections: "Tamsin Okoro" (dangerou…' |
+| tests/unit/nameChangesReachThePrompt.test.js › when a change is told (dueNameChanges) the note says one name, and that the old one is no alias | AssertionError: expected '## NAMES THE TABLE CHANGED\n\nEach of…' to match /The change is the table's correction,…/ |
+
+- New test passing with and without the fix (a control?): tests/unit/classifierOffersSheetMovesAndNamedMoves.test.js › the pacing reader offers what only a move changes, and takes a named move control: an everyday action with nothing at risk is still narration
+- New test passing with and without the fix (a control?): tests/unit/exploreLongHaul.test.js › each beat's check on the world a recovery beat is done by any recover move's hit, not the first roll's (the second live run: Heal missed, Resupply hit)
+- New test passing with and without the fix (a control?): tests/unit/exploreLongHaul.test.js › the player's two new actions a kept run's press of a button the module has since renamed finds it by its new name (LABEL_RENAMES)
+- New test passing with and without the fix (a control?): tests/unit/interpreterContext.test.js › buildContextSummary — the roller's connections and their relationship tracks control: a roller with no connections adds no line

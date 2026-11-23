@@ -89,7 +89,8 @@ describe('issue #345 AA31 — the galley vignette\'s CHARACTER blocks are the PC
     await beginWithGalley();
 
     const call = galleyCall();
-    expect(call.userText).toMatch(/Active players[^\n]*\n- Kira[\s\S]*\n- Ren[\s\S]*Absent crewmates/);
+    // No other crewmate registered: nobody else is aboard (issue #377 item 4).
+    expect(call.userText).toMatch(/Active players[^\n]*\n- Kira[\s\S]*\n- Ren[\s\S]*Nobody else is aboard/);
     expect(blockNames(call.system)).toEqual(['Kira', 'Ren']);
     expect(call.system).not.toMatch(SECOND_PERSON);
     expect(call.system).not.toMatch(/\(speaking this turn\)/);

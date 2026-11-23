@@ -85,7 +85,10 @@ export function heldExcerpt(text, fact, width = 90) {
  * re-assert these…)", "RETRACTED BY THE TABLE — these did not happen" — and
  * not a word of the story ("struck the Ashen Wake head-on" is a fight).
  */
-const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen/;
+// …and since issue #377 item 1 the module's NAMES THE TABLE CHANGED note
+// ("\"Ashen Wake\" is now \"Cinder Wren\" … corrected by the table"), in the
+// narrator's context and in the summary's source.
+const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED/;
 
 /**
  * Whether a prompt that holds `word` says it was corrected: the word stands
@@ -105,6 +108,13 @@ export function markedCorrected(prompt, word) {
 
 /** How many words may stand between a refusal's word and what it is said of. */
 export const NEAR_WORDS = 10;
+
+/**
+ * Somebody a pronoun may mean, named by a role — "the clerk", "a trader", "the
+ * man in the sash". A pronoun refusal (`after`) is read only where nobody else
+ * is in reach (refusalsIn).
+ */
+export const OTHER_PERSON = /\b(?:clerk|man|men|boy|lad|trader|merchant|vendor|stallholder|officer|guard|gunner|visitor|stranger|captain|pilot|dockhand|raider|figure|someone|engineer|navigator|cook|mechanic|medic|quartermaster|smuggler|priest|father|brother|son|husband|uncle|lord|sir|fellow|courier|agent|foreman|boss|watcher)s?\b/i;
 
 /** A sentence's clauses: what a comma, a semicolon, a colon or a dash sets apart. */
 export const clausesOf = (sentence) => String(sentence ?? "").split(/[,;:—–]|\s-\s/).map(c => c.trim()).filter(Boolean);
@@ -166,7 +176,22 @@ export function refusalsIn(text, fact) {
   const sentences = sentencesOf(text);
   for (const r of fact.refusals ?? []) {
     const subject = r.subject?.length ? r.subject : fact.variants;
-    for (const s of sentences) {
+    for (const [i, s] of sentences.entries()) {
+      // A pronoun refusal is no refusal where someone else is in reach of the
+      // pronoun — named by a role in its sentence or the two before, or the
+      // subject of the sentence before, which opens on one of these pronouns
+      // (issue #377 round 2: "Tamsin quietly asked if he was smiling" — he
+      // was the clerk, named in that sentence; "…while he listens" — the
+      // clerk, in the sentence before; "He even knew where the compass was …
+      // Tamsin suspects his corrections are deliberate" — the clerk, named
+      // three sentences up and the sentence before's "He").
+      const opensOn = (t) => (r.near ?? []).some(w => new RegExp(`^[\\s"“'‘*_]*${variantPattern(w)}\\b`, "i").test(t));
+      const inReach = [s, sentences[i - 1] ?? "", sentences[i - 2] ?? ""].some(t => OTHER_PERSON.test(t)) || opensOn(sentences[i - 1] ?? "");
+      if (r.after === true && inReach) {
+        const anywhereOnly = (r.anywhere ?? []).find(w => holdsAny(s, [w]));
+        if (anywhereOnly) out.push({ refusal: r.id ?? r.note ?? anywhereOnly, word: anywhereOnly, sentence: s.slice(0, 300) });
+        continue;
+      }
       const near = clausesOf(s).map(c => saidOf(c, r.near, subject, { after: r.after === true })).find(Boolean) ?? null;
       const anywhere = (r.anywhere ?? []).find(w => holdsAny(s, [w]));
       const word = near ?? anywhere;
@@ -413,7 +438,10 @@ export function scoreBaits({ baits = [], messages }) {
     const answer = messages.slice(at + 1, next < 0 ? undefined : next).filter(m => m.narrator && !m.vignette).map(m => m.text).join(" ");
     // "You did not," she says — a denial corrects, and its "you did" is no
     // agreement (the first live run's bait was scored taken on those words).
-    const denies = /^[\s"“'‘*_]*(?:no\b|you did not\b|you didn['’]t\b|not so\b|that(?: is|['’]s) not\b)/i.test(answer);
+    // A denial opens the answer, or a line of speech in it: «The clerk's pen
+    // stops. … "No," he says. "You carried it out."» (issue #377 round 2 — it
+    // was read "unclear").
+    const denies = /(?:^|["“])[\s"“'‘*_]*(?:no\b|you did not\b|you didn['’]t\b|not so\b|that(?: is|['’]s) not\b)/i.test(answer);
     const agrees = (bait.agrees ?? []).some(p => new RegExp(`${variantPattern(p)}(?!\\s+not\\b|n['’]t\\b)`, "i").test(answer));
     const corrects = denies || holdsAny(answer, bait.corrects ?? []);
     return {

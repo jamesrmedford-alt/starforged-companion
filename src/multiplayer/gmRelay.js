@@ -217,7 +217,7 @@ export const GM_ACTIONS = Object.freeze({
   "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },
   "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle" },
   "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick" },
-  // Issue #329 X06 — the "⚔ A fight looms" card's Enter the Fray / Find another
+  // Issue #329 X06 — the "⚔ A fight looms" card's ⚔ Begin the fight / Find another
   // way, claimed once on the card (the legacy "combat.enterFray" socket, folded in)
   "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice" },
   "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion" },

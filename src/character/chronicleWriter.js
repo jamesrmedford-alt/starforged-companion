@@ -7,6 +7,10 @@
 // entry went to the first PC (CHRONICLE-FIRST-PC); the first PC is now only
 // the fallback for a narration that names none.
 //
+// A resolved move whose result changes something lasting is kept whatever
+// the scribe rates it (`lasting` — chronicleKeeps.js, issue #374 A5): the
+// rating decides only the beats that are none of those.
+//
 // The scribe is told who the beat is about and what their player wrote
 // (issue #374 A2). Given the prose alone, which says "you", it wrote "the
 // character", and what a player established in their own line — what the
@@ -121,6 +125,8 @@ Constraints:
  *   scribe names the one the beat is about
  * @param {string|null} [args.narrationId] — the narration's id, stamped on the
  *   entry so the X-Card can take it back (XCARD-CHRONICLE)
+ * @param {string|null} [args.lasting] — what the move changed that lasts
+ *   (chronicleKeeps.js lastingChangeOf): its entry is kept whatever its rating
  */
 export function scheduleChronicleEntry(args) {
   if (!isAutoEntryEnabled()) return;
@@ -139,7 +145,7 @@ export function scheduleChronicleEntry(args) {
  */
 export async function writeChronicleEntry({
   narrationText, campaignState, moveId, outcome, kind, actorId: narrationActorId = null, characters = null,
-  narrationId = null, playerText = '',
+  narrationId = null, playerText = '', lasting = null,
 }) {
   if (!isAutoEntryEnabled())              return null;
   if (!globalThis.game?.user?.isGM)       return null;
@@ -167,6 +173,7 @@ export async function writeChronicleEntry({
     // round's characters carry their own names and lines (`cast`).
     characterName: cast.length ? '' : pcName(subjectId),
     playerText:    cast.length ? '' : playerLine(playerText),
+    lasting:       keptWhateverRated(lasting),
   }).catch(err => {
     console.warn(`${MODULE_ID} | chronicle writer: Haiku call failed:`, err);
     return null;
@@ -176,7 +183,10 @@ export async function writeChronicleEntry({
 
   // Per-channel salience floor (docs/decisions.md → auto-capture salience gate).
   // Fail-open: an unrated beat passes rather than silently dropping (F20).
-  if (!passesSalience(generated.salience, getSalienceThreshold('chronicle'))) {
+  // A move that changed something lasting is kept whatever its rating (issue
+  // #374 A5): the scribe rated every resolved move of three live runs "scene",
+  // and a session of four rolls left nothing for a recap to be written from.
+  if (!keptWhateverRated(lasting) && !passesSalience(generated.salience, getSalienceThreshold('chronicle'))) {
     return null;
   }
 
@@ -227,9 +237,10 @@ export async function writeChronicleEntry({
  * @param {Array<{actorId: string, name: string, text: string}>} [args.cast] — a round's acting PCs
  * @param {string} [args.characterName] — the one PC a move or a paced line is about
  * @param {string} [args.playerText] — what that PC's player wrote
+ * @param {string} [args.lasting] — what the move changed that lasts, when it did
  * @returns {string}
  */
-function buildScribeMessage({ narrationText, moveId, outcome, kind, cast = [], characterName = '', playerText = '' }) {
+function buildScribeMessage({ narrationText, moveId, outcome, kind, cast = [], characterName = '', playerText = '', lasting = '' }) {
   const contextLines = [];
   if (kind === 'move' && moveId) {
     contextLines.push(`Move: ${moveId}`);
@@ -248,6 +259,8 @@ function buildScribeMessage({ narrationText, moveId, outcome, kind, cast = [], c
     const name = cast[0]?.name ?? characterName;
     if (name) contextLines.push(`Character: ${name} — the player character this beat is about.`);
   }
+  // A kept result: the entry is written for the record, so it says what changed.
+  if (lasting) contextLines.push(`Kept on record: this result changed something lasting (${lasting}). The entry is kept whatever you rate it — say what changed.`);
   const contextBlock = contextLines.length
     ? `## CONTEXT\n\n${contextLines.join('\n')}\n\n`
     : '';
@@ -265,8 +278,8 @@ function buildScribeMessage({ narrationText, moveId, outcome, kind, cast = [], c
   return `${contextBlock}${linesBlock}## NARRATION\n\n${narrationText.trim()}`;
 }
 
-async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind, cast = [], characterName = '', playerText = '' }) {
-  const userMessage = buildScribeMessage({ narrationText, moveId, outcome, kind, cast, characterName, playerText });
+async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind, cast = [], characterName = '', playerText = '', lasting = '' }) {
+  const userMessage = buildScribeMessage({ narrationText, moveId, outcome, kind, cast, characterName, playerText, lasting });
 
   const model = readModel();
   const body = {
@@ -353,6 +366,11 @@ function roundCast(characters) {
     out.push({ actorId: id, name: String(c.name ?? '').trim() || id, text: playerLine(c.text) });
   }
   return out;
+}
+
+/** What a move changed that lasts, as a short plain label — '' when nothing was named. */
+function keptWhateverRated(lasting) {
+  return typeof lasting === 'string' ? lasting.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
 }
 
 /** A player's line as the scribe is shown it: plain text on one line, cut at PLAYER_LINE_MAX_CHARS. */

@@ -140,6 +140,9 @@ const CLASSIFICATION = {
   spotlight:              SCENE,
   sessionRetractions:     STORE,
   recentOracles:          STORE,
+  // The names the table changed (issue #377 item 1): a card's rename sync,
+  // `!truth` and the correction dialog, straight to the store.
+  nameChanges:            STORE,
 };
 
 const fields = [...campaignStateFields().keys()].sort();

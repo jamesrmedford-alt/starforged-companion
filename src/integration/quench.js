@@ -486,6 +486,10 @@ function installAutoDocumentCleanup(quench) {
         // Register our `after` regardless of whether the batch body threw
         // synchronously during registration, so docs are still swept.
         context.after(async function () {
+          // One server round trip per document the batch left, as many as it
+          // made: the sector batch's reap ran past Mocha's 2 s default in a
+          // cloud session (known-issues CLOUD-QUENCH-TIMEOUTS).
+          this.timeout(30000);
           if (!snapshot) return;
           if (!game.user?.isGM) { snapshot = null; return; }
           await reapNewDocuments(snapshot, name);
@@ -1138,6 +1142,7 @@ function registerSectorCreatorTests(quench) {
         let createdConnectionId  = null;
 
         after(async function () {
+          this.timeout(15000); // a campaign-state write and three Actor deletes, each a server round trip; Mocha's default is 2 s
           // Clean up: remove sector and entity IDs from campaignState
           const state = game.settings.get("starforged-companion", "campaignState");
           if (createdSectorId) {
@@ -1178,6 +1183,13 @@ function registerSectorCreatorTests(quench) {
         });
 
         it("creates a 'Starforged Sectors' journal if none exists", async function () {
+          // A sector's creation is fifteen server round trips — two folders,
+          // six Actors (its settlements, connection and sites) and three
+          // updates to them, two Items, a World Journal page and a
+          // campaign-state write. Under Mocha's 2 s default it was stopped
+          // mid-creation on CI (run 45222650220), and the two tests after it
+          // read a sector not yet stored.
+          this.timeout(30000);
           const { generateSector, storeSector, createEntityJournals } = await import(
             `${MODULE_PATH}/sectors/sectorGenerator.js`
           );
@@ -1237,6 +1249,7 @@ function registerSectorCreatorTests(quench) {
         let seededSectorId = null;
 
         before(async function () {
+          this.timeout(15000); // a World Journal page and a campaign-state write, server round trips; Mocha's default is 2 s
           const { generateSector, storeSector } = await import(
             `${MODULE_PATH}/sectors/sectorGenerator.js`
           );
@@ -1247,6 +1260,7 @@ function registerSectorCreatorTests(quench) {
         });
 
         after(async function () {
+          this.timeout(15000); // a campaign-state write, a server round trip; Mocha's default is 2 s
           if (!seededSectorId) return;
           const state = game.settings.get("starforged-companion", "campaignState");
           state.sectors = (state.sectors ?? []).filter(s => s.id !== seededSectorId);
@@ -1256,6 +1270,7 @@ function registerSectorCreatorTests(quench) {
         });
 
         it("extras.activeSectorBlock is populated when a sector is active", async function () {
+          this.timeout(15000); // assembles the narrator's context — on a cold page its modules load first, and it ran past Mocha's 2 s default in a cloud session
           const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get("starforged-companion", "campaignState");
           if (!state.activeSectorId) { this.skip(); return; }
@@ -1269,6 +1284,7 @@ function registerSectorCreatorTests(quench) {
         });
 
         it("extras.activeSectorBlock is empty when no active sector", async function () {
+          this.timeout(15000); // assembles the narrator's context, as the test above; Mocha's default is 2 s
           const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get("starforged-companion", "campaignState");
           const savedId = state.activeSectorId;
@@ -1288,6 +1304,7 @@ function registerSectorCreatorTests(quench) {
         let placeholder = null;
 
         before(async function () {
+          this.timeout(30000); // a Scene made with its notes and drawings (and perhaps a placeholder activated), server round trips; Mocha's default is 2 s
           // Foundry v13 auto-activates a freshly-created scene when the world
           // has no other active scene. That'd make `scene is NOT activated`
           // fail through no fault of createSectorScene. Pre-create + activate
@@ -1308,6 +1325,7 @@ function registerSectorCreatorTests(quench) {
         });
 
         after(async function () {
+          this.timeout(15000); // up to two Scene deletes, server round trips; Mocha's default is 2 s
           if (testScene) {
             await testScene.delete().catch(err =>
               console.error(`starforged-companion | quench: testScene teardown failed (orphaned scene id ${testScene?.id ?? "?"}):`, err));
@@ -1370,6 +1388,7 @@ function registerSectorCreatorTests(quench) {
         let testJournal = null;
 
         after(async function () {
+          this.timeout(15000); // a JournalEntry delete, a server round trip; Mocha's default is 2 s
           if (testJournal) {
             await testJournal.delete().catch(err =>
               console.error(`starforged-companion | quench: testJournal teardown failed (orphaned journal id ${testJournal?.id ?? "?"}):`, err));
@@ -1378,6 +1397,7 @@ function registerSectorCreatorTests(quench) {
         });
 
         it("creates a JournalEntry with the sector record name", async function () {
+          this.timeout(15000); // a JournalEntry and its page, server round trips; Mocha's default is 2 s
           const { generateSector, createSectorJournal } = await import(
             `${MODULE_PATH}/sectors/sectorGenerator.js`
           );
@@ -2927,6 +2947,7 @@ function registerChatCommandsTests(quench) {
 
       describe("!x via chat hook — triggers suppressScene", function () {
         it("posting !x sets campaignState.xCardActive = true", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           try {
             await post("!x");
             const after = await waitForCampaignState(cs => cs?.xCardActive === true);
@@ -4699,6 +4720,7 @@ function registerPacingTests(quench) {
         // for it (waitForCampaignState) — a fixed number of ticks raced it,
         // and the !roll case lost the race on CI.
         it("!pace hot sets a +3 override and posts a confirmation card", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           const before = game.messages.size;
           await ChatMessage.create({ content: "!pace hot" }).then(m => cardIds.push(m.id));
@@ -4708,6 +4730,7 @@ function registerPacingTests(quench) {
         });
 
         it("!pace clear removes the override", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!pace clear" }).then(m => cardIds.push(m.id));
           const state = await waitForCampaignState(s => s.pacing?.sceneOverride == null);
@@ -4717,6 +4740,7 @@ function registerPacingTests(quench) {
 
       describe("!roll command — false-negative recovery", function () {
         it("sets pacing.forceNextAsMove on campaignState", async function () {
+          this.timeout(10000); // the campaign-state poll below waits up to 3 s; Mocha's default is 2 s
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!roll" }).then(m => cardIds.push(m.id));
           const state = await waitForCampaignState(s => s.pacing?.forceNextAsMove === true);
@@ -12765,6 +12789,7 @@ function registerPromptContractTests(quench) {
 
       describe("composition: what one narration records, the next one is told", function () {
         it("a fact block's truth, state and scene frame reach the next request", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const fact = "Hid the beacon codes in his left boot";
           stub.prose.push("Vance limps to the hatch, one boot squelching.");
           stub.sidecars.push({
@@ -12798,6 +12823,7 @@ function registerPromptContractTests(quench) {
         });
 
         it("!narrator debug shows the request that was sent, without the Private Lines", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const request = await capture(PACED);
           const before  = new Set(game.messages.contents.map(m => m.id));
           await ChatMessage.create({ content: "!narrator debug" });
@@ -12827,6 +12853,7 @@ function registerPromptContractTests(quench) {
         });
 
         it("a price that reveals a new enemy asks the narration to decide it; the plan reaches the next request, a plan elsewhere does not", async function () {
+          this.timeout(30000); // a narration and a poll of up to 10 s; Mocha's default is 2 s
           const { withPayThePriceSeed } = await import(`${MODULE_PATH}/moves/resolver.js`);
           const secrets = await import(`${MODULE_PATH}/world/secrets.js`);
           // A plan out of play: another scene's, its name in nothing this turn.

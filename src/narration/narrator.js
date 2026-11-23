@@ -43,6 +43,7 @@ import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock 
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
+import { formatNameChangesForSource, formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -72,6 +73,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
+import { lastingChangeOf, roundLastingChange } from '../character/chronicleKeeps.js';
 import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
@@ -398,6 +400,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // Advances the per-scene pointer as a side effect; '' when not applicable.
     // The acting PC is never the one named next (issue #330 D8).
     spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState, character?.actorId ?? null),
+    // The names the table changed (issue #377 item 1), from the store: told
+    // wherever the old name still reaches the prompt (NAMES THE TABLE CHANGED).
+    nameChanges:        storedCampaignState()?.nameChanges ?? campaignState?.nameChanges ?? [],
   };
 
   // What keeps this beat from reading like the last (issue #354 P2-22,
@@ -1399,6 +1404,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       kind:          'move',
       actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
       playerText:    writtenLine(resolution),      // what the roller's player wrote (issue #374 A2)
+      lasting:       lastingChangeOf(resolution),  // kept whatever its rating (issue #374 A5)
       narrationId,
     });
     return narration;
@@ -1442,6 +1448,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
             kind:          'move',
             actorId:       character?.actorId ?? null,
             playerText:    writtenLine(resolution),
+            lasting:       lastingChangeOf(resolution),
             narrationId,
           });
           return narration;
@@ -1837,6 +1844,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
         narrationText: narration, campaignState, kind: 'round', narrationId,
         // Each with the line its player wrote (issue #374 A2).
         characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName, text: e.text ?? '' })),
+        // Kept whatever its rating when one of its moves changed something lasting (issue #374 A5).
+        lasting: roundLastingChange(entries),
       });
       return { posted: 'card', narrationId, card };
     } catch (err) {
@@ -3476,6 +3485,9 @@ export async function getCampaignRecap(campaignState, options = {}) {
   const settings    = getNarratorSettings();
   const character   = getActiveCharacter(campaignState);
   const extras      = await buildNarratorExtras('campaign_recap', campaignState, { character });
+  // The Chronicle may name someone by a name the table has since changed
+  // (issue #377 item 1): the recap is told the new one where it does.
+  extras.nameChangeTexts = chronicleEntries;
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
   const userMessage  = buildCampaignRecapUserMessage(chronicleEntries);
 
@@ -3528,7 +3540,13 @@ export async function getCampaignRecap(campaignState, options = {}) {
 // ---------------------------------------------------------------------------
 
 const ROLLING_SUMMARY_MODEL     = 'claude-haiku-5-5';
-const ROLLING_SUMMARY_MAX_TOK   = 420;   // was 320 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
+// The summary is asked for 4–8 sentences. At 420 tokens a live session's ran
+// to the cap and was kept cut off mid-word ("…which may be Reyes's. Unresol" —
+// the first-session recording of 2026-11-22; a later run used 405 of the 420):
+// issue #374 A12. The cap is a guess at a model's length, so there is room
+// above what was seen, and a reply that still reaches it loses its unfinished
+// sentence (wholeSentences) instead of being kept with it.
+const ROLLING_SUMMARY_MAX_TOK   = 700;   // was 420, and 320 before Haiku 5.5 (which counts the same text as about 30% more tokens)
 const ROLLING_SUMMARY_DEBOUNCE  = 1.5;
 
 const ROLLING_SUMMARY_SYSTEM_PROMPT =
@@ -3546,6 +3564,21 @@ const ROLLING_SUMMARY_SYSTEM_PROMPT =
   `This is narrative memory, not a recap card: do not address the player, do not ` +
   `propose actions, do not mention dice, moves, momentum, or any game mechanic. ` +
   `Summarise only what the session contains — never invent.`;
+
+/**
+ * A reply cut off mid-sentence, back to the end of its last whole sentence —
+ * '' when it holds none. A sentence ends at ., ! or ? (and any closing quote
+ * or bracket after it) followed by a space or the end.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function wholeSentences(text) {
+  const s = typeof text === 'string' ? text.trimEnd() : '';
+  let end = -1;
+  for (const m of s.matchAll(/[.!?…]["'”’)\]]*(?=\s|$)/g)) end = m.index + m[0].length;
+  return end > 0 ? s.slice(0, end) : '';
+}
 
 /**
  * Debounce threshold — how many new narrator cards must accrue before the
@@ -3620,6 +3653,12 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     ? `\n\n## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n` +
       struck.map(f => `- ${f.label} — ${f.fact}`).join('\n')
     : '';
+  // …and names the table has changed since (issue #377 item 1): the session's
+  // summary was written with the old surname after the GM's rename.
+  const renamed = formatNameChangesForSource(
+    storedCampaignState()?.nameChanges ?? campaignState.nameChanges,
+    { texts: [sourceProse], sessionId });
+  const namesNote = renamed ? `\n\n${renamed}` : '';
 
   // An X-Card played while the call is out removes a narration this summary
   // was made from: its reply is never stored (issue #325 W06). So does one
@@ -3637,19 +3676,26 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   });
 
   let text;
+  const reply = {};
   try {
     text = await callNarratorAPI({
       label: 'getRollingSessionSummary',
       apiKey,
       systemPrompt: ROLLING_SUMMARY_SYSTEM_PROMPT,
-      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}`,
+      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}${namesNote}`,
       model:        ROLLING_SUMMARY_MODEL,
       maxTokens:    ROLLING_SUMMARY_MAX_TOK,
+      reply,
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: rolling summary generation failed:`, err?.message ?? err);
     return cachedText;
   }
+  // Cut off at its length cap: the sentence it was in the middle of is not
+  // kept — the summary becomes LAST SESSION, the Session Log's story and the
+  // snapshot's EARLIER SESSIONS (issue #374 A12). With no whole sentence in
+  // it, the summary there was stands.
+  if (reply.stopReason === 'max_tokens') text = wholeSentences(text);
   if (!text?.trim()) return cachedText;
   if (xCardPlayCount() !== xCardPlaysAtStart || madeFromXCarded()) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
@@ -7031,8 +7077,39 @@ export async function prewarmNarratorCache(campaignState) {
   }
 }
 
-async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
+/**
+ * A call's user message with NAMES THE TABLE CHANGED added at its end, when
+ * the user message names an old name and nothing in the call tells the new
+ * one yet (issue #377 item 1). The system prompt carries the note wherever its
+ * own text, or this session, calls for it (narratorPrompt.js [6.4]), but every
+ * path builds its user message after its system prompt — so an old name only
+ * the user message holds went untold: a player's line, the recent scene, or
+ * a closing scene's earlier bookends ("(Tamsin Vey) Tamsin closes her ledger
+ * stall", from a session before the rename — the long haul's rehearsal,
+ * 2026-11-23). The user message is per call, so the cached blocks stay as
+ * they are. Pure but for the store read; never throws.
+ *
+ * @param {string} systemPrompt
+ * @param {string} userMessage
+ * @returns {string}
+ */
+function withNameChangesNoted(systemPrompt, userMessage) {
+  try {
+    const text = typeof userMessage === 'string' ? userMessage : '';
+    if (!text || String(systemPrompt ?? '').includes(NAME_CHANGES_HEADING) || text.includes(NAME_CHANGES_HEADING)) return userMessage;
+    const changes = storedCampaignState()?.nameChanges;
+    if (!Array.isArray(changes) || !changes.length) return userMessage;
+    const note = formatNameChangesBlock(changes, { texts: [text] });
+    return note ? `${text}\n\n${note}` : userMessage;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the name-change note was not added:`, err?.message ?? err);
+    return userMessage;
+  }
+}
+
+async function callNarratorAPI({ apiKey, systemPrompt, userMessage: message, model, maxTokens, label = null, reply = null }) {
   const blocks = splitNarratorSystemPrompt(systemPrompt);
+  const userMessage = withNameChangesNoted(systemPrompt, message);
   const body = {
     model,
     max_tokens: maxTokens ?? 16000,
@@ -7074,6 +7151,10 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
       `Raise the narration length headroom if this recurs.`,
     );
   }
+
+  // Why the reply ended, for a caller that keeps its text as written (the
+  // rolling summary — issue #374 A12).
+  if (reply) reply.stopReason = data?.stop_reason ?? null;
 
   const text = (data.content ?? [])
     .filter(b => b.type === 'text')

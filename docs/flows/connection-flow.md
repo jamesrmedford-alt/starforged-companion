@@ -531,6 +531,13 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 3. Forge the bond
 
+The move interpreter is told the roller's connections and each one's
+relationship track (`interpreter.js rollerConnectionLines`, read from the PC's
+bond Items): a full track says Forge a Bond can be made, a bonded connection is
+marked bonded. Told nothing of it, it read "Tamsin, I ask you to forge a bond
+with me, to Forge a Bond" — her track full — as Make a Connection (the long
+haul's second live run, known-issues NAMED-MOVE-READ-AS-ANOTHER).
+
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
 **hit — strong or weak** (BOND-WEAK-FORGE fix; the weak hit forges too, with

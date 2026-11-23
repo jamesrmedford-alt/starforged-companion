@@ -40,13 +40,13 @@ import { burnableDice, scriptedDice } from '../../test/ci/playwright/lib/gm.mjs'
 import { plansSeen, recheckBeats, scoreLongRun } from '../../test/ci/playwright/lib/longrun.mjs';
 import { faceOf, parseDiceLine, uniformFor } from '../../test/ci/playwright/lib/table.mjs';
 import {
-  ACTION_TOOL, HISTORY_ACTIONS, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, sayWithoutIds, scriptedForm,
+  ACTION_TOOL, HISTORY_ACTIONS, LABEL_RENAMES, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, sayWithoutIds, scriptedForm,
   summariseAction, truthIdFor, validateAction,
 } from '../../test/ci/playwright/lib/player.mjs';
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import {
-  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, speedOf, spokenFor,
+  annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, slipsOf, speedOf, spokenFor,
 } from '../../test/ci/playwright/lib/review.mjs';
 import { burnedOutcome, outcomeOf, rolledScore } from '../helpers/sequence/rules.js';
 
@@ -129,6 +129,17 @@ describe('a fact, held and refused', () => {
     ]) expect(refusalsIn(sentence, tamsin), sentence).toEqual([]);
     expect(refusalsIn('Tamsin sets his ledger down.', tamsin), 'said of her').toHaveLength(1);
     expect(refusalsIn('Tamsin looks up, and he smiles.', tamsin), 'another clause').toEqual([]);
+    // The second live run: every "he" was the clerk — named by his role in the
+    // sentence, or in the one before.
+    for (const text of [
+      'Mira kept Tamsin talking on the comm and described the clerk\'s narrow face to her, until Tamsin quietly asked if he was smiling, and the corner of his mouth lifted.',
+      'Mira kept Tamsin talking on the comm and described the smiling clerk to her, and Tamsin learned what he was paid to hear.',
+      'The clerk\'s mouth moves, and the corner of it lifts. *If you want to hold Tamsin\'s trust while he listens, this could be a Develop Your Relationship.*',
+      'The clerk\'s pen stops mid-line, and he tilts his head toward the comm. You tell Tamsin what you have of him: flat heels, a sash pressed too neat, a habit of reading upside down.',
+    ]) expect(refusalsIn(text, tamsin), text).toEqual([]);
+    expect(refusalsIn('The comm hisses. Tamsin sets his ledger down.', tamsin), 'nobody else in reach').toHaveLength(1);
+    // …and the recap: the clerk three sentences up, the sentence before his "He".
+    expect(refusalsIn('The clerk is the part that does not settle. He knew Tamsin\'s full name and the manifest under her ledger. He even knew where the compass was, and Tamsin denied ever having held it. Tamsin suspects his corrections are deliberate.', tamsin)).toEqual([]);
 
     const berth = { id: 'F5', variants: ['Bleakhold'], refusals: [{ id: 'another settlement', subject: ['Kobayashi', 'your ship'], near: ['berthed at Hollow Spire', 'docked at Hollow Spire'] }] };
     expect(refusalsIn('You believed you were berthed at Hollow Spire, but the dock log puts the Kobayashi IV at Bleakhold, cradle four, with you as captain.', berth)).toEqual([]);
@@ -270,6 +281,18 @@ describe('the ledger, scored layer by layer', () => {
     // Said of something else, it marks nothing.
     expect(markedCorrected('## RECENT SCENE\n\nThe course was corrected twice.\n\nThe Ashen Wake cuts across your bow.\n', 'Ashen Wake')).toBe(false);
     expect(markedCorrected('## RECENT SCENE\nNothing of it here.\n', 'Ashen Wake')).toBe(false);
+
+    // Issue #377 item 1: the module's own note says it, in every later prompt
+    // the old name reaches — the snapshot's plan, a clock, lore.
+    const noted = [
+      '#### Threat — Ashen Wake (id sk-Enye9o8yVxQGTh8x)', '',
+      '## CLOCKS', '', '- Tension: Ashen Wake — 0/4', '',
+      '## NAMES THE TABLE CHANGED', '', 'Each of these is one person, place or ship with one name.', '',
+      '- "Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.', '',
+    ].join('\n');
+    expect(markedCorrected(noted, 'Ashen Wake')).toBe(true);
+    // …and the summary's source note.
+    expect(markedCorrected('## SESSION NARRATION (oldest first)\n\nThe Ashen Wake burns.\n\n## NAMES THE TABLE CHANGED — one name each\n\n- "Ashen Wake" is now "Cinder Wren".\n', 'Ashen Wake')).toBe(true);
   });
 
   it('a probe is looked for among the lines of the beat that asks it: a short question\'s words elsewhere are not the question', () => {
@@ -310,6 +333,8 @@ describe('baits and hidden plans', () => {
     // The first live run: scored "taken" on the "you did" of a denial.
     expect(scoreBaits({ baits: [bait], messages: asked('"You did not," Tamsin says over the comm. "It\'s face-down on your galley table, where you keep leaving it."') })[0].result).toBe('corrected');
     expect(scoreBaits({ baits: [bait], messages: asked('You didn\'t. It is on the table.') })[0].result).toBe('corrected');
+    // The second live run: the denial opens a line of speech, not the answer.
+    expect(scoreBaits({ baits: [bait], messages: asked('The clerk\'s pen stops. He lets the question sit, then reaches past your shoulder and taps your coat, where the brass lies against your ribs. "No," he says. "You carried it out." On the comm, Tamsin\'s chair creaks.') })[0].result).toBe('corrected');
     expect(scoreBaits({ baits: [bait], messages: asked(null) })[0].result).toBe('unanswered');
     expect(scoreBaits({ baits: [bait], messages: [] })[0]).toMatchObject({ asked: false, result: 'not-asked' });
   });
@@ -558,6 +583,18 @@ describe('each beat\'s check on the world', () => {
     expect(check('burned', { moves: ['strike'] }, [setup, markOf('a1', tableOf(), [weak]), markOf('a2', tableOf(), [burned])])).toMatchObject({ status: 'done' });
   });
 
+  it('a recovery beat is done by any recover move\'s hit, not the first roll\'s (the second live run: Heal missed, Resupply hit)', () => {
+    const heal = moveCard('r1', 'Heal', 'Action: 4 + 1 = 5 | Challenge: 10, 6', 'miss');
+    const resupply = moveCard('r2', 'Resupply', 'Action: 6 + 2 = 8 | Challenge: 5, 5', 'strong_hit');
+    const choice = { id: 's1', suffer: { resolved: false, picked: [], moveId: 'resupply' } };
+    const taken = { ...choice, suffer: { ...choice.suffer, resolved: true, picked: [1] } };
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal])]).detail).toBe('heal missed');
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal]), markOf('a2', tableOf(), [heal, resupply, choice])]).detail)
+      .toBe('resupply came up strong_hit; its choice is not made');
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal]), markOf('a2', tableOf(), [heal, resupply, choice]), markOf('a3', tableOf(), [heal, resupply, taken])]))
+      .toMatchObject({ status: 'done', detail: 'resupply came up strong_hit at a2' });
+  });
+
   it('the cast\'s connection is one card, followed by its id: renamed since it was made, its bond is still found', () => {
     const made = markOf('a1', tableOf({ connections: [{ ...conn, name: 'Tamsin Vey', ticks: 0 }] }));
     const renamed = (extra) => tableOf({ connections: [{ ...conn, name: 'Tamsin Okoro', ...extra }] });
@@ -745,6 +782,17 @@ describe('the player\'s two new actions', () => {
     expect(scriptedForm({ action: 'say', text: 'I look over the wreck.' }, SCREEN)).toEqual({ action: 'say', text: 'I look over the wreck.' });
     expect(sayWithoutIds(struck, 'nothing listed')).toEqual(struck);
     expect(truthIdFor('raider cutter — is named the Ashen Wake', 'tr-0aa11 raider cutter — is named the Ashen Wake tr-0bb22 other')).toBe('tr-0aa11');
+  });
+
+  it('a kept run\'s press of a button the module has since renamed finds it by its new name (LABEL_RENAMES)', () => {
+    const now = { ...SCREEN, messages: [{ ...SCREEN.messages[1], buttons: [{ n: 1, label: '⚔ Begin the fight', disabled: false }, { n: 2, label: '🚪 Find another way', disabled: false }] }] };
+    // The first live long haul pressed "⚔ Enter the Fray" on the fight's card.
+    expect(LABEL_RENAMES['⚔ Enter the Fray']).toBe('⚔ Begin the fight');
+    expect(resolveScripted({ action: 'click', label: '⚔ Enter the Fray', fromNewest: 0, reason: 'begin it' }, now))
+      .toEqual({ ok: true, action: { action: 'click', messageId: 'idB', message: 'm2', button: 1, label: '⚔ Begin the fight', reason: 'begin it' } });
+    // A screen that still offers the recorded label is pressed as recorded.
+    expect(resolveScripted({ action: 'click', label: '⚔ Enter the Fray', fromNewest: 0 }, SCREEN).action.label).toBe('⚔ Enter the Fray');
+    expect(resolveScripted({ action: 'click', label: 'Nothing like it', fromNewest: 0 }, now)).toEqual({ ok: false, problem: 'no message on screen offers "Nothing like it"' });
   });
 
   it('a card further up the chat that can still be answered is on its screen, under its own heading, and is clicked by its own reference', () => {
@@ -1022,6 +1070,24 @@ describe('what a run counts for its review', () => {
     expect(spokenFor([{ step: 'a60', narrator: true, text: 'The visitor is listening. "Careful what you tell her," the voice says. "I know that compass."' }]), 'the voice speaks, not you').toEqual([]);
     expect(spokenFor([{ step: 'a51', narrator: true, text: '"Tamsin\'s," you say, and the plating gives back a short pause.' }])).toHaveLength(1);
   });
+
+  it('counts what the narrator was told and wrote anyway — the first live run\'s own sentences (issue #377 items 2, 4)', () => {
+    const slips = slipsOf([
+      { step: 'a57', narrator: true, text: 'Open on the hatch, not you. The handle turns its quarter inch and stops.' },
+      { step: 'a79', narrator: true, text: '*Open on Tamsin, not the hatch.* Her answer comes over the comm.' },
+      { step: 'a15', narrator: true, vignette: 'galley_begin', text: 'You eat slowly, because Wits 3 is a lot of thinking to do on bland food. So you have invented a crew: the engineer is teaching the coolant pump to hum.' },
+      { step: 'a20', narrator: true, text: 'Iron rings on iron. The open door waits.' },
+      { step: 'a48', narrator: true, vignette: 'npc_end', text: 'The cook at the next stall burns the lentils again.' },
+    ]);
+    expect(slips.directives.map(s => s.step)).toEqual(['a57', 'a79']);
+    expect(slips.statsAloud.map(s => s.sentence)).toEqual(['You eat slowly, because Wits 3 is a lot of thinking to do on bland food.']);
+    expect(slips.crewInOpenings.map(s => s.sentence)).toEqual(['So you have invented a crew: the engineer is teaching the coolant pump to hum.']);
+    // A closing's cook is no opening's crew; "iron rings on iron" is no stat.
+    expect(slips.crewInOpenings.some(s => s.step === 'a48')).toBe(false);
+    const card = scorecard({ charter: { name: 'long-haul' }, run: { id: 'r', mode: 'live' }, slips });
+    expect(card).toContain('2 instruction(s) written as prose; 1 stat(s) read aloud; 1 opening sentence(s) naming a crew role');
+    expect(card).toContain('## Told, and written anyway — each to be read');
+  });
 });
 
 describe('the generated layers of the review', () => {
@@ -1200,6 +1266,64 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
   });
 
   it('carries no key, every model it recorded has a price, and its review is written: no marked place is left', () => {
+    expect(RAW).not.toMatch(/sk-ant-/);
+    expect(Object.keys(CONFIG.prices.usdPerMillionTokens)).toEqual(expect.arrayContaining(RUN.recording.provenance.models));
+    for (const file of ['annotated-transcript.md', 'scorecard.md']) {
+      const text = fs.readFileSync(path.join(FOLDER, file), 'utf8');
+      expect(text, file).not.toContain('_To write');
+      expect(text, file).toContain('Re-scored');
+    }
+  });
+});
+
+// ── the second live run, after issue #377's fixes ────────────────────────────
+
+describe('the second live run of the long haul, kept as a replay (explorations/long-haul-live-20261123-1459)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261123-1459');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const CONFIG = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explore.config.json'), 'utf8'));
+  const said = (step, kind = /narrate/) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+
+  it('is a run the runner can take again: 89 actions with no document id, its dice, and every reply filed under a step', () => {
+    expect(RUN.actions).toHaveLength(89);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.actions.filter(a => a.action === 'choose').map(a => a.option)).toEqual(['Tamsin Vey', 'Find who is raiding the Cinder Expanse lanes']);
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.actions.filter(a => /\btr-[a-z0-9]{4,}\b/.test(a.text ?? '')).map(a => a.text), 'a truth is named by its entry, not its id').toEqual([]);
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+  });
+
+  it('expects what the corrected checks found: the fight\'s five beats not exercised, the rest done, no rule broken', () => {
+    const notDone = Object.entries(RUN.expected.beats).filter(([, s]) => s !== 'done').map(([b]) => b);
+    expect(notDone).toEqual(['b9', 'b10', 'b11', 'b12', 'b13']);
+    expect(Object.values(RUN.expected.beats).filter(s => s === 'not-exercised')).toHaveLength(5);
+    expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
+    expect(RUN.rescored).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/), was: { classification: 'suspected-quality-issue', beats: { done: 20, notExercised: 6 } } });
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+  });
+
+  it('holds what its review says of it, in the recorded replies', () => {
+    // Issue #377 item 1: the corrected and the renamed names, and the change told as a story.
+    expect(said('a47')).toContain('The *Cinder Wren*, Mira');
+    expect(said('a48')).toContain('You crossed it out, and wrote it again.');
+    // A memory slip: the manifest handed over before the promise.
+    expect(said('a45')).toContain('with the manifest still in your hand');
+    // Item 3: the medkit line narrated without healing — and offered nothing.
+    expect(said('a49')).toContain('spread the gauze across the galley table');
+    expect(said('a49', /classifyInput/)).toMatch(/"decision":"NARRATIVE","suggestedMove":null/);
+    // The named bond read as a connection, the track full.
+    expect(said('a65', /interpretMove/)).toMatch(/"moveId":"make_a_connection"[\s\S]*needs an established bond track/);
+    // A bait refused inside a line of speech.
+    expect(said('a84')).toMatch(/"No," he says\. "You carried it out\."/);
+  });
+
+  it('carries no key, every model it recorded has a price, and its review is written', () => {
     expect(RAW).not.toMatch(/sk-ant-/);
     expect(Object.keys(CONFIG.prices.usdPerMillionTokens)).toEqual(expect.arrayContaining(RUN.recording.provenance.models));
     for (const file of ['annotated-transcript.md', 'scorecard.md']) {

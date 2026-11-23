@@ -240,6 +240,17 @@ export function truthIdFor(entry, screenText) {
 }
 
 /**
+ * Buttons the module renamed after a kept run recorded a press of them: the
+ * label it recorded → the label the module shows now. A replay looks for the
+ * new one when no message offers the old (resolveScripted).
+ */
+export const LABEL_RENAMES = Object.freeze({
+  // The fight threshold card's button (issue #377 round 2,
+  // FIGHT-COMMIT-CARD-AFTER-THE-ROLL) — pressed in the first live long haul.
+  "⚔ Enter the Fray": "⚔ Begin the fight",
+});
+
+/**
  * A taken action in the form a replay takes it again: no document ids — they
  * differ in every world. A click is kept as its button's label and which of
  * the messages offering that label it was, counted from the newest; a typed
@@ -264,10 +275,14 @@ export function scriptedForm(action, snapshot) {
  */
 export function resolveScripted(scripted, snapshot) {
   if (scripted.action === "click") {
-    const offering = snapshot.messages.filter(m => m.buttons.some(b => !b.disabled && b.label === scripted.label));
+    // A button the module has since renamed is found by its new label, so a
+    // kept run still replays (LABEL_RENAMES).
+    const offers = (label) => snapshot.messages.filter(m => m.buttons.some(b => !b.disabled && b.label === label));
+    const label = offers(scripted.label).length || !LABEL_RENAMES[scripted.label] ? scripted.label : LABEL_RENAMES[scripted.label];
+    const offering = offers(label);
     const message = offering[offering.length - 1 - (scripted.fromNewest ?? 0)];
     if (!message) return { ok: false, problem: `no message on screen offers "${scripted.label}"` };
-    const button = message.buttons.find(b => !b.disabled && b.label === scripted.label);
+    const button = message.buttons.find(b => !b.disabled && b.label === label);
     return { ok: true, action: { action: "click", messageId: message.id, message: message.ref, button: button.n, label: button.label, reason: scripted.reason ?? "" } };
   }
   if (scripted.action === "choose") {
@@ -387,6 +402,7 @@ export function playerSystemPrompt(charter) {
     `- You play by typing in chat as your character, in the first person, a sentence or two. The narrator answers in chat; a card may offer buttons.`,
     `- Chat commands exist: !begin-session opens the session, !end-session closes it. Each opens a window you fill in and submit.`,
     `- After you act, the table needs time: if the narrator has not answered yet, wait rather than repeat yourself.`,
+    `- A card that asks you to choose — "Resolve consequence", a cost to pick, with its choices as buttons — is waiting on you. Answer it with a click before you type anything else: a cost you owe stays owed until you do, and the table will not stop you from typing past it.`,
     `- You know only what your screen shows. Do not invent what the narrator said.`,
     `- You are shown your last ${HISTORY_ACTIONS} actions and your notebook, nothing older. When something will matter later — a name, a thing you established, what you have finished — put one short line in \`note\`.`,
     `- When you have done everything your goal asks, or you cannot go on, use stop and say which. Someone else judges whether the goal was met.`,

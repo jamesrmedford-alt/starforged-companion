@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 const ISSUE_STATE = {
   293: { state: 'closed', state_reason: 'completed' },   // closed 2026-10-25
   340: { state: 'closed', state_reason: 'completed' },
+  290: { state: 'closed', state_reason: 'completed' },   // closed 2026-11-23 — what was left of its part 3 is in #373 and #302
 };
 const BADGE_FOR = { 'closed/completed': '✅ COMPLETE', 'closed/not_planned': '🔧 SUPERSEDED' };
 
@@ -36,6 +37,14 @@ describe("the scope index's status follows the issue (issue #342 Z71)", () => {
     const row = rowFor(293);
     expect(row).toMatch(/Phone Play on The Forge/);
     expect(badge(row)).toBe(expected(293));
+  });
+
+  it('the Narrator In-Client Testing row (#290, closed completed) reads ✅ COMPLETE, and says where the rest of part 3 went', () => {
+    const row = rowFor(290);
+    expect(row).toMatch(/Narrator In-Client Testing/);
+    expect(badge(row)).toBe(expected(290));
+    expect(row).toMatch(/#373/);
+    expect(row).toMatch(/#302/);
   });
 
   it('the phone checks still to make point at their known-issues rows, not at open scope', () => {

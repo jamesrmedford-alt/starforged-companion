@@ -271,8 +271,12 @@ export const BEAT_CHECKS = {
 
   /** A recover move was made and what it offers was taken. */
   recovered(v, c) {
-    const roll = v.rolls.find(r => (c.moves ?? ["heal", "resupply", "sojourn", "hearten"]).includes(r.moveId) && r.rolled);
-    if (!roll) return notYet("no recover move yet");
+    // Any recover move's hit, not the first roll's: the second live run's Heal
+    // missed and its Resupply came up a strong hit, and the beat was read off
+    // the miss alone (issue #377 round 2).
+    const rolls = v.rolls.filter(r => (c.moves ?? ["heal", "resupply", "sojourn", "hearten"]).includes(r.moveId) && r.rolled);
+    if (!rolls.length) return notYet("no recover move yet");
+    const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
     const offered = v.allCards.filter(k => k.suffer && v.inWindow(k) && k.suffer.moveId === roll.moveId);
     if (offered.length && !offered.some(k => k.suffer.resolved)) return notYet(`${roll.moveId} came up ${roll.outcome}; its choice is not made`, 2);

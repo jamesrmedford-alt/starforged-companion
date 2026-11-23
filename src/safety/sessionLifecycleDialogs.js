@@ -39,6 +39,7 @@ import { newNarrationId } from "../factContinuity/ledgers.js";
 import { proseToHtml } from "../audio/segments.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { RANKS } from "../schemas.js";
+import { costsOwedSentence } from "../moves/sufferCard.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -566,6 +567,16 @@ export async function openEndSessionDialog() {
       ? `This session has already ended. A focus set now replaces the one noted; its momentum was already taken.`
       : `This session has already ended. Setting a focus now still grants <strong>+1 momentum</strong>, once.`;
 
+  // A cost nobody has answered, said while there is still a session to answer
+  // it in (issue #374 A10). Fail-open: no line.
+  let owedHint = "";
+  try {
+    const owed = costsOwedSentence();
+    if (owed) owedHint = `<p class="hint sf-costs-owed"><strong>Unpaid:</strong> ${escapeHtml(owed)}</p>`;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | End a Session: the costs still owed could not be read:`, err?.message ?? err);
+  }
+
   // The open vows and the connections, one click each into their focus
   // field, beside the free text (issue #353 R4): left blank, the focus — and
   // its +1 momentum — went unchosen. Fail-open: none offered.
@@ -595,6 +606,7 @@ export async function openEndSessionDialog() {
       </label>
       ${renderFocusChoices("connectionFocus", "Connections", connectionChoices)}
       <p class="hint">${bonusHint}</p>
+      ${owedHint}
     </form>
   `;
 
@@ -647,6 +659,11 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     return;
   }
 
+  // A cost nobody answered is said before the session closes on it (issue
+  // #374 A10): its card holds nothing up, so it can be typed past.
+  const owed = costsOwedSentence();
+  const owedBlock = owed ? `<p class="sf-costs-owed"><strong>Unpaid:</strong> ${escapeHtml(owed)}</p>` : "";
+
   const focusBlock = !lines.length
     ? `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`
     : failed
@@ -659,7 +676,7 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     : "";
 
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>End a Session</strong>${focusBlock}${notRecorded}</div>`,
+    content: `<div class="sf-session-card"><strong>End a Session</strong>${focusBlock}${owedBlock}${notRecorded}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 }

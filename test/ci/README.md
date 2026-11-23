@@ -193,6 +193,10 @@ ANTHROPIC_API_KEY=… ./scripts/cloud.sh playthroughs --record
 ./scripts/cloud.sh down
 ```
 
+Every suite installs the module from the working tree as it is when it runs —
+not only `up` — so an edit to `src/` is what the next run serves; uncommitted
+changes are named in a warning, since the run records HEAD as its commit.
+
 It needs `FOUNDRY_USERNAME` and `FOUNDRY_PASSWORD` in the session's
 environment (your foundryvtt.com account; an admin key is generated), and the
 environment's network must allow, besides package registries: `ghcr.io`,
@@ -306,6 +310,16 @@ step annotated and its ten questions answered. Its action items are issue
 
 ```bash
 ./scripts/cloud.sh explore --replay playwright/explorations/long-haul-live-20261123
+```
+
+`playwright/explorations/long-haul-live-20261123-1459/` is the second, the
+first after issue #377's fixes (89 actions, 344 model calls, $2.26), kept as
+re-scored with every step annotated and its eight questions answered. Its fight
+was never begun — the fight's card read as answered by its roll, fixed since —
+so its five fight beats are not exercised:
+
+```bash
+./scripts/cloud.sh explore --replay playwright/explorations/long-haul-live-20261123-1459
 ```
 
 **Caps** (`playwright/explore.config.json`): 30 player actions, 100 model

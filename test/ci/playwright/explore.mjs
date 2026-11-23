@@ -72,7 +72,7 @@ import { createBudget } from "./lib/budget.mjs";
 import {
   snapshotScreen, describeScreen, executeAction, chooseAction, summariseAction, scriptedForm, resolveScripted, keepNote,
 } from "./lib/player.mjs";
-import { createObserver, scoreMemory, healthOf, classifyRun } from "./lib/observer.mjs";
+import { createObserver, scoreMemory, healthOf, classifyRun, costsOwedText } from "./lib/observer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
 import { BEAT_CHECKS, createPointer, classifyLongRun } from "./lib/beats.mjs";
 import { scoreLongRun } from "./lib/longrun.mjs";
@@ -673,7 +673,7 @@ async function main() {
         ? { status: outcome.status, reason: outcome.reason, beats: long.summary, checks: { made: long.mechanics.checks, violated: long.mechanics.violations.length }, ledger: long.ledger.totals, scripted, interruptions }
         : { status: outcome.status, reason: outcome.reason, failingLayer: outcome.failingLayer, milestones: outcome.milestones },
       health: {
-        failures: health.failures, waitingOnGm: health.waitingOnGm, knownFailures: health.knownFailures, errors: health.errors.length,
+        failures: health.failures, waitingOnGm: health.waitingOnGm, costsOwed: health.costsOwed, knownFailures: health.knownFailures, errors: health.errors.length,
         uncaught: [gm, player].filter(Boolean).flatMap(c => (c.pageErrors ?? []).slice(0, 5).map(e => ({ client: c.label, ...e }))),
         // A write the server refused, with the stack of the code that asked for it.
         refused: refusedWrites,
@@ -697,6 +697,7 @@ async function main() {
       for (const f of long.ledger.facts) log(`  ${f.id} ${f.verdict}${f.failingLayer ? ` (${f.failingLayer})` : ""} — planted ${f.plantedAt ?? "never"}; probes ${f.probes.filter(p => p.asked).map(p => `${p.id}@${p.step}:${p.inAnswer ? "answered" : p.failingLayer}${p.counted ? "" : "(not counted)"}`).join(" ") || "none"}`);
     }
     for (const failure of health.failures) log(`health: ${failure}`);
+    if (health.costsOwed.length) log(`left owed: ${health.costsOwed.length} cost card(s) nobody answered — ${costsOwedText(health.costsOwed)}`);
     if (health.waitingOnGm.length) log(`the GM's screen was left waiting on: ${health.waitingOnGm.join(", ")}`);
     if (CALLS) log(`${MODE === "live" ? "spent" : "priced at"} $${spend.usd.toFixed(4)} of $${caps.usd} — ${spend.calls} model calls, ${spend.actions} actions, ${spend.minutes} minutes`);
     log(`RESULT ${verdict.classification} — ${verdict.because}`);

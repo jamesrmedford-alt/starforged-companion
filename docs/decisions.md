@@ -6,6 +6,285 @@ rejected.
 
 ---
 
+## The long haul's second round: the fight's card follows its roll, a move only a move can make is always offered, a named move asks for itself, and a name change is the table's (issue #373 round 2, after issue #377) (2026-11)
+
+**Decision:** what the long haul's second live run (2026-11-23,
+`explorations/long-haul-live-20261123-1459/`; the maintainer: "run a long
+haul, address the issues that crop up, and then open a PR") found fix-ready,
+fixed; the rest recorded (known-issues → "The long haul").
+
+- **The fight's card follows its roll, and does not wear the move's name**
+  (FIGHT-COMMIT-CARD-AFTER-THE-ROLL). "Combat is offered, not forced" stands:
+  the fight's track is made only on the card. What changed is how the card
+  reads — posted after the Enter the Fray's roll card, saying the roll has not
+  made the track, its button "⚔ Begin the fight". Above the roll with "⚔ Enter
+  the Fray" on it, it read as already answered and the run lost five beats.
+  **Rejected:** making the track at the roll — it would reverse the decision,
+  and the way out would then have to end a fight.
+- **What only a move changes is always offered** (SHEET-MOVE-OFFERED-NOTHING).
+  Issue #377 item 3 took healing, restocking and repair out of narration; a
+  line that sets about one is now never plain NARRATIVE, at any dial — the
+  move is at least offered. The low dial's rule (an unsure move is offered,
+  not rolled) is otherwise unchanged.
+- **A line that names its move asks for it, to the pacing reader**; and the
+  move interpreter is told the roller's connections and their relationship
+  tracks, so a named Forge a Bond with a full track is not read as Make a
+  Connection (NAMED-MOVE-READ-AS-ANOTHER). **Not changed:** Balanced Mischief
+  may still pick a neighbouring move (P2-02) — the run's second "forge a bond"
+  was that, and it stands.
+- **A name change is the table's correction, not an event of the story**
+  (NAME-CHANGE-TOLD-AS-A-STORY). The note says so, and that the new name has
+  always been the name. A table that means an in-story change of name says so
+  in play.
+- **The stores still keep the old names** (SESSION-LOG-KEEPS-OLD-NAMES): option
+  1 of issue #377 item 1 stands; rewriting a renamed record in the Session Log
+  is the option to take if a table minds what it reads there.
+- **The #374 fixes were merged in before the run** (A5, A9, A10, A12, from a
+  branch not yet in a PR): each was on the path the run walked, and the
+  spending rule is not to pay while a fix-ready finding is open on it. They
+  were merged unchanged.
+- **No further run was bought.** This one could not test the fight; the next
+  run belongs after the fight's card is fixed — it is — to read a player pressing
+  it — the miss's price, the suffer path, a burn, a GM reload mid-fight and
+  End a Session naming a cost owed.
+
+---
+
+## A changed name is told wherever the old one still reaches; the narrator's instructions are said as instructions; a solo character is alone with the ship (issue #377 items 1–5) (2026-11)
+
+**Decision:** the long haul's first round's action items (issue
+[#377](https://github.com/jamesrmedford-alt/starforged-companion/issues/377);
+the maintainer, 2026-11-23: "Please implement issue 377"), each by the
+option the issue recommended.
+
+- **Item 1 — a correction or a rename reaches the record (option 1, not
+  option 2).** A change of name is recorded once, on
+  `campaignState.nameChanges` (`factContinuity/nameChanges.js`), by the
+  table's paths alone: a GM's rename of a card in the sidebar (the Actor and
+  journal rename syncs) and a correction of a name — `!truth strike` +
+  `!truth set` on one subject, in either order, or the correction dialog's
+  Replace. The narrator is told under NAMES THE TABLE CHANGED, just above the
+  scene's truths, in every mode — the recap's included — while the change is
+  this session's or while its old name, whole or the part the new one does
+  not share ("Vey"), is in what the call sends; the session summary's source
+  carries the same note. A call whose user message alone names an old name —
+  a player's line, the recent scene, a closing scene's earlier bookends — has
+  the note added at the end of that message (`callNarratorAPI`): every path
+  builds its user message after its system prompt, and the long haul's
+  rehearsal found a closing scene told "(Tamsin Vey) …" a session after the
+  rename, with nothing to say she was Okoro now. **Rejected: rewriting the old name in the stores**
+  (option 2) — snapshot lines, lore titles, truths' subjects, plan subjects,
+  clock labels, Chronicle entries. It touches every store, and a store missed
+  is the same defect again; the note is the mechanism a corrected truth
+  already had, carried past its scene. The stores still hold the old name —
+  a clock card the table reads still says "Ashen Wake" — and the issue's
+  option 3 (both) is open if the note alone does not hold.
+  - **Only a name said to be one is a name change.** A strike + set is read
+    as a rename only when the words before the name say so ("named",
+    "called", "known as", "goes by"…): "docked at Bleakhold" corrected to
+    "docked at Vigil Reach" is a correction of where, not a rename, and saying
+    "Bleakhold is now Vigil Reach" would be false. A name and a longer form of
+    it ("Tamsin", "Tamsin Vey") are one name.
+  - **Not recorded: a narration's reveal of a placeholder**, nor the X-Card's
+    take-back of one. The narrator named them itself, and the reveal is the
+    X-Card's to undo; both write the record before the card's name, so the
+    sidebar sync sees nothing to follow.
+  - **The old name is no alias, and no former name.** The note says so in
+    those words. A GM's rename is read as the table's correction of who
+    someone is, not an in-story change of name — the long haul's case. A
+    table that means an in-story change says so in play, where the narrator
+    reads it.
+  - The field is store-owned: a move's record keeps the stored value
+    (`persistResolution.js` STORE_OWNED_FIELDS), so a move begun before a
+    rename does not put the old list back.
+- **Item 2 — the beat's shape (option 1).** The five shapes are said of the
+  narration ("Its first sentence is about someone other than the acting
+  character…") under "How this narration is built:", and the line says it is
+  an instruction never to be written. "Shape: Open on…" read as a director's
+  note and came back as prose twice in 28 lines. Option 2 (strip a leading
+  "Open on…" before posting) is kept for if it recurs.
+- **Item 3 — an offered move (option 1).** SUGGESTED MOVE says the move has
+  not been made and nothing it would decide has happened — narrate to its
+  threshold. The no-move rule says nothing on a character's sheet changes in
+  narration (no wound treated, no supplies gained, no damage repaired, no
+  progress), which is the line the medkit crossed: no move was offered there,
+  and the old rule spoke only of "risky" actions.
+- **Item 4 — the opening scene (options 1 and 3; #374 A4's decision and
+  A11).** With no other PC registered the galley scene is the character alone
+  with the ship, whose noises and habits are the joke: no crew is invented,
+  present or absent, and the character does not imagine one. No stat line is
+  sent, and a stat is never to be stated. The mode's role text says the same.
+  #374 A4's other half — a line with the command vehicle that nobody aboard
+  outranks the player characters — is not built: no crew is invented now to
+  outrank them.
+- **Item 5 — scenes of one kind (a fix to try).** Each bookend's user message
+  lists the newest three earlier ones of its kind, as already used
+  (`session/vignetteHistory.js`, read from the chat's cards; a closing's card
+  names whom it featured, `vignetteNpc`), and the opening's fixed example
+  jokes are gone (#374 A3). The closing scene still picks its NPC by the same
+  priority: with one NPC of weight it is her again, at something else.
+- **Items 6–8 — not yet.** Each needs more samples, which the round's next
+  long haul supplies; none was changed.
+
+**The runner, with it.** The ledger's correction mark knows the new note (a
+prompt that carries "Ashen Wake" beside NAMES THE TABLE CHANGED says it was
+corrected), and the review counts what the narrator was told and wrote
+anyway — an instruction written as prose, a stat read aloud, a crew role in
+an opening (`slipsOf`).
+
+---
+
+## What a session's turning points are kept by; a summary cut at its cap; a cost left owed is named; "combat" is any immediate physical danger (issue #374 A5, A12, A10, A9) (2026-11)
+
+**Decision:** four items the third live run left open (issue
+[#374](https://github.com/jamesrmedford-alt/starforged-companion/issues/374)),
+settled by the maintainer on 2026-11-23: "Take the recommended for each."
+A5 and A12 had a recommendation on record and it is what was built. **A9 and
+the table's half of A10 were listed as decisions with no recommendation
+written; the options built for those two were the assistant's choice, taken
+as the lighter of each pair**, and are the ones to revisit first if either
+reads wrong at a table.
+
+**A5 — the Chronicle keeps a resolved move that changes something lasting,
+whatever the scribe rates it.** An automatic entry is kept when its rating
+is at or above the floor ("notable"). Over three live runs the scribe rated
+every resolved move "scene" — five of five, both arrivals among them — and
+the third run's session of four rolls left the Chronicle empty, so no
+campaign recap was written. A model rating its own work no longer decides
+whether a session's turning points are on record
+(`src/character/chronicleKeeps.js` → `lastingChangeOf`):
+
+- a progress move, on any outcome — a vow brought to its end, a bond put to
+  the test, a fight decided, an expedition or scene challenge finished, a
+  legacy continued (read from `moveRollKind`, not a list, so a new progress
+  move is covered);
+- Swear an Iron Vow, Forsake Your Vow, Face Death and Face Desolation, on
+  any outcome;
+- Set a Course and Make a Connection, on a hit — an arrival, a connection
+  made;
+- any move's miss that pays a price (`missPaysPrice`, the pipeline's own
+  definition: a routed Pay the Price, or a miss whose choice offers one).
+
+Every other beat is decided by its rating as before: a clean strong hit, a
+weak hit whose cost is a choice still to be made, paced narration, a
+vignette. The scribe still writes and rates the entry, and is told in one
+line that it is on record and why, so the entry says what changed. A Batch
+Mode round writes one entry and is kept when any of its rolled moves is
+(`roundLastingChange`). The X-Card and a strike still remove an entry, and
+`chronicleAutoEntry` off still writes none. The rule is code, so its effect
+on what is kept needs no measuring; what the entries then *say*, and the
+recap made from them, are still a model's and are read on the long haul
+(issue #373).
+
+**A12 — a session summary that stops at its length cap is cut back to its
+last whole sentence, and the cap is higher.** The summary is asked for 4–8
+sentences. At 420 output tokens a recorded live call stopped mid-word
+("…which may be Reyes's. Unresol") and a second used 405; nothing read the
+call's stop reason, so the fragment was stored — as STORY SO FAR, LAST
+SESSION, the Session Log's story and the snapshot's EARLIER SESSIONS. Now
+the cap is 700 (`ROLLING_SUMMARY_MAX_TOK`), `callNarratorAPI` hands back the
+reply's stop reason to a caller that asks, and a summary that stopped at
+`max_tokens` keeps only its whole sentences (`wholeSentences`); one with no
+whole sentence is not stored and the earlier summary stands. A reply that
+ended by itself is stored as it came — it is never trimmed on its wording.
+
+**A10 — End a Session names the costs nobody has answered; the AI player is
+told such a card is its to answer, and a run that leaves one is not a clean
+pass.** A weak hit's cost is a card with choices on it and holds nothing up,
+by design (the suffer dialog's lock-up, PR #243; "nothing is auto-applied or
+guessed"). In the live run two were typed past and stayed unpaid through two
+more moves, End a Session and Begin a Session. The card stays non-blocking
+and nothing is applied for the player. **The table's half:** End a Session
+says which costs are still owed, by character and move — in its dialog,
+while there is still a session to answer them in, and on its card
+(`sufferCard.js` → `costsLeftOwed`, `costsOwedSentence`; an answered, a
+retired and an X-carded card are not owed). **The runner's half:** the
+player's instructions say a card that asks it to choose is waiting on it;
+the observer reports the cost cards left unanswered (`health.costsOwed` in
+`run.json`), and a goal achieved on a table that owes is classed
+`suspected-quality-issue`, not `pass` — the player's omission, not the
+module's failure.
+
+**A9 — the pacing reader's "combat" category is any immediate physical
+danger, and says so.** The reader has five categories and defined combat as
+"fighting or under direct attack right now". Four lines of four about a
+hazard with no fight in it — a humming airlock, a dryer fire — were read
+under combat, the reader noting "the fire is a hazard rather than an
+adversary". The category was already being used that way; its definition
+now covers it (a fire, a hull breach, a collapse), with one guard: the
+category sets the dial only, and a danger with no foe in it is still Face
+Danger, not a combat move. The Combat dial's description, the Pacing pane
+and the help page say the dial also sets how readily a hazard is rolled for.
+Nothing about which lines roll is meant to change — the three fire lines
+were each a fair Face Danger.
+
+**Also here:** seven more Quench tests that poll under Mocha's 2-second
+default now set their own timeout, as `rules/quench.md` requires (the cause
+of PR #376's one red run). A re-scan found seven, not the eight first
+counted: two of the candidates wait a fixed 50 ms and poll nothing.
+
+**Rejected:**
+- *A5: lower the Chronicle's floor to "scene".* It keeps every scene-level
+  beat, which is most of a session; the floor is the GM's dial for
+  everything that is not a turning point, and it stays.
+- *A5: reword the scribe's "be sparing" guidance* (the issue's option 3).
+  It is a model's behaviour and would have to be measured across runs; the
+  rule in code needs no run. Not ruled out for the beats the rule does not
+  cover.
+- *A5: write the recap from the session summaries as well* (option 2).
+  Still worth doing now that A12 is fixed; not asked for here, and the
+  summaries swap who did what (A8).
+- *A5: keep every weak hit.* Its cost is a choice the player has yet to
+  make; what lasts is the cost paid, and that is on the sheet, not a beat.
+- *A12: ask for fewer sentences.* It trades the summary's content for a
+  guess at a model's length; the guard does not depend on the guess.
+- *A12: trim every summary to whole sentences.* A reply that ended by
+  itself is the model's whole answer, and a summary may end on a quotation
+  or a list.
+- *A10: block the next move, or End a Session, until the cost is answered.*
+  A blocking step in the move pipeline wedged the lock once already; a
+  player may also choose to leave a cost for the table to settle.
+- *A10: apply a default cost.* The rules give the player the choice.
+- *A10: say it on every next move's confirmation.* A table in the middle of
+  a fight would be told on every roll; End a Session is the one point where
+  the cards are about to scroll out of anyone's attention.
+- *A10: make an unanswered card a health failure of the run.* Health is the
+  module's; this is the player's.
+- *A9: a sixth category, "hazard", with its own dial.* A stored setting, a
+  panel control, a classifier schema change and a migration, for a
+  difference no table has yet asked to set. The issue's other option; the
+  one to build if a table wants hazards rolled less readily than fights.
+
+**Checked against a real Foundry, no key (2026-11-23):** both scripted
+playthroughs replay and pass; a rehearsal passes; both kept runs reproduce.
+The third run's replay — its scribe's own recorded "scene" ratings — now
+keeps the miss and the arrival, asks for a campaign recap at End a Session
+(the live run asked for none) with both entries in its prompt, and its End a
+Session card reads "Unpaid: 2 costs are still owed — Mira Kestrel: Face
+Danger ×2"; the run is classed `suspected-quality-issue` for them.
+
+**What that replay caught.** The first form of the costs-owed read counted
+every card flagged `sufferCard` that was not resolved — and the cards that
+*report* a cost applied carry that flag too (`sufferExecutor.js`
+`postSufferCard`), with no prompt and no `resolved`. The replay named three
+costs for two: the third was the miss's paid price. A cost card is one that
+asks for a choice (`sufferPrompt`); both reads now say so. The unit test's
+fixture had been a choice card every time, so it could not see this — a
+report card is in it now.
+
+**Not done here:** the recordings and the two kept runs were made from the
+earlier scribe, summary and pacing prompts. Replays still pass, and **do not
+report these changes as stale**: a recording's staleness check compares a
+prompt's section headings, and a definition reworded inside a section, a
+context line and a call's token cap change none (`rules/ci-e2e.md`).
+Re-recording costs live calls and was not asked for.
+**Proved by:** `chronicleKeepsLastingMoves.test.js`, `sessionSummary.test.js`
+("a session summary cut off at its length cap"),
+`endSessionNamesCostsOwed.test.js`, `classifierCombatCoversHazards.test.js`
+and `exploreRunner.test.js` (each fails without its change).
+
+---
+
 ## End a Session's closing cutaway is not the campaign's scene; the scribe is told who, and what the player wrote (issue #374 A1, A2) (2026-11)
 
 **Decision:** the two product defects the first reviewed live run found with
@@ -64,8 +343,9 @@ Burn Momentum or Improve Result re-narration carries no line.
   subject, so the writer reads its name.
 
 **Not done here:** which beats the scribe keeps (issue #374 A5 — the run's
-one roll and its arrival were rated "scene" and dropped) waits for the long
-haul's ratings. **Proved by:** `recapNotSetInClosingVignette.test.js` and
+one roll and its arrival were rated "scene" and dropped) — since decided: a
+resolved move that changes something lasting is kept whatever its rating
+(the entry above). **Proved by:** `recapNotSetInClosingVignette.test.js` and
 `chronicleScribeGivenNameAndLine.test.js` (each fails without its fix); the
 live re-run of the memory charter that reads the recap and the Chronicle is
 the next paid run (issue #374 → "Next spend").
@@ -8029,6 +8309,9 @@ Each channel's default is said once, in `salience.js` (`DEFAULT_THRESHOLDS`);
 the settings' registration and the panel read it from there. A world that has
 stored a floor keeps it — the panel writes the control on every save, and a
 stored `significant` cannot be told from a choice, so there is no migration.
+The floor does not decide a resolved move that changes something lasting —
+that entry is kept whatever its rating (2026-11-23; "What a session's
+turning points are kept by", at the top of this file).
 
 **Conservative default (D5):** the floor is `significant`, so only durable
 world/character facts are recorded and the GM promotes scene texture up. Under-

@@ -47,8 +47,16 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
+import { nameCorrectionOf, withNameChange } from "./nameChanges.js";
 
 const MODULE_ID = "starforged-companion";
+
+/** What a truth's subject is, as NAMES THE TABLE CHANGED says it: its text, or its record's name. */
+function subjectAbout(subject, entities) {
+  if (subject?.kind === "text") return String(subject.text ?? "").trim() || null;
+  if (subject?.kind === "entity") return (entities ?? []).find(e => e?.journalId === subject.entityId)?.name ?? null;
+  return null;
+}
 
 const USAGE_ALL = 'Usage: !truth list | !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>';
 
@@ -210,6 +218,7 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   let struckTruth = false;
   let lift = null;           // a `!truth set` lifting a strike: { strikeId, truthId }
   let liftKept = null;       // …or one an earlier scene kept: { strike, dropped }
+  let renamed = null;        // the name a correction changed (issue #377 item 1)
   try {
     // A truth or state set with no scene open starts one first, as a
     // narration does (ensureSceneStarted — the issue #321 U34 rule for the
@@ -231,6 +240,12 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         // The strike reaches the tier details, lore and summary that copied
         // the fact (issue #286 B6).
         await propagateRetraction(struck, campaignState);
+        // A strike of a name whose correction stands already (set first,
+        // struck second) is a name change (issue #377 item 1).
+        renamed = nameCorrectionOf(campaignState, {
+          subject: struck.subject, fact: struck.fact, struck: true, truthId: struck.id,
+          about: subjectAbout(struck.subject, entities),
+        });
       }
       // A truth already retracted — struck, replaced or removed by the X-Card
       // — is left as it is (issue #336 Y30), and the card says so; its fact
@@ -262,6 +277,15 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       // once the lift is in the store (below).
       if (truth && struck?.id) lift = { strikeId: struck.id, truthId: truth.id };
       if (truth && kept) liftKept = { strike: kept, dropped: false };
+      // A set that gives a struck name's correction is a name change (issue
+      // #377 item 1): "is named the Ashen Wake" struck, "is named the Cinder
+      // Wren" set. Told nothing past the scene, the narrator went on naming
+      // the cutter by the struck name, and then by both.
+      if (truth) {
+        renamed = nameCorrectionOf(campaignState, {
+          subject, fact: truth.fact, truthId: truth.id, about: subjectAbout(subject, entities),
+        });
+      }
       // The id `!truth strike` takes is shown (issue #326 W67).
       resultLine = truth
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${(struck || kept) ? " The strike on it is lifted." : ""}`
@@ -296,14 +320,22 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // same write — while the store holds this scene: an X-Card that took the
     // strike over meanwhile has dropped it already (nothing to lift), and a
     // scene changed meanwhile takes the truth's set with it.
+    // A name change rides the same write (issue #377 item 1).
     if (changed) {
+      const further = struckTruth ? markSummaryForRegen
+        : liftKept ? (target) => {
+          if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
+          liftKept.dropped = dropSessionStrike(target, liftKept.strike);
+        }
+          : null;
       await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
-        onto: struckTruth ? markSummaryForRegen
-          : liftKept ? (target) => {
-            if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
-            liftKept.dropped = dropSessionStrike(target, liftKept.strike);
+        onto: (further || renamed) ? (latest) => {
+          if (further) further(latest);
+          if (renamed) {
+            latest.nameChanges = withNameChange(latest.nameChanges,
+              { ...renamed, sessionId: latest.currentSessionId ?? campaignState.currentSessionId ?? null });
           }
-            : null,
+        } : null,
       });
     }
 

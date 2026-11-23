@@ -475,7 +475,7 @@
       "needs": [
         "b1"
       ],
-      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, enter the fray against the raider cutter Ashen Wake. When a card offers the fight (\"A fight looms\"), choose your vow in its vow dropdown and press \"⚔ Enter the Fray\".",
+      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, enter the fray against the raider cutter Ashen Wake. When a card offers the fight (\"A fight looms\"), choose your vow in its vow dropdown and press \"⚔ Begin the fight\" — the Enter the Fray roll alone does not begin the fight.",
       "check": {
         "type": "fightBegun"
       }
@@ -1028,7 +1028,7 @@
     {
       "beat": 9,
       "action": "click",
-      "label": "Enter the Fray"
+      "label": "Begin the fight"
     },
     {
       "beat": 10,

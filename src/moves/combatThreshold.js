@@ -17,6 +17,13 @@
 
 import { COMBAT_RANKS, normalizeCombatRank } from "./combat.js";
 
+/**
+ * The threshold card's button that makes the fight's track. It was "⚔ Enter
+ * the Fray", the name of the move whose roll had just posted the card, and a
+ * player took the roll for the fight begun (FIGHT-COMMIT-CARD-AFTER-THE-ROLL).
+ */
+export const BEGIN_FIGHT_LABEL = "⚔ Begin the fight";
+
 export const WAY_OUT_PROMPT =
   "You look for a way out — slip away, talk them down, or buy your way clear. "
   + "Take the move that fits (Face Danger, Compel, or Secure an Advantage); the "
@@ -136,16 +143,22 @@ export function buildCombatThresholdHtml({ label, suggestedRank, vowNames = [], 
     .concat((vowNames ?? []).filter(Boolean).map(n => `<option value="${esc(n)}">${esc(n)}</option>`))
     .join("");
   const positionLine = thresholdPositionLine(position);
+  // The card follows the Enter the Fray roll that posted it, and says so
+  // (known-issues FIGHT-COMMIT-CARD-AFTER-THE-ROLL): its button was labelled
+  // "⚔ Enter the Fray", the move just rolled, and the long haul's second live
+  // run read the roll as the fight begun — the vow chosen, the button never
+  // pressed, no fight's track, five beats lost. The fight's track is still
+  // made only here (decisions.md "Combat is offered, not forced").
   return `<div class="sf-card sf-combat-threshold" data-suggested-rank="${rank}">`
     + `<div class="sf-card-header">⚔ A fight looms — ${foe}</div>`
     + `<div class="sf-card-body">`
-    + `<p>Commit to the fight, or look for a way out. The narrator suggests this is a <strong>${rank}</strong> fight.</p>`
+    + `<p>Your Enter the Fray is rolled, but the fight's track is not made yet: set it up here and press <strong>${esc(BEGIN_FIGHT_LABEL)}</strong> to begin it — or look for a way out instead. The narrator suggests this is a <strong>${rank}</strong> fight.</p>`
     + positionLine
     + `<p><label>Difficulty: <select class="sf-threshold-rank">${rankOpts}</select></label></p>`
     + `<p><label>This fight serves: <select class="sf-threshold-vow">${vowOpts}</select></label></p>`
     + `<p><label>Objective: <input type="text" class="sf-threshold-objective" maxlength="120" placeholder="e.g. free the hostages" /></label></p>`
     + `<p>`
-    + `<button type="button" class="entity-btn" data-action="sf-enter-fray">⚔ Enter the Fray</button> `
+    + `<button type="button" class="entity-btn" data-action="sf-enter-fray">${esc(BEGIN_FIGHT_LABEL)}</button> `
     + `<button type="button" class="entity-btn" data-action="sf-way-out">🚪 Find another way</button>`
     + `</p>`
     + `</div></div>`;
