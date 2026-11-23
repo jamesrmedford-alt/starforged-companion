@@ -268,8 +268,8 @@
   },
   "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/long-haul-live-20261123-050206 node explore.mjs",
   "rescored": {
-    "at": "2026-11-23T05:58:15.787Z",
-    "commit": null,
+    "at": "2026-11-23T06:34:27.515Z",
+    "commit": "fb7c637f60573301237949e6ecab6620e5a479dd",
     "was": {
       "classification": "product-failure",
       "because": "beat 15 (Interruption: the X-Card on one narration) was brought about wrongly: the removed narration still has 1 standing truth(s) (a35: \"a torn strip of its hull plating drifts in the bay mouth, carrying a fresh weld seam over an older mark, partly legible to Mira\") and 0 Chronicle entries",
