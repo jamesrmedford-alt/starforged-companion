@@ -1510,9 +1510,11 @@ function formatEntityCardsBlock(entityCards) {
 
 /**
  * [6.5] The active-scene ledger, when fact continuity and its in-context
- * toggle are on. '' otherwise, or when nothing is in scope.
+ * toggle are on. '' otherwise, or when nothing is in scope. With
+ * `shipPositionOnly` (a meta mode's — the campaign recap), the ship's
+ * position line alone: the scene's frame, truths and state are a scene's.
  */
-function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null } = {}) {
+function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false } = {}) {
   const {
     factContinuityEnabled         = true,
     factContinuityLedgerInContext = true,
@@ -1520,13 +1522,14 @@ function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = 
     factContinuitySceneFrame      = true,
   } = settings ?? {};
   if (!factContinuityEnabled || !factContinuityLedgerInContext) return '';
-  return buildLedgerBlock(campaignState, {
+  const block = buildLedgerBlock(campaignState, {
     matchedEntityIds,
     currentLocationId: campaignState?.currentLocationId ?? null,
     maxTokens:         factContinuityMaxLedgerTokens,
     entityNamesById,
     sceneFrameEnabled: factContinuitySceneFrame,
-  }).combined;
+  });
+  return shipPositionOnly ? block.shipPosition : block.combined;
 }
 
 /**
@@ -2106,9 +2109,14 @@ export function buildNarratorSystemBlocks(
   //       (`extras.sceneLedger` — buildNarratorExtras, issue #325 W05): a
   //       move narrates from a snapshot taken before its confirm dialog, and
   //       an X-Card or `!truth strike` made meanwhile is only in the store.
+  //       A meta mode gets the ship's position alone — the one line of the
+  //       block that is no scene's. A recap retells the Chronicle, and the
+  //       scene that happens to be open is not its to honour: told, as
+  //       binding, the frame of End a Session's closing cutaway, it set the
+  //       whole campaign there (issue #374 A1).
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
-  }, { matchedEntityIds, entityNamesById });
+  }, { matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode });
   if (ledgerBlock) parts.push(ledgerBlock);
 
   // [6.6] UNREVEALED — the narrative skeleton (issue #353): the hidden plans

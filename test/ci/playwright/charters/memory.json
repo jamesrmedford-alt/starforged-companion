@@ -36,12 +36,6 @@
       "belonged"
     ]
   },
-  "canon": [
-    "The player's character is Mira Kestrel (she/her).",
-    "Her ship is the Kobayashi IV.",
-    "The first session opens at Hollow Spire, a lawless settlement in the Cinder Expanse; Bleakhold Station is a corporate settlement in the same sector.",
-    "In the first session Mira establishes that she carries a brass star-compass that belonged to her sister Ilse."
-  ],
   "settings": {
     "narrationEnabled": true,
     "narratorSessionSummary": true,

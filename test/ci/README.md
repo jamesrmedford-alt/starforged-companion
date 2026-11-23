@@ -228,9 +228,12 @@ its own screen and types, clicks and fills dialogs. The GM's client runs the
 real pipeline, and an autopilot answers what the module asks of the GM before
 a roll (the move's confirmation; "Who are you interacting with?"). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
-asking a model; a **narrative reviewer** reads the transcript and flags what
-it suspects, quoting it. Nothing in CI runs this, and it never files an issue,
-changes code or rewrites a recording: it writes evidence for a person.
+asking a model. The run is then **reviewed by whoever made it** — the full
+transcript annotated, a scorecard, the action items as an issue, what it cost
+and returned. No model reviews a run: the API reviewer the runner first had
+saw the transcript alone, and was deleted (2026-11-23).
+Nothing in CI runs this, and the run itself never files an issue, changes
+code or rewrites a recording: it writes evidence.
 
 ```bash
 ./scripts/cloud.sh up --fresh
@@ -242,7 +245,7 @@ changes code or rewrites a recording: it writes evidence for a person.
 | Mode | Key | What it tells you |
 | --- | --- | --- |
 | live | `ANTHROPIC_API_KEY` | How the narrator did, for this player, this once. |
-| rehearsal | none | That the runner works — the budget's gate, the player's tool calls, the reviewer, the recording. Its "narrator" is scripted (`playwright/lib/rehearsal.mjs`), so its score says nothing about the real one. `EXPLORE_REHEARSAL_FORGET=1` rehearses a narrator that keeps nothing. |
+| rehearsal | none | That the runner works — the budget's gate, the player's tool calls, the recording. Its "narrator" is scripted (`playwright/lib/rehearsal.mjs`), so its score says nothing about the real one. `EXPLORE_REHEARSAL_FORGET=1` rehearses a narrator that keeps nothing. |
 | replay | none | That a run's finding reproduces: its actions, dice and replies in a fresh world, scored again. |
 
 **The first charter is memory** (`charters/memory.json`): the player
@@ -254,7 +257,7 @@ prompt for that question, in the answer — so a miss says where it was lost:
 
 **Caps** (`playwright/explore.config.json`): 30 player actions, 100 model
 calls, 20 minutes, $10 — whichever comes first. Every call counts — the
-narrator's and the helpers', the player's, the reviewer's, retries — and each
+narrator's and the helpers', the player's, retries — and each
 one's worst cost (its whole prompt, its whole `max_tokens`) is reserved before
 it is sent, so calls in flight together cannot pass the dollar cap. A model
 with no price in the config is refused. **Check the prices there against
@@ -267,7 +270,7 @@ it: `run.json` (what ran, what it cost, the result and why, the command that
 replays it), `actions.json` (each action: the screen it was chosen on, the
 reason given, what happened), `transcript.md`, `observer.json` (the world
 after each action, the goal scored layer by layer, health), `requests.json`
-(every prompt and reply, no headers), `review.json`, `replay.json`. The key is
+(every prompt and reply, no headers), `replay.json`. The key is
 in none of them. The folder is not committed; to keep a finding, turn its
 `replay.json` into a scripted playthrough or a unit test.
 
@@ -275,17 +278,20 @@ in none of them. The folder is not committed; to keep a finding, turn its
 
 | | |
 | --- | --- |
-| `pass` | The goal was achieved, nothing failed, the reviewer flagged nothing. |
+| `pass` | The goal was achieved and nothing failed. The run's own verdict — read the review before trusting it. |
 | `product-failure` | A check that holds whatever the charter failed: the move lock still held at the end, an error of the module's on a page, a step the table never finished. |
-| `suspected-quality-issue` | The goal was not achieved (the layer is named), or the reviewer flagged a passage. For a person to read. |
+| `suspected-quality-issue` | The goal was not achieved (the layer is named). For a person to read. |
 | `not-exercised` | The goal was never put to the test — the player stopped early or named the fact itself, or the GM's screen was left waiting on a question the run's GM autopilot does not answer (the window is named). Not a pass. |
 | `budget-exhausted` | A cap ended the run before the goal was put to the test. |
 | `infrastructure-error` | The run could not be made: Foundry, the browser, or the model API failed. |
 
 **A live run kept.** `playwright/explorations/memory-live-20261122/` is the
 first live run of the memory charter that went the whole way (12 actions, 40
-model calls, $0.34): its `replay.json`, with its `run.json` and
-`transcript.md` beside it for a reader. Anyone can play it again with no key:
+model calls, $0.34): its `replay.json`, with its `run.json`, `transcript.md`,
+`annotated-transcript.md` — the whole session with notes on what went right
+and wrong — and `scorecard.md` beside it for a reader. Its action items are
+issue #374. Every live run ends with such a review (`rules/ci-e2e.md` → "AI
+exploration"). Anyone can play it again with no key:
 
 ```bash
 ./scripts/cloud.sh explore --replay playwright/explorations/memory-live-20261122

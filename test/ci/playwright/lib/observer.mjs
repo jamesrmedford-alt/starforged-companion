@@ -18,8 +18,8 @@
 // A fact is "held" by text when one of its accepted variants occurs in it
 // (case, spacing and hyphenation aside). That is a presence test: it does not
 // read negation or paraphrase ("you lost the compass" holds "compass"). The
-// narrative reviewer reads the answer for sense; the benchmark of §6 (slice E)
-// is where structured facts belong.
+// run's review — made by whoever ran it (rules/ci-e2e.md) — reads the answer
+// for sense; the benchmark of §6 (slice E) is where structured facts belong.
 
 import { MODULE_ID } from "./foundry.mjs";
 
@@ -333,7 +333,7 @@ export function healthOf({ endSession, clients, stalls = [], knownErrors = [] })
  * a verdict. `product-failure` is kept for what holds whatever the charter:
  * healthOf's checks.
  */
-export function classifyRun({ infrastructure = null, budgetStop = null, outcome, health, review = null }) {
+export function classifyRun({ infrastructure = null, budgetStop = null, outcome, health }) {
   if (infrastructure) return { classification: "infrastructure-error", because: infrastructure };
   if (health?.failures?.length) return { classification: "product-failure", because: health.failures[0] };
   if (outcome.status === "not-exercised" && health?.waitingOnGm?.length) {
@@ -347,6 +347,5 @@ export function classifyRun({ infrastructure = null, budgetStop = null, outcome,
   if (outcome.status === "not-achieved") {
     return { classification: "suspected-quality-issue", because: `${outcome.failingLayer}: ${outcome.reason}` };
   }
-  if (review?.flags?.length) return { classification: "suspected-quality-issue", because: `the reviewer flagged ${review.flags.length} passage(s); the goal itself was achieved` };
   return { classification: "pass", because: outcome.reason };
 }

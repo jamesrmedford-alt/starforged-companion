@@ -48,7 +48,7 @@ disposition ride the record.
 | Galley / end-session vignette user messages | ✅ `[she/her]` per participant | ✅ end-session NPC leads with pronouns | the finding-R fix — these are the only paths that pass full snapshots |
 | Audio NPC voice | n/a | ✅ `pronounsToVoiceKey` from the card (`getConnection` — the sheet's pronouns, issue #335 Y13) | mixed/unset → default voice |
 | Perspective instruction (`PERSPECTIVE_DESCRIPTIONS`) | ✅ binding since 2026-07 | — | third person: use recorded pronouns exactly, never infer from a name; second person: recorded pronouns govern NPC dialogue about the PC |
-| Chronicle / campaign recap | prose-anchored | prose-anchored | scribe re-summarises narrator prose; recap told "third person for multiplayer" with no pronoun data beyond entry text |
+| Chronicle / campaign recap | ✅ the scribe is sent the PC's name and told to use it (issue #374 A2 — it wrote "the character" from prose that says "you"); pronouns prose-anchored | prose-anchored | scribe re-summarises narrator prose with the line the PC's player wrote (a round's characters each with theirs); recap told "third person for multiplayer" with no pronoun data beyond entry text |
 
 ## 3. Audit defects — all resolved (v1.7.30 cycle)
 
@@ -106,6 +106,7 @@ audio voice (finding E) and preserves an already-set value (the sheet's first �
 issue #335 Y13); the galley and
 end-session vignette user messages lead with pronouns for every participant
 (finding R); the audio voice map keys off the record with a safe default;
-the chronicle scribe stays anchored to source prose; and speaker resolution
+the chronicle scribe stays anchored to source prose (and, since issue #374
+A2, the player's own line and the character's name); and speaker resolution
 prefers the actual chat speaker before falling back (the
 first-PC-in-campaign misattribution was already fixed).

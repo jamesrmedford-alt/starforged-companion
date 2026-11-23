@@ -1,10 +1,10 @@
-// The exploration runner's own model calls — the AI player's and the narrative
-// reviewer's (issue #302 slice D). The module's calls do not come through
+// The exploration runner's own model calls — the AI player's (issue #302
+// slice D). The module's calls do not come through
 // here: they are made by the module in the GM's page and answered by the
 // Claude harness (lib/claude.mjs).
 //
 // Plain fetch against the Messages API, like the harness: the Playwright
-// suites carry no SDK, and a dependency is not added for two call sites
+// suites carry no SDK, and a dependency is not added for one call site
 // (CLAUDE.md → "Never do without explicit instruction").
 //
 // Every call — a retry too — is reserved against the run's budget before it is
@@ -68,7 +68,7 @@ export function readReply(data, { toolName = null } = {}) {
  * One model call, budgeted.
  *
  * @param {object} o
- * @param {string} o.role — "player" | "reviewer": the budget's tally and the request log's label
+ * @param {string} o.role — "player": the budget's tally and the request log's label
  * @param {{ reserve: Function, settle: Function }} o.budget
  * @param {object[]} [o.requestLog] — each attempt is appended: prompt, reply, usage (no headers)
  * @returns {Promise<{ ok: boolean, problem?: string, kind?: "budget"|"api"|"refusal"|"reply",

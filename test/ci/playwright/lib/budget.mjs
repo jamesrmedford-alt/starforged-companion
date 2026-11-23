@@ -3,7 +3,7 @@
 //
 // Every model call of a run goes through here: the narrator's and the
 // helpers' calls the module makes from the GM's page (the Claude harness's
-// gate), the player's, the reviewer's, and their retries. A call's worst cost
+// gate), the player's, and their retries. A call's worst cost
 // is reserved before it is sent — its whole prompt priced as a cache write and
 // its whole `max_tokens` as output — so calls in flight together cannot pass
 // the cap between them; what it used replaces the reservation when it

@@ -7,14 +7,9 @@
     "usd": 10
   },
   "player": {
-    "model": "claude-opus-5-5",
+    "model": "claude-sonnet-5-5",
     "effort": "low",
     "maxTokens": 6000
-  },
-  "reviewer": {
-    "model": "claude-opus-5-5",
-    "effort": "medium",
-    "maxTokens": 12000
   },
   "prices": {
     "asOf": "2026-11-03",

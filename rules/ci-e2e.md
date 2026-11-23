@@ -420,9 +420,12 @@ Three roles, and what each may do — keep them apart:
   the requests the harness saw — and never writes. Its verdict is arithmetic
   (`scoreMemory`, `healthOf`, `classifyRun`, all pure and unit-tested): no
   model is asked whether the goal was met.
-- **The reviewer** (`lib/reviewer.mjs`) is a model's opinion with evidence.
-  A flag must quote the transcript word for word or it is dropped
-  (`keepQuotedFlags`); nothing it says outranks the observer.
+- **The review is yours** — the agent that made the run reads it afterwards
+  (below). No model reviews a run. The runner had an API reviewer (a model
+  shown the transcript alone); it was deleted on the maintainer's instruction
+  (2026-11-23): it never saw the prompts or what the helpers wrote, which is
+  where the first reviewed run's findings were. Do not add one back without
+  being asked.
 
 The GM's client is on autopilot for what the module asks of the GM before a
 move rolls, answered without steering the story (`GM_AUTOPILOT` in
@@ -432,7 +435,7 @@ what closing it means. Nothing else is answered.
 
 **The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
 Every model call of a run goes through it — the module's (the harness's
-`gate`), the player's and the reviewer's (`lib/anthropic.mjs`), each retry —
+`gate`), the player's (`lib/anthropic.mjs`), each retry —
 and a call's worst cost is reserved *before* it is sent. A call the budget
 refuses is not sent: a module call gets the neutral stub so the page does not
 hang, and the run ends as `budget-exhausted` (if the goal had not been put to
@@ -478,7 +481,8 @@ charter or touch the runner:
 failed health check (`product-failure`), then a goal never put to the test
 (`not-exercised` — also when the table was left waiting on the GM — or
 `budget-exhausted` when a cap caused it), then a goal not
-achieved or a reviewer's flag (`suspected-quality-issue`), else `pass`. A
+achieved (`suspected-quality-issue`), else `pass`. **`pass` is the run's own verdict, not the review's**: the first
+run that went the whole way had a wrong campaign recap behind it. A
 memory goal that was not achieved is *suspected* at every layer — which
 stored facts a prompt owes is a design rule the observer does not know (a
 Chronicle entry reaches every narration only when pinned) — so `retrieval` is
@@ -497,8 +501,8 @@ offering it, counted from the newest), the dice as they fell, and the
 module's replies filed under the action each belonged to. A replay takes the
 actions again in a fresh world and scores it again; it `REPRODUCED` when the
 observer's finding — the goal's status and layer, and whether health failed
-— is the same. The reviewer is a model and is not asked again, so the run's
-class may differ where only its flags coloured it.
+— is the same. The run's class is not compared: the first kept run's was
+coloured by the flags of the API reviewer the runner then had.
 
 **A run worth keeping is committed under `playwright/explorations/`** — its
 `replay.json`, with `run.json` and `transcript.md` for a reader — and is then
@@ -519,17 +523,64 @@ finding. Never edit a kept `replay.json` by hand.
 Messages API stood in for in the runner's own process (`lib/rehearsal.mjs`):
 the charter's `rehearsal` script comes back through the player's tool, the
 module's calls get replies that keep the charter's fact once it is in front
-of them, and the reviewer returns one flag that quotes nothing (so it must be
-dropped). A remembering rehearsal scores `achieved` only because the module's
+of them. A remembering rehearsal scores `achieved` only because the module's
 own memory path carried the fact from one session to the next — it is a real
 check of that path, with a cooperative narrator; `EXPLORE_REHEARSAL_FORGET=1`
 scores `not-achieved` at `storage`. Run both after a change to the runner.
+
+**Every live run ends with a review** (the maintainer's standing instruction,
+2026-11-23; issue #373, modelled on issue #374). You made the run: you read
+it, when it completes, without being asked. A run whose evidence is not read
+has bought a verdict and little else — the first run that went the whole way
+reported "achieved" and one flag, and eleven of the twelve things learned
+from it came from reading its prompts and records afterwards. Four parts:
+
+1. **The annotated transcript** (`annotated-transcript.md`, beside the run's
+   evidence, and sent). Every message in order; at the step each concerns,
+   what the player was trying to do and the reason it gave, what the table
+   did with the line (the pacing read, the move, the dice, the effects, what
+   each helper wrote, what the GM's autopilot answered), the observer's
+   findings, time and cost. Then your own notes on
+   **what went right and what went wrong, and why** — where the fault was the
+   runner's, as in the first live run, saying so.
+2. **The scorecard** (`scorecard.md`). One row per dimension with its result,
+   its basis and how far to trust it — goal, mechanics, continuity in what
+   the narrator said and in what the helpers wrote, agency, friction,
+   narrator quality, speed, length, cost — then the detail. Say what was
+   never exercised and what the run did not record.
+3. **The action items, as a GitHub issue**: one per round, extended after
+   each run of it, and one for a run made alone. Each item with its quote,
+   its cause as far as the code or a prompt shows it, the step and file that
+   show it, and whether there is **enough data to fix it** — *enough* (the
+   cause is readable: give options, a recommendation and what would prove
+   the fix), *a fix can be proposed and its effect must be measured* (say
+   what to measure), or *not yet* (say what would supply the samples). Every
+   finding also goes in `docs/known-issues.md`. The review fixes nothing.
+4. **What it cost and what it returned.** What was spent, split between the
+   module's own calls and the AI player; each thing learned, of what kind, how it was found, and whether it needed a live model at
+   all; what could have been had for nothing; where the next dollar should
+   and should not go.
+
+Check your counts against the evidence before you send them: the first
+review reported three draft cards where the run had two.
+
+A rehearsal or a replay does not need a review.
+
+**A live run is paid for; these decide whether one is made** (issue #373,
+"Spending rules"). Say in writing what the run is to answer before it runs.
+Do the free checks first — a rehearsal, and a read-through of the prompts it
+produces: what each helper is and is not sent is visible there for nothing.
+Do not run while a finding with a fix ready is open on the path the run
+would walk. Do not buy the same session twice except to verify a fix against
+it. After each run of a round, say whether the next is worth making. And
+every run leaves something that costs nothing to use again: a replay, and a
+regression for each defect it found.
 
 **Adding a charter.** A charter is `charters/<name>.json`: `persona`, `goal`
 and `playerNotes` (what the player model is told), `facts` (each with the
 `variants` that count as holding it; `required: false` for one that is
 reported and does not decide), `ask.cues` (words one of which marks a line as
-the question), `canon` (what the reviewer is told is true), `settings` and
+the question), `settings` and
 `seed` (the scripted playthroughs' format), and `rehearsal` (the player's
 actions for a rehearsal). The observer scores the memory goal only: a charter
 with a different goal needs its own pure scoring function beside

@@ -27,7 +27,8 @@ paced_narrative, scene_interrogation, oracle_followup, session_vignette
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
-sidecar/latitude), round_resolution (a Batch Mode round, issue #340 — see
+sidecar/latitude, and of the scene ledger [6.5] the ship's position alone —
+issue #374 A1), round_resolution (a Batch Mode round, issue #340 — see
 below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
@@ -899,7 +900,9 @@ never land, a Batch Mode round resolving at End or a move narrated while End
 runs posts into the ended session after it (issue #345 AA21), and an X-Card
 on End's closing vignette empties a summary that covered the beat it removed
 (issue #342 Z41); End's own closing vignette, posted after its refresh, is
-the one card that check leaves out — its scene closes under its own id, then
+the one card that check leaves out (its scene is closed already: End a
+Session ends it once the vignette's card is posted — `closing_vignette`,
+issue #374 A1) — a scene left open closes under its own id, then
 `mintSession` keeps that summary as `previousSessionSummary` (a finalise that
 could not cover the session — no key on that client yet, a failed call —
 marks it `unsummarisedSession`, and the canonical GM summarises its cards into
@@ -982,7 +985,10 @@ matches, so a corrected entry is never recapped in its old form, and with no
 key to regenerate there is no recap rather than a stale one (issue #301 B04 —
 the check was the entry count alone, and the session-opening read had none).
 
-**Ledger scope** ([6.5]): scene subjects and free-text subjects (unrecorded
+**Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
+position line alone, never the frame, truths, corrections or state: it
+retells the Chronicle, whatever scene is open — issue #374 A1): scene
+subjects and free-text subjects (unrecorded
 figures and places — the ledger holds only this scene) are always in scope
 (B4: they used to need their exact phrase in the player text or the frame);
 recorded entities are in scope when matched, at the current location, or in
@@ -1413,10 +1419,16 @@ wrote its copy's list whole, so an X-Card played during its awaits lost what
 it wrote there — a strike it took over was named again, and the scene's
 truths it retracted were kept live (XCARD-DURING-SCENE-END-RACE). Triggers for `endScene`: the two
 commands, the implicit path, **End Session**
-(`session_close`), and the close-out before a new session is minted
+(`session_close`), **End a Session's closing vignette once its card is
+posted** (`closing_vignette` — the vignette is a cutaway, and the scene it
+opens for its fact block after End closed the session's own, issue #321 U34,
+is ended before the campaign recap is refreshed, its facts filed as any
+scene's end files them, also when the narration failed after opening it;
+left open until the next mint, it was the campaign's active scene between
+sessions and the recap was told the campaign stood there — issue #374 A1),
+and the close-out before a new session is minted
 (`rollSessionIfDue`: `session_gap_remint` for a session that went idle,
-`session_close` for one that was ended — which closes the scene End a
-Session's closing vignette opens after End closed its own, issue #321 U34) —
+`session_close` for one that was ended and still holds a scene) —
 session boundaries no longer leak scene truths into the next session's empty
 ring, and the closing scene's truths keep the closing session's number.
 
