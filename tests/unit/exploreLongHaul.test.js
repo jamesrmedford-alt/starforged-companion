@@ -138,6 +138,8 @@ describe('a fact, held and refused', () => {
       'The clerk\'s pen stops mid-line, and he tilts his head toward the comm. You tell Tamsin what you have of him: flat heels, a sash pressed too neat, a habit of reading upside down.',
     ]) expect(refusalsIn(text, tamsin), text).toEqual([]);
     expect(refusalsIn('The comm hisses. Tamsin sets his ledger down.', tamsin), 'nobody else in reach').toHaveLength(1);
+    // …and the recap: the clerk three sentences up, the sentence before his "He".
+    expect(refusalsIn('The clerk is the part that does not settle. He knew Tamsin\'s full name and the manifest under her ledger. He even knew where the compass was, and Tamsin denied ever having held it. Tamsin suspects his corrections are deliberate.', tamsin)).toEqual([]);
 
     const berth = { id: 'F5', variants: ['Bleakhold'], refusals: [{ id: 'another settlement', subject: ['Kobayashi', 'your ship'], near: ['berthed at Hollow Spire', 'docked at Hollow Spire'] }] };
     expect(refusalsIn('You believed you were berthed at Hollow Spire, but the dock log puts the Kobayashi IV at Bleakhold, cradle four, with you as captain.', berth)).toEqual([]);

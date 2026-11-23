@@ -178,11 +178,16 @@ export function refusalsIn(text, fact) {
     const subject = r.subject?.length ? r.subject : fact.variants;
     for (const [i, s] of sentences.entries()) {
       // A pronoun refusal is no refusal where someone else is in reach of the
-      // pronoun — named by a role in its sentence or the one before (issue
-      // #377 round 2: "Tamsin quietly asked if he was smiling" — he was the
-      // clerk, named in that sentence; "…while he listens" — the clerk, in
-      // the sentence before).
-      if (r.after === true && (OTHER_PERSON.test(s) || OTHER_PERSON.test(sentences[i - 1] ?? ""))) {
+      // pronoun — named by a role in its sentence or the two before, or the
+      // subject of the sentence before, which opens on one of these pronouns
+      // (issue #377 round 2: "Tamsin quietly asked if he was smiling" — he
+      // was the clerk, named in that sentence; "…while he listens" — the
+      // clerk, in the sentence before; "He even knew where the compass was …
+      // Tamsin suspects his corrections are deliberate" — the clerk, named
+      // three sentences up and the sentence before's "He").
+      const opensOn = (t) => (r.near ?? []).some(w => new RegExp(`^[\\s"“'‘*_]*${variantPattern(w)}\\b`, "i").test(t));
+      const inReach = [s, sentences[i - 1] ?? "", sentences[i - 2] ?? ""].some(t => OTHER_PERSON.test(t)) || opensOn(sentences[i - 1] ?? "");
+      if (r.after === true && inReach) {
         const anywhereOnly = (r.anywhere ?? []).find(w => holdsAny(s, [w]));
         if (anywhereOnly) out.push({ refusal: r.id ?? r.note ?? anywhereOnly, word: anywhereOnly, sentence: s.slice(0, 300) });
         continue;
