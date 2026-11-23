@@ -876,13 +876,9 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [], unnamed 
   if (rank != null && rank !== "") rank = rankName(rank);
   const vrank = rank ?? "dangerous";
   // Connection picker (#248 B-link): link this vow to a connection so fulfilling
-  // it deepens that bond. Rendered only when connections exist.
-  const linkHtml = (Array.isArray(connections) && connections.length)
-    ? `<p class="sf-vow-link">🤝 For a connection? `
-      + `<select class="sf-vow-connection"><option value="">— none —</option>`
-      + connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
-      + `</select> <button type="button" class="entity-btn" data-action="sf-player-vow-link">Link</button></p>`
-    : "";
+  // it deepens that bond. Rendered only when connections exist — and brought
+  // up to date when they come to (refreshVowCardLinkRows).
+  const linkHtml = vowLinkRowHtml(connections);
   const what = unnamed
     ? `<p>A new vow — name it and set its rank on its sheet. ⚔ Swear it (roll) swears the vow as its sheet has it then.</p>`
     : `<p>"${escapeHtml(name ?? "Unnamed Vow")}"${rank ? ` <em>(${escapeHtml(rank)})</em>` : ""}</p>`
@@ -892,8 +888,76 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [], unnamed 
     + what
     + `<p><button type="button" class="entity-btn" data-action="sf-player-vow-swear">⚔ Swear it (roll)</button></p>`
     + linkHtml
-    + `<p class="sf-incite-hint">Pick a reward for it below${linkHtml ? "; linking a connection makes fulfilling this vow deepen that bond" : ""}.</p>`
+    + vowLinkHintHtml(!!linkHtml)
     + `</div></div>`;
+}
+
+/** The player-vow card's 🤝 Link row for these connections, by name; nothing for none. */
+function vowLinkRowHtml(connections) {
+  if (!Array.isArray(connections) || !connections.length) return "";
+  return `<p class="sf-vow-link">🤝 For a connection? `
+    + `<select class="sf-vow-connection"><option value="">— none —</option>`
+    + connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
+    + `</select> <button type="button" class="entity-btn" data-action="sf-player-vow-link">Link</button></p>`;
+}
+
+/** The card's closing hint, which names the link only when the card offers one. */
+function vowLinkHintHtml(hasLink) {
+  return `<p class="sf-incite-hint">Pick a reward for it below${hasLink ? "; linking a connection makes fulfilling this vow deepen that bond" : ""}.</p>`;
+}
+
+/**
+ * Pure: a player-vow card's content with its 🤝 Link row for the connections
+ * the table has now — the row added, its names replaced, or the row taken
+ * away when there are none. The rest of the card is left as it stands.
+ * Content with no closing hint (not this card's shape) is returned unchanged.
+ *
+ * @param {string} content — the card's HTML
+ * @param {string[]} connections — the connections' names
+ * @returns {string}
+ */
+export function withVowLinkRow(content, connections) {
+  const html = String(content ?? "");
+  const tail = /(?:<p class="sf-vow-link">[\s\S]*?<\/p>)?<p class="sf-incite-hint">[\s\S]*?<\/p>/;
+  if (!tail.test(html)) return html;
+  const linkHtml = vowLinkRowHtml(connections);
+  return html.replace(tail, () => linkHtml + vowLinkHintHtml(!!linkHtml));
+}
+
+/**
+ * Bring the 🤝 Link row of every open, unlinked player-vow card up to date
+ * with the connections the table has now. The row was written once, when the
+ * card was posted: a vow recorded before its connection was met — Begin a
+ * Session's vow, then the first NPC of the session — had no Link at all, and
+ * no later way to get one (known-issues VOW-CARD-LINK-ONLY-AT-POSTING; found
+ * while the long haul's charter was written, issue #373). Called when a
+ * connection is created, renamed or deleted (src/entities/connection.js).
+ * Canonical GM: one emitter for a shared card. Never throws.
+ *
+ * @param {{ campaignState?: Object|null }} [opts] — the state to read the
+ *   connections from: the caller's, when it holds one the store does not yet
+ * @returns {Promise<number>} how many cards changed
+ */
+export async function refreshVowCardLinkRows({ campaignState = null } = {}) {
+  let changed = 0;
+  try {
+    if (!globalThis.game?.ready || !isCanonicalGM()) return 0;
+    const cards = (globalThis.game?.messages?.contents ?? []).filter((m) => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.playerVowCard === true && !f.linkedConnection && !f.vowGone;
+    });
+    if (!cards.length) return 0;
+    const connections = await connectionNamesForVowCard(campaignState);
+    for (const card of cards) {
+      const content = withVowLinkRow(card.content, connections);
+      if (content === card.content) continue;
+      await card.update({ content });
+      changed += 1;
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: the vow cards' Link rows were not brought up to date:`, err?.message ?? err);
+  }
+  return changed;
 }
 
 /**
@@ -1004,10 +1068,15 @@ export function registerPlayerVowHook() {
   });
 }
 
-/** The connections the world has, by name — the player-vow card's link picker (#248 B-link). Fail-open: none. */
-async function connectionNamesForVowCard() {
+/**
+ * The connections the world has, by name — the player-vow card's link picker
+ * (#248 B-link). From `campaignState` when one is given (a creator's own
+ * copy, which lists a connection the store does not yet), else the store's.
+ * Fail-open: none.
+ */
+async function connectionNamesForVowCard(campaignState = null) {
   try {
-    const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    const cs = campaignState ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
     const { getConnection } = await import("../entities/connection.js");
     return (cs.connectionIds ?? [])
       .map(hostId => getConnection(hostId)?.name)

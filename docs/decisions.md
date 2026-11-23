@@ -168,6 +168,51 @@ won-fight card's button keeps its label.
 
 ---
 
+## A vow's card offers its Link once the table has a connection (issue #373 slice 0) (2026-11)
+
+**Decision:** The "🆕 New vow recorded" card's 🤝 Link row follows the
+table's connections. It was written once, when the card was posted, and only
+when a connection already existed; it is now brought up to date whenever a
+connection is created, renamed or deleted (`refreshVowCardLinkRows`,
+`src/session/swearVow.js`, called from `src/entities/connection.js`) — on
+every open vow card that is not yet linked and whose vow is not gone, sworn
+or not. A linked card is left as it is. Canonical GM: one emitter for a
+shared card.
+
+**Reason:** found for nothing, before any run, while the long haul's charter
+was written. Its beats are the order a first session takes: a vow sworn in
+Begin a Session's dialog (beat 1), the session's first NPC met and made a
+connection (beat 2), the vow linked to them (beat 3, "the vow card's 🤝
+Link"). The card of beat 1 is posted before any connection exists, so it had
+no Link row, and nothing later gave it one: the link is made from that card
+and from nowhere else (the other writers are a vow sworn to a person through
+`!incite` or the swear dialog's target). A vow sworn before its connection
+was met could not be linked at all — and so its fulfilment could never
+deepen that bond, and a fight served by it never offered to.
+
+It is fixed here, without a separate go-ahead, under issue #373's third
+spending rule — "a run is not made while a finding with a fix ready is open
+on the path it would walk: it would pay to find it again" — and it is the
+maintainer's to take back (known-issues VOW-CARD-LINK-ONLY-AT-POSTING).
+
+- The row lists what the store lists (`campaignState.connectionIds`, by
+  name): a creator that has not yet persisted passes its own copy.
+- Only the Link row and the hint that names it are rewritten
+  (`withVowLinkRow`); the rest of the card — its name, its stakes, a swear
+  already rolled — stands.
+
+**Rejected:**
+- *Building the row when the card is rendered.* A card already on screen is
+  not rendered again when a connection is created; only a change to the
+  message reaches every client.
+- *A hook on `createActor`.* The card is created before the connection is
+  listed, so the hook would read a table that does not have it yet, or wait
+  on a timer for one that does.
+- *Recording it and leaving the beat unreachable.* Every run of the round
+  would then spend eight actions finding that the card has no Link.
+
+---
+
 ## AI exploration: a player that only plays, an observer that only reads (2026-11)
 
 **Decision:** Issue #302 slice D (with #290 part 3) is

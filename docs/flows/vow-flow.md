@@ -183,7 +183,13 @@ reads the newest 200 chat messages for each vow's open, unsworn card and
 sends one that does not show its vow's name and rank through
 `followVowOnItsCard`; a card in step costs no write and no Claude call —
 issue #364 VOW-CARD-RENAME-NO-GM), a **connection
-picker** when connections exist
+picker** when connections exist — and from the moment they do: the row was
+written once, when the card was posted, so a vow recorded before its
+connection was met (Begin a Session's vow, then the session's first NPC) had
+no Link and never got one; it is now brought up to date on every open,
+unlinked vow card, sworn or not, when a connection is created, renamed or
+deleted (`refreshVowCardLinkRows` → `withVowLinkRow`, called by
+`connection.js`; canonical GM; known-issues VOW-CARD-LINK-ONLY-AT-POSTING)
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
 vow did not take releases the claim and whispers the presser, with no

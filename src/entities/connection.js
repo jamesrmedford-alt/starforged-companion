@@ -118,7 +118,30 @@ export async function createConnection(data, campaignState, { persist = true } =
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);
+  // Not awaited: a creator reads the new card in the turn this returns in
+  // (whose portrait it is, with Auto-Seed NPC on), and a wait here let the
+  // seed and the creator each make one.
+  void refreshVowCardLinks(campaignState);
   return connection;
+}
+
+/**
+ * The vow cards in chat offer the connections the table has (their 🤝 Link
+ * row): bring them up to date when one is created, renamed or deleted. A vow
+ * recorded before its connection was met had no Link, and never got one
+ * (known-issues VOW-CARD-LINK-ONLY-AT-POSTING). Never throws.
+ *
+ * @param {Object|null} [campaignState] — a creator's copy, when it lists a
+ *   connection the store does not yet
+ */
+async function refreshVowCardLinks(campaignState = null) {
+  try {
+    // Dynamic import: swearVow imports entity modules.
+    const { refreshVowCardLinkRows } = await import("../session/swearVow.js");
+    await refreshVowCardLinkRows({ campaignState });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | vow card link refresh failed:`, err?.message ?? err);
+  }
 }
 
 
@@ -240,6 +263,8 @@ export async function renameVowLinks(actorId, name) {
   } catch (err) {
     console.warn(`${MODULE_ID} | vow link rename mirror failed:`, err?.message ?? err);
   }
+  // The unlinked vow cards offer the connection by its name: the new one.
+  await refreshVowCardLinks();
 }
 
 /**
@@ -706,6 +731,8 @@ async function clearDeletedConnectionReferences(name, deletedId) {
   // the payoff failure cards whose Retry would deepen it.
   await retireFightVowDeepenFor(name, which);
   await retirePayoffDeepenStepsFor(name, which);
+  // And the unlinked vow cards stop offering it.
+  await refreshVowCardLinks();
 }
 
 /**
