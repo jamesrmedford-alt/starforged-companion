@@ -2718,7 +2718,12 @@ async function applyOutcomeEffects({
       if (!existing || existing.completed) {
         const vowNames = (readVows(speakerActor) ?? [])
           .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
-        await postCombatThresholdCard({
+        // Posted after the Enter the Fray's roll card, which it follows
+        // (known-issues FIGHT-COMMIT-CARD-AFTER-THE-ROLL): above the roll, it
+        // read as a choice the roll had already made, and the long haul's
+        // second live run left it unpressed. Its weak hit's choice card,
+        // which names it, posts after both and reads it at the click.
+        out.afterMoveCard.push(() => postCombatThresholdCard({
           label:         moveTarget ?? "the enemy",
           suggestedRank: interpretation?.combatRank,
           vowNames,
@@ -2726,7 +2731,7 @@ async function applyOutcomeEffects({
           actorId:       speakerActor?.id ?? null,
           resolutionId:  resolution._id ?? null,
         }).catch(err =>
-          console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
+          console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err)));
         thresholdPosted = true;
         // The move's choice card names this card, by the resolution that
         // posted it: its weak hit's "You are in control" lands on the fight

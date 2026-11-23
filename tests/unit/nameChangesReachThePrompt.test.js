@@ -106,6 +106,12 @@ describe('when a change is told (dueNameChanges)', () => {
     expect(note.startsWith(NAME_CHANGES_HEADING)).toBe(true);
     expect(note).toContain('"Tamsin Vey" is now "Tamsin Okoro" (a person) — renamed by the table.');
     expect(note).toMatch(/not an alias/);
+    // The second live run made the change itself a story — a name "crossed out
+    // and written again" — and the recap recorded "now goes by".
+    expect(note).toMatch(/The change is the table's correction, not something that happened in the story/);
+    expect(note).toMatch(/nobody renamed anyone, crossed a name out\s+or wrote it again/);
+    expect(formatNameChangesForSource([ASHEN_TO_CINDER], { texts: ['The Ashen Wake holds station'] }))
+      .toMatch(/never write that someone was renamed or "now goes by" a name/);
     expect(formatNameChangesForSource([ASHEN_TO_CINDER], { texts: ['The Ashen Wake holds station'] }))
       .toContain('"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.');
   });

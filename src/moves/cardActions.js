@@ -1579,8 +1579,9 @@ function thresholdVowOptions(content) {
 
 /**
  * gmRelay handler for "combat.threshold" — runs on the canonical GM (issue
- * #329 X06). The "⚔ A fight looms" threshold card offers ⚔ Enter the Fray
- * (create the fight's track) or 🚪 Find another way (post the way-out card).
+ * #329 X06). The "⚔ A fight looms" threshold card offers ⚔ Begin the fight
+ * (create the fight's track — labelled "⚔ Enter the Fray" until
+ * FIGHT-COMMIT-CARD-AFTER-THE-ROLL) or 🚪 Find another way (post the way-out card).
  * Its buttons were disabled in the clicker's DOM only, nothing was stamped
  * and nothing checked at render, so every other client — and the clicker's
  * next render — showed both armed: a second "Find another way" posted a

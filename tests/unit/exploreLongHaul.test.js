@@ -40,7 +40,7 @@ import { burnableDice, scriptedDice } from '../../test/ci/playwright/lib/gm.mjs'
 import { plansSeen, recheckBeats, scoreLongRun } from '../../test/ci/playwright/lib/longrun.mjs';
 import { faceOf, parseDiceLine, uniformFor } from '../../test/ci/playwright/lib/table.mjs';
 import {
-  ACTION_TOOL, HISTORY_ACTIONS, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, sayWithoutIds, scriptedForm,
+  ACTION_TOOL, HISTORY_ACTIONS, LABEL_RENAMES, NOTEBOOK_LINES, describeScreen, keepNote, playerSystemPrompt, playerTurnPrompt, resolveScripted, sayWithoutIds, scriptedForm,
   summariseAction, truthIdFor, validateAction,
 } from '../../test/ci/playwright/lib/player.mjs';
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
@@ -129,6 +129,15 @@ describe('a fact, held and refused', () => {
     ]) expect(refusalsIn(sentence, tamsin), sentence).toEqual([]);
     expect(refusalsIn('Tamsin sets his ledger down.', tamsin), 'said of her').toHaveLength(1);
     expect(refusalsIn('Tamsin looks up, and he smiles.', tamsin), 'another clause').toEqual([]);
+    // The second live run: every "he" was the clerk — named by his role in the
+    // sentence, or in the one before.
+    for (const text of [
+      'Mira kept Tamsin talking on the comm and described the clerk\'s narrow face to her, until Tamsin quietly asked if he was smiling, and the corner of his mouth lifted.',
+      'Mira kept Tamsin talking on the comm and described the smiling clerk to her, and Tamsin learned what he was paid to hear.',
+      'The clerk\'s mouth moves, and the corner of it lifts. *If you want to hold Tamsin\'s trust while he listens, this could be a Develop Your Relationship.*',
+      'The clerk\'s pen stops mid-line, and he tilts his head toward the comm. You tell Tamsin what you have of him: flat heels, a sash pressed too neat, a habit of reading upside down.',
+    ]) expect(refusalsIn(text, tamsin), text).toEqual([]);
+    expect(refusalsIn('The comm hisses. Tamsin sets his ledger down.', tamsin), 'nobody else in reach').toHaveLength(1);
 
     const berth = { id: 'F5', variants: ['Bleakhold'], refusals: [{ id: 'another settlement', subject: ['Kobayashi', 'your ship'], near: ['berthed at Hollow Spire', 'docked at Hollow Spire'] }] };
     expect(refusalsIn('You believed you were berthed at Hollow Spire, but the dock log puts the Kobayashi IV at Bleakhold, cradle four, with you as captain.', berth)).toEqual([]);
@@ -322,6 +331,8 @@ describe('baits and hidden plans', () => {
     // The first live run: scored "taken" on the "you did" of a denial.
     expect(scoreBaits({ baits: [bait], messages: asked('"You did not," Tamsin says over the comm. "It\'s face-down on your galley table, where you keep leaving it."') })[0].result).toBe('corrected');
     expect(scoreBaits({ baits: [bait], messages: asked('You didn\'t. It is on the table.') })[0].result).toBe('corrected');
+    // The second live run: the denial opens a line of speech, not the answer.
+    expect(scoreBaits({ baits: [bait], messages: asked('The clerk\'s pen stops. He lets the question sit, then reaches past your shoulder and taps your coat, where the brass lies against your ribs. "No," he says. "You carried it out." On the comm, Tamsin\'s chair creaks.') })[0].result).toBe('corrected');
     expect(scoreBaits({ baits: [bait], messages: asked(null) })[0].result).toBe('unanswered');
     expect(scoreBaits({ baits: [bait], messages: [] })[0]).toMatchObject({ asked: false, result: 'not-asked' });
   });
@@ -570,6 +581,18 @@ describe('each beat\'s check on the world', () => {
     expect(check('burned', { moves: ['strike'] }, [setup, markOf('a1', tableOf(), [weak]), markOf('a2', tableOf(), [burned])])).toMatchObject({ status: 'done' });
   });
 
+  it('a recovery beat is done by any recover move\'s hit, not the first roll\'s (the second live run: Heal missed, Resupply hit)', () => {
+    const heal = moveCard('r1', 'Heal', 'Action: 4 + 1 = 5 | Challenge: 10, 6', 'miss');
+    const resupply = moveCard('r2', 'Resupply', 'Action: 6 + 2 = 8 | Challenge: 5, 5', 'strong_hit');
+    const choice = { id: 's1', suffer: { resolved: false, picked: [], moveId: 'resupply' } };
+    const taken = { ...choice, suffer: { ...choice.suffer, resolved: true, picked: [1] } };
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal])]).detail).toBe('heal missed');
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal]), markOf('a2', tableOf(), [heal, resupply, choice])]).detail)
+      .toBe('resupply came up strong_hit; its choice is not made');
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf(), [heal]), markOf('a2', tableOf(), [heal, resupply, choice]), markOf('a3', tableOf(), [heal, resupply, taken])]))
+      .toMatchObject({ status: 'done', detail: 'resupply came up strong_hit at a2' });
+  });
+
   it('the cast\'s connection is one card, followed by its id: renamed since it was made, its bond is still found', () => {
     const made = markOf('a1', tableOf({ connections: [{ ...conn, name: 'Tamsin Vey', ticks: 0 }] }));
     const renamed = (extra) => tableOf({ connections: [{ ...conn, name: 'Tamsin Okoro', ...extra }] });
@@ -757,6 +780,17 @@ describe('the player\'s two new actions', () => {
     expect(scriptedForm({ action: 'say', text: 'I look over the wreck.' }, SCREEN)).toEqual({ action: 'say', text: 'I look over the wreck.' });
     expect(sayWithoutIds(struck, 'nothing listed')).toEqual(struck);
     expect(truthIdFor('raider cutter — is named the Ashen Wake', 'tr-0aa11 raider cutter — is named the Ashen Wake tr-0bb22 other')).toBe('tr-0aa11');
+  });
+
+  it('a kept run\'s press of a button the module has since renamed finds it by its new name (LABEL_RENAMES)', () => {
+    const now = { ...SCREEN, messages: [{ ...SCREEN.messages[1], buttons: [{ n: 1, label: '⚔ Begin the fight', disabled: false }, { n: 2, label: '🚪 Find another way', disabled: false }] }] };
+    // The first live long haul pressed "⚔ Enter the Fray" on the fight's card.
+    expect(LABEL_RENAMES['⚔ Enter the Fray']).toBe('⚔ Begin the fight');
+    expect(resolveScripted({ action: 'click', label: '⚔ Enter the Fray', fromNewest: 0, reason: 'begin it' }, now))
+      .toEqual({ ok: true, action: { action: 'click', messageId: 'idB', message: 'm2', button: 1, label: '⚔ Begin the fight', reason: 'begin it' } });
+    // A screen that still offers the recorded label is pressed as recorded.
+    expect(resolveScripted({ action: 'click', label: '⚔ Enter the Fray', fromNewest: 0 }, SCREEN).action.label).toBe('⚔ Enter the Fray');
+    expect(resolveScripted({ action: 'click', label: 'Nothing like it', fromNewest: 0 }, now)).toEqual({ ok: false, problem: 'no message on screen offers "Nothing like it"' });
   });
 
   it('a card further up the chat that can still be answered is on its screen, under its own heading, and is clicked by its own reference', () => {

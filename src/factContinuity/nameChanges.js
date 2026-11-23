@@ -290,7 +290,14 @@ export function formatNameChangesBlock(changes, opts = {}) {
     `Each of these is one person, place or ship with one name. Older lines in this prompt ` +
     `(earlier sessions, lore, plans, clocks, truths, the recent scene) may still use the old name: ` +
     `read it as the new one, and write only the new one. The old name is not an alias, a nickname, ` +
-    `a former name or something people call them — never say or suggest that it is.\n\n` +
+    `a former name or something people call them — never say or suggest that it is. ` +
+    // The long haul's second live run (issue #377 item 1): told the old name was
+    // no alias, the narrator made the change itself a story — a name "crossed
+    // out and written again", which a voice then asked about for a session and
+    // the recap recorded ("your friend now goes by Tamsin Okoro").
+    `The change is the table's correction, not something that happened in the story: in the ` +
+    `fiction the new name has always been the name — nobody renamed anyone, crossed a name out ` +
+    `or wrote it again, and no character remembers it otherwise.\n\n` +
     due.map(changeLine).join('\n');
 }
 
@@ -307,7 +314,8 @@ export function formatNameChangesForSource(changes, opts = {}) {
   if (!due.length) return '';
   return `## NAMES THE TABLE CHANGED — one name each\n\n` +
     `Where the narration above uses an old name, it means the new one. Write only the new name; ` +
-    `the old one is not an alias or another name they go by.\n\n` +
+    `the old one is not an alias or another name they go by, and the change is the table's ` +
+    `correction, not an event of the session — never write that someone was renamed or "now goes by" a name.\n\n` +
     due.map(changeLine).join('\n');
 }
 

@@ -207,6 +207,24 @@ only when the fiction puts something at risk in doing it. (Travel is the
 exception already stated: a journey toward an uncharted destination is at least
 offered as undertake_an_expedition, hazard or not.)
 
+WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED — treating a wound or an ailment
+(heal), restocking supplies (resupply), repairing a vehicle or gear (repair),
+finding comfort or a community to recover in (hearten, sojourn): each changes
+a character's sheet, and narration never changes it, so a line that sets about
+one is never plain NARRATIVE. At any dial, answer at least
+NARRATIVE_WITH_MOVE_AVAILABLE with that move as suggestedMove, so the table is
+offered it — MOVE where the dial and the player's commitment call for one. A
+line that only mentions such a thing in passing is not setting about it.
+Example: "I treat my wounds with the ship's medkit" at a downtime dial of 1 →
+NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal. NOT plain NARRATIVE.
+
+A LINE THAT NAMES ITS MOVE ASKS FOR IT — when the player names the move they
+are making ("…, to Develop Your Relationship", "I Face Danger to cross the
+gap", "I forge a bond with her"), that is explicit intent at any dial: classify
+MOVE with that move as suggestedMove, not another move the scene might suggest
+— unless the fiction plainly cannot support it, when NARRATIVE_WITH_MOVE_AVAILABLE
+offers it.
+
 ## CATEGORY DEFINITIONS
 
 Pick the category from the SITUATION, not the apparatus being used:

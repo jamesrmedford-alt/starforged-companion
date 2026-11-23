@@ -137,3 +137,29 @@ describe("buildContextSummary — the roller's support vehicles and companions",
     expect(buildContextSummary({}, { roller: ren })).toBe("The character speaking and acting this turn is Ren. No active tracks yet.");
   });
 });
+
+// Issue #377 round 2: told nothing of the roller's connections, the
+// interpreter read "Tamsin, I ask you to forge a bond with me, to Forge a
+// Bond" — her relationship track full — as Make a Connection: "Forge a Bond
+// … needs an established bond track". Each connection is now listed with its
+// relationship track, and a full one says Forge a Bond can be made.
+describe("buildContextSummary — the roller's connections and their relationship tracks", () => {
+  const bond = (id, name, extra = {}) => ({ id, name, type: "progress", system: { subtype: "bond", rank: 2, current: 0, completed: false, ...extra } });
+
+  it("lists each connection with its track — full, partway, bonded — and leaves a severed one out", () => {
+    const mira = installPc("pc-mira", "Mira Kestrel", [
+      bond("b1", "Tamsin Okoro", { current: 40 }),
+      bond("b2", "Juro", { current: 12 }),
+      bond("b3", "Ysolde Marr", { completed: true, current: 40 }),
+      { ...bond("b4", "Ilse"), flags: { [MODULE_ID]: { lost: true } } },
+    ]);
+    const summary = buildContextSummary({}, { roller: mira });
+    expect(summary).toContain('Connections: "Tamsin Okoro" (dangerous) — relationship 40 of 40 ticks, full: Forge a Bond can be made, "Juro" (dangerous) — relationship 12 of 40 ticks, "Ysolde Marr" (dangerous) — bonded.');
+    expect(summary).not.toContain("Ilse");
+  });
+
+  it("control: a roller with no connections adds no line", () => {
+    const ren = installPc("pc-ren", "Ren", []);
+    expect(buildContextSummary({}, { roller: ren })).not.toContain("Connections:");
+  });
+});

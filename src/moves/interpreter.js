@@ -18,7 +18,7 @@ import { MOVES, STATS, toMoveId } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
-import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getPlayerActors, readVows, readConnections, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { normaliseStakes, withPriceSource } from "./stakes.js";
 import { missPaysPrice } from "./resolver.js";
@@ -235,6 +235,15 @@ export function buildContextSummary(campaignState, { roller = null } = {}) {
   const tracks = readOpenTrackLabels();
   if (tracks.length) lines.push(`Open progress tracks: ${formatList(tracks)}.`);
 
+  // The roller's connections, with how far each relationship has come
+  // (issue #377 round 2): told none of it, the interpreter read "Tamsin, I
+  // ask you to forge a bond with me, to Forge a Bond" — her relationship
+  // track full — as Make a Connection, "Forge a Bond … needs an established
+  // bond track", and it missed. A full track is what Forge a Bond is rolled
+  // against; a bonded connection is developed with a roll of its own.
+  const bonds = rollerConnectionLines(roller);
+  if (bonds.length) lines.push(`Connections: ${formatList(bonds)}.`);
+
   // Current session mischief level (informational — actual framing in system prompt)
   if (campaignState?.currentSessionId) {
     lines.push(`Session active.`);
@@ -303,6 +312,32 @@ const CONTEXT_LIST_CAP = 8;
 // would pull ApplicationV2 code into the interpreter.
 const PROGRESS_JOURNAL_NAME = "Starforged Progress Tracks";
 const PROGRESS_FLAG_KEY     = "tracks";
+
+/**
+ * The roller's live connections (their bond Items), each with its relationship
+ * track: `"Tamsin Okoro" (dangerous) — relationship 40 of 40 ticks, full:
+ * Forge a Bond can be made`. A severed one is left out. [] with no roller
+ * who is a player character. Never throws.
+ *
+ * @param {Actor|null} roller
+ * @returns {string[]}
+ */
+function rollerConnectionLines(roller) {
+  try {
+    if (!isPlayerCharacterActor(roller)) return [];
+    return readConnections(roller)
+      .filter(c => c?.name && !c.lost)
+      .map((c) => {
+        const name = `"${String(c.name).replace(/[\r\n]+/g, " ").trim()}" (${c.rank})`;
+        if (c.completed) return `${name} — bonded`;
+        const ticks = Math.max(0, Math.min(40, Number(c.ticks) || 0));
+        return `${name} — relationship ${ticks} of 40 ticks${ticks >= 40 ? ", full: Forge a Bond can be made" : ""}`;
+      });
+  } catch (err) {
+    console.debug(`${MODULE_ID} | interpreter: connection read failed — omitting connections from context:`, err?.message ?? err);
+    return [];
+  }
+}
 
 /** `"Vow name"` for each open vow on the player characters (owner-tagged when >1 PC). */
 function readOpenVowLabels() {
