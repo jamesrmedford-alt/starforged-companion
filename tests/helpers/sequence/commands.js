@@ -30,14 +30,21 @@
  * were when it was posted and follows its vow's sheet until it is sworn, and
  * neither the rules nor the decisions say enough about that card for a model
  * of it that is not the code's own (known-issues SEQUENCE-LINK-NOT-GENERATED).
- * And a vow sworn to a connection already bonded is not fulfilled here:
- * nothing written says what a bonded relationship takes from it.
+ *
+ * A connection may start bonded, and one is bonded mid-sequence by a Forge a
+ * Bond hit. Develop Your Relationship with it is then a roll, +their rank
+ * (DevelopBondedRelationship), and a vow sworn to it, fulfilled, marks no
+ * progress: its roller is offered that roll, once (FulfilVow, then
+ * TakeBondRoll on the offer) — the move's own text, and issue #373's
+ * decision 4. Until that decision nothing written said what a bonded
+ * relationship takes from a fulfilled vow, and such a vow was not fulfilled
+ * here.
  */
 
 import fc from "fast-check";
 import { expect } from "vitest";
 import * as M from "./model.js";
-import { RANKS, TICKS_PER_BOX, TRACK_BOXES } from "./rules.js";
+import { BOND_ROLL_ADDS, RANKS, TICKS_PER_BOX, TRACK_BOXES } from "./rules.js";
 
 export const VOW_NAMES = Object.freeze(["Find Kade", "Pay the debt", "Free the miners"]);
 export const CONNECTION_NAMES = Object.freeze(["Sable", "Vega", "Orrin", "Thess"]);
@@ -45,6 +52,8 @@ const MAX_VOWS_EACH = 3;
 const MAX_CONNECTIONS = 4;
 
 const dice = (challenge) => `${challenge[0]},${challenge[1]}`;
+/** An action roll's dice: the action die, then the challenge dice. */
+const rolled = (actionDie, challenge) => `${actionDie} vs ${dice(challenge)}`;
 /** A press two people make in the same moment: the roller's player and the GM (for a draft, the GM and the player). */
 const twice = (doubled) => (doubled ? ", pressed by two at once" : "");
 
@@ -127,20 +136,18 @@ export class FulfilVow extends Command {
   constructor(pcPick, vowPick, challenge) { super(); Object.assign(this, { pcPick, vowPick, challenge }); }
   pending() { return `FulfilVow(pc#${this.pcPick}, vow#${this.vowPick}, dice ${dice(this.challenge)})`; }
   #vow(model) { return M.pick(M.openVows(model, M.pick(model.pcs, this.pcPick)), this.vowPick); }
-  check(model) {
-    const vow = this.#vow(model);
-    return M.canPlay(model) && !!vow && !M.swornConnection(model, vow)?.bonded;
-  }
+  check(model) { return M.canPlay(model) && !!this.#vow(model); }
   async run(model, world) {
     const vow = this.#vow(model);
     const before = vow.ticks;
     const sworn = M.swornConnection(model, vow);
     const outcome = M.fulfilVow(model, vow, this.challenge);
-    const deepened = !!sworn && outcome !== "miss";
-    this.described = `FulfilVow(${vow.ref} "${vow.name}" of ${vow.pc}, ${before} ticks vs ${dice(this.challenge)} → ${outcome}${sworn ? `; sworn to ${sworn.ref} "${sworn.name}"` : ""})`;
+    // Sworn to a connection, a hit deepens it — or, a bond already shared, offers its roll.
+    const paid = !!sworn && outcome !== "miss";
+    this.described = `FulfilVow(${vow.ref} "${vow.name}" of ${vow.pc}, ${before} ticks vs ${dice(this.challenge)} → ${outcome}${sworn ? `; sworn to ${sworn.ref} "${sworn.name}"${sworn.bonded ? ", already bonded" : ""}` : ""})`;
     await world.fulfilVow(vow.ref, { pc: vow.pc, name: vow.name, challenge: this.challenge });
     await this.finish(model, world, outcome);
-    if (deepened) count("FulfilVow:deepened its connection");
+    if (paid) count(sworn.bonded ? "FulfilVow:offered its bonded connection's roll" : "FulfilVow:deepened its connection");
   }
 }
 
@@ -181,6 +188,8 @@ export class RenameVow extends Command {
 
 /** The unbonded connections `pc` holds: the ones their player would be offered. */
 const theirUnbonded = (model, pc) => M.unbonded(model).filter(c => c.holders.includes(pc));
+/** The bonded ones. */
+const theirBonded = (model, pc) => M.bonded(model).filter(c => c.holders.includes(pc));
 
 export class AddConnection extends Command {
   constructor(pcPick, namePick, doubled = false) { super(); Object.assign(this, { pcPick, namePick, doubled }); }
@@ -229,6 +238,43 @@ export class ForgeBond extends Command {
     model.pressed = true;
     await world.forgeBond(connection.ref, { pc, challenge: this.challenge, doubled: this.doubled });
     await this.finish(model, world, outcome, this.doubled);
+  }
+}
+
+/** Develop Your Relationship with a connection already bonded: a roll +their rank, and no progress. */
+export class DevelopBondedRelationship extends Command {
+  constructor(pcPick, connectionPick, actionDie, challenge, doubled = false) { super(); Object.assign(this, { pcPick, connectionPick, actionDie, challenge, doubled }); }
+  pending() { return `DevelopBondedRelationship(pc#${this.pcPick}, connection#${this.connectionPick}, dice ${rolled(this.actionDie, this.challenge)}${twice(this.doubled)})`; }
+  #who(model) { const pc = M.pick(model.pcs, this.pcPick); return { pc, connection: M.pick(theirBonded(model, pc), this.connectionPick) }; }
+  check(model) { return M.canPlay(model) && !!this.#who(model).connection; }
+  async run(model, world) {
+    const { pc, connection } = this.#who(model);
+    const rank = connection.rank;
+    const { outcome, raised } = M.developBondedRelationship(model, connection, pc, this.actionDie, this.challenge);
+    this.described = `DevelopBondedRelationship(${connection.ref} "${connection.name}", picked by ${pc}${twice(this.doubled)}, ${this.actionDie} +${BOND_ROLL_ADDS[rank]} (${rank}) vs ${dice(this.challenge)} → ${outcome}${raised ? `, raised to ${connection.rank}` : ""})`;
+    model.pressed = true;
+    await world.developBondedRelationship(connection.ref, { pc, actionDie: this.actionDie, challenge: this.challenge, doubled: this.doubled });
+    await this.finish(model, world, outcome, this.doubled);
+    if (raised) count("DevelopBondedRelationship:raised its rank");
+  }
+}
+
+/** The roll a fulfilled vow left its roller for a connection already bonded, taken on the offer card. Once. */
+export class TakeBondRoll extends Command {
+  constructor(offerPick, actionDie, challenge, doubled = false) { super(); Object.assign(this, { offerPick, actionDie, challenge, doubled }); }
+  pending() { return `TakeBondRoll(offer#${this.offerPick}, dice ${rolled(this.actionDie, this.challenge)}${twice(this.doubled)})`; }
+  #vow(model) { return M.pick(M.bondRollOffers(model), this.offerPick); }
+  check(model) { return M.canPlay(model) && !!this.#vow(model); }
+  async run(model, world) {
+    const vow = this.#vow(model);
+    const connection = M.swornConnection(model, vow);
+    const rank = connection.rank;
+    const { outcome, raised } = M.takeBondRoll(model, vow, this.actionDie, this.challenge);
+    this.described = `TakeBondRoll(${vow.ref} "${vow.name}" of ${vow.pc}, for ${connection.ref} "${connection.name}"${twice(this.doubled)}, ${this.actionDie} +${BOND_ROLL_ADDS[rank]} (${rank}) vs ${dice(this.challenge)} → ${outcome}${raised ? `, raised to ${connection.rank}` : ""})`;
+    model.pressed = true;
+    await world.takeBondRoll(connection.ref, { pc: vow.pc, actionDie: this.actionDie, challenge: this.challenge, doubled: this.doubled });
+    await this.finish(model, world, outcome, this.doubled);
+    if (raised) count("TakeBondRoll:raised its rank");
   }
 }
 
@@ -360,6 +406,9 @@ const vowName  = fc.nat({ max: VOW_NAMES.length - 1 });
 const connName = fc.nat({ max: CONNECTION_NAMES.length - 1 });
 const rank     = fc.constantFrom(...RANKS);
 const challenge = fc.tuple(fc.integer({ min: 1, max: 10 }), fc.integer({ min: 1, max: 10 }));
+const actionDie = fc.integer({ min: 1, max: 6 });
+/** An action roll's challenge dice — a match one time in three: a strong hit with one is what raises a bonded connection's rank. */
+const actionChallenge = fc.oneof({ weight: 2, arbitrary: challenge }, { weight: 1, arbitrary: fc.integer({ min: 1, max: 10 }).map(n => [n, n]) });
 const doubled  = fc.boolean();
 
 /** The vow and connection commands (slice C, step 2). */
@@ -397,6 +446,27 @@ export function tableCommands() {
 }
 
 /**
+ * A connection already bonded, among the vow and connection commands (issue
+ * #373 slice 0): Develop Your Relationship with it as the roll it is, and the
+ * roll a vow fulfilled for it leaves its roller — each twice: their
+ * preconditions wait on a bond, and on a hit on a vow sworn to one — with a
+ * page reloaded among them, so an offer card and its claim are read back from
+ * the world. A list of its own, beside the two above: adding a command to
+ * those would change every sequence their fixed seed makes.
+ */
+export function bondedCommands() {
+  const seat = fc.nat({ max: SEATS.length - 1 });
+  return [
+    ...vowAndConnectionCommands(),
+    fc.tuple(pcPick, anyPick, actionDie, actionChallenge, doubled).map(a => new DevelopBondedRelationship(...a)),
+    fc.tuple(pcPick, anyPick, actionDie, actionChallenge, doubled).map(a => new DevelopBondedRelationship(...a)),
+    fc.tuple(anyPick, actionDie, actionChallenge, doubled).map(a => new TakeBondRoll(...a)),
+    fc.tuple(anyPick, actionDie, actionChallenge, doubled).map(a => new TakeBondRoll(...a)),
+    seat.map(s => new Reload(s)),
+  ];
+}
+
+/**
  * What a sequence starts with: up to two vows a character and up to three
  * connections, of any rank and any progress. A sequence that began from
  * nothing would spend its commands getting to where a roll can hit; the
@@ -408,13 +478,16 @@ const startingVows = fc.uniqueArray(
   fc.record({ name: fc.constantFrom(...VOW_NAMES), rank, boxes: fc.nat({ max: TRACK_BOXES }), swornTo: fc.option(pcPick, { nil: null }) }),
   { maxLength: 2, selector: v => v.name },
 );
+const startingConnection = { name: fc.constantFrom(...CONNECTION_NAMES), rank, boxes: fc.nat({ max: TRACK_BOXES }), holderPick: pcPick };
 export const startingWorld = fc.record({
   vows: fc.tuple(startingVows, startingVows),
   // Two connections may share a name from the start: the crew knows two Sables.
-  connections: fc.array(
-    fc.record({ name: fc.constantFrom(...CONNECTION_NAMES), rank, boxes: fc.nat({ max: TRACK_BOXES }), holderPick: pcPick }),
-    { maxLength: 3 },
-  ),
+  connections: fc.array(fc.record(startingConnection), { maxLength: 3 }),
+});
+/** The same, with half its connections already bonded — as an earlier Forge a Bond left them. */
+export const startingWorldWithBonds = fc.record({
+  vows: fc.tuple(startingVows, startingVows),
+  connections: fc.array(fc.record({ ...startingConnection, bonded: fc.boolean() }), { maxLength: 3 }),
 });
 
 /** Put a generated fixture into a fresh model; returns it in world.js's fixture shape. */
@@ -430,11 +503,12 @@ export function applyFixture(model, { vows = [], connections = [] } = {}) {
       if (swornTo !== null) sworn.push([vow, out.vows.at(-1), swornTo]);
     }
   });
-  for (const { name, rank: r, boxes, holderPick } of connections) {
+  for (const { name, rank: r, boxes, holderPick, bonded = false } of connections) {
     const holder = M.pick(model.pcs, holderPick);
     const connection = M.addConnection(model, { name, rank: r, holder });
     connection.ticks = boxes * TICKS_PER_BOX;
-    out.connections.push({ ref: connection.ref, name, rank: r, ticks: connection.ticks, holder });
+    connection.bonded = bonded === true;
+    out.connections.push({ ref: connection.ref, name, rank: r, ticks: connection.ticks, holder, bonded: connection.bonded });
   }
   for (const [vow, entry, pick] of sworn) {
     const connection = M.pick(model.connections, pick);

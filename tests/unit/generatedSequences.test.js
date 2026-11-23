@@ -32,12 +32,16 @@
  * A reduced failure becomes an ordinary test in "sequences that once failed",
  * below — the corpus only finds; those keep.
  *
- * Two corpora, both fixed-seed, so a pull request runs the same sequences
- * every time: vows and connections, and "the table" — the same commands with
+ * Three corpora, all fixed-seed, so a pull request runs the same sequences
+ * every time: vows and connections; "the table" — the same commands with
  * sessions ended and begun, pages reloaded and connections dropped among
- * them. A broader run is on demand:
+ * them; and "bonds already forged" (issue #373 slice 0) — the vow and
+ * connection commands in a world where some connections start bonded, with
+ * Develop Your Relationship as the roll it then is, the roll a vow fulfilled
+ * for a bonded connection leaves its roller, and pages reloaded among them.
+ * A broader run is on demand:
  *
- *   SEQUENCE_RUNS=2000 SEQUENCE_TABLE_RUNS=400 SEQUENCE_SEED=$RANDOM npx vitest run tests/unit/generatedSequences.test.js
+ *   SEQUENCE_RUNS=2000 SEQUENCE_TABLE_RUNS=400 SEQUENCE_BONDED_RUNS=800 SEQUENCE_SEED=$RANDOM npx vitest run tests/unit/generatedSequences.test.js
  *
  * Nothing here is mocked (tests/helpers/sequence/world.js says why): the
  * modules on every simulated page are the real ones.
@@ -48,9 +52,10 @@ import fc from 'fast-check';
 import { bootSequenceTable, usableTable, SequenceWorld, PCS } from '../helpers/sequence/world.js';
 import * as M from '../helpers/sequence/model.js';
 import {
-  AddConnection, AddVow, BeginSession, DevelopRelationship, DropAndRejoin, EndSession, ForgeBond, FulfilVow, ReachMilestone,
-  RecommitVow, Reload, RenameConnection,
-  RepeatLastPress, applyFixture, compare, resetTally, startingWorld, tableCommands, tally, vowAndConnectionCommands,
+  AddConnection, AddVow, BeginSession, DevelopBondedRelationship, DevelopRelationship, DropAndRejoin, EndSession, ForgeBond, FulfilVow,
+  ReachMilestone, RecommitVow, Reload, RenameConnection,
+  RepeatLastPress, TakeBondRoll, applyFixture, bondedCommands, compare, resetTally, startingWorld, startingWorldWithBonds, tableCommands, tally,
+  vowAndConnectionCommands,
 } from '../helpers/sequence/commands.js';
 
 // The fixed corpus a pull request runs. Chosen once; changing it changes which
@@ -58,6 +63,7 @@ import {
 const CORPUS_SEED = 302;
 const RUNS         = Number(process.env.SEQUENCE_RUNS) || 100;
 const TABLE_RUNS   = Number(process.env.SEQUENCE_TABLE_RUNS) || 25;
+const BONDED_RUNS  = Number(process.env.SEQUENCE_BONDED_RUNS) || 100;
 const MAX_COMMANDS = Number(process.env.SEQUENCE_MAX_COMMANDS) || 20;
 const SEED         = process.env.SEQUENCE_SEED ? Number(process.env.SEQUENCE_SEED) : CORPUS_SEED;
 const PATH         = process.env.SEQUENCE_PATH || undefined;
@@ -75,6 +81,18 @@ const TABLE_KINDS = [
   'EndSession:focus', 'EndSession:no focus', 'BeginSession:vignette', 'BeginSession:no vignette',
   'Reload:the GM', 'Reload:a player', 'DropAndRejoin:the GM', 'DropAndRejoin:a player',
   'ReachMilestone', 'FulfilVow', 'FulfilVow:deepened its connection', 'DevelopRelationship', 'ForgeBond', 'pressed by two at once',
+];
+
+/**
+ * What the bonded corpus is for: a bonded connection's own roll, each way and
+ * with a rank raised by a match; a vow fulfilled for one — the roll offered,
+ * then taken; a vow fulfilled for one not yet bonded beside it; and a GM's
+ * reload among them.
+ */
+const BONDED_KINDS = [
+  'DevelopBondedRelationship', 'DevelopBondedRelationship:strong_hit', 'DevelopBondedRelationship:weak_hit', 'DevelopBondedRelationship:miss',
+  'DevelopBondedRelationship:raised its rank', "FulfilVow:offered its bonded connection's roll", 'TakeBondRoll',
+  'FulfilVow:deepened its connection', 'ForgeBond', 'DevelopRelationship', 'Reload:the GM', 'pressed by two at once',
 ];
 
 let table;
@@ -130,6 +148,20 @@ describe('generated sequences: the table — sessions, reloads, dropped connecti
     await fc.assert(property, { seed: SEED, path: PATH, numRuns: TABLE_RUNS, endOnFailure: !!PATH });
     console.info(`generated table sequences (seed ${SEED}, ${TABLE_RUNS} runs): ${[...tally].sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);
     if (!PATH && SEED === CORPUS_SEED && TABLE_RUNS >= 25) expect(TABLE_KINDS.filter(kind => !tally.get(kind)), 'kinds the table corpus never ran').toEqual([]);
+  }, 600_000);
+});
+
+describe('generated sequences: bonds already forged', () => {
+  it(`${BONDED_RUNS} sequences of up to ${MAX_COMMANDS} commands in a world with bonded connections: their roll, and the roll a fulfilled vow leaves`, async () => {
+    const property = fc.asyncProperty(
+      startingWorldWithBonds,
+      fc.commands(bondedCommands(), { maxCommands: MAX_COMMANDS, size: 'max' }),
+      async (fixture, commands) => { await fc.asyncModelRun(() => begin(fixture), commands); },
+    );
+    resetTally();
+    await fc.assert(property, { seed: SEED, path: PATH, numRuns: BONDED_RUNS, endOnFailure: !!PATH });
+    console.info(`generated bonded sequences (seed ${SEED}, ${BONDED_RUNS} runs): ${[...tally].sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);
+    if (!PATH && SEED === CORPUS_SEED && BONDED_RUNS >= 100) expect(BONDED_KINDS.filter(kind => !tally.get(kind)), 'kinds the bonded corpus never ran').toEqual([]);
   }, 600_000);
 });
 
@@ -270,6 +302,38 @@ describe('the sequences the properties are about, written out', () => {
       connections: [{ name: 'Thess', rank: 'formidable', boxes: 2, holderPick: 1 }],
     });
     expect(world.observe().connections).toEqual([{ ref: 'c2', name: 'Thess', rank: 'formidable', ticks: 16, bonded: false }]);
+  });
+
+  it('a vow fulfilled for a connection already bonded marks nothing on her track: its roller is offered her roll, once, and it pays by its dice', async () => {
+    const { world } = await play([
+      new FulfilVow(0, 0, [3, 9]),                   // v1: 10 boxes vs 3,9 — a strong hit; c2 is bonded: no marks, a roll offered to Kira
+      new TakeBondRoll(0, 5, [4, 4], true),          // Pat and the GM both press it: 5 +2 (dangerous) vs 4,4 — a strong hit with a match, once
+      new RepeatLastPress(),                         // the offer is spent
+    ], {
+      vows: [[{ name: 'Find Kade', rank: 'formidable', boxes: 10, swornTo: 0 }], []],
+      connections: [{ name: 'Sable', rank: 'dangerous', boxes: 6, holderPick: 1, bonded: true }],
+    });
+    const seen = world.observe();
+    expect(seen.connections, 'no progress; a rank for the match').toEqual([{ ref: 'c2', name: 'Sable', rank: 'formidable', ticks: 24, bonded: true }]);
+    expect(seen.pcs['pc-ash'].bonds, 'her bond on Ash\'s sheet follows').toEqual([{ connection: 'c2', name: 'Sable', rank: 'formidable', ticks: 24, forged: true }]);
+    expect(seen.legacy, 'the vow\'s box on quests, the roll\'s two ticks on bonds').toEqual({ quests: 4, bonds: 2 });
+    expect(seen.rollOffers).toEqual([]);
+    expect(world.card(f => f.payoffFailureCard), 'no "Vow payoff incomplete" card').toBe(null);
+  });
+
+  it('a connection bonded in play: developed again it is a roll +her rank — a weak hit is momentum to its roller, a miss nothing, and no progress either way', async () => {
+    const { world } = await play([
+      new ForgeBond(0, 0, [1, 3]),                   // Kira: c1, 4 boxes vs 1,3 — a strong hit: bonded
+      new DevelopBondedRelationship(0, 0, 2, [7, 3]),  // 2 +3 (formidable) vs 7,3 — a weak hit: +2 momentum to Kira
+      new RepeatLastPress(),
+      new DevelopBondedRelationship(0, 0, 1, [9, 9]),  // 1 +3 vs 9,9 — a miss, with a match: nothing
+      new Reload(0),                                 // the GM's page
+      new DevelopBondedRelationship(0, 0, 6, [2, 8]),  // 6 +3 vs 2,8 — a strong hit: two ticks on bonds
+    ], { connections: [{ name: 'Sable', rank: 'formidable', boxes: 4, holderPick: 0 }] });
+    const seen = world.observe();
+    expect(seen.connections).toEqual([{ ref: 'c1', name: 'Sable', rank: 'formidable', ticks: 16, bonded: true }]);
+    expect([seen.pcs['pc-kira'].momentum, seen.pcs['pc-ash'].momentum]).toEqual([4, 2]);
+    expect(seen.legacy.bonds, 'the forge\'s box and the strong hit\'s two ticks').toBe(6);
   });
 
   it('the GM\'s connection drops and comes back: her page stands down, a move made meanwhile is not resolved, and her reload brings the table back', async () => {

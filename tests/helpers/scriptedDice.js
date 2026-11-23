@@ -8,8 +8,9 @@
  *
  *   - The move's dice. `rollDie` (src/moves/resolver.js) maps Math.random() to
  *     a face as floor(r × faces) + 1. A command names its dice as faces;
- *     `uniformFor` / `progressDice` turn them into the Math.random values that
- *     produce them, and `installMoveDice` serves them to rollDie.
+ *     `uniformFor` / `progressDice` / `actionDice` turn them into the
+ *     Math.random values that produce them, and `installMoveDice` serves them
+ *     to rollDie.
  *   - Everything else that reads Math.random on the way: tests/setup.js's
  *     `foundry.utils.randomID` (16 reads an id), an oracle roll, a mischief
  *     aside. `installSeededRandom(seed)` makes those a function of the seed.
@@ -38,6 +39,11 @@ export function uniformFor(face, faces) {
 /** A progress roll's reads — and a recommit's: the two challenge dice. */
 export function progressDice(challenge) {
   return [uniformFor(challenge[0], 10), uniformFor(challenge[1], 10)];
+}
+
+/** An action roll's reads, in the order the resolver makes them: the two challenge dice, then the action die. */
+export function actionDice(actionDie, challenge) {
+  return [...progressDice(challenge), uniformFor(actionDie, 6)];
 }
 
 /**

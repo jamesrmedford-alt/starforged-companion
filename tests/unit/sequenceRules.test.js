@@ -21,7 +21,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  DEEPEN_MARKS, LEGACY_REWARD_TICKS, MOMENTUM_MAX, PROGRESS_TICKS, RANKS, TICKS_PER_BOX, bondReward, deepen, fulfilReward, gainMomentum,
+  ACTION_SCORE_MAX, BONDED_DEVELOP_LEGACY_TICKS, BONDED_DEVELOP_MOMENTUM, BOND_ROLL_ADDS, DEEPEN_MARKS, LEGACY_REWARD_TICKS, MOMENTUM_MAX,
+  PROGRESS_TICKS, RANKS, TICKS_PER_BOX, actionScore, bondReward, bondedDevelop, deepen, fulfilReward, gainMomentum, isMatch,
   markProgress, outcomeOf, progressScore, rankAbove, rankBelow, rankOf, recommit, sheetRank,
 } from '../helpers/sequence/rules.js';
 import * as M from '../helpers/sequence/model.js';
@@ -83,6 +84,46 @@ describe('the rules are the game\'s, read from its text', () => {
   it.skipIf(!HAVE_VENDOR)('Reach a Milestone and Develop Your Relationship mark progress per the rank, and roll nothing', () => {
     expect(moveText('Reach_a_Milestone_0d7f13818c1c19ed.json')).toMatch(/you may mark progress per the rank of the vow/);
     expect(moveText('Develop_Your_Relationship_141aec8b92efd14b.json')).toMatch(/you may mark progress per the rank of the connection/);
+  });
+
+  it.skipIf(!HAVE_VENDOR)('a connection already bonded takes a roll +their rank and no progress — Develop Your Relationship says so', () => {
+    const text = moveText('Develop_Your_Relationship_141aec8b92efd14b.json').replace(/\s+/g, ' ');
+    expect(text).toMatch(/completing a quest to their benefit/);
+    expect(text).toMatch(/If you already share a bond with the connection, do not mark progress\. Instead, roll \+their rank to learn the impact on your legacy/);
+    const adds = Object.fromEntries([...text.matchAll(/(troublesome|dangerous|formidable|extreme|epic)=\+(\d)/g)].map(([, rank, n]) => [rank, Number(n)]));
+    expect(adds).toEqual(BOND_ROLL_ADDS);
+    expect(text).toMatch(/On a __strong hit__, mark 2 ticks on your bonds legacy track/);
+    expect(text).toMatch(/On a __strong hit with a match__, you may also [^.]* raise their rank by one \(if not already epic\)/);
+    expect(text).toMatch(/On a __weak hit__, take \+2 momentum/);
+    expect(text).toMatch(/On a __miss__, take no lasting benefit/);
+    expect([BONDED_DEVELOP_LEGACY_TICKS, BONDED_DEVELOP_MOMENTUM]).toEqual([2, 2]);
+  });
+
+  it('the recorded decisions: the table raises the rank on a strong hit with a match, and a vow fulfilled for a bonded connection offers that roll', () => {
+    const decisions = fs.readFileSync(path.join(ROOT, 'docs/decisions.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(decisions).toContain('with a match raises the connection\'s rank by one');
+    expect(decisions).toContain('the fulfilment\'s payoff marks nothing on the relationship track');
+    expect(decisions).toContain('offers one bonded Develop Your Relationship roll');
+    expect(decisions).toContain('once per vow');
+  });
+
+  it('an action roll: the die plus what is added, never above 10; ties go to the challenge dice; two dice of one value are a match', () => {
+    const summary = fs.readFileSync(path.join(ROOT, 'docs/rules-reference/rulebook-summary.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(summary).toMatch(/Ties go to the challenge dice\. The action score caps at 10/);
+    expect(summary).toMatch(/If both challenge dice show the same value, that's a \*\*match\*\*/);
+    expect(ACTION_SCORE_MAX).toBe(10);
+    expect([actionScore(1, 1), actionScore(6, 3), actionScore(6, 5)]).toEqual([2, 9, 10]);
+    expect([isMatch([4, 4]), isMatch([4, 5])]).toEqual([true, false]);
+  });
+
+  it('a bonded Develop Your Relationship by its dice: 2 bonds ticks on a strong hit, +2 momentum on a weak one, a rank on a strong hit with a match', () => {
+    expect(bondedDevelop('dangerous', 4, [5, 3])).toEqual({ outcome: 'strong_hit', bondsTicks: 2, momentum: 0, rank: 'dangerous' });   // 6 beats both
+    expect(bondedDevelop('dangerous', 4, [6, 3])).toEqual({ outcome: 'weak_hit', bondsTicks: 0, momentum: 2, rank: 'dangerous' });     // a tie is not beaten
+    expect(bondedDevelop('dangerous', 4, [6, 9])).toEqual({ outcome: 'miss', bondsTicks: 0, momentum: 0, rank: 'dangerous' });
+    expect(bondedDevelop('dangerous', 4, [3, 3])).toEqual({ outcome: 'strong_hit', bondsTicks: 2, momentum: 0, rank: 'formidable' });  // with a match
+    expect(bondedDevelop('epic', 6, [9, 9]), 'epic stays epic').toEqual({ outcome: 'strong_hit', bondsTicks: 2, momentum: 0, rank: 'epic' });
+    expect(bondedDevelop('troublesome', 1, [2, 2]), 'a match on a miss raises nothing').toEqual({ outcome: 'miss', bondsTicks: 0, momentum: 0, rank: 'troublesome' });
+    expect(bondedDevelop('formidable', 2, [5, 5]), 'nor on a tie').toEqual({ outcome: 'miss', bondsTicks: 0, momentum: 0, rank: 'formidable' });
   });
 
   it.skipIf(!HAVE_VENDOR)('a session: a vignette at its beginning, or a focus noted at its end, is +1 momentum to every player — never past +10', () => {
@@ -154,6 +195,40 @@ describe('the model moves by those rules', () => {
     expect(model.legacy.bonds).toBe(2);
   });
 
+  it('a connection already bonded: developed, it takes its roll and no progress; a vow fulfilled for it leaves its roller that roll, once', () => {
+    const model = fresh();
+    const sable = M.addConnection(model, { name: 'Sable', rank: 'dangerous', holder: 'pc-ash' });
+    sable.ticks = 24;
+    expect(M.forgeBond(model, sable, [1, 2])).toBe('strong_hit');
+    expect(model.legacy.bonds).toBe(2);
+
+    expect(M.developBondedRelationship(model, sable, 'pc-ash', 4, [6, 3])).toEqual({ outcome: 'weak_hit', raised: false });
+    expect(model.momentum).toEqual({ 'pc-kira': 2, 'pc-ash': 4 });   // the roller's, and only theirs
+    expect(sable.ticks, 'no progress').toBe(24);
+
+    const vow = M.addVow(model, { pc: 'pc-kira', name: 'Find Kade', rank: 'epic' });
+    M.swearTo(model, vow, sable);
+    vow.ticks = 40;
+    expect(M.fulfilVow(model, vow, [1, 1])).toBe('strong_hit');
+    expect(sable.ticks, 'a fulfilled vow marks nothing on a forged bond').toBe(24);
+    expect(M.expected(model).rollOffers).toEqual([{ connection: sable.ref, to: 'pc-kira' }]);
+
+    expect(M.takeBondRoll(model, vow, 6, [7, 7])).toEqual({ outcome: 'strong_hit', raised: true });   // 8 beats 7 and 7, a match
+    expect(sable).toMatchObject({ rank: 'formidable', ticks: 24 });
+    expect(model.legacy.bonds).toBe(4);
+    expect(M.expected(model).rollOffers, 'taken: offered no more').toEqual([]);
+    expect(M.bondRollOffers(model)).toEqual([]);
+  });
+
+  it('momentum from a bonded weak hit is never past +10', () => {
+    const model = fresh();
+    const sable = M.addConnection(model, { name: 'Sable', rank: 'troublesome', holder: 'pc-kira' });
+    sable.bonded = true;
+    model.momentum['pc-kira'] = 9;
+    M.developBondedRelationship(model, sable, 'pc-kira', 3, [4, 1]);    // 4 against 4 and 1: a weak hit
+    expect(model.momentum['pc-kira']).toBe(10);
+  });
+
   it('a session: ended with a focus and begun with a vignette, every character gains one momentum each time; with neither, none', () => {
     const model = fresh();
     expect(M.canPlay(model)).toBe(true);
@@ -189,6 +264,7 @@ describe('the model moves by those rules', () => {
     expect(M.expected(model)).toEqual({
       legacy: { quests: 1, bonds: 0 },
       links: { v1: { connection: 'c3', name: 'Sable' } },
+      rollOffers: [],
       pcs: {
         'pc-kira': {
           momentum: 2, legacyOnSheet: { quests: 1, bonds: 0 },

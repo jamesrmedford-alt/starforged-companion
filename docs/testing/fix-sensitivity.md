@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344, #364 and the three rounds of open items found while fixing #364
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344, #364 and the three rounds of open items found while fixing #364, #373 (slice 0)
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -38,7 +38,10 @@ round — the eighteen those left, and the ones found while settling them —
 the same day, and for issue #302 slice C — five defects put back to show that
 the generated sequences catch them — on 2026-11-22 (injected into `72d9ebe`),
 and for known-issues VOW-CONNECTION-LINK-BY-NAME — the defect found beside
-those sequences, fixed at the maintainer's request — the same day.
+those sequences, fixed at the maintainer's request — the same day, and for
+issue #373's slice 0 — a vow fulfilled for a bonded connection, a vow card
+with no Link, and two defects put back into the sequences' bonded corpus — on
+2026-11-23 (injected into `e882449`).
 To reproduce:
 
 ```bash
@@ -363,6 +366,11 @@ node scripts/fix-sensitivity.mjs \
 
 # VOW-CONNECTION-LINK-BY-NAME — the defect found beside the generated sequences
 node scripts/fix-sensitivity.mjs d87125d --md details.md
+
+# issue #373 slice 0 — the two fixes, and the bonded corpus by two defects put back
+node scripts/fix-sensitivity.mjs 5ee20522 8c6f1a11 \
+  --inject scripts/defects/seq-vow-deepen-bonded-marks-track.patch \
+  --inject scripts/defects/seq-bonded-develop-rolls-without-rank.patch --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -440,6 +448,8 @@ one, reduced by fast-check to the shortest failing sequence.
 | A sworn vow's connection is found by its name, not its card's id (VOW-CONNECTION-LINK-BY-NAME's defect, the reader's half) | `seq-vow-link-found-by-name.patch` | 1 — the vows-and-connections corpus, and nothing else: with the name kept current by the rename, every hand-written test still passes; it takes two cards of one name at the fulfilment, which the corpus reaches |
 | A renamed card no longer renames the vows sworn to it | `seq-vow-link-name-not-renamed.patch` | 4 — both corpora; "a vow sworn to a connection deepens that one"; "with her card renamed, the progress is still hers" |
 | A fulfilled vow deepens its connection by one mark whatever its rank | `seq-vow-deepen-one-mark.patch` | 3 — the vows-and-connections corpus; "a vow sworn to a connection deepens that one"; "missed and recommitted" |
+| A vow's deepen marks the track of a connection already bonded (issue #373 decision 4) | `seq-vow-deepen-bonded-marks-track.patch` | 8 — the bonded corpus (reduced to one bonded connection and one `FulfilVow`); "a vow fulfilled for a connection already bonded marks nothing on her track"; six in `vowDeepenBondedOffersRoll.test.js` |
+| A bonded Develop Your Relationship rolls without the rank (issue #314 Q06's defect) | `seq-bonded-develop-rolls-without-rank.patch` | 2 — the bonded corpus (reduced to one roll); "a connection bonded in play: developed again it is a roll +her rank" |
 
 The first version of the commands caught the first of these and missed the
 next two: it had no connections sharing a name at the start, and its only
@@ -1778,11 +1788,27 @@ a test that found no defect: it pins behaviour that already held. The accepted
 rows are SOJOURN-BOTH-WRITES-REFUSED, TWO-OWED-SESSIONS-ONE-MARK,
 SITE-LADDER-WHOLE-WORD-FIRST-MATCH and SHIP-SEED-SENTENCE-INITIAL-CAPITAL.
 
+### Issue #373 slice 0 — the faults on the long haul's path
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| VOW-DEEPEN-BONDED-MARKS-TRACK | 5ee20522 | revert, and `seq-vow-deepen-bonded-marks-track.patch` | 9 — `vowDeepenBondedOffersRoll.test.js` (the fulfilment, the won-fight card's 🤝 and a payoff card's Retry mark nothing on a bonded connection's track and offer the roll once) and the generated sequences' bonded corpus with its written-out sequence |
+| VOW-CARD-LINK-ONLY-AT-POSTING | 8c6f1a11 | revert | 2 — `vowCardLinkAfterConnection.test.js` (a vow recorded before its connection is met gains its Link when one is made; a rename is followed); 3 more fail only for the missing export |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
 pass either way by design. The script lists every new test that passed both
 ways; each was read and is a control:
+
+*Issue #373 slice 0:* 9 new tests pass both ways. For the bonded-vow fix,
+two are named `control: …` (a connection not yet bonded is deepened as
+before, by the fulfilment and by the won-fight card), five are the model's
+own rules read from the game's text (`sequenceRules.test.js` — they test the
+model, not `src/`), and one is the bonded roll's weak hit, which the fix did
+not touch (`seq-bonded-develop-rolls-without-rank.patch` shows it is
+sensitive). For the vow card's Link, one: a card already linked, and one
+whose vow is gone, are left as they are.
 
 *Issue #347's open items:* 21 new tests pass both ways — 19 are named
 `control: …` (a page whose connection never dropped, an in-step sheet, a
@@ -19147,3 +19173,82 @@ Test files: `tests/unit/generatedSequences.test.js`, `tests/unit/vowConnectionLi
 - New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a link made before the fix still develops the connection its name names
 - New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › a vow sworn to a connection develops that connection, whatever its card is called (VOW-CONNECTION-LINK-BY-NAME) a name two cards share cannot say which card: a link made before the fix stays by its name
 - New test passing with and without the fix (a control?): tests/unit/xcardDeletedNpcReferencesCleared.test.js › issue #364 XCARD-NPC-DELETE-SKIPS-TEARDOWN — the X-Card's delete of an NPC clears what names them a namesake is left, and the vow's link is by name alone (made before links carried a card's id): the name still means someone, so it keeps its link
+
+### 5ee20522 — fix: a vow fulfilled for a bonded connection offers the bonded roll, and marks nothing
+
+Test files: `tests/unit/connectionLinkNoFallback.test.js`, `tests/unit/generatedSequences.test.js`, `tests/unit/sequenceRules.test.js`, `tests/unit/vowDeepenBondedOffersRoll.test.js`. Source restored: 2 file(s).
+
+- With the fix: 48 passed, 0 failed.
+- Without it: 9 failed (9 new; 0 only for a missing export); 39 still pass (8 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 8 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/connectionLinkNoFallback.test.js › a vow deepens the connection it names, or none (DEEPEN-LINK-FALLBACK) control: the link names a connection already bonded — found, offered its roll, not marked | AssertionError: expected { ok: true } to match object { ok: true, bonded: true } |
+| (new) tests/unit/generatedSequences.test.js › generated sequences: bonds already forged 100 sequences of up to 20 commands in a world with bonded connections: their roll, and the roll a fulfilled vow leaves | Error: Property failed after 35 tests |
+| (new) tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a vow fulfilled for a connection already bonded marks nothing on her track: its roller is offered her roll, once, and it pays by its dice | AssertionError: after FulfilVow(v1 "Find Kade" of pc-kira, 40 ticks vs 3,9 → strong_hit; sworn to c2 "Sable", already bonded): expected { …(7) } to deeply equal |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) marks nothing on the relationship track, and offers the roller one bonded Develop Your Relationship roll | AssertionError: the forged bond's track is not marked: expected 40 to be 24 // Object.is equality |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) the link by the connection's card id takes the same path, under the card's name now | AssertionError: expected 40 to be 24 // Object.is equality |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) the roller's pick rolls +their rank: a strong hit marks 2 ticks on the bonds legacy and no progress | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) once per vow: the won-fight card's 🤝 after the fulfilment offers no second roll | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) once per vow: the won-fight card's 🤝 first offers the roll, and the fulfilment offers none | AssertionError: the press marks nothing on a forged bond: expected 40 to be 24 // Object.is equality |
+| (new) tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) an offer card the world refuses is not recorded as given: it goes to the GMs, and their Retry offers it once | AssertionError: expected 40 to be 24 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a connection bonded in play: developed again it is a roll +her rank — a weak hit is momentum to its roller, a miss nothing, and no progress either way
+- New test passing with and without the fix (a control?): tests/unit/sequenceRules.test.js › the rules are the game's, read from its text the recorded decisions: the table raises the rank on a strong hit with a match, and a vow fulfilled for a bonded connection offers that roll
+- New test passing with and without the fix (a control?): tests/unit/sequenceRules.test.js › the rules are the game's, read from its text an action roll: the die plus what is added, never above 10; ties go to the challenge dice; two dice of one value are a match
+- New test passing with and without the fix (a control?): tests/unit/sequenceRules.test.js › the rules are the game's, read from its text a bonded Develop Your Relationship by its dice: 2 bonds ticks on a strong hit, +2 momentum on a weak one, a rank on a strong hit with a match
+- New test passing with and without the fix (a control?): tests/unit/sequenceRules.test.js › the model moves by those rules a connection already bonded: developed, it takes its roll and no progress; a vow fulfilled for it leaves its roller that roll, once
+- New test passing with and without the fix (a control?): tests/unit/sequenceRules.test.js › the model moves by those rules momentum from a bonded weak hit is never past +10
+- New test passing with and without the fix (a control?): tests/unit/vowDeepenBondedOffersRoll.test.js › control: a connection not yet bonded is deepened as before the fulfilment marks the vow's rank in milestones on the relationship track, and offers no roll
+- New test passing with and without the fix (a control?): tests/unit/vowDeepenBondedOffersRoll.test.js › control: a connection not yet bonded is deepened as before the won-fight card's 🤝 marks it too, once
+
+### 8c6f1a11 — fix: a vow's card offers its Link once the table has a connection
+
+Test files: `tests/unit/vowCardLinkAfterConnection.test.js`. Source restored: 3 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 5 failed (5 new; 3 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/vowCardLinkAfterConnection.test.js › the vow card's Link row, as content a card posted with no connections has no Link; given one, it has the row and the hint that names it | TypeError: (0 , withVowLinkRow) is not a function |
+| (new) (API) tests/unit/vowCardLinkAfterConnection.test.js › the vow card's Link row, as content the names are replaced, not added to; with none left the row goes; the rest of the card is untouched | TypeError: (0 , withVowLinkRow) is not a function |
+| (new) tests/unit/vowCardLinkAfterConnection.test.js › a vow recorded before its connection is met its card gains the Link when the connection is created — and the link can then be made from it | AssertionError: the card follows the table: expected '&lt;div class="sf-card sf-player-vow">&lt;d…' to contain '&lt;option value="Tamsin Vey">Tamsin Vey…' |
+| (new) tests/unit/vowCardLinkAfterConnection.test.js › a vow recorded before its connection is met a second connection is offered beside the first; a renamed one is offered under its new name | AssertionError: expected '&lt;div class="sf-card sf-player-vow">&lt;d…' to contain '&lt;option value="Vance Oduya">' |
+| (new) (API) tests/unit/vowCardLinkAfterConnection.test.js › a vow recorded before its connection is met only the canonical GM writes the shared card: a player's client changes nothing | TypeError: (0 , refreshVowCardLinkRows) is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/vowCardLinkAfterConnection.test.js › a vow recorded before its connection is met a card already linked, and one whose vow is gone, are left as they are
+
+### `scripts/defects/seq-vow-deepen-bonded-marks-track.patch` — issue #373 decision 4 (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK) — a vow's deepen marks the relationship track of a connection whose bond is already forged, as it did before the decision; the move's text gives a bonded connection a roll +their rank and no progress
+
+Test files: `tests/unit/generatedSequences.test.js`, `tests/unit/vowDeepenBondedOffersRoll.test.js`.
+
+- On HEAD: 29 passed, 0 failed.
+- With the defect: 8 failed (0 only for a missing export); 21 still pass.
+- Verdict: **sensitive** — 8 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: bonds already forged 100 sequences of up to 20 commands in a world with bonded connections: their roll, and the roll a fulfilled vow leaves | Error: Property failed after 35 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a vow fulfilled for a connection already bonded marks nothing on her track: its roller is offered her roll, once, and it pays by its dice | AssertionError: after FulfilVow(v1 "Find Kade" of pc-kira, 40 ticks vs 3,9 → strong_hit; sworn to c2 "Sable", already bonded): expected { …(7) } to deeply equal |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) marks nothing on the relationship track, and offers the roller one bonded Develop Your Relationship roll | AssertionError: the forged bond's track is not marked: expected 40 to be 24 // Object.is equality |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) the link by the connection's card id takes the same path, under the card's name now | AssertionError: expected 40 to be 24 // Object.is equality |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) the roller's pick rolls +their rank: a strong hit marks 2 ticks on the bonds legacy and no progress | TypeError: Cannot read properties of undefined (reading '_id') |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) once per vow: the won-fight card's 🤝 after the fulfilment offers no second roll | AssertionError: expected [] to have a length of 1 but got +0 |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) once per vow: the won-fight card's 🤝 first offers the roll, and the fulfilment offers none | AssertionError: the press marks nothing on a forged bond: expected 40 to be 24 // Object.is equality |
+| tests/unit/vowDeepenBondedOffersRoll.test.js › a vow fulfilled for a connection already bonded (issue #373 decision 4) an offer card the world refuses is not recorded as given: it goes to the GMs, and their Retry offers it once | AssertionError: expected 40 to be 24 // Object.is equality |
+
+### `scripts/defects/seq-bonded-develop-rolls-without-rank.patch` — issue #373 slice 0 — a bonded Develop Your Relationship rolls the action die alone, without the connection's rank (issue #314 Q06's defect: the move's text is "roll +their rank … troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5")
+
+Test files: `tests/unit/generatedSequences.test.js`.
+
+- On HEAD: 21 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 19 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/generatedSequences.test.js › generated sequences: bonds already forged 100 sequences of up to 20 commands in a world with bonded connections: their roll, and the roll a fulfilled vow leaves | Error: Property failed after 21 tests |
+| tests/unit/generatedSequences.test.js › the sequences the properties are about, written out a connection bonded in play: developed again it is a roll +her rank — a weak hit is momentum to its roller, a miss nothing, and no progress either way | AssertionError: after DevelopBondedRelationship(c1 "Sable", picked by pc-kira, 2 +3 (formidable) vs 7,3 → weak_hit): expected { …(7) } to deeply equal { …(7) } |

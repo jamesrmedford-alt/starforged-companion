@@ -1,5 +1,5 @@
 {
-  "about": "Caps, models and prices for AI exploration runs (explore.mjs; issue #302 slice D). A live run stops at whichever cap it reaches first, and a model with no price here is refused before it is called. Prices are dollars per million tokens; check them against Anthropic's price list before a run and correct them here when they change — the run's cost is computed from this table, not billed from it. notMemory: stores the observer finds a fact in and does not count as memory — diagnostic logs no narration is built from. ignoreWindows: windows on the player's screen the player is not shown — the game system's own first-start prompt.",
+  "about": "Caps, models and prices for AI exploration runs (explore.mjs; issue #302 slice D). A live run stops at whichever cap it reaches first, and a model with no price here is refused before it is called. Prices are dollars per million tokens; check them against Anthropic's price list before a run and correct them here when they change — the run's cost is computed from this table, not billed from it. knownErrors: an error on a page that is somebody else's and is known — `match` in its text and, where given, `asker`: the path of the code that asked for the refused write (health.refused). notMemory: stores the observer finds a fact in and does not count as memory — diagnostic logs no narration is built from. ignoreWindows: windows on the player's screen the player is not shown — the game system's own first-start prompt.",
   "caps": {
     "actions": 30,
     "calls": 100,
@@ -12,8 +12,8 @@
     "maxTokens": 6000
   },
   "prices": {
-    "asOf": "2026-11-03",
-    "notes": "Standard rates. A cache write is charged at 1.25 times input (lib/budget.mjs). Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
     "usdPerMillionTokens": {
       "claude-opus-5-5": {
         "input": 4,
@@ -27,14 +27,22 @@
       },
       "claude-haiku-5-5": {
         "input": 0.1,
-        "output": 0.5
+        "output": 0.5,
+        "cacheRead": 0.01
       }
     }
   },
   "ignoreWindows": [
     "Welcome"
   ],
-  "knownErrors": [],
+  "knownErrors": [
+    {
+      "id": "PLAYER-CLIENT-ITEM-CREATE-REFUSED",
+      "match": "lacks permission to create Item",
+      "asker": "/systems/foundry-ironsworn/",
+      "why": "The game system's own createActor hook adds a bondset Item to every new character Actor, from every client; a player's client is refused on an NPC card it does not own, and the refusal is an uncaught error on its page. Known only where the refused write was asked for by the system's code with no frame of the module's (health.refused)."
+    }
+  ],
   "notMemory": [
     "journal \"Pacing Telemetry\""
   ]

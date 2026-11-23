@@ -36,7 +36,7 @@ import { simulateTable, USERS, MODULE_ID } from "../multiClient.js";
 import { parseHTML } from "../cardDom.js";
 import { withLiveDocuments } from "../liveDocuments.js";
 import { scriptClaude } from "../faults.js";
-import { installMoveDice, installSeededRandom, progressDice } from "../scriptedDice.js";
+import { actionDice, installMoveDice, installSeededRandom, progressDice } from "../scriptedDice.js";
 import { rankOf, sheetRank, TRACK_TICKS } from "./rules.js";
 import { CampaignStateSchema } from "../../../src/schemas.js";
 
@@ -53,6 +53,14 @@ const isVow  = (item) => item.type === "progress" && item.system?.subtype === "v
 const isBond = (item) => item.type === "progress" && item.system?.subtype === "bond";
 const refNumber = (ref) => Number(String(ref).replace(/^\D+/, "")) || Number.MAX_SAFE_INTEGER;
 const byRef = (key) => (a, b) => refNumber(a[key]) - refNumber(b[key]);
+/**
+ * A vow's payoff offering the Develop Your Relationship roll of a connection
+ * already bonded: a connection picker with that connection alone, which says
+ * why no progress was marked. Told from a move card's picker by those words —
+ * the card carries no flag of its own.
+ */
+const isBondRollOffer = (message) => flagsOf(message).connectionPicker === true
+  && /already share a bond/i.test(String(message.content ?? ""));
 
 /** Boot the table every sequence in a file plays on. */
 export async function bootSequenceTable() {
@@ -92,7 +100,7 @@ export class SequenceWorld {
    *
    * @param {Object} table
    * @param {{ vows?: Array<{ ref: string, pc: string, name: string, rank: string, ticks: number, swornTo?: string, swornToRef?: string }>,
-   *   connections?: Array<{ ref: string, name: string, rank: string, ticks: number, holder: string }> }} [fixture]
+   *   connections?: Array<{ ref: string, name: string, rank: string, ticks: number, holder: string, bonded?: boolean }> }} [fixture]
    */
   static async start(table, fixture = {}) {
     SequenceWorld.#random?.restore();
@@ -198,13 +206,14 @@ export class SequenceWorld {
     this.vowIds.set(ref, id);
   }
 
-  #seedConnection({ ref, name, rank, ticks, holder }) {
+  /** A connection as play left it — `bonded`: the bond forged, its holder's bond Item completed with it. */
+  #seedConnection({ ref, name, rank, ticks, holder, bonded = false }) {
     const hostId = this.#hostIdFor(ref);
     const recordId = `rec-${ref}`;
     this.table.addActor({ id: hostId, name, type: "character", flags: { [MODULE_ID]: { entityType: "connection", entityId: recordId, connection: {
-      _id: recordId, name, rank, role: "Fixer", relationshipTicks: ticks, bonded: false, active: true, history: [],
+      _id: recordId, name, rank, role: "Fixer", relationshipTicks: ticks, bonded: bonded === true, active: true, history: [],
     } } } });
-    this.table.addItem(holder, { name, type: "progress", system: { subtype: "bond", rank, current: ticks },
+    this.table.addItem(holder, { name, type: "progress", system: { subtype: "bond", rank, current: ticks, completed: bonded === true },
       flags: { [MODULE_ID]: { connectionId: recordId } } });
     this.connections.set(ref, { hostId, recordId });
   }
@@ -337,13 +346,29 @@ export class SequenceWorld {
     await this.quiet();
     this.client(playerOf(pc)).click(card.id, `[data-action="${button}"]`);
     await this.quiet();
-    const picker = this.card(f => f.connectionPicker && !f.resolved);
+    // The move card's picker: a vow's offer of a bonded connection's roll is a picker too, and stays open until taken.
+    const picker = this.card((f, m) => f.connectionPicker && !f.resolved && !isBondRollOffer(m));
     if (!picker) throw new Error(`sequence: no connection picker for ${action}`);
     await this.press(playerOf(pc), picker._id, `[data-action="sf-connection-pick"][data-host-id="${this.hostId(ref)}"]`, { also: doubled ? GM : null });
   }
 
   async developRelationship(ref, { pc, doubled = false }) {
     await this.#pickConnection(ref, pc, "develop", doubled);
+  }
+
+  /** The same pick for a connection already bonded: the move is a roll, +their rank. */
+  async developBondedRelationship(ref, { pc, actionDie, challenge, doubled = false }) {
+    this.dice.push(...actionDice(actionDie, challenge));
+    await this.#pickConnection(ref, pc, "develop", doubled);
+  }
+
+  /** The roll a fulfilled vow left `pc`, taken on its offer card: their player presses the connection it names. */
+  async takeBondRoll(ref, { pc, actionDie, challenge, doubled = false }) {
+    const hostId = this.hostId(ref);
+    const offer = this.card((f, m) => isBondRollOffer(m) && !f.resolved && f.actorId === pc && (f.choices ?? []).some(c => c.hostId === hostId));
+    if (!offer) throw new Error(`sequence: no open Develop Your Relationship offer for ${pc} with connection ${ref}`);
+    this.dice.push(...actionDice(actionDie, challenge));
+    await this.press(playerOf(pc), offer._id, `[data-action="sf-connection-pick"][data-host-id="${hostId}"]`, { also: doubled ? GM : null });
   }
 
   async forgeBond(ref, { pc, challenge, doubled = false }) {
@@ -481,10 +506,18 @@ export class SequenceWorld {
       return { ref, name, rank: rankOf(record.rank), ticks: record.relationshipTicks ?? 0, bonded: record.bonded === true };
     }).sort(byRef("ref"));
 
+    // The Develop Your Relationship rolls offered and not yet taken: each open
+    // offer card's one connection, and the character it is offered to.
+    const rollOffers = this.table.cards((f, m) => isBondRollOffer(m) && !f.resolved).flatMap(card => {
+      const f = flagsOf(card);
+      return (f.choices ?? []).map(c => ({ connection: hostRefs.get(c.hostId) ?? `unknown card ${c.hostId}`, to: f.actorId ?? "nobody named" }));
+    }).sort((a, b) => `${a.connection} ${a.to}`.localeCompare(`${b.connection} ${b.to}`));
+
     return {
       legacy: { quests: legacyTotal(state.legacyTracks?.quests), bonds: legacyTotal(state.legacyTracks?.bonds) },
       pcs,
       links,
+      rollOffers,
       connections,
       sessionOpen: state.sessionActive === true,
       moveInFlight: !!state.pendingMove,

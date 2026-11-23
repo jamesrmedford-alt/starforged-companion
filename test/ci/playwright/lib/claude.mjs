@@ -367,6 +367,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
       let data = null;
       try { data = JSON.parse(text); } catch { data = null; }
       if (data) {
+        entry.usage = data.usage ?? null;
         settle(data.usage ?? null);
         const ids = idNames(`${live.system}\n${live.user}`);
         const sections = sectionHeadings(live.system);
@@ -396,9 +397,11 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
     lastActivity = Date.now();
     const live = parseRequest(payload.body);
     const kind = callerKind(payload.stack);
+    // startedAt / ms: how long the page waited for this call (issue #374 A7 —
+    // a run's review could not say how long a player waits).
     const entry = {
       n: requests.length + 1, client, step, kind, model: live.model, system: live.system, user: live.user,
-      source: null, recordedStep: null, ambiguous: null,
+      source: null, recordedStep: null, ambiguous: null, startedAt: Date.now(), ms: null, usage: null,
     };
     requests.push(entry);
     try {
@@ -414,6 +417,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
         entry.ambiguous = hit.ambiguous;
         if (hit.ambiguous) log(`AMBIGUOUS ${kind} in step "${entry.step}": ${hit.ambiguous}`);
         const r = hit.exchange.response ?? {};
+        entry.usage = r.usage ?? null;
         return {
           status: 200,
           body: JSON.stringify({
@@ -430,6 +434,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
     } finally {
       pending -= 1;
       lastActivity = Date.now();
+      entry.ms = lastActivity - entry.startedAt;
     }
   }
 

@@ -126,6 +126,201 @@ the module 31%); and every run leaves a keyless replay.
 
 ---
 
+## The long haul, built: beats the observer marks, checks from the game's text, a ledger read against the helpers too (issue #373 slices 1–5) (2026-11)
+
+**Decision:** The exploration runner (`test/ci/playwright/explore.mjs`) runs
+a charter with `beats` as a long run: `charters/long-haul.json`, the
+maintainer's go-ahead 2026-11-23 ("address issue 373"). How each part is
+built, and why:
+
+- **The observer marks a beat done; the player is never asked**
+  (`lib/beats.mjs`). The player is told every beat, which one is current, and
+  what the observer sees of it — never that it is done. A beat that makes no
+  progress in eight actions is `not-exercised`; a beat with several parts
+  (four facts to plant, a track to fill) counts the eight from the last time
+  it moved, because the issue's "not reached in eight actions" would
+  otherwise give up on filling a track that takes five marks. A beat that
+  `needs` one never done is not exercised at once, for nothing.
+- **The mechanical checks read the table as data and the rules from the
+  game's text** (`lib/mechanics.mjs`, `lib/table.mjs`,
+  `tests/helpers/sequence/rules.js`): nothing in them is computed with a
+  function of `src/` (the rule of "Generated command sequences against an
+  independent model"). A roll is recomputed from the dice line on its own
+  card — a move card carries its dice in its text, not its flags — and held
+  against the dice that fell. A check that could not be made is counted as
+  not made; a violated one makes the run a `product-failure` to be read,
+  since the check may be the one at fault.
+- **The fact ledger is a presence test with refusals, read three ways**
+  (`lib/ledger.mjs`): against the narrator's answers, against the narrator's
+  prompts for a corrected fact's old value, and against what the helpers
+  wrote. A probe is the charter's own question — the player is told to ask
+  it word for word, and a line is that probe when it holds most of its words
+  — because a question told apart by cue words stops being told apart at
+  seven facts; and it is looked for among the lines of the beat that asks
+  it, since a short question's words turn up in play. A scene that restates
+  a fact before the question makes the question uncounted and is itself
+  scored.
+- **A corrected fact's old value in a later prompt is a refusal only when
+  the prompt does not say it was corrected.** The issue's row reads "the old
+  value is in no later prompt or answer". It cannot hold as written, and the
+  third rehearsal showed why: the module names a corrected value to the
+  narrator so that it is not asserted again ("CORRECTED (retracted by the
+  table — do NOT re-assert these, even if earlier narration mentions
+  them)"), and a session summary is written from the session as it was
+  played, its retracted lines under a heading that says so. Every prompt
+  that carries the old value is listed with its sections (`carried`, and the
+  scorecard's "A corrected value in later prompts"); one that carries it and
+  marks it nowhere (`markedCorrected`) is the refusal — the narrator handed
+  the old value as if it stood. In an answer, or in what a helper wrote, it
+  refuses as the issue says.
+- **Six rolls are scripted at the GM's confirmation, by the move it names**
+  (`lib/gm.mjs`), and the scripted miss scripts its price too. Armed when the
+  beat begins, the dice would go to whichever move rolled first. The price is
+  a seventh number, said plainly: Pay the Price is a d100, one entry in four
+  names a suffer move, and the beat's check is the suffer card — so the miss
+  is given "You are harmed". Everything else rolls for real and all of it is
+  recorded, the module's other randomness by the file that asked for it, so a
+  replay rolls the same price.
+- **The burn is scripted from the table as it stands**: a weak hit that
+  momentum improves needs momentum above the higher challenge die, so the
+  dice are worked out in the page from the character's momentum and stat, and
+  no roll is scripted when momentum is too low for one. The beat is then not
+  exercised, and says why.
+- **A line of play is settled when it has been answered.** The first
+  rehearsal that rolled found the runner taking the module's pause between
+  reading a line and narrating it for the end of the turn.
+- **The player's prompt is bounded and its instructions cached**: the last
+  fifteen actions, a notebook of fourteen lines it writes itself, the current
+  beat; the beats and the rules in a system block that is the same on every
+  turn. Measured in rehearsal: +3 characters per action over eighty actions.
+- **The player sees the cards further up the chat that can still be
+  answered**, under their own heading and reference (`e1`…), with the chat's
+  last twelve messages below. A person scrolls up to a vow's card; a view of
+  the last lines alone hid it (the third rehearsal: the vow card was
+  thirteen messages up when its Link was wanted).
+- **The cast's connection is followed by its card's id.** A beat names the
+  connection as the charter made it; after the rename of beat 18 the bond of
+  beat 22 was looked for under a name nobody had.
+- **A live run is refused without its questions in writing**
+  (`EXPLORE_QUESTIONS`, one to a line): the first spending rule, held in
+  code. They head the run's scorecard, each with a place for its answer.
+- **A cache write is priced by how long it is kept** — 1.25 times input for
+  five minutes, twice for an hour, by the split a reply's usage reports
+  (`lib/budget.mjs`). Every write was priced at 1.25; the module's narrator
+  writes one-hour entries. Checked against Anthropic's price list on
+  2026-11-23, with Haiku's cache-read price added to the table.
+- **A write the server refuses is kept with the stack of the code that
+  asked for it** (`installRefusalTrace`): the refusal itself comes back with
+  the server's stack and says nothing of who asked.
+- **A rehearsal that rolls** (`createRollingRehearsal`): the script says
+  which lines are moves, the stand-in's classifier and interpreter say so to
+  the module, and the resolver rolls. `rehearsalDice` scripts the rolls the
+  six do not, so a rehearsal walks one road. Four of them found, for
+  nothing: the runner's settle, a result held where a price was expected, a
+  vow card with no Link ("A vow's card offers its Link…", below), that a strike's miss does not
+  offer a suffer card three times in four, the player's view, the cast
+  looked up by a name it no longer had, and the corrected value's rule
+  above.
+- **The review's arithmetic is generated; its judgement is not**
+  (`lib/review.mjs`): `annotated-transcript.md` with every step's facts and a
+  marked place for the reader's notes, `scorecard.md` with every row that is
+  a count. Repetition is counted by content — shared content words and a
+  name doing the same thing in two scenes of one kind.
+
+**Rejected:**
+- *Asking the player whether a beat is done, or letting it skip one.* Then a
+  model's impression is the result.
+- *Simulating each move's effects in full.* A weak hit is a choice more often
+  than a number; the checks hold the table to what the text fixes — a score,
+  an outcome, a bound, a mark's size, a reward's size, a cost — and count the
+  rest as not checked.
+- *Arming scripted dice when the beat begins.* The first roll of the beat is
+  not always the beat's roll.
+- *Leaving the price to chance.* The suffer check would run in one run of
+  four and the round has three.
+- *An allow-list of what counts as an answer to a probe.* The answer is read
+  for the fact's own words and its refusals; the reading is for the rest.
+- *Editing the kept memory replay to the new runner.* A kept run is replaced
+  by a new live run, never edited.
+
+---
+
+## The long haul's first round: one live run, scored again by corrected checks; the round stops there (issue #373 slice 6) (2026-11)
+
+**Decision:** The first round of the long haul was one live run (2026-11-23,
+87 actions, $2.30), after the memory charter's re-run ($0.25). What was
+decided in making and reading it:
+
+- **A run's verdict can be made again from its evidence** (`rescore.mjs`,
+  `lib/longrun.mjs`). The run ended `product-failure` with eight alarms; read
+  against its records, seven were faults in the checks — the X-Card had
+  retracted its truth, the correction had been made, four "refused" facts
+  were words said of something else, a bait was refused in the answer's
+  first three words. Every verdict is arithmetic over what the observer
+  recorded, so the corrected checks are run over the same folder: 26 of 26
+  beats, no rule broken, two facts refused. The kept run's files are that
+  re-score, each saying so and what the run first said; its `replay.json`
+  expects what the corrected checks found. The beats keep the steps they
+  had — the player acted on the pointer as it stood — and the charter's own
+  scoring data (facts, baits, each beat's check) is taken as it is now.
+- **A refusal word must be said of the fact.** In its clause, within ten
+  words; a pronoun after the name with no other name between
+  (`refusalsIn`, a refusal's `after`). Anywhere in the sentence, live prose
+  set it off twelve times on five facts and never rightly.
+- **The correction's beat is the correction.** Done when the truth that
+  stated the old value is struck and the new one stands. Truths filed under
+  the old name as their subject are said, and do not hold the beat: the
+  table has no command that renames a subject. What becomes of the old name
+  is the ledger's to read — and it found it.
+- **A miss whose price is told in the story is a miss paid.** The beat is
+  done and says the suffer path was not exercised; a later move's choice
+  card is not the miss's.
+- **A replay carries no id the world made, in what is typed as in what is
+  pressed.** The live run's `!truth strike tr-ca277` struck nothing in its
+  first replay, and every beat after it ran out of step. A typed line that
+  names a truth by its id is kept by the entry the id stood before
+  (`sayWithoutIds`), and finds that entry's id on the replay's own screen.
+  A hidden plan's id cannot be helped this way — the narrator's recorded
+  sidecar decides plans by id — so a replayed world's plans stay undecided;
+  a replay compares beats, checks and health, which do not read them
+  (known-issues EXPLORE-REPLAY-PLANS-STAY-UNDECIDED).
+- **The round stops at one run.** A second run would walk the same session
+  into the same four causes, and the spending rules do not buy a session
+  twice except to verify a fix. Three runs were the cap, not the plan.
+- **A kept run is added beside the earlier ones, not swapped in**, while
+  they still reproduce: `memory-live-20261122` (issue #374's findings),
+  `memory-live-20261123` (its fixes read in a real session — made by
+  another session and merged with PR #376 while this branch was open) and
+  `memory-live-20261123-0436`, this session's own re-run of the same thing
+  an hour later.
+- **The memory charter's re-run was bought twice, and is recorded as that.**
+  Issue #373's slice 0 and issue #374's next spend were the same run; two
+  sessions each made it, neither able to see the other's branch. This one's
+  is kept under its own name for what the first has not — a recap written
+  from the corrected prompt, the offered move narrated as done, a miss
+  whose price was a suffer move — and the rule gains a step: fetch `main`
+  and read `explorations/` before a run is paid for
+  (rules/ci-e2e.md → "A live run is paid for").
+- **The review's findings are not fixed in the branch that found them.** The
+  module's four causes — a corrected or renamed name that does not reach
+  the record, the Shape directive written as prose, a declared move
+  narrated as done, the opening scene told to invent a crew — are issue
+  #377, with options and a recommendation each. The runner's own faults
+  are fixed here: they are the test's.
+
+**Rejected:**
+- *Reporting the run's own verdict and explaining it away in prose.* A
+  scorecard headed `product-failure` over a session in which no rule was
+  broken would be read by its heading.
+- *Editing the run's files by hand to the corrected numbers.* The re-score
+  is a program over the evidence, and says it is one.
+- *A second and third run to fill the round.* Each would cost what the
+  first did and return its findings again.
+- *Fixing the narrator's prompts here.* Four changes to what the narrator
+  is told, unmeasured, under a pull request for a test.
+
+---
+
 ## A vow fulfilled for a bonded connection marks no progress: it offers the bonded roll (2026-11)
 
 **Decision:** (maintainer, 2026-11-23, with issue #373's decision 4.) When a
@@ -148,13 +343,68 @@ fulfilment's payoff did not, and marked the track of a bonded connection
 player: a roll is the player's move (the #241 decision's reasoning for the
 won-fight prompt).
 
-**Not built yet** — slice 0 of issue #373.
+**Built (2026-11-23, slice 0 of issue #373).** The check is in
+`deepenLinkedConnection`, the one function every deepen calls, so the
+fulfilment's payoff, the won-fight card's 🤝 and a payoff card's Retry all
+take it: a connection already bonded is not marked, and the vow's roller is
+offered the roll on a connection picker that lists that connection alone and
+says why no progress was marked. The pick is the pipeline's own bonded
+Develop Your Relationship. The step is recorded on the vow's ledger when the
+offer is posted — whichever of the fulfilment and the won-fight card comes
+first offers it, the other offers nothing. An offer the world refuses is not
+recorded: it goes on the GMs' payoff card, whose Retry offers it. The
+won-fight card's button keeps its label.
 
 **Rejected:**
 - *Leave it: the marks are harmless.* The card tells the table a milestone
   was marked where the rules give a roll for legacy.
 - *Roll it automatically at the fulfilment.* It would spend a roll, and
   possibly a rank raise, the player did not ask for.
+
+---
+
+## A vow's card offers its Link once the table has a connection (issue #373 slice 0) (2026-11)
+
+**Decision:** The "🆕 New vow recorded" card's 🤝 Link row follows the
+table's connections. It was written once, when the card was posted, and only
+when a connection already existed; it is now brought up to date whenever a
+connection is created, renamed or deleted (`refreshVowCardLinkRows`,
+`src/session/swearVow.js`, called from `src/entities/connection.js`) — on
+every open vow card that is not yet linked and whose vow is not gone, sworn
+or not. A linked card is left as it is. Canonical GM: one emitter for a
+shared card.
+
+**Reason:** found for nothing, before any run, while the long haul's charter
+was written. Its beats are the order a first session takes: a vow sworn in
+Begin a Session's dialog (beat 1), the session's first NPC met and made a
+connection (beat 2), the vow linked to them (beat 3, "the vow card's 🤝
+Link"). The card of beat 1 is posted before any connection exists, so it had
+no Link row, and nothing later gave it one: the link is made from that card
+and from nowhere else (the other writers are a vow sworn to a person through
+`!incite` or the swear dialog's target). A vow sworn before its connection
+was met could not be linked at all — and so its fulfilment could never
+deepen that bond, and a fight served by it never offered to.
+
+It is fixed here, without a separate go-ahead, under issue #373's third
+spending rule — "a run is not made while a finding with a fix ready is open
+on the path it would walk: it would pay to find it again" — and it is the
+maintainer's to take back (known-issues VOW-CARD-LINK-ONLY-AT-POSTING).
+
+- The row lists what the store lists (`campaignState.connectionIds`, by
+  name): a creator that has not yet persisted passes its own copy.
+- Only the Link row and the hint that names it are rewritten
+  (`withVowLinkRow`); the rest of the card — its name, its stakes, a swear
+  already rolled — stands.
+
+**Rejected:**
+- *Building the row when the card is rendered.* A card already on screen is
+  not rendered again when a connection is created; only a change to the
+  message reaches every client.
+- *A hook on `createActor`.* The card is created before the connection is
+  listed, so the hook would read a table that does not have it yet, or wait
+  on a timer for one that does.
+- *Recording it and leaving the beat unreachable.* Every run of the round
+  would then spend eight actions finding that the card has no Link.
 
 ---
 
@@ -473,16 +723,23 @@ choices below were made while building them.)
   numbers is written for a won fight's marks on its vow and is not applied
   here. Swearing mid-sequence stays out: the vow card's own lifecycle is not
   written down anywhere but the code, and a model of it would be the code's
-  (known-issues SEQUENCE-LINK-NOT-GENERATED). A vow sworn to a connection
-  already bonded is not fulfilled in a sequence — nothing says what a bonded
-  relationship takes from it (SEQUENCE-COMMANDS-LEFT).
+  (known-issues SEQUENCE-LINK-NOT-GENERATED). A connection already bonded
+  is generated since 2026-11-23 (issue #373 slice 0): Develop Your
+  Relationship with it is a roll +their rank, and a vow fulfilled for it
+  marks no progress and leaves its roller that roll, once — both from the
+  move's text.
 - **A corpus that exercised nothing has passed nothing.** Each fixed corpus
   counts every kind of command, each roll's outcome and each press by two,
   and fails if a kind never ran.
-- **Two fixed-seed corpora on a pull request; broader ones on demand.** Seed
-  302: 100 sequences of vows and connections, and 25 with sessions, reloads
+- **Three fixed-seed corpora on a pull request; broader ones on demand.** Seed
+  302: 100 sequences of vows and connections, 25 with sessions, reloads
   and dropped connections among them (a reload boots a page, a quarter of a
-  second each). `SEQUENCE_RUNS`, `SEQUENCE_TABLE_RUNS`, `SEQUENCE_SEED`,
+  second each), and 100 in a world where half the connections start bonded,
+  with a bonded connection's roll, the roll a fulfilled vow leaves, and
+  reloads (`SEQUENCE_BONDED_RUNS`). It is a corpus of its own because adding
+  a command to the first two changes every sequence their seed makes — the
+  first attempt did, and one defect patch stopped being caught.
+  `SEQUENCE_RUNS`, `SEQUENCE_TABLE_RUNS`, `SEQUENCE_SEED`,
   `SEQUENCE_PATH` and `SEQUENCE_MAX_COMMANDS` widen them or replay a failure.
   A reduced failure is written out as an ordinary test in the same file; the
   corpus only finds.
@@ -500,8 +757,9 @@ choices below were made while building them.)
   (`scripts/defects/seq-*.patch`, `docs/testing/fix-sensitivity.md`): the vow
   resolver forgetting the roller (#301 B02's defect), the picked connection's
   id dropped (#301 B01's), a picker never claimed, Begin a Session's start
-  effects unguarded (#300 F11's), and every world load starting a new
-  session. The first version of the commands caught one of the first three;
+  effects unguarded (#300 F11's), every world load starting a new
+  session, a bonded connection's track marked by a fulfilled vow, and a
+  bonded roll made without the rank. The first version of the commands caught one of the first three;
   namesake connections in the starting world and the press by two came from
   the two it missed.
 - **A defect the sequences' probes find is recorded and keyed, not fixed

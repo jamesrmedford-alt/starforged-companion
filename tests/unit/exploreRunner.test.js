@@ -52,14 +52,24 @@ afterEach(() => vi.unstubAllGlobals());
 // ── the budget ───────────────────────────────────────────────────────────────
 
 describe('the run\'s budget', () => {
-  it('prices a call from its usage: input, cache writes at 1.25×, cache reads at their own rate, output', () => {
+  it('prices a call from its usage: input, cache writes by how long they are kept, cache reads at their own rate, output', () => {
     const usage = { input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000 };
-    expect(costOf(PRICES.opus, usage)).toBeCloseTo(4 + 5 + 0.2 + 20, 6);
-    expect(costOf(PRICES.haiku, usage), 'no cache-read price: charged as input').toBeCloseTo(0.1 + 0.125 + 0.1 + 0.5, 6);
+    expect(costOf(PRICES.opus, usage), 'a write that does not say how long it is kept is priced as an hour\'s: 2×').toBeCloseTo(4 + 8 + 0.2 + 20, 6);
+    expect(costOf(PRICES.haiku, usage), 'no cache-read price: charged as input').toBeCloseTo(0.1 + 0.2 + 0.1 + 0.5, 6);
   });
 
-  it('a call\'s worst cost is its whole prompt as a cache write and its whole max_tokens as output', () => {
-    expect(worstCost(PRICES.opus, { promptChars: 2_000_000, maxTokens: 1_000_000 })).toBeCloseTo(5 + 20, 6);
+  it('a cache write is 1.25× input kept five minutes and 2× kept an hour, by the split the API reports', () => {
+    const written = (fiveMinutes, hour) => ({
+      cache_creation_input_tokens: fiveMinutes + hour,
+      cache_creation: { ephemeral_5m_input_tokens: fiveMinutes, ephemeral_1h_input_tokens: hour },
+    });
+    expect(costOf(PRICES.opus, written(1_000_000, 0)), 'the player\'s instructions: five minutes').toBeCloseTo(5, 6);
+    expect(costOf(PRICES.opus, written(0, 1_000_000)), 'the narrator\'s: an hour').toBeCloseTo(8, 6);
+    expect(costOf(PRICES.opus, written(400_000, 600_000))).toBeCloseTo(0.4 * 5 + 0.6 * 8, 6);
+  });
+
+  it('a call\'s worst cost is its whole prompt as an hour\'s cache write and its whole max_tokens as output', () => {
+    expect(worstCost(PRICES.opus, { promptChars: 2_000_000, maxTokens: 1_000_000 })).toBeCloseTo(8 + 20, 6);
   });
 
   it('reserves the worst cost before dispatch: calls in flight together cannot pass the dollar cap', () => {
@@ -496,6 +506,24 @@ describe('health, and the run\'s class', () => {
     expect(known).toMatchObject({ failures: [], knownFailures: ['KNOWN-1'] });
   });
 
+  it('a known error that names its asker is known only where the refused write was asked for by that code, with no frame of the module\'s', () => {
+    const message = 'User Playthrough Player lacks permission to create Item [abc] in parent Actor [def]';
+    const knownErrors = CONFIG.knownErrors;
+    expect(knownErrors.map(k => k.id)).toEqual(['PLAYER-CLIENT-ITEM-CREATE-REFUSED']);
+    const page = [{ label: 'player', errors: [`pageerror: ${message}`] }];
+    const system = { message, stack: '    at Object.fn (http://localhost:30000/systems/foundry-ironsworn/ironsworn.js:240846:18)\n    at Hooks.callAll (http://localhost:30000/scripts/foundry.mjs:23791:17)' };
+    expect(healthOf({ endSession: { pendingMove: false }, clients: page, knownErrors, refused: [system] }))
+      .toMatchObject({ failures: [], knownFailures: ['PLAYER-CLIENT-ITEM-CREATE-REFUSED'] });
+    // The same words with nothing saying who asked, or asked for by the module: a failure.
+    expect(healthOf({ endSession: { pendingMove: false }, clients: page, knownErrors, refused: [] }).failures).toHaveLength(1);
+    const ours = { message, stack: '    at createBond (http://localhost:30000/modules/starforged-companion/src/character/actorBridge.js:10:3)' };
+    expect(healthOf({ endSession: { pendingMove: false }, clients: page, knownErrors, refused: [ours] }).failures).toHaveLength(1);
+    const through = { message, stack: `${system.stack}\n    at createConnection (http://localhost:30000/modules/starforged-companion/src/entities/connection.js:104:17)` };
+    expect(healthOf({ endSession: { pendingMove: false }, clients: page, knownErrors, refused: [through] }).failures, 'the system\'s code, called by the module\'s').toHaveLength(1);
+    // Another refused Item, asked for by the system: not this message, not known.
+    expect(healthOf({ endSession: { pendingMove: false }, clients: [{ label: 'player', errors: ['pageerror: User X lacks permission to create Item [zzz] in parent Actor [def]'] }], knownErrors, refused: [system] }).failures).toHaveLength(1);
+  });
+
   it('a table left waiting on a question put to the GM is the run\'s limit, not the module\'s failure — the lock it holds is the question\'s', () => {
     // The module asks the GM "Who are you interacting with?" before the dice
     // and holds the move until it is answered (decisions.md, issue #347 D1).
@@ -595,10 +623,13 @@ describe('a rehearsal\'s stand-in for the model API', () => {
 
 // Each went the whole way with real narrator replies. The first (2026-11-22)
 // is the run issue #374's review was made from, one move rolled; the second
-// (2026-11-23) is the re-run after that issue's fixes, four moves rolled.
+// (2026-11-23) is the re-run after that issue's fixes, four moves rolled; the
+// third is that re-run made again an hour later by a session that did not
+// know of the second (issue #373 slice 0) — one move, a miss with its price.
 const KEPT_RUNS = [
   { name: 'memory-live-20261122', rolls: 1 },
   { name: 'memory-live-20261123', rolls: 4 },
+  { name: 'memory-live-20261123-0436', rolls: 1 },
 ];
 
 describe.each(KEPT_RUNS)('a live run of the memory charter, kept as a replay (explorations/$name)', ({ name, rolls }) => {

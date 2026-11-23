@@ -13,7 +13,9 @@
  *
  * What it tracks
  *   - each vow: whose it is, its name, rank, ticks, whether it is
- *     fulfilled, and the connection it was sworn to, if any;
+ *     fulfilled, the connection it was sworn to, if any, and — fulfilled for
+ *     a connection already bonded — the Develop Your Relationship roll that
+ *     leaves its roller: offered, then taken;
  *   - each connection: its name, rank, ticks, whether a bond is forged, and
  *     which characters hold it;
  *   - the crew's quests and bonds legacy tracks, in ticks ever marked;
@@ -23,7 +25,7 @@
  */
 
 import {
-  MOMENTUM_START, bondReward, deepen, fulfilReward, gainMomentum, markProgress, outcomeOf, progressScore, recommit,
+  MOMENTUM_START, bondReward, bondedDevelop, deepen, fulfilReward, gainMomentum, markProgress, outcomeOf, progressScore, recommit,
 } from "./rules.js";
 
 export function createModel(pcs) {
@@ -47,13 +49,16 @@ const nextRef = (model, prefix) => `${prefix}${++model.refs}`;
 export const openVows = (model, pc = null) => model.vows.filter(v => v.status === "open" && (pc === null || v.pc === pc));
 export const liveConnections = (model) => model.connections;
 export const unbonded = (model) => model.connections.filter(c => !c.bonded);
+export const bonded = (model) => model.connections.filter(c => c.bonded);
+/** The fulfilled vows whose bonded connection's roll is offered and not yet taken. */
+export const bondRollOffers = (model) => model.vows.filter(v => v.bondRoll === "offered");
 /** The nth of a list, wrapping — a command is generated before the list exists. */
 export const pick = (list, n) => (list.length ? list[n % list.length] : null);
 
 // ── vows ────────────────────────────────────────────────────────────────────
 
 export function addVow(model, { pc, name, rank }) {
-  const vow = { ref: nextRef(model, "v"), pc, name, rank, ticks: 0, status: "open", offer: false, swornTo: null };
+  const vow = { ref: nextRef(model, "v"), pc, name, rank, ticks: 0, status: "open", offer: false, swornTo: null, bondRoll: null };
   model.vows.push(vow);
   return vow;
 }
@@ -80,9 +85,12 @@ export function fulfilVow(model, vow, challenge) {
   vow.status = "fulfilled";
   vow.offer = false;
   model.legacy.quests += fulfilReward(vow.rank, outcome);
-  // Sworn to a connection: the fulfilment deepens that relationship, once.
+  // Sworn to a connection: the fulfilment deepens that relationship, once —
+  // or, a bond already shared, marks no progress: its roller is offered the
+  // roll that says what it did for the legacy, once.
   const connection = swornConnection(model, vow);
-  if (connection) connection.ticks = deepen(connection.ticks, connection.rank, vow.rank);
+  if (connection?.bonded) vow.bondRoll = "offered";
+  else if (connection) connection.ticks = deepen(connection.ticks, connection.rank, vow.rank);
   return outcome;
 }
 
@@ -118,6 +126,29 @@ export function forgeBond(model, connection, challenge) {
   connection.offer = false;
   model.legacy.bonds += bondReward(connection.rank, outcome);
   return outcome;
+}
+
+/**
+ * Develop Your Relationship with a connection already bonded: `pc` rolls
+ * +their rank. No progress is marked; a strong hit marks the crew's bonds
+ * legacy (and, with a match, raises the connection's rank), a weak hit is
+ * momentum to the roller.
+ *
+ * @returns {{ outcome: "strong_hit"|"weak_hit"|"miss", raised: boolean }}
+ */
+export function developBondedRelationship(model, connection, pc, actionDie, challenge) {
+  const result = bondedDevelop(connection.rank, actionDie, challenge);
+  model.legacy.bonds += result.bondsTicks;
+  if (result.momentum) model.momentum[pc] = gainMomentum(model.momentum[pc], result.momentum);
+  const raised = result.rank !== connection.rank;
+  connection.rank = result.rank;
+  return { outcome: result.outcome, raised };
+}
+
+/** The roll a fulfilled vow left its roller, taken: theirs, for the connection the vow was sworn to. Once. */
+export function takeBondRoll(model, vow, actionDie, challenge) {
+  vow.bondRoll = "taken";
+  return developBondedRelationship(model, swornConnection(model, vow), vow.pc, actionDie, challenge);
 }
 
 export function recommitConnection(model, connection, challenge) {
@@ -183,10 +214,15 @@ export function expected(model) {
     const connection = swornConnection(model, vow);
     if (connection) links[vow.ref] = { connection: connection.ref, name: connection.name };
   }
+  // The rolls offered and not yet taken: for which connection, to whom.
+  const rollOffers = bondRollOffers(model)
+    .map(v => ({ connection: v.swornTo, to: v.pc }))
+    .sort((a, b) => `${a.connection} ${a.to}`.localeCompare(`${b.connection} ${b.to}`));
   return {
     legacy: { ...model.legacy },
     pcs,
     links,
+    rollOffers,
     connections: model.connections.map(c => ({ ref: c.ref, name: c.name, rank: c.rank, ticks: c.ticks, bonded: c.bonded })),
     sessionOpen: model.session.active,
     moveInFlight: false,

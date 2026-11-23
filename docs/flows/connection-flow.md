@@ -464,7 +464,17 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   source's rank. A vow deepens its connection once (issue #326 D1): the
   won-fight card's press (`deepenVowConnectionOnce`) and the fulfilment's
   payoff share the vow's `fulfilPayoff.deepen` ledger step — whichever lands
-  first pays.
+  first pays. **A connection already bonded is not marked** (issue #373
+  decision 4 — the move's text: "If you already share a bond with the
+  connection, do not mark progress. Instead, roll +their rank"): the step is
+  then the offer of that roll — `offerBondedDevelopRoll` posts a connection
+  picker with that connection alone, naming the vow's roller and saying why
+  no progress was marked — and the pick is the bonded path above (rung 0,
+  the card's host id). Recorded on the same ledger step when the offer posts,
+  so a vow offers it once; an offer that does not post reports `refused` and
+  goes on the GMs' payoff card (`vow-flow.md`, "A deepen for a connection
+  already bonded"). The bonded track was marked, and the card said so
+  (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK).
 - **Suggestion buttons** on connection-category move cards
   (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
   canonical GM (`cardActions.applyConnectionSuggestion`), which checks the
@@ -575,7 +585,9 @@ no matching name it takes the sole un-bonded connection, else nothing.
 Vow↔connection linkage lives on the vow item (`linkedConnectionId` — the NPC
 card's Actor id — with `linkedConnectionName` beside it, set at inciting
 swear or via the vow card's picker). Fulfilment and won-linked-fight
-paths deepen the bond (`deepenLinkedConnection`) and grant the vow's promised
+paths deepen the bond (`deepenLinkedConnection` — a bond already forged takes
+no progress: its roller is offered the bonded Develop Your Relationship roll
+instead, once per vow, §2) and grant the vow's promised
 reward; the victory card's 🤝 Deepen button relays `fightVow.deepenBond` to
 the canonical GM (`applyFightVowDeepenBond`, one-shot via
 `resolvedActions.deepenBond`, values from the GM-authored card — see
@@ -590,9 +602,9 @@ vow's link to a connection is the NPC card, by its id"):
 |---|---|
 | canonical | `flags[MODULE].linkedConnectionId` on the vow Item — the connection's host Actor id |
 | mirror | `flags[MODULE].linkedConnectionName` — the card's name, as the vow's cards say it |
-| writers | the vow card's 🤝 Link (`swearVow.applyPlayerVowLinkFromRelay` → `actorBridge.setVowLinkedConnection(vowId, name, id)`); the crew's opening vow (`swearSharedVowForAll` → `connection.reconcileVowLinks` once the target's card exists) |
+| writers | the vow card's 🤝 Link (`swearVow.applyPlayerVowLinkFromRelay` → `actorBridge.setVowLinkedConnection(vowId, name, id)` — the card's row lists the table's connections as they are now: `createConnection`, a card's rename (`renameVowLinks`) and its deletion (`clearDeletedConnectionReferences`) each call `swearVow.refreshVowCardLinkRows`, so a vow recorded before its connection was met can still be linked, known-issues VOW-CARD-LINK-ONLY-AT-POSTING); the crew's opening vow (`swearSharedVowForAll` → `connection.reconcileVowLinks` once the target's card exists) |
 | mirror upkeep | a rename of the card, both paths (`index.js syncEntityRecordNameOnUpdate`, `connection.updateConnection`) → `connection.renameVowLinks` → `actorBridge.renameVowLinksToConnection`; the world-load pass (`connection.reconcileVowLinks`, canonical GM) gives a link by name alone its card's id when one card has the name, and a link whose card was renamed its name |
-| readers | the fulfilment's payoff (`payFulfilledVowCopies`), the won-fight card (`postFightVowMilestoneCard` puts `connectionId` on the card; `deepenVowConnectionOnce`), a payoff card's Retry (`runPayoffStep`, the step's `connectionId`) — all through `deepenLinkedConnection(name, marks, { connectionId })` → `findOpenConnection`: by id when there is one, never falling back to the name; by name (`strict`) for a link with a name alone |
+| readers | the fulfilment's payoff (`payFulfilledVowCopies`), the won-fight card (`postFightVowMilestoneCard` puts `connectionId` on the card; `deepenVowConnectionOnce`), a payoff card's Retry (`runPayoffStep`, the step's `connectionId`) — all through `deepenLinkedConnection(name, marks, { connectionId, actorId })` → `findOpenConnection`: by id when there is one, never falling back to the name; by name (`strict`) for a link with a name alone. `actorId` is the vow's roller, whom a bonded connection's roll is offered to |
 | teardown | deleting the card: `clearVowLinksToConnection` and the two chat-card retirements, by the card's id (and by name for name-only links when no namesake is left) |
 
 Left by name: a link whose name named two cards (or none) when it was made

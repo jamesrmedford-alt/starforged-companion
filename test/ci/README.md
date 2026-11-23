@@ -225,8 +225,9 @@ guards. See `rules/ci-e2e.md` → "Cloud sessions".
 #290 part 3). It is given a persona and a goal — a *charter*,
 `playwright/charters/*.json` — and plays as a logged-in player does: it reads
 its own screen and types, clicks and fills dialogs. The GM's client runs the
-real pipeline, and an autopilot answers what the module asks of the GM before
-a roll (the move's confirmation; "Who are you interacting with?"). An **observer** reads the
+real pipeline, and fixed rules — no model — answer what the module asks of
+the GM (the move's confirmation; "Who are you interacting with?"; a draft for
+someone in the charter's cast). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model. The run is then **reviewed by whoever made it** — the full
 transcript annotated, a scorecard, the action items as an issue, what it cost
@@ -240,6 +241,7 @@ code or rewrites a recording: it writes evidence.
 ./scripts/cloud.sh explore --rehearse      # no key, no spend: the live path with the model API stood in for
 ./scripts/cloud.sh explore                 # LIVE: real models, real money, up to the caps
 ./scripts/cloud.sh explore --replay playwright/artifacts/explore/<run>   # an earlier run again, no key
+EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse           # the long haul, rehearsed (about 15 minutes)
 ```
 
 | Mode | Key | What it tells you |
@@ -255,6 +257,57 @@ the fact at three layers — in a store a narration is built from, in the
 prompt for that question, in the answer — so a miss says where it was lost:
 `storage`, `retrieval` or `generation`.
 
+**The long haul** (`charters/long-haul.json`, issue #373) is three sessions
+and about ninety player actions that load the narrator's memory and the
+mechanics together:
+
+- **26 beats**, each with a result the observer checks in the world. The
+  player is told the beats and which is current; the observer marks a beat
+  done and moves on, and a beat not reached in eight actions is
+  `not-exercised`.
+- **A ledger of seven facts** — a possession, a name and its pronouns, an
+  item handed over, a promise, where the ship is, a correction, a rename —
+  each asked about in every later session, scored stored / in the prompt / in
+  the answer, with the words that would contradict it; read against the
+  narrator's answers **and** against every summary, Chronicle entry and recap
+  the helpers wrote.
+- **Mechanical checks after every action**, from the game's text: each roll
+  recomputed from the dice on its card, meters and tracks in bounds, progress
+  and rewards by rank, an effect landing once, the lock free, every line
+  answered once.
+- **Six decisive rolls scripted, the rest real, all recorded**; the GM is
+  fixed rules.
+- **Four interruptions** made by the runner: the GM's page reloads mid-fight,
+  End a Session is opened and closed unanswered, the X-Card is played, the
+  connection's card is renamed.
+
+Its rehearsal rolls: the stand-in's classifier calls a move where the script
+makes the line one, so the move path — confirmation, held result, price,
+victory card — is walked with no key. A long run also writes `beats.json`,
+`mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
+model calls, 60 minutes, $15.
+
+Every run that calls a model — either charter — writes `review-data.json`
+and the generated layers of its review: `annotated-transcript.md` and
+`scorecard.md`, with the reader's notes left to write.
+
+**When a check turns out wrong**, a long run is not bought again: its
+evidence is scored again by the checks as they are now.
+
+```bash
+cd playwright && node rescore.mjs artifacts/explore/<run>     # writes <run>/rescored/, no Foundry, no key
+```
+
+`playwright/explorations/long-haul-live-20261123/` is the first live run of
+the long haul (87 actions, 345 model calls, $2.30), kept as re-scored — the
+run's own checks failed it for things the module had done right — with every
+step annotated and its ten questions answered. Its action items are issue
+#377. It replays like the memory runs:
+
+```bash
+./scripts/cloud.sh explore --replay playwright/explorations/long-haul-live-20261123
+```
+
 **Caps** (`playwright/explore.config.json`): 30 player actions, 100 model
 calls, 20 minutes, $10 — whichever comes first. Every call counts — the
 narrator's and the helpers', the player's, retries — and each
@@ -262,7 +315,19 @@ one's worst cost (its whole prompt, its whole `max_tokens`) is reserved before
 it is sent, so calls in flight together cannot pass the dollar cap. A model
 with no price in the config is refused. **Check the prices there against
 Anthropic's price list before a live run**: the cost is computed from that
-table.
+table. A cache write is priced by how long it is kept — 1.25 times input for
+five minutes, twice for an hour.
+
+**A live run is given its questions first.** It is refused without
+`EXPLORE_QUESTIONS` — what the run is to answer that a rehearsal cannot, one
+question to a line:
+
+```bash
+EXPLORE_CHARTER=long-haul EXPLORE_QUESTIONS="$(cat questions.txt)" ./scripts/cloud.sh explore
+```
+
+They are kept in `run.json` and head a long run's scorecard, each with a
+place for its answer.
 
 **Evidence** lands in `playwright/artifacts/explore/<charter>-<mode>-<time>/`
 and is written as the run goes, so a run a cap or a crash stops still leaves
@@ -279,9 +344,9 @@ in none of them. The folder is not committed; to keep a finding, turn its
 | | |
 | --- | --- |
 | `pass` | The goal was achieved and nothing failed. The run's own verdict — read the review before trusting it. |
-| `product-failure` | A check that holds whatever the charter failed: the move lock still held at the end, an error of the module's on a page, a step the table never finished. |
-| `suspected-quality-issue` | The goal was not achieved (the layer is named). For a person to read. |
-| `not-exercised` | The goal was never put to the test — the player stopped early or named the fact itself, or the GM's screen was left waiting on a question the run's GM autopilot does not answer (the window is named). Not a pass. |
+| `product-failure` | A check that holds whatever the charter failed: the move lock still held at the end, an error of the module's on a page, a step the table never finished — and, in a long run, a mechanical check violated or a beat brought about wrongly (each named with its step; the check may be the one at fault). |
+| `suspected-quality-issue` | The goal was not achieved (the layer is named); in a long run, a fact lost or refused. For a person to read. |
+| `not-exercised` | The goal was never put to the test — the player stopped early or named the fact itself, or the GM's screen was left waiting on a question the GM's rules do not answer (the window is named); in a long run, more than a quarter of the beats were never exercised. Not a pass. |
 | `budget-exhausted` | A cap ended the run before the goal was put to the test. |
 | `infrastructure-error` | The run could not be made: Foundry, the browser, or the model API failed. |
 
@@ -308,7 +373,12 @@ issue #374. It is the current one to replay:
 ```
 
 It ends `REPRODUCED` while the module still carries what the first session
-established into the second. When it diverges after a change that was meant
+established into the second.
+`playwright/explorations/memory-live-20261123-0436/` is that re-run made a
+second time the same day, by a session that did not know of the first (12
+actions, 40 model calls, $0.25): one move, a miss with its price, the first
+campaign recap written from the corrected prompt, and a move that was offered
+and narrated as made. It replays the same way. When it diverges after a change that was meant
 to alter the narrator's calls, make a new live run and put its files there
 (about 35 cents). CI does not run it.
 

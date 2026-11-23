@@ -64,9 +64,24 @@ describe('a vow deepens the connection it names, or none (DEEPEN-LINK-FALLBACK)'
   });
 
   it('control: the connection the link names is deepened', async () => {
-    const res = await deepenLinkedConnection('Rook', 1);
+    const vance = connectionCard('npc-vance', { name: 'Vance', rank: 'dangerous', bonded: false });
+    const cs = game.settings.get(MODULE_ID, 'campaignState');
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { ...cs, connectionIds: ['npc-rook', 'npc-vance'] });
+
+    const res = await deepenLinkedConnection('Vance', 1);
 
     expect(res).toMatchObject({ ok: true });
-    expect(ticks(rook)).toBe(8);                                       // one dangerous mark
+    expect(ticks(vance)).toBe(8);                                      // one dangerous mark
+    expect(ticks(rook)).toBe(0);
+  });
+
+  // Issue #373 decision 4: this control deepened Rook, whose bond is forged —
+  // the move's text gives a bonded connection a roll, not a mark
+  // (tests/unit/vowDeepenBondedOffersRoll.test.js).
+  it('control: the link names a connection already bonded — found, offered its roll, not marked', async () => {
+    const res = await deepenLinkedConnection('Rook', 1);
+
+    expect(res).toMatchObject({ ok: true, bonded: true });
+    expect(ticks(rook)).toBe(0);
   });
 });

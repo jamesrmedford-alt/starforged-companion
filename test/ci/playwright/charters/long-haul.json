@@ -1,0 +1,1412 @@
+{
+  "description": "The long haul (issue #373; #302 slice E part 1): three sessions, about ninety player actions, through the real UI. Twenty-six beats with results the observer checks in the world; a ledger of facts planted in play and probed at three distances and three layers, read against the narrator's answers and against what the helpers wrote; mechanical checks from the game's text after every action; six decisive rolls scripted, the rest real; four interruptions. The GM is fixed rules. Rehearsed with a stand-in that rolls (its script is `rehearsal`; `rehearsalDice` scripts its other rolls so a rehearsal walks the same road every time).",
+  "caps": {
+    "actions": 100,
+    "calls": 400,
+    "minutes": 60,
+    "usd": 15
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play three sessions by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type or say, use exactly those words.",
+    "Never say the answer to a question a beat has you ask: the point is to learn what the narrator remembers.",
+    "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
+    "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
+    "A beat that is a move needs its roll. If the narrator answers your line without a roll and its card offers \"Roll\" with the move the beat is about (\"Roll Gather Information\", \"Roll Set a Course\"), press that button. If nothing is offered, say the line again, plainly, as that move.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "Some beats are the table's and not yours — a page reloads, a window opens and closes, an X-Card is played, a card is renamed. Wait a few seconds; the observer moves you on.",
+    "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way."
+  ],
+  "cast": {
+    "connection": {
+      "name": "Tamsin Vey",
+      "pronouns": "she/her",
+      "role": "salvage broker",
+      "description": "A salvage broker who keeps a ledger stall on the Hollow Spire docks."
+    },
+    "renamed": {
+      "name": "Tamsin Okoro",
+      "pronouns": "she/her",
+      "role": "salvage broker",
+      "description": "Tamsin, under the name she goes by now."
+    }
+  },
+  "facts": [
+    {
+      "id": "F1",
+      "kind": "a possession",
+      "required": true,
+      "statement": "Mira Kestrel carries a brass star-compass that belonged to her sister Ilse.",
+      "variants": [
+        "star-compass",
+        "star compass",
+        "compass"
+      ],
+      "refusals": [
+        {
+          "id": "lost, sold or given away",
+          "near": [
+            "lost",
+            "sold",
+            "pawned",
+            "traded away",
+            "gave away",
+            "given away",
+            "no longer carry",
+            "no longer have",
+            "left it with",
+            "handed it"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "F1-A",
+          "set": "A",
+          "ask": "What do I still carry that belonged to my sister?"
+        },
+        {
+          "id": "F1-B",
+          "set": "B",
+          "ask": "Remind me, which keepsake of my sister's is on me?"
+        },
+        {
+          "id": "F1-C",
+          "set": "C",
+          "ask": "One last check: what of my sister's do I have with me at this very moment?"
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "kind": "an NPC's name and pronouns",
+      "required": true,
+      "statement": "The salvage broker Mira befriended at Hollow Spire is called Tamsin (she/her).",
+      "variants": [
+        "Tamsin"
+      ],
+      "refusals": [
+        {
+          "id": "the wrong pronoun in a sentence that names her",
+          "subject": [
+            "Tamsin"
+          ],
+          "near": [
+            "he",
+            "him",
+            "his",
+            "himself"
+          ],
+          "after": true
+        }
+      ],
+      "probes": [
+        {
+          "id": "F2-A",
+          "set": "A",
+          "ask": "What is the name of the salvage broker I befriended at Hollow Spire?"
+        },
+        {
+          "id": "F2-B",
+          "set": "B",
+          "ask": "Who do I count as a friend among the dock traders back where this began?"
+        },
+        {
+          "id": "F2-C",
+          "set": "C",
+          "ask": "Which person in this sector would I trust with my life?"
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "kind": "an item handed to someone",
+      "required": true,
+      "statement": "Mira left the cargo manifest with Tamsin for safekeeping.",
+      "variants": [
+        "Tamsin"
+      ],
+      "anchor": [
+        "manifest"
+      ],
+      "refusals": [
+        {
+          "id": "she still has it",
+          "subject": [
+            "manifest"
+          ],
+          "near": [
+            "you still have",
+            "still in your",
+            "in your pocket",
+            "in your jacket",
+            "you kept the",
+            "tucked in your"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "F3-A",
+          "set": "A",
+          "ask": "Who is holding the cargo manifest I was carrying?"
+        },
+        {
+          "id": "F3-B",
+          "set": "B",
+          "ask": "Whose hands is the manifest in these days?"
+        },
+        {
+          "id": "F3-C",
+          "set": "C",
+          "ask": "Who has the manifest in their keeping today?"
+        }
+      ]
+    },
+    {
+      "id": "F4",
+      "kind": "a promise with a deadline",
+      "required": true,
+      "statement": "Mira promised Tamsin she would be back before the next tide of cargo.",
+      "variants": [
+        "tide of cargo",
+        "next tide",
+        "cargo tide"
+      ],
+      "refusals": [
+        {
+          "id": "the promise denied",
+          "near": [
+            "never promised",
+            "no promise",
+            "made no promise",
+            "no deadline"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "F4-A",
+          "set": "A",
+          "ask": "By when did I promise to return?"
+        },
+        {
+          "id": "F4-B",
+          "set": "B",
+          "ask": "What deadline did I give for coming home to the docks?"
+        },
+        {
+          "id": "F4-C",
+          "set": "C",
+          "ask": "On what schedule did I swear to come back to her?"
+        }
+      ]
+    },
+    {
+      "id": "F5",
+      "kind": "where the ship is, and whose it is",
+      "required": true,
+      "from": "world",
+      "plantedBy": "b8",
+      "statement": "The Kobayashi IV, Mira's own ship, is docked at Bleakhold Station.",
+      "variants": [
+        "Bleakhold"
+      ],
+      "refusals": [
+        {
+          "id": "someone else in command",
+          "anywhere": [
+            "your captain",
+            "the captain's orders",
+            "the captain wants",
+            "the captain says",
+            "the captain's ship"
+          ]
+        },
+        {
+          "id": "another settlement after arrival",
+          "subject": [
+            "Kobayashi",
+            "your ship",
+            "the ship"
+          ],
+          "near": [
+            "docked at Hollow Spire",
+            "berthed at Hollow Spire",
+            "still at Hollow Spire",
+            "docked at Vigil Reach"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "F5-B",
+          "set": "B",
+          "ask": "Where is my ship berthed right now, and who commands her?"
+        },
+        {
+          "id": "F5-C",
+          "set": "C",
+          "ask": "Which station are we docked at tonight?"
+        }
+      ]
+    },
+    {
+      "id": "F6",
+      "kind": "a corrected fact",
+      "required": true,
+      "from": "world",
+      "plantedBy": "b16",
+      "statement": "The raider cutter is named the Cinder Wren.",
+      "variants": [
+        "Cinder Wren"
+      ],
+      "refusals": [
+        {
+          "id": "the old value, anywhere, after the correction",
+          "anywhere": [
+            "Ashen Wake"
+          ],
+          "prompts": true
+        }
+      ],
+      "probes": [
+        {
+          "id": "F6-B",
+          "set": "B",
+          "ask": "What is the raider cutter called?"
+        },
+        {
+          "id": "F6-C",
+          "set": "C",
+          "ask": "What was the hostile vessel in our last battle christened?"
+        }
+      ]
+    },
+    {
+      "id": "F7",
+      "kind": "a renamed NPC",
+      "required": true,
+      "from": "world",
+      "plantedBy": "b18",
+      "statement": "Mira's broker friend now goes by Tamsin Okoro.",
+      "variants": [
+        "Okoro"
+      ],
+      "refusals": [
+        {
+          "id": "the old name used as if current",
+          "anywhere": [
+            "Tamsin Vey",
+            "Vey"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "F7-B",
+          "set": "B",
+          "ask": "What surname does my broker friend go by these days?"
+        },
+        {
+          "id": "F7-C",
+          "set": "C",
+          "ask": "What is my bonded friend's full name now?"
+        }
+      ]
+    }
+  ],
+  "baits": [
+    {
+      "id": "bait-compass",
+      "fact": "F1",
+      "ask": "Didn't I leave the compass with Tamsin?",
+      "agrees": [
+        "you did",
+        "that's right",
+        "you left the compass",
+        "left the compass with",
+        "yes, you"
+      ],
+      "corrects": [
+        "manifest",
+        "still carry",
+        "you carry",
+        "never left",
+        "in your pocket",
+        "still have"
+      ],
+      "truth": "It was the cargo manifest you left with Tamsin. The star-compass has never left you."
+    },
+    {
+      "id": "bait-dock",
+      "fact": "F5",
+      "ask": "We are still docked at Hollow Spire, aren't we?",
+      "agrees": [
+        "still docked at Hollow Spire",
+        "that's right",
+        "yes, you",
+        "still at Hollow Spire"
+      ],
+      "corrects": [
+        "Bleakhold"
+      ],
+      "truth": "No: the Kobayashi IV is docked at Bleakhold Station."
+    }
+  ],
+  "beats": [
+    {
+      "id": "b1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session, swearing a vow in its dialog",
+      "tell": "Type !begin-session. In the window that opens set vignette to true, write the vow in newVow — \"Find who is raiding the Cinder Expanse lanes\" — set newVowRank to dangerous, and press Begin. A card for the new vow follows (\"New vow recorded\"): press its \"⚔ Swear it (roll)\" button once.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1,
+        "vow": {
+          "rank": "dangerous"
+        },
+        "sworn": true
+      }
+    },
+    {
+      "id": "b2",
+      "n": 2,
+      "session": 1,
+      "title": "Meet someone and make them a connection",
+      "tell": "First, in one line of play, meet Tamsin Vey, a salvage broker at her ledger stall on the Hollow Spire docks — name her in full. When the narrator has answered, make her a connection: say, in a line, that you set out to make a connection with Tamsin Vey and what you offer her. A roll follows.",
+      "check": {
+        "type": "connectionMade",
+        "name": "Tamsin Vey",
+        "move": "make_a_connection"
+      },
+      "dice": {
+        "moves": [
+          "make_a_connection"
+        ],
+        "roll": "strong_hit"
+      }
+    },
+    {
+      "id": "b3",
+      "n": 3,
+      "session": 1,
+      "title": "Link the vow to them",
+      "needs": [
+        "b1",
+        "b2"
+      ],
+      "tell": "On the card of your vow (\"New vow recorded\") choose Tamsin Vey in its dropdown, then press its Link button.",
+      "check": {
+        "type": "vowLinked",
+        "name": "Tamsin Vey"
+      }
+    },
+    {
+      "id": "b4",
+      "n": 4,
+      "session": 1,
+      "title": "Gather Information",
+      "tell": "Work the docks for who saw the raiders last: one line of play that searches for answers with something at stake. It should be rolled as Gather Information; if a card offers choices afterwards, take one.",
+      "check": {
+        "type": "moveRolled",
+        "moves": [
+          "gather_information"
+        ]
+      }
+    },
+    {
+      "id": "b5",
+      "n": 5,
+      "session": 1,
+      "title": "Plant facts F1–F4",
+      "tell": "Say each of these as its own line of play, in these words or very near them: (1) \"I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.\" (2) \"I leave the cargo manifest with Tamsin for safekeeping.\" (3) \"I promise Tamsin I'll be back before the next tide of cargo.\" Put each in your notebook once it is said.",
+      "check": {
+        "type": "factsPlanted",
+        "facts": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      }
+    },
+    {
+      "id": "b6",
+      "n": 6,
+      "session": 1,
+      "title": "End a Session, noting a focus",
+      "tell": "Type !end-session. In the window write a quest focus in questFocus (\"Find who is raiding the Cinder Expanse lanes\") and press End Session.",
+      "check": {
+        "type": "sessionEnded",
+        "n": 1
+      }
+    },
+    {
+      "id": "b7",
+      "n": 7,
+      "session": 2,
+      "title": "Begin a Session; ask probe set A",
+      "tell": "Type !begin-session and press Begin (leave vignette false this time). Then ask the narrator these questions, each as its own line, in exactly these words, and never say the answers yourself: \"What do I still carry that belonged to my sister?\"  \"What is the name of the salvage broker I befriended at Hollow Spire?\"  \"Who is holding the cargo manifest I was carrying?\"  \"By when did I promise to return?\"",
+      "check": {
+        "type": "probesAsked",
+        "set": "A",
+        "session": 2
+      }
+    },
+    {
+      "id": "b8",
+      "n": 8,
+      "session": 2,
+      "title": "Travel to the second settlement",
+      "tell": "Set a course for Bleakhold Station: say you plot the course and take the Kobayashi IV there. If the roll costs you, settle the card it gives you (choose one of its buttons); if it misses, set the course again. The beat is done when you arrive.",
+      "check": {
+        "type": "arrived",
+        "settlement": "Bleakhold Station"
+      }
+    },
+    {
+      "id": "b9",
+      "n": 9,
+      "session": 2,
+      "title": "Enter a fight that serves the vow",
+      "needs": [
+        "b1"
+      ],
+      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, enter the fray against the raider cutter Ashen Wake. When a card offers the fight (\"A fight looms\"), choose your vow in its vow dropdown and press \"⚔ Enter the Fray\".",
+      "check": {
+        "type": "fightBegun"
+      }
+    },
+    {
+      "id": "b10",
+      "n": 10,
+      "session": 2,
+      "title": "A scripted miss in the fight",
+      "needs": [
+        "b9"
+      ],
+      "tell": "Attack the cutter (Strike if you are in control, Clash if you are in a bad spot — say what you do). The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
+      "check": {
+        "type": "sufferPaid",
+        "moves": [
+          "strike",
+          "clash"
+        ]
+      },
+      "dice": {
+        "moves": [
+          "strike",
+          "clash"
+        ],
+        "roll": "miss",
+        "price": 78
+      }
+    },
+    {
+      "id": "b11",
+      "n": 11,
+      "session": 2,
+      "title": "A scripted weak hit, then Burn Momentum",
+      "needs": [
+        "b9"
+      ],
+      "tell": "Attack again. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "check": {
+        "type": "burned",
+        "moves": [
+          "strike",
+          "clash"
+        ]
+      },
+      "dice": {
+        "moves": [
+          "strike",
+          "clash"
+        ],
+        "roll": "burnable"
+      }
+    },
+    {
+      "id": "b12",
+      "n": 12,
+      "session": 2,
+      "title": "Interruption: the GM's page reloads mid-fight",
+      "needs": [
+        "b9"
+      ],
+      "interruption": "gmReload",
+      "tell": "The table's, not yours: the GM's page reloads. Wait.",
+      "check": {
+        "type": "survivedReload"
+      }
+    },
+    {
+      "id": "b13",
+      "n": 13,
+      "session": 2,
+      "title": "Take Decisive Action; mark the milestone",
+      "needs": [
+        "b9"
+      ],
+      "tell": "Finish the fight: press \"⚔ Attempt to Finish the Fight\" on your last attack's card (or say you take decisive action to end it). When the victory card appears, press its \"⚑ Mark milestone\" button.",
+      "check": {
+        "type": "fightWon"
+      },
+      "dice": {
+        "moves": [
+          "take_decisive_action"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      }
+    },
+    {
+      "id": "b14",
+      "n": 14,
+      "session": 2,
+      "title": "Interruption: End a Session opened and closed unanswered",
+      "interruption": "endSessionCancelled",
+      "tell": "The table's, not yours: a window opens and closes. Wait.",
+      "check": {
+        "type": "nothingChanged"
+      }
+    },
+    {
+      "id": "b15",
+      "n": 15,
+      "session": 2,
+      "title": "Interruption: the X-Card on one narration",
+      "interruption": "xCard",
+      "after": "line",
+      "tell": "Play one short line of ordinary play — look over the wreckage and say what you see. The table will then X-Card the narrator's answer; that is expected. Carry on when it has.",
+      "check": {
+        "type": "xCarded"
+      }
+    },
+    {
+      "id": "b16",
+      "n": 16,
+      "session": 2,
+      "title": "Correct an earlier fact",
+      "tell": "The cutter's name was wrong. Type !truth list and find the entry that names the Ashen Wake; type !truth strike followed by that entry's id as the list shows it; then type exactly: !truth set \"raider cutter\" is named the Cinder Wren",
+      "check": {
+        "type": "corrected",
+        "fact": "F6"
+      }
+    },
+    {
+      "id": "b17",
+      "n": 17,
+      "session": 2,
+      "title": "Ask the oracle",
+      "tell": "Type exactly: !oracle yes likely Is anyone left alive aboard the wreck?",
+      "check": {
+        "type": "oracleAsked"
+      }
+    },
+    {
+      "id": "b18",
+      "n": 18,
+      "session": 2,
+      "title": "Interruption: the GM renames the connection's card",
+      "needs": [
+        "b2"
+      ],
+      "interruption": "rename",
+      "tell": "The table's, not yours: the GM renames a card. Wait.",
+      "check": {
+        "type": "renamed",
+        "from": "Tamsin Vey",
+        "to": "Tamsin Okoro"
+      }
+    },
+    {
+      "id": "b19",
+      "n": 19,
+      "session": 2,
+      "title": "End a Session",
+      "tell": "Type !end-session, write a quest focus in questFocus, press End Session.",
+      "check": {
+        "type": "sessionEnded",
+        "n": 2
+      }
+    },
+    {
+      "id": "b20",
+      "n": 20,
+      "session": 3,
+      "title": "Begin a Session; ask probe set B",
+      "tell": "Type !begin-session and press Begin. Then ask these, each as its own line, in exactly these words, never saying the answers yourself: \"Remind me, which keepsake of my sister's is on me?\"  \"Who do I count as a friend among the dock traders back where this began?\"  \"Whose hands is the manifest in these days?\"  \"What deadline did I give for coming home to the docks?\"  \"Where is my ship berthed right now, and who commands her?\"  \"What is the raider cutter called?\"  \"What surname does my broker friend go by these days?\"",
+      "check": {
+        "type": "probesAsked",
+        "set": "B",
+        "session": 3
+      }
+    },
+    {
+      "id": "b21",
+      "n": 21,
+      "session": 3,
+      "title": "Recover",
+      "tell": "Recover what the fight cost: say you treat your wounds with the ship's medkit (Heal), or restock the ship at Bleakhold's market (Resupply). When its card offers what you regain, take it.",
+      "check": {
+        "type": "recovered",
+        "moves": [
+          "heal",
+          "resupply",
+          "sojourn",
+          "hearten"
+        ]
+      }
+    },
+    {
+      "id": "b22",
+      "n": 22,
+      "session": 3,
+      "title": "Develop the relationship to a full track; Forge a Bond",
+      "needs": [
+        "b2"
+      ],
+      "tell": "Develop your relationship with Tamsin, one line each time — raise her on the comm, trade news, do her a favour: each should mark progress on your relationship (Develop Your Relationship). Keep going until the observer's note says the track is full (40 of 40 ticks), then say you ask her to forge a bond with you. If a card asks which connection, choose her.",
+      "check": {
+        "type": "bondForged"
+      },
+      "dice": {
+        "moves": [
+          "forge_a_bond"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      }
+    },
+    {
+      "id": "b23",
+      "n": 23,
+      "session": 3,
+      "title": "Develop Your Relationship again, bonded",
+      "needs": [
+        "b22"
+      ],
+      "tell": "Once more, develop your relationship with Tamsin, in a line of play. Now that you share a bond it is a roll.",
+      "check": {
+        "type": "bondedDevelop"
+      }
+    },
+    {
+      "id": "b24",
+      "n": 24,
+      "session": 3,
+      "title": "Reach milestones; Fulfill Your Vow",
+      "needs": [
+        "b1"
+      ],
+      "tell": "Bring your vow to its end. Play a line that reaches a milestone on it (say what you have now proved about the raids, and that it is a milestone on your vow); press \"⚑ Mark Progress on Vow\" when a card offers it. When the vow holds three boxes or more, press \"🏁 Attempt to Fulfill Vow\" or say you fulfil your vow. Leave any card it offers afterwards.",
+      "check": {
+        "type": "vowFulfilled"
+      },
+      "dice": {
+        "moves": [
+          "fulfill_your_vow"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      }
+    },
+    {
+      "id": "b25",
+      "n": 25,
+      "session": 3,
+      "title": "Recap; ask probe set C; two baits",
+      "tell": "Type !recap. Then ask these, each as its own line, in exactly these words: \"One last check: what of my sister's do I have with me at this very moment?\"  \"Which person in this sector would I trust with my life?\"  \"Who has the manifest in their keeping today?\"  \"On what schedule did I swear to come back to her?\"  \"Which station are we docked at tonight?\"  \"What was the hostile vessel in our last battle christened?\"  \"What is my bonded friend's full name now?\"  And last, these two, in exactly these words: \"Didn't I leave the compass with Tamsin?\"  \"We are still docked at Hollow Spire, aren't we?\"",
+      "check": {
+        "type": "probesAsked",
+        "set": "C",
+        "baits": [
+          "bait-compass",
+          "bait-dock"
+        ],
+        "recap": true
+      }
+    },
+    {
+      "id": "b26",
+      "n": 26,
+      "session": 3,
+      "title": "End a Session, then Begin a fourth",
+      "tell": "Type !end-session, write a quest focus, press End Session. Then type !begin-session and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 4
+      }
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      }
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes"
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      },
+      {
+        "name": "Vigil Reach",
+        "authority": "Tolerated",
+        "trouble": "A failing reactor",
+        "pin": [
+          1000,
+          900
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [
+    {
+      "moves": [
+        "swear_an_iron_vow",
+        "gather_information",
+        "set_a_course",
+        "enter_the_fray",
+        "heal",
+        "resupply",
+        "develop_your_relationship"
+      ],
+      "roll": "strong_hit"
+    }
+  ],
+  "rehearsalPlan": {
+    "subject": "the quiet buyer",
+    "truth": "The quiet buyer underwrites the lane raids through a shell consortium and means to own the wreck rights outright."
+  },
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "true"
+        },
+        {
+          "name": "newVow",
+          "value": "Find who is raiding the Cinder Expanse lanes"
+        },
+        {
+          "name": "newVowRank",
+          "value": "dangerous"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 1,
+      "action": "click",
+      "label": "Swear it",
+      "move": {
+        "id": "swear_an_iron_vow"
+      }
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "On the Hollow Spire docks I find Tamsin Vey, the salvage broker, at her ledger stall, and ask what she has heard of the raids.",
+      "names": [
+        "Tamsin Vey"
+      ]
+    },
+    {
+      "beat": 2,
+      "action": "wait",
+      "seconds": 5
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I set out to make a connection with Tamsin Vey: first pick of my salvage, if she will keep an ear out for me.",
+      "names": [
+        "Tamsin Vey"
+      ],
+      "move": {
+        "id": "make_a_connection",
+        "stat": "heart",
+        "target": "Tamsin Vey"
+      }
+    },
+    {
+      "beat": 3,
+      "action": "choose",
+      "option": "Tamsin Vey"
+    },
+    {
+      "beat": 3,
+      "action": "click",
+      "label": "Link"
+    },
+    {
+      "beat": 4,
+      "action": "say",
+      "text": "I work the docks for who saw the raiders last, before the trail goes cold.",
+      "move": {
+        "id": "gather_information",
+        "stat": "wits"
+      }
+    },
+    {
+      "beat": 5,
+      "action": "say",
+      "text": "I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.",
+      "plants": [
+        "F1"
+      ]
+    },
+    {
+      "beat": 5,
+      "action": "say",
+      "text": "I leave the cargo manifest with Tamsin for safekeeping.",
+      "plants": [
+        "F3"
+      ],
+      "names": [
+        "Tamsin Vey"
+      ]
+    },
+    {
+      "beat": 5,
+      "action": "say",
+      "text": "I promise Tamsin I'll be back before the next tide of cargo.",
+      "plants": [
+        "F4"
+      ],
+      "names": [
+        "Tamsin Vey"
+      ]
+    },
+    {
+      "beat": 6,
+      "action": "say",
+      "text": "!end-session"
+    },
+    {
+      "beat": 6,
+      "action": "dialog",
+      "title": "End a Session",
+      "fields": [
+        {
+          "name": "questFocus",
+          "value": "Find who is raiding the Cinder Expanse lanes"
+        }
+      ],
+      "press": "End Session"
+    },
+    {
+      "beat": 7,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 7,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin"
+    },
+    {
+      "beat": 7,
+      "action": "say",
+      "text": "What do I still carry that belonged to my sister?",
+      "probe": "F1"
+    },
+    {
+      "beat": 7,
+      "action": "say",
+      "text": "What is the name of the salvage broker I befriended at Hollow Spire?",
+      "probe": "F2"
+    },
+    {
+      "beat": 7,
+      "action": "say",
+      "text": "Who is holding the cargo manifest I was carrying?",
+      "probe": "F3"
+    },
+    {
+      "beat": 7,
+      "action": "say",
+      "text": "By when did I promise to return?",
+      "probe": "F4"
+    },
+    {
+      "beat": 8,
+      "action": "say",
+      "text": "I plot a course for Bleakhold Station and take the Kobayashi IV out of the Spire's shadow.",
+      "move": {
+        "id": "set_a_course",
+        "stat": "supply",
+        "target": "Bleakhold Station"
+      }
+    },
+    {
+      "beat": 9,
+      "action": "say",
+      "text": "!truth set \"raider cutter\" is named the Ashen Wake"
+    },
+    {
+      "beat": 9,
+      "action": "say",
+      "text": "The raider cutter Ashen Wake cuts across my bow off Bleakhold — I bring the Kobayashi IV about and enter the fray.",
+      "move": {
+        "id": "enter_the_fray",
+        "stat": "edge",
+        "target": "Ashen Wake",
+        "rank": "dangerous"
+      }
+    },
+    {
+      "beat": 9,
+      "action": "choose",
+      "option": "Find who is raiding the Cinder Expanse lanes"
+    },
+    {
+      "beat": 9,
+      "action": "click",
+      "label": "Enter the Fray"
+    },
+    {
+      "beat": 10,
+      "action": "say",
+      "text": "I strike at the Ashen Wake's drive section with the forward guns.",
+      "move": {
+        "id": "strike",
+        "stat": "edge",
+        "target": "Ashen Wake"
+      }
+    },
+    {
+      "beat": 10,
+      "action": "click",
+      "label": "Keep the result",
+      "optional": true,
+      "patience": 2
+    },
+    {
+      "beat": 10,
+      "action": "click",
+      "label": "Endure Harm",
+      "optional": true
+    },
+    {
+      "beat": 10,
+      "action": "click",
+      "label": "Endure Stress",
+      "optional": true
+    },
+    {
+      "beat": 10,
+      "action": "click",
+      "label": "Lose Momentum",
+      "optional": true
+    },
+    {
+      "beat": 11,
+      "action": "say",
+      "text": "I come about and rake her flank while her guns are cycling.",
+      "move": {
+        "id": "strike",
+        "stat": "edge",
+        "target": "Ashen Wake"
+      }
+    },
+    {
+      "beat": 11,
+      "action": "click",
+      "label": "Burn Momentum"
+    },
+    {
+      "beat": 13,
+      "action": "click",
+      "label": "Finish the Fight",
+      "move": {
+        "id": "take_decisive_action"
+      }
+    },
+    {
+      "beat": 13,
+      "action": "click",
+      "label": "Mark milestone"
+    },
+    {
+      "beat": 15,
+      "action": "say",
+      "text": "I look over the wreckage drifting off my bow."
+    },
+    {
+      "beat": 16,
+      "action": "say",
+      "text": "!truth list"
+    },
+    {
+      "beat": 16,
+      "action": "say",
+      "match": "(tr-[a-z0-9]+)(?:(?!tr-[a-z0-9]).)*?Ashen Wake",
+      "template": "!truth strike $1",
+      "patience": 3
+    },
+    {
+      "beat": 16,
+      "action": "say",
+      "text": "!truth set \"raider cutter\" is named the Cinder Wren"
+    },
+    {
+      "beat": 17,
+      "action": "say",
+      "text": "!oracle yes likely Is anyone left alive aboard the wreck?"
+    },
+    {
+      "beat": 19,
+      "action": "say",
+      "text": "!end-session"
+    },
+    {
+      "beat": 19,
+      "action": "dialog",
+      "title": "End a Session",
+      "fields": [
+        {
+          "name": "questFocus",
+          "value": "Find who is raiding the Cinder Expanse lanes"
+        }
+      ],
+      "press": "End Session"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 20,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "Remind me, which keepsake of my sister's is on me?",
+      "probe": "F1"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "Who do I count as a friend among the dock traders back where this began?",
+      "probe": "F2"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "Whose hands is the manifest in these days?",
+      "probe": "F3"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "What deadline did I give for coming home to the docks?",
+      "probe": "F4"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "Where is my ship berthed right now, and who commands her?",
+      "probe": "F5"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "What is the raider cutter called?",
+      "probe": "F6"
+    },
+    {
+      "beat": 20,
+      "action": "say",
+      "text": "What surname does my broker friend go by these days?",
+      "probe": "F7"
+    },
+    {
+      "beat": 21,
+      "action": "say",
+      "text": "I treat the gash in my arm with the ship's medkit.",
+      "move": {
+        "id": "heal",
+        "stat": "iron"
+      }
+    },
+    {
+      "beat": 21,
+      "action": "click",
+      "label": "health",
+      "optional": true
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I raise Tamsin on the comm and trade news of the lanes with her (1).",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I raise Tamsin on the comm and trade news of the lanes with her (2).",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I raise Tamsin on the comm and trade news of the lanes with her (3).",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I raise Tamsin on the comm and trade news of the lanes with her (4).",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I raise Tamsin on the comm and trade news of the lanes with her (5).",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I ask Tamsin to stand with me in this, come what may — to forge a bond.",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "forge_a_bond",
+        "target": "Tamsin Okoro",
+        "progress": true
+      }
+    },
+    {
+      "beat": 23,
+      "action": "say",
+      "text": "I call Tamsin again and tell her what the fight cost me.",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin Okoro"
+      }
+    },
+    {
+      "beat": 24,
+      "action": "say",
+      "text": "I lay out what I have proved: the raids trace back to one buyer. That is a milestone on my vow.",
+      "move": {
+        "id": "reach_a_milestone",
+        "target": "Find who is raiding the Cinder Expanse lanes"
+      }
+    },
+    {
+      "beat": 24,
+      "action": "click",
+      "label": "Mark Progress on Vow",
+      "optional": true
+    },
+    {
+      "beat": 24,
+      "action": "say",
+      "text": "I name the raiders' paymaster before the station board. My vow is fulfilled.",
+      "move": {
+        "id": "fulfill_your_vow",
+        "target": "Find who is raiding the Cinder Expanse lanes",
+        "progress": true
+      }
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "!recap"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "One last check: what of my sister's do I have with me at this very moment?",
+      "probe": "F1"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "Which person in this sector would I trust with my life?",
+      "probe": "F2"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "Who has the manifest in their keeping today?",
+      "probe": "F3"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "On what schedule did I swear to come back to her?",
+      "probe": "F4"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "Which station are we docked at tonight?",
+      "probe": "F5"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "What was the hostile vessel in our last battle christened?",
+      "probe": "F6"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "What is my bonded friend's full name now?",
+      "probe": "F7"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "Didn't I leave the compass with Tamsin?",
+      "bait": "bait-compass"
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "We are still docked at Hollow Spire, aren't we?",
+      "bait": "bait-dock"
+    },
+    {
+      "beat": 26,
+      "action": "say",
+      "text": "!end-session"
+    },
+    {
+      "beat": 26,
+      "action": "dialog",
+      "title": "End a Session",
+      "fields": [
+        {
+          "name": "questFocus",
+          "value": "What the paymaster does next"
+        }
+      ],
+      "press": "End Session"
+    },
+    {
+      "beat": 26,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 26,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [],
+      "press": "Begin"
+    },
+    {
+      "action": "stop",
+      "reason": "the rehearsal script is done"
+    }
+  ]
+}

@@ -41,9 +41,14 @@ export async function openClient(browser, label, { prepare } = {}) {
     else if (msg.type() === "warning" && own) warnings.push(msg.text());
     else if (msg.type() === "debug" && own) { debug.push(msg.text()); if (debug.length > 200) debug.shift(); }
   });
-  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  // An uncaught error's stack says whose it is: kept, cut to its first frames.
+  const pageErrors = [];
+  page.on("pageerror", (err) => {
+    errors.push(`pageerror: ${err.message}`);
+    pageErrors.push({ message: err.message, stack: String(err.stack ?? "").split("\n").slice(0, 14).join("\n") });
+  });
   if (prepare) await prepare(page);
-  return { label, context, page, errors, warnings, debug };
+  return { label, context, page, errors, warnings, debug, pageErrors };
 }
 
 /** Join the running world as `userName` (blank password) and wait for game.ready. */
