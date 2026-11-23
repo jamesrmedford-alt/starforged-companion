@@ -163,13 +163,31 @@ json_field() {  # file key
   python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' "$1" "$2"
 }
 
+# The module, from the working tree as it is now. Run before every suite as
+# well as at `up`: a run made later against the copy `up` staged served the
+# module as it was then while recording HEAD as its commit — the long haul's
+# second live run (2026-11-23) was recorded at a commit whose last change it
+# never ran. Foundry serves a module's files from disk, so a page opened after
+# this reads them; module.json's own entries are read when the world launches.
+stage_module() {
+  local module_dir="${USER_DATA_DIR}/modules/starforged-companion" entry
+  log "installing starforged-companion (from the working tree)"
+  rm -rf "${module_dir}"; mkdir -p "${module_dir}"
+  for entry in module.json src lang styles packs; do
+    [[ -e "${REPO_ROOT}/${entry}" ]] && cp -R "${REPO_ROOT}/${entry}" "${module_dir}/"
+  done
+  [[ -f "${module_dir}/module.json" ]] || die "module.json missing in the installed module"
+  if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain -- module.json src lang styles packs 2>/dev/null)" ]]; then
+    warn "the module has uncommitted changes: they are what runs, and a run records HEAD ($(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null)) as its commit"
+  fi
+}
+
 stage() {  # fresh(0|1)
-  local fresh="$1" version system_dir quench_dir module_dir world_dir
+  local fresh="$1" version system_dir quench_dir world_dir
   require_cmd curl; require_cmd unzip; require_cmd python3
   version="$(ironsworn_version)"; [[ -n "${version}" ]] || die "could not read IRONSWORN_VERSION from install-deps.sh"
   system_dir="${USER_DATA_DIR}/systems/foundry-ironsworn"
   quench_dir="${USER_DATA_DIR}/modules/quench"
-  module_dir="${USER_DATA_DIR}/modules/starforged-companion"
   world_dir="${USER_DATA_DIR}/worlds/${WORLD_ID}"
   mkdir -p "${USER_DATA_DIR}/systems" "${USER_DATA_DIR}/modules" "${USER_DATA_DIR}/worlds" "${STATE_DIR}"
 
@@ -187,13 +205,7 @@ stage() {  # fresh(0|1)
     [[ -f "${quench_dir}/module.json" ]] || die "quench module.json missing after extract"
   fi
 
-  log "installing starforged-companion (from the working tree)"
-  rm -rf "${module_dir}"; mkdir -p "${module_dir}"
-  local entry
-  for entry in module.json src lang styles packs; do
-    [[ -e "${REPO_ROOT}/${entry}" ]] && cp -R "${REPO_ROOT}/${entry}" "${module_dir}/"
-  done
-  [[ -f "${module_dir}/module.json" ]] || die "module.json missing in the installed module"
+  stage_module
 
   if (( fresh )) || [[ ! -f "${world_dir}/world.json" ]]; then
     log "installing the test world from its template"
@@ -288,6 +300,7 @@ run_suite() {  # script.mjs [env assignments are the caller's]
   ensure_playwright
   docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null | grep -q true \
     || die "Foundry is not running — ./scripts/cloud.sh up"
+  stage_module
   mkdir -p "${PW_DIR}/artifacts"
   ( cd "${PW_DIR}" && BASE_URL="${BASE_URL}" node "$1" )
 }

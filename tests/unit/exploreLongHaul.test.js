@@ -1275,3 +1275,61 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
     }
   });
 });
+
+// ── the second live run, after issue #377's fixes ────────────────────────────
+
+describe('the second live run of the long haul, kept as a replay (explorations/long-haul-live-20261123-1459)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261123-1459');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const CONFIG = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explore.config.json'), 'utf8'));
+  const said = (step, kind = /narrate/) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+
+  it('is a run the runner can take again: 89 actions with no document id, its dice, and every reply filed under a step', () => {
+    expect(RUN.actions).toHaveLength(89);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.actions.filter(a => a.action === 'choose').map(a => a.option)).toEqual(['Tamsin Vey', 'Find who is raiding the Cinder Expanse lanes']);
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.actions.filter(a => /\btr-[a-z0-9]{4,}\b/.test(a.text ?? '')).map(a => a.text), 'a truth is named by its entry, not its id').toEqual([]);
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+  });
+
+  it('expects what the corrected checks found: the fight\'s five beats not exercised, the rest done, no rule broken', () => {
+    const notDone = Object.entries(RUN.expected.beats).filter(([, s]) => s !== 'done').map(([b]) => b);
+    expect(notDone).toEqual(['b9', 'b10', 'b11', 'b12', 'b13']);
+    expect(Object.values(RUN.expected.beats).filter(s => s === 'not-exercised')).toHaveLength(5);
+    expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
+    expect(RUN.rescored).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/), was: { classification: 'suspected-quality-issue', beats: { done: 20, notExercised: 6 } } });
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+  });
+
+  it('holds what its review says of it, in the recorded replies', () => {
+    // Issue #377 item 1: the corrected and the renamed names, and the change told as a story.
+    expect(said('a47')).toContain('The *Cinder Wren*, Mira');
+    expect(said('a48')).toContain('You crossed it out, and wrote it again.');
+    // A memory slip: the manifest handed over before the promise.
+    expect(said('a45')).toContain('with the manifest still in your hand');
+    // Item 3: the medkit line narrated without healing — and offered nothing.
+    expect(said('a49')).toContain('spread the gauze across the galley table');
+    expect(said('a49', /classifyInput/)).toMatch(/"decision":"NARRATIVE","suggestedMove":null/);
+    // The named bond read as a connection, the track full.
+    expect(said('a65', /interpretMove/)).toMatch(/"moveId":"make_a_connection"[\s\S]*needs an established bond track/);
+    // A bait refused inside a line of speech.
+    expect(said('a84')).toMatch(/"No," he says\. "You carried it out\."/);
+  });
+
+  it('carries no key, every model it recorded has a price, and its review is written', () => {
+    expect(RAW).not.toMatch(/sk-ant-/);
+    expect(Object.keys(CONFIG.prices.usdPerMillionTokens)).toEqual(expect.arrayContaining(RUN.recording.provenance.models));
+    for (const file of ['annotated-transcript.md', 'scorecard.md']) {
+      const text = fs.readFileSync(path.join(FOLDER, file), 'utf8');
+      expect(text, file).not.toContain('_To write');
+      expect(text, file).toContain('Re-scored');
+    }
+  });
+});

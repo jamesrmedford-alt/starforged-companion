@@ -6,6 +6,50 @@ rejected.
 
 ---
 
+## The long haul's second round: the fight's card follows its roll, a move only a move can make is always offered, a named move asks for itself, and a name change is the table's (issue #373 round 2, after issue #377) (2026-11)
+
+**Decision:** what the long haul's second live run (2026-11-23,
+`explorations/long-haul-live-20261123-1459/`; the maintainer: "run a long
+haul, address the issues that crop up, and then open a PR") found fix-ready,
+fixed; the rest recorded (known-issues → "The long haul").
+
+- **The fight's card follows its roll, and does not wear the move's name**
+  (FIGHT-COMMIT-CARD-AFTER-THE-ROLL). "Combat is offered, not forced" stands:
+  the fight's track is made only on the card. What changed is how the card
+  reads — posted after the Enter the Fray's roll card, saying the roll has not
+  made the track, its button "⚔ Begin the fight". Above the roll with "⚔ Enter
+  the Fray" on it, it read as already answered and the run lost five beats.
+  **Rejected:** making the track at the roll — it would reverse the decision,
+  and the way out would then have to end a fight.
+- **What only a move changes is always offered** (SHEET-MOVE-OFFERED-NOTHING).
+  Issue #377 item 3 took healing, restocking and repair out of narration; a
+  line that sets about one is now never plain NARRATIVE, at any dial — the
+  move is at least offered. The low dial's rule (an unsure move is offered,
+  not rolled) is otherwise unchanged.
+- **A line that names its move asks for it, to the pacing reader**; and the
+  move interpreter is told the roller's connections and their relationship
+  tracks, so a named Forge a Bond with a full track is not read as Make a
+  Connection (NAMED-MOVE-READ-AS-ANOTHER). **Not changed:** Balanced Mischief
+  may still pick a neighbouring move (P2-02) — the run's second "forge a bond"
+  was that, and it stands.
+- **A name change is the table's correction, not an event of the story**
+  (NAME-CHANGE-TOLD-AS-A-STORY). The note says so, and that the new name has
+  always been the name. A table that means an in-story change of name says so
+  in play.
+- **The stores still keep the old names** (SESSION-LOG-KEEPS-OLD-NAMES): option
+  1 of issue #377 item 1 stands; rewriting a renamed record in the Session Log
+  is the option to take if a table minds what it reads there.
+- **The #374 fixes were merged in before the run** (A5, A9, A10, A12, from a
+  branch not yet in a PR): each was on the path the run walked, and the
+  spending rule is not to pay while a fix-ready finding is open on it. They
+  were merged unchanged.
+- **No further run was bought.** This one could not test the fight; the next
+  run belongs after the fight's card is fixed — it is — to read a player pressing
+  it — the miss's price, the suffer path, a burn, a GM reload mid-fight and
+  End a Session naming a cost owed.
+
+---
+
 ## A changed name is told wherever the old one still reaches; the narrator's instructions are said as instructions; a solo character is alone with the ship (issue #377 items 1–5) (2026-11)
 
 **Decision:** the long haul's first round's action items (issue

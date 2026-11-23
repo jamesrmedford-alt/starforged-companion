@@ -224,7 +224,13 @@ does **not** create a track. If no open combat track is the foe by name
 one open fight is not a new foe's: it resumed that fight, posted no card and
 took the opening position, ENTER-FRAY-SOLE-FIGHT), it posts the **threshold
 decision card**
-(`buildCombatThresholdHtml`, `src/moves/combatThreshold.js`):
+(`buildCombatThresholdHtml`, `src/moves/combatThreshold.js`) — **after the
+Enter the Fray's own roll card** (`out.afterMoveCard`, which the pipeline posts
+once the roll card is on the table): posted above it, the card read as a choice
+the roll had already made, and the long haul's second live run never pressed it
+— no fight's track, five beats lost (known-issues
+FIGHT-COMMIT-CARD-AFTER-THE-ROLL). Its weak hit's choice card posts after both
+and finds it by resolution id at the click:
 
 - header "⚔ A fight looms — <foe>" with the foe from `interpretation.moveTarget`;
 - a **rank select** pre-set from the AI interpreter's `combatRank`
@@ -233,7 +239,11 @@ decision card**
 - a free-text **objective**;
 - the carried **opening position line** ("⚑ If you enter this fight, you begin
   in control / in a bad spot") when Enter the Fray's own outcome set one;
-- **⚔ Enter the Fray** and **🚪 Find another way** buttons.
+- a line saying the roll has not made the fight's track yet — "Your Enter the
+  Fray is rolled, but the fight's track is not made yet: set it up here and
+  press ⚔ Begin the fight to begin it — or look for a way out instead";
+- **⚔ Begin the fight** (`BEGIN_FIGHT_LABEL`; it was "⚔ Enter the Fray", the
+  move just rolled) and **🚪 Find another way** buttons.
 
 **One choice per card** (issue #329 X06): both buttons relay
 `combat.threshold` to the canonical GM (`cardActions.applyCombatThresholdChoice`),
@@ -242,7 +252,7 @@ behind an in-flight guard before acting, and a claimed card renders both
 buttons disabled on every client — they were disabled in the clicker's DOM
 only, so a re-render or another client posted a second way-out card, or began
 a won fight again. An effect that does not land releases the claim.
-**Enter the Fray** takes the presser's rank, vow (one the card's picker
+**Begin the fight** (`data-action="sf-enter-fray"`, unchanged) takes the presser's rank, vow (one the card's picker
 offers) and objective, with the card's own label, carried position and
 roller, and creates the track (the card keeps only its `thresholdTaken`
 claim). `createCombatTrackFromThreshold` → `applyCombatProgress`

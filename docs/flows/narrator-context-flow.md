@@ -747,7 +747,10 @@ name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
 each told while it is this session's or while its old name, whole or the part
 the new one does not share, is in what the call sends: the cached blocks, the
 context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the recap's
-included; per-beat. Nothing in the stores is rewritten — the note is what says
+included; per-beat. It says the old name is no alias, and that the change is
+the table's correction, not something that happened in the story (the long
+haul's second run made it a story of a crossed-out name — known-issues
+NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says
 which name is current; the session summary's source carries the same note,
 `formatNameChangesForSource`; and a call whose user message alone names an old
 name — a player's line, the recent scene, a bookend's EARLIER list — has it
@@ -863,7 +866,11 @@ it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
 playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
-speaker line, in the narrator's words) and what the classifier made of the line
+speaker line, in the narrator's words), the roller's connections with each
+one's relationship track — a full one says Forge a Bond can be made (the long
+haul's second live run: told nothing of it, the interpreter read "…, to Forge a
+Bond", her track full, as Make a Connection; known-issues
+NAMED-MOVE-READ-AS-ANOTHER) and what the classifier made of the line
 (`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
 classifier made, `router.classifierReadingOf`: never for pacing switched off,
 a `!roll`, the classifier's fallback for a failed call or an unreadable reply,

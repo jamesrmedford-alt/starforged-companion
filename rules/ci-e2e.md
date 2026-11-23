@@ -283,7 +283,10 @@ fact block, detection and draft cards, End and Begin a Session.
 
 The stack also runs inside a Claude Code cloud session — `cloud.sh up`, then
 `playthroughs [--record]`, `multiplayer`, `quench` — with the session's own
-Playwright and Chromium in place of the Cypress and Playwright images. CI is
+Playwright and Chromium in place of the Cypress and Playwright images. Every
+suite stages the module from the working tree before it runs (`stage_module`);
+it used to be staged at `up` alone, and the long haul's second live run ran a
+copy older than the commit it recorded (known-issues EXPLORE-RAN-A-STALE-MODULE). CI is
 unchanged and is still the gate; this is for recording playthroughs and for
 looking at a live world from a session. What it took, each of which fails
 silently or misleadingly when it is missing:
@@ -698,8 +701,12 @@ its price, and the first campaign recap written from the corrected prompt.
 A later run is kept beside an earlier one whose review an issue cites; say
 which is the current one. `long-haul-live-20261123` is the first live long
 haul (87 actions; its `replay.json` is 1.6 MB), kept as re-scored;
-`exploreLongHaul.test.js` checks it the same way and holds its review to the
-narrator's recorded words. `exploreRunner.test.js` checks on
+`long-haul-live-20261123-1459` the second, after issue #377's fixes (89
+actions; the fight's five beats not exercised — its card was never pressed),
+kept the same way and the current one; `exploreLongHaul.test.js` checks both
+and holds each review to the narrator's recorded words. A button the module
+renames after a kept run pressed it goes on `player.mjs` `LABEL_RENAMES`, so
+the run still replays. `exploreRunner.test.js` checks on
 every PR that each file is one the runner can take again and that it holds
 what its result claims (the fact stated in the first session, not named by
 the player in the second, and in the narrator's replies there); the replay
