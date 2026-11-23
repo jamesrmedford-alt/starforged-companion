@@ -908,6 +908,17 @@ describe('the generated layers of the review', () => {
     expect(text).toContain('_To write — the reader\'s notes');
   });
 
+  it('a run without beats has its goal where a long run has beats: the memory charter gets the same scorecard', () => {
+    const goal = { status: 'not-achieved', failingLayer: 'retrieval', reason: 'the fact was stored and not in the question\'s prompt', milestones: { established: true, sessionEnded: true, askedLater: true, stored: true, inPrompt: false, inAnswer: false } };
+    const text = scorecard({ charter: { name: 'memory' }, run: { id: 'r1', mode: 'live', classification: 'suspected-quality-issue', because: 'x', questions: [] }, goal });
+    expect(text).toContain('| Goal | not-achieved — lost at retrieval: the fact was stored and not in the question\'s prompt |');
+    expect(text).not.toContain('Goal and beats');
+    expect(text).not.toContain('## Beats');
+    expect(text).toContain('## The goal, layer by layer');
+    expect(text).toContain('| inPrompt | no |');
+    expect(text).toContain('## The reading');
+  });
+
   it('the scorecard: one row per dimension with its basis and how far to trust it; what was never exercised; the reading left to write', () => {
     const text = scorecard({ charter: CHARTER, run, beats, mechanics, ledger: scoreLedger({ facts: [COMPASS], marks: [], messages: [], requests: [] }) });
     for (const dimension of ['Goal and beats', 'Mechanics', 'Continuity — the narrator', 'Continuity — the helpers', 'Agency', 'Friction', 'Narrator quality', 'Speed', 'Length', 'Caching', 'Cost']) {

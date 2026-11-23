@@ -45,16 +45,16 @@
 //   requests.json   every prompt and reply — the module's and the player's —
 //                   with usage and no headers
 //   replay.json     the actions, dice and replies a replay needs
-// and, for a charter with beats (a long run, issue #373):
-//   beats.json      each beat: done, failed or not exercised, at which step, why
-//   mechanics.json  every mechanical check made and violated, each roll with its dice
-//   ledger.json     each fact: planted, probed (stored / in the prompt / in the
-//                   answer), refused, and what the helpers kept of it
 //   review-data.json  speed, caching and cost by call kind, prompt length,
 //                   repetition by content, friction — the scorecard's numbers
 //   annotated-transcript.md, scorecard.md — the generated layers of the
 //                   review every live run ends with; the reader's notes are
 //                   left to write
+// and, for a charter with beats (a long run, issue #373):
+//   beats.json      each beat: done, failed or not exercised, at which step, why
+//   mechanics.json  every mechanical check made and violated, each roll with its dice
+//   ledger.json     each fact: planted, probed (stored / in the prompt / in the
+//                   answer), refused, and what the helpers kept of it
 //
 // Exit code: 0 when the run finished and its evidence is written — whatever
 // it found; 1 on an infrastructure error, or when a replay does not reproduce
@@ -643,8 +643,9 @@ async function main() {
       id: runId, mode: MODE, startedAt: startedAt.toISOString(), classification: verdict.classification, because: verdict.because,
       questions: QUESTIONS,
     };
-    if (LONG) {
-      // What the review is written from: every number that is arithmetic.
+    if (CALLS || LONG) {
+      // What the review is written from: every number that is arithmetic. A
+      // charter without beats has its goal where a long run has beats.
       const prices = config.prices.usdPerMillionTokens;
       const allCalls = [
         ...moduleRequests.map(r => ({ step: r.step, kind: r.kind, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
@@ -659,16 +660,21 @@ async function main() {
         cost: costSplit(spend, { actions: actions.length, lines }),
         length: lengthOf(allCalls),
         repetition: repetitionOf(messages),
-        friction: frictionOf({ actions, beats: long.beats, autopilot: accepted, messages }),
+        friction: frictionOf({ actions, beats: long?.beats ?? [], autopilot: accepted, messages }),
         agency: spokenFor(messages),
       };
-      out.json("beats.json", long.beats);
-      out.json("mechanics.json", long.mechanics);
-      out.json("ledger.json", { ...long.ledger, baits: long.baits, plans: long.leaks });
+      if (LONG) {
+        out.json("beats.json", long.beats);
+        out.json("mechanics.json", long.mechanics);
+        out.json("ledger.json", { ...long.ledger, baits: long.baits, plans: long.leaks });
+      }
       out.json("review-data.json", { ...data, scripted, interruptions });
       out.json("actions.json", actions);
-      out.text("annotated-transcript.md", annotatedTranscript({ charter, run, actions, messages, requests: allCalls, autopilot: accepted, beats: long.beats, mechanics: long.mechanics, interruptions }));
-      out.text("scorecard.md", scorecard({ charter, run, beats: long.beats, mechanics: long.mechanics, ledger: long.ledger, baits: long.baits, leaks: long.leaks, ...data }));
+      out.text("annotated-transcript.md", annotatedTranscript({ charter, run, actions, messages, requests: allCalls, autopilot: accepted, beats: long?.beats ?? [], mechanics: long?.mechanics ?? null, interruptions }));
+      out.text("scorecard.md", scorecard({
+        charter, run, goal: LONG ? null : outcome,
+        beats: long?.beats ?? [], mechanics: long?.mechanics ?? null, ledger: long?.ledger ?? null, baits: long?.baits ?? [], leaks: long?.leaks ?? [], ...data,
+      }));
     }
     const replayable = MODE !== "replay" && actions.some(a => a.scripted);
     if (replayable) {

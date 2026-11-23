@@ -345,7 +345,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [] }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [] }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -356,7 +356,9 @@ export function scorecard({ charter, run, beats = [], mechanics = null, ledger =
     `Run \`${run.id ?? "?"}\` · ${run.mode} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "",
     ...((run.questions ?? []).length ? ["## What this run was to answer", "", ...run.questions.map((q, i) => `${i + 1}. ${q}`), "", TO_ANSWER, ""] : []),
     table(["Dimension", "Result", "Basis", "Trust"], [
-      ["Goal and beats", `${done} done, ${failed} failed, ${never} not exercised of ${beats.length}`, "the observer's checks on the world after each action", "high: arithmetic over the world's records"],
+      goal
+        ? ["Goal", `${goal.status}${goal.failingLayer ? ` — lost at ${goal.failingLayer}` : ""}: ${goal.reason ?? ""}`, "the observer: the fact in a store, in the question's prompt, in its answer", "medium: presence of words, not comprehension — read the answer"]
+        : ["Goal and beats", `${done} done, ${failed} failed, ${never} not exercised of ${beats.length}`, "the observer's checks on the world after each action", "high: arithmetic over the world's records"],
       ["Mechanics", mechanics ? `${mechanics.checks} checks, ${mechanics.violations.length} violated` : "not run", "the game's text (tests/helpers/sequence/rules.js), each roll from its own dice", "high where a check ran; see what was never exercised"],
       ["Continuity — the narrator", t ? `${t.recalled} recalled, ${t.carriedUnasked} carried unasked, ${t.lost} lost, ${t.refused} refused, ${t.notProbed} not probed of ${t.facts}` : "not scored", "fact × probe × layer; refusals; leaks", "medium: presence of words, not comprehension — read each excerpt"],
       ["Continuity — the helpers", ledger ? `${helperRows.length} refusal(s) in summaries, Chronicle entries and recaps` : "not scored", "each helper's writing against the ledger", "medium: a refusal is a contradiction that was thought of"],
@@ -369,8 +371,10 @@ export function scorecard({ charter, run, beats = [], mechanics = null, ledger =
       ["Cost", cost ? `${usd(cost.total)} — the module ${usd(cost.module.usd)} (${pct(cost.module.share)}), the test's own models ${usd(cost.test.usd)} (${pct(cost.test.share)})` : "not recorded", "the budget's tally by role and the price table", "high for tokens; prices are entered by hand"],
     ]), ""];
 
-  out.push("## Beats", "", table(["#", "Beat", "Status", "Actions", "At", "Detail"],
+  if (beats.length) out.push("## Beats", "", table(["#", "Beat", "Status", "Actions", "At", "Detail"],
     beats.map(b => [b.n ?? b.id, b.title, b.status, b.actions ?? 0, b.doneAt ?? "", b.detail ?? ""])), "");
+  if (goal?.milestones) out.push("## The goal, layer by layer", "", table(["Milestone", "Reached"],
+    Object.entries(goal.milestones).map(([k, v]) => [k, v === true ? "yes" : v === false ? "no" : String(v ?? "")])), "");
 
   if (mechanics) {
     out.push("## Mechanics", "", `${mechanics.checks} checks made.`, "",

@@ -284,10 +284,12 @@ mechanics together:
 Its rehearsal rolls: the stand-in's classifier calls a move where the script
 makes the line one, so the move path — confirmation, held result, price,
 victory card — is walked with no key. A long run also writes `beats.json`,
-`mechanics.json`, `ledger.json`, `review-data.json`, and the generated layers
-of its review: `annotated-transcript.md` and `scorecard.md`, with the
-reader's notes left to write. Its caps are its own: 100 actions, 400 model
-calls, 60 minutes, $15.
+`mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
+model calls, 60 minutes, $15.
+
+Every run that calls a model — either charter — writes `review-data.json`
+and the generated layers of its review: `annotated-transcript.md` and
+`scorecard.md`, with the reader's notes left to write.
 
 **Caps** (`playwright/explore.config.json`): 30 player actions, 100 model
 calls, 20 minutes, $10 — whichever comes first. Every call counts — the

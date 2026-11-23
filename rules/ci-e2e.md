@@ -692,7 +692,7 @@ reported "achieved" and one flag, and eleven of the twelve things learned
 from it came from reading its prompts and records afterwards. Four parts:
 
 1. **The annotated transcript** (`annotated-transcript.md`, beside the run's
-   evidence, and sent). A long run generates its layers (`lib/review.mjs`) —
+   evidence, and sent). The run generates its layers (`lib/review.mjs`) —
    each step's beat, the player's reason and note, the calls and how long
    they took, the roll and its dice, the GM's answers, the interruptions, the
    checks violated, time and cost — and leaves a marked place under every
@@ -703,8 +703,9 @@ from it came from reading its prompts and records afterwards. Four parts:
    findings, time and cost. Then your own notes on
    **what went right and what went wrong, and why** — where the fault was the
    runner's, as in the first live run, saying so.
-2. **The scorecard** (`scorecard.md`; for a long run its arithmetic rows are
-   generated from `review-data.json` — speed by call kind and from a line to
+2. **The scorecard** (`scorecard.md`; its arithmetic rows are generated
+   from `review-data.json` — the run's questions with a place for each
+   answer, the goal or the beats, speed by call kind and from a line to
    its reply, caching and cost by call kind, prompt length against the action
    number, repetition by content between scenes of one kind — and "The
    reading" is left to write). One row per dimension with its result,
