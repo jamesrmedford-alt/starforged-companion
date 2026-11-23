@@ -152,8 +152,11 @@ export function readWorld(gm, facts, notMemory = []) {
         pendingMove: cs.pendingMove === true, sceneId: cs.currentSceneId ?? null, locationId: cs.currentLocationId ?? null,
         // Cost cards nobody has answered: a card waits on the player and holds
         // nothing up, so a cost can be typed past (the third live run did, twice).
+        // A cost card asks for a choice (`sufferPrompt`); the cards that report a
+        // cost applied carry `sufferCard` too and are not owed.
         owed: game.messages.contents
-          .filter(m => m.flags?.[MODULE_ID]?.sufferCard === true && m.flags[MODULE_ID].resolved !== true && m.flags[MODULE_ID].xCarded !== true)
+          .filter(m => m.flags?.[MODULE_ID]?.sufferCard === true && m.flags[MODULE_ID].sufferPrompt
+            && m.flags[MODULE_ID].resolved !== true && m.flags[MODULE_ID].xCarded !== true)
           .map(m => ({ actor: game.actors.get(m.flags[MODULE_ID].actorId)?.name ?? null, move: m.flags[MODULE_ID].moveId ?? null })),
       },
       messages, stores,

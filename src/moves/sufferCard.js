@@ -954,6 +954,13 @@ const NEED_UNPOSTED_NOTE = "The card to answer it on could not be posted — the
  * session closes on it (issue #374 A10 — a live test run ended two sessions
  * with two weak hits' costs unpaid, and nothing had said so).
  *
+ * A cost card is one that asks for a choice: it carries its `sufferPrompt`
+ * (postSufferChoiceCard — a weak hit's cost, the at-0 choice, the picker of a
+ * loss redirected). `sufferCard` alone is not enough: the cards that REPORT a
+ * cost applied carry it too (sufferExecutor.js postSufferCard — "Endure Harm:
+ * -1 health"), with no prompt and nothing to answer, and counted, a paid
+ * price read as a cost owed.
+ *
  * @returns {Array<{ messageId: string|null, actorId: string|null, actorName: string, moveId: string|null, moveName: string }>}
  */
 export function costsLeftOwed() {
@@ -961,14 +968,14 @@ export function costsLeftOwed() {
   const owed = [];
   for (const message of messages) {
     const f = message?.flags?.[MODULE_ID];
-    if (f?.sufferCard !== true || f.resolved === true || f.xCarded === true) continue;
+    if (f?.sufferCard !== true || !f.sufferPrompt || f.resolved === true || f.xCarded === true) continue;
     const moveId = typeof f.moveId === "string" && f.moveId ? f.moveId : null;
     owed.push({
       messageId: message.id ?? null,
       actorId:   f.actorId ?? null,
       actorName: String(getActor(f.actorId)?.name ?? "").trim() || "Someone",
       moveId,
-      moveName:  moveId ? moveDisplayName(moveId) : "a move",
+      moveName:  moveId ? moveDisplayName(moveId) : "a cost to choose",
     });
   }
   return owed;

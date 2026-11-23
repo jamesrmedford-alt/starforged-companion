@@ -95,6 +95,25 @@ describe("WEAK-HIT-COST-UNPAID — End a Session names the costs nobody has answ
     expect(endCard()).toContain("2 costs are still owed — Mira Kestrel: Face Danger; Ren: Gather Information. Each waits on its card in the chat.");
   }, 30_000);
 
+  it("a card that reports a cost applied is not a cost owed (it carries sufferCard and asks nothing)", async () => {
+    // sufferExecutor.js postSufferCard's card for a paid price — "Endure Harm: -1 health". It has no
+    // prompt and no `resolved`; the replay of the third live run counted the miss's as a third cost owed.
+    await table.client("gm-1").run(() => globalThis.ChatMessage.create({
+      content: `<div class="sf-card sf-card--suffer"><div class="sf-card-header">Endure Harm</div><div class="sf-card-body">-1 health</div></div>`,
+      flags: { [MODULE_ID]: { sufferCard: true, priceOf: "res-miss" } },
+    }));
+    await table.settle(); await table.drain();
+    await costCard("pc-mira", "face_danger");
+    await endSession();
+    expect(endCard()).toContain("1 cost is still owed — Mira Kestrel: Face Danger. It waits on its card in the chat.");
+  }, 30_000);
+
+  it("a picker posted for no move of its own (a loss redirected) is named as a cost to choose", async () => {
+    await costCard("pc-mira", null);
+    await endSession();
+    expect(endCard()).toContain("1 cost is still owed — Mira Kestrel: a cost to choose. It waits on its card in the chat.");
+  }, 30_000);
+
   it("control: with nothing owed, neither the dialog nor the card says anything of it", async () => {
     await costCard("pc-mira", "face_danger", { resolved: true });
     await endSession();

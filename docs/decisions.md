@@ -127,9 +127,29 @@ counted: two of the candidates wait a fixed 50 ms and poll nothing.
   difference no table has yet asked to set. The issue's other option; the
   one to build if a table wants hazards rolled less readily than fights.
 
+**Checked against a real Foundry, no key (2026-11-23):** both scripted
+playthroughs replay and pass; a rehearsal passes; both kept runs reproduce.
+The third run's replay — its scribe's own recorded "scene" ratings — now
+keeps the miss and the arrival, asks for a campaign recap at End a Session
+(the live run asked for none) with both entries in its prompt, and its End a
+Session card reads "Unpaid: 2 costs are still owed — Mira Kestrel: Face
+Danger ×2"; the run is classed `suspected-quality-issue` for them.
+
+**What that replay caught.** The first form of the costs-owed read counted
+every card flagged `sufferCard` that was not resolved — and the cards that
+*report* a cost applied carry that flag too (`sufferExecutor.js`
+`postSufferCard`), with no prompt and no `resolved`. The replay named three
+costs for two: the third was the miss's paid price. A cost card is one that
+asks for a choice (`sufferPrompt`); both reads now say so. The unit test's
+fixture had been a choice card every time, so it could not see this — a
+report card is in it now.
+
 **Not done here:** the recordings and the two kept runs were made from the
-earlier scribe, summary and pacing prompts; replays still pass and report
-those calls as stale. Re-recording costs live calls and was not asked for.
+earlier scribe, summary and pacing prompts. Replays still pass, and **do not
+report these changes as stale**: a recording's staleness check compares a
+prompt's section headings, and a definition reworded inside a section, a
+context line and a call's token cap change none (`rules/ci-e2e.md`).
+Re-recording costs live calls and was not asked for.
 **Proved by:** `chronicleKeepsLastingMoves.test.js`, `sessionSummary.test.js`
 ("a session summary cut off at its length cap"),
 `endSessionNamesCostsOwed.test.js`, `classifierCombatCoversHazards.test.js`

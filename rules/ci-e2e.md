@@ -199,7 +199,11 @@ fact block, detection and draft cards, End and Begin a Session.
   prose with an empty fact block; `{}` for a JSON helper) and an
   `UNRECORDED <kind>` line. A recording whose system-prompt sections differ
   from the live request — entity ids and numbers normalised away — logs
-  `STALE <kind>`: re-record. The per-kind call counts, and any recording
+  `STALE <kind>`: re-record. The check compares section *headings*: a
+  sentence reworded inside a section, a line added to a context block, or a
+  call's parameters (its token cap) changes none, and nothing is logged —
+  the recording is older than the prompt and only the commit history says
+  so (issue #374 A9, A12 and A5 each changed a prompt this way). The per-kind call counts, and any recording
   nothing asked for, are logged after each scenario.
   A scenario marked `"strict": true` names every step (`id`) and declares
   its Claude calls: `calls` (each one required once, with an optional
@@ -483,7 +487,10 @@ charter or touch the runner:
   it, the observer reads the cost cards left unanswered at the end
   (`health.costsOwed` in `run.json`; the log's "left owed:" line), and a goal
   achieved on a table that owes is not a `pass` (known-issues
-  WEAK-HIT-COST-UNPAID). The instruction is a prompt line — whether a player
+  WEAK-HIT-COST-UNPAID). A cost card is one that asks for a choice
+  (`sufferPrompt`): the cards that report a cost applied carry `sufferCard`
+  too, and the check's first form counted one of those as owed — the third
+  run's replay showed three for two. The instruction is a prompt line — whether a player
   model follows it is read in the next live run; the check does not depend
   on it. A replay of a run made before this still reproduces: what is
   compared is the goal's status, its failing layer and the health checks,
