@@ -686,6 +686,15 @@ describe('the memory charter and the run\'s config', () => {
     expect(CONFIG.caps).toEqual({ actions: 30, calls: 100, minutes: 20, usd: 10 });
   });
 
+  it('the player is the model the maintainer chose, and no API reviewer runs unless it is turned on', () => {
+    // 2026-11-23: the AI player on Sonnet 5.5; the run is reviewed by the agent
+    // that made it, which reads the prompts and records a transcript-only
+    // reviewer is never shown (decisions.md → "AI exploration").
+    expect(CONFIG.player).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' });
+    expect(CONFIG.reviewer.enabled).toBe(false);
+    expect(CONFIG.reviewer.model, 'still configured, for a run nobody will read').toBeTruthy();
+  });
+
   it('every model the run calls has a price — the player\'s, the reviewer\'s, and the module\'s own', () => {
     const priced = Object.keys(CONFIG.prices.usdPerMillionTokens);
     expect(priced).toEqual(expect.arrayContaining([CONFIG.player.model, CONFIG.reviewer.model]));

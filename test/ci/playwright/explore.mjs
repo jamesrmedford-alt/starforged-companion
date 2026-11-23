@@ -5,15 +5,21 @@
 // screen and types, clicks and fills dialogs (lib/player.mjs). The GM's client
 // runs the real pipeline. An observer reads the world, the chat and the
 // prompts and decides — without a model — whether the goal was met
-// (lib/observer.mjs); a narrative reviewer reads the transcript and flags what
-// it suspects, with quotes (lib/reviewer.mjs). Every model call of the run is
-// held to the run's caps (lib/budget.mjs, explore.config.json).
+// (lib/observer.mjs). Every model call of the run is held to the run's caps
+// (lib/budget.mjs, explore.config.json).
+//
+// The run is then read by whoever made it: every live run ends with a review
+// (rules/ci-e2e.md → "AI exploration"). An API reviewer — a model that reads
+// the transcript alone and flags passages, with quotes (lib/reviewer.mjs) —
+// is off unless explore.config.json turns it on: it sees none of the prompts
+// or the records the helpers write, which is where the first reviewed run's
+// findings were. A rehearsal always runs it, so the option does not rot.
 //
 // On demand only: nothing in CI runs this, and it never files an issue,
 // changes code or rewrites a recording. It writes evidence, for a person.
 //
 // Modes (EXPLORE_MODE):
-//   live      — the player, the narrator and the reviewer are real models.
+//   live      — the player and the narrator are real models.
 //               Needs ANTHROPIC_API_KEY; spends money, up to the caps.
 //   rehearsal — the live path, whole — the budget's gate, the player's tool
 //               calls, the reviewer, the recording — with the Messages API
@@ -40,7 +46,7 @@
 //                   stored), the goal's score layer by layer, health
 //   requests.json   every prompt and reply — the module's, the player's, the
 //                   reviewer's — with usage and no headers
-//   review.json     the reviewer's flags (advisory)
+//   review.json     the API reviewer's flags, when it is on (advisory)
 //   replay.json     the actions, dice and replies a replay needs
 //
 // Exit code: 0 when the run finished and its evidence is written — whatever
@@ -257,6 +263,7 @@ async function main() {
     installRehearsal({ charter, forget: FORGETFUL });
   }
 
+  const REVIEWER = MODE === "rehearsal" || (MODE === "live" && config.reviewer?.enabled === true);
   const startedAt = new Date();
   const dir = path.join(ARTIFACTS, "explore", `${charter.name}-${MODE}-${stamp(startedAt)}`);
   const out = writer(dir);
@@ -280,7 +287,7 @@ async function main() {
 
   log(`${charter.name} charter, ${MODE} mode — evidence in ${path.relative(process.cwd(), dir)}`);
   if (MODE === "rehearsal") log(`a rehearsal: the model API is stood in for${FORGETFUL ? " — by a narrator that keeps nothing" : ""}`);
-  if (CALLS) log(`caps: ${config.caps.actions} actions, ${config.caps.calls} model calls, ${config.caps.minutes} minutes, $${config.caps.usd} — player ${config.player.model}, reviewer ${config.reviewer.model}`);
+  if (CALLS) log(`caps: ${config.caps.actions} actions, ${config.caps.calls} model calls, ${config.caps.minutes} minutes, $${config.caps.usd} — player ${config.player.model}, API reviewer ${REVIEWER ? config.reviewer.model : "off"}`);
 
   const browser = await chromium.launch();
   try {
@@ -414,7 +421,7 @@ async function main() {
     const outcome = scoreMemory({ facts: charter.facts, askCues: charter.ask?.cues ?? [], marks, messages, requests: moduleRequests });
     const health = healthOf({ endSession: marks.at(-1)?.session ?? null, clients: [gm, player].filter(Boolean), stalls, knownErrors: config.knownErrors ?? [] });
 
-    if (CALLS && !infrastructure && messages.some(m => m.narrator)) {
+    if (REVIEWER && !infrastructure && messages.some(m => m.narrator)) {
       review = await reviewTranscript({ apiKey: API_KEY, ...config.reviewer, messages, canon: charter.canon ?? charter.facts.map(f => f.statement), budget, requestLog: runnerRequests });
       if (!review.ok) log(`the reviewer did not report: ${review.problem}`);
     }
@@ -454,7 +461,7 @@ async function main() {
       commit: process.env.EXPLORE_COMMIT || null,
       versions: world,
       models: MODE === "live"
-        ? { player: config.player, reviewer: config.reviewer, module: [...new Set(moduleRequests.map(r => r.model).filter(Boolean))] }
+        ? { player: config.player, reviewer: REVIEWER ? config.reviewer : "off", module: [...new Set(moduleRequests.map(r => r.model).filter(Boolean))] }
         : "none — no model was called",
       prices: CALLS ? config.prices : undefined,
       settings: charter.settings ?? {},
@@ -466,7 +473,8 @@ async function main() {
       playerStopped: stopped,
       goal: { status: outcome.status, reason: outcome.reason, failingLayer: outcome.failingLayer, milestones: outcome.milestones },
       health: { failures: health.failures, waitingOnGm: health.waitingOnGm, knownFailures: health.knownFailures, errors: health.errors.length },
-      review: review ? { ok: review.ok, flags: review.flags.length, dropped: review.dropped, summary: review.summary, problem: review.problem } : "not run",
+      review: review ? { ok: review.ok, flags: review.flags.length, dropped: review.dropped, summary: review.summary, problem: review.problem }
+        : "no API reviewer — the run is reviewed by whoever made it",
       budget: spend,
       replay: MODE === "replay"
         ? { of: path.relative(process.cwd(), REPLAY_FROM), expected, reproduced, diverged }

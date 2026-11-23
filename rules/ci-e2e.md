@@ -420,9 +420,13 @@ Three roles, and what each may do — keep them apart:
   the requests the harness saw — and never writes. Its verdict is arithmetic
   (`scoreMemory`, `healthOf`, `classifyRun`, all pure and unit-tested): no
   model is asked whether the goal was met.
-- **The reviewer** (`lib/reviewer.mjs`) is a model's opinion with evidence.
-  A flag must quote the transcript word for word or it is dropped
-  (`keepQuotedFlags`); nothing it says outranks the observer.
+- **The review is yours** — the agent that made the run reads it afterwards
+  (below). An API reviewer (`lib/reviewer.mjs`: a model shown the transcript
+  alone, whose flags must quote it word for word or are dropped) is **off by
+  default** (`explore.config.json` → `reviewer.enabled`): it never sees the
+  prompts or what the helpers wrote, which is where the first reviewed run's
+  findings were. Turn it on for a run nobody will read. A rehearsal always
+  runs it. Nothing it says outranks the observer.
 
 The GM's client is on autopilot for what the module asks of the GM before a
 move rolls, answered without steering the story (`GM_AUTOPILOT` in
@@ -478,7 +482,9 @@ charter or touch the runner:
 failed health check (`product-failure`), then a goal never put to the test
 (`not-exercised` — also when the table was left waiting on the GM — or
 `budget-exhausted` when a cap caused it), then a goal not
-achieved or a reviewer's flag (`suspected-quality-issue`), else `pass`. A
+achieved, or an API reviewer's flag when one ran (`suspected-quality-issue`),
+else `pass`. **`pass` is the run's own verdict, not the review's**: the first
+run that went the whole way had a wrong campaign recap behind it. A
 memory goal that was not achieved is *suspected* at every layer — which
 stored facts a prompt owes is a design rule the observer does not know (a
 Chronicle entry reaches every narration only when pinned) — so `retrieval` is

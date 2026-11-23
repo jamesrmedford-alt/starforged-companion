@@ -125,10 +125,21 @@ maintainer's go-ahead for the slice: 2026-11-22.
   (its prompt as a cache write, its `max_tokens` as output) is reserved
   before it is sent and replaced by what it used. A model with no price is
   refused.
-- **Models: `claude-opus-5-5` for the player (effort low) and the reviewer
-  (effort medium).** The module's own calls use the models its settings
-  name. Chosen as the current default model; a config line each, the
-  maintainer's to change.
+- **The player is `claude-sonnet-5-5` at low effort** (the maintainer,
+  2026-11-23; it was `claude-opus-5-5` for the first two live runs). Its job
+  is to read a screen and pick one of five actions, and it was 57% of the
+  first reviewed run's cost. The module's own calls use the models its
+  settings name. A config line.
+- **No API reviewer by default** (the maintainer, 2026-11-23: "What we really
+  want is your full context review after the fact"). The reviewer is a model
+  shown the transcript and nothing else; the first reviewed run's findings
+  were in the prompts and in what the helpers wrote, which it never sees. It
+  found one thing the reading also found, for 12% of the run's cost. Every
+  live run is reviewed by the agent that made it (rules/ci-e2e.md); the API
+  reviewer stays in the runner as an option
+  (`explore.config.json` → `reviewer.enabled`) for a run nobody will read,
+  and a rehearsal always runs it so the option does not rot. If the first
+  round of the long haul never wants it, delete it.
 - **No server-side refusal fallback.** A declined call is reported as a
   refusal. A rescued call bills at the fallback model's rates, which the
   reservation made before dispatch did not cover — and the dollar cap is a

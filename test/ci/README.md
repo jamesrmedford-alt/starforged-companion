@@ -228,9 +228,12 @@ its own screen and types, clicks and fills dialogs. The GM's client runs the
 real pipeline, and an autopilot answers what the module asks of the GM before
 a roll (the move's confirmation; "Who are you interacting with?"). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
-asking a model; a **narrative reviewer** reads the transcript and flags what
-it suspects, quoting it. Nothing in CI runs this, and it never files an issue,
-changes code or rewrites a recording: it writes evidence for a person.
+asking a model. The run is then **reviewed by whoever made it** — the full
+transcript annotated, a scorecard, the action items as an issue, what it cost
+and returned. (An API reviewer — a model shown the transcript alone — is in
+the runner and off by default: `explore.config.json` → `reviewer.enabled`.)
+Nothing in CI runs this, and the run itself never files an issue, changes
+code or rewrites a recording: it writes evidence.
 
 ```bash
 ./scripts/cloud.sh up --fresh
@@ -275,9 +278,9 @@ in none of them. The folder is not committed; to keep a finding, turn its
 
 | | |
 | --- | --- |
-| `pass` | The goal was achieved, nothing failed, the reviewer flagged nothing. |
+| `pass` | The goal was achieved and nothing failed. The run's own verdict — read the review before trusting it. |
 | `product-failure` | A check that holds whatever the charter failed: the move lock still held at the end, an error of the module's on a page, a step the table never finished. |
-| `suspected-quality-issue` | The goal was not achieved (the layer is named), or the reviewer flagged a passage. For a person to read. |
+| `suspected-quality-issue` | The goal was not achieved (the layer is named), or the API reviewer, when on, flagged a passage. For a person to read. |
 | `not-exercised` | The goal was never put to the test — the player stopped early or named the fact itself, or the GM's screen was left waiting on a question the run's GM autopilot does not answer (the window is named). Not a pass. |
 | `budget-exhausted` | A cap ended the run before the goal was put to the test. |
 | `infrastructure-error` | The run could not be made: Foundry, the browser, or the model API failed. |
