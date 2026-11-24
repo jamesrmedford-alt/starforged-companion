@@ -113,6 +113,24 @@ describe('the plain lines that ship', () => {
     expect(LIST.contexts['bleakhold-after-fight'].state).toMatchObject({ location: 'Bleakhold Station', health: 3, supply: 2 });
   });
 
+  it('a step toward a vow is asked for with no fight open — one of them with none behind it either — and a thought about the quest is a control', () => {
+    const steps = LIST.cases.filter(c => (c.want.moves ?? []).includes('reach_a_milestone'));
+    expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4']);
+    for (const c of steps) {
+      const state = LIST.contexts[c.context].state;
+      expect(state.vow?.name, `${c.id}: a vow to step toward`).toBeTruthy();
+      // No fight is open in any context: the pacing reader's rules for one do not apply.
+      expect((state.tracks ?? []).some(t => t.type === 'combat'), `${c.id}: no fight open`).toBe(false);
+    }
+    // progress-3 follows a fight that is over; progress-4 is said alone at the dock, nothing attempted and nobody told.
+    expect(steps.find(c => c.id === 'progress-4').context).toBe('aboard-at-spire');
+    expect(LIST.contexts['aboard-at-spire'].scene.join(' ')).not.toMatch(/\b(?:cutter that jumped|volley|scrap now)\b/);
+    // Its control: a line about the quest that is no step toward it, where the same vow is open.
+    const musing = LIST.cases.find(c => c.id === 'none-vow-musing');
+    expect(musing).toMatchObject({ family: 'control', context: 'aboard-at-spire', want: { none: true } });
+    expect(LIST.contexts[musing.context].state.vow.name).toBe('Find who is raiding the Cinder Expanse lanes');
+  });
+
   it('a run reads a context\'s lines together, and READERS_ONLY picks a pilot', () => {
     const { cases, unknown } = casesToRun(LIST);
     expect(unknown).toEqual([]);

@@ -231,16 +231,36 @@ only when the fiction puts something at risk in doing it. (Travel is the
 exception already stated: a journey toward an uncharted destination is at least
 offered as undertake_an_expedition, hazard or not.)
 
-WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED — treating a wound or an ailment
-(heal), restocking supplies (resupply), repairing a vehicle or gear (repair),
-finding comfort or a community to recover in (hearten, sojourn): each changes
-a character's sheet, and narration never changes it, so a line that sets about
-one is never plain NARRATIVE. At any dial, answer at least
+WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED — a character's sheet changes only
+by a move; narration never changes it. So a line that sets about one of the
+things below is never plain NARRATIVE. At any dial, answer at least
 NARRATIVE_WITH_MOVE_AVAILABLE with that move as suggestedMove, so the table is
 offered it — MOVE where the dial and the player's commitment call for one. A
 line that only mentions such a thing in passing is not setting about it.
-Example: "I treat my wounds with the ship's medkit" at a downtime dial of 1 →
-NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal. NOT plain NARRATIVE.
+
+  - RECOVERY — treating a wound or an ailment (heal), restocking supplies
+    (resupply), repairing a vehicle or gear (repair), finding comfort or a
+    community to recover in (hearten, sojourn).
+    Example: "I treat my wounds with the ship's medkit" at a downtime dial of
+    1 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal. NOT plain NARRATIVE.
+
+  - A STEP TOWARD A VOW — a line that states a real step toward one of the
+    speaker's open vows (the Open vows of the SITUATION): proof found, an
+    obstacle overcome, a lead run to ground, a foe of the quest beaten. Only
+    reach_a_milestone marks a vow's progress, so offer it. Such a line often
+    attempts nothing and puts nothing at stake — it says what has been
+    achieved, to the table or to someone in the scene — and that is no reason
+    to call it plain NARRATIVE: a milestone is claimed, not rolled.
+    A line that also attempts something with stakes is still that action's
+    move (going through the files is gather_information; the milestone is
+    what it may earn). A line that says outright the vow is done — the quest
+    finished, the promise kept — is fulfill_your_vow. A hope, a plan, a
+    question or a passing remark about the quest is no step; and with no open
+    vow there is nothing to step toward.
+    Example: "I now have proof the raids are fed by dock clerks selling cargo
+    routes." with the open vow "Find who is raiding the Cinder Expanse lanes"
+    → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove reach_a_milestone. NOT
+    plain NARRATIVE.
 
 A LINE THAT NAMES ITS MOVE ASKS FOR IT — when the player names the move they
 are making ("…, to Develop Your Relationship", "I Face Danger to cross the
@@ -283,7 +303,7 @@ ADVENTURE
 
 QUEST
 - swear_an_iron_vow: commit to a quest
-- reach_a_milestone: meaningful progress on a vow
+- reach_a_milestone: a real step toward an open vow — marks its progress (no roll)
 - fulfill_your_vow: progress move when vow completes
 
 CONNECTION

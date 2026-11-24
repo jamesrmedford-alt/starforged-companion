@@ -294,6 +294,37 @@ All real progress lands on **item ticks** (`system.current`) via
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced
   `reach_a_milestone` move instead (next bullet).
+- **A step said in the fiction** is at least *offered* Reach a Milestone
+  (known-issues VOW-STEP-SAID-IN-FICTION-NOT-READ). A typed line that states
+  a real step toward one of the speaker's open vows — proof found, an
+  obstacle overcome, a lead run to ground — attempts nothing and puts nothing
+  at stake, and the pacing classifier narrated it with nothing offered
+  (twelve readings of twelve in the readers' plain-line test: "the player
+  states a conclusion… no action is attempted"). Its WHAT ONLY A MOVE CHANGES
+  IS ALWAYS OFFERED block now names it beside recovery (`pacing/classifier.js`
+  — the vows reach it in the SITUATION block, §3), and the interpreter's rule
+  10 reads such a line as `reach_a_milestone`, with no roll. The hops after
+  the classifier's answer:
+  - **offered** (NARRATIVE_WITH_MOVE_AVAILABLE) → `router.routePacedInput` →
+    `narratePacedInput` posts the paced card with `suggestedMove:
+    "reach_a_milestone"` and its Roll button (the narrator's own closing hint,
+    when it names another move, takes the button instead —
+    `reconcileSuggestedMove`) → the press relays `paced.roll` →
+    `cardActions.applyPacedRoll` posts the line again as its speaker with
+    `forcedMoveId` → `readMove`'s forced interpretation (the move has no
+    stat, so no model is asked) → the confirm dialog → the pipeline branch
+    above: the roller's sole open vow is marked by its rank, several ask on
+    the picker (`vowStepPacedRollMarksVow.test.js` walks it);
+  - **a MOVE** (the dial and the line's commitment) → the interpreter: its
+    `reach_a_milestone` reaches the same confirm dialog; its NO MOVE narrates
+    the line with the classifier's milestone offered (`readMove`'s
+    `noMove.offeredMove`);
+  - **in an open fight** an offer is a MOVE (the router's combat backstop),
+    so the interpreter reads the line.
+
+  A line that also attempts something with stakes is that action's move —
+  whose hit carries ⚑ Mark Progress on Vow (next bullet); a line that says
+  outright the vow is done is Fulfill Your Vow (§4).
 - **Move-card suggestion buttons** ("⚑ Mark Progress on Vow" / "🏁 Attempt to
   Fulfill Vow") on eligible adventure/exploration hits — these post forced
   moves so the GM-side pipeline does the work. "⚑ Mark Progress on Vow"

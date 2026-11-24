@@ -919,6 +919,18 @@ the summary to the canonical GM to store (`narrator.summary` →
 one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
 the cached text.
 
+**What a typed line is read as** (decisions.md → "A player is never made to
+name a move"). Both readers run on Sonnet 5.5, thinking off (their own
+constants; `api-proxy.js` sends the model's form). The classifier's rules hold
+one block for what narration can never do — WHAT ONLY A MOVE CHANGES IS ALWAYS
+OFFERED: a line that sets about it is never plain NARRATIVE, at any dial, but
+at least NARRATIVE_WITH_MOVE_AVAILABLE with the move on the card's Roll. It
+names recovery (heal, resupply, repair, hearten, sojourn — issue #377 item 3)
+and a step toward one of the speaker's open vows said in the fiction
+(reach_a_milestone — `vow-flow.md` §2 has the hops to the vow's track). The
+interpreter's rules 7 and 10 say the same of a line it is handed. What the
+classifier reads the line against is the SITUATION above.
+
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
 session is over once End a Session marks it (`sessionEndedId`) or after four
