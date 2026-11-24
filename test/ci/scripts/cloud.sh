@@ -376,7 +376,7 @@ cmd_readers() {
     [[ -n "$(claude_key)" ]] || die "a live run calls Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first — or run it dry"
     [[ -n "${READERS_QUESTIONS:-}" ]] || die "a live run is given its questions first: set READERS_QUESTIONS — what this run is to answer that a dry run cannot, one question to a line"
     export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"
-    log "reading the plain lines LIVE — real models (${READERS_ARMS:-claude-haiku-5-5,claude-sonnet-5-5}), spend capped at ${READERS_CAP_USD:-2.00} dollars"
+    log "reading the plain lines LIVE — real models (${READERS_ARMS:-claude-sonnet-5-5,claude-haiku-5-5}), spend capped at ${READERS_CAP_USD:-2.00} dollars"
   else
     unset ANTHROPIC_API_KEY
     log "reading the plain lines (dry: no key, no model call — the readings are stubs)"

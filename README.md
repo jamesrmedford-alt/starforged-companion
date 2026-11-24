@@ -239,9 +239,12 @@ reference, settings documentation, troubleshooting guide, and changelog.
 Claude is billed to your own Anthropic API key. The narrator runs on
 **Claude Sonnet 5.5** by default (the *Narration Model* setting — Claude
 Haiku 5.5 is the cheaper choice), and so does the automatic Chronicle writer,
-which follows that setting; the move interpreter, the pacing classifier, the
-detection passes after each narration, relevance, `!lore` and the Private
-Channel run on **Claude Haiku 5.5**. At Anthropic's published rates:
+which follows that setting. The two calls that read each line you type — the
+pacing classifier (is it a move?) and the move interpreter (which move, which
+stat) — run on **Claude Sonnet 5.5** as well, whatever that setting says: it
+reads a plain line of play right more often than Haiku does. The detection
+passes after each narration, relevance, `!lore` and the Private Channel run on
+**Claude Haiku 5.5**. At Anthropic's published rates:
 
 | Model | Input | Output |
 |---|---|---|
@@ -257,9 +260,11 @@ The narrator call — one per chat input that is narrated, and one per move —
 is most of the bill, and most of what it sends is billed at the full input
 rate: its system prompt is rebuilt for every call (it carries the scene's
 entities, ledger and character state), so cached reads are a small share of
-it. The helper calls' fixed instructions are marked for prompt caching
-(cached reads bill at a fraction of the input rate); one shorter than the
-model's minimum cacheable length is sent uncached.
+it. Reading a typed line comes next: one short call, and a second when the
+line is a move. The helper calls' fixed instructions — the two readers' among
+them — are marked for prompt caching (cached reads bill at a fraction of the
+input rate, for as long as lines follow one another within a few minutes); one
+shorter than the model's minimum cacheable length is sent uncached.
 
 Earlier versions of this README quoted per-session and per-call dollar
 figures measured in v1.2.7 play on the models of that time; they no longer

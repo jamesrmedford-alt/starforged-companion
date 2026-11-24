@@ -8,10 +8,11 @@ the owning function; line numbers drift, so search by symbol. Sibling docs:
 Cross-cutting: consequence writes are GM-gated per branch; expedition state
 lives in the Starforged Progress Tracks journal flag (`type:"expedition"`).
 The move interpreter learns the open tracks from the same live stores
-(`buildContextSummary`, `src/moves/interpreter.js`): the open vow Items on the
-PCs (owner-tagged when there is more than one PC) and the open non-vow tracks
-in the Progress Tracks journal, so an open expedition is named to it for
-`finish_an_expedition` targeting. (It once read
+(`buildContextSummary`, `src/moves/interpreter.js`): the roller's open vows in
+their SITUATION block (`moves/situation.js`, with rank and progress — the
+other characters' by name, owner-tagged, at a table of several) and the open
+non-vow tracks in the Progress Tracks journal, so an open expedition is named
+to it for `finish_an_expedition` targeting. (It once read
 `campaignState.progressTrackIds`, which nothing wrote, so it was never told
 about any track; that field and the dead `consequences.progressTrackId`
 mark-progress route in `persistResolution` were deleted in the 2026-10

@@ -400,6 +400,24 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 2. Develop (relationship progress)
 
+- **Something done for a connection, said in the fiction, is at least
+  *offered* Develop Your Relationship** (known-issues
+  FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A gift of value, a risk taken for
+  them, a favour that costs the character time or standing, bringing them
+  what they need: the pacing classifier's WHAT ONLY A MOVE CHANGES IS ALWAYS
+  OFFERED block names it as its third thing (`pacing/classifier.js` — the
+  speaker's connections reach it in the SITUATION block, §3), so the line is
+  never plain NARRATIVE; MOVE when the connection is bonded and the social
+  dial calls for one. Small talk, news traded, a plain question and a
+  courtesy that costs nothing stay narration, and the interpreter's rule 10
+  reads both the same way. The readers' plain-line test had "I offer to watch
+  Tamsin's counter for an hour while she rests" and a gift of salvage rights
+  narrated with nothing offered three readings of four on Haiku 5.5 ("a kind
+  offer… with no roll-worthy risk… is plain conversation") — the rule is
+  stated whatever the model. The offer's Roll (`cardActions.applyPacedRoll`)
+  forces the move with no target and asks no reader, so the connection is
+  found from the player's line — the next bullet's `enrichBondedDevelop`
+  (`favourPacedRollDevelopsNamedConnection.test.js` walks it).
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
   one name inside the other as whole words, either way — "Lorenzo" is not Ren,
@@ -408,7 +426,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
   resolves the connection before the dice — the picker's host id, else the
-  name — stamps `moveTargetId` / `moveTarget` so this branch marks the same
+  name, else, for a Develop Your Relationship that carries no target at all
+  (a paced card's Roll), the one active connection the player's line names
+  (`namedOnce`: the full name, or a first or last name no other shares —
+  with no target it took the sole bonded connection, whoever the line was
+  about, and with several known and none bonded it marked nothing) — stamps
+  `moveTargetId` / `moveTarget` so this branch marks the same
   one, and makes the rank the stat (`BOND_ROLL_ADDS`, +1 troublesome … +5
   epic; the card reads "+epic (5)" — issue #314 Q06, the pipeline rolled +0
   while `!bond` rolled +rank); the outcome pays `BONDED_DEVELOP_OUTCOMES`
@@ -429,8 +452,10 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   with their box XP, `writeLegacyTicks` — and a match's rank raise; a Test
   Your Relationship from a miss develops then): the upgrade did not re-run
   the branch, so a bonded development burned to a strong hit marked nothing
-  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named)
-  silently no-ops. `selectConnection`'s `strict` option is for an
+  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named —
+  for a Develop Your Relationship, none or two named by the line either)
+  silently no-ops; a Test Your Relationship with no target still takes the
+  sole-bonded / sole-active fallback alone. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name resolves the connection it names
   exactly, else the one connection whose name holds it as whole words (the
   typed name a fragment OF the record's name — `!sever Lyssa Chen` severed
@@ -535,12 +560,18 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 3. Forge the bond
 
-The move interpreter is told the roller's connections and each one's
-relationship track (`interpreter.js rollerConnectionLines`, read from the PC's
-bond Items): a full track says Forge a Bond can be made, a bonded connection is
-marked bonded. Told nothing of it, it read "Tamsin, I ask you to forge a bond
-with me, to Forge a Bond" — her track full — as Make a Connection (the long
-haul's second live run, known-issues NAMED-MOVE-READ-AS-ANOTHER).
+Both readers of a typed line — the pacing classifier and the move interpreter
+— are told the speaker's connections and each one's relationship track, in
+the SITUATION block they share (`moves/situation.js buildSituationBlock`, read
+from the PC's bond Items through `readConnections`): its rank, its progress in
+boxes, "full, no bond forged yet" for a full track, "bonded" for a forged one;
+a severed connection is left out. The interpreter's rule 10 says a full track
+is what Forge a Bond is rolled against and a bonded connection is developed,
+not bonded again. Told nothing of it, the interpreter read "Tamsin, I ask you
+to forge a bond with me, to Forge a Bond" — her track full — as Make a
+Connection (the long haul's second live run, known-issues
+NAMED-MOVE-READ-AS-ANOTHER); the classifier was told the names alone until the
+block.
 
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
@@ -642,11 +673,12 @@ progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The pacing
-classifier reads the same mirror for the speaker alone
-(`classifier.formatConnections` — "Kira's connections: Kael Dros, Sable
-(bonded)") and leans toward a move only for a line that presses or tests one
-of them; it was told every NPC card, and leaned toward a roll whenever a line
-addressed one (issue #354 P2-04). The vendor
+classifier and the move interpreter read the same mirror for the speaker alone
+— the Connections line of their SITUATION block (`moves/situation.js`:
+`- Connections: "Kael Dros" (dangerous, relationship 4 of 10 boxes); "Sable"
+(formidable, bonded).`) — and the classifier leans toward a move only for a
+line that presses or tests one of them; it was told every NPC card, and leaned
+toward a roll whenever a line addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
 writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN),

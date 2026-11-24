@@ -4,21 +4,36 @@
  *
  * Decides whether a player input warrants a move (MOVE), should be pure
  * narration (NARRATIVE), or is narration with a move available
- * (NARRATIVE_WITH_MOVE_AVAILABLE). One Haiku call per undecorated chat
+ * (NARRATIVE_WITH_MOVE_AVAILABLE). One model call per undecorated chat
  * input. Output is structured JSON; the router consumes it.
+ *
+ * The model is Sonnet 5.5, as the move interpreter's is (decisions.md → "The
+ * readers run on Sonnet 5.5"): of 90 plain lines that wanted a move it read 77
+ * right to Haiku 5.5's 71, and offered a move nobody wanted for none of 20
+ * controls to Haiku's 5 (test/ci/playwright/readers/runs/
+ * readers-live-20261124-0255/). Its thinking is off — api-proxy.js sends the
+ * model's own form of that (narration/thinking.js) — so the reply is the JSON
+ * object and nothing else, inside the cap below.
+ *
+ * What it is told of the speaker: their name and their SITUATION — the block
+ * the move interpreter is given too (src/moves/situation.js): health, spirit
+ * and supply with the impact each recovery move clears, the command
+ * vehicle's integrity, the open vows with their progress, the connections
+ * with their relationship tracks. It was told the connections' names alone,
+ * and nothing of a meter or a vow.
  *
  * Transport: all Anthropic calls go through src/api-proxy.js per CLAUDE.md.
  * Prompt caching applies to the system prompt (move catalog summary, decision
- * guidance) so subsequent calls in a session are ~10% of the input cost.
+ * guidance) so subsequent calls in a session are ~5% of the input cost.
  */
 
 import { apiPost } from "../api-proxy.js";
-import { readConnections, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
+import { buildSituationBlock } from "../moves/situation.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MODEL         = "claude-haiku-5-5";
+const MODEL         = "claude-sonnet-5-5";
 
 export const PACING_DECISION = Object.freeze({
   MOVE:                          "MOVE",
@@ -147,6 +162,15 @@ sceneChallenge (null for any other move). A fight is still combat
 (enter_the_fray …) even mid-challenge, and any other move is itself. With no
 scene challenge open, never nominate them.
 
+THE SITUATION — under CHARACTER the user message gives the speaker's sheet as
+it stands: health, spirit and supply, each with the impact that goes with it
+(wounded, shaken, unprepared); the command vehicle's integrity and whether it
+is battered; the open vows, each with its rank and progress; the connections,
+each with its rank and relationship track. It is what a move would change.
+Read the input against it, as you read it against the recent scene: it says
+whether there is a wound to treat, a vow a line could be a step toward, a
+relationship a line could deepen.
+
 READ THE INPUT AGAINST THE RECENT SCENE — a short line takes its meaning from
 what it follows. "We're on our way", "let's go", "head there", "wake me when we
 get there" after the scene set up a destination is travel toward that
@@ -195,10 +219,10 @@ relationship; a line that carries a threat or a danger — implied menace
 counts — is a move too (face_danger, compel).
 
 THE SPEAKER'S CONNECTIONS — when such a pressing or testing line is spoken to
-one of THE SPEAKER'S CONNECTIONS listed under CHARACTER (the relationships on
-that character's own sheet), lean toward MOVE in the social category: the
-relationship is at stake. Any other NPC carries no lean, and a connection
-carries none for plain conversation.
+one of the speaker's connections — the Connections of the SITUATION under
+CHARACTER, the relationships on that character's own sheet — lean toward MOVE
+in the social category: the relationship is at stake. Any other NPC carries no
+lean, and a connection carries none for plain conversation.
 
 AN EVERYDAY ACTION WITH NOTHING AT RISK IS NOT A MOVE — answering a hail,
 opening a channel, powering a system up, walking to a station, picking
@@ -207,16 +231,71 @@ only when the fiction puts something at risk in doing it. (Travel is the
 exception already stated: a journey toward an uncharted destination is at least
 offered as undertake_an_expedition, hazard or not.)
 
-WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED — treating a wound or an ailment
-(heal), restocking supplies (resupply), repairing a vehicle or gear (repair),
-finding comfort or a community to recover in (hearten, sojourn): each changes
-a character's sheet, and narration never changes it, so a line that sets about
-one is never plain NARRATIVE. At any dial, answer at least
+WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED — a character's sheet changes only
+by a move; narration never changes it. So a line that sets about one of the
+things below is never plain NARRATIVE. At any dial, answer at least
 NARRATIVE_WITH_MOVE_AVAILABLE with that move as suggestedMove, so the table is
 offered it — MOVE where the dial and the player's commitment call for one. A
 line that only mentions such a thing in passing is not setting about it.
-Example: "I treat my wounds with the ship's medkit" at a downtime dial of 1 →
-NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal. NOT plain NARRATIVE.
+
+  - RECOVERY — treating a wound or an ailment (heal), restocking supplies
+    (resupply), repairing a vehicle or gear (repair), finding comfort or a
+    community to recover in (hearten, sojourn).
+    Example: "I treat my wounds with the ship's medkit" at a downtime dial of
+    1, with Health 3 of 5 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal.
+    NOT plain NARRATIVE.
+    THE EXCEPTION — NOTHING TO RECOVER. A recovery move with nothing to
+    recover is no move, and is not offered: answer plain NARRATIVE,
+    suggestedMove null. Read it from the Meters and the Command vehicle of the
+    SITUATION:
+      · heal — Health is full and the character is not wounded (unless the
+        care is plainly for someone else: an ally, a companion);
+      · hearten — Spirit is full and the character is not shaken;
+      · resupply — Supply is full and the character is not unprepared (unless
+        the line is after one particular item it needs);
+      · repair — the command vehicle's integrity is full and it is not
+        battered (unless the line is about something else that is damaged:
+        another vehicle, a module, a companion, a device).
+    A meter the SITUATION gives as unknown, or no command vehicle recorded, is
+    not "nothing": offer the move as above.
+    Example: "I treat my wounds with the ship's medkit" with Health 5 of 5
+    (full, not wounded) → NARRATIVE, suggestedMove null. There is no wound to
+    treat; rolled, it would buy nothing and could cost supply.
+
+  - A STEP TOWARD A VOW — a line that states a real step toward one of the
+    speaker's open vows (the Open vows of the SITUATION): proof found, an
+    obstacle overcome, a lead run to ground, a foe of the quest beaten. Only
+    reach_a_milestone marks a vow's progress, so offer it. Such a line often
+    attempts nothing and puts nothing at stake — it says what has been
+    achieved, to the table or to someone in the scene — and that is no reason
+    to call it plain NARRATIVE: a milestone is claimed, not rolled.
+    A line that also attempts something with stakes is still that action's
+    move (going through the files is gather_information; the milestone is
+    what it may earn). A line that says outright the vow is done — the quest
+    finished, the promise kept — is fulfill_your_vow. A hope, a plan, a
+    question or a passing remark about the quest is no step; and with no open
+    vow there is nothing to step toward.
+    Example: "I now have proof the raids are fed by dock clerks selling cargo
+    routes." with the open vow "Find who is raiding the Cinder Expanse lanes"
+    → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove reach_a_milestone. NOT
+    plain NARRATIVE.
+
+  - SOMETHING DONE FOR A CONNECTION — the speaker does something for one of
+    their connections (the Connections of the SITUATION) that costs the
+    speaker something or meets a real need of that person's: a gift of value,
+    a risk taken for them, a favour that costs the speaker time or standing,
+    bringing them what they need. That deepens the relationship, and only
+    develop_your_relationship marks it, so offer it — MOVE when the
+    connection is bonded (it is rolled then) and the social dial calls for
+    one. Nothing need be at risk and nothing need be rolled: with a connection
+    not yet bonded the move is no roll at all, a mark of progress.
+    Small talk, news traded, a plain question and a courtesy that costs
+    nothing are still narration (TALKING IS NOT A MOVE). And this is about
+    the speaker's connections only: the same deed done for anyone else is
+    read by the other rules, as it was.
+    Example: "I offer to watch Tamsin's counter for an hour while she rests."
+    with Tamsin Okoro among the Connections → NARRATIVE_WITH_MOVE_AVAILABLE,
+    suggestedMove develop_your_relationship. NOT plain NARRATIVE.
 
 A LINE THAT NAMES ITS MOVE ASKS FOR IT — when the player names the move they
 are making ("…, to Develop Your Relationship", "I Face Danger to cross the
@@ -227,7 +306,8 @@ offers it.
 
 ## CATEGORY DEFINITIONS
 
-Pick the category from the SITUATION, not the apparatus being used:
+Pick the category from what is happening in the fiction, not the apparatus
+being used:
 
 - combat:        fighting or under direct attack right now — and acting
                  against any other immediate physical danger as it happens
@@ -259,7 +339,7 @@ ADVENTURE
 
 QUEST
 - swear_an_iron_vow: commit to a quest
-- reach_a_milestone: meaningful progress on a vow
+- reach_a_milestone: a real step toward an open vow — marks its progress (no roll)
 - fulfill_your_vow: progress move when vow completes
 
 CONNECTION
@@ -312,7 +392,8 @@ FATE
  * @param {string}   args.playerText
  * @param {Object}   args.campaignState
  * @param {{ name?: string|null, actorId?: string|null }|null} args.character — the
- *   speaker: their name, and their Actor id for their own connections
+ *   speaker: their name, and their Actor id for their own sheet — the
+ *   SITUATION block (meters, vows, connections; moves/situation.js)
  * @param {{count: number, window: number}} args.recentMoveDensity
  * @param {{dials: Object, sceneOverride?: {modifier:number,label:string}|null}} args.pacingConfig
  * @param {boolean} [args.combatActive] — a fight is open (the COMBAT IS ACTIVE rule)
@@ -342,7 +423,7 @@ export function buildClassifierContext({
   const density = recentMoveDensity ?? { count: 0, window: 5 };
   const densityLine = `Last ${density.window} inputs in current scene: ${density.count} were moves.`;
 
-  const connectionLine = formatConnections(character);
+  const situation      = speakerSituation(character, campaignState);
   const sceneLine      = formatScene(campaignState);
   const chartedLine    = formatChartedPlaces(campaignState);
   const combatLine     = combatActive
@@ -373,7 +454,7 @@ export function buildClassifierContext({
     "",
     "## CHARACTER",
     character?.name ? `Name: ${character.name}` : "Name: (none set)",
-    connectionLine,
+    situation,
     "",
     "## CURRENT SCENE",
     ...(combatLine ? [combatLine] : []),
@@ -466,7 +547,9 @@ export async function classifyInput({
 async function callClassifierAPI({ apiKey, systemPrompt, userMessage, model }) {
   const body = {
     model,
-    max_tokens: 330,   // was 250 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
+    // Room for the JSON decision: Sonnet 5.5 and Haiku 5.5 count a text alike,
+    // and the longest of 220 measured decisions was 173 tokens on either.
+    max_tokens: 330,
     system: [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
     ],
@@ -568,42 +651,36 @@ function fallbackDecision(reason) {
 // CONTEXT EXTRACTION — minimal pure helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The most connections of the speaker's the classifier is told of.
-const SPEAKER_CONNECTIONS_CAP = 8;
-
 /**
- * The speaker's own connections — the relationships on that character's sheet
- * (actorBridge.readConnections: the bond Items a Make a Connection or a
- * confirmed NPC put there), a severed one left out — for the THE SPEAKER'S
- * CONNECTIONS rule (issue #354 P2-04, the maintainer's decision).
+ * The speaker's SITUATION block (moves/situation.js buildSituationBlock) — the
+ * one the move interpreter is given too: their sheet's meters and impacts, the
+ * command vehicle, their open vows and their connections. With no player
+ * character behind the line (no speaker, an Actor that is gone), the block
+ * says no sheet is known.
  *
- * This listed every NPC card (`campaignState.connectionIds`): under FOLDER-002
- * every named individual is a connection-type card, so "the addressee is a
- * Connection → lean toward MOVE" covered every tracked NPC, and every line
- * spoken to one — a question, an answer, "my name is Isaac" — was read as
- * Compel. A Starforged connection is a relationship a character has, so the
- * list is the speaker's own. Never throws.
+ * Its Connections are what THE SPEAKER'S CONNECTIONS rule reads: the
+ * relationships on that character's own sheet (actorBridge.readConnections —
+ * the bond Items a Make a Connection or a confirmed NPC put there), a severed
+ * one left out (issue #354 P2-04, the maintainer's decision). The classifier
+ * once listed every NPC card (`campaignState.connectionIds`): under
+ * FOLDER-002 every named individual is a connection-type card, so "the
+ * addressee is a Connection → lean toward MOVE" covered every tracked NPC,
+ * and every line spoken to one — a question, an answer, "my name is Isaac" —
+ * was read as Compel. A Starforged connection is a relationship a character
+ * has, so the list is the speaker's own. Never throws.
  *
  * @param {{ name?: string|null, actorId?: string|null }|null} character — the speaker
+ * @param {Object|null} campaignState — for the command vehicle
  * @returns {string}
  */
-function formatConnections(character) {
-  const who = character?.name ? `${character.name}'s connections` : "The speaker's connections";
-  let names = [];
+function speakerSituation(character, campaignState) {
+  let actor = null;
   try {
-    const actor = character?.actorId ? globalThis.game?.actors?.get?.(character.actorId) : null;
-    if (isPlayerCharacterActor(actor)) {
-      names = readConnections(actor)
-        .filter(c => c?.name && !c.lost)
-        .map(c => `${String(c.name).replace(/[\r\n]+/g, " ").trim()}${c.completed ? " (bonded)" : ""}`);
-    }
+    actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null;
   } catch (err) {
-    console.warn(`starforged-companion | pacing classifier: the speaker's connections could not be read:`, err?.message ?? err);
+    console.warn(`starforged-companion | pacing classifier: the speaker's character could not be found:`, err?.message ?? err);
   }
-  const unique = [...new Set(names.filter(Boolean))];
-  if (!unique.length) return `${who}: (none)`;
-  const shown = unique.slice(0, SPEAKER_CONNECTIONS_CAP);
-  return `${who}: ${shown.join(", ")}${unique.length > shown.length ? `, +${unique.length - shown.length} more` : ""}`;
+  return buildSituationBlock(actor, { campaignState });
 }
 
 // The most charted places the classifier is told of.

@@ -35,6 +35,15 @@
 import { onTestFailed } from "vitest";
 import { CLAUDE_FAULT, MODULE_ID } from "./multiClient.js";
 
+/**
+ * A call made by one of the two readers of a typed line — the pacing
+ * classifier or the move interpreter (by how their system prompts open). Both
+ * run on Sonnet 5.5, the narration model's default (decisions.md → "The
+ * readers run on Sonnet 5.5"), so a test that tells a narration call by its
+ * model says it is not one of these as well.
+ */
+export const isReaderCall = (call) => /^You are the (?:pacing pre-classifier|move interpreter)\b/.test(call?.system ?? "");
+
 /** A promise with its resolve / reject exposed. */
 export function deferred() {
   let resolve;

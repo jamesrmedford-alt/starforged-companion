@@ -74,6 +74,7 @@ import { finishVow } from "./vow.js";
 import { selectCombatTrack } from "./combat.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, bondedDevelopRoll, developmentAdded } from "./developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
+import { readSituation, isRecoveryMove, nothingToRecover, nothingToRecoverReason } from "./situation.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
 import { extractRiders } from "./consequenceRiders.js";
@@ -277,8 +278,10 @@ async function travelDestinationUnread(moveId) {
  * @returns {Promise<{ interpretation: Object, combatPosition: *, targetChoice: Object|null,
  *   speakerActor: Actor|null, rollerActor: Actor|null, noMove?: { rationale: string, lowConfidence: boolean,
  *   offeredMove: string|null } }>} — `noMove`: the line makes no move (or its
- *   reading is too unsure to roll): the caller narrates it, with `offeredMove`
- *   — the move it might be — offered on the narration's card; nothing else is read
+ *   reading is too unsure to roll, or it is read as a recovery move the
+ *   roller's sheet has nothing for): the caller narrates it, with `offeredMove`
+ *   — the move it might be — offered on the narration's card; nothing else is
+ *   read. A recovery move with nothing to recover is never the one offered.
  */
 export async function readMove({
   narration, speakerActorId, campaignState, apiKey, dial,
@@ -327,15 +330,38 @@ export async function readMove({
     // A reading that failed (the interpreter's fallback) is not an unsure one:
     // it goes to the confirm dialog, which says so.
     const unsure = !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
-    if (interpretation.noMove || unsure) {
-      const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+    const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+
+    // Nothing to recover (known-issues HEAL-ROLLED-AT-FULL-HEALTH): a recovery
+    // move the roller's sheet has nothing for is neither rolled nor offered.
+    // A Heal at 5 health of 5 was offered, pressed and rolled — "0 health (now
+    // 5)" for 2 supply — twice in live play. The interpreter is told the
+    // meters and the rule (its rule 10); this holds the two places a reading
+    // could still bring one back: its own reading of such a move where the
+    // sheet alone settles it (situation.js nothingToRecover, `sheetAlone` —
+    // Hearten, and Heal with nobody else to treat), and the classifier's
+    // move offered again on the card of a line read as no move. Not in an
+    // open fight, as an unsure reading is not; a forced move and a roll that
+    // was asked for never come here.
+    const nothingFor = (moveId, opts) => !combatPosition && isRecoveryMove(moveId)
+      && nothingToRecover(moveId, readSituation(rollerActor, { campaignState }), opts);
+    const moot = !interpretation.noMove && !interpretation.fallback && nothingFor(interpretation.moveId, { sheetAlone: true });
+
+    if (interpretation.noMove || unsure || moot) {
       const offered = classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null;
+      // Offered again only while there is something for it to recover: with
+      // the interpreter's own "no move" beside the sheet, any of the four;
+      // with the sheet alone, where it settles the question.
+      const offerable = typeof offered === "string" && MOVES[offered]
+        && !nothingFor(offered, { sheetAlone: interpretation.noMove !== true });
       return {
         interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor,
         noMove: {
-          rationale:     interpretation.rationale ?? "",
+          rationale:     moot
+            ? `${interpretation.rationale ? `${interpretation.rationale} ` : ""}(Nothing to recover: ${nothingToRecoverReason(interpretation.moveId)} — narrated, with no ${moveDisplayName(interpretation.moveId)}.)`
+            : (interpretation.rationale ?? ""),
           lowConfidence: unsure,
-          offeredMove:   typeof offered === "string" && MOVES[offered] ? offered : null,
+          offeredMove:   offerable ? offered : null,
         },
       };
     }

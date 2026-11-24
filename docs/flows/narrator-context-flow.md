@@ -936,12 +936,27 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
-speaker line, in the narrator's words), the roller's connections with each
-one's relationship track — a full one says Forge a Bond can be made (the long
-haul's second live run: told nothing of it, the interpreter read "…, to Forge a
-Bond", her track full, as Make a Connection; known-issues
-NAMED-MOVE-READ-AS-ANOTHER) and what the classifier made of the line
+playtest). Both are told the speaker's **situation**, in one block built once
+(`moves/situation.js buildSituationBlock` — the classifier's CHARACTER
+section, `buildContextSummary` for the interpreter): the sheet's health,
+spirit and supply, each beside the impact its recovery move clears (wounded,
+shaken, unprepared — `readCharacterSnapshot`); the command vehicle's
+integrity and whether it is battered (`entities/ship.js getCommandVehicle`:
+the STARSHIP asset's track, the starship's native impact); each open vow
+with its rank, its progress in boxes and the connection it is sworn to
+(`readVows`, its `linkedConnectionName`); each live connection with its rank
+and relationship track — "full, no bond forged yet" or "bonded"
+(`readConnections`). The same words to both, so the two cannot be told
+different things of one sheet; a speaker with no character of their own is
+told as "no character sheet is known". Until the long haul's third live run
+neither was told a meter and the classifier was told no vow: Heal was offered
+and rolled at 5 health of 5, and a step toward a vow said in the fiction was
+narrated with nothing offered (known-issues HEAL-ROLLED-AT-FULL-HEALTH,
+VOW-STEP-SAID-IN-FICTION-NOT-READ). The interpreter is also told who is
+speaking (`buildContextSummary`'s speaker line, in the narrator's words), the
+other characters' open vows by name at a table of several, the open progress
+tracks, the roller's support vehicles and companions, and what the classifier
+made of the line
 (`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
 classifier made, `router.classifierReadingOf`: never for pacing switched off,
 a `!roll`, the classifier's fallback for a failed call or an unreadable reply,
@@ -982,6 +997,47 @@ the summary to the canonical GM to store (`narrator.summary` →
 `applyRelayedSessionSummary`: this session's, covering more than the stored
 one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
 the cached text.
+
+**What a typed line is read as** (decisions.md → "A player is never made to
+name a move"). Both readers run on Sonnet 5.5, thinking off (their own
+constants; `api-proxy.js` sends the model's form). The classifier's rules hold
+one block for what narration can never do — WHAT ONLY A MOVE CHANGES IS ALWAYS
+OFFERED: a line that sets about it is never plain NARRATIVE, at any dial, but
+at least NARRATIVE_WITH_MOVE_AVAILABLE with the move on the card's Roll. It
+names recovery (heal, resupply, repair, hearten, sojourn — issue #377 item 3),
+a step toward one of the speaker's open vows said in the fiction
+(reach_a_milestone — `vow-flow.md` §2 has the hops to the vow's track) and
+something done for one of the speaker's connections — a gift of value, a risk
+taken for them, a favour that costs time or standing, bringing them what they
+need (develop_your_relationship — `connection-flow.md` §2; small talk, news
+traded and plain questions stay narration). The
+interpreter's rules 7 and 10 say the same of a line it is handed. What the
+classifier reads the line against is the SITUATION above.
+
+The block's one exception is **a recovery move with nothing to recover**
+(known-issues HEAL-ROLLED-AT-FULL-HEALTH — a Heal offered, pressed and rolled
+at 5 health of 5, "0 health (now 5)" for 2 supply, twice in live play): heal
+with health full and not wounded, hearten with spirit full and not shaken,
+resupply with supply full and not unprepared, repair with the command
+vehicle's integrity full and it not battered are plain NARRATIVE with nothing
+offered, and the interpreter's rule 10 answers NO MOVE for them — each unless
+the line is plainly about something the meters do not show (care for an ally
+or a companion; one particular item; a support vehicle, a module, a companion
+or a device). Where the sheet settles it the code decides
+(`moves/situation.js nothingToRecover`, from the same `readSituation` the
+block is rendered from), outside a fight:
+- `router.decidePacing` turns the classifier's MOVE or offer of Hearten — or
+  of Heal when there is nobody else the care could be for (no other player
+  character, no companion) — into NARRATIVE with no move, and its reasoning
+  says why (`[nothing to recover: …]`, in the Pacing Telemetry journal);
+- `movePipeline.readMove` narrates the interpreter's own reading of such a
+  move instead of rolling it, and never offers a recovery move with nothing to
+  recover on the card of a line read as no move — the classifier's nominated
+  Heal was what that card carried. With the interpreter's "no move" beside
+  the sheet that holds for all four; on the sheet alone, for the two above.
+A forced move (a card's button) and a roll that was asked for (`!roll`, a
+round's "Roll a move instead") are made as they always were: a player who
+means it can still roll it. Sojourn is not held to one meter.
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A

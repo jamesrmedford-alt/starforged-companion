@@ -208,6 +208,17 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
  * develop branch after the roll marks the same connection. An un-bonded
  * connection changes nothing: its development is no roll, a mark of progress.
  *
+ * A move that carries no target at all — a paced card's "Roll Develop Your
+ * Relationship" forces the move with none, and a forced move asks no reader —
+ * is for the one active connection its player's line names (as an Aid Your
+ * Ally's ally is found, namedOnce). selectConnection's fallback for no
+ * target is the sole bonded connection, else the sole active one: "I offer
+ * to watch Tamsin's counter" developed the one bonded connection, whoever
+ * that was, and at a table that knows several people and has bonded none it
+ * marked nothing — so the favour the pacing reader offered led nowhere
+ * (known-issues FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A line that names
+ * none, or two, falls back as before.
+ *
  * @param {Object} interpretation — mutated: `statUsed` / `statValue` when
  *   bonded; `moveTargetId` / `moveTarget` when a connection resolves
  * @param {{ listConnections: () => Promise<Array<Object>> }} deps — the active
@@ -218,7 +229,11 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 export async function enrichBondedDevelop(interpretation, { listConnections }) {
   if (interpretation?.moveId !== "develop_your_relationship") return null;
   const connections = await listConnections();
-  const target = selectConnection(connections, interpretation.moveTarget ?? null,
+  const untargeted = !interpretation.moveTarget && !interpretation.moveTargetId;
+  const named = untargeted
+    ? namedOnce((connections ?? []).filter(c => c && c.active !== false), interpretation.playerNarration)
+    : null;
+  const target = named ?? selectConnection(connections, interpretation.moveTarget ?? null,
     { hostId: interpretation.moveTargetId ?? null });
   if (!target) return { connection: null, bonded: false, adds: 0 };
   if (target.__hostId) interpretation.moveTargetId = target.__hostId;

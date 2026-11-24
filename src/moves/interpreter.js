@@ -12,13 +12,21 @@
  * The confirmation UI (ui/settingsPanel.js) lets the player accept or change it.
  *
  * Mischief is applied silently. The player sees the result, not the framing.
+ *
+ * What it is told of the speaker (buildContextSummary): who is speaking, and
+ * their SITUATION — the block the pacing classifier is given too
+ * (./situation.js): health, spirit and supply with the impact each recovery
+ * move clears, the command vehicle's integrity, the open vows with their
+ * progress, the connections with their relationship tracks. Then the open
+ * progress tracks, and the roller's support vehicles and companions.
  */
 
 import { MOVES, STATS, toMoveId } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
-import { getPlayerActors, readVows, readConnections, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { buildSituationBlock } from "./situation.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { normaliseStakes, withPriceSource } from "./stakes.js";
 import { missPaysPrice } from "./resolver.js";
@@ -28,9 +36,13 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 // Heal's four situations (vendored Heal): each rolls its own stat.
 const HEAL_SITUATIONS = new Set(["self", "treated", "companion", "ally"]);
-const MODEL         = "claude-haiku-5-5";
-// Room for the JSON reading: Haiku 5.5 counts the same text as about 30% more
-// tokens than Haiku 4.5, whose cap was 1000.
+// Sonnet 5.5, as the pacing classifier's is (decisions.md → "The readers run on
+// Sonnet 5.5"): on plain lines it picked a neighbouring move once where Haiku
+// 5.5 did eight times (test/ci/playwright/readers/runs/readers-live-20261124-0255/).
+// Thinking is off (api-proxy.js sends the model's own form of that).
+const MODEL         = "claude-sonnet-5-5";
+// Room for the JSON reading: Sonnet 5.5 and Haiku 5.5 count a text alike, and
+// the longest of 116 measured readings was 472 tokens.
 const MAX_TOKENS    = 1300;
 
 // Combat moves that are only legal in one position. When the interpreter
@@ -58,7 +70,7 @@ const POSITION_MOVE_REMAP = {
  *
  * Prompt caching: this string is long and changes rarely.
  * It is sent as a cache_control: ephemeral block on every call.
- * After the first call, cache hits cost ~10% of normal input price.
+ * After the first call, cache hits cost ~5% of normal input price.
  */
 function buildSystemPrompt() {
   return `You are the move interpreter for an Ironsworn: Starforged tabletop RPG campaign. Your job is to read a player's narration and identify the single most appropriate Starforged move, along with the best stat to roll.
@@ -160,9 +172,13 @@ Only while a scene challenge is open — the context lists it among the open pro
 4. If the narration describes a reaction to danger, prefer face_danger or react_under_fire over gather_information.
 5. Suffer moves are only chosen when the player is explicitly describing taking damage/stress, not when they're trying to avoid it.
 6. COMBAT POSITION: when the user message includes a COMBAT POSITION directive, you MUST pick a combat move that is available for that position. Strike and Gain Ground are available only when IN CONTROL; Clash and React Under Fire are available only when IN A BAD SPOT. Take Decisive Action (seize the objective) and Face Defeat (give up) are available in either position. Non-combat moves remain available when the narration clearly calls for one.
-7. NO MOVE: a move is made when the character attempts something whose outcome is uncertain and matters. Plain conversation is not a move — asking a question, answering one, agreeing or refusing, choosing between options someone offered, saying a name, telling someone what happened. Neither is an everyday action with nothing at risk — answering a hail, opening a channel, powering a system up, walking to a station, picking something up. For these, return "moveId": null with the reason in "rationale" (statUsed and stakes null). A line is a move when it presses someone to do or give something they are reluctant to (compel), tests or deepens a relationship, or carries a threat or a danger — implied menace counts. Do not answer NO MOVE for an action taken in an open fight (a COMBAT POSITION directive is present), or when the user message says a roll was asked for.
+7. NO MOVE: a move is made when the character attempts something whose outcome is uncertain and matters. Plain conversation is not a move — asking a question, answering one, agreeing or refusing, choosing between options someone offered, saying a name, telling someone what happened. Neither is an everyday action with nothing at risk — answering a hail, opening a channel, powering a system up, walking to a station, picking something up. For these, return "moveId": null with the reason in "rationale" (statUsed and stakes null). A line is a move when it presses someone to do or give something they are reluctant to (compel), tests or deepens a relationship, or carries a threat or a danger — implied menace counts. So is a line that states a real step toward one of the character's open vows, though nothing is attempted in it (rule 10). Do not answer NO MOVE for an action taken in an open fight (a COMBAT POSITION directive is present), or when the user message says a roll was asked for.
 8. WHO IS SPEAKING: the user message names the character speaking and acting this turn. The move, its stat and the rationale are that character's — never another character the recent scene happens to be about.
 9. PACING READ: when the user message carries one, an earlier stage read the line as that move in that kind of scene. It is a hint about what the line is doing, not a ruling: choose the move that fits best, which may be a different one, or answer NO MOVE.
+10. THE SITUATION: the user message gives the speaking character's sheet as it stands (SITUATION) — health, spirit and supply, each with the impact that goes with it; the command vehicle's integrity and whether it is battered; the open vows, each with its rank and progress; the connections, each with its rank and relationship track. Read the line against it. Name a vow or a connection in moveTarget as the SITUATION names it. A relationship track that is full is ready for forge_a_bond (a progress move — it may be tried sooner, at worse odds); a connection already bonded is developed (develop_your_relationship), never bonded again.
+   - A STEP TOWARD A VOW: a line that states a real step toward one of the character's open vows — proof found, an obstacle overcome, a lead run to ground, a foe of the quest beaten — is reach_a_milestone (no roll: statUsed and stakes null; moveTarget the vow's name), though it attempts nothing: rule 7 does not make it NO MOVE. A line that also attempts something with stakes is that action's move; one that says outright the vow is done is fulfill_your_vow. A hope, a plan, a question or a passing remark about the quest is no step.
+   - SOMETHING DONE FOR A CONNECTION: a line in which the character does something for one of their connections that costs the character something or meets a real need of that person's — a gift of value, a risk taken for them, a favour that costs time or standing, bringing them what they need — is develop_your_relationship (moveTarget the connection's name; statUsed null: it is no roll unless the connection is bonded, and then the module fills the rank in). Small talk, news traded and plain questions are not (rule 7).
+   - NOTHING TO RECOVER: a recovery move with nothing to recover is NO MOVE (rule 7), whatever the pacing read says — heal when Health is full and the character is not wounded (unless the care is plainly for someone else: an ally, a companion); hearten when Spirit is full and the character is not shaken; resupply when Supply is full and the character is not unprepared (unless the line is after one particular item it needs); repair when the command vehicle's integrity is full and it is not battered (unless the line is about something else that is damaged: another vehicle, a module, a companion, a device). Say in the rationale what is full. A meter the SITUATION gives as unknown is not "nothing". This does not apply when the move is already chosen, or when a roll was asked for.
 
 ## RESPONSE FORMAT
 Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation outside the JSON.
@@ -212,41 +228,49 @@ missSuffer: when that miss plainly costs the character one of these, name it and
  *
  * Kept short by design — the system prompt already has the full move reference.
  * This just gives the interpreter enough context to make good choices.
+ *
+ * With a roller who is a player character it reads: who is speaking; their
+ * SITUATION block, on lines of its own; then the rest. With none (a caller
+ * that names no roller) there is no sheet to tell of, and the table's open
+ * vows are listed by name, as they always were.
  */
 export function buildContextSummary(campaignState, { roller = null } = {}) {
-  const lines = [];
-
   // Who is speaking (issue #354 P2-06): the classifier and the narrator were
   // told, the interpreter was not — so it took the speaker from the recent
   // scene, and after a beat that closed on Karthik it read Isaac's line as
   // "Karthik presses Archer", rolled as Isaac. In the narrator's own words.
   const speaker = speakerLine(roller);
-  if (speaker) lines.push(speaker);
+
+  // The speaker's sheet as it stands — the block the pacing classifier is
+  // given too (situation.js): their meters and impacts, the command vehicle,
+  // their open vows with rank and progress, their connections with their
+  // relationship tracks. The interpreter was told the vows' names and the
+  // connections' tracks, and nothing of a meter: Heal was read, and rolled,
+  // at 5 health of 5 (known-issues HEAL-ROLLED-AT-FULL-HEALTH). A full
+  // relationship track is what Forge a Bond is rolled against (issue #377
+  // round 2: told nothing of it, "Tamsin, I ask you to forge a bond with me,
+  // to Forge a Bond" was read as Make a Connection).
+  const situation = speaker ? buildSituationBlock(roller, { campaignState }) : "";
+
+  const rest = [];
 
   // Open vows + other open tracks — helps identify reach_a_milestone,
   // fulfill_your_vow, finish_an_expedition, take_decisive_action, and name
   // the moveTarget. Read from the live stores: vow Items on the player
   // characters and the Progress Tracks journal. (This once read
   // campaignState.progressTrackIds, which nothing ever wrote — the
-  // interpreter was never told about any track.)
-  const vows = readOpenVowLabels();
-  if (vows.length) lines.push(`Open vows: ${formatList(vows)}.`);
+  // interpreter was never told about any track.) The roller's own vows are
+  // in the block; what is listed here is everyone else's, by name — a Fulfill
+  // Your Vow by a roller who holds none scores the table's (selectFulfilVow).
+  const vows = readOpenVowLabels(situation ? roller : null);
+  if (vows.length) rest.push(`${situation ? "Other characters' open vows" : "Open vows"}: ${formatList(vows)}.`);
 
   const tracks = readOpenTrackLabels();
-  if (tracks.length) lines.push(`Open progress tracks: ${formatList(tracks)}.`);
-
-  // The roller's connections, with how far each relationship has come
-  // (issue #377 round 2): told none of it, the interpreter read "Tamsin, I
-  // ask you to forge a bond with me, to Forge a Bond" — her relationship
-  // track full — as Make a Connection, "Forge a Bond … needs an established
-  // bond track", and it missed. A full track is what Forge a Bond is rolled
-  // against; a bonded connection is developed with a roll of its own.
-  const bonds = rollerConnectionLines(roller);
-  if (bonds.length) lines.push(`Connections: ${formatList(bonds)}.`);
+  if (tracks.length) rest.push(`Open progress tracks: ${formatList(tracks)}.`);
 
   // Current session mischief level (informational — actual framing in system prompt)
   if (campaignState?.currentSessionId) {
-    lines.push(`Session active.`);
+    rest.push(`Session active.`);
   }
 
   // The roller's own vehicles and companions, by name: withstand_damage names
@@ -254,10 +278,11 @@ export function buildContextSummary(campaignState, { roller = null } = {}) {
   // starship), companion_takes_a_hit the companion — and the interpreter was
   // told neither, so "The hoverbike skids across the scree" was the
   // starship's (SUPPORT-VEHICLES-UNLISTED).
-  lines.push(...rollerAssetLines(roller));
+  rest.push(...rollerAssetLines(roller));
 
-  if (!vows.length && !tracks.length) lines.splice(speaker ? 1 : 0, 0, "No active tracks yet.");
-  return lines.join(" ");
+  // With no sheet told of, say that nothing is open (the block says so itself).
+  if (!situation && !vows.length && !tracks.length) rest.unshift("No active tracks yet.");
+  return [speaker, situation, rest.join(" ")].filter(Boolean).join("\n");
 }
 
 /**
@@ -314,40 +339,25 @@ const PROGRESS_JOURNAL_NAME = "Starforged Progress Tracks";
 const PROGRESS_FLAG_KEY     = "tracks";
 
 /**
- * The roller's live connections (their bond Items), each with its relationship
- * track: `"Tamsin Okoro" (dangerous) — relationship 40 of 40 ticks, full:
- * Forge a Bond can be made`. A severed one is left out. [] with no roller
- * who is a player character. Never throws.
+ * `"Vow name"` for each open vow on the player characters (owner-tagged when
+ * >1 PC). With `except` — the roller, whose own vows the SITUATION block
+ * gives — the other characters' alone, each tagged with its owner; a copy of
+ * a shared vow the roller holds too is theirs already, and is not listed
+ * again.
  *
- * @param {Actor|null} roller
+ * @param {Actor|null} [except]
  * @returns {string[]}
  */
-function rollerConnectionLines(roller) {
+function readOpenVowLabels(except = null) {
   try {
-    if (!isPlayerCharacterActor(roller)) return [];
-    return readConnections(roller)
-      .filter(c => c?.name && !c.lost)
-      .map((c) => {
-        const name = `"${String(c.name).replace(/[\r\n]+/g, " ").trim()}" (${c.rank})`;
-        if (c.completed) return `${name} — bonded`;
-        const ticks = Math.max(0, Math.min(40, Number(c.ticks) || 0));
-        return `${name} — relationship ${ticks} of 40 ticks${ticks >= 40 ? ", full: Forge a Bond can be made" : ""}`;
-      });
-  } catch (err) {
-    console.debug(`${MODULE_ID} | interpreter: connection read failed — omitting connections from context:`, err?.message ?? err);
-    return [];
-  }
-}
-
-/** `"Vow name"` for each open vow on the player characters (owner-tagged when >1 PC). */
-function readOpenVowLabels() {
-  try {
-    const pcs   = getPlayerActors();
-    const multi = pcs.length > 1;
+    const pcs   = getPlayerActors().filter(actor => !except || actor?.id !== except.id);
+    const multi = !!except || pcs.length > 1;
+    const own   = new Set(except ? readVows(except).filter(v => !v.completed && v.vowId).map(v => v.vowId) : []);
     const out   = [];
     for (const actor of pcs) {
       for (const vow of readVows(actor)) {
         if (vow.completed || !vow.name) continue;
+        if (vow.vowId && own.has(vow.vowId)) continue;
         out.push(multi ? `"${vow.name}" (${actor.name})` : `"${vow.name}"`);
       }
     }

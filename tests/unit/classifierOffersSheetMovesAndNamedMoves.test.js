@@ -19,6 +19,11 @@
  * The reader's guidance now says a line that sets about what only a move
  * changes (heal, resupply, repair, hearten, sojourn) is always at least
  * offered, and a line that names its move asks for that move.
+ *
+ * Since the long haul's third run the block holds more: a step toward a vow
+ * (readersVowStepOffered.test.js) and the exception for a recovery move with
+ * nothing to recover (readersNothingToRecover.test.js) — a49's line is
+ * offered Heal while there is a wound to treat, which the example now says.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -36,8 +41,8 @@ describe('the pacing reader offers what only a move changes, and takes a named m
     expect(text).toContain('WHAT ONLY A MOVE CHANGES IS ALWAYS OFFERED');
     expect(text).toMatch(/treating a wound or an ailment \(heal\), restocking supplies \(resupply\), repairing a vehicle or gear \(repair\)/);
     expect(text).toMatch(/At any dial, answer at least NARRATIVE_WITH_MOVE_AVAILABLE with that move as suggestedMove/);
-    // The run's own line, as the example.
-    expect(text).toMatch(/"I treat my wounds with the ship's medkit" at a downtime dial of 1 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal/);
+    // The run's own line, as the example — with a wound to treat.
+    expect(text).toMatch(/"I treat my wounds with the ship's medkit" at a downtime dial of 1, with Health 3 of 5 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal/);
   });
 
   it('a line that names its move asks for that move', () => {

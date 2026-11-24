@@ -510,7 +510,7 @@ function readGrantedRewards(actor) {
  * convention explicit.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground, shared }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground, shared, clock, vowId, linkedConnectionName }>}
  */
 export function readVows(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -558,8 +558,19 @@ export function readVows(actor) {
       // carries the same one (issue #321 U02 — a Fulfill Your Vow counts the
       // copies as one vow). null on a vow the module has not stamped yet.
       vowId:        v.flags?.[MODULE_ID]?.vowId ?? null,
+      // The connection the vow is sworn to, by the name its cards say
+      // (setVowLinkedConnection keeps it in step with the connection's card)
+      // — null for a vow that serves nobody. Read by the readers' situation
+      // block (moves/situation.js): "sworn to Tamsin Okoro".
+      linkedConnectionName: linkedConnectionNameOf(v),
     };
   });
+}
+
+/** A vow Item's linked connection, by name — null when it is linked to nobody. */
+function linkedConnectionNameOf(item) {
+  const name = item?.flags?.[MODULE_ID]?.linkedConnectionName;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
 
 /**
@@ -592,6 +603,22 @@ export function readConnections(actor) {
       lost:      b.flags?.[MODULE_ID]?.lost === true,
     };
   });
+}
+
+/**
+ * The sheet's health, spirit and supply as they stand — read live, never from
+ * the cached snapshot (as readMomentumState reads momentum): what both
+ * readers of a typed line are told of the sheet, and what decides whether a
+ * recovery move has anything to recover (moves/situation.js), must be what
+ * the sheet holds now. A meter the sheet does not carry is null.
+ *
+ * @param {Actor} actor
+ * @returns {{ health: number|null, spirit: number|null, supply: number|null }}
+ */
+export function readMeters(actor) {
+  const sys = actor?.system ?? {};
+  const live = (meter) => (meter == null ? null : meterValue(meter));
+  return { health: live(sys.health), spirit: live(sys.spirit), supply: live(sys.supply) };
 }
 
 /**
