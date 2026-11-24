@@ -109,7 +109,7 @@ describe('issue #364 NATIVE-FULFIL-NO-ENDING-TRACK — a vow fulfilled on the sh
   it('a vow reworded since its plan was filed: the fulfilment\'s narration is shown the plan, by the vow\'s id', async () => {
     const plan = await vowPlan();
     arkVow.name = 'Bring the ark home';   // reworded on the sheet
-    table.replies = () => ({ prose: 'The ark opens, and what was inside is gone.',
+    table.replies = () => ({ prose: 'The ark opens: it was a prison, and what was inside is gone.',
       sidecar: { newTruths: [], stateChanges: [], reveals: [{ id: plan.id, revealed: ['truth'] }] } });
     await rollOnSheet('Bring the ark home', STRONG);
 
@@ -128,7 +128,7 @@ describe('issue #364 NATIVE-FULFIL-NO-ENDING-TRACK — a vow fulfilled on the sh
     await table.drain();
     expect(planOf(plan.id).status, 'setup: resolved with its vow').toBe('resolved');
 
-    table.replies = () => ({ prose: 'The ark opens, and what was inside is gone.',
+    table.replies = () => ({ prose: 'The ark opens: it was a prison, and what was inside is gone.',
       sidecar: { newTruths: [], stateChanges: [], reveals: [{ id: plan.id, revealed: ['truth'] }] } });
     await rollOnSheet('Find the lost ark', STRONG);
 

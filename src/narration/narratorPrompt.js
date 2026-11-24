@@ -2198,6 +2198,8 @@ export function buildNarratorSystemBlocks(
       plannedSubjects,
       sidecar: factContinuityEnabled,
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
+      // The vows this beat's move fulfils (narrator.js buildNarratorExtras).
+      endingSubjectIds: Array.isArray(extras?.endingTrackIds) ? extras.endingTrackIds : [],
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
   }
@@ -2437,10 +2439,51 @@ function formatSkeletonEntry(r) {
     lines.push(withheld ? 'When the expedition is finished, record it as resolved.'
       : 'When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
   } else if (r.kind === 'vow') {
+    // A vow's end does not reveal its truth; telling it does (known-issues
+    // VOW-FULFILLED-WITH-NOBODY-NAMED: "and "truth" as revealed if it comes
+    // out" was recorded under a fulfilment whose prose told none of it).
     lines.push(withheld ? 'When the vow is fulfilled or forsaken, its story ends: record it as resolved.'
-      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
+      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved. Its truth comes out only by being told: ' +
+        'record "truth" as revealed when your prose states it, never because the vow ended.');
   }
   return lines.join('\n');
+}
+
+/**
+ * [6.6] THIS BEAT ENDS A VOW — for each decided vow plan the beat's move
+ * fulfils (`endingSubjectIds`, the vow's id on the move's `endingTrackIds`;
+ * known-issues VOW-FULFILLED-WITH-NOBODY-NAMED, the long haul's third live
+ * run, a64). "Find who is raiding the Cinder Expanse lanes" was fulfilled
+ * under UNREVEALED's standing rule — "Never state one outright" — and its
+ * narration obeyed: "The thing you swore to find has a hand and a seal, and
+ * both are named now", with no name anywhere in the story, and "truth"
+ * recorded as revealed. The fulfilment is where the vow's truth is told, so
+ * the rule is lifted for that plan, here: the prose states the truth, as far
+ * as the truth goes, and claims nothing it does not hold. '' with no such
+ * plan, and for one whose truth the X-Card withheld (truthWithheld).
+ *
+ * @param {Object[]} decided — the decided plans in play
+ * @param {Iterable<string>} endingSubjectIds
+ * @returns {string[]} lines, [] for none
+ */
+function vowEndingLines(decided, endingSubjectIds) {
+  const ending = new Set(endingSubjectIds ?? []);
+  const vows = decided.filter(r => r?.kind === 'vow' && r.subject?.id && ending.has(r.subject.id) && !truthWithheld(r));
+  if (!vows.length) return [];
+  return [
+    '',
+    '### THIS BEAT ENDS A VOW',
+    `The move this beat narrates fulfils ${vows.map(r => `${skeletonHeading(r)} (id ${r.id})`).join(' and ')}. What that vow set out`,
+    'to find, do or learn is told now, in the prose, as far as the story holds it:',
+    '- For this plan the rule against stating a truth outright is lifted. Where the fulfilment brings its',
+    '  truth out — it does when the vow was sworn to find out who, what or why, and the Truth line is the',
+    '  answer — state that truth in the narration itself, in plain words a player could repeat: who or what',
+    '  it is, where, what they want, as the Truth line gives them. Then record "truth" as revealed. A truth',
+    '  recorded as revealed that the prose did not tell is not revealed.',
+    '- The Truth line is all there is to tell. Where it gives no name, there is no name: say what was found,',
+    '  and say plainly that the rest — who, by name — is still not known.',
+    '- Never write that an answer is "known", "named", "found" or "proved" without saying what it is.',
+  ];
 }
 
 /**
@@ -2473,15 +2516,17 @@ export function formatSnapshotPlan(r) {
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
  * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
- *   coveredIds?: string[] }} [opts] —
+ *   coveredIds?: string[], endingSubjectIds?: string[] }} [opts] —
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
  *   "new" one is one of them (`sameAs`, issue #354 P2-30);
  *   `coveredIds`: the decided plans the world snapshot holds (issue #357) — each is named by its
- *   heading and id, not printed again; a decided plan not among them is printed as before
+ *   heading and id, not printed again; a decided plan not among them is printed as before;
+ *   `endingSubjectIds`: the vows the beat's move fulfils (its `endingTrackIds`) — a vow plan about one
+ *   is told now (THIS BEAT ENDS A VOW, vowEndingLines)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [] } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [] } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
   const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
@@ -2508,6 +2553,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       '  "reveals": [{ "id": "<its id>", "revealed": ["<clue id>", or "truth" when the truth itself comes',
       '  out>], "advanced": "<the escalation step id it played>", "resolved": true when its story ends }].',
       '  Only what this beat actually showed; nothing for a subject it did not touch.',
+      // VOW-FULFILLED-WITH-NOBODY-NAMED: "truth" was recorded under prose that told none of it.
+      '  "truth" only when the prose of this narration states the truth itself, naming what it names: a',
+      '  line saying that something is now known, named or proved, without saying what, reveals nothing.',
       '- Where your narration contradicts something below, your narration stands: record the change in',
       '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
       '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
@@ -2533,6 +2581,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
     );
   }
+  // The vow this beat's move fulfils is told now — with the fact block, which
+  // records it (the Private Channel narrates no move).
+  if (sidecar) lines.push(...vowEndingLines(everyDecided, endingSubjectIds));
 
   if (pending.length || requests.length) {
     lines.push(
@@ -3148,6 +3199,10 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   if (fightBlock) parts.push(fightBlock);
   const choiceBlock = formatOpenChoiceBlock(openChoice);
   if (choiceBlock) parts.push(choiceBlock);
+  // A vow fulfilled says what it asked for, or that it is not yet known
+  // (VOW-FULFILLED-WITH-NOBODY-NAMED).
+  const vowBlock = formatVowFulfilledBlock(resolution?.moveId ?? null, resolution?.outcome ?? null);
+  if (vowBlock) parts.push(vowBlock);
 
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
@@ -3171,6 +3226,36 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   );
 
   return parts.join('\n\n');
+}
+
+/**
+ * The move user message's block for a vow fulfilled (known-issues
+ * VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live run, a64):
+ * "Find who is raiding the Cinder Expanse lanes" was fulfilled with "The
+ * thing you swore to find has a hand and a seal, and both are named now" —
+ * no name is anywhere in the story; the recap repeated "have a name", and
+ * four steps on an NPC asked "Whose name did you decide on?". A fulfilment
+ * says what the vow asked for as far as the story holds it, or says it is
+ * not yet known; it never claims an answer it does not state. Whether a
+ * hidden plan's truth is told is UNREVEALED's to say (formatUnrevealedBlock,
+ * THIS BEAT ENDS A VOW) — with no plan in play, this block alone applies.
+ * '' for any other move, and for a miss: the vow is not fulfilled.
+ *
+ * @param {string|null} moveId
+ * @param {string|null} outcome
+ * @returns {string}
+ */
+function formatVowFulfilledBlock(moveId, outcome) {
+  if (moveId !== 'fulfill_your_vow' || (outcome !== 'strong_hit' && outcome !== 'weak_hit')) return '';
+  return (
+    `## THE VOW IS FULFILLED\n\n` +
+    `This move fulfils a vow. Say what the vow set out to find, do or learn, and only as far as the ` +
+    `story holds it: what the recent scene and your instructions state — a hidden plan's truth only ` +
+    `where your instructions say this beat ends that vow. Never write that an answer is known, named, ` +
+    `found or proved without stating it in this narration. Where the story holds no answer — no name, ` +
+    `no face, no place — the vow ends on what was done, and the narration says plainly what is still ` +
+    `not known.`
+  );
 }
 
 /**
@@ -3272,6 +3357,9 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       // …and a cost still its player's to choose (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
       const choiceBlock = formatOpenChoiceBlock(input.openChoice ?? null);
       if (choiceBlock) lines.push(choiceBlock.replace(/^## /gm, '#### '));
+      // …and a vow fulfilled says what it asked for (VOW-FULFILLED-WITH-NOBODY-NAMED).
+      const vowBlock = formatVowFulfilledBlock(input.moveId ?? null, input.outcome ?? null);
+      if (vowBlock) lines.push(vowBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
       if (input.isMatch === true) lines.push(MATCH_TOLD_AS_TWIST);

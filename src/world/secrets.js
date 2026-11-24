@@ -34,7 +34,7 @@ import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
   normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
-  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION,
+  MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION, proseTellsTruth,
 } from "./skeletons.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
@@ -841,6 +841,60 @@ async function rollMysteryAnswer() {
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: the question's oracle roll failed:`, err?.message ?? err);
     return [];
+  }
+}
+
+/**
+ * A narration's fact block, less each truth it records as revealed and did
+ * not tell (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's
+ * third live run, a64). "Find who is raiding the Cinder Expanse lanes" was
+ * fulfilled; the prose said "The thing you swore to find has a hand and a
+ * seal, and both are named now", and its fact block said `"revealed":
+ * ["truth"]`. The mark was taken at its word: the plan's truth — a crew in
+ * Hollow Spire's shadow, a leader hunting a hidden enclave — became a binding
+ * scene fact and confirmed lore, and its oracle rolls were shown to the
+ * table, with none of it ever told. A truth is revealed by prose that tells
+ * it (skeletons.js proseTellsTruth, against the truth the plan holds or the
+ * one this block's own `plans` entry decides): otherwise "truth" comes off
+ * the reveal, whose clues, step and ending stand, and the plan stays
+ * unrevealed — the narrator is given it again, a GM can Reveal now.
+ *
+ * Run on the narration's own reveals before anything reads them
+ * (narrator.js applyNarratorSidecar — revealedTruthsOf and applyPlanSideData
+ * both read the block it returns), never on a step the code forced. A client
+ * that reads no plan (a player's, issue #362 D1) checks nothing: its reveals
+ * are dropped at the relay. Never throws.
+ *
+ * @param {Object|null} sidecar — normaliseSidecar's
+ * @param {string} prose — the narration, its fact block removed
+ * @returns {Object|null} the block itself when nothing was taken off
+ */
+export function withoutUntoldTruths(sidecar, prose) {
+  const reveals = Array.isArray(sidecar?.reveals) ? sidecar.reveals : [];
+  if (!reveals.some(r => Array.isArray(r?.revealed) && r.revealed.includes("truth")) || !skeletonsEnabled()) return sidecar;
+  try {
+    const decided = new Map(normalisePlans(sidecar.plans).map(p => [p.id, p]));
+    const untold = [];
+    const kept = [];
+    for (const reveal of reveals) {
+      const stored = Array.isArray(reveal?.revealed) && reveal.revealed.includes("truth") ? getSkeleton(reveal.id) : null;
+      const truths = stored ? [stored.truth, decided.get(reveal.id)?.truth].filter(t => typeof t === "string" && t.trim()) : [];
+      const about  = stored ? [stored.subject?.name, stored.question, ...(stored.aliases ?? [])].filter(Boolean) : [];
+      if (!truths.length || truths.some(t => proseTellsTruth(prose, t, { about }))) {
+        kept.push(reveal);
+        continue;
+      }
+      untold.push(skeletonPageName(stored));
+      const rest = { ...reveal, revealed: reveal.revealed.filter(v => v !== "truth") };
+      if (rest.revealed.length || rest.advanced || rest.resolved) kept.push(rest);
+    }
+    if (!untold.length) return sidecar;
+    console.warn(`${MODULE_ID} | secrets: a narration recorded a truth as revealed that its prose did not tell — ` +
+      `left unrevealed: ${untold.join("; ")}. Reveal it from the Secrets panel if the table should have it.`);
+    return { ...sidecar, reveals: kept };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: a narration's reveals could not be checked against its prose:`, err?.message ?? err);
+    return sidecar;
   }
 }
 

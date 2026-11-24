@@ -82,6 +82,7 @@ import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRoll
 import { priceChoiceStatus, withUnansweredCards } from '../moves/resultUpgrade.js';
 // What the long haul's third live run turned up (a line of its own, apart from the block above).
 import { formatOracleAnswerRule } from './narratorPrompt.js';
+import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
@@ -578,6 +579,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   extras.planRequests = [];
   extras.decideNowRequests = [];
   extras.plannedSubjects = [];
+  // The vows this beat's move fulfils: UNREVEALED tells their plan's truth
+  // now (formatUnrevealedBlock THIS BEAT ENDS A VOW).
+  extras.endingTrackIds = Array.isArray(endingTrackIds) ? endingTrackIds : [];
   if (mode !== 'campaign_recap' && skeletonsEnabled()) {
     try {
       const allPlans = listSkeletons();
@@ -6578,14 +6582,19 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // the skeleton"): the request is the move's, and its rolls exist nowhere
   // else.
   const asked = Array.isArray(ctx.planRequests) && ctx.planRequests.length > 0;
+  // A plan's truth is revealed by prose that tells it, never by the fact
+  // block's say alone (VOW-FULFILLED-WITH-NOBODY-NAMED): "truth" comes off a
+  // reveal of the narration's own whose prose told none of it, before the
+  // ledger and the plans read the block. A step the code forced is left.
+  const written = withoutUntoldTruths(parsedBlock.sidecar, prose);
   // The forced reveals go first: the reveals are capped at
   // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
   // step the beat was made to play — its clock then stayed full though the
   // vignette was written (issue #362 AC08; coverage FC D5).
   const sidecar = (forced.length || asked)
-    ? { ...(parsedBlock.sidecar ?? normaliseSidecar({})),
-      ...(forced.length ? { reveals: [...forced, ...(parsedBlock.sidecar?.reveals ?? [])] } : {}) }
-    : parsedBlock.sidecar;
+    ? { ...(written ?? normaliseSidecar({})),
+      ...(forced.length ? { reveals: [...forced, ...(written?.reveals ?? [])] } : {}) }
+    : written;
 
   if (parseError) {
     console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);

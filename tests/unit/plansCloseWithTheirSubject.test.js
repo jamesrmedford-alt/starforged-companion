@@ -148,7 +148,8 @@ describe('issue #362 D4 — a vow\'s plan closes with its vow', () => {
     renCopy.system.completed = true;
     await itemHook('updateItem', kiraCopy, { system: { completed: true } });
     expect(planOf(plan.id).status).toBe('resolved');
-    table.replies = reply({ reveals: [{ id: plan.id, revealed: ['truth'] }] }, 'The ark opens, and what was inside is gone.');
+    // The prose tells the truth it reveals (secrets.js withoutUntoldTruths).
+    table.replies = reply({ reveals: [{ id: plan.id, revealed: ['truth'] }] }, 'The ark opens: it was a prison, and what was inside is gone.');
     await narrateMoveOn(table, moveResolution({ moveId: 'fulfill_your_vow', moveName: 'Fulfill Your Vow',
       outcome: 'strong_hit', outcomeLabel: 'Strong Hit', endingTrackIds: ['vow-ark-1'] }));
     expect(lastCall().system).toContain(`(id ${plan.id})`);

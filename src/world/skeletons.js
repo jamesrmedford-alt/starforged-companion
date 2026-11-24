@@ -520,6 +520,80 @@ export function nameMentioned(name, passage) {
   return false;
 }
 
+/**
+ * Words too common to show that a passage tells a truth: function words, and
+ * the general ones a narration and a truth share by chance ("thing", "still").
+ */
+const TRUTH_COMMON = new Set([
+  "about", "above", "after", "again", "against", "along", "already", "also", "always", "among", "around", "away",
+  "back", "because", "been", "before", "behind", "being", "below", "between", "both", "came", "come", "could",
+  "does", "done", "down", "each", "even", "ever", "every", "from", "gave", "give", "goes", "gone", "have",
+  "having", "here", "hers", "into", "itself", "just", "keep", "kept", "know", "known", "least", "less", "like",
+  "made", "make", "many", "might", "more", "most", "much", "must", "near", "never", "none", "once", "only",
+  "onto", "other", "others", "over", "own", "past", "really", "same", "says", "said", "shall", "should", "since",
+  "some", "someone", "something", "still", "such", "take", "taken", "than", "that", "their", "theirs", "them",
+  "then", "there", "these", "they", "thing", "things", "this", "those", "through", "under", "until", "upon",
+  "very", "want", "wants", "were", "what", "when", "where", "whether", "which", "while", "whom", "whose",
+  "will", "with", "within", "without", "would", "your", "yours",
+]);
+
+/**
+ * A word as it is compared: without its possessive, its plural or its -ing /
+ * -ed ending, a final "e" or a doubled last letter — so "raiding", "raided"
+ * and "raids" are one word, as are "lane" and "lanes", "name" and "named".
+ * Rough on purpose: the same rule is applied to both sides.
+ */
+function wordStem(word) {
+  let w = String(word).replace(/'s?$/, "");
+  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
+  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
+  else if (w.length > 4 && w.endsWith("ies")) w = `${w.slice(0, -3)}y`;
+  else if (w.length > 4 && /(?:ch|sh|x|z|ss)es$/.test(w)) w = w.slice(0, -2);
+  else if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
+  if (w.length > 3 && w.endsWith("e")) w = w.slice(0, -1);
+  if (w.length > 3 && w.at(-1) === w.at(-2)) w = w.slice(0, -1);
+  return w;
+}
+
+/** The stems of a passage's telling words: four letters or more, none of the common ones. */
+function tellingStems(passage) {
+  return new Set(words(passage).filter(w => w.length >= 4 && !TRUTH_COMMON.has(w)).map(wordStem).filter(s => s.length >= 3));
+}
+
+/**
+ * Whether a narration's prose tells any of a plan's truth (known-issues
+ * VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live run, a64): the
+ * prose has at least one of the truth's own telling words, other than the
+ * words of what the plan is about (`about`: its subject's name, a mystery's
+ * question), which a narration uses without telling anything. A fulfilment's
+ * fact block recorded its vow's truth as revealed — the raiders are "a
+ * coordinated crew working the lanes from inside Hollow Spire's shadow",
+ * their leader after "a vulnerable enclave kept hidden" — under prose that
+ * said "The thing you swore to find has a hand and a seal, and both are named
+ * now": none of it.
+ *
+ * A floor, not a judgement of whether the truth was stated — that is asked of
+ * the narrator in its prompt (narratorPrompt.js formatUnrevealedBlock). It
+ * catches the reveal whose prose told nothing, and takes any telling that
+ * keeps one of the truth's words: a higher bar turned away plain reveals in
+ * other words ("Someone sold her berth to people who wanted her gone"), and a
+ * truth left unrevealed after its prose told it is the worse mistake to make
+ * by rule. True for a truth with no telling words of its own.
+ *
+ * @param {string} prose — the narration, its fact block removed
+ * @param {string} truth — the plan's truth
+ * @param {{ about?: string[] }} [opts] — what the plan is about: left out of the truth's words
+ * @returns {boolean}
+ */
+export function proseTellsTruth(prose, truth, { about = [] } = {}) {
+  const own = tellingStems(truth);
+  for (const a of Array.isArray(about) ? about : []) for (const s of tellingStems(a)) own.delete(s);
+  if (!own.size) return true;
+  const told = tellingStems(prose);
+  for (const s of own) if (told.has(s)) return true;
+  return false;
+}
+
 /** How many plans one beat is shown, at most (the token cap trims further). */
 export const MAX_RELEVANT_SKELETONS = 4;
 
