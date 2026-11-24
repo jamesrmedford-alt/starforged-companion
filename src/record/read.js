@@ -26,8 +26,9 @@
  *      new one in every words, label and prose field (nameChanges.js
  *      writeNewNames) — and a field with an actor id is written with that
  *      actor's current name.
- *   4. Cutaways. A closing vignette is a beat of kind `cutaway`: an NPC
- *      elsewhere, not something the characters did.
+ *   4. Cutaways. A closing vignette and Begin's Spotlight Vignette are beats
+ *      of kind `cutaway`: a scene elsewhere, hidden from the characters — not
+ *      something they did.
  *
  * `hash` is FNV-1a over the corrected value: any correction changes it, and a
  * view stores the hash of the read it was made from (a stale view is never
@@ -351,7 +352,7 @@ function sessionBeats(events, { xcarded, superseded }) {
         // An @scene answer is its question's beat: asked of the narrator, not something that happened.
         if (!beat && d.mode === 'scene_answer' && nar) beat = questionOf.get(nar) ?? null;
         if (!beat && d.mode === 'paced') beat = lineOf(d.actorId ?? e.who?.actor);
-        if (!beat) beat = open(d.mode === 'vignette_close' ? 'cutaway' : 'play', e);
+        if (!beat) beat = open(CUTAWAY_MODES.has(d.mode) ? 'cutaway' : 'play', e);
         if (res) byRes.set(res, beat);
         if (nar) byNar.set(nar, beat);
         if (viaXCard) {
@@ -476,6 +477,9 @@ function correctNames(session, { names, nameOf, otherNames }) {
   snapshot(session.begun);
   snapshot(session.ended);
 }
+
+/** The narration modes told out of the characters' sight: a closing vignette, Begin's spotlight. */
+const CUTAWAY_MODES = new Set(['vignette_close', 'vignette_spotlight']);
 
 /**
  * Read the record.

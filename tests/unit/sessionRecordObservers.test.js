@@ -164,16 +164,18 @@ describe('narration — narrator memory\'s cards, as they post', () => {
       .toEqual([['nar-p', 'paced', 'pc-kira', 'The hatch ticks.']]);
   });
 
-  it('a move card names its resolution; a re-narration the resolution it upgraded; a closing vignette is a cutaway', async () => {
+  it('a move card names its resolution; a re-narration the resolution it upgraded; a closing vignette and Begin\'s spotlight are cutaways', async () => {
+    Hooks.call('createChatMessage', card({ narrationId: 'nar-s', sessionVignetteCard: true, vignetteKind: 'spotlight_begin' }));
     Hooks.call('createChatMessage', card({ narrationId: 'nar-m', resolutionId: 'res-1' }));
     Hooks.call('createChatMessage', card({ narrationId: 'nar-u', resolutionId: 'res-1', upgradeOf: 'res-1' }));
     Hooks.call('createChatMessage', card({ narrationId: 'nar-v', sessionVignetteCard: true, vignetteKind: 'npc_end' }));
     await recordSettled();
     const events = stored().filter(e => e.k === 'narration');
     expect(events.map(e => [e.ref.nar, e.ref.res ?? null, e.d.mode, e.d.upgradeOf ?? null])).toEqual([
+      ['nar-s', null, 'vignette_spotlight', null],
       ['nar-m', 'res-1', 'move', null], ['nar-u', 'res-1', 'move', 'res-1'], ['nar-v', null, 'vignette_close', null],
     ]);
-    expect(readRecord({ session: SESSION }).sessions[0].beats.map(b => b.kind)).toEqual(['play', 'cutaway']);
+    expect(readRecord({ session: SESSION }).sessions[0].beats.map(b => b.kind)).toEqual(['cutaway', 'play', 'cutaway']);
   });
 });
 

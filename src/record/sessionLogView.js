@@ -48,6 +48,7 @@ const RENDER_NOW_KINDS = new Set(['session.begun', 'session.ended', 'truth.struc
 const TOLD = {
   vignette_open: 'An opening scene was told.',
   vignette_close: 'A closing scene was told, elsewhere.',
+  vignette_spotlight: 'A spotlight scene was told, out of the characters\' sight.',
   oracle: 'An oracle\'s answer was told.',
   clock: 'A clock\'s advance was told.',
   vow: 'A vow\'s swearing was told.',

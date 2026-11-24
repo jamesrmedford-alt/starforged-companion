@@ -125,7 +125,10 @@ lists its scenes.
    words, label and prose field (`nameChanges.js` `writeNewNames` — the whole
    name, the part the new one does not share, and its short form after "the"
    or before "'s": decision D5); an actor's name is read through its id.
-4. *Cutaways* — a closing vignette is a `cutaway` beat.
+4. *Cutaways* — a closing vignette (`vignette_close`) and Begin's Spotlight
+   Vignette (`vignette_spotlight`, issue #381 slice 3) are `cutaway` beats: told
+   out of the characters' sight, never what they did (`read.js` `CUTAWAY_MODES`;
+   the recap's facts leave them out).
 
 `hash` is FNV-1a over the corrected read: any correction changes it.
 
