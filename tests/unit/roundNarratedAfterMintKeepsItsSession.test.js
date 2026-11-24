@@ -67,6 +67,8 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { UPGRADE_IN_FLIGHT_GRACE_MS } from '../../src/batch/round.js';
 import { holdWrites, scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
 
 const REPLY = 'Kira slips through.\n```json\n{"newTruths":[{"subject":"vent","fact":"The vent grille hangs loose."}],"stateChanges":[]}\n```';
 const NARRATION_MODEL = 'claude-sonnet-5-5';
@@ -258,15 +260,20 @@ describe('issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT — a round opened before 
     expectNarratedAsItsOwnSessions(roundId);
   }, 60_000);
 
-  it('with no narration of its session, takes the number the mint recorded its session under (LAST SESSION) — never the minted session\'s', async () => {
-    // Since issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD the mint records a
-    // closing session whose round is still to be narrated as LAST SESSION's
-    // session, under its number: that names the round's session.
+  it('with no narration of its session, takes the number the session record gives its session — never the minted session\'s', async () => {
+    // The session record numbers every session a table began (issue #382):
+    // its Session Log page names the round's session.
     const roundId = await burnStillApplyingAtUpgradeStep();   // no earlier narration in the session
     await endTheSession();
     await gmPageDiesAndLoadsAgain();
     expect(world().sessionNumber, 'setup: the load minted session 5').toBe(5);
-    expect(world().previousSessionSummary, 'setup: the mint recorded the round\'s session').toMatchObject({ sessionId: 'sess-1', sessionNumber: 4 });
+    const log = makeJournal(JOURNAL_NAMES.sessionLog);
+    table.journal._set(log.id, log);
+    await log.createEmbeddedDocuments('JournalEntryPage', [{ name: 'Session 4', flags: { [MODULE_ID]: {
+      sessionLogPage: { sessionId: 'sess-1', sessionNumber: 4, pageName: 'Session 4', createdAt: new Date(1).toISOString() },
+      sessionRecord: { v: 1, sessionId: 'sess-1', createdAt: 1, seq: 1, views: {},
+        events: { e1: { id: 'e1', k: 'session.begun', at: 1, seq: 1, s: 'sess-1', scene: null, who: {}, ref: {}, d: { number: 4 } } } },
+    } } }]);
     roundWithoutItsSessionNumber();
     theGraceHasPassed();
     await sendNow();
@@ -280,12 +287,8 @@ describe('issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT — a round opened before 
     await endTheSession();
     await gmPageDiesAndLoadsAgain();
     expect(world().sessionNumber, 'setup: the load minted session 5').toBe(5);
-    // A world whose store names the round's session nowhere: no LAST SESSION
-    // record of it and no mark owed for it.
-    const cs = { ...world() };
-    delete cs.previousSessionSummary;
-    delete cs.unsummarisedSession;
-    await table.client('gm-1').setSetting('campaignState', cs);
+    // A world whose record names the round's session nowhere: no page of it.
+    table.journal._reset();
     roundWithoutItsSessionNumber();
     theGraceHasPassed();
     await sendNow();

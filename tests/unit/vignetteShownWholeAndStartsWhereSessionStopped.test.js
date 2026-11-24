@@ -24,11 +24,14 @@
  * openingSceneFromMaterial.test.js.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { buildGalleyVignetteUserMessage, composeOpeningScene } from '../../src/session/galleyVignette.js';
 import { buildEndSessionVignetteUserMessage } from '../../src/session/endSessionVignette.js';
 import { earlierVignettes } from '../../src/session/vignetteHistory.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { seedLegacySessionPage, seedSessionRecord, playedBeats } from '../helpers/sessionRecordSeed.js';
+import { _resetSummaryViewForTests } from '../../src/record/summaryView.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -42,7 +45,7 @@ const FIRST_OPENING =
   'Out past the hull the Cinder Expanse sits black and patient, and the comm panel by the hatch gives a single, apologetic chirp.';
 const ITS_LAST_BEAT = 'the comm panel by the hatch gives a single, apologetic chirp.';
 
-// Run 3, a76 — session 3's summary, which the mint keeps as LAST SESSION.
+// Run 3, a76 — session 3's summary: LAST SESSION, read from its Session Log page (issue #382).
 const SESSION_3_SUMMARY =
   'Mira Kestrel sits in the galley of the *Kobayashi IV*, which is grappled to the dead flank of the Cinder Wren off Bleakhold Station, not docked at Hollow Spire. ' +
   'She carries Ilse\'s brass star-compass, its needle now settled on north. ' +
@@ -88,12 +91,18 @@ describe('GALLEY-VIGNETTE-REPEATS — an earlier scene is shown whole', () => {
 });
 
 describe('an opening starts from where the last session stopped', () => {
-  const minted = {
-    currentSessionId: 's-4', sessionNumber: 4,
-    previousSessionSummary: { text: SESSION_3_SUMMARY, sessionId: 's-3', sessionNumber: 3 },
-  };
+  const minted = { currentSessionId: 's-4', sessionNumber: 4 };
+  // LAST SESSION is read from the session record (issue #382): session 3's
+  // page holds its story.
+  let journals;
+  beforeEach(async () => {
+    journals = installJournalMock();
+    _resetSummaryViewForTests();
+    await seedLegacySessionPage('s-3', SESSION_3_SUMMARY, { number: 3 });
+  });
+  afterEach(() => journals.restore());
 
-  it('it is told how the last session ended, from the summary the mint kept', async () => {
+  it('it is told how the last session ended, from its summary', async () => {
     const msg = await opening(minted);
     expect(msg).toContain('WHERE THE LAST SESSION STOPPED (session 3, as its summary has it):');
     expect(msg).toContain('grappled to the dead flank of the Cinder Wren off Bleakhold Station');
@@ -127,22 +136,26 @@ describe('an opening starts from where the last session stopped', () => {
     expect(msg.indexOf('MATERIAL — rolled for this scene')).toBeLessThan(msg.indexOf('EARLIER OPENINGS'));
   });
 
-  it('a mint\'s record still waiting for its text tells the one it stands in front of', async () => {
-    const waiting = { ...minted, previousSessionSummary: { text: '', sessionId: 's-3', sessionNumber: 3,
-      displaced: { text: 'Mira left Hollow Spire with her manifest in Tamsin Vey\'s keeping.', sessionId: 's-2', sessionNumber: 2 } } };
-    const msg = await opening(waiting);
-    expect(msg).toContain('WHERE THE LAST SESSION STOPPED (session 2, as its summary has it):');
-    expect(msg).toContain('her manifest in Tamsin Vey\'s keeping');
+  it('a session nobody began since is told after it, by what was played in it', async () => {
+    await seedSessionRecord('s-prep', playedBeats('s-prep', ['I ask the oracle where the Wren drifted.'], { begun: false, number: null }));
+    _resetSummaryViewForTests();
+    const msg = await opening(minted);
+    expect(msg).toContain('WHERE THE LAST SESSION STOPPED (session 3, as its summary has it):');
+    expect(msg).toContain('Played between sessions, while no session was begun:');
+    expect(msg).toContain('I ask the oracle where the Wren drifted.');
   });
 
   it('control: a campaign\'s first session has nothing to pick up, and says nothing', async () => {
+    journals.restore();
+    journals = installJournalMock();
+    _resetSummaryViewForTests();
     const msg = await opening({ currentSessionId: 's-1', sessionNumber: 1 });
     expect(msg).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
     expect(msg).not.toMatch(/picks the story up/);
   });
 
   it('control: a record that is this session\'s own is not "the last session"', async () => {
-    const own = { currentSessionId: 's-3', previousSessionSummary: { text: SESSION_3_SUMMARY, sessionId: 's-3', sessionNumber: 3 } };
+    const own = { currentSessionId: 's-3', sessionNumber: 3 };
     expect(await opening(own)).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
   });
 });

@@ -30,11 +30,11 @@
  *      the same id.
  *   - `rollSessionIfDue(campaignState)` — at world load (src/index.js
  *      ready) and Begin a Session: when the session is over, bring its
- *      rolling summary up to date, close its scene under its own id, then
- *      `mintSession` — which keeps that summary as `previousSessionSummary`
- *      (issue #286 C3) for the narrator's LAST SESSION block, and closes the
- *      session-active gate: a new session is begun at Begin a Session
- *      (issue #321 U12).
+ *      summary up to date, close its scene under its own id, then
+ *      `mintSession`, which closes the session-active gate: a new session is
+ *      begun at Begin a Session (issue #321 U12). The narrator's LAST
+ *      SESSION block is read from the session record (`lastSessionToTell` —
+ *      record/summaryView.js, issue #382): nothing is carried.
  *   - `registerSessionActivityHook()` — the canonical GM refreshes the
  *      session's activity stamp on chat activity, at most every
  *      ACTIVITY_STAMP_MINUTES — the world setting `sessionActivity`
@@ -53,8 +53,8 @@
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { resolveNarrationPerspective } from "../narration/narratorPrompt.js";
 import { settledWithin } from "../multiplayer/settleWithin.js";
-import { storedRound, isResolving } from "../batch/round.js";
 import { recordSessionEdge } from "../record/tableSnapshot.js";
+import { lastSessionStory } from "../record/summaryView.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -172,8 +172,6 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "sessionNumber",
   "lastSessionTimestamp",
   "sessionEndedId",
-  "previousSessionSummary",
-  "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
   "deletedChatMessages",
@@ -383,202 +381,53 @@ function closingSessionUnbegun(campaignState) {
     && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
 }
 
-/** What leads the summary of a session nobody began, folded onto LAST SESSION (mintSession, issue #331 X65). */
-const BETWEEN_SESSIONS_LEAD = "Narrated between sessions, while no session was begun: ";
-
 /**
- * LAST SESSION's text (`previousSessionSummary.text`) in its two parts: the
- * summary of the session it names (`own`), and what mints folded onto it
- * from sessions nobody began (`between` — from the first fold's lead to the
- * end, issue #331 X65). The fold is made from another session's cards, so a
- * writer that summarises the named session again — a narration posted late
- * into it, or the X-Card taking one back (narrator.js
- * catchUpUnsummarisedSession, dropLastSessionTelling) — replaces `own` and
- * keeps `between` (issue #364 LATE-ROUND-NOT-IN-LAST-SESSION).
+ * Where the last session stopped — LAST SESSION, the one accessor: the
+ * summary of the newest earlier session a table began, followed by what was
+ * played in any session nobody began since, as facts; a session from before
+ * the record told by the story its Session Log page holds. Read from the
+ * session record (record/summaryView.js lastSessionStory, issue #382 slice 3)
+ * — nothing is carried from session to session, and nothing is marked owed:
+ * a summary a correction made stale is not told until it is made again.
+ * Null when nothing tells it (a campaign's first session). Read by the
+ * narrator's LAST SESSION block (narrator.js previousSessionSummaryFor), the
+ * world snapshot's earlier sessions and the opening scene (galleyVignette.js).
  *
- * @param {string|null|undefined} text
- * @returns {{ own: string, between: string }}
+ * @param {Object|null|undefined} campaignState
+ * @returns {{ sessionId: string|null, sessionNumber: number|null, text: string }|null}
  */
-export function lastSessionTextParts(text) {
-  const whole = typeof text === "string" ? text.trim() : "";
-  const at = whole.indexOf(BETWEEN_SESSIONS_LEAD);
-  if (at < 0) return { own: whole, between: "" };
-  return { own: whole.slice(0, at).trim(), between: whole.slice(at).trim() };
-}
-
-/**
- * LAST SESSION's text from its two parts (lastSessionTextParts), as
- * mintSession joins them.
- *
- * @param {string} own
- * @param {string} between
- * @returns {string}
- */
-export function lastSessionTextFrom(own, between) {
-  return [own, between].map(t => (typeof t === "string" ? t.trim() : "")).filter(Boolean).join("\n\n");
-}
-
-/**
- * Whether a Batch Mode round of `sessionId` is still to be narrated: the
- * round stored is being resolved — rolled, at its upgrade step or narrating —
- * and is filed under that session. A round whose session is over goes on to
- * its narration, filed under its own session after the next session is
- * minted too (batch/driver.js — ROUND-UPGRADE-STEP-AT-SESSION-END,
- * ROUND-CARD-SESSION-ID-AFTER-MINT); a collecting one is closed unnarrated.
- * Asked by a mint, and by the catch-up of a session owed its LAST SESSION
- * (narrator.js catchUpUnsummarisedSession), whether more of a session's story
- * may still come (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD). Never throws.
- *
- * @param {string|null|undefined} sessionId
- * @returns {boolean}
- */
-export function sessionRoundUnnarrated(sessionId) {
-  if (typeof sessionId !== "string" || !sessionId) return false;
-  let round = null;
+export function lastSessionToTell(campaignState) {
   try {
-    round = storedRound(globalThis.game?.settings?.get?.(MODULE_ID, "batchMode.round"));
-  } catch {
-    round = null;
+    return lastSessionStory(campaignState ?? null);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | LAST SESSION could not be read from the session record:`, err?.message ?? err);
+    return null;
   }
-  return isResolving(round) && round.sessionId === sessionId;
 }
 
 /**
- * The record LAST SESSION tells (`previousSessionSummary`): the record itself
- * when it has text; else, while a mint's record of a session whose summary is
- * still to come stands empty (mintSession — a Batch Mode round of it left to
- * be narrated), the record it was put in front of (`displaced`), which is what
- * LAST SESSION told until then. The empty record makes nothing up and hides
- * nothing older (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD). Null when
- * neither has text.
- *
- * @param {Object|null|undefined} record — `previousSessionSummary`
- * @returns {Object|null}
- */
-export function lastSessionToTell(record) {
-  const told = (r) => (typeof r?.text === "string" && r.text.trim() ? r : null);
-  return told(record) ?? told(record?.displaced);
-}
-
-/**
- * LAST SESSION once nothing more can come for a session a mint recorded with
- * no text (mintSession, for a Batch Mode round of it left to be narrated —
- * the round closed with nothing narrated, or the X-Card took back all that
- * was): the record it displaced, with whatever a mint folded onto the empty
- * one from a session nobody began — LAST SESSION as it would stand had the
- * empty record never been made — or null when it displaced none and nothing
- * was folded. A record with text of its own, or one no such mint made (no
- * `displaced`), is returned as it is. Read by the catch-up that finds nothing
- * to summarise (narrator.js catchUpUnsummarisedSession) and by the next mint
- * (rollSessionIfDue) — issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD.
- *
- * @param {Object|null|undefined} record — `previousSessionSummary`
- * @returns {Object|null}
- */
-export function lastSessionSettled(record) {
-  if (!record || typeof record !== "object") return null;
-  if (!Object.prototype.hasOwnProperty.call(record, "displaced")) return record;
-  const { own, between } = lastSessionTextParts(record.text);
-  if (own) return record;
-  const back = record.displaced && typeof record.displaced === "object" ? record.displaced : null;
-  if (!back) return between ? withoutDisplaced(record) : null;
-  if (!between) return back;
-  return { ...back, text: lastSessionTextFrom(back.text, between), updatedAt: record.updatedAt ?? back.updatedAt ?? null };
-}
-
-/** A LAST SESSION record without the one it was put in front of: one level only is kept. */
-function withoutDisplaced(record) {
-  const kept = { ...record };
-  delete kept.displaced;
-  return kept;
-}
-
-/**
- * Start a new session: keep the closing session's rolling summary as
- * `previousSessionSummary` (an older one stays when the closing session has
- * none; a closing session nobody began adds its summary to the older one,
- * which keeps its number — issue #331 X65), then mint the id, bump
- * `sessionNumber` and stamp
+ * Start a new session: mint the id, bump `sessionNumber` and stamp
  * `lastSessionTimestamp`. `sessionNumber` counts the sessions a table began:
  * a closing session nobody began (no Begin stamped it `sessionStartedId`,
  * its gate is shut, and End a Session did not close it — issue #331 X64) — a
- * world opened only to prepare — hands its number on
- * to the next instead of burning one, so the table's session after session 3
- * is "Session #4" however often the world was opened between them (issue
- * #330 D12). The id changes either way. The new session has not been begun, so its
- * session-active gate is closed until Begin a Session opens it: a session
- * nobody ended (it went idle) used to hand its open gate to the next one —
- * "Active" since last week, Begin disabled, and the campaign clocks, the
- * Spotlight Vignette and the foci skipped (issue #321 U12). A begun closing
- * session with no summary of its own whose Batch Mode round is still to be
- * narrated (`roundUnnarrated` — rollSessionIfDue asks sessionRoundUnnarrated)
- * is recorded as LAST SESSION's session with no text, the record LAST SESSION
- * told kept behind it as `displaced`; the caller marks it owed (issue #364
- * LATE-ROUND-NO-LAST-SESSION-RECORD). Mutates and returns campaignState; the
- * caller persists SESSION_MINT_FIELDS.
+ * world opened only to prepare — hands its number on to the next instead of
+ * burning one, so the table's session after session 3 is "Session #4" however
+ * often the world was opened between them (issue #330 D12). The id changes
+ * either way. The new session has not been begun, so its session-active gate
+ * is closed until Begin a Session opens it: a session nobody ended (it went
+ * idle) used to hand its open gate to the next one — "Active" since last
+ * week, Begin disabled, and the campaign clocks, the Spotlight Vignette and
+ * the foci skipped (issue #321 U12). Nothing of the closing session's summary
+ * is carried: LAST SESSION is read from the session record (lastSessionToTell
+ * — issue #382). Mutates and returns campaignState; the caller persists
+ * SESSION_MINT_FIELDS.
  *
  * @param {Object} campaignState
  * @param {number} [now] — epoch ms
- * @param {{ roundUnnarrated?: boolean }} [opts]
  * @returns {Object}
  */
-export function mintSession(campaignState, now = Date.now(), { roundUnnarrated = false } = {}) {
-  const closing = campaignState.currentSessionId;
-  const summary = campaignState.sessionSummary;
+export function mintSession(campaignState, now = Date.now()) {
   const closingUnbegun = closingSessionUnbegun(campaignState);
-  if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
-    const text     = summary.text.trim();
-    const prev     = campaignState.previousSessionSummary;
-    const prevText = typeof prev?.text === "string" ? prev.text.trim() : "";
-    // A LAST SESSION whose session is still owed its summary — its mark names
-    // it — holds its place with no text of its own: an X-Card took back what
-    // it told and the catch-up has not made it again yet, or the mint recorded
-    // it for a round left to be narrated. Replaced, its mark went with it and
-    // that session was never told again (issue #364
-    // EMPTIED-LAST-SESSION-PREP-ONLY-MINT).
-    const prevOwed = !!prev?.sessionId && campaignState.unsummarisedSession?.sessionId === prev.sessionId;
-    if (closingUnbegun && (prevText || prevOwed)) {
-      // What was narrated in a session nobody began — a world opened to
-      // prepare (`@scene`, `!oracle`) — is added to the summary of the
-      // session before it, which stays LAST SESSION under its own number. It
-      // replaced that summary, so the narrator lost what the table last
-      // played (issue #331 X65). The owed session's catch-up writes its own
-      // text in front of the fold (lastSessionTextParts).
-      campaignState.previousSessionSummary = {
-        ...prev,
-        text:      lastSessionTextFrom(prevText, `${BETWEEN_SESSIONS_LEAD}${text}`),
-        updatedAt: summary.updatedAt ?? prev.updatedAt ?? null,
-      };
-    } else {
-      campaignState.previousSessionSummary = {
-        sessionId:     closing,
-        // An unbegun session's number passes to the next one, so its summary
-        // carries none — LAST SESSION, not "Session 4" while session 4 runs.
-        sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
-        text,
-        updatedAt:     summary.updatedAt ?? null,
-      };
-    }
-  } else if (closing && roundUnnarrated && !closingUnbegun) {
-    // Nothing of the closing session was narrated before its mint, and a Batch
-    // Mode round of it still is to be: its narration is filed under it whenever
-    // it comes, and brings LAST SESSION up to date only while LAST SESSION
-    // names it (narrator.js bringLastSessionUpToDate). It named an older
-    // session or none, so the round reached the next narrator only through its
-    // facts. The session is recorded now, with no text — nothing is made up —
-    // and the record LAST SESSION told stays behind it: still told until the
-    // session's own summary is written (lastSessionToTell), and LAST SESSION
-    // again when nothing comes (lastSessionSettled) — issue #364
-    // LATE-ROUND-NO-LAST-SESSION-RECORD.
-    const behind = lastSessionToTell(campaignState.previousSessionSummary);
-    campaignState.previousSessionSummary = {
-      sessionId:     closing,
-      sessionNumber: campaignState.sessionNumber ?? null,
-      text:          "",
-      updatedAt:     null,
-      displaced:     behind ? withoutDisplaced(behind) : null,
-    };
-  }
   campaignState.currentSessionId       = newSessionId();
   campaignState.sessionNumber          = closingUnbegun && campaignState.sessionNumber > 0
     ? campaignState.sessionNumber
@@ -647,18 +496,12 @@ async function keepHeldResultsOfClosingSession(campaignState) {
  * At world load and Begin a Session, on the canonical GM: when the session is
  * over (sessionNeedsMint), close it out and mint the next one. A result still
  * held for Burn / Improve / Keep is kept first (keepHeldResultsOfClosingSession).
- * The closing
- * session first gets its rolling summary brought up to date
- * (finalizeSessionSummary, no call when it covers every card), so the summary
- * carried forward covers all of it — an ended session's too. End a Session
- * refreshes its own, but that refresh can fail or never land; a Batch Mode
- * round resolving at End, or a move narrated while End runs, posts into the
- * ended session after it (issue #345 AA21 — the mint kept any ended summary
- * with text, and LAST SESSION missed the session's last beats); and an X-Card
- * played on End's closing vignette empties a summary that covered the beat it
- * removed (issue #342 Z41). End's own closing vignette, which posts after its
- * refresh, is the one card left out of that check — not worth a second
- * summary call. Its scene closes under its own id, so migrated
+ * The closing session's summary is then brought up to date from its record
+ * (narrator.js getRollingSessionSummary, forced; no call when it tells every
+ * beat — End's closing vignette is a cutaway, not one): End a Session makes
+ * its own, but that call can fail, and a Batch Mode round resolving at End,
+ * or a move narrated while End runs, lands in the ended session after it
+ * (issue #345 AA21). Its scene closes under its own id, so migrated
  * truths, whereabouts and strikes keep that session's number. Mutates
  * campaignState; endScene persists the scene fields itself, the caller
  * persists SESSION_MINT_FIELDS.
@@ -695,42 +538,21 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (closing && !ended && campaignState.sessionStartedId === closing) {
     void recordSessionEdge("session.ended", campaignState, { reason: "idle" }, { session: closing });
   }
-  // Whether the closing session's summary covers it now. The finalise is
-  // fail-open — no key on this client yet, or its one call failed — and the
-  // mint goes ahead regardless; a session closed out short is marked, and
-  // LAST SESSION summarised from its cards once a keyed canonical GM can
-  // (narrator.js catchUpUnsummarisedSession, issue #347 AB15). It was never
-  // looked at again.
-  let caughtUp = true;
-  if (closing) {
+  // The closing session's summary brought up to date — the record holds
+  // every beat of it, a Batch Mode round narrated after End a Session or a
+  // move narrated while End ran among them (issue #345 AA21). Fail-open: no
+  // key on this client yet, or its call failed, and the mint goes ahead; the
+  // record says the summary is owed, and the keyed canonical GM makes it at
+  // the next narration, world load or key (narrator.js refreshStaleSummaries).
+  // A session nobody began is told by its facts: no summary is made for it.
+  if (closing && !closingSessionUnbegun(campaignState)) {
     try {
-      const { finalizeSessionSummary } = await import("../narration/narrator.js");
-      caughtUp = (await finalizeSessionSummary(campaignState)) !== false;
+      const { getRollingSessionSummary } = await import("../narration/narrator.js");
+      await getRollingSessionSummary(campaignState, { sessionId: closing, forceRefresh: true });
     } catch (err) {
-      caughtUp = false;
-      console.warn(`${MODULE_ID} | session roll: summary finalise failed:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | session roll: bringing the closing session's summary up to date failed:`, err?.message ?? err);
     }
   }
-  // Its Session Log page's story is rebuilt from the summary just brought up
-  // to date when an X-Card after End emptied it (SESSION-LOG-STORY-NOT-REBUILT),
-  // or when it was written before the newest narration that summary tells — a
-  // round narrated after End a Session but before this mint, filed under the
-  // session still current (issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT).
-  // Fail-open.
-  const closingSummary = campaignState.sessionSummary;
-  if (closing && caughtUp && closingSummary?.sessionId === closing && closingSummary.text?.trim()) {
-    try {
-      const { restoreSessionLogStory } = await import("../world/worldJournal.js");
-      const { sessionStoryThrough } = await import("../narration/narrator.js");
-      await restoreSessionLogStory(closing, closingSummary.text, { through: sessionStoryThrough(closing) });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | session roll: rebuilding the Session Log's story failed:`, err?.message ?? err);
-    }
-  }
-  // A session nobody began is folded into the one before it (X65): not marked.
-  const unsummarised = closing && !caughtUp && !closingSessionUnbegun(campaignState)
-    ? { sessionId: closing, sessionNumber: campaignState.sessionNumber ?? null }
-    : null;
   if (closing && hasSceneContent(campaignState)) {
     try {
       const { endScene } = await import("../factContinuity/sceneLifecycle.js");
@@ -739,36 +561,7 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
       console.warn(`${MODULE_ID} | session roll: stale-scene close failed:`, err?.message ?? err);
     }
   }
-  // A session still owed its summary stays owed while LAST SESSION goes on
-  // naming it: the closing session left no summary of its own (nothing was
-  // narrated in it), or one folded onto LAST SESSION (nobody began it). Every
-  // mint replaced the mark, so a LAST SESSION an X-Card had emptied — the
-  // table stopped before anything else was narrated — or one closed out short
-  // on a browser with no key was never made again once the next session was
-  // minted (issue #364 LAST-SESSION-OWED-LOST-AT-MINT).
-  const owed = campaignState.unsummarisedSession ?? null;
-  // A LAST SESSION a mint recorded with no text, for a round left to be
-  // narrated, that has nothing more to come — its round closed unnarrated and
-  // nothing is owed it — goes back to the record it stood in front of before
-  // this mint carries the closing session's summary onto it, as it would have
-  // (issue #364 LATE-ROUND-NO-LAST-SESSION-RECORD).
-  const last = campaignState.previousSessionSummary ?? null;
-  if (last?.sessionId && last.sessionId !== closing && owed?.sessionId !== last.sessionId
-      && !sessionRoundUnnarrated(last.sessionId)) {
-    campaignState.previousSessionSummary = lastSessionSettled(last);
-  }
-  // The closing session, begun, whose Batch Mode round is still to be
-  // narrated: with no summary to carry, the mint records it with no text, and
-  // it is owed its summary — the late narration's catch-up builds into it.
-  const roundOwed = !!closing && !closingSessionUnbegun(campaignState) && sessionRoundUnnarrated(closing);
-  const closingNumber = campaignState.sessionNumber ?? null;
-  mintSession(campaignState, now, { roundUnnarrated: roundOwed });
-  const recorded = roundOwed && campaignState.previousSessionSummary?.sessionId === closing
-    && !lastSessionTextParts(campaignState.previousSessionSummary.text).own
-    ? { sessionId: closing, sessionNumber: closingNumber } : null;
-  const stillOwed = owed?.sessionId && owed.sessionId !== closing
-    && campaignState.previousSessionSummary?.sessionId === owed.sessionId ? owed : null;
-  campaignState.unsummarisedSession = unsummarised ?? recorded ?? stillOwed;
+  mintSession(campaignState, now);
   return true;
 }
 

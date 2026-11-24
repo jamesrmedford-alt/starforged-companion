@@ -1430,11 +1430,6 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
-    // A rolling summary made from them goes first, while they are still in
-    // memory (issue #345 AA24 — the move narration's supersede does the same).
-    await import("../narration/narrator.js")
-      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(list))
-      .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
     const narrationIds = [];
     for (const card of list) {
       await card.update({

@@ -43,6 +43,8 @@ const ONE_SIDED = {
   characterIds: 'read, never written — kept for older stored records; every reader falls back to the speaker or the owned PC (schemas.js)',
   api: 'read, never written — the move interpreter\'s model settings stay at the schema default; the interpreter falls back to its own constants',
   canonicalTruthSlugs: 'read, never written — UNWIRED: nothing selects canonical truth slugs yet (known-issues.md → CAMPAIGN-TRUTHS-UNWIRED)',
+  previousSessionSummary: 'read, never written — a world\'s LAST SESSION from before the summary was a view of the session record, copied once onto its Session Log page at world load (worldJournal.js keepPreRecordSummaries, issue #382 section 9)',
+  sessionSummary: 'read, never written — the summary of a session under way from before the record, copied once onto its Session Log page at world load (worldJournal.js keepPreRecordSummaries, issue #382 section 9)',
 };
 
 /** The merge policies: every name they list must be a live field. */

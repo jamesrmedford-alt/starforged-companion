@@ -13,6 +13,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { logNarratorUsage } from '../../src/pacing/telemetry.js';
 import { getRollingSessionSummary } from '../../src/narration/narrator.js';
+import { makeJournal as makeLogJournal } from '../helpers/fullStateFixture.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
+import { seedSessionRecord, playedBeats, citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -98,14 +101,16 @@ describe('logNarratorUsage', () => {
 describe('every narrator call logs its usage', () => {
   it('a rolling-summary regen is logged under its function, with the response\'s usage', async () => {
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
-    game.messages = { contents: [1, 2, 3, 4, 5, 6].map(i => ({
-      flags: { [MODULE_ID]: { narratorCard: true, sessionId: 'sess-1', narrationText: `Beat ${i}.` } },
-    })) };
+    // The session's record, on its Session Log page: the summary is a view of it (issue #382).
+    const log = makeLogJournal(JOURNAL_NAMES.sessionLog);
+    const getName = game.journal.getName;
+    game.journal.getName = (name) => (name === JOURNAL_NAMES.sessionLog ? log : getName(name));
+    await seedSessionRecord('sess-1', playedBeats('sess-1', [1, 2, 3, 4, 5, 6].map(i => `Beat ${i}.`)));
     const savedFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async () => ({
       ok: true, status: 200, text: async () => '',
       json: async () => ({
-        content: [{ type: 'text', text: 'The crew chased the signal.' }],
+        content: [{ type: 'text', text: citedSummaryReply(['The crew chased the signal.']) }],
         usage:   { input_tokens: 420, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 60 },
       }),
     }));
@@ -119,7 +124,6 @@ describe('every narrator call logs its usage', () => {
     } finally {
       globalThis.fetch = savedFetch;
       game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
-      game.messages = { contents: [] };
     }
   });
 });

@@ -102,8 +102,9 @@ longer special-cases them).
   campaignState: each row action reads the store as it is at the click (a
   Replace once its prompt closes), applies to a copy and persists only the
   ledger field it changed onto the latest store (`persistSceneLedgerFields`),
-  a Strike's or Replace's regen mark on the stored rolling summary riding the
-  same write (`onto` → `markSummaryForRegen`); a cancelled prompt or a row
+  a Replace's name change riding the same write (`onto`) — a strike reaches
+  the session summary through the session record's `truth.struck`, which
+  makes a summary that told the fact stale (issue #382); a cancelled prompt or a row
   that no longer matches writes nothing — a truth retracted meanwhile
   included: `strikeTruth` / `replaceTruth` refuse an entry already retracted,
   and `mergeSceneLedgers` keeps a store truth the X-Card retracted over a

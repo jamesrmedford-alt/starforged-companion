@@ -69,39 +69,6 @@ export function lastingChangeOf(move) {
   return null;
 }
 
-/** What a move settles whatever it rolls, and what it settles on a hit — in words a summary can state. */
-const SETTLED_WHATEVER_THE_OUTCOME = Object.freeze({
-  swear_an_iron_vow: 'a vow was sworn',
-  forsake_your_vow:  'a vow was forsaken',
-});
-const SETTLED_ON_A_HIT = Object.freeze({
-  fulfill_your_vow:     'the vow was fulfilled',
-  finish_an_expedition: 'the expedition was finished',
-  take_decisive_action: 'the fight was won',
-});
-
-/**
- * What a resolved move settled for good, as a plain statement of fact — or
- * null when it settled nothing a summary must keep. The session summary's
- * source carries it under the move's narration (narrator.js
- * summarySourceEntry): the prose of a vow's fulfilment said only "the weight
- * of the vow lifts off you", and the summary of that session left the
- * fulfilment out (the long haul's third live run, a76). Narrower than
- * lastingChangeOf on purpose — only what is true of every result it names: a
- * miss is told by its own narration.
- *
- * @param {{ moveId?: string|null, outcome?: string|null }|null} move — a move
- *   card's flags, or a round card's entry
- * @returns {string|null}
- */
-export function settledByMove(move) {
-  const moveId = typeof move?.moveId === 'string' ? move.moveId : '';
-  if (!moveId) return null;
-  if (Object.hasOwn(SETTLED_WHATEVER_THE_OUTCOME, moveId)) return SETTLED_WHATEVER_THE_OUTCOME[moveId];
-  if (Object.hasOwn(SETTLED_ON_A_HIT, moveId) && HITS.has(move?.outcome)) return SETTLED_ON_A_HIT[moveId];
-  return null;
-}
-
 /**
  * The first lasting change among a round's rolled entries — a Batch Mode
  * round writes one Chronicle entry, and it is kept when any of its moves is.

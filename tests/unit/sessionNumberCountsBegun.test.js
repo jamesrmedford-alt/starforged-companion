@@ -59,14 +59,14 @@ describe("issue #330 D12 — a world opened only to prepare does not burn a sess
     expect(cs.sessionNumber).toBe(4);
   });
 
-  it("an unbegun session's summary is carried as LAST SESSION, with no number of its own", () => {
-    const cs = {
-      currentSessionId: "S4", sessionNumber: 4, sessionStartedId: "S3",
-      sessionSummary: { sessionId: "S4", text: "The crew read the inciting incident.", updatedAt: null },
-    };
+  // LAST SESSION is read from the session record since issue #382 slice 3: a
+  // session nobody began is told by its facts after the begun one before it,
+  // and a begun one by its own number (tests/unit/summaryView.test.js).
+  it("an unbegun session hands its number on, and the mint carries no summary", () => {
+    const cs = { currentSessionId: "S4", sessionNumber: 4, sessionStartedId: "S3" };
     mintSession(cs, T0);
     expect(cs.sessionNumber).toBe(4);
-    expect(cs.previousSessionSummary).toMatchObject({ sessionId: "S4", sessionNumber: null });
+    expect(cs).not.toHaveProperty("previousSessionSummary");
   });
 
   it("control: a session that was begun and went idle is followed by the next number", async () => {
@@ -77,14 +77,10 @@ describe("issue #330 D12 — a world opened only to prepare does not burn a sess
     expect(cs.sessionActive).toBe(false);
   });
 
-  it("control: a begun session's summary keeps its number", () => {
-    const cs = {
-      currentSessionId: "S3", sessionNumber: 3, sessionStartedId: "S3",
-      sessionSummary: { sessionId: "S3", text: "Session three.", updatedAt: null },
-    };
+  it("control: a begun session is followed by the next number", () => {
+    const cs = { currentSessionId: "S3", sessionNumber: 3, sessionStartedId: "S3" };
     mintSession(cs, T0);
     expect(cs.sessionNumber).toBe(4);
-    expect(cs.previousSessionSummary).toMatchObject({ sessionId: "S3", sessionNumber: 3 });
   });
 
   it("control: a world's first session is session 1", () => {

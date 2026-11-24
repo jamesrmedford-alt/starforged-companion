@@ -2611,21 +2611,18 @@ function registerWorldJournalTests(quench) {
             "the lore entry's text should not have been mutated");
         });
 
-        it("writeSessionLog produces a session-log page", async function () {
+        it("getOrCreateSessionLogPage makes one page a session, and finds it again (issue #382)", async function () {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const before = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
-          const page = await wj.writeSessionLog(state);
+          // A session of the test's own: the world's own pages are never written here.
+          const session = { currentSessionId: `quench-log-${Date.now()}`, sessionNumber: null };
+          const made = await wj.getOrCreateSessionLogPage(session);
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
-          if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
-          assert.isObject(page);
-          assert.isNotEmpty(page?.text?.content ?? "", "session-log page should have a body");
-          const after = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
-          // writeSessionLog now find-or-creates one running page per session (D7),
-          // so a re-run fills the summary on the existing page rather than spawning
-          // another. Assert a page exists and none were lost, not a strict +1.
-          assert.isAtLeast(after, Math.max(before, 1));
+          if (made?.page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: made.page.id });
+          assert.isObject(made?.page);
+          assert.isNotEmpty(made.page?.text?.content ?? "", "session-log page should have a body (its title)");
+          const again = await wj.getOrCreateSessionLogPage(session);
+          assert.equal(again?.page?.id, made.page.id, "one page a session");
         });
 
         it("the Session Log page is the session record's view: a line recorded for a session is listed on its page (issue #382)", async function () {
@@ -12631,7 +12628,9 @@ function registerPromptContractTests(quench) {
           const request = await capture(PRIVATE);
           carries(request, "ROLE", PRIVATE.name);
           carries(request, "CHARACTER", PRIVATE.name, [N.pcA]);
-          for (const name of ["LAST SESSION", "ENTITIES IN SCENE", "ACTIVE SCENE", "CAMPAIGN PREMISE"]) {
+          // LAST SESSION is read from the world's Session Log (issue #382), which
+          // other batches have written to: it is not this bare campaign's to lack.
+          for (const name of ["ENTITIES IN SCENE", "ACTIVE SCENE", "CAMPAIGN PREMISE"]) {
             lacks(request, name, PRIVATE.name);
           }
         });
@@ -12679,13 +12678,13 @@ function registerPromptContractTests(quench) {
           });
           await setCombatTrackPosition(fight.id, "bad_spot");
 
-          // The campaign: last session's summary (kept by the real mint), the
-          // premise, every player's safety lines, the recap's cache (so the
-          // session's first narration makes no recap call).
+          // The campaign: the premise, every player's safety lines, the
+          // recap's cache (so the session's first narration makes no recap
+          // call). Last session's summary is read from the session record
+          // (issue #382): its Session Log page's story, below.
           const cs = {
             currentSessionId: "quench-contract-s1", sessionNumber: 1, sessionActive: true,
             sessionStartedId: "quench-contract-s1",   // begun: its number is its own (issue #330 D12)
-            sessionSummary: { text: N.lastSession, sessionId: "quench-contract-s1", coveredCount: 4, updatedAt: new Date().toISOString() },
             safety: {
               lines: ["No harm to children"], veils: [],
               privateLines: [{ playerId: "quench-contract-player", lines: [N.privateLine] }],
@@ -12708,6 +12707,11 @@ function registerPromptContractTests(quench) {
           };
           mintSession(cs);
           await game.settings.set(MODULE, "campaignState", cs);
+          // LAST SESSION: session 1's story on its Session Log page, as the
+          // world load copies one a world kept before the record (issue #382
+          // section 9 — the real copy, given the summary such a world held).
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          await wj.keepPreRecordSummaries({ ...cs, previousSessionSummary: { sessionId: "quench-contract-s1", sessionNumber: 1, text: N.lastSession } });
 
           // The scene: the NPC in the frame, a fact about him in the ledger.
           await startScene(state(), { reason: "quench_contract" });

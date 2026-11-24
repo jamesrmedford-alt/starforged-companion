@@ -1272,11 +1272,12 @@ export async function applyStateTransition(transition, campaignState, { narratio
 // holds the session's record (its `sessionRecord` flag — src/record/store.js)
 // and its body is that record's rendered view (src/record/sessionLogView.js):
 // what happened, what was established and stands, what the table corrected.
-// The `sessionLogPage` flag says which session the page is and, until the
-// session summary is a view of the record too, keeps the story End a Session
-// writes (`summary.narrative`). A page from before the record keeps what it
-// has — its old "Scene log" of the detector's lines among it — and is never
-// rendered again.
+// The `sessionLogPage` flag says which session the page is; its story is the
+// session summary, a view of the record too (record/summaryView.js — issue
+// #382 slice 3). The story End a Session wrote onto a page before that
+// (`summary.narrative`) is read as that session's story until its summary is
+// made, and a page from before the record keeps what it has — its old "Scene
+// log" of the detector's lines among it — and is never rendered again.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The Session Log journal, or null when it has not been made (or is not readable on this client). */
@@ -1290,62 +1291,8 @@ function findSessionLogPage(journal, sessionId) {
   ) ?? null;
 }
 
-/**
- * The body of a Session Log page from before the session record (issue
- * #382), from its flag: the "Scene log" it accumulated and the summary End a
- * Session wrote. Only such a page is rendered here, and only when the X-Card
- * or a late narration revises its story; a page with a record is the
- * record's view (src/record/sessionLogView.js).
- *
- * @param {Object} flag — the sessionLogPage flag
- * @returns {string} HTML
- */
-function renderLegacySessionLogContent(flag) {
-  const lines = [
-    `<h2>${escapeHtml(flag.pageName)}</h2>`,
-    `<p>Session ID: <code>${escapeHtml(flag.sessionId || "—")}</code></p>`,
-    `<h3>Scene log</h3>`,
-  ];
-
-  const beats = Array.isArray(flag.beats) ? flag.beats : [];
-  if (beats.length) {
-    lines.push("<ul>");
-    for (const b of beats) {
-      const label = b.kind === "threat" ? "Threat" : "Lore";
-      const text  = b.text ? ` — ${escapeHtml(b.text)}` : "";
-      lines.push(`<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(b.title)}${text}</li>`);
-    }
-    lines.push("</ul>");
-  } else {
-    lines.push("<p><em>No scene beats recorded yet.</em></p>");
-  }
-
-  const summary = flag.summary;
-  const hasNarrative = !!(summary && typeof summary.narrative === "string" && summary.narrative.trim());
-  if (summary && (hasNarrative || summary.lore?.length || summary.threats?.length)) {
-    lines.push("<h3>Session summary</h3>");
-    if (hasNarrative) {
-      lines.push("<h4>Story so far</h4>");
-      for (const p of summary.narrative.trim().split(/\n\n+/)) {
-        lines.push(`<p>${escapeHtml(p.trim())}</p>`);
-      }
-    }
-    if (summary.lore?.length) {
-      lines.push("<h4>Lore this session</h4><ul>");
-      for (const t of summary.lore) lines.push(`<li>${escapeHtml(t)}</li>`);
-      lines.push("</ul>");
-    }
-    if (summary.threats?.length) {
-      lines.push("<h4>Threats this session</h4><ul>");
-      for (const t of summary.threats) lines.push(`<li>${escapeHtml(t.name)} — ${escapeHtml(t.severity)}</li>`);
-      lines.push("</ul>");
-    }
-  }
-  return lines.join("");
-}
-
 // A session's page being made, by session id: two makers in one tick — the
-// record's first write and End a Session's story — share the one creation
+// record's first write and the world load's copy of a story — share the one creation
 // (rules/reachability.md §7: get-or-create keyed on a stable id).
 const _sessionLogPageCreates = new Map();
 
@@ -1405,25 +1352,51 @@ export async function getOrCreateSessionLogPage(campaignState) {
 }
 
 /**
- * Save a session page's `sessionLogPage` flag — its story — and bring the
- * page's body up to date: the record's view when the page has a record, the
- * old rendering for a page from before it.
+ * What a world wrote of its last sessions before the session summary was a
+ * view of the record (issue #382 section 9) — LAST SESSION
+ * (`campaignState.previousSessionSummary`) and the summary of the session
+ * under way (`campaignState.sessionSummary`) — copied once onto those
+ * sessions' Session Log pages as their story (`sessionLogPage.summary
+ * .narrative`), where the record reads a session's story until its summary is
+ * made (record/summaryView.js sessionStoryOf; a session the record opened in
+ * the middle of is given it as EARLIER THIS SESSION). Additive and
+ * idempotent: a page whose story is written is left as it is, and a session
+ * with no page — one that ended by idleness, which End never wrote — gets one
+ * (by its id). Nothing in campaignState is changed or removed, and nothing
+ * else writes either field. The canonical GM's, at world load. Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Promise<number>} how many stories were copied
  */
-async function persistSessionLogPage(page, flag) {
-  flag.updatedAt = new Date().toISOString();
-  try {
-    await page.setFlag(MODULE_ID, FLAG_KEYS.sessionLogPage, flag);
-    if (page.flags?.[MODULE_ID]?.sessionRecord) {
-      const { renderSessionLog } = await import("../record/sessionLogView.js");
-      await renderSessionLog(flag.sessionId);
-    } else {
-      await page.update({ text: { format: 1, content: renderLegacySessionLogContent(flag) } });
-    }
-    return page;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | worldJournal: session-log persist failed:`, err);
-    return null;
+export async function keepPreRecordSummaries(campaignState) {
+  if (!isCanonicalGM() || !campaignState || typeof campaignState !== "object") return 0;
+  const told = (r) => (typeof r?.sessionId === "string" && r.sessionId && typeof r.text === "string" && r.text.trim() ? r : null);
+  const copies = [];
+  const last = told(campaignState.previousSessionSummary);
+  if (last && last.sessionId !== campaignState.currentSessionId) {
+    copies.push({ sessionId: last.sessionId, sessionNumber: last.sessionNumber ?? null, text: last.text.trim() });
   }
+  const live = told(campaignState.sessionSummary);
+  if (live && live.sessionId === campaignState.currentSessionId) {
+    copies.push({ sessionId: live.sessionId, sessionNumber: campaignState.sessionNumber ?? null, text: live.text.trim() });
+  }
+  let kept = 0;
+  for (const copy of copies) {
+    try {
+      const ctx = await getOrCreateSessionLogPage({ currentSessionId: copy.sessionId, sessionNumber: copy.sessionNumber });
+      if (!ctx) continue;
+      const story = ctx.flag.summary?.narrative;
+      if (typeof story === "string" && story.trim()) continue;
+      const now = new Date().toISOString();
+      await ctx.page.setFlag(MODULE_ID, FLAG_KEYS.sessionLogPage, {
+        ...ctx.flag, updatedAt: now, summary: { ...(ctx.flag.summary ?? {}), narrative: copy.text, writtenAt: now, beforeRecord: true },
+      });
+      kept += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | worldJournal: a session's story from before the record could not be kept:`, err?.message ?? err);
+    }
+  }
+  return kept;
 }
 
 /**
@@ -2181,90 +2154,6 @@ export function hiddenPlansInPlayWithout(narrationIds, { keepPlanAbout = null } 
 }
 
 /**
- * The Session Log page's story after an X-Card on its session (issue #345
- * AA27). End a Session writes the session's rolling summary onto the page
- * (writeSessionLog), so an X-Card played after End — its beat reaching back
- * to the session's last narration — left the story telling what it removed.
- * `narrative`: the X-Card dropped the summary the story was written from (it
- * covered the removed narration — applyXCardToNarratorMemory), so the story
- * leaves the page too, marked (`narrativeXCarded`): the mint's catch-up
- * rebuilds it from the summary of what remains (restoreSessionLogStory,
- * SESSION-LOG-STORY-NOT-REBUILT). A page End has not summarised is left
- * alone. Everything else on the page is the session record's view, which the
- * X-Card reaches as `narration.removed` (issue #382). A journal write: the
- * canonical GM's, after the X-Card's undo. Never throws.
- *
- * @param {string|null} sessionId — the X-carded narrations' session
- * @param {{ narrative?: boolean }} [opts]
- * @returns {Promise<boolean>} whether the page was rewritten
- */
-export async function retractSessionLogSummary(sessionId, { narrative = false } = {}) {
-  if (typeof sessionId !== "string" || !sessionId) return false;
-  try {
-    const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
-    const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
-    const summary = flag?.summary;
-    if (!summary?.writtenAt) return false;
-    const dropStory = narrative && typeof summary.narrative === "string" && summary.narrative.trim() !== "";
-    if (!dropStory) return false;
-    const next = { ...summary, narrative: "", narrativeXCarded: true };
-    return !!(await persistSessionLogPage(page, { ...flag, summary: next }));
-  } catch (err) {
-    console.warn(`${MODULE_ID} | X-Card: the Session Log's story could not be revised:`, err?.message ?? err);
-    return false;
-  }
-}
-
-/**
- * Write a session's "Story so far" back onto its Session Log page after an
- * X-Card emptied it (SESSION-LOG-STORY-NOT-REBUILT — the maintainer's
- * proposal). An X-Card after End a Session drops the page's story with the
- * summary it was written from (retractSessionLogSummary marks it); the next
- * mint regenerates that session's summary from the cards that remain for
- * LAST SESSION (rollSessionIfDue's finalize, or catchUpUnsummarisedSession
- * later), and this is that write's mirror on the page — the page was left
- * without its story for good. A story the X-Card emptied, while the page
- * still has none; and a story written before the newest narration the
- * summary was made from (`through`, that card's time, against the page's
- * `writtenAt`): a Batch Mode round narrated after End a Session wrote the page
- * is summarised into LAST SESSION by the catch-up, and the page — the
- * snapshot's memory of the session once a later mint moves LAST SESSION on
- * (worldSnapshot.js memoryUnits) — told it without the round (issue #364
- * LATE-ROUND-NOT-IN-SESSION-LOG-STORY). That rewrite is stamped (`writtenAt`,
- * no earlier than `through`), so a later one made from the same cards leaves
- * the page alone. A journal write: the canonical GM's (both callers are).
- * Never throws.
- *
- * @param {string|null} sessionId — the closing session
- * @param {string} text — its summary, regenerated without the removed beat or with the late one
- * @param {{ through?: number|null }} [opts] — the newest narration's time (ms) the summary was made from
- * @returns {Promise<boolean>} whether the page was rewritten
- */
-export async function restoreSessionLogStory(sessionId, text, { through = null } = {}) {
-  const story = typeof text === "string" ? text.trim() : "";
-  if (typeof sessionId !== "string" || !sessionId || !story) return false;
-  try {
-    const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
-    const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
-    const summary = flag?.summary;
-    if (!summary?.writtenAt) return false;
-    const told      = typeof summary.narrative === "string" ? summary.narrative.trim() : "";
-    const emptied   = summary.narrativeXCarded === true && !told;
-    const writtenAt = Date.parse(summary.writtenAt);
-    const behind    = summary.narrativeXCarded !== true && Number.isFinite(through)
-      && (!Number.isFinite(writtenAt) || writtenAt < through) && told !== story;
-    if (!emptied && !behind) return false;
-    const rebuilt = { ...summary, narrative: story };
-    delete rebuilt.narrativeXCarded;
-    if (Number.isFinite(through)) rebuilt.writtenAt = new Date(Math.max(Date.now(), through)).toISOString();
-    return !!(await persistSessionLogPage(page, { ...flag, summary: rebuilt }));
-  } catch (err) {
-    console.warn(`${MODULE_ID} | the Session Log's story could not be rebuilt:`, err?.message ?? err);
-    return false;
-  }
-}
-
-/**
  * Put back the stance X-carded narrations moved on faction records — the
  * canonical stance home (decisions.md → "Faction stance: the entity record is
  * canonical"): each version's `recordStance`, newest first, where the record
@@ -2309,35 +2198,6 @@ export async function writeEntryPage(page, flagKey, data) {
     console.warn(`${MODULE_ID} | worldJournal: page body update for "${page?.name}" failed:`, err?.message ?? err);
   }
 }
-
-/**
- * Write the session's story onto its Session Log page at End a Session (F18):
- * the rolling narrative summary, finalised by the End flow before this write.
- * The page's "what happened", its standing truths and its corrections are the
- * session record's view (src/record/sessionLogView.js, issue #382) — the
- * lists of lore titles and threats End used to copy here were a second,
- * never-revised record of the session, and are gone.
- *
- * @param {Object} campaignState
- * @returns {Promise<Object|null>} — the page, or null
- */
-export async function writeSessionLog(campaignState) {
-  const ctx = await getOrCreateSessionLogPage(campaignState);
-  if (!ctx) return null;
-
-  const { page, flag } = ctx;
-  const sessionId = campaignState?.currentSessionId ?? "";
-
-  // Only adopt the summary when it belongs to this session, so a stale
-  // prior-session summary never leaks onto the page.
-  const narrative = (campaignState?.sessionSummary?.sessionId === sessionId)
-    ? (campaignState.sessionSummary.text ?? "")
-    : "";
-
-  flag.summary = { narrative, writtenAt: new Date().toISOString() };
-  return persistSessionLogPage(page, flag);
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // READ — used by the assembler (Phase 5 will wire these in)

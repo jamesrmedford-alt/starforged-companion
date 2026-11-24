@@ -328,7 +328,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'sessionNumber',
   'lastSessionTimestamp',
   'sessionEndedId',
-  'previousSessionSummary',
   'customOracles',
   'recentOracles',
   'sessionRetractions',
@@ -349,7 +348,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'loreRecap',
   'crewSupply',
   'deletedChatMessages',
-  'unsummarisedSession',
   'sessionPerspective',
 ]);
 
@@ -381,10 +379,6 @@ function mergeWithLatestState(working, latestRaw, markedCopy = null) {
   // working copy's index dropped entries stored meanwhile (issue #300 F14).
   if (latest.artAssetIds || working.artAssetIds) {
     working.artAssetIds = mergeArtIndex(latest.artAssetIds, working.artAssetIds);
-  }
-
-  if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
-    working.sessionSummary = latest.sessionSummary;
   }
 
   const legacy = legacyTracksWithCopyMarks(latest.legacyTracks, working.legacyTracks, markedCopy);
@@ -423,12 +417,6 @@ function artEntryHolds(assetId, entryName) {
   if (entryName && journal?.getName?.(entryName)) return true;
   const entries = journal?.contents ?? [];
   return entries.some(e => e?.flags?.[MODULE_ID]?.entityType === 'artAsset' && e.flags[MODULE_ID].assetId === assetId);
-}
-
-function isNewerRecord(storeRec, workingRec) {
-  if (!storeRec) return false;
-  if (!workingRec) return true;
-  return String(storeRec.updatedAt ?? '') > String(workingRec.updatedAt ?? '');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

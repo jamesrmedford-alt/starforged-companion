@@ -938,11 +938,6 @@ export async function supersedeOriginalNarration(burn, { kind = "burn", campaign
       && f?.burnSuperseded !== true;
   });
   if (!card) return;
-  // A rolling summary made from it goes first, while the card is still in
-  // memory: the count it is debounced on does not move (issue #345 AA24).
-  await import("../narration/narrator.js")
-    .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards([card]))
-    .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of the superseded narration could not be dropped:`, err?.message ?? err));
   await card.update({
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
     content: buildSupersededNarrationContent(card.content, kind),

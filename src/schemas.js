@@ -541,14 +541,6 @@ export const CampaignStateSchema = {
   // The session End a Session closed (issue #286 C4). The next world load or
   // Begin a Session mints a new session while this equals currentSessionId.
   sessionEndedId:       null,
-  // The rolling summary of the session before this one, kept when the new
-  // session is minted (issue #286 C3) and shown to the narrator as LAST
-  // SESSION. Written by mintSession (src/session/lifecycle.js), from
-  // sessionSummary — the canonical, live record — and by the catch-up of a
-  // session the mint closed out without its summary (narrator.js
-  // catchUpUnsummarisedSession, issue #347 AB15).
-  //   { sessionId, sessionNumber, text, updatedAt }
-  previousSessionSummary: null,
   // The newest deleted chat messages the X-Card's pick reads — narration and
   // X-Card cards, and the lines that end a beat, without their text — so a
   // narration whose card a GM deleted is still the one the next X-Card removes
@@ -556,12 +548,6 @@ export const CampaignStateSchema = {
   // AB22 and its residual). Canonical GM; the newest 20, newest last.
   //   [{ id, timestamp, whisper, flags: { [MODULE_ID]: { narratorCard, sessionId, narrationId, … } } | {}, deleted: true }]
   deletedChatMessages: [],
-  // The session the last mint closed out before its summary could be brought
-  // up to date — no Claude key on the minting GM's client yet, or the one
-  // summary call failed (issue #347 AB15). LAST SESSION is summarised from its
-  // cards the next time a keyed canonical GM can, and this cleared.
-  //   { sessionId, sessionNumber } | null
-  unsummarisedSession: null,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin

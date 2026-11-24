@@ -149,10 +149,8 @@ export async function propagateRetraction(truth, campaignState) {
     }
   }
 
-  // The summary is regenerated from source, and the source prose still says
-  // it: the next regen runs regardless of the debounce, with the struck fact
-  // in its leave-out list (sessionRetractedFacts).
-  markSummaryForRegen(campaignState);
+  // The session summary that told it is stale by the strike's `truth.struck`
+  // on the session record, and made again (record/summaryView.js, issue #382).
   return out;
 }
 
@@ -256,23 +254,6 @@ export function loreRetractionHolder(campaignState) {
     }
     return blocked.some(f => statesKept(entry, f)) ? true : null;
   };
-}
-
-/**
- * Mark this session's rolling summary for a regen: the next refresh runs
- * regardless of the debounce (`coveredCount` 0). propagateRetraction marks
- * its caller's copy; a correction that persists onto the latest store marks
- * the stored summary the same way (issue #321 U06 — the copy's summary may
- * predate a regen that landed meanwhile). Mutates campaignState.
- *
- * @param {Object} campaignState
- * @returns {boolean} true when a summary was marked
- */
-export function markSummaryForRegen(campaignState) {
-  const summary = campaignState?.sessionSummary;
-  if (!summary || summary.sessionId !== campaignState.currentSessionId) return false;
-  campaignState.sessionSummary = { ...summary, coveredCount: 0 };
-  return true;
 }
 
 /**

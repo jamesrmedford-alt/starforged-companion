@@ -26,6 +26,8 @@ vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 import { simulateTable, USERS } from "../helpers/multiClient.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { postSessionRecap, postNarrationCard } from "../../src/narration/narrator.js";
+import { makeJournal } from "../helpers/fullStateFixture.js";
+import { JOURNAL_NAMES } from "../../src/world/worldJournal.js";
 import { supersedeOriginalNarration } from "../../src/moves/burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
@@ -75,9 +77,16 @@ describe("!recap session N recaps session N", () => {
     expect(r.content).not.toContain("Gather Information");
   }, 30_000);
 
-  it("a session whose cards carry no number is found through last session's summary", async () => {
-    await seed({ currentSessionId: "sess-2", sessionNumber: 2,
-      previousSessionSummary: { sessionId: "sess-1", sessionNumber: 1, text: "The old war ended." } });
+  it("a session whose cards carry no number is found through the session record", async () => {
+    await seed({ currentSessionId: "sess-2", sessionNumber: 2 });
+    // Session 1's page of the Session Log: its record numbers it (issue #382).
+    const log = makeJournal(JOURNAL_NAMES.sessionLog);
+    table.journal._set(log.id, log);
+    await log.createEmbeddedDocuments("JournalEntryPage", [{ name: "Session 1", flags: { [MODULE_ID]: {
+      sessionLogPage: { sessionId: "sess-1", sessionNumber: 1, pageName: "Session 1", createdAt: new Date(1).toISOString() },
+      sessionRecord: { v: 1, sessionId: "sess-1", createdAt: 1, seq: 1, views: {},
+        events: { e1: { id: "e1", k: "session.begun", at: 1, seq: 1, s: "sess-1", scene: null, who: {}, ref: {}, d: { number: 1 } } } },
+    } } }]);
     await card("sess-1", null, "face_danger", "The old war ended at Firstlight.");
     await card("sess-2", null, "face_danger", "The reactor hums tonight.");
     await table.settle();

@@ -115,31 +115,17 @@ async function draftCard() {
   return table.cards(f => f.draftEntityCard)[0];
 }
 
-describe('CACHE-MUTATED-BEFORE-WRITE — the rolling-summary persist', () => {
-  it('a refused write leaves the GM\'s cache without the summary the world never took', async () => {
-    const refused = failWrites(table, (w) => campaignStateWrite('gm-1')(w) && !!w.value?.sessionSummary?.text);
+// The rolling-summary persist wrote its summary onto a copy of campaignState
+// — set on the cached object first, a refused write left the GM serving a
+// summary the world never took. Since issue #382 slice 3 the summary is a
+// view of the session record, kept on its session's Session Log page
+// (record/summaryView.js): nothing of it is written to campaignState at all.
+describe('CACHE-MUTATED-BEFORE-WRITE — the session summary', () => {
+  it('is no campaignState write: neither the world nor the GM\'s cache is given a summary', async () => {
     await twoNarratedBeats();
     await table.drain();
-    expect(refused.refused).toBe(1);
     expect(world().sessionSummary ?? null).toBeNull();
     expect(gmCache().sessionSummary ?? null).toBeNull();
-  }, 30_000);
-
-  it('control: the summary\'s write lands — the world and the GM have it', async () => {
-    await twoNarratedBeats();
-    await table.drain();
-    expect(world().sessionSummary).toMatchObject({ sessionId: 'sess-1', coveredCount: 2 });
-    expect(gmCache().sessionSummary?.text).toMatch(/docks/);
-  }, 30_000);
-
-  it('written while an oracle answer is on its way: the summary and the answer both stand', async () => {
-    const held = holdGmCampaignStateWrites();
-    await gmAsks();   // no key yet: no follow-up narration
-    expect(held[0]?.value?.recentOracles?.map(e => e.question), 'the capture\'s write is in flight').toEqual(['is the hatch sealed']);
-    await twoNarratedBeats();
-    await releaseInOrder(held);
-    expect(world().sessionSummary?.text).toMatch(/docks/);
-    expect(questions()).toEqual(['is the hatch sealed']);
   }, 30_000);
 });
 

@@ -21,7 +21,6 @@ import { apiPost } from '../../src/api-proxy.js';
 import {
   postRoundNarrationCard,
   getRecentNarrationContext,
-  getRollingSessionSummary,
   postSessionRecap,
   xCardedNarrationCards,
   narrateRound,
@@ -91,16 +90,6 @@ describe('the round card', () => {
       'PLAYER — Kira wrote: "I slip through the vent."\n'
       + 'PLAYER — Ren wrote: "I keep the corridor covered."\n'
       + 'Kira slips through the vent while Ren holds the corridor.');
-  });
-
-  it('the rolling summary is made from the same lines', async () => {
-    game.settings._store.set(`${MODULE_ID}.narratorSessionSummary`, true);
-    setMessages([await postCard()]);
-    apiPost.mockResolvedValue({ content: [{ type: 'text', text: 'A summary.' }], usage: {}, stop_reason: 'end_turn' });
-    await getRollingSessionSummary({ ...CS }, { forceRefresh: true });
-    const user = String(apiPost.mock.calls[0][2].messages[0].content);
-    expect(user).toContain('PLAYER — Kira wrote: "I slip through the vent."');
-    expect(user).toContain('PLAYER — Ren wrote: "I keep the corridor covered."');
   });
 
   it('the session recap counts each entry\'s move, outcome and match', async () => {

@@ -19,7 +19,8 @@
  *     named nowhere, state removed, a frame they wrote giving way to the one
  *     it replaced — issue #345 D3) — and keeps it retracted against a stale
  *     writer's merge or a late relayed sidecar;
- *   - drops the rolling summary's text when it covered the narration;
+ *   - leaves the session summary to the session record: the removal makes a
+ *     summary that told it stale (issue #382), so nothing of it is written here;
  *   - leaves a redirect the first narration after a GM resumes carries,
  *     cleared once a narration has posted.
  *
@@ -194,16 +195,19 @@ describe('the X-carded narration leaves narrator memory', () => {
     expect(stored().sceneTruths.some(t => /Screams/.test(t.fact))).toBe(false);
   });
 
-  it("drops the rolling summary's text when it covered the narration", async () => {
+  // Issue #382 slice 3: the session summary is a view of the session record;
+  // the X-Card's `narration.removed` there makes a summary that told it stale
+  // (tests/unit/summaryView.test.js) — the pause writes nothing of it.
+  it('writes no summary of its own: what campaignState holds of one is left as it was', async () => {
     await narrate('nar-docks', 'The dockmaster waves you in.', DOCKS);
     await personSays('I head for the cells.');
     await narrate('nar-torch', 'The interrogator lifts the cutting torch.', TORCH);
     syncChat();
 
-    // Made after both cards: it covers the X-carded one.
-    game.settings._store.set(KEY, { ...stored(), sessionSummary: { text: 'Kira watched the torch.', coveredCount: 2, sessionId: SESSION } });
+    const old = { text: 'Kira watched the torch.', coveredCount: 2, sessionId: SESSION };
+    game.settings._store.set(KEY, { ...stored(), sessionSummary: { ...old } });
     await suppressScene({}, { local: true });
-    expect(stored().sessionSummary).toMatchObject({ text: '', coveredCount: 0 });
+    expect(stored().sessionSummary).toEqual(old);
   });
 
   // Control: before this fix nothing touched the summary either; it pins that the coverage check keeps it.

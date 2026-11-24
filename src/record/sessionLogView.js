@@ -36,6 +36,7 @@ import { onRecordWritten, storedRecordView, writeRecordView } from './store.js';
 import { pageMeta, recordPageOf, sessionLogPages } from './pages.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { OWN_WORDS, changeText, didText, moveText } from './phrasing.js';
+import { sessionStoryOf } from './summaryView.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -203,12 +204,15 @@ async function renderNow(sessionId) {
     const session = read.sessions[0];
     if (!session) return false;
     const enabled = autoWriteEnabled();
-    const sourceHash = recordHash([read.hash, meta.story, meta.name, enabled]);
+    // The session summary as every reader is given it: its view while it
+    // stands, else the story its page held before the summary was a view.
+    const story = sessionStoryOf(session);
+    const sourceHash = recordHash([read.hash, story, meta.name, enabled]);
     if (storedRecordView(sessionId, 'log')?.sourceHash === sourceHash) return false;
     _lastRender.set(sessionId, Date.now());
     return await writeRecordView(sessionId, 'log', { sourceHash, renderedAt: Date.now() }, {
       'text.format': 1,
-      'text.content': renderSessionLogBody(session, { story: meta.story, enabled }),
+      'text.content': renderSessionLogBody(session, { story, enabled }),
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | the Session Log page of session ${sessionId} could not be rendered:`, err?.message ?? err);

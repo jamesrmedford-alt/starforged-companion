@@ -437,20 +437,10 @@ async function finishXCardRemoval(narrator, removal) {
       console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
     }
   }
-  // An X-Card played after End a Session: the Session Log's "Story so far"
-  // End wrote kept telling the removed beat (issue #345 AA27). After the
-  // undo and the propagation, so the lore they retracted leaves its list.
-  try {
-    const { retractSessionLogSummary } = await import("../world/worldJournal.js");
-    await retractSessionLogSummary(removal.sessionId ?? null, { narrative: removal.summaryDropped === true });
-    // LAST SESSION told a removed narration posted late into the session it
-    // names, and was dropped with it: that session's page goes the same way,
-    // and its story is written back when LAST SESSION is made again
-    // (restoreSessionLogStory — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION).
-    if (removal.lastSessionDropped) await retractSessionLogSummary(removal.lastSessionDropped, { narrative: true });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | X-Card: revising the Session Log's summary failed:`, err?.message ?? err);
-  }
+  // The Session Log's pages, and every session summary that told the removed
+  // beats, reach the removal through the session record (recorded first,
+  // above): a summary is stale and made again, a page rendered again
+  // (issue #382; issue #345 AA27's story End wrote is now that view).
 }
 
 /**

@@ -211,8 +211,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   live run, a78 against a2), and both rules now name how a scene ends as used.
   **The opening is set where the last session stopped** (issue #381 D1/D2) —
   WHERE THE LAST SESSION STOPPED: the summary of the session before
-  (`campaignState.previousSessionSummary` as LAST SESSION tells it,
-  `lifecycle.lastSessionToTell`) and the last narration the table read, word
+  (LAST SESSION, read from the session record — `lifecycle.lastSessionToTell`,
+  issue #382) and the last narration the table read, word
   for word (`narrator.getLastStoryNarration`: the newest story card's session,
   its newest two story cards by the ring's own rule — no session or clock
   vignette — so it adds no store). Both are read in one call,
@@ -498,18 +498,11 @@ the result card it narrated, `oracleCardId`, and each ring entry carries
 its card's id; a move narration's — or a round card's entries' —
 `resolutionId` names its Pay the Price; RECENT ORACLE RESULTS told every
 later narration the removed answer was established — issue #345 AA01),
-drops a rolling summary that covered them
-(text emptied, a regen due — stamped with a fresh `updatedAt` and
-`xCardedAt`, so a move in flight cannot merge its working copy's older
-summary back over it, and a regen whose Haiku call was out when the card was
-played discards its reply; issue #325 W06 — checked again by the play count
-at the write's turn on the GM's write chain, so a card played while the
-write waited behind another, which jumps the chain and lands first, discards
-it too: issue #345 AA25; a pause still standing from an earlier play does
-not — its cards are out of the source — unless the source still holds a
-narration the pause's write names, `xCardedNarrationIds`, before its card
-is flagged: the next session's mint, or End a Session pressed while paused,
-kept no summary of the session just played, issue #345 AA57) and sets
+leaves every session summary to the session record — its
+`narration.removed` (recorded first, `finishXCardRemoval`) makes a summary
+that told them stale, never shown and made again from what remains, and a
+summary whose call was out when it landed is discarded at its reply (issue
+#382 slice 3; issue #325 W06, #345 AA25 / AA57) — and sets
 `xCardRedirect` — on
 every play. A ship move the narration made is undone too: the sidecar's
 `ship / position` change is written to the command vehicle stamped with the
@@ -567,13 +560,9 @@ removal on the session record (`recordNarrationsRemoved`, issue #382 —
 docs/flows/session-record-flow.md), awaited: the removed narration's prose
 and what it established are blanked in the stored record (decision D3), and
 every view of the record — the Session Log page among them — reads without
-them. Last, the story End a Session wrote on the session's Session Log page
-(`retractSessionLogSummary`): it goes when the pause dropped the rolling
-summary it was written from — an X-Card played after End left the page
-telling the removed beat (issue #345 AA27); the story is rebuilt from the
-summary the next mint regenerates without the beat (`restoreSessionLogStory`
-at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
-SESSION-LOG-STORY-NOT-REBUILT). A capture still running when the
+them. The session's Session Log page is the record's view: its "Session
+summary" is the summary view, stale with the removal and rendered again
+without it (issue #345 AA27). A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED
 `xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
@@ -618,11 +607,12 @@ canonical stance, `recordStance` before → after) is put back too, where the
 record still holds what the narration set (known-issues
 XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
-`propagateRetraction`. Readers: the ring and the rolling summary skip
-`xCarded` cards (`sessionNarratorCards`), the session recap keeps the move
+`propagateRetraction`. Readers: the ring skips
+`xCarded` cards (`sessionNarratorCards`); the session summary reads the
+record, where the removal applies (issue #382); the session recap keeps the move
 but quotes none of its prose, the audio hook shows no Play button and
 stops the card's narration where it is playing or loading (XCARD-AUDIO-PLAYING), the
-CORRECTED block and the summary's leave-out list never name an X-Card
+CORRECTED block and the summary's STRUCK list never name an X-Card
 retraction (it still blocks re-assertion in the ledger),
 `mergeSceneLedgers` strips an X-carded narration's entries from a stale
 working copy (its frame yields to the store's), and a relayed sidecar of an
@@ -649,12 +639,10 @@ Z46) — the clock's newest live trigger vignette of the session, found by the
 rewind the world refused (`retryUpgradeStep`: the step keeps the upgrade's
 kind and each vow copy's vow id; its vignette stayed live beside a clock no
 longer full, UPGRADE-RETRY-REWIND-NO-SUPERSEDE); `sessionNarratorCards`
-leaves both out of the ring, the rolling summary's source and the recap. A
-rolling summary already made from either is dropped first, while the card
-is still in memory — the X-Card's covered-index rule, text emptied and a
-regen due (`narrator.js` `dropSummaryOfSupersededCards`): one card left the
-source and the re-narration joined it, so the count the summary is debounced
-on did not move, and STORY SO FAR told the replaced outcome for up to
+leaves both out of the ring and the recap, and the record's supersede
+(`narration.removed` by `superseded`) leaves them out of the session summary:
+a summary made from the replaced telling is stale and made again with the
+re-narration — STORY SO FAR told the replaced outcome for up to
 round(1.5 × Context Cards) narrations (issue #345 AA24). Their ledger entries are
 retracted by `narrationId` through the X-Card's `retractNarrations`, with
 `{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
@@ -722,10 +710,11 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   (`mergeFactionLandscape`, uncapped), every World Journal threat not
   resolved, all confirmed lore with the Locations journal's places and
   `campaignState.loreRecap`, the newest three earlier sessions' summaries
-  (`previousSessionSummary`, and each Session Log page's story — one with no
-  number, an unbegun session's, reads "An earlier session", not "Session 0",
-  and the session that closed last is the newest numbered or not, issue #362
-  AC71) with the open
+  (read from the session record — `summaryView.js` `earlierSessionStories`:
+  each begun session's summary view, or the story its page held, LAST
+  SESSION's with what a session nobody began played after it; one with no
+  number reads "An earlier session", not "Session 0", and the session that
+  closed last is the newest numbered or not, issue #362 AC71) with the open
   vows and tracks by name, and every active plan of the Secrets journal
   (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
   context settings and the rolling summary's setting leave their sections
@@ -852,8 +841,9 @@ and `!lore` read one
 save: issue #322 V34; each truth's rolled sub-table detail after its title —
 who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
-SESSION (`previousSessionSummary`, kept at the mint — issue #286 C3), then the
-rolling session summary, each prefixed with a **ledger-wins caveat** — a
+SESSION (the session record's — `lifecycle.lastSessionToTell`, issue #382;
+issue #286 C3), then the session summary (STORY SO FAR — the current
+session's summary view), each prefixed with a **ledger-wins caveat** — a
 summary is texture, not a fact store · **[4d] active threats · [4e]
 faction landscape · [4f] established lore** (chosen per turn since issue
 #286 C2 — `selectLoreForContext`: up to 5 confirmed lore / recorded-location
@@ -1053,14 +1043,13 @@ null ("Player") — never as the campaign's first PC (issue #342 Z50); so are
 their `@scene` question and their `!oracle` follow-up, whose captures carry no
 PC either (issue #345 AA30 — `interrogateScene` and `narrateOracleFollowup`
 took `getActiveCharacter`'s first-PC fallback).
-The rolling summary reads the same entries (`ringEntryText`), so what a
-player wrote reaches it too — and, under a move's entry, what that move
-settled for good, from the card's own `moveId` / `outcome` (a round card's
-entries each): "(Settled by this move: the vow was fulfilled.)"
-(`summarySourceEntry` → `chronicleKeeps.settledByMove` — a vow sworn,
-fulfilled or forsaken, an expedition finished, a fight won). Its prompt says
-to keep every such line and to say only what the passages state: the prose of
-a vow's fulfilment said "the weight of the vow lifts off you", one passage of
+The session summary reads the session record (issue #382 slice 3 —
+`summaryView.js` `summarySource`): each beat's facts, the player's own words
+among them, and TOLD AS its narration; a beat that changed something for good
+— a vow sworn, fulfilled or forsaken, an expedition finished, a fight decided —
+is marked LASTING (read.js, `chronicleKeeps.lastingChangeOf`). Its prompt says
+every LASTING beat is told and nothing found only in TOLD AS is an event: the
+prose of a vow's fulfilment said "the weight of the vow lifts off you", one passage of
 twenty-three, and that session's summary left the fulfilment out (the long
 haul's third live run, a76). Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card
@@ -1133,53 +1122,25 @@ narrated under the closing session's id, as End a Session does, which a
 session over by idleness never got (`keepEveryHeldResult`; the mint's working
 copy then takes the store's value for each field the keep changed — issue
 #364 HELD-RESULT-IDLE-SESSION) —
-the closing session's summary is brought up to date
-(`finalizeSessionSummary`, no call when it covers every card) — an ended
-one's too: End a Session refreshes its own, but that refresh can fail or
-never land, a Batch Mode round resolving at End or a move narrated while End
-runs posts into the ended session after it (issue #345 AA21), and an X-Card
-on End's closing vignette empties a summary that covered the beat it removed
-(issue #342 Z41); End's own closing vignette, posted after its refresh, is
-the one card that check leaves out (its scene is closed already: End a
-Session ends it once the vignette's card is posted — `closing_vignette`,
-issue #374 A1) — a scene left open closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary` (a finalise that
-could not cover the session — no key on that client yet, a failed call —
-marks it `unsummarisedSession`, and the canonical GM summarises its cards into
-`previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
-after each narrator card, at the load and when its key is set — issue #347
-AB15; a narration posted into the session LAST SESSION names after the mint —
-a Batch Mode round narrated late, filed under its own session — marks it
-again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
-text again from that session's cards, one summary call per late card, what a
-mint folded onto it from a session nobody began kept
-(`lifecycle.js` `lastSessionTextParts`), and that session's Session Log
-"Story so far" — the snapshot's memory of it once a later mint moves LAST
-SESSION on — is rewritten with the same text when it was written before the
-newest card the summary was made from (`worldJournal.js`
-`restoreSessionLogStory`'s `through` against the page's `writtenAt`, stamped
-so the same cards never rewrite it twice; End a Session's closing vignette
-left out — issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY: End's story stood,
-without the round; the mint rebuilds the closing session's story the same way
-from the summary it finalises, for a round narrated after End but before the
-mint — `sessionStoryThrough`, issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT);
-an X-Card on such a narration drops
-that text and marks the session the same way, `dropLastSessionTelling`; when
-the mint carried no summary for the card's session, LAST SESSION is left as
-it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's
-Batch Mode round was still to be narrated at the mint (`sessionRoundUnnarrated`):
-a begun session with no summary of its own is then recorded as LAST SESSION's
-session with no text, the record LAST SESSION told kept behind it
-(`displaced`) and still what the narrator is told until the session's own
-summary is written (`lastSessionToTell`), and it is marked owed — the
-catch-up leaves the mark while nothing of it is narrated and the round still
-waits, and once nothing more can come (the round closed unnarrated, or the
-X-Card took back all of it) the displaced record is LAST SESSION again, at
-the catch-up or before the next mint (`lastSessionSettled`) —
-LATE-ROUND-NO-LAST-SESSION-RECORD; a later mint keeps the
-mark while LAST SESSION goes on naming that session, so a summary an X-Card
-emptied or a keyless GM closed out short is still made once the next session
-is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
+the closing session's summary is brought up to date from its record (issue
+#382 slice 3: `getRollingSessionSummary`, forced, for a begun session; no call
+when it tells every beat — End's closing vignette is a cutaway, no beat): End
+a Session makes its own, but that call can fail, and a Batch Mode round
+resolving at End or a move narrated while End runs lands in the ended session
+after it (issue #345 AA21) — a scene left open closes under its own id, and
+`mintSession` carries nothing of a summary. LAST SESSION is read from the
+session record (`lifecycle.js` `lastSessionToTell` → `summaryView.js`
+`lastSessionStory`): the newest earlier begun session's summary view while it
+stands — a correction since (an X-Card after End, a strike, a changed name)
+makes it stale: not told until made again (issue #342 Z41, #345 AA57) — else
+the story its page held before slice 3, followed, as facts, by what was
+played in any session nobody began since (issue #331 X65). A summary owed — a
+session closed on a browser with no key, a call that failed, a round narrated
+after its session closed (issue #347 AB15, #364 LATE-ROUND-*) — is not a mark:
+the record says it is owed (`summariesOwed`), and the keyed canonical GM makes
+it again after each narrator card, at the load and when its key is set
+(`refreshStaleSummaries`); the Session Log page's "Session summary" is that
+view, re-rendered when it is stored — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65), a LAST
@@ -1207,7 +1168,7 @@ the stored value, so a refused save leaves the GM's cache unbegun and a retry
 starts the session (issue #309 N09) — and the table is told: the GM posts "The
 session was not started … No momentum was applied … Try Begin a Session
 again" where the Begin card is (issue #329 X13). End a Session's effects (scene close,
-summary, Session Log, the focus momentum, the closing vignette) run once per
+summary, the focus momentum, the closing vignette) run once per
 session id too: `applyEndSession` runs one End at a time on the canonical GM,
 and an End on a session already ended only replaces the focus for next
 session and posts a note — its momentum is paid for the first focus noted,
@@ -1575,9 +1536,10 @@ the scenery filed as lore and a draft location. Now:
   Chronicle entry. It still starts a scene when none is open, and is still
   read against the ledger (the consistency check: it writes no fact).
 - **What it still feeds, deliberately** — the A1 decision kept: its card
-  carries the narrator flag family, so the **recent-narration ring** and the
-  rolling summary's source hold the question and what was said in reply
-  (`PLAYER — Kira asked: "…"`); a later beat must not contradict an answer
+  carries the narrator flag family, so the **recent-narration ring** holds
+  the question and what was said in reply (`PLAYER — Kira asked: "…"`), and
+  the session summary's source lists it under QUESTIONS (the record's
+  `question`, issue #382); a later beat must not contradict an answer
   the table has just read. It is **no narration** where one is meant: the
   session's first-narration campaign recap (`sessionStartRecap` — a question
   asked first took the first beat's recap) and the X-Card's redirect
@@ -1669,9 +1631,9 @@ do the other writers that hold a snapshot across an await: `!lore` writes only
 `loreRecap` (`writeOwnedFields`, on the write chain; store-owned in
 `persistResolution`'s merge, U06a/g); `!truth` / `!state` and the correction dialog work on a fresh copy
 and persist only the ledger field they changed through
-`persistSceneLedgerFields`, a Strike's or Replace's regen mark on the stored
-rolling summary riding the same write (`opts.onto` → `markSummaryForRegen`,
-U06b/e); the inciting premise is written with its scene ledgers the same way
+`persistSceneLedgerFields`, a Replace's name change riding the same write
+(`opts.onto`, U06b/e — a strike reaches the session summary through the
+record's `truth.struck`, issue #382); the inciting premise is written with its scene ledgers the same way
 (`onto` sets `incitingIncident`, U06d) — one the world refused is told on a
 whispered "Premise not saved" card to its asker and the GMs, since nothing
 else would carry [4b] (issue #336 Y33); a site reveal or clear saves its
@@ -1855,11 +1817,11 @@ ring, and the closing scene's truths keep the closing session's number.
   lifting that one restores it, an X-Card retraction — the active scene's or
   an earlier scene's kept block — or an earlier scene's kept strike, issue
   #336 Y32), and the
-  rolling summary regenerates on the next refresh with a "RETRACTED BY THE
-  TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
-  `campaignState.sessionRetractions`, so CORRECTED and that list hold for the
-  rest of the session — the ring and the summary's source prose still state
-  the fact after the scene closes. Strikes are told apart by subject and
+  session summary that told it is stale by the record's `truth.struck`, and
+  is made again with it under "STRUCK BY THE TABLE — did not happen" (issue
+  #382). `endScene` keeps the scene's bare strikes on
+  `campaignState.sessionRetractions`, so CORRECTED holds for the rest of the
+  session — the ring's prose still states the fact after the scene closes. Strikes are told apart by subject and
   fact together, so two characters' identical struck facts are both kept
   (U39). A kept strike keeps its truth's id, subject key and who struck it —
   and, for a scene fact, the place it was asserted at (`place`, the truth's

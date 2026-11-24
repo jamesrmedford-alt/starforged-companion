@@ -17,7 +17,7 @@ import {
   updateThreatSeverity,
   promoteLoreToConfirmed,
   applyStateTransition,
-  writeSessionLog,
+  keepPreRecordSummaries,
   getOrCreateSessionLogPage,
   parseJournalCommand,
   executeJournalCommand,
@@ -496,66 +496,42 @@ describe("applyStateTransition — lore contradiction", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// writeSessionLog
+// keepPreRecordSummaries — issue #382 section 9: the summaries a world kept in
+// campaignState before the session summary was a view of the record, copied
+// once onto their sessions' Session Log pages (End a Session writes no story:
+// the page's "Session summary" is the summary view).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("writeSessionLog", () => {
-  it("creates a text page in the session log journal", async () => {
-    const page = await writeSessionLog(campaign({ sessionNumber: 7, currentSessionId: "ses-7" }));
-    expect(page).not.toBeNull();
-    expect(page.name).toContain("Session 7");
-    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
-    expect(journal.pages.contents).toHaveLength(1);
+describe("keepPreRecordSummaries", () => {
+  const story = (sessionId) => _journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents
+    .find(p => p.flags?.[MODULE_ID]?.sessionLogPage?.sessionId === sessionId)?.flags[MODULE_ID].sessionLogPage.summary ?? null;
+
+  it("copies LAST SESSION onto its session's page — made when the session has none (it ended by idleness)", async () => {
+    const cs = campaign({ currentSessionId: "ses-5", sessionNumber: 5,
+      previousSessionSummary: { sessionId: "ses-4", sessionNumber: 4, text: " The crew found the munitions. " } });
+    expect(await keepPreRecordSummaries(cs)).toBe(1);
+    expect(story("ses-4")).toMatchObject({ narrative: "The crew found the munitions.", beforeRecord: true });
+    expect(_journals.get(JOURNAL_NAMES.sessionLog).pages.contents[0].name).toContain("Session 4");
   });
 
-  // F18: the Session Log was blank because writeSessionLog was never called from
-  // production (now wired into End Session). Pin that the page carries a body.
-  it("writes a non-empty page body", async () => {
-    const page = await writeSessionLog(campaign({ sessionNumber: 3, currentSessionId: "ses-3" }));
-    expect(page.text?.content ?? "").not.toBe("");
-    expect(page.text.content).toContain("Session 3");
+  it("is additive and idempotent: a page whose story is written is left as it is, and a second load copies nothing", async () => {
+    const made = await getOrCreateSessionLogPage(campaign({ currentSessionId: "ses-4", sessionNumber: 4 }));
+    await made.page.setFlag(MODULE_ID, "sessionLogPage", { ...made.flag, summary: { narrative: "The story End wrote." } });
+    const cs = campaign({ currentSessionId: "ses-5", previousSessionSummary: { sessionId: "ses-4", sessionNumber: 4, text: "Another telling." } });
+    expect(await keepPreRecordSummaries(cs)).toBe(0);
+    expect(story("ses-4").narrative).toBe("The story End wrote.");
   });
 
-  // D7: the End-Session story lands on the SAME page the session already has
-  // (the one its record is kept on) — one page per session, not one per call.
-  // Issue #382 D6: the lore titles End used to copy beside it are gone — a
-  // second, never-revised record of the session; the page's lists are the
-  // session record's view (src/record/sessionLogView.js).
-  it("writes the story onto the session's page without spawning a new one, and lists no lore titles", async () => {
-    const cs = campaign({ sessionNumber: 5, currentSessionId: "ses-5", sessionSummary: { text: "The crew found the munitions.", sessionId: "ses-5" } });
-    const made = await getOrCreateSessionLogPage(cs);
-    await recordLoreDiscovery("Wartime munitions", { text: "real", sessionId: "ses-5" }, cs);
-    const page = await writeSessionLog(cs);
+  it("copies the summary of the session under way, and nothing of another session's or none", async () => {
+    const live = campaign({ currentSessionId: "ses-N", sessionNumber: 9,
+      sessionSummary: { sessionId: "ses-N", text: "The crew chased the signal to Bleakhold." } });
+    expect(await keepPreRecordSummaries(live)).toBe(1);
+    expect(story("ses-N").narrative).toBe("The crew chased the signal to Bleakhold.");
 
-    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
-    expect(journal.pages.contents).toHaveLength(1);          // one page for the session
-    expect(page).toBe(made.page);
-    expect(page.text.content).toContain("found the munitions");
-    expect(page.text.content).not.toContain("Wartime munitions");
-    expect(page.flags[MODULE_ID].sessionLogPage.summary).not.toHaveProperty("lore");
-    expect(page.flags[MODULE_ID].sessionLogPage.summary).not.toHaveProperty("threats");
-  });
-
-  // Rolling session summary (architecture §8.6) — the finalised "story so far"
-  // prose is recorded under the Session summary section for subsequent use.
-  it("records the rolling narrative summary for the current session", async () => {
-    const cs = campaign({
-      currentSessionId: "ses-N",
-      sessionNumber: 9,
-      sessionSummary: { text: "The crew chased the signal to Bleakhold and crossed the Khatri Syndicate.", sessionId: "ses-N" },
-    });
-    const page = await writeSessionLog(cs);
-    expect(page.text.content).toContain("Story so far");
-    expect(page.text.content).toContain("crossed the Khatri Syndicate");
-  });
-
-  it("ignores a rolling summary that belongs to a different session", async () => {
-    const cs = campaign({
-      currentSessionId: "ses-N",
-      sessionSummary: { text: "Stale prior-session prose.", sessionId: "ses-OLD" },
-    });
-    const page = await writeSessionLog(cs);
-    expect(page.text.content).not.toContain("Stale prior-session prose.");
+    const stale = campaign({ currentSessionId: "ses-M", sessionSummary: { sessionId: "ses-OLD", text: "Stale prior-session prose." },
+      previousSessionSummary: { sessionId: "ses-M", text: "This session's own — not LAST SESSION." } });
+    expect(await keepPreRecordSummaries(stale)).toBe(0);
+    expect(await keepPreRecordSummaries(campaign({ currentSessionId: "ses-Q" }))).toBe(0);
   });
 });
 
@@ -583,7 +559,7 @@ describe("getOrCreateSessionLogPage", () => {
     expect(_journals.get(JOURNAL_NAMES.sessionLog).pages.contents).toHaveLength(1);
   });
 
-  it("two makers in one tick — the record's first write and End's story — share one creation (rules/reachability.md §7)", async () => {
+  it("two makers in one tick — the record's first write and the world load's copy of a story — share one creation (rules/reachability.md §7)", async () => {
     const cs = campaign({ currentSessionId: "ses-3", sessionNumber: 3 });
     const [a, b] = await Promise.all([getOrCreateSessionLogPage(cs), getOrCreateSessionLogPage(cs)]);
     expect(b.page).toBe(a.page);

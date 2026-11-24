@@ -194,11 +194,14 @@ describe('propagateRetraction', () => {
     expect(getConfirmedLore(cs).map(e => e.title)).toEqual(['The quartermaster']);
   });
 
-  it('marks this session\'s rolling summary for a regen', async () => {
-    const cs = makeState({ sessionSummary: { text: 'Kael showed his scar.', coveredCount: 12, sessionId: 'sess-1' } });
+  // Issue #382 slice 3: a strike reaches the session summary through the
+  // session record (`truth.struck`): the summary is stale and made again.
+  it('marks no rolling summary — a strike reaches it through the session record', async () => {
+    const summary = { text: 'Kael showed his scar.', coveredCount: 12, sessionId: 'sess-1' };
+    const cs = makeState({ sessionSummary: { ...summary } });
     applySidecar({ newTruths: [{ subject: 'scene', fact: 'it is raining' }], stateChanges: [] }, { campaignState: cs });
     await propagateRetraction(strikeTruth(cs.sceneTruths[0].id, cs), cs);
-    expect(cs.sessionSummary).toMatchObject({ text: 'Kael showed his scar.', coveredCount: 0 });
+    expect(cs.sessionSummary).toEqual(summary);
   });
 });
 
