@@ -324,6 +324,14 @@ the transcript alone), `annotated-transcript.md`, `scorecard.md` and
 `review-notes.md` (the recaps checked sentence by sentence, each finding with its
 cause). It replays with no key like the others.
 
+**The fourth live run of the long haul** (2026-11-24, $2.86) is kept at
+`playwright/explorations/long-haul-live-20261124-213912/`: the first on the
+readers' Sonnet 5.5, the session record and set-pieces built from oracle rolls,
+with the expedition beat — reviewed the same way (`cold-read.md`,
+`annotated-transcript.md`, `scorecard.md`, `review-notes.md` — its findings,
+issue #383). Its replay diverges from today's module wherever a fix since
+changed what the module does.
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 fifty plain in-fiction lines that name no move, each with the reading it

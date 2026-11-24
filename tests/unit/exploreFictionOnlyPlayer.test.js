@@ -358,3 +358,64 @@ describe('the third live run of the long haul, kept as a replay (explorations/lo
     expect(fs.existsSync(path.join(FOLDER, 'review-notes.md'))).toBe(true);
   });
 });
+
+// ── the fourth live run, kept: the first on the readers' Sonnet, the session
+// record and the set-pieces built from oracle rolls ────────────────────────
+
+describe('the fourth live run of the long haul, kept as a replay (explorations/long-haul-live-20261124-213912)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261124-213912');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const said = (step, kind = /narrate|interrogateScene/) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+  const stepNumber = (step) => Number(String(step).replace(/^[ax]/, ''));
+
+  it('is a run the runner can take again: 89 actions with no document id, its dice, and every reply filed under a step', () => {
+    expect(RUN.actions).toHaveLength(89);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(RAW).not.toMatch(/sk-ant-/);
+  });
+
+  it('its player named a move only once a beat\'s last resort was open, and asked its questions as the charter says', () => {
+    const typed = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` })).filter(a => a.action === 'say' && a.text);
+    const named = typed.filter(a => movesNamedIn(a.text).length);
+    expect(named.map(a => a.step)).toEqual(['a8', 'a33', 'a64', 'a66', 'a68', 'a73']);
+    for (const a of named) expect(`${a.reason} ${a.note}`).toMatch(/last resort|naming/i);
+    expect(typed.filter(a => isSceneQuestion(a.text))).toHaveLength(16);
+  });
+
+  it('expects what it found: the connection\'s beats and the recovery not exercised, one rule broken — a line narrated twice', () => {
+    const notDone = Object.entries(RUN.expected.beats).filter(([, s]) => s !== 'done').map(([b]) => b);
+    expect(notDone).toEqual(['b2', 'b3', 'b18', 'b21', 'b22', 'b23']);
+    expect(RUN.expected).toMatchObject({ violations: ['answered-once'], healthFailed: false, classification: 'product-failure' });
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    const checksById = (beats) => Object.fromEntries(beats.map(b => [b.id, b.check]));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats));
+  });
+
+  it('holds what its review says of it, in the recorded replies', () => {
+    // The detector, given the player's line, drafted her by her full name …
+    expect(said('a4', /Detection/)).toMatch(/"name":\s*"Tamsin Vey"/);
+    // … and, a connection from the GM's confirmation of that draft, every plea for a tie was read as Develop Your Relationship.
+    expect(said('a5', /interpretMove/)).toMatch(/"moveId":\s*"develop_your_relationship"/);
+    // Nothing to recover: the heal line is narrated, offered nothing — the sheet says so.
+    expect(said('a62', /classifyInput/)).toMatch(/"decision":\s*"NARRATIVE"/);
+    expect(said('a62', /classifyInput/)).toMatch(/Health is 5 of 5/);
+    // The vow's fulfilment says the answer is not known, rather than claim it.
+    expect(said('a75')).toContain('still not known');
+    // The fight's miss was narrated twice (the run's one broken rule).
+    expect(RUN.recording.exchanges.filter(x => x.step === 'a41' && /narrate/.test(x.kind))).toHaveLength(2);
+    // After the correction (a49) the old name is in no narration's prose, whole or cut short …
+    const prose = (x) => x.response.content.map(c => c.text ?? '').join('').split('```')[0];
+    const later = RUN.recording.exchanges.filter(x => /narrate|interrogateScene/.test(x.kind) && stepNumber(x.step) > 49);
+    expect(later.length).toBeGreaterThan(10);
+    expect(later.map(prose).join('\n')).not.toMatch(/\bWake\b/);
+    // … but the next narration's fact block copied the scene frame with it unchanged (a50: "Ashen Wake pilot").
+    expect(said('a50', /narrateOracleFollowup/)).toMatch(/"present":\s*\[[^\]]*"Ashen Wake pilot"/);
+  });
+});
