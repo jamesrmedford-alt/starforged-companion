@@ -884,7 +884,8 @@ describe('the player\'s bounded memory', () => {
   it('its standing instructions are the same every turn, list every beat, and are sent as a cached block', () => {
     const system = playerSystemPrompt(CHARTER);
     expect(playerSystemPrompt(CHARTER)).toBe(system);
-    for (const b of CHARTER.beats) expect(system).toContain(`${b.n}. [session ${b.session}] ${b.title}`);
+    // The title the player is shown names no move (decisions.md → "A player is never made to name a move").
+    for (const b of CHARTER.beats) expect(system).toContain(`${b.n}. [session ${b.session}] ${b.playerTitle ?? b.title}`);
     expect(system).toContain('You do not decide when a beat is done');
     expect(system.length, 'long enough to be cached at all').toBeGreaterThan(6000);
     const body = buildRequest({ model: CONFIG.player.model, effort: 'low', maxTokens: 1000, system, user: 'U', tool: ACTION_TOOL, cache: true });

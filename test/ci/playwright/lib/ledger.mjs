@@ -38,7 +38,8 @@
 import { variantPattern, factIn, excerptOf, sectionsHolding, LAYERS } from "./observer.mjs";
 
 /** The module calls that narrate in answer to a player's line. */
-const NARRATION_KIND = /^callNarratorAPI>narrate(?!SessionVignette)/;
+// A scene question (`@scene …`) is answered by the narrator too: its call is `interrogateScene`.
+const NARRATION_KIND = /^callNarratorAPI>(?:narrate(?!SessionVignette)|interrogateScene)/;
 /** Any narrator call — a scene's own prompt, a vignette's included. */
 const NARRATOR_KIND = /^callNarratorAPI>/;
 

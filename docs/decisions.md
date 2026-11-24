@@ -37,6 +37,15 @@ the fiction, just not forcing the player to do so in their freeform input."
 - **Rejected:** a rule in code that a named move is always made (proposed
   2026-11-24). It perfects the case players are not to be in. Balanced
   Mischief may still pick a neighbouring move for a named one (P2-02).
+- **How it is held to.** The long haul's AI player types only what its
+  character does: no beat gives it a move's name to type, and a move is
+  named only as a last resort the observer unlocks after two plain lines
+  bring nothing — recorded against the beat. Its memory questions are asked
+  with `@scene` (the maintainer: "many of those questions should have been
+  involved with an @scene"), one of each set kept as a line of play. The
+  scorecard says what each line of play became (`rules/ci-e2e.md` → "A
+  charter's player stays in the fiction"; known-issues
+  PLAIN-LINE-GOES-UNREAD is where the count is kept).
 
 ## The long haul's second round: the fight's card follows its roll, a move only a move can make is always offered, a named move asks for itself, and a name change is the table's (issue #373 round 2, after issue #377) (2026-11)
 

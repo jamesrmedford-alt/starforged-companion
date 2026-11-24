@@ -25,7 +25,8 @@ import { MODULE_ID } from "./foundry.mjs";
 import { readTable, readCards } from "./table.mjs";
 
 /** The module calls that narrate in answer to a player's line. */
-const NARRATION_KIND = /^callNarratorAPI>narrate(?!SessionVignette)/;
+// A scene question (`@scene …`) is answered by the narrator too: its call is `interrogateScene`.
+const NARRATION_KIND = /^callNarratorAPI>(?:narrate(?!SessionVignette)|interrogateScene)/;
 /** Failing layers, in the order a fact travels them. */
 export const LAYERS = ["storage", "retrieval", "generation"];
 

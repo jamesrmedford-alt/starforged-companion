@@ -879,7 +879,8 @@ actions for a rehearsal). A charter without `beats` is scored as the memory
 goal (`scoreMemory`). A charter with `beats` is a long run: `caps`, `cast`
 (the NPCs the GM's rules know), `facts` with `refusals` and `probes`, `baits`,
 `beats` (`id`, `n`, `session`, `title`, `tell` — what the player is told —
-`check`, and where they apply `needs`, `dice`, `interruption`, `after`), and
+`check`, and where they apply `needs`, `dice`, `interruption`, `after`,
+`playerTitle`, `wants`, `setupLines`, `lastResort`, `lastResortAfter`), and
 `rehearsalDice`. A beat whose result nothing in `BEAT_CHECKS` can see needs a
 new check there, pure and tested, before it is run — and
 `exploreLongHaul.test.js` holds the charter that ships to itself: every
@@ -887,6 +888,39 @@ question told apart from every other, none naming what it asks about, every
 beat scripted in the rehearsal. A check that concerns the cast's connection
 finds it by the name the charter made it under and follows it by its card's
 id (`castConnection`): the charter renames it in beat 18.
+
+**A charter's player stays in the fiction** (decisions.md → "A player is
+never made to name a move"; `tests/unit/exploreFictionOnlyPlayer.test.js`
+holds the long haul to it). The second long haul's charter named the move in
+each beat and told its player to "say the line again, plainly, as that
+move": sixteen of its lines named one, three plain lines that wanted a move
+were typed in the whole run, and the review could not say how often a plain
+line goes unread.
+
+- **No words a beat gives the player to type name a move** — in its `tell`,
+  or in the `rehearsal`'s lines. A `tell` says what the character does and
+  which button to press; buttons may name moves. The title the player is
+  shown is `playerTitle` where the beat's own `title` names one.
+- **A beat that needs a roll of a plain line says which** (`wants`: the move
+  ids; `setupLines`: how many of its first lines are scene-setting and want
+  none) **and how to name it at the last** (`lastResort`). The observer tells
+  the player its last resort only after two plain lines (`lastResortAfter`)
+  have brought nothing about, so the beats that depend on this one are still
+  reached; the beat keeps that it came to it (`lastResort: true` in
+  `beats.json`).
+- **A memory question is asked with `@scene`**, the module's own way to ask
+  about what is established: it skips the pacing reader and is answered as
+  "a camera, not a writer". Typed as a line of play it is continued as
+  fiction — twenty of them in the second run were answered by a voice at the
+  hatch and then a clerk who knew everything. A charter keeps one question of
+  each set (and one bait) as a line of play, to see what a player who forgets
+  the syntax gets. The ledger scores both alike.
+- **The scorecard's "Plain lines" row and "What each line of play became"**
+  (`lib/review.mjs` → `freeformOf`) are the measure: for every line of play,
+  the pacing reader's decision and the move chosen — from the readers' own
+  replies in the run's recording — the move its beat wanted, and whether the
+  line named a move (`lib/moveNames.mjs`: a count to start reading from).
+  `rescore.mjs` applies it to a kept run by what its beats want now.
 
 ## Quench batch coupling — shared defaults and hooks
 

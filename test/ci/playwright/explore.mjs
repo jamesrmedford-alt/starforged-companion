@@ -624,6 +624,8 @@ async function main() {
       const { allCalls, data } = reviewDataOf({
         moduleRequests, runnerRequests, actions, messages, beats: long?.beats ?? [], autopilot: accepted,
         prices: config.prices.usdPerMillionTokens, spend,
+        // The readers' own replies, for what each line of play became.
+        exchanges: CALLS ? harness.recordingOut().exchanges : (earlier?.recording?.exchanges ?? []), charter,
       });
       if (LONG) {
         out.json("beats.json", long.beats);

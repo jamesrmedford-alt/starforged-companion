@@ -28,6 +28,10 @@ import { rankOf } from "../../../../tests/helpers/sequence/rules.js";
 
 /** Actions on a beat with no progress before it is given up as not exercised. */
 export const STALL_ACTIONS = 8;
+/** Plain lines that bring nothing about before a beat's `lastResort` is told to the player. */
+export const LAST_RESORT_AFTER = 2;
+/** A scene question (`@scene …`): asked of the narrator, not a line of play. */
+export const isSceneQuestion = (text) => /^@scene\b/i.test(String(text ?? "").trim());
 
 const slug = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const same = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
@@ -385,7 +389,10 @@ export const BEAT_CHECKS = {
  *   needs?: string[], stall?: number, interruption?: string }>} beats
  */
 export function createPointer(beats) {
-  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0 }));
+  // `lines` / `linesAtProgress`: the lines of play typed on the beat, and how
+  // many of them had been typed when it last moved — the difference is the
+  // plain lines that brought nothing about (`lastResort`, below).
+  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false }));
   let at = 0;
   const byId = (id) => state.find(s => s.id === id);
 
@@ -431,9 +438,11 @@ export function createPointer(beats) {
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const result = check(beatView({ ...run, from: cur.enteredAt }), beat.check);
+        const view = beatView({ ...run, from: cur.enteredAt });
+        const result = check(view, beat.check);
         cur.detail = result.detail;
-        if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; }
+        cur.lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text)).length;
+        if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; cur.linesAtProgress = cur.lines; }
         if (result.done) {
           Object.assign(cur, { status: result.failed ? "failed" : "done", doneAt: step });
           changes.push({ ...cur });
@@ -464,12 +473,28 @@ export function createPointer(beats) {
       at += 1;
     },
 
-    /** What the player is told about the beat it is on. */
+    /**
+     * What the player is told about the beat it is on. A player never names a
+     * move in what it types (decisions.md → "A player is never made to name a
+     * move"), so a beat's `tell` does not name one and the player is shown
+     * `playerTitle` where the beat's own title does. A beat that needs a roll
+     * says how to name it under `lastResort` — told to the player only once
+     * `lastResortAfter` plain lines (two unless the beat says) have brought
+     * nothing about, so that the beats after it can still be reached. The beat
+     * keeps that it was (`state.lastResort`): its move was not had from plain
+     * lines.
+     */
     brief() {
       const cur = this.current();
       if (!cur) return null;
-      return { n: cur.beat.n, of: beats.length, session: cur.beat.session, title: cur.beat.title, tell: cur.beat.tell ?? "", actions: cur.state.actions,
-        note: cur.state.detail ? `the observer sees: ${cur.state.detail}` : "" };
+      const unread = cur.state.lines - cur.state.linesAtProgress;
+      const resort = !!cur.beat.lastResort && unread >= (cur.beat.lastResortAfter ?? LAST_RESORT_AFTER);
+      if (resort) cur.state.lastResort = true;
+      const note = [
+        cur.state.detail ? `the observer sees: ${cur.state.detail}` : "",
+        resort ? `LAST RESORT — ${unread} plain lines have brought nothing about: this once you may name the move — ${cur.beat.lastResort}` : "",
+      ].filter(Boolean).join("; ");
+      return { n: cur.beat.n, of: beats.length, session: cur.beat.session, title: cur.beat.playerTitle ?? cur.beat.title, tell: cur.beat.tell ?? "", actions: cur.state.actions, note };
     },
 
     summary() {

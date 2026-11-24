@@ -285,6 +285,14 @@ mechanics together:
   End a Session is opened and closed unanswered, the X-Card is played, the
   connection's card is renamed.
 
+Its player stays in the fiction: no beat gives it a move's name to type, a
+question about what is established is asked with `@scene` (one of each set
+is kept as a line of play, to compare), and a beat's move is named only as a
+last resort the observer unlocks after two plain lines bring nothing. The
+scorecard's **Plain lines** row says what each line of play became —
+rolled, offered a move, or narrated with nothing offered — and whether it
+named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+
 Its rehearsal rolls: the stand-in's classifier calls a move where the script
 makes the line one, so the move path — confirmation, held result, price,
 victory card — is walked with no key. A long run also writes `beats.json`,

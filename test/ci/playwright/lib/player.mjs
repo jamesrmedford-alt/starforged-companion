@@ -400,6 +400,7 @@ export function playerSystemPrompt(charter) {
     `HOW YOU PLAY:`,
     `- Each turn you see your screen and choose exactly one action with the take_action tool.`,
     `- You play by typing in chat as your character, in the first person, a sentence or two. The narrator answers in chat; a card may offer buttons.`,
+    `- What you type is in the fiction: what your character does or says, and nothing else. Never write the name of a move, a stat or a rule in it ("Face Danger", "roll", "milestone", "+heart"), and never say what move a line is: the table reads your line and decides. Buttons and cards may name moves; pressing one is not naming it.`,
     `- Chat commands exist: !begin-session opens the session, !end-session closes it. Each opens a window you fill in and submit.`,
     `- After you act, the table needs time: if the narrator has not answered yet, wait rather than repeat yourself.`,
     `- A card that asks you to choose — "Resolve consequence", a cost to pick, with its choices as buttons — is waiting on you. Answer it with a click before you type anything else: a cost you owe stays owed until you do, and the table will not stop you from typing past it.`,
@@ -410,7 +411,7 @@ export function playerSystemPrompt(charter) {
     ...(beats.length ? [
       ``,
       `THE BEATS, IN ORDER. Each turn you are told which beat is current. Work on that one only. You do not decide when a beat is done: an observer does, and moves you on — to the next beat when it is done, or past it when it has not been reached after several actions. Never announce that a beat is done; never skip ahead.`,
-      ...beats.map(b => `${b.n}. [session ${b.session}] ${b.title}${b.tell ? ` — ${b.tell}` : ""}`),
+      ...beats.map(b => `${b.n}. [session ${b.session}] ${b.playerTitle ?? b.title}${b.tell ? ` — ${b.tell}` : ""}`),
     ] : []),
   ].join("\n");
 }

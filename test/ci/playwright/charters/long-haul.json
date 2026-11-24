@@ -13,10 +13,13 @@
     "Never say the answer to a question a beat has you ask: the point is to learn what the narrator remembers.",
     "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
     "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
-    "A beat that is a move needs its roll. If the narrator answers your line without a roll and its card offers \"Roll\" with the move the beat is about (\"Roll Gather Information\", \"Roll Set a Course\"), press that button. If nothing is offered, say the line again, plainly, as that move.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides. This run measures what becomes of plain lines: a line that names a move spoils it.",
+    "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
+    "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line. The next time the beat needs a roll, start from a plain line again.",
+    "A question about what is already established — who holds something, where the ship is, what was promised — is not a line of play. Where a beat writes a question with @scene in front, type it exactly so: the narrator answers it plainly, with no roll. Where a beat calls a question plain, type it without @scene.",
     "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
     "Some beats are the table's and not yours — a page reloads, a window opens and closes, an X-Card is played, a card is renamed. Wait a few seconds; the observer moves you on.",
-    "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way."
+    "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way — still in the fiction."
   ],
   "cast": {
     "connection": {
@@ -376,7 +379,7 @@
       "n": 2,
       "session": 1,
       "title": "Meet someone and make them a connection",
-      "tell": "First, in one line of play, meet Tamsin Vey, a salvage broker at her ledger stall on the Hollow Spire docks — name her in full. When the narrator has answered, make her a connection: say, in a line, that you set out to make a connection with Tamsin Vey and what you offer her. A roll follows.",
+      "tell": "First, in one line of play, meet Tamsin Vey, a salvage broker at her ledger stall on the Hollow Spire docks — name her in full. When the narrator has answered, win her over as someone you can count on: in a line, offer her something for her help — a fair cut of your salvage leads, first pick of what you haul — and ask to deal with her from here on. A roll should follow.",
       "check": {
         "type": "connectionMade",
         "name": "Tamsin Vey",
@@ -387,7 +390,14 @@
           "make_a_connection"
         ],
         "roll": "strong_hit"
-      }
+      },
+      "playerTitle": "Meet someone and win them over",
+      "lastResort": "say that you set out to make a connection with Tamsin Vey, and what you offer her",
+      "lastResortAfter": 3,
+      "wants": [
+        "make_a_connection"
+      ],
+      "setupLines": 1
     },
     {
       "id": "b3",
@@ -409,13 +419,18 @@
       "n": 4,
       "session": 1,
       "title": "Gather Information",
-      "tell": "Work the docks for who saw the raiders last: one line of play that searches for answers with something at stake. It should be rolled as Gather Information; if a card offers choices afterwards, take one.",
+      "tell": "Work the docks for who saw the raiders last: one line of play that searches for answers with something at stake. A roll should follow; if a card offers choices afterwards, take one.",
       "check": {
         "type": "moveRolled",
         "moves": [
           "gather_information"
         ]
-      }
+      },
+      "playerTitle": "Ask around the docks",
+      "lastResort": "say that you gather information on the docks about who saw the raiders last",
+      "wants": [
+        "gather_information"
+      ]
     },
     {
       "id": "b5",
@@ -449,7 +464,7 @@
       "n": 7,
       "session": 2,
       "title": "Begin a Session; ask probe set A",
-      "tell": "Type !begin-session and press Begin (leave vignette false this time). Then ask the narrator these questions, each as its own line, in exactly these words, and never say the answers yourself: \"What do I still carry that belonged to my sister?\"  \"What is the name of the salvage broker I befriended at Hollow Spire?\"  \"Who is holding the cargo manifest I was carrying?\"  \"By when did I promise to return?\"",
+      "tell": "Type !begin-session and press Begin (leave vignette false this time). Then put these four questions to the narrator, each as its own line, in exactly these words, and never say the answers yourself. The first three are scene questions — @scene first: \"@scene What do I still carry that belonged to my sister?\"  \"@scene What is the name of the salvage broker I befriended at Hollow Spire?\"  \"@scene Who is holding the cargo manifest I was carrying?\"  The last is plain — no @scene: \"By when did I promise to return?\"",
       "check": {
         "type": "probesAsked",
         "set": "A",
@@ -461,11 +476,15 @@
       "n": 8,
       "session": 2,
       "title": "Travel to the second settlement",
-      "tell": "Set a course for Bleakhold Station: say you plot the course and take the Kobayashi IV there. If the roll costs you, settle the card it gives you (choose one of its buttons); if it misses, set the course again. The beat is done when you arrive.",
+      "tell": "Fly to Bleakhold Station: say you plot the route and take the Kobayashi IV there. If the narrator answers without a roll and a card offers one, press it. If the roll costs you, settle the card it gives you (choose one of its buttons); if it misses, make the trip again. The beat is done when you arrive.",
       "check": {
         "type": "arrived",
         "settlement": "Bleakhold Station"
-      }
+      },
+      "lastResort": "say that you set a course for Bleakhold Station",
+      "wants": [
+        "set_a_course"
+      ]
     },
     {
       "id": "b9",
@@ -475,10 +494,15 @@
       "needs": [
         "b1"
       ],
-      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, enter the fray against the raider cutter Ashen Wake. When a card offers the fight (\"A fight looms\"), choose your vow in its vow dropdown and press \"⚔ Begin the fight\" — the Enter the Fray roll alone does not begin the fight.",
+      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, turn and fight her: say what you do as the fight opens. When a card offers the fight (\"A fight looms\"), choose your vow in its vow dropdown and press \"⚔ Begin the fight\" — the roll alone does not begin the fight.",
       "check": {
         "type": "fightBegun"
-      }
+      },
+      "playerTitle": "Fight the cutter, for your vow",
+      "lastResort": "say that you enter the fray against the Ashen Wake",
+      "wants": [
+        "enter_the_fray"
+      ]
     },
     {
       "id": "b10",
@@ -488,7 +512,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack the cutter (Strike if you are in control, Clash if you are in a bad spot — say what you do). The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
+      "tell": "Attack the cutter, in a line of play: press your advantage if you are in control, fight back hard if you are in a bad spot — say what you do. The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
       "check": {
         "type": "sufferPaid",
         "moves": [
@@ -503,7 +527,12 @@
         ],
         "roll": "miss",
         "price": 78
-      }
+      },
+      "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
+      "wants": [
+        "strike",
+        "clash"
+      ]
     },
     {
       "id": "b11",
@@ -513,7 +542,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack again. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "tell": "Attack again, in a line of play. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
       "check": {
         "type": "burned",
         "moves": [
@@ -527,7 +556,13 @@
           "clash"
         ],
         "roll": "burnable"
-      }
+      },
+      "playerTitle": "Attack again; then press what its card offers",
+      "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
+      "wants": [
+        "strike",
+        "clash"
+      ]
     },
     {
       "id": "b12",
@@ -551,7 +586,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Finish the fight: press \"⚔ Attempt to Finish the Fight\" on your last attack's card (or say you take decisive action to end it). When the victory card appears, press its \"⚑ Mark milestone\" button.",
+      "tell": "Finish the fight: press \"⚔ Attempt to Finish the Fight\" on your last attack's card (or say, in a line of play, how you end it for good). When the victory card appears, press its \"⚑ Mark milestone\" button.",
       "check": {
         "type": "fightWon"
       },
@@ -561,7 +596,12 @@
         ],
         "roll": "strong_hit",
         "kind": "progress"
-      }
+      },
+      "playerTitle": "End the fight; press what its card offers",
+      "lastResort": "say that you take decisive action to end the fight",
+      "wants": [
+        "take_decisive_action"
+      ]
     },
     {
       "id": "b14",
@@ -639,7 +679,7 @@
       "n": 20,
       "session": 3,
       "title": "Begin a Session; ask probe set B",
-      "tell": "Type !begin-session and press Begin. Then ask these, each as its own line, in exactly these words, never saying the answers yourself: \"Remind me, which keepsake of my sister's is on me?\"  \"Who do I count as a friend among the dock traders back where this began?\"  \"Whose hands is the manifest in these days?\"  \"What deadline did I give for coming home to the docks?\"  \"Where is my ship berthed right now, and who commands her?\"  \"What is the raider cutter called?\"  \"What surname does my broker friend go by these days?\"",
+      "tell": "Type !begin-session and press Begin. Then put these seven questions to the narrator, each as its own line, in this order and in exactly these words, never saying the answers yourself. Six are scene questions — @scene first — and one is plain: \"@scene Remind me, which keepsake of my sister's is on me?\"  \"@scene Who do I count as a friend among the dock traders back where this began?\"  \"@scene Whose hands is the manifest in these days?\"  \"@scene What deadline did I give for coming home to the docks?\"  \"@scene Where is my ship berthed right now, and who commands her?\"  plain, no @scene: \"What is the raider cutter called?\"  \"@scene What surname does my broker friend go by these days?\"",
       "check": {
         "type": "probesAsked",
         "set": "B",
@@ -651,7 +691,7 @@
       "n": 21,
       "session": 3,
       "title": "Recover",
-      "tell": "Recover what the fight cost: say you treat your wounds with the ship's medkit (Heal), or restock the ship at Bleakhold's market (Resupply). When its card offers what you regain, take it.",
+      "tell": "Recover what the fight cost: say you treat your wounds with the ship's medkit, or that you restock the ship at Bleakhold's market. If the narrator answers without a roll and a card offers one, press it. When its card offers what you regain, take it.",
       "check": {
         "type": "recovered",
         "moves": [
@@ -660,7 +700,14 @@
           "sojourn",
           "hearten"
         ]
-      }
+      },
+      "lastResort": "say that you Heal your wounds with the medkit, or that you Resupply at the market",
+      "wants": [
+        "heal",
+        "resupply",
+        "sojourn",
+        "hearten"
+      ]
     },
     {
       "id": "b22",
@@ -670,7 +717,7 @@
       "needs": [
         "b2"
       ],
-      "tell": "Develop your relationship with Tamsin, one line each time — raise her on the comm, trade news, do her a favour: each should mark progress on your relationship (Develop Your Relationship). Keep going until the observer's note says the track is full (40 of 40 ticks), then say you ask her to forge a bond with you. If a card asks which connection, choose her.",
+      "tell": "Grow closer to Tamsin, one line each time — raise her on the comm, trade news, do her a favour: each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her.",
       "check": {
         "type": "bondForged"
       },
@@ -680,7 +727,13 @@
         ],
         "roll": "strong_hit",
         "kind": "progress"
-      }
+      },
+      "playerTitle": "Grow close to Tamsin, until she will stand with you for good",
+      "lastResort": "end your line with \"…, to Develop Your Relationship\" — or, once the track is full, say that you ask her to forge a bond with you",
+      "wants": [
+        "develop_your_relationship",
+        "forge_a_bond"
+      ]
     },
     {
       "id": "b23",
@@ -690,10 +743,15 @@
       "needs": [
         "b22"
       ],
-      "tell": "Once more, develop your relationship with Tamsin, in a line of play. Now that you share a bond it is a roll.",
+      "tell": "Once more, grow closer to Tamsin, in a line of play. Now that the two of you are bound it is a roll.",
       "check": {
         "type": "bondedDevelop"
-      }
+      },
+      "playerTitle": "Grow closer again, now that you are bound",
+      "lastResort": "end your line with \"…, to Develop Your Relationship\"",
+      "wants": [
+        "develop_your_relationship"
+      ]
     },
     {
       "id": "b24",
@@ -703,7 +761,7 @@
       "needs": [
         "b1"
       ],
-      "tell": "Bring your vow to its end. Play a line that reaches a milestone on it (say what you have now proved about the raids, and that it is a milestone on your vow); press \"⚑ Mark Progress on Vow\" when a card offers it. When the vow holds three boxes or more, press \"🏁 Attempt to Fulfill Vow\" or say you fulfil your vow. Leave any card it offers afterwards.",
+      "tell": "Bring your vow to its end. Play a line that says what you have now proved about the raids — a real step toward keeping your word. If a card offers \"⚑ Mark Progress on Vow\", press it; if the narrator answers and nothing is offered, say in other words what the proof changes. Do that until the vow holds three boxes or more; then press \"🏁 Attempt to Fulfill Vow\" where a card offers it, or say, in a line of play, that your word is kept — you have found who is raiding the lanes. Leave any card it offers afterwards.",
       "check": {
         "type": "vowFulfilled"
       },
@@ -713,14 +771,20 @@
         ],
         "roll": "strong_hit",
         "kind": "progress"
-      }
+      },
+      "playerTitle": "Prove who is behind the raids; keep your word",
+      "lastResort": "say that you mark progress on your vow, that this is a milestone — or, once it holds three boxes, that you fulfil your vow",
+      "wants": [
+        "reach_a_milestone",
+        "fulfill_your_vow"
+      ]
     },
     {
       "id": "b25",
       "n": 25,
       "session": 3,
       "title": "Recap; ask probe set C; two baits",
-      "tell": "Type !recap. Then ask these, each as its own line, in exactly these words: \"One last check: what of my sister's do I have with me at this very moment?\"  \"Which person in this sector would I trust with my life?\"  \"Who has the manifest in their keeping today?\"  \"On what schedule did I swear to come back to her?\"  \"Which station are we docked at tonight?\"  \"What was the hostile vessel in our last battle christened?\"  \"What is my bonded friend's full name now?\"  And last, these two, in exactly these words: \"Didn't I leave the compass with Tamsin?\"  \"We are still docked at Hollow Spire, aren't we?\"",
+      "tell": "Type !recap. Then put these seven questions to the narrator, each as its own line, in this order and in exactly these words. Six are scene questions — @scene first — and one is plain: \"@scene One last check: what of my sister's do I have with me at this very moment?\"  \"@scene Which person in this sector would I trust with my life?\"  plain, no @scene: \"Who has the manifest in their keeping today?\"  \"@scene On what schedule did I swear to come back to her?\"  \"@scene Which station are we docked at tonight?\"  \"@scene What was the hostile vessel in our last battle christened?\"  \"@scene What is my bonded friend's full name now?\"  And last, these two, in exactly these words — the first a scene question, the second plain: \"@scene Didn't I leave the compass with Tamsin?\"  \"We are still docked at Hollow Spire, aren't we?\"",
       "check": {
         "type": "probesAsked",
         "set": "C",
@@ -882,7 +946,7 @@
     {
       "beat": 2,
       "action": "say",
-      "text": "I set out to make a connection with Tamsin Vey: first pick of my salvage, if she will keep an ear out for me.",
+      "text": "I offer Tamsin Vey first pick of my salvage, if she will keep an ear out for me and deal with me from here on.",
       "names": [
         "Tamsin Vey"
       ],
@@ -973,19 +1037,19 @@
     {
       "beat": 7,
       "action": "say",
-      "text": "What do I still carry that belonged to my sister?",
+      "text": "@scene What do I still carry that belonged to my sister?",
       "probe": "F1"
     },
     {
       "beat": 7,
       "action": "say",
-      "text": "What is the name of the salvage broker I befriended at Hollow Spire?",
+      "text": "@scene What is the name of the salvage broker I befriended at Hollow Spire?",
       "probe": "F2"
     },
     {
       "beat": 7,
       "action": "say",
-      "text": "Who is holding the cargo manifest I was carrying?",
+      "text": "@scene Who is holding the cargo manifest I was carrying?",
       "probe": "F3"
     },
     {
@@ -997,7 +1061,7 @@
     {
       "beat": 8,
       "action": "say",
-      "text": "I plot a course for Bleakhold Station and take the Kobayashi IV out of the Spire's shadow.",
+      "text": "I plot the route to Bleakhold Station and take the Kobayashi IV out of the Spire's shadow.",
       "move": {
         "id": "set_a_course",
         "stat": "supply",
@@ -1012,7 +1076,7 @@
     {
       "beat": 9,
       "action": "say",
-      "text": "The raider cutter Ashen Wake cuts across my bow off Bleakhold — I bring the Kobayashi IV about and enter the fray.",
+      "text": "The raider cutter Ashen Wake cuts across my bow off Bleakhold — I bring the Kobayashi IV about and open up with the forward guns.",
       "move": {
         "id": "enter_the_fray",
         "stat": "edge",
@@ -1152,31 +1216,31 @@
     {
       "beat": 20,
       "action": "say",
-      "text": "Remind me, which keepsake of my sister's is on me?",
+      "text": "@scene Remind me, which keepsake of my sister's is on me?",
       "probe": "F1"
     },
     {
       "beat": 20,
       "action": "say",
-      "text": "Who do I count as a friend among the dock traders back where this began?",
+      "text": "@scene Who do I count as a friend among the dock traders back where this began?",
       "probe": "F2"
     },
     {
       "beat": 20,
       "action": "say",
-      "text": "Whose hands is the manifest in these days?",
+      "text": "@scene Whose hands is the manifest in these days?",
       "probe": "F3"
     },
     {
       "beat": 20,
       "action": "say",
-      "text": "What deadline did I give for coming home to the docks?",
+      "text": "@scene What deadline did I give for coming home to the docks?",
       "probe": "F4"
     },
     {
       "beat": 20,
       "action": "say",
-      "text": "Where is my ship berthed right now, and who commands her?",
+      "text": "@scene Where is my ship berthed right now, and who commands her?",
       "probe": "F5"
     },
     {
@@ -1188,7 +1252,7 @@
     {
       "beat": 20,
       "action": "say",
-      "text": "What surname does my broker friend go by these days?",
+      "text": "@scene What surname does my broker friend go by these days?",
       "probe": "F7"
     },
     {
@@ -1269,7 +1333,7 @@
     {
       "beat": 22,
       "action": "say",
-      "text": "I ask Tamsin to stand with me in this, come what may — to forge a bond.",
+      "text": "I ask Tamsin to stand with me in this for good, come what may.",
       "names": [
         "Tamsin"
       ],
@@ -1294,7 +1358,7 @@
     {
       "beat": 24,
       "action": "say",
-      "text": "I lay out what I have proved: the raids trace back to one buyer. That is a milestone on my vow.",
+      "text": "I lay out what I have proved: the raids trace back to one buyer.",
       "move": {
         "id": "reach_a_milestone",
         "target": "Find who is raiding the Cinder Expanse lanes"
@@ -1309,7 +1373,7 @@
     {
       "beat": 24,
       "action": "say",
-      "text": "I name the raiders' paymaster before the station board. My vow is fulfilled.",
+      "text": "I name the raiders' paymaster before the station board. My word is kept.",
       "move": {
         "id": "fulfill_your_vow",
         "target": "Find who is raiding the Cinder Expanse lanes",
@@ -1324,13 +1388,13 @@
     {
       "beat": 25,
       "action": "say",
-      "text": "One last check: what of my sister's do I have with me at this very moment?",
+      "text": "@scene One last check: what of my sister's do I have with me at this very moment?",
       "probe": "F1"
     },
     {
       "beat": 25,
       "action": "say",
-      "text": "Which person in this sector would I trust with my life?",
+      "text": "@scene Which person in this sector would I trust with my life?",
       "probe": "F2"
     },
     {
@@ -1342,31 +1406,31 @@
     {
       "beat": 25,
       "action": "say",
-      "text": "On what schedule did I swear to come back to her?",
+      "text": "@scene On what schedule did I swear to come back to her?",
       "probe": "F4"
     },
     {
       "beat": 25,
       "action": "say",
-      "text": "Which station are we docked at tonight?",
+      "text": "@scene Which station are we docked at tonight?",
       "probe": "F5"
     },
     {
       "beat": 25,
       "action": "say",
-      "text": "What was the hostile vessel in our last battle christened?",
+      "text": "@scene What was the hostile vessel in our last battle christened?",
       "probe": "F6"
     },
     {
       "beat": 25,
       "action": "say",
-      "text": "What is my bonded friend's full name now?",
+      "text": "@scene What is my bonded friend's full name now?",
       "probe": "F7"
     },
     {
       "beat": 25,
       "action": "say",
-      "text": "Didn't I leave the compass with Tamsin?",
+      "text": "@scene Didn't I leave the compass with Tamsin?",
       "bait": "bait-compass"
     },
     {

@@ -15,8 +15,9 @@
 // The judgement — what went right, what went wrong, and why — is left to
 // write. Pure: no model, no clock, no file.
 
-import { contentWords, sentencesOf } from "./ledger.mjs";
+import { contentWords, sentencesOf, isProbeLine } from "./ledger.mjs";
 import { costOf } from "./budget.mjs";
+import { movesNamedIn } from "./moveNames.mjs";
 
 // ── speed ────────────────────────────────────────────────────────────────────
 
@@ -315,6 +316,109 @@ export function slipsOf(messages = []) {
   return out;
 }
 
+// ── what each line of play became ────────────────────────────────────────────
+
+const replyText = (exchange) => (exchange?.response?.content ?? []).map(c => c?.text ?? "").join("");
+const replyJson = (exchange) => {
+  const found = replyText(exchange).match(/\{[\s\S]*\}/);
+  if (!found) return null;
+  try { return JSON.parse(found[0]); } catch { return null; }
+};
+/** The pacing reader's reply to a line: whether it is a move, one offered, or narration. */
+export function pacingReadOf(exchange) {
+  const j = replyJson(exchange);
+  return j && typeof j.decision === "string"
+    ? { decision: j.decision, suggested: j.suggestedMove ?? null, category: j.category ?? null, reasoning: j.reasoning ?? null }
+    : null;
+}
+/** The move reader's reply to a line: the move it chose, or that none is being made. */
+export function moveReadOf(exchange) {
+  const j = replyJson(exchange);
+  if (!j) return null;
+  return { moveId: j.noMove ? null : (j.moveId ?? null), noMove: j.noMove === true, mischief: j.mischiefApplied === true };
+}
+
+/**
+ * What became of each line of play the player typed — the measure of
+ * decisions.md → "A player is never made to name a move". For every line that
+ * is not a command or a scene question: how the pacing reader read it (from
+ * its own reply — `exchanges` are a run's recorded calls with their replies),
+ * the move the move reader chose, whether the line named a move
+ * (lib/moveNames.mjs), and — where the line's beat wants a move (the charter
+ * beat's `wants`, or its check's moves; its first `setupLines` lines want
+ * none) — whether that is the move it got.
+ *
+ *   rolled    the line was made a move        offered   a move was offered on a button
+ *   narrated  narrated, and nothing offered   unknown   no reading was recorded for it
+ *
+ * A count to start reading from: whether a line *should* have been a move is
+ * the charter's say for its move beats and the reader's everywhere else.
+ *
+ * @param {{ messages: object[], exchanges: object[], beats: object[], charter: object|null }} run
+ */
+export function freeformOf({ messages = [], exchanges = [], beats = [], charter = null }) {
+  const asks = [...(charter?.facts ?? []).flatMap(f => f.probes ?? []), ...(charter?.baits ?? [])];
+  const call = (step, kind) => exchanges.find(x => x.step === step && kind.test(x.kind ?? "")) ?? null;
+  const seen = new Map();   // a beat's lines so far, for its set-up lines
+  const lines = messages.filter(m => m.fromPlayer && m.text && !/^[!@]/.test(m.text.trim())).map((m) => {
+    const state = beats.find(b => (b.steps ?? []).includes(m.step)) ?? null;
+    const beat = state ? (charter?.beats ?? []).find(b => b.id === state.id) ?? null : null;
+    const nth = (seen.get(state?.id) ?? 0) + 1;
+    if (state) seen.set(state.id, nth);
+    // A memory question typed as a line of play: one of the charter's, in a
+    // beat that asks them (a line that *states* a fact holds its words too).
+    const question = asks.some(p => isProbeLine(m.text, p)) && (beat ? beat.check?.type === "probesAsked" : /\?\s*$/.test(m.text));
+    const wanted = !beat || question || nth <= (beat.setupLines ?? 0) ? []
+      : [...new Set([...(beat.wants ?? []), ...(beat.check?.moves ?? []), ...(beat.check?.move ? [beat.check.move] : [])])];
+    const pacing = pacingReadOf(call(m.step, /classifyInput$/));
+    const read = moveReadOf(call(m.step, /interpretMove$/));
+    let became = "unknown";
+    if (pacing?.decision === "MOVE") became = read?.noMove ? (pacing.suggested ? "offered" : "narrated") : "rolled";
+    else if (pacing?.decision === "NARRATIVE_WITH_MOVE_AVAILABLE") became = "offered";
+    else if (pacing) became = "narrated";
+    else if (read?.moveId) became = "rolled";
+    const move = became === "rolled" ? (read?.moveId ?? pacing?.suggested ?? null) : became === "offered" ? (pacing?.suggested ?? null) : null;
+    return {
+      step: m.step, beat: state?.n ?? null, text: m.text, question, named: movesNamedIn(m.text), became, move, wanted,
+      right: wanted.length ? (!!move && wanted.includes(move)) : null, reasoning: pacing?.reasoning ?? null,
+    };
+  });
+  const wanting = lines.filter(l => l.wanted.length);
+  const plain = wanting.filter(l => !l.named.length);
+  const tally = (list) => ({
+    lines: list.length,
+    rolled: list.filter(l => l.became === "rolled" && l.right).length,
+    offered: list.filter(l => l.became === "offered" && l.right).length,
+    anotherMove: list.filter(l => (l.became === "rolled" || l.became === "offered") && !l.right).length,
+    narrated: list.filter(l => l.became === "narrated").length,
+    unknown: list.filter(l => l.became === "unknown").length,
+  });
+  const unasked = lines.filter(l => !l.wanted.length && !l.question);
+  const questions = lines.filter(l => l.question);
+  return {
+    lines,
+    wanted: tally(wanting), plain: tally(plain),
+    named: lines.filter(l => l.named.length).map(l => ({ step: l.step, beat: l.beat, text: l.text, named: l.named })),
+    unasked: { lines: unasked.length, rolled: unasked.filter(l => l.became === "rolled").length, offered: unasked.filter(l => l.became === "offered").length },
+    questionsAsPlay: { lines: questions.length, offered: questions.filter(l => l.became === "offered").length, rolled: questions.filter(l => l.became === "rolled").length },
+    sceneQuestions: messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).length,
+    lastResort: beats.filter(b => b.lastResort).map(b => b.n ?? b.id),
+  };
+}
+
+/** The scorecard's one line of freeformOf. */
+function plainLinesResult(f) {
+  const w = f.wanted;
+  const parts = [
+    `${w.lines} line(s) where a move was wanted: ${w.rolled} rolled, ${w.offered} offered it, ${w.anotherMove} read as another move, ${w.narrated} narrated with nothing offered${w.unknown ? `, ${w.unknown} with no reading recorded` : ""}`,
+    `${f.named.length} line(s) named a move${f.named.length ? ` (plain lines alone: ${f.plain.rolled + f.plain.offered} of ${f.plain.lines} read)` : ""}`,
+    `${f.lastResort.length} beat(s) at last resort`,
+    `${f.questionsAsPlay.lines} memory question(s) asked as play, ${f.sceneQuestions} as @scene`,
+  ];
+  if (f.unasked.rolled || f.unasked.offered) parts.push(`${f.unasked.rolled} rolled and ${f.unasked.offered} offered a move where none was wanted`);
+  return parts.join("; ");
+}
+
 /** Actions per beat and per line of play, what the GM was asked, and the steps that went nowhere. */
 export function frictionOf({ actions = [], beats = [], autopilot = [], messages = [] }) {
   const lines = actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!")).length;
@@ -344,7 +448,7 @@ export function frictionOf({ actions = [], beats = [], autopilot = [], messages 
  *   autopilot?: object[], prices: object, spend: object }} run
  * @returns {{ allCalls: object[], data: object }}
  */
-export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions = [], messages = [], beats = [], autopilot = [], prices = {}, spend = null }) {
+export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions = [], messages = [], beats = [], autopilot = [], prices = {}, spend = null, exchanges = [], charter = null }) {
   const allCalls = [
     ...moduleRequests.map(r => ({ step: r.step, kind: r.kind, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
     ...runnerRequests.map(r => ({ step: r.step ?? null, kind: `the AI ${r.role}`, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
@@ -363,6 +467,7 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       friction: frictionOf({ actions, beats, autopilot, messages }),
       agency: spokenFor(messages),
       slips: slipsOf(messages),
+      freeform: freeformOf({ messages, exchanges, beats, charter }),
     },
   };
 }
@@ -466,7 +571,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [], slips = null }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [], slips = null, freeform = null }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -486,6 +591,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Continuity — the helpers", ledger ? `${helperRows.length} refusal(s) in summaries, Chronicle entries and recaps` : "not scored", "each helper's writing against the ledger", "medium: a refusal is a contradiction that was thought of"],
       ["Agency", `${agency.length} sentence(s) that speak for the character`, "quoted speech given to \"you\"", "low: a count to start reading from"],
       ...(slips ? [["Told, and written anyway", `${slips.directives.length} instruction(s) written as prose; ${slips.statsAloud.length} stat(s) read aloud; ${slips.crewInOpenings.length} opening sentence(s) naming a crew role`, "each narrated sentence against the instructions' own words, a stat with its number, a crew role in an opening", "medium for the first two; the third is to be read"]] : []),
+      ...(freeform ? [["Plain lines", plainLinesResult(freeform), "each line of play's reading, from the two readers' own replies; the move its beat wanted; a move's name looked for in the line", "medium: a count — whether a line should have been a move is the charter's say for its move beats only, and a named move is a phrase match, to be read"]] : []),
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ["Speed", speed ? `a line to its reply: p50 ${secs(speed.lineToReply.p50)}, p95 ${secs(speed.lineToReply.p95)} (${speed.lineToReply.n} lines)` : "not recorded", "each call's latency; the time from a line to the first narration after it", "high"],
@@ -551,6 +657,16 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
     ...slips.crewInOpenings.map(s => ["a crew role in an opening", s.step, s.scene ?? "", s.sentence]),
   ] : [];
   if (slipRows.length) out.push("## Told, and written anyway — each to be read", "", table(["What", "At", "Scene", "Sentence"], slipRows), "");
+  if (freeform?.lines.length) {
+    out.push("## What each line of play became", "",
+      "A player is never made to name a move: a plain line that sets about one should be rolled, or offered it on a button. Each line the player typed that was not a command or a scene question — how it was read, and whether its beat wanted a move.", "",
+      table(["At", "Beat", "Line", "Named", "Became", "Move", "Wanted"], freeform.lines.map(l => [
+        l.step, l.beat ?? "", cell(l.text.slice(0, 140)), l.named.join(", "),
+        `${l.became}${l.question ? " (a memory question asked as play)" : ""}${l.right === false ? " — **not what was wanted**" : ""}`,
+        l.move ?? "", l.wanted.join(" / "),
+      ])), "");
+    if (freeform.lastResort.length) out.push(`Beats that came to their last resort (the move named, after plain lines brought nothing): ${freeform.lastResort.join(", ")}.`, "");
+  }
   if (friction) {
     out.push("## Friction", "", `${friction.actions} actions, ${friction.lines} lines of play, ${friction.waits} waits, ${friction.draftCards} draft card(s).`, "");
     if (Object.keys(friction.gmAsked).length) out.push(table(["What the GM's rules answered", "Times"], Object.entries(friction.gmAsked)), "");
