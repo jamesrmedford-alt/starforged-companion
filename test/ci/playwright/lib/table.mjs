@@ -101,6 +101,37 @@ export function sessionLogOwnText(html, narrative = "") {
   return cleanText(`${stripHtml(own)} ${narrative ?? ""}`);
 }
 
+/** The words of a text, lower case, its markup and entities gone. */
+const wordsOf = (text) => (String(text ?? "").replace(/<[^>]*>/g, " ")
+  .replace(/&(?:amp|lt|gt|quot|#0?39|apos|nbsp);/g, (e) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#039;": "'", "&apos;": "'", "&nbsp;": " " })[e] ?? " ")
+  .toLowerCase().match(/[a-z0-9]+/g) ?? []);
+
+/**
+ * What is wrong with a session's Session Log page for the scripted
+ * playthroughs' `sessionLog` check (v1.6.1 F18), or null. Since the session
+ * summary is a view of the record (issue #382 slice 3), End a Session writes
+ * no story of its own (`sessionLogPage.summary.narrative`): the summary is the
+ * page record's view (`sessionRecord.views.summary.text`), and the page
+ * renders it under its "Session summary" heading. Pure.
+ *
+ * @param {{ content: string, summary: string }|null} page — the page's body, and its record's summary view's text
+ * @param {number} session
+ * @returns {string|null}
+ */
+export function sessionLogSummaryProblem(page, session) {
+  if (!page) return `no Session Log page for session ${session}`;
+  const summary = wordsOf(page.summary);
+  if (!summary.length) return `the Session Log page for session ${session} has no summary — its record's summary view is empty`;
+  const content = String(page.content ?? "");
+  const at = content.indexOf("Session summary");
+  if (at < 0) return `the Session Log page for session ${session} doesn't render its summary`;
+  const opening = summary.slice(0, 8).join(" ");
+  if (!` ${wordsOf(content.slice(at)).join(" ")} `.includes(` ${opening} `)) {
+    return `the Session Log page for session ${session} doesn't show its summary under its "Session summary" heading`;
+  }
+  return null;
+}
+
 /**
  * The table, as data.
  *
@@ -191,9 +222,6 @@ function readTableOnPage(gm) {
     }));
 
     // ── what the helpers wrote ───────────────────────────────────────────────
-    const summaries = [];
-    if (cs.previousSessionSummary?.text) summaries.push({ session: cs.previousSessionSummary.sessionId ?? "previous", text: clean(cs.previousSessionSummary.text) });
-    if (cs.sessionSummary?.text) summaries.push({ session: cs.sessionSummary.sessionId ?? "current", text: clean(cs.sessionSummary.text) });
     const chronicle = [];
     for (const j of game.journal.contents) {
       if (!flagsOf(j).chronicleActorId) continue;
@@ -203,11 +231,22 @@ function readTableOnPage(gm) {
         }
       }
     }
+    // A session's summary (STORY SO FAR, LAST SESSION) is a view of its
+    // record, kept on its Session Log page (`sessionRecord.views.summary`,
+    // issue #382 slice 3) — campaignState holds none since. Each page's
+    // record is measured where it is read: its size as JSON
+    // (RECORD-SIZES-UNMEASURED; lib/review.mjs recordSizesOf).
+    const summaries = [];
+    const records = [];
     const sessionLog = [];
     for (const j of game.journal.contents) {
       if (!/Session Log/i.test(j.name)) continue;
       for (const p of j.pages?.contents ?? []) {
         const log = flagsOf(p).sessionLogPage ?? null;
+        const record = flagsOf(p).sessionRecord ?? null;
+        const summary = record?.views?.summary ?? null;
+        if (typeof summary?.text === "string" && summary.text.trim()) summaries.push({ session: log?.sessionId ?? p.name, text: clean(summary.text) });
+        if (record) records.push({ name: p.name, sessionId: log?.sessionId ?? null, chars: JSON.stringify(record).length });
         sessionLog.push({
           name: p.name, text: clean(`${strip(p.text?.content)} ${log?.summary?.narrative ?? ""}`),
           html: String(p.text?.content ?? ""), narrative: String(log?.summary?.narrative ?? ""),
@@ -241,7 +280,15 @@ function readTableOnPage(gm) {
       legacy: { quests: legacyOf("quests"), bonds: legacyOf("bonds"), discoveries: legacyOf("discoveries") },
       scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths },
       xCardedNarrationIds: [...(cs.xCardedNarrationIds ?? [])],
-      helpers: { summaries, chronicle, recap: clean(cs.campaignRecapCache?.text ?? ""), sessionLog },
+      // The recap's text, and — for its review (lib/review.mjs recapCitesOf)
+      // — as stored: its paragraphs, each sentence's cited ids, when it was made.
+      helpers: {
+        summaries, chronicle, recap: clean(cs.campaignRecapCache?.text ?? ""), sessionLog,
+        recapCache: typeof cs.campaignRecapCache?.text === "string" && cs.campaignRecapCache.text.trim()
+          ? { text: cs.campaignRecapCache.text, cites: Array.isArray(cs.campaignRecapCache.cites) ? cs.campaignRecapCache.cites : null, madeAt: cs.campaignRecapCache.generatedAt ?? null }
+          : null,
+      },
+      records,
       plans,
       recentOracles: (cs.recentOracles ?? []).map(o => ({ name: o.name ?? null, question: o.question ?? null, answer: o.answer ?? null })),
     };

@@ -96,7 +96,7 @@ const rescored = {
 const { allCalls, data } = reviewDataOf({
   moduleRequests: requests.module, runnerRequests: requests.runner, actions, messages, beats: long.beats, autopilot: observer.autopilot ?? [],
   prices: run.prices?.usdPerMillionTokens ?? {}, spend: run.budget,
-  exchanges: replay.recording?.exchanges ?? [], charter,
+  exchanges: replay.recording?.exchanges ?? [], charter, marks,
 });
 const header = { id: path.basename(dir), mode: run.mode, startedAt: run.startedAt, classification: verdict.classification, because: verdict.because, questions: run.questions ?? [], rescored };
 

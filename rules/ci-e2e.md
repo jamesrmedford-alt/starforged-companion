@@ -377,7 +377,13 @@ scenario written against hand-made replies meets what the model does:
   record now (issue #382), so a session with any beat has a recap call
   whatever the scribe kept; its reply is cited JSON, and a recorded prose
   reply is asked for once more (an UNEXPECTED second call) — re-record a
-  scenario's recap step after the recap's prompt changes.
+  scenario's recap step after the recap's prompt changes. The session
+  summary is the same since slice 3 (a cited JSON list, from the session's
+  numbered beats): first-session's End step re-records both calls, its
+  declarations (the summary's `"THE SESSION": "[1]"`, the recap's `"THE
+  RECORD": "[s1-"`) changed with its recording in one commit
+  (`playthroughReplay.test.js` plays each against the other). Both calls are
+  made through a local `ask`, so the runner names them `callNarratorAPI>ask`.
 - The step's wait for its required calls is five times longer in record mode:
   a session's end makes its calls one after another, and each live reply
   takes seconds.
@@ -983,7 +989,18 @@ sentences, each fact a line of the source holds told with that line's id,
 and every beat marked LASTING told — a reply that is not that JSON leaves the
 recap empty, and the forgetful stand-in tells no fact. The recap beat
 (`probesAsked` with `recap`) wants a recap with something in it: the card
-that says "No campaign history available yet" is not one.
+that says "No campaign history available yet" is not one. The session
+summary is a view of the record too (slice 3): its source is the session's
+numbered beats (`## THE SESSION`, each with what it was TOLD AS; the
+questions apart), and both stand-ins answer it with the cited JSON list it
+asks for (`citedSummaryReply`) — the day's business citing the first beat,
+each fact a beat's fact line holds (never a question put to the narrator),
+every LASTING beat — or the summaries come out empty; the forgetful one's
+summary is there and holds no fact. The summary is kept on its session's
+Session Log page (`sessionRecord.views.summary`), not in campaignState: the
+table reader reads it there (`helpers.summaries`), and the playthroughs'
+`sessionLog` check asks for it shown under the page's "Session summary"
+heading (`lib/table.mjs` `sessionLogSummaryProblem`).
 **Walk every beat in a rehearsal, and read the prompts it produced
 (`requests.json`), before a live run is paid for** (issue #373, spending rule
 2). Four rehearsals found, for nothing: the runner taking a pause for the end
@@ -1041,7 +1058,13 @@ first ("Read it cold before you score it", below), then four parts:
    its prose holds, read apart from the module's own account on the card;
    and count 7 — each spotlight a Begin card rolled followed by its cutaway,
    built from that roll, or by the note that it is the table's to envision;
-   `setPiecesOf`) — and "The reading" is left to write). One row per
+   `setPiecesOf`), each campaign recap sentence by sentence ("Recap — what it
+   rests on": each sentence beside the lines of its source it cites — the
+   cache's `cites` against the recap's recorded request, a cited id that is
+   no line failing; design #382 11.4 check 5, `recapCitesOf`), how large each
+   session's record grows ("Record sizes": each Session Log page's
+   `sessionRecord` as JSON after each End a Session; `recordSizesOf`) — and
+   "The reading" is left to write). One row per
    dimension with its result,
    its basis and how far to trust it — goal, mechanics, continuity in what
    the narrator said and in what the helpers wrote, agency, friction,

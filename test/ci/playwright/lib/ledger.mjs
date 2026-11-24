@@ -88,8 +88,11 @@ export function heldExcerpt(text, fact, width = 90) {
  */
 // …and since issue #377 item 1 the module's NAMES THE TABLE CHANGED note
 // ("\"Ashen Wake\" is now \"Cinder Wren\" … corrected by the table"), in the
-// narrator's context and in the summary's source.
-const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED/;
+// narrator's context and in the summary's source; and since the summary and
+// the recap are views of the session record (issue #382) their sources' STRUCK
+// BY THE TABLE — "these did not happen" in the recap's, "did not happen" in the
+// summary's (record/summaryView.js summarySource).
+const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED|STRUCK BY THE TABLE/;
 
 /**
  * Whether a prompt that holds `word` says it was corrected: the word stands
