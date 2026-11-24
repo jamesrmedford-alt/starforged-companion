@@ -523,7 +523,9 @@
       "dice": {
         "moves": [
           "strike",
-          "clash"
+          "clash",
+          "gain_ground",
+          "react_under_fire"
         ],
         "roll": "miss",
         "price": 78
@@ -531,7 +533,9 @@
       "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
       "wants": [
         "strike",
-        "clash"
+        "clash",
+        "gain_ground",
+        "react_under_fire"
       ]
     },
     {
@@ -553,7 +557,9 @@
       "dice": {
         "moves": [
           "strike",
-          "clash"
+          "clash",
+          "gain_ground",
+          "react_under_fire"
         ],
         "roll": "burnable"
       },
@@ -561,7 +567,9 @@
       "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
       "wants": [
         "strike",
-        "clash"
+        "clash",
+        "gain_ground",
+        "react_under_fire"
       ]
     },
     {

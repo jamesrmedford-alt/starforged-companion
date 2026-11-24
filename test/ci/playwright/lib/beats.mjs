@@ -85,6 +85,17 @@ export function beatView({ marks, messages, actions, charter, from }) {
   };
 }
 
+/**
+ * A beat that asks for an attack in a fight (Strike, Clash) takes any of the
+ * fight's attack moves: which one a plain line is depends on the position and
+ * the reader. The third live run's "I press my advantage and drive in close"
+ * was Gain Ground — the rules' own gloss for it, in control — its miss was
+ * paid through Withstand Damage, and the check, wanting Strike or Clash,
+ * called the beat not exercised while the player waited six turns.
+ */
+export const ATTACK_MOVES = ["strike", "clash", "gain_ground", "react_under_fire"];
+const attacks = (moves) => (moves.some(m => m === "strike" || m === "clash") ? [...new Set([...moves, ...ATTACK_MOVES])] : moves);
+
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
 const notYet = (detail, progress = 0) => ({ done: false, detail, progress });
 const failed = (detail) => ({ done: true, failed: true, detail });
@@ -202,7 +213,7 @@ export const BEAT_CHECKS = {
    * and the table took it, or a suffer card was offered and answered.
    */
   sufferPaid(v, c) {
-    const miss = v.rolls.find(r => (c.moves ?? ["strike", "clash"]).includes(r.moveId) && r.outcome === "miss");
+    const miss = v.rolls.find(r => attacks(c.moves ?? ["strike", "clash"]).includes(r.moveId) && r.outcome === "miss");
     if (!miss) return notYet("no miss in the fight yet");
     if (miss.card.move.held?.open) return notYet(`${miss.moveId} missed at ${miss.step}; its result is held — nothing is paid until it is kept`, 1);
     const prices = v.allCards.filter(k => k.price && v.inWindow(k)).map(k => ({ step: v.firstSeen.get(k.id), ...parsePriceLine(k.price.text) }));
@@ -226,7 +237,7 @@ export const BEAT_CHECKS = {
 
   /** Momentum was burned on a roll made while the beat was current. */
   burned(v, c) {
-    const roll = v.rolls.find(r => r.rolled && (!c.moves || c.moves.includes(r.moveId)) && (!c.outcome || r.outcome === c.outcome));
+    const roll = v.rolls.find(r => r.rolled && (!c.moves || attacks(c.moves).includes(r.moveId)) && (!c.outcome || r.outcome === c.outcome));
     if (!roll) return notYet("no such roll yet");
     if (!roll.card.move.burn) return notYet(`${roll.moveId} came up ${roll.outcome}; its card offers no burn`, 1);
     if (!roll.card.move.burn.consumed) return notYet(`${roll.moveId} came up ${roll.outcome}; momentum has not been burned`, 2);
