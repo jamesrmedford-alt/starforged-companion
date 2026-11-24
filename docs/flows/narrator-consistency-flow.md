@@ -182,10 +182,19 @@ longer special-cases them).
   whole old name did, so the third live run's session 3 summary was written
   from "the Wake's registry" with no note. The note gave the old name whole
   until then, and one step after the correction the narrator wrote "The Wake's
-  boarding lock" from a prompt that said "the Wake" six times. Not covered: a
-  short form only the user message holds while the system prompt already
-  carries the note for another reason — `withNameChangesNoted` adds nothing
-  to a call that has the heading.
+  boarding lock" from a prompt that said "the Wake" six times. **The user
+  message is told what its own text calls for** (known-issues
+  NAME-NOTE-MISSES-THE-USER-MESSAGE): every narrator call sends its user
+  message through `callNarratorAPI` → `withNameChangesNoted`, which adds at
+  its end each change due for that text that the system prompt's note does
+  not tell — the change's line, or its line again when the user message cuts
+  the old name short in a way the system's line does not name
+  (`formatNameChangesBlock`'s `told` and `context`: the system prompt is read
+  for the names it holds, never for a change it makes due). It added nothing
+  once the system prompt carried the heading at all, so session 3's opening,
+  which quotes the last session's final narration word for word, carried
+  "Ashen Wake" beside a note that listed only "Tamsin" → "Tamsin Okoro". A user
+  message that already carries the note is not given a second.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)
   posts the same card WITHOUT the retract button — WJ lore's correction
   affordance is the `!journal` command family (reaffirmed 2026-07).

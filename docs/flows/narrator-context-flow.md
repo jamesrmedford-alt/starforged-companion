@@ -887,10 +887,13 @@ the table's correction, not something that happened in the story (the long
 haul's second run made it a story of a crossed-out name — known-issues
 NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says
 which name is current; the session summary's source carries the same note,
-`formatNameChangesForSource`; and a call whose user message alone names an old
-name — a player's line, the recent scene, a bookend's EARLIER list — has it
-added at that message's end, `narrator.js callNarratorAPI` →
-`withNameChangesNoted`) · [6.5] active-scene ledger
+`formatNameChangesForSource`; and every change a call's user message names —
+a player's line, the recent scene, a bookend's EARLIER list, the opening's
+last narration quoted word for word — that this note does not tell, or whose
+short form there its line does not name, is added at that message's end,
+`narrator.js callNarratorAPI` → `withNameChangesNoted` (known-issues
+NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
+there at all)) · [6.5] active-scene ledger
 (SCENE FRAME — with the scene's question, shown while it stands, marked
 when answered (issue #353 R2), released when play has left it unanswered for
 `SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for

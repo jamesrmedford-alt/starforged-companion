@@ -6872,16 +6872,23 @@ export async function prewarmNarratorCache(campaignState) {
 }
 
 /**
- * A call's user message with NAMES THE TABLE CHANGED added at its end, when
- * the user message names an old name and nothing in the call tells the new
- * one yet (issue #377 item 1). The system prompt carries the note wherever its
+ * A call's user message with NAMES THE TABLE CHANGED added at its end, for
+ * each change its own text calls for that the system prompt's note does not
+ * tell (issue #377 item 1). The system prompt carries the note wherever its
  * own text, or this session, calls for it (narratorPrompt.js [6.4]), but every
  * path builds its user message after its system prompt — so an old name only
  * the user message holds went untold: a player's line, the recent scene, or
  * a closing scene's earlier bookends ("(Tamsin Vey) Tamsin closes her ledger
  * stall", from a session before the rename — the long haul's rehearsal,
- * 2026-11-23). The user message is per call, so the cached blocks stay as
- * they are. Pure but for the store read; never throws.
+ * 2026-11-23). And once the system prompt carried a note at all, nothing was
+ * added: session 3's opening quoted the last session's final narration word
+ * for word, its "Ashen Wake" untold beside a note that listed only "Tamsin" →
+ * "Tamsin Okoro" (known-issues NAME-NOTE-MISSES-THE-USER-MESSAGE). A change the
+ * system's note lists is told again here only when the user message cuts its
+ * old name short in a way the system's line does not name (CORRECTED-NAME-
+ * SHORT-FORM). A user message that already carries the note is not given a
+ * second. The user message is per call, so the cached blocks stay as they
+ * are. Pure but for the store read; never throws.
  *
  * @param {string} systemPrompt
  * @param {string} userMessage
@@ -6890,10 +6897,11 @@ export async function prewarmNarratorCache(campaignState) {
 function withNameChangesNoted(systemPrompt, userMessage) {
   try {
     const text = typeof userMessage === 'string' ? userMessage : '';
-    if (!text || String(systemPrompt ?? '').includes(NAME_CHANGES_HEADING) || text.includes(NAME_CHANGES_HEADING)) return userMessage;
+    if (!text || text.includes(NAME_CHANGES_HEADING)) return userMessage;
     const changes = storedCampaignState()?.nameChanges;
     if (!Array.isArray(changes) || !changes.length) return userMessage;
-    const note = formatNameChangesBlock(changes, { texts: [text] });
+    const system = String(systemPrompt ?? '');
+    const note = formatNameChangesBlock(changes, { texts: [text], context: [system], told: system });
     return note ? `${text}\n\n${note}` : userMessage;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: the name-change note was not added:`, err?.message ?? err);

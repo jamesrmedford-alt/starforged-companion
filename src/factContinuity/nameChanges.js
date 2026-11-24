@@ -388,9 +388,12 @@ function usesOfNameWord(texts, word, name, current = []) {
  * @param {Array} [changes] — every stored change, normalised: the other names in play
  * @param {string[]} [current] — the names as they stand now: a word written
  *   inside one of them is part of that name ("Vey" in "Vey's Lantern")
+ * @param {string[]} [context] — the rest of the call (a user message's system
+ *   prompt): a form it never makes, but a word it uses inside another name is
+ *   not this name's alone
  * @returns {Array<{ old: string, write: string }>}
  */
-function shortFormsInUse(change, texts, changes = [], current = changes.map(o => o.to)) {
+function shortFormsInUse(change, texts, changes = [], current = changes.map(o => o.to), context = []) {
   const oldWords = nameWordsOf(change.from);
   if (oldWords.length < 2 || !texts.length) return [];
   const ownOld = ownWordsOf(change.from);
@@ -407,12 +410,13 @@ function shortFormsInUse(change, texts, changes = [], current = changes.map(o =>
     if (ownNew.has(lower) || others.has(lower)) continue;
     const uses = usesOfNameWord(texts, word, change.from, current);
     if (!uses.alone || uses.other) continue;
+    if (context.length && usesOfNameWord(context, word, change.from, current).other) continue;
     const twin = newWords.length < 2 ? null
       : word === oldWords.at(-1) ? newWords.at(-1)
         : word === oldWords[0] ? newWords[0]
           : null;
     const twinIsOwn = !!twin && !ownOld.has(twin.toLowerCase()) && !others.has(twin.toLowerCase())
-      && !usesOfNameWord(texts, twin, change.to, current).other;
+      && !usesOfNameWord([...texts, ...context], twin, change.to, current).other;
     const article = uses.article * 2 >= uses.alone;
     const write = twinIsOwn ? twin : change.to;
     forms.push({
@@ -570,39 +574,65 @@ export function dueNameChanges(changes, { texts = [], sessionId = null } = {}) {
   return all.filter(c => (sessionId && c.sessionId === sessionId) || sources.some(t => mentionsOldName(t, c, { current })));
 }
 
+/** A change's line in a note, up to its short forms: `- "Ashen Wake" is now "Cinder Wren"`. */
+const lineHead = (c) => `- "${c.from}" is now "${c.to}"`;
+
+/**
+ * Whether a note the call already carries (`told`) has a change's line,
+ * naming each short form in `forms` — so the change is told there.
+ */
+function toldIn(told, c, forms) {
+  const at = told.indexOf(lineHead(c));
+  if (at < 0) return false;
+  const end = told.indexOf('\n', at);
+  const line = end < 0 ? told.slice(at) : told.slice(at, end);
+  return forms.every(f => line.includes(`for "${f.old}" write "`));
+}
+
 /**
  * A note's lines: one for each change due, with the short forms of its old
  * name the call's texts use — read over all of them together, beside every
  * stored change, so a word another name holds anywhere in the call is not
  * listed. '' when no change is due.
  *
+ * `context` is the rest of the call — a user message's system prompt: read
+ * for the names it holds, never for a change it makes due. `told` is a note
+ * the call carries already: a change whose line it holds, naming every short
+ * form this line would name, is left out — a user message is told what its
+ * system prompt's note does not (known-issues NAME-NOTE-MISSES-THE-USER-MESSAGE).
+ *
  * @param {Array} changes — campaignState.nameChanges
- * @param {{ texts?: string[], sessionId?: string|null }} [opts]
+ * @param {{ texts?: string[], sessionId?: string|null, context?: string[], told?: string }} [opts]
  * @returns {string}
  */
 function changeLines(changes, opts = {}) {
   const due = dueNameChanges(changes, opts);
   if (!due.length) return '';
   const sources = sourcesOf(opts.texts ?? []);
+  const around = sourcesOf(opts.context ?? []);
+  const told = typeof opts.told === 'string' ? opts.told : '';
   const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
   return due.map((c) => {
     const how = c.kind === 'corrected' ? 'corrected by the table' : 'renamed by the table';
     // The old name as the call's own text cuts it short, and what to write for it.
-    const forms = shortFormsInUse(c, sources, all);
+    const forms = shortFormsInUse(c, sources, all, all.map(o => o.to), around);
+    if (told && toldIn(told, c, forms)) return '';
     const short = forms.length
       ? ` The old name cut short is the old name too: ${forms.map(f => `for "${f.old}" write "${f.write}"`).join('; ')}.`
       : '';
-    return `- "${c.from}" is now "${c.to}"${c.about ? ` (${c.about})` : ''} — ${how}.${short}`;
-  }).join('\n');
+    return `${lineHead(c)}${c.about ? ` (${c.about})` : ''} — ${how}.${short}`;
+  }).filter(Boolean).join('\n');
 }
 
 /**
  * The narrator's note (its context, every mode, and a call's user message
- * when that alone holds an old name): the changes due, each with the short
- * forms of its old name the texts use, or ''.
+ * for what its own text calls for that the system prompt's note does not
+ * tell): the changes due, each with the short forms of its old name the texts
+ * use, or ''.
  *
  * @param {Array} changes
- * @param {{ texts?: string[], sessionId?: string|null }} [opts]
+ * @param {{ texts?: string[], sessionId?: string|null, context?: string[], told?: string }} [opts] —
+ *   `context`, `told`: the rest of the call and the note it carries (changeLines)
  * @returns {string}
  */
 export function formatNameChangesBlock(changes, opts = {}) {
