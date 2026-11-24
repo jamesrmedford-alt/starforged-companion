@@ -401,6 +401,139 @@ function refrainsResult(r) {
     + `${waiting} of ${of} narrations end on someone waiting, watching or still`;
 }
 
+// ── session set-pieces: what each was built from (issue #381) ────────────────
+
+/** A session set-piece's kind, by the first line of its user message (as scene-counts.mjs tells them). */
+const SET_PIECE_KINDS = [["opening", /^OPENING VIGNETTE\b/], ["closing", /^CLOSING VIGNETTE\b/], ["spotlight", /^SPOTLIGHT VIGNETTE\b/]];
+
+/** A set-piece's kind from its user message, or null for any other call. */
+export const setPieceKindOf = (user) => SET_PIECE_KINDS.find(([, re]) => re.test(String(user ?? "").trimStart()))?.[0] ?? null;
+
+/**
+ * The MATERIAL block of a set-piece's user message (src/session/sceneSeeds.js
+ * formatMaterial): each numbered result with its label, its tables and dice,
+ * and the second result under it — "1. What the vignette shows — Spotlight
+ * Vignette (37): <result>", "     (if that cannot be true here: <second>)".
+ * [] for a message with none. Pure.
+ *
+ * @param {string} user
+ * @returns {Array<{ n: number, label: string, source: string, rolls: string, result: string, second: string|null }>}
+ */
+export function materialOf(user) {
+  const lines = String(user ?? "").split("\n");
+  const at = lines.findIndex(l => /^MATERIAL\b/.test(l.trim()));
+  if (at < 0) return [];
+  const out = [];
+  for (const raw of lines.slice(at + 1)) {
+    const line = raw.trim();
+    if (!line) { if (out.length) break; continue; }
+    const m = /^(\d+)\.\s+(.*?)\s+—\s+(.*?)(?:\s+\(([^()]*)\))?:\s+(.+)$/.exec(line);
+    if (m) { out.push({ n: Number(m[1]), label: m[2], source: m[3], rolls: m[4] ?? "", result: m[5].trim(), second: null }); continue; }
+    const second = /^\(if that cannot be true here:\s*(.*)\)$/.exec(line);
+    if (second && out.length) { out.at(-1).second = second[1].trim(); continue; }
+    break;
+  }
+  return out;
+}
+
+/** A text as its words, lower case — to find one run of words in another. */
+const runOfWords = (text) => (String(text ?? "").replace(/<[^>]*>/g, " ").toLowerCase().replace(/[’‘]/g, "'").match(/[a-z0-9']+/g) ?? []).join(" ");
+
+/** A reply's prose and its fenced JSON fact block, read here and not with the module's parser. Pure. */
+function proseAndBlock(text) {
+  const s = String(text ?? "");
+  const fence = /```json\s*([\s\S]*?)```/i.exec(s);
+  if (!fence) return { prose: s.trim(), block: null };
+  let block = null;
+  try { block = JSON.parse(fence[1]); } catch { block = null; }
+  return { prose: s.slice(0, fence.index).trim(), block };
+}
+
+/**
+ * What each session set-piece was built from, and whether the narration used
+ * it — the review's counts 1 and 7 of design #381.
+ *
+ * Count 1, from the recorded exchanges: for each opening, closing and
+ * spotlight call (its user message's first line), each numbered result of its
+ * MATERIAL is `used` (the words the reply's fact block gave for it — its
+ * `builtFrom` — and the prose holds them), not used (`false`: the block named
+ * none the prose holds; the words it gave are `claimed`), or unknown (`null`:
+ * no fact block was read); `tookSecond` where the narration took the second
+ * result. Read independently of the module's own account (sceneSeeds.js
+ * markSeedsUsed, which the card's `builtFrom` flag keeps), so that the two
+ * can disagree.
+ *
+ * Count 7, from the chat: a Begin a Session card that rolled a "Spotlight
+ * vignette: <result>" — and did not say it is the table's to envision — is
+ * followed by its spotlight cutaway (a `spotlight_begin` card, and a
+ * spotlight call whose first result is that one: `told`, with its roll), or
+ * by the note that "the narrator did not write it: yours to envision"
+ * (`toEnvision`); else it is `missing` — a narration promised and never
+ * written, or written for another result.
+ *
+ * @param {{ exchanges?: object[], messages?: object[] }} o
+ * @returns {{ scenes: object[], totals: object, spotlights: object[] }}
+ */
+export function setPiecesOf({ exchanges = [], messages = [] } = {}) {
+  const scenes = [];
+  for (const e of exchanges) {
+    const kind = setPieceKindOf(e?.user);
+    if (!kind) continue;
+    const material = materialOf(e.user);
+    const { prose, block } = proseAndBlock(replyText(e));
+    const account = block && typeof block === "object" ? (Array.isArray(block.builtFrom) ? block.builtFrom : []) : null;
+    const told = ` ${runOfWords(prose)} `;
+    const results = material.map((r) => {
+      const entry = account?.find(a => Number(a?.n) === r.n) ?? null;
+      const words = typeof entry?.words === "string" ? entry.words.replace(/\s+/g, " ").trim() : "";
+      const held = !!words && !!runOfWords(words) && told.includes(` ${runOfWords(words)} `);
+      return {
+        n: r.n, label: r.label, rolls: r.rolls, result: r.result,
+        used: account === null ? null : held ? words : false,
+        ...(words && !held ? { claimed: words } : {}), ...(entry?.second === true && r.second ? { tookSecond: true } : {}),
+      };
+    });
+    scenes.push({ step: e.step ?? null, kind, results, factBlock: account !== null });
+  }
+  const all = scenes.flatMap(s => s.results);
+  const totals = {
+    scenes: scenes.length, byKind: Object.fromEntries(SET_PIECE_KINDS.map(([k]) => [k, scenes.filter(s => s.kind === k).length])),
+    results: all.length, used: all.filter(r => typeof r.used === "string").length, notUsed: all.filter(r => r.used === false).length,
+    unknown: all.filter(r => r.used === null).length, claimed: all.filter(r => r.claimed).length, tookSecond: all.filter(r => r.tookSecond).length,
+  };
+  // Count 7. A card's text is its markup with the tags taken off: its words
+  // still carry their entities ("&#039;"), where the MATERIAL line has none.
+  const ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#039;": "'", "&apos;": "'", "&nbsp;": " " };
+  const clean = (s) => String(s ?? "").replace(/&(?:amp|lt|gt|quot|#0?39|apos|nbsp);/g, (x) => ENTITIES[x] ?? x).replace(/\s+/g, " ").trim();
+  const spotlights = [];
+  messages.forEach((m, i) => {
+    const text = clean(m.text);
+    if (!/^Begin a Session\b/.test(text)) return;
+    const rolled = /Spotlight vignette:\s*(.+?)(\s+—\s+yours to envision\.)?\s+All players take\b/.exec(text);
+    if (!rolled) return;
+    const result = clean(rolled[1]);
+    if (rolled[2]) { spotlights.push({ step: m.step ?? null, result, outcome: "theTables", detail: "the card said it is the table's to envision" }); return; }
+    const after = messages.slice(i + 1);
+    const card = after.find(x => x.vignette === "spotlight_begin") ?? null;
+    const scene = scenes.find(s => s.kind === "spotlight" && clean(s.results[0]?.result) === result) ?? null;
+    const note = after.find(x => /the narrator did not write it: yours to envision/.test(clean(x.text))) ?? null;
+    if (card && scene) spotlights.push({ step: m.step ?? null, result, outcome: "told", roll: scene.results[0].rolls || null, at: card.step ?? null });
+    else if (note) spotlights.push({ step: m.step ?? null, result, outcome: "toEnvision", at: note.step ?? null });
+    else spotlights.push({ step: m.step ?? null, result, outcome: "missing", detail: card ? "a spotlight cutaway was posted for another result" : "no spotlight cutaway and no note followed" });
+  });
+  return { scenes, totals, spotlights };
+}
+
+/** The scorecard's one line of setPiecesOf. */
+function setPiecesResult(p) {
+  const t = p.totals;
+  const kinds = Object.entries(t.byKind).filter(([, n]) => n).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(", ");
+  const s = (o) => p.spotlights.filter(x => x.outcome === o).length;
+  return `${t.scenes} set-piece scene(s)${kinds ? ` (${kinds})` : ""}: ${t.used} of ${t.results} rolled results in their scene, ${t.notUsed} not, ${t.unknown} with no fact block to say`
+    + `${t.claimed ? `; ${t.claimed} claimed and not in the prose` : ""}${t.tookSecond ? `; ${t.tookSecond} took the second result` : ""}`
+    + (p.spotlights.length ? `; spotlight vignettes rolled: ${p.spotlights.length} — ${s("told")} told, ${s("toEnvision")} left to envision, ${s("theTables")} the table's from the start, ${s("missing")} missing` : "");
+}
+
 // ── agency and friction ──────────────────────────────────────────────────────
 
 /**
@@ -618,6 +751,7 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       length: lengthOf(allCalls),
       repetition: repetitionOf(messages),
       refrains: refrainsOf(messages),
+      setPieces: setPiecesOf({ exchanges, messages }),
       friction: frictionOf({ actions, beats, autopilot, messages }),
       agency: spokenFor(messages),
       slips: slipsOf(messages),
@@ -725,7 +859,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, friction = null, agency = [], slips = null, freeform = null }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, setPieces = null, friction = null, agency = [], slips = null, freeform = null }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -748,6 +882,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ...(freeform ? [["Plain lines", plainLinesResult(freeform), "each line of play's reading, from the two readers' own replies; the move its beat wanted; a move's name looked for in the line", "medium: a count — whether a line should have been a move is the charter's say for its move beats only, and a named move is a phrase match, to be read"]] : []),
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
+      ...(setPieces?.totals.scenes || setPieces?.spotlights.length ? [["Set-pieces", setPiecesResult(setPieces), "each opening, closing and spotlight call: its MATERIAL's numbered results, and the words its reply's fact block gave for each (`builtFrom`) found in its prose; each Begin card's spotlight roll followed by its cutaway or by the note that it is the table's to envision", "high for the arithmetic; whether a result is in the scene recognisably, and not only in the words given, is for the reading"]] : []),
       ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations, the opening and closing scenes apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
       ["Speed", speed ? speedResult(speed) : "not recorded", "each call's latency; the time from a line of play, and from a scene question, to the first narration after it", "high"],
       ["Length", length ? Object.entries(length).filter(([, v]) => v.calls >= 3).sort((a, b) => Math.abs(b[1].charsPerAction) - Math.abs(a[1].charsPerAction)).slice(0, 2).map(([k, v]) => `${k}: ${v.charsPerAction >= 0 ? "+" : ""}${v.charsPerAction} chars/action`).join("; ") || "too few calls to fit" : "not recorded", "prompt size against the action number, per call kind", "high"],
@@ -806,6 +941,20 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
     if (!r.pairs.length) continue;
     out.push(`## Repetition by content — ${kind}`, "", table(["Earlier", "Later", "Content words shared", "Who is doing what, again"],
       r.pairs.map(p => [p.earlier, p.later, `${p.shared} of ${p.words} (${pct(p.sharedShare)})`, p.repeatedActs.map(a => `${a.who}: ${a.doing.join(" ")}`).join("; ")])), "");
+  }
+  if (setPieces?.scenes.length || setPieces?.spotlights.length) {
+    out.push("## Set-pieces — what each was built from", "",
+      "Each session set-piece's rolled results (its MATERIAL) and whether its narration used each: the words its fact block gave for the result, found in its prose — read here, apart from the module's own account on the card. A result \"not used\" had no words the prose holds; \"claimed\" words are the fact block's, not the prose's. A spotlight vignette the Begin card rolled is followed by its cutaway or by the note that it is the table's to envision.", "");
+    if (setPieces.scenes.length) {
+      out.push(table(["At", "Scene", "n", "What it is for", "Rolled", "Used"], setPieces.scenes.flatMap(sc => (sc.results.length ? sc.results : [{ n: "—", label: "(no MATERIAL)", result: "", used: null }]).map(r => [
+        sc.step ?? "", sc.kind, r.n, r.label, `${r.result}${r.rolls ? ` (${r.rolls})` : ""}`,
+        typeof r.used === "string" ? `"${r.used}"${r.tookSecond ? " (the second)" : ""}` : r.used === false ? `not used${r.claimed ? ` — claimed "${r.claimed}"` : ""}` : "no fact block",
+      ]))), "");
+    }
+    if (setPieces.spotlights.length) {
+      out.push(table(["At", "Spotlight vignette rolled", "What followed"], setPieces.spotlights.map(x => [x.step ?? "", x.result,
+        x.outcome === "told" ? `its cutaway${x.at ? ` at ${x.at}` : ""}${x.roll ? ` (rolled ${x.roll})` : ""}` : x.outcome === "toEnvision" ? `the note that it is the table's to envision${x.at ? ` (${x.at})` : ""}` : x.outcome === "theTables" ? "nothing — the card said it is the table's to envision" : `MISSING — ${x.detail}`])), "");
+    }
   }
   if (refrains?.sessions.some(x => x.counted)) {
     out.push("## Refrains — what each session's narrations keep returning to", "",

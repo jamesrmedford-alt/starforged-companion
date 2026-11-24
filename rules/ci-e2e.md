@@ -231,7 +231,10 @@ fact block, detection and draft cards, End and Begin a Session.
   `confirmDraft`, `privateChannel` (builds the player's Private Channel prompt
   in their browser; `expectCard` pins whether a named NPC's card is in it),
   `dragShip` (drops the ship's token on a settlement's pin; checks the token
-  stays put while the Set a Course it starts is pending), `endSession`,
+  stays put while the Set a Course it starts is pending), `endSession` (done
+  when the session is closed and its End a Session card is posted — not when
+  a closing cutaway is: since issue #381 one is posted only when someone or
+  somewhere can be shown; `closingVignette: true` waits for one),
   the Batch Mode steps (issue #340: `batchMode` — the GM's toolbar switch;
   `roundSubmit` — an action written in its author's Round window and read on
   the canonical GM, `reads` / `move` pinning the reading; `roundConfirm` —
@@ -591,6 +594,18 @@ charter or touch the runner:
   Foundry container's processes reniced): a Begin a Session's +1 momentum
   landed a step late the same way (`session-momentum` violated), and a
   rehearsal that takes fifteen minutes alone took thirty-four.
+- **A session set-piece's dice are a stream of their own** (issue #381). The
+  opening, the closing cutaway and the spotlight vignette draw their MATERIAL
+  through one function (`drawDie`, `session/sceneSeeds.js`), kept and handed
+  back as `random.gm["session/sceneSeeds.js"]`; and a table row that is a
+  directive ("Action + Theme", a reference, "Roll twice") makes
+  `rollOracle(id, { roll })` roll again through `oracles/roller.js`.
+  `installDiceScript` files those roller draws under the set-piece too (a
+  draw whose caller is the roller and whose stack holds a set-piece's file):
+  under the roller they would take, in a replay, values a run recorded for
+  its prices and oracles, and every price after them would come out another.
+  The Begin card's spotlight d100 is the pressing client's own roller draw,
+  as before; a move's scripted dice and a scripted price are untouched.
 - **A run a crash stops has no record of its dice.** The dice are read from
   the GM's page when the run ends; until then the record is `null`, and a
   check with no record is not made. The first rehearsal with the expedition
@@ -856,6 +871,11 @@ whatever happens to the others.
   truth, and one told would read as another's leaked. In the recovery
   scenario the stand-in reader calls Heal both times — it is the module's own
   rule (`situation.js` `nothingToRecover`) that must say no to the second.
+  At every charter's session set-piece (its user message's first line:
+  OPENING, CLOSING or SPOTLIGHT VIGNETTE) the stand-in writes each MATERIAL
+  result into its prose and accounts for it in its fact block (`builtFrom`),
+  as the prompt asks; the forgetful one (`EXPLORE_REHEARSAL_FORGET=1`) does
+  neither, so the scorecard's set-piece count is seen to pass and to fail.
 - **How it runs** (`./scripts/cloud.sh explore --suite scenarios --rehearse`;
   `--replay <suite folder>`; `EXPLORE_SUITE_ONLY=<a,b>` runs those alone, in
   the suite's order). `suite.mjs` runs each scenario's charter with
@@ -1000,8 +1020,15 @@ first ("Read it cold before you score it", below), then four parts:
    to its reply — a scene question's wait apart: it skips the readers and is
    answered sooner — caching and cost by call kind, prompt length against the
    action number, repetition by content between scenes of one kind, what each
-   session's narrations keep returning to ("Refrains") — and "The reading" is
-   left to write). One row per dimension with its result,
+   session's narrations keep returning to ("Refrains"), what each session
+   set-piece was built from ("Set-pieces": design #381's count 1 — each
+   rolled result of an opening's, a closing's or a spotlight's MATERIAL
+   found in its scene, by the words its fact block's `builtFrom` gave and
+   its prose holds, read apart from the module's own account on the card;
+   and count 7 — each spotlight a Begin card rolled followed by its cutaway,
+   built from that roll, or by the note that it is the table's to envision;
+   `setPiecesOf`) — and "The reading" is left to write). One row per
+   dimension with its result,
    its basis and how far to trust it — goal, mechanics, continuity in what
    the narrator said and in what the helpers wrote, agency, friction,
    narrator quality, speed, length, cost — then the detail. Say what was

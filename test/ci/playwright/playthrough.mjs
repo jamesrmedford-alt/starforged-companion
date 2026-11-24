@@ -229,15 +229,26 @@ const STEPS = {
     }
   },
 
-  /** `!end-session` on the player's screen, with the foci the step names. */
+  /**
+   * `!end-session` on the player's screen, with the foci the step names.
+   * Waits for the End to finish — the session closed, and the End a Session
+   * card its presser posts once the GM's relay has done the End's work
+   * (foci, the close, the summary, the Session Log, momentum) — not for a
+   * closing cutaway: one is posted only when someone or somewhere can be
+   * shown (issue #381 D6), and a world with no connection, no named threat
+   * and no settlement but where the characters are gets none. A step that
+   * wants the cutaway says so (`closingVignette: true`); what a strict step's
+   * End narrated is its calls' declaration, waited for after every step.
+   */
   async endSession(ctx, step) {
     const actor = ctx.client(step.as);
     const before = await messageIds(ctx.gm);
     await chat(actor, "!end-session");
     await submitDialog(actor, "End a Session", { questFocus: step.questFocus ?? "", connectionFocus: step.connectionFocus ?? "" });
     await waitForState(ctx.gm, "cs.sessionActive === false", "the session to end");
-    if (step.closingVignette !== false) {
-      await waitForCard(ctx.gm, before, "f.sessionVignetteCard === true && f.vignetteKind !== 'galley_begin'", "the closing vignette");
+    await waitForCard(ctx.gm, before, "f.sessionLifecycleCard === true && f.sessionVignetteCard !== true", "the End a Session card");
+    if (step.closingVignette === true) {
+      await waitForCard(ctx.gm, before, "f.sessionVignetteCard === true && f.vignetteKind === 'npc_end'", "the closing vignette");
     }
   },
 

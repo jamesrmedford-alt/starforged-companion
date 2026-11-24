@@ -58,7 +58,9 @@ export function installRefusalTrace() {
  * value rollDie is given — scripted or real — is appended to it. While
  * window.__sfcRandomKept is an object, every other value a file of the
  * module's draws is appended to it under that file's name, and taken from
- * window.__sfcRandomQueue first when it holds values for that file.
+ * window.__sfcRandomQueue first when it holds values for that file — a
+ * session set-piece's under its own stream, "session/sceneSeeds.js", the
+ * roller's draws for it included (issue #381).
  */
 export function installDiceScript() {
   const realRandom = Math.random;
@@ -90,7 +92,21 @@ export function installDiceScript() {
       Error.stackTraceLimit = 4;
       const caller = (new Error().stack || "").split("\n")[2] || "";
       Error.stackTraceLimit = limit;
-      const file = /\/modules\/starforged-companion\/src\/([^?:)\s]+)/.exec(caller)?.[1] ?? null;
+      const fileOf = (line) => /\/modules\/starforged-companion\/src\/([^?:)\s]+)/.exec(line ?? "")?.[1] ?? null;
+      let file = fileOf(caller);
+      // A session set-piece's dice are one stream (issue #381): its own
+      // (`drawDie`, session/sceneSeeds.js) and the roller's for it — a table
+      // row that is a directive ("Action + Theme", a reference, "Roll twice")
+      // makes `rollOracle(id, { roll })` roll again through oracles/roller.js.
+      // Filed under the roller, those draws would take, in a replay, values a
+      // run recorded for its prices and oracles, and every price after them
+      // would come out another.
+      if (file === "oracles/roller.js") {
+        Error.stackTraceLimit = 16;
+        const deeper = (new Error().stack || "").split("\n").slice(3).map(fileOf);
+        Error.stackTraceLimit = limit;
+        if (deeper.some(f => /^session\/(?:sceneSeeds|spotlightVignette|galleyVignette|endSessionVignette)\.js$/.test(f ?? ""))) file = "session/sceneSeeds.js";
+      }
       if (file) {
         const queue = window.__sfcRandomQueue?.[file];
         const value = Array.isArray(queue) && queue.length ? queue.shift() : realRandom();

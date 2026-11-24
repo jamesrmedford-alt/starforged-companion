@@ -31,6 +31,7 @@
 // its prompt shows, and skips what the table never offered.
 
 import { castMembers, castMemberFor, optionFor } from "./cast.mjs";
+import { materialOf } from "./review.mjs";
 
 const API_HOST = "api.anthropic.com";
 
@@ -284,7 +285,19 @@ export function createRollingRehearsal({ charter, forget = false }) {
     const sidecar = { newTruths: [], stateChanges: [] };
     let prose;
     if (/vignette/i.test(user) && !entry.plants && !entry.probe) {
+      // A session set-piece — an opening, a closing or a spotlight cutaway
+      // (its user message's first line: OPENING / CLOSING / SPOTLIGHT
+      // VIGNETTE) — is built from the MATERIAL rolled for it (issue #381):
+      // each result in the prose, in its own words, and accounted for in the
+      // fact block (`builtFrom`), as the prompt asks. The forgetful stand-in
+      // does neither, so the review's count of them can be seen to fail.
       prose = `The ship ticks as it cools, and for a moment nothing is asked of anyone. (Scene ${turn}.)`;
+      const material = forget ? [] : materialOf(user);
+      if (material.length) {
+        prose += ` ${material.map(r => `${r.result}.`).join(" ")}`;
+        // "The three to eight words of your prose that are it."
+        sidecar.builtFrom = material.map(r => ({ n: r.n, words: r.result.split(/\s+/).slice(0, 8).join(" ") }));
+      }
     } else if (entry.plants?.length) {
       const said = statementsOf(entry.plants);
       prose = forget ? "The moment passes. Nothing more comes of it." : `You say it plainly, and it stays said. ${said.join(" ")}`;
