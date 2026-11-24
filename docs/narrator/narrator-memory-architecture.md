@@ -28,12 +28,12 @@ skeleton, the one surface that holds what has *not* been stated):
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
 | **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
-| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone (system prompt §6.5; issue #374 A1) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
-| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call but the campaign recap's (top of §6.5); scoping + relevance unions | ~30–60 tokens |
+| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone of that block (system prompt §6.5; issue #374 A1) and the scene's facts and state in a section of its own, as how things stand (§[6.5m] WHERE THINGS STAND NOW — never as binding) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
+| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call but the campaign recap's (top of §6.5 — a recap gets its place and "Now" line under WHERE THINGS STAND NOW, no cast, no question); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
-| **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
-| **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired — by the narrator's `resolved`, a GM's Retire, or in code as its subject ends: an expedition's track, a vow, a scene's unanswered mystery (issue #362 D4); GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`, `reveals`, `countdown`, `newThreats`) on the canonical GM, from the oracle rolls a trigger made (a price's new enemy, an enemy the prose introduced — `newThreats`, issue #354 P2-29 — a posed question); a plan answered `sameAs` joins the plan its subject already has, which keeps the other name as an alias (issue #354 P2-30); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided) and the Private Channel (decided plans only) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION; the opening vignette's user message (WHERE THE LAST SESSION STOPPED); and the campaign recap, when it covers the whole of its session (WHERE THINGS STAND NOW) | ~≤320 tokens each (Haiku-capped) |
+| **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b] — the answer stands over earlier narration; the oracle follow-up's own role and user message say an answer binds and the scene is what is reconciled, ORACLE-NO-NARRATED-AS-YES) + the assembler's RECENT ORACLES section | last 5 lines |
+| **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired — by the narrator's `resolved`, a GM's Retire, or in code as its subject ends: an expedition's track, a vow, a scene's unanswered mystery (issue #362 D4); GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`, `reveals`, `countdown`, `newThreats`) on the canonical GM, from the oracle rolls a trigger made (a price's new enemy, an enemy the prose introduced — `newThreats`, issue #354 P2-29 — a posed question); a plan answered `sameAs` joins the plan its subject already has, which keeps the other name as an alias (issue #354 P2-30); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided; THIS BEAT ENDS A VOW for the plan of a vow the move fulfils, whose truth is then stated in the prose) and the Private Channel (decided plans only). A truth is revealed by prose that tells it: "truth" comes off a narration's own reveal whose prose told none of it (`withoutUntoldTruths`, VOW-FULFILLED-WITH-NOBODY-NAMED) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
 
 Durable campaign context (world truths, sector, current location, character
 state, World Journal injections) rides alongside these in the system prompt —
@@ -61,8 +61,14 @@ uniform across modes — only two things legitimately vary, because they are not
    vignette→embellishment, inciting→discovery). Meta modes (`campaign_recap`)
    carry no latitude block, no sidecar instruction, and no audio markup — their
    output is consumed verbatim, so a stray sidecar JSON block would leak —
-   and none of the open scene's frame, truths or state (issue #374 A1: of
-   §6.5 a recap gets the ship's position line alone).
+   and none of the open scene's frame, truths or state as a binding scene
+   (issue #374 A1: of §6.5 a recap gets the ship's position line alone).
+   What a recap is told of how things stand is its own section, §[6.5m]
+   WHERE THINGS STAND NOW (`formatStandsNowBlock`,
+   RECAP-STATES-WHAT-DID-NOT-HAPPEN): the latest session's summary when it
+   covers the whole of its session (`recapSummaryFor`) and the open scene's
+   facts and state — the later word on how things stand, never the campaign's
+   setting, and no event the Chronicle lacks.
 
 ### Data flow per turn
 
@@ -242,8 +248,12 @@ CLAUDE.md "audit consumers" rule):
   floor — or, whatever its rating, when its move changed something lasting
   (`chronicleKeeps.js` → `lastingChangeOf` / `roundLastingChange`: a progress
   move, a vow sworn or forsaken, a brush with death, an arrival, a connection
-  made, a miss that paid its price — issue #374 A5). The campaign recap is
-  written from the Chronicle alone, so this is what a recap can know
+  made, a miss that paid its price — issue #374 A5). The campaign recap
+  retells the Chronicle — this is what a recap can say happened; how things
+  stand now also reaches it from the whole session summary and the open
+  scene's ledger (WHERE THINGS STAND NOW, RECAP-STATES-WHAT-DID-NOT-HAPPEN) —
+  and the scribe names whose thing a thing is and genders no one the story
+  did not, since a recap turns its third person into "you"
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -739,7 +749,21 @@ regressions, all are known scope cuts:
       narration after a GM resumes steers elsewhere (X-CARD — REDIRECT;
       issue #321 U07).
 - [ ] `!oracle yes` → the answer renders under RECENT ORACLE RESULTS on the
-      next narrator call; the narration does not contradict it.
+      next narrator call; the narration does not contradict it — and where
+      the scene so far said otherwise, the follow-up reconciles the scene to
+      the answer (a recording, a relay, a mistake, or it has stopped), never
+      the answer to the scene (ORACLE-NO-NARRATED-AS-YES).
+- [ ] Fulfill a vow whose plan is decided → the narration states the plan's
+      truth in its prose, or says what is still not known; a fact block that
+      records "truth" under prose that told none of it leaves the plan
+      unrevealed, with no scene fact and no lore
+      (VOW-FULFILLED-WITH-NOBODY-NAMED).
+- [ ] A weak hit whose cost is a choice, and an Enter the Fray whose card is
+      unanswered → the narration stops short of the cost, and before the
+      first blow.
+- [ ] `!recap` mid-session and End a Session → the recap's last paragraph
+      agrees with the scene's current state and the session's summary, and
+      says nothing no Chronicle entry states.
 - [ ] Strike a truth → it renders under CORRECTED and the narrator does not
       re-assert it; a narrator sidecar re-emitting it is blocked at the
       write (console debug).

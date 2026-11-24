@@ -509,6 +509,31 @@ resolves it once no copy of the vow is open, its last copy deleted retires it
 narration still has it in play to reveal its end (`skeletons.planInPlay` by
 its `endingTrackIds`).
 
+**A fulfilment says what the vow asked for, or says it is not yet known**
+(known-issues VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live
+run, a64: "Find who is raiding the Cinder Expanse lanes" was fulfilled with
+"The thing you swore to find has a hand and a seal, and both are named now";
+no name is anywhere in the story, and the narration's fact block recorded the
+plan's truth as revealed). Three parts:
+- the beat that fulfils a vow with a decided plan carries **THIS BEAT ENDS A
+  VOW** under UNREVEALED (`narratorPrompt.formatUnrevealedBlock`'s
+  `endingSubjectIds`, the move's `endingTrackIds` on the extras): the standing
+  rule against stating a truth outright is lifted for that plan, its truth is
+  stated in the prose in plain words, and nothing the truth does not hold is
+  claimed — where it gives no name there is none, and the narration says what
+  is still not known. The vow plan's own line no longer ties "truth" to the
+  vow's end: it is revealed by being told;
+- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED**
+  (`buildNarratorUserMessage`, a round's entry too; a sheet-rolled hit goes
+  the same way): never write that an answer is known, named, found or proved
+  without stating it — with no plan in play, and no answer in the story, the
+  vow ends on what was done;
+- **a truth is not marked revealed by a narration that told none of it**
+  (`secrets.withoutUntoldTruths` → `skeletons.proseTellsTruth`, in
+  `applyNarratorSidecar`): "truth" comes off the reveal, which still ends the
+  plan's story; the truth is no scene fact and no lore, its rolls stay hidden,
+  and a GM can Reveal now from the Secrets panel.
+
 ## 4. Fulfilment
 
 Scoring: `fulfill_your_vow` is a progress move; `enrichProgressTicks` fills

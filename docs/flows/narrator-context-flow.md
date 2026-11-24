@@ -28,8 +28,9 @@ trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
 sidecar/latitude, and of the scene ledger [6.5] the ship's position alone —
-issue #374 A1), round_resolution (a Batch Mode round, issue #340 — see
-below). The `!ship
+issue #374 A1; how things stand reaches it in a section of its own, [6.5m]
+WHERE THINGS STAND NOW, below), round_resolution (a Batch Mode round, issue
+#340 — see below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
 read the ledger).
@@ -65,6 +66,30 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
   THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
   (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
+  **What the table has still to answer** is read the same way, from the
+  table's cards, beside that settle (`resultUpgrade.withUnansweredCards`, in
+  `movePlanRequests` and for each of a round's move entries; the long haul's
+  third live run): a **cost that is the player's choice and not chosen yet**
+  (`openChoice` — the outcome's own choice card has no pick, or is not posted
+  yet: a free-flow result is narrated before its card; the choice is
+  `consequences.sufferPrompt` or the card's, and counts only when an option
+  costs something — a suffer move, a loss, a price, a complication) gets THE
+  COST IS THE PLAYER'S CHOICE (`stakes.formatOpenChoiceBlock`: what every
+  option has in common is narrated, the cost is not — a Heal weak hit's
+  narration had spent the supplies before the card asked "Lose Momentum, or
+  Sacrifice Resources?", known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN), and
+  the stakes' weak-hit line points at it instead of asking for "the cost … the
+  move outcome names"; once a pick is made nothing is said. An **Enter the
+  Fray whose fight no one has begun** (`fightOffer` — its threshold card,
+  found by the resolution's id, is unanswered, or the way out was taken) gets
+  THE FIGHT IS STILL ONLY OFFERED / THE FIGHT WAS NOT BEGUN
+  (`stakes.formatFightOfferBlock`; `combat-flow.md` §1). A **Fulfill Your Vow
+  hit** carries THE VOW IS FULFILLED (never claim an answer the narration does
+  not state — `vow-flow.md` §3), and a roll **with a match** is told, under its
+  outcome block's "[MATCH]", to tell the twist and never write the word. The
+  move and round roles name the outcome's own words — strong hit, weak hit,
+  miss, match — as never to appear as such (known-issues
+  NARRATION-NAMES-THE-OUTCOME).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -143,6 +168,20 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is
   skipped with a debug line (the raw card already carries the result).
+  **An oracle's answer binds the narration that tells it** (known-issues
+  ORACLE-NO-NARRATED-AS-YES — "Is anyone left alive aboard the wreck?" rolled
+  NO, and the follow-up wrote "which means someone is aboard", keeping the
+  voice it had made over three beats): the `oracle_followup` role says the
+  answer is the table's — never narrated as its opposite, as doubtful or as
+  still to be found out — and that where the scene so far said otherwise the
+  scene gives way (what was heard was a recording, a relay, a mistake, or has
+  stopped); the user message says a yes/no answer back in plain words with its
+  question, after the recent scene and before the ask
+  (`narratorPrompt.formatOracleAnswerRule`, read by `buildOracleUserMessage`;
+  nothing for a table roll, a price or a complication); and RECENT ORACLE
+  RESULTS ([3b]) tells every later narration that the answer stands over
+  earlier narration. A table's result keeps its latitude, and is never turned
+  into its reverse.
 - **Session vignettes** (galley, closing) run in the Begin / End a Session
   relay handlers on the canonical GM (`applyBeginSession` /
   `applyEndSession`), so they need a keyed GM; at a keyless-GM table they are
@@ -163,7 +202,19 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   as a crew member of her own ship). Each bookend's message lists the earlier
   ones of its kind as already used — the newest three, read from the chat's
   cards (`vignetteHistory.js earlierVignettes`; a closing's card names whom it
-  featured, `vignetteNpc`) — issue #377 item 5.
+  featured, `vignetteNpc`) — issue #377 item 5 — each one **whole**: shown its
+  first 700 characters, a fourth opening ended on the first one's own last
+  sentence, which the cut had taken out of the list (the long haul's third
+  live run, a78 against a2), and both rules now name how a scene ends as used.
+  **The opening is told where the last session stopped** — WHERE THE LAST
+  SESSION STOPPED, the summary of the session before
+  (`campaignState.previousSessionSummary` as LAST SESSION tells it,
+  `lifecycle.lastSessionToTell`; nothing in a campaign's first session or with
+  the session summary off) — and that it picks the story up there: nothing
+  still going on is over or behind them, and no more time has passed than it
+  allows (the third opening soaked apricots "for the third time this week"
+  beside a raider's open boarding lock; the fourth wrote "since the Wren" of a
+  ship still grappled alongside).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -775,7 +826,11 @@ closes an expedition's plan with its track, a vow's with its vow, and an
 ended scene's unanswered mysteries with their clocks — `closePlansAbout`,
 `retireSceneMysteries`, issue #362 D4); the plan of the vow the scene serves
 (`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
-(its `vowId` on `endingTrackIds`), Phase 4 —
+(its `vowId` on `endingTrackIds`), Phase 4 — for that plan the block adds
+THIS BEAT ENDS A VOW (`extras.endingTrackIds` → `formatUnrevealedBlock`'s
+`endingSubjectIds`): the standing rule "Never state one outright" is lifted
+for it, its truth is stated in the prose, and nothing the truth does not hold
+is claimed (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED; `vow-flow.md` §3) —
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
 the plans this narration's seeds ask it to decide: a price that revealed a
 new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
@@ -891,7 +946,15 @@ their `@scene` question and their `!oracle` follow-up, whose captures carry no
 PC either (issue #345 AA30 — `interrogateScene` and `narrateOracleFollowup`
 took `getActiveCharacter`'s first-PC fallback).
 The rolling summary reads the same entries (`ringEntryText`), so what a
-player wrote reaches it too. Both read the session's cards through
+player wrote reaches it too — and, under a move's entry, what that move
+settled for good, from the card's own `moveId` / `outcome` (a round card's
+entries each): "(Settled by this move: the vow was fulfilled.)"
+(`summarySourceEntry` → `chronicleKeeps.settledByMove` — a vow sworn,
+fulfilled or forsaken, an expedition finished, a fight won). Its prompt says
+to keep every such line and to say only what the passages state: the prose of
+a vow's fulfilment said "the weight of the vow lifts off you", one passage of
+twenty-three, and that session's summary left the fulfilment out (the long
+haul's third live run, a76). Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card
 (`narrationFallback` — it keeps the flag family so the session recap still
 counts the move, but was fed back as story and counted as the session's first
@@ -1017,9 +1080,40 @@ the scribe's rating against the floor, and — whatever the rating — a resolve
 move that changed something lasting (`chronicleKeeps.js`, issue #374 A5; a
 live session of four rolls had kept none and opened the next with no recap).
 
+**What a recap is told** (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN — the
+long haul's third live run's four recaps held fourteen sentences the story
+does not support). It retells the Chronicle (`buildCampaignRecapUserMessage`,
+the entries oldest first), under a role that says a recap says only what its
+sources say: nothing inferred (no cause, link or verdict no entry gives, no
+answer to a question left open), nothing filled in between two entries (one
+may be missing because the table took that moment out), whose things are
+whose (only the character is "you"; a "her" an entry leaves open keeps the
+entry's names — "first pick of her hauls" was the wrong woman's in all four),
+and how a thing stands now is its latest word. Beside it, **[6.5m] WHERE
+THINGS STAND NOW** (`narratorPrompt.formatStandsNowBlock`, meta mode only) —
+later than any entry, and already in other prompts:
+- the latest session's summary, when it covers the whole of its session
+  (`extras.recapSummary`, `narrator.recapSummaryFor`): this session's when
+  every narration since it was made is a closing cutaway — End a Session
+  finalises the summary, posts the cutaway, then refreshes the recap — else,
+  in a session with no narration yet, the last session's (LAST SESSION). A
+  summary made at the debounce, with narrations after it, is behind the
+  Chronicle and is left out;
+- the open scene's facts, corrections and state (every subject — a recap has
+  no player line for relevance to match), with where it is and its "Now" line.
+It is given as the later word on how things stand — where the two differ, the
+recap follows it — never as a binding scene, without the cast or the scene
+question, and with the line that the scene is one moment of the campaign: the
+ACTIVE SCENE block itself is still not sent (issue #374 A1 — told, under
+"binding", the frame of End a Session's closing cutaway, a recap set the whole
+campaign there; that scene now ends before the recap is written). The recap's
+cache is still keyed by the Chronicle alone: a recap is made again when an
+entry changes, not when only the scene or the summary has.
+
 **Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
-position line alone, never the frame, truths, corrections or state: it
-retells the Chronicle, whatever scene is open — issue #374 A1): scene
+position line alone of this block, never the frame, truths, corrections or
+state as binding: it retells the Chronicle, whatever scene is open — issue
+#374 A1; what it is told of the scene is [6.5m], above): scene
 subjects and free-text subjects (unrecorded
 figures and places — the ledger holds only this scene) are always in scope
 (B4: they used to need their exact phrase in the player text or the frame);
@@ -1100,7 +1194,17 @@ with its id, and still marks the step it was made to play
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
-for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
+for its decision changes nothing, issue #362 AC16 — and only when the prose
+told it: `secrets.withoutUntoldTruths`, run in `applyNarratorSidecar` on the
+narration's own reveals before the ledger and the plans read them, takes
+"truth" off a reveal whose prose has none of the truth's own words
+(`skeletons.proseTellsTruth`, the plan's subject and question left out; the
+reveal's clues, step and ending stand, and the GM's console names the plan).
+A fulfilment that said "both are named now" recorded its vow's truth as
+revealed, and the truth became a binding scene fact and confirmed lore with
+none of it told — known-issues VOW-FULFILLED-WITH-NOBODY-NAMED. A floor, not
+a judgement: whether a truth is stated is asked of the narrator in UNREVEALED;
+a step the code forced is not checked), which becomes a ledger truth of the narration's own
 (`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
 correction or decision of the same id is laid on first, so a truth changed or
 decided and revealed in one beat is the one the ledger and Lore both state,
