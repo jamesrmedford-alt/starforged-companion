@@ -151,7 +151,7 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState, { earlier
   const earlierBlock = formatEarlierVignettes(
     "EARLIER CLOSINGS",
     Array.isArray(earlier) ? earlier : earlierVignettes(["npc_end"]),
-    "Whoever is featured, show them somewhere else, at something else: not the same place, task, food or objects.",
+    "Whoever is featured, show them somewhere else, at something else: not the same place, task, food or objects, and not the gesture any of them ends on.",
   );
 
   return [
