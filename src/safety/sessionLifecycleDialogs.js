@@ -1017,9 +1017,9 @@ async function endSessionOnce(payload, ctx = {}) {
     console.warn(`${MODULE_ID} | endSession scene close failed:`, err?.message ?? err);
   }
 
-  // Finalise the rolling session summary (architecture §8.6) before the
-  // Session Log write, so the log captures the tail since the last debounced
-  // regen. Self-gates on narratorSessionSummary; fail-open.
+  // Bring the session summary up to date (a view of the session record,
+  // issue #382): it is the Session Log page's "Session summary" and the next
+  // session's LAST SESSION. Self-gates on narratorSessionSummary; fail-open.
   try {
     const { getRollingSessionSummary } = await import("../narration/narrator.js");
     await getRollingSessionSummary(state, { forceRefresh: true });
@@ -1027,20 +1027,8 @@ async function endSessionOnce(payload, ctx = {}) {
     console.warn(`${MODULE_ID} | rolling session summary finalise failed:`, err?.message ?? err);
   }
 
-  // The session as the store holds it now: the scene fields endScene
-  // persisted, the summary getRollingSessionSummary did, End's own fields.
-  const ended = game.settings.get(MODULE_ID, "campaignState") ?? state;
-
-  // Write the session log on End (F18). writeSessionLog was implemented but
-  // never called from production, so the Session Log journal stayed blank.
-  if (game.settings.get(MODULE_ID, "sessionLogAutoWrite") !== false) {
-    try {
-      const { writeSessionLog } = await import("../world/worldJournal.js");
-      await writeSessionLog(ended);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
-    }
-  }
+  // Its Session Log page is the record's view, rendered as the record and the
+  // summary land (record/sessionLogView.js) — nothing is written to it here.
 
   // Fire-and-forget closing cutaway — narrator-generated, three to five
   // sentences: someone the campaign has, chosen by a die and never the same

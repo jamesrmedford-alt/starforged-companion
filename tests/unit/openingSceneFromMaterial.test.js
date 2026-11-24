@@ -31,6 +31,8 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { installSceneDice } from '../helpers/scriptedDice.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
 import { buildGalleyVignetteUserMessage, composeOpeningScene } from '../../src/session/galleyVignette.js';
 import { buildNarratorSystemBlocks, sidecarModeAddendum } from '../../src/narration/narratorPrompt.js';
 import { normaliseSidecar, extractSidecar } from '../../src/factContinuity/sidecarParser.js';
@@ -262,9 +264,16 @@ describe('Begin a Session — the opening\'s dice reach the prompt and the card'
         ...CampaignStateSchema, sessionActive: false, sessionStartedId: null, currentSessionId: 'os-s2',
         sessionNumber: 2, lastSessionTimestamp: new Date().toISOString(), safetyFlags: [],
         currentSceneId: null, sceneTruths: [], sceneState: { bySubject: {}, sceneId: null }, sceneFrame: null,
-        previousSessionSummary: { text: 'The Ashen Wake is grappled alongside off Bleakhold Station.', sessionId: 'os-s1', sessionNumber: 1 },
       },
     } } });
+    // LAST SESSION is read from the session record (issue #382): session 1's
+    // Session Log page holds its story.
+    const log = makeJournal(JOURNAL_NAMES.sessionLog);
+    table.journal._set(log.id, log);
+    await log.createEmbeddedDocuments('JournalEntryPage', [{ name: 'Session 1', flags: { [MODULE_ID]: { sessionLogPage: {
+      sessionId: 'os-s1', sessionNumber: 1, pageName: 'Session 1', createdAt: new Date(1).toISOString(),
+      summary: { narrative: 'The Ashen Wake is grappled alongside off Bleakhold Station.', writtenAt: new Date(1).toISOString() },
+    } } } }]);
     await table.setClaudeKey('gm-1', 'sk-ant-gina');
     table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
     scriptClaude(table, { fallback: (call) => (call.model === NARRATION_MODEL ? OPENING : '{}') });
@@ -350,7 +359,7 @@ describe('Begin a Session — the opening\'s dice reach the prompt and the card'
   }, 30_000);
 
   it('a first session with nothing behind it rolls where aboard', async () => {
-    await table.client('gm-1').setSetting('campaignState', { ...table.client('gm-1').getSetting('campaignState'), previousSessionSummary: null });
+    table.journal._reset();   // no Session Log: nothing behind this session
     dice = installSceneDice([14, 20, 5, 6, 63, 18, 7, 8, 40, 12, 70, 30]);
     await begin('gm-1');
     expect(openingCall().userText).toContain('3. Where aboard the ship this is — Ship zone + area (40, 12): Galley or kitchen (Living)');

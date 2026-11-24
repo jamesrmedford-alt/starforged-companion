@@ -44,7 +44,7 @@ import {
   findTruthByIdOrPrefix,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
-import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
+import { propagateRetraction, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 import { nameCorrectionOf, withNameChange, recordNameChanged } from "./nameChanges.js";
@@ -313,8 +313,9 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // Persist only what the command changed, onto the store as it is now
     // (rules/reachability.md §9): the ledger field, merged with the store's
     // (a narration's truths and a relayed X-Card that landed while a Strike
-    // propagated stay; a released move lock is not written back), and a
-    // Strike's regen mark on the stored rolling summary. A no-match writes
+    // propagated stay; a released move lock is not written back). A strike
+    // reaches the session summary through the session record — the summary
+    // that told it is stale, and made again (issue #382). A no-match writes
     // nothing.
     // A kept strike's lift is dropped from the stored session list in the
     // same write — while the store holds this scene: an X-Card that took the
@@ -322,12 +323,10 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // scene changed meanwhile takes the truth's set with it.
     // A name change rides the same write (issue #377 item 1).
     if (changed) {
-      const further = struckTruth ? markSummaryForRegen
-        : liftKept ? (target) => {
-          if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
-          liftKept.dropped = dropSessionStrike(target, liftKept.strike);
-        }
-          : null;
+      const further = !struckTruth && liftKept ? (target) => {
+        if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
+        liftKept.dropped = dropSessionStrike(target, liftKept.strike);
+      } : null;
       await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
         onto: (further || renamed) ? (latest) => {
           if (further) further(latest);

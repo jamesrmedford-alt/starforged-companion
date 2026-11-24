@@ -523,24 +523,6 @@ export function formatNameChangesBlock(changes, opts = {}) {
 }
 
 /**
- * The same note for a helper that writes from the session's prose (the session
- * summary): the changes due, each with the short forms the prose uses, or ''.
- *
- * @param {Array} changes
- * @param {{ texts?: string[], sessionId?: string|null }} [opts]
- * @returns {string}
- */
-export function formatNameChangesForSource(changes, opts = {}) {
-  const lines = changeLines(changes, opts);
-  if (!lines) return '';
-  return `## NAMES THE TABLE CHANGED — one name each\n\n` +
-    `Where the narration above uses an old name, it means the new one. Write only the new name; ` +
-    `the old one is not an alias or another name they go by, and the change is the table's ` +
-    `correction, not an event of the session — never write that someone was renamed or "now goes by" a name.\n\n` +
-    lines;
-}
-
-/**
  * Put a changed name on the session record (issue #382) — called by each
  * writer of `campaignState.nameChanges` once its write has landed, so every
  * view of the record writes the new name: the stored list is capped and tells

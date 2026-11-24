@@ -40,7 +40,9 @@ import { recapSource, standingLines, campaignRecapSourceOf } from '../../src/rec
 import { buildNarratorSystemPrompt, buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
 import { addChronicleEntry } from '../../src/character/chronicle.js';
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
-import { settledByMove } from '../../src/character/chronicleKeeps.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { seedSessionRecord, recordedEvent } from '../helpers/sessionRecordSeed.js';
+import { _resetSummaryViewForTests } from '../../src/record/summaryView.js';
 
 const MODULE_ID = 'starforged-companion';
 const HEADING = '## WHERE THINGS STAND';
@@ -153,66 +155,67 @@ describe('the recap is not told a summary (issue #382: one record, read by the r
 });
 
 describe('the session summary keeps what its moves settled (a76: the vow\'s fulfilment was left out)', () => {
-  let origFetch, requests;
+  // Since issue #382 slice 3 the summary is a view of the session record: a
+  // move that settles something for good is a beat marked LASTING in its
+  // source (read.js — chronicleKeeps.js lastingChangeOf), and the summary is
+  // told to tell every such beat. The prose alone told the fulfilment as "the
+  // weight of the vow lifts off you", and the summary of that session left it out.
+  let origFetch, requests, journals;
   const A64 = '"I\'d still like that slip back," the dry voice says. You don\'t answer it. You set the stamp square on the galley table, '
     + 'and the weight of the vow lifts off you. The thing you swore to find has a hand and a seal, and both are named now.';
-  const card = (text, extra = {}) => ({ flags: { [MODULE_ID]: { narratorCard: true, narrationText: text, sessionId: 's-3', ...extra } } });
+  const ev = (k, extra) => recordedEvent('s-3', k, extra);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     origFetch = global.fetch;
     requests = [];
     global.fetch = vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: SUMMARY }] }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify([{ text: SUMMARY, because: ['2'] }]) }] }), text: async () => '' };
     });
     game.user.isGM = true;
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
     game.settings._store.delete(`${MODULE_ID}.campaignState`);
-    global.game.messages = { contents: [
-      card('The galley lamp hums over the table.', { playerText: 'Mark progress on your vow.', playerName: 'Mira Kestrel', moveId: 'reach_a_milestone', outcome: 'strong_hit' }),
-      card(A64, { playerText: 'Attempt to fulfill your vow.', playerName: 'Mira Kestrel', moveId: 'fulfill_your_vow', outcome: 'strong_hit' }),
-      card('The drawer by your hip stands open its inch.', { sceneQuestion: 'What of my sister\'s do I have with me?', playerName: 'Mira Kestrel' }),
-    ] };
+    journals = installJournalMock();
+    _resetSummaryViewForTests();
+    game.actors._reset();
+    game.actors._set('pc-mira', makeTestActor({ id: 'pc-mira', name: 'Mira Kestrel' }));
+    const who = { actor: 'pc-mira' };
+    await seedSessionRecord('s-3', [
+      ev('session.begun', { d: { number: 3 } }),
+      ev('move.resolved', { who, ref: { res: 'r1' }, d: { moveId: 'reach_a_milestone', moveName: 'Reach a Milestone', rollKind: 'none', outcome: null } }),
+      ev('narration', { who, ref: { nar: 'n1', res: 'r1' }, d: { mode: 'move' }, text: 'The galley lamp hums over the table.' }),
+      ev('move.resolved', { who, ref: { res: 'r2' }, d: { moveId: 'fulfill_your_vow', moveName: 'Fulfill Your Vow', rollKind: 'progress', progressScore: 9, outcome: 'strong_hit' } }),
+      ev('narration', { who, ref: { nar: 'n2', res: 'r2' }, d: { mode: 'move' }, text: A64 }),
+      ev('question', { who, ref: { nar: 'n3' }, text: 'What of my sister\'s do I have with me?' }),
+      ev('narration', { who, ref: { nar: 'n3' }, d: { mode: 'scene_answer' }, text: 'The drawer by your hip stands open its inch.' }),
+    ], { number: 3 });
   });
   afterEach(() => {
     global.fetch = origFetch;
-    global.game.messages = { contents: [] };
+    journals.restore();
+    game.actors._reset();
     game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
   });
 
-  it('the source says, under the fulfilment\'s narration, that the vow was fulfilled', async () => {
-    await getRollingSessionSummary({ currentSessionId: 's-3' }, { forceRefresh: true, persist: false });
+  it('the source marks the fulfilment LASTING, with its telling under it — a milestone and a question are not', async () => {
+    await getRollingSessionSummary({ currentSessionId: 's-3' }, { forceRefresh: true });
     expect(requests).toHaveLength(1);
     const source = String(requests[0].messages[0].content);
-    expect(source).toContain('the weight of the vow lifts off you');
-    expect(source).toMatch(/both are named now\.\n\(Settled by this move: the vow was fulfilled\.\)/);
-    // Only what a move settled for good: a milestone marked and a question asked settle nothing.
-    expect(source.match(/\(Settled by this move:/g)).toHaveLength(1);
+    expect(source).toMatch(/Mira Kestrel — Fulfill Your Vow, strong hit — LASTING: a vow brought to its end\nTOLD AS: “[^”]*the weight of the vow lifts off you/);
+    expect(source.match(/LASTING:/g)).toHaveLength(1);
+    expect(source).toMatch(/## QUESTIONS[^\n]*\n\n\[\d\] Mira Kestrel asked the narrator “What of my sister's do I have with me\?”/);
   });
 
-  it('and the summary is told to keep every such line, and to say only what the passages state', async () => {
-    await getRollingSessionSummary({ currentSessionId: 's-3' }, { forceRefresh: true, persist: false });
+  it('and the summary is told to tell every such beat, and to say only what the facts state', async () => {
+    await getRollingSessionSummary({ currentSessionId: 's-3' }, { forceRefresh: true });
     const system = JSON.stringify(requests[0].system);
     expect(system).toContain('continuity scribe');
-    expect(system).toMatch(/Every one of them is in the summary, stated plainly — a vow fulfilled is said to be fulfilled/);
-    expect(system).toMatch(/Say only what the passages state\. Infer nothing/);
-    expect(system).toMatch(/count nothing they do not count/);
-    expect(system).toMatch(/Where something changes during the session, say how it stands at the end/);
-  });
-
-  it('what a move settles for good, in words a summary can state', () => {
-    expect(settledByMove({ moveId: 'fulfill_your_vow', outcome: 'strong_hit' })).toBe('the vow was fulfilled');
-    expect(settledByMove({ moveId: 'fulfill_your_vow', outcome: 'weak_hit' })).toBe('the vow was fulfilled');
-    expect(settledByMove({ moveId: 'fulfill_your_vow', outcome: 'miss' })).toBeNull();
-    expect(settledByMove({ moveId: 'swear_an_iron_vow', outcome: 'miss' })).toBe('a vow was sworn');
-    expect(settledByMove({ moveId: 'forsake_your_vow', outcome: null })).toBe('a vow was forsaken');
-    expect(settledByMove({ moveId: 'take_decisive_action', outcome: 'weak_hit' })).toBe('the fight was won');
-    expect(settledByMove({ moveId: 'take_decisive_action', outcome: 'miss' })).toBeNull();
-    expect(settledByMove({ moveId: 'face_danger', outcome: 'strong_hit' })).toBeNull();
-    expect(settledByMove(null)).toBeNull();
+    expect(system).toMatch(/Every beat marked LASTING is told/);
+    expect(system).toMatch(/State only what the facts state/);
+    expect(system).toMatch(/nothing found only in TOLD AS is an event/);
+    expect(system).toMatch(/nothing happened because one was asked/);
   });
 });
-
 describe('the Chronicle scribe names whose thing a thing is, and genders no one the story did not', () => {
   let origFetch, requests;
   beforeEach(() => {

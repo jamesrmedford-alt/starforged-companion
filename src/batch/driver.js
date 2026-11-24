@@ -72,6 +72,7 @@ import { moveDisplayName } from "../system/i18n.js";
 import { checkedTokenDragCourse } from "../sectors/sectorSceneHooks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import { recordEvent } from "../record/record.js";
+import { recordedSessionNumber } from "../record/summaryView.js";
 import {
   ROUND_PHASE,
   ENTRY_STATUS,
@@ -411,15 +412,13 @@ function roundSessionOver(round, cs = campaignStateNow()) {
 /**
  * The number of a round's session: the one the round opened with, else — a
  * round opened before rounds kept it — the one that session's narrator cards
- * carry, else the one its summary was carried forward under (LAST SESSION, or
- * the mark of a session closed without its summary). Null when nothing names
- * it: unknown, never another session's.
+ * carry, else the one the session record gives it (issue #382). Null when
+ * nothing names it: unknown, never another session's.
  *
  * @param {Object} round
- * @param {Object} cs — campaignState as stored
  * @returns {number|null}
  */
-function roundSessionNumber(round, cs) {
+function roundSessionNumber(round) {
   const numbered = (n) => (Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null);
   if (numbered(round?.sessionNumber)) return numbered(round.sessionNumber);
   const card = (game.messages?.contents ?? []).findLast?.((m) => {
@@ -427,10 +426,8 @@ function roundSessionNumber(round, cs) {
     return f?.narratorCard === true && f.sessionId === round.sessionId && numbered(f.sessionNumber) !== null;
   });
   if (card) return numbered(card.flags[MODULE_ID].sessionNumber);
-  for (const kept of [cs?.previousSessionSummary, cs?.unsummarisedSession]) {
-    if (kept?.sessionId === round.sessionId && numbered(kept.sessionNumber)) return numbered(kept.sessionNumber);
-  }
-  return null;
+  // The session record numbers every session a table began (issue #382).
+  return numbered(recordedSessionNumber(round.sessionId));
 }
 
 /**
@@ -455,7 +452,7 @@ function roundNarrationState(round) {
   const cs = workingCopy();
   const own = round?.sessionId ?? null;
   if (!own || (cs.currentSessionId ?? null) === own) return cs;
-  const sessionNumber = roundSessionNumber(round, cs);
+  const sessionNumber = roundSessionNumber(round);
   cs.currentSessionId = own;
   cs.sessionNumber = sessionNumber;
   return cs;

@@ -17,7 +17,8 @@
 
 import { getPlayerActors } from './actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
-import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { recordNames } from '../record/read.js';
+import { writeNewNames } from '../factContinuity/nameChanges.js';
 
 const MODULE_ID      = 'starforged-companion';
 const CHRONICLE_KEY  = 'chronicle';
@@ -67,48 +68,24 @@ export async function retractNarrationChronicle(narrationIds) {
 
 /**
  * Take a struck fact's automatic entries out of the Chronicle
- * (STRIKE-CHRONICLE): the session's scribe entries that state it — matched
- * as propagateRetraction matches lore (`states(entry)`, word overlap on the
- * struck subject and fact). A pinned entry or one a player edited stays, as
- * a pinned tier detail does: the table keeps it. The campaign recap is
- * rebuilt from what remains (its cache key is the entries' text, issue #301
- * B04). A strike may be made on any GM's client: each entry is deleted by id
- * by the canonical GM, the Chronicle's one writer — directly when this client
- * is that GM, through requestChronicleEdit's GM-only "delete" from any other.
- * On the canonical GM the strike usually runs inside a queued relay handler
- * (`!truth strike` is "factContinuity.command", End a Session's scene end
- * takes back a correction): a "chronicle.edit" asked for from there queued
- * behind the handler awaiting it, so the strike — and every relayed action
- * after it — waited out the handler's whole run budget (issue #362 AC27,
- * reachability.md §8). The direct delete runs on the actor's write chain,
- * as the relayed one does. Never creates a journal. Fail-open.
+ * (STRIKE-CHRONICLE): the entries written from the beats whose narrations set
+ * the struck truths — found through the session record, by the narration
+ * (`narrationId`) or the record's narration event (`eventId`; issue #382
+ * slice 4 — it was a word-overlap match on the struck fact). A pinned entry
+ * or one a player edited stays, as a pinned tier detail does: the table keeps
+ * it. Runs on the canonical GM — the record is written there
+ * (record/chronicleView.js), and it is the Chronicle's one writer — on each
+ * actor's write chain. Never creates a journal. Fail-open per character.
  *
- * @param {string} sessionId
- * @param {(entry: Object) => boolean} states — true when the entry states the struck fact
+ * @param {{ narrationIds?: string[], eventIds?: string[] }} from
  * @returns {Promise<number>} entries removed
  */
-export async function retractStruckChronicle(sessionId, states) {
-  if (!sessionId || typeof states !== 'function') return 0;
-  let count = 0;
-  for (const actorId of chronicleActorIds()) {
-    try {
-      const struck = readEntries(findChronicleJournals(actorId)).filter(entry => entry?.automated === true
-        && entry.sessionId === sessionId && typeof entry.id === 'string' && entry.id
-        && entry.pinned !== true && entry.playerEdited !== true
-        && states(entry));
-      for (const entry of struck) {
-        if (isCanonicalGM()) {
-          if (await deleteChronicleEntry(actorId, entry.id)) count += 1;
-          continue;
-        }
-        const res = await requestChronicleEdit(actorId, { op: 'delete', entryId: entry.id });
-        if (res?.ok && res.result?.applied !== false) count += 1;
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | chronicle: removing a struck fact's entries from ${actorId}'s chronicle failed:`, err?.message ?? err);
-    }
-  }
-  return count;
+export async function retractChronicleOfNarrations({ narrationIds = [], eventIds = [] } = {}) {
+  const narrations = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
+  const events = new Set((eventIds ?? []).filter(id => typeof id === 'string' && id));
+  if (!narrations.size && !events.size) return 0;
+  return removeChronicleEntries(entry => entry?.automated === true && entry.pinned !== true && entry.playerEdited !== true
+    && (narrations.has(entry.narrationId) || events.has(entry.eventId)));
 }
 
 /** Remove the entries `drop` names from every character's Chronicle. */
@@ -146,12 +123,26 @@ function chronicleActorIds() {
 }
 
 /**
- * Get all chronicle entries for a character, oldest first.
+ * Get all chronicle entries for a character, oldest first — the one read. An
+ * automatic entry nobody edited is read with every name the table changed
+ * since written as the new one (the session record's fold, short forms
+ * included — issue #382 slice 4); the stored text is not rewritten. A
+ * player's own words are theirs, as written.
  * @param {string} actorId
  * @returns {Promise<Object[]>}
  */
 export async function getChronicleEntries(actorId) {
-  return readEntries(findChronicleJournals(actorId));
+  const entries = readEntries(findChronicleJournals(actorId));
+  let naming = { names: [], otherNames: [] };
+  try {
+    naming = recordNames();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | chronicle: the names the table changed could not be read:`, err?.message ?? err);
+  }
+  if (!naming.names.length) return entries;
+  return entries.map(e => (e?.automated === true && e.playerEdited !== true && typeof e.text === 'string' && e.text
+    ? { ...e, text: writeNewNames(e.text, naming.names, { otherNames: naming.otherNames }) }
+    : e));
 }
 
 /**

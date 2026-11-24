@@ -48,6 +48,9 @@ vi.mock('../../src/pacing/router.js', async (importOriginal) => {
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
+import { playedBeats, citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 
 const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
 const LINE = 'I check the airlock seals one more time.';
@@ -55,7 +58,25 @@ const NARRATION = 'The seals hiss and hold; frost creeps along the inner hatch.'
 const isSummaryCall = (call) => /continuity scribe/.test(call?.system ?? '');
 
 let table;
+let closingSummary = () => null;
 afterEach(async () => { await table?.teardown(); table = null; control.routed = []; });
+
+/**
+ * The closing session's record on its Session Log page — what the mint's
+ * summary call is made from (issue #382: the summary is a view of the record).
+ */
+async function seedClosingRecord(sessionId) {
+  const log = makeJournal(JOURNAL_NAMES.sessionLog);
+  table.journal._set(log.id, log);
+  const events = playedBeats(sessionId, ['I bargain for passage codes.'], { number: 4 });
+  await log.createEmbeddedDocuments('JournalEntryPage', [{ name: 'Session 4', flags: { [MODULE_ID]: {
+    sessionLogPage: { sessionId, sessionNumber: 4, pageName: 'Session 4', createdAt: new Date(1).toISOString() },
+    sessionRecord: { v: 1, sessionId, createdAt: 1, seq: Math.max(...events.map(e => e.seq)), views: {},
+      events: Object.fromEntries(events.map(e => [e.id, e])) },
+  } } }]);
+  return () => log.pages.contents.find(p => p.flags?.[MODULE_ID]?.sessionLogPage?.sessionId === sessionId)
+    ?.flags[MODULE_ID].sessionRecord.views?.summary ?? null;
+}
 
 async function boot({ idle }) {
   table = await simulateTable({
@@ -73,8 +94,9 @@ async function boot({ idle }) {
     } },
   });
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
+  closingSummary = await seedClosingRecord('ldm-s1');
   const claude = scriptClaude(table, {
-    fallback: (call) => (isSummaryCall(call) ? 'Kira bargained for passage codes at the docks.'
+    fallback: (call) => (isSummaryCall(call) ? citedSummaryReply(['Kira bargained for passage codes at the docks.'])
       : `${NARRATION}\n\`\`\`json\n{"newTruths":[],"stateChanges":[]}\n\`\`\``),
   });
   // The player is in the world first, and last session's narration is in chat.
@@ -104,7 +126,8 @@ describe('issue #345 AA58 — a line typed while the world load closes the idle 
     const cs = table.world.campaignState();
     expect(cs.currentSessionId, 'sanity: the load minted the next session').not.toBe('ldm-s1');
     expect(cs.sessionActive).toBe(false);
-    expect(cs.previousSessionSummary?.sessionId).toBe('ldm-s1');
+    // LAST SESSION: the closing session's summary, made by the mint from its record.
+    expect(closingSummary()?.text).toBe('Kira bargained for passage codes at the docks.');
     // What happened to the line: narrated in the old session, after its summary was taken.
     const narrated = lineNarrations().map(m => m.flags[MODULE_ID].sessionId);
     expect.soft(control.routed, 'the line reached the pacing router').toEqual([]);

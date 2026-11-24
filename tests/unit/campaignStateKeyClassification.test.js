@@ -116,11 +116,13 @@ const CLASSIFICATION = {
   sessionNumber:          STORE,
   lastSessionTimestamp:   STORE,
   sessionEndedId:         STORE,
-  previousSessionSummary: STORE,
-  // The rolling summary — the debounced refresh and the pipeline's narration.
-  sessionSummary:         MERGED,
+  // The session summaries a world kept before the summary was a view of the
+  // session record: read once at world load and copied onto their Session Log
+  // pages (worldJournal.js keepPreRecordSummaries — issue #382 section 9),
+  // never written.
+  previousSessionSummary: UNWRITTEN,
+  sessionSummary:         UNWRITTEN,
   deletedChatMessages:    STORE,
-  unsummarisedSession:    STORE,
   sessionActive:          STORE,
   sessionActiveStartedAt: STORE,
   sessionStartedId:       STORE,
@@ -173,10 +175,8 @@ function scene(side, sceneId) {
 
 /** The fields merged by a rule of their own, as each side holds them — the store's the newer and further along. */
 const MERGED_SIDES = {
-  store:   { artAssetIds: { 'art-store': 'Art: Store' }, legacyTracks: { bonds: { ticks: 8, cleared: false } },
-             sessionSummary: { sessionId: 's-1', text: 'the store\'s summary', updatedAt: '2026-11-19T10:00:00.000Z' } },
-  working: { artAssetIds: {}, legacyTracks: { bonds: { ticks: 2, cleared: false } },
-             sessionSummary: { sessionId: 's-1', text: 'the copy\'s summary', updatedAt: '2026-11-19T09:00:00.000Z' } },
+  store:   { artAssetIds: { 'art-store': 'Art: Store' }, legacyTracks: { bonds: { ticks: 8, cleared: false } } },
+  working: { artAssetIds: {}, legacyTracks: { bonds: { ticks: 2, cleared: false } } },
 };
 
 /** Every field holding `side`'s value. */

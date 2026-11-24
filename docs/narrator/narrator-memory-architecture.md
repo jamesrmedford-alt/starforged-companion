@@ -31,7 +31,7 @@ skeleton, the one surface that holds what has *not* been stated):
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone of that block (system prompt §6.5; issue #374 A1) and the scene's state, read live, under WHERE THINGS STAND in its user message (its truths reach it from the session record — issue #382; never as binding) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response — a session vignette's without its question; never an `@scene` answer's) | every narrator call but the campaign recap's (top of §6.5 — a recap gets the scene's question, answered or not, under WHERE THINGS STAND in its user message, no cast); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION; the opening vignette's user message (WHERE THE LAST SESSION STOPPED) | ~≤320 tokens each (Haiku-capped) |
+| **5. Session summary** | a view of the session record (issue #382 slice 3, `src/record/summaryView.js`): kept on the session's Session Log page (`sessionRecord.views.summary`), shown while the span it was made from reads the same — a correction (X-Card, strike, changed name, an upgrade's supersede) makes it stale and it is made again; LAST SESSION is the newest earlier begun session's (`lifecycle.js` `lastSessionToTell`), with what a session nobody began played after it as facts | Haiku, from the session read with its corrections — each beat's facts and TOLD AS its narration — as cited sentences; debounced at ~1.5×N beats, made after a narrator card posts — never inside a narration (issue #286 B7) — at End a Session and at the closing session's mint; an earlier session's owed one by `refreshStaleSummaries` | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION; the opening vignette's user message (WHERE THE LAST SESSION STOPPED) | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b] — the answer stands over earlier narration; the oracle follow-up's own role and user message say an answer binds and the scene is what is reconciled, ORACLE-NO-NARRATED-AS-YES) + the assembler's RECENT ORACLES section | last 5 lines |
 | **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired — by the narrator's `resolved`, a GM's Retire, or in code as its subject ends: an expedition's track, a vow, a scene's unanswered mystery (issue #362 D4); GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`, `reveals`, `countdown`, `newThreats`) on the canonical GM, from the oracle rolls a trigger made (a price's new enemy, an enemy the prose introduced — `newThreats`, issue #354 P2-29 — a posed question); a plan answered `sameAs` joins the plan its subject already has, which keeps the other name as an alias (issue #354 P2-30); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided; THIS BEAT ENDS A VOW for the plan of a vow the move fulfils, whose truth is then stated in the prose) and the Private Channel (decided plans only). A truth is revealed by prose that tells it: "truth" comes off a narration's own reveal whose prose told none of it (`withoutUntoldTruths`, VOW-FULFILLED-WITH-NOBODY-NAMED) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
 
@@ -167,8 +167,9 @@ entry). **A1 is kept, deliberately, for the ring**: the table has read the
 answer, so the next beats are shown the question and the reply and do not
 contradict them — and a wrong answer is bounded by the ring's depth instead of
 becoming a fact. The card's other readings were re-audited for the change of
-meaning: the rolling summary's source keeps it (as the ring's twin — its
-`asked` label marks it; issue #286 B5), the session recap lists it, the
+meaning: the session summary's source lists it under QUESTIONS (the
+record's `question` — issue #382; nothing happened because one was asked),
+the session recap lists it, the
 X-Card can remove it; it is **no narration** for the session-start recap gate
 or the X-Card's redirect (both now leave `sceneResponse` cards out, as they
 do a published reflection), and it never took a beat shape.
@@ -234,8 +235,10 @@ CLAUDE.md "audit consumers" rule):
   it is on screen, so the X-Card answers it when it is the newest narration,
   and a beat is one session's (a narration of the current session bounds a
   late beat; a current beat passes a late card over). The Round window's
-  newest narration reads it the same way; the ring, the rolling summary and
-  the Private Channel's ring do not — the card is its own session's story.
+  newest narration reads it the same way; the ring and the Private Channel's
+  ring do not, and the record files it under its own session, whose summary
+  it makes behind — made again by `refreshStaleSummaries` — the card is its
+  own session's story.
   A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
@@ -251,10 +254,10 @@ CLAUDE.md "audit consumers" rule):
   DELETED-NARRATION-MEMORY-PAGE-ONLY); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
-  `sessionNarratorCards` leaves out (ring, summary, recap), after dropping a
-  rolling summary already made from it (`dropSummaryOfSupersededCards`, the
-  X-Card's covered-index rule — the debounce's count did not move, issue #345
-  AA24). Since issue #338
+  `sessionNarratorCards` leaves out (ring, recap), and the record's supersede
+  (`narration.removed` by `superseded`) leaves out of the session summary — a
+  summary made from it is stale and made again (issue #382; issue #345 AA24).
+  Since issue #338
   D8 a Burn Momentum / Improve Result that rewinds a clock out of its trigger
   flags that clock's newest live trigger vignette of the session (found by
   its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),
@@ -268,18 +271,27 @@ CLAUDE.md "audit consumers" rule):
   truths relabelled `xcard` (issue #347 D2)
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
-- the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
-  `round`, which the writer's prompt knows (issue #340); every entry the
-  scribe writes carries its narration's `narrationId`, so the X-Card's finish
-  removes it (`retractNarrationChronicle`) and a scribe still running when
-  the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
-  session's automatic entries that state the struck fact
-  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE).
-  An entry is kept when the scribe rates it at or above the Chronicle's
-  floor — or, whatever its rating, when its move changed something lasting
-  (`chronicleKeeps.js` → `lastingChangeOf` / `roundLastingChange`: a progress
-  move, a vow sworn or forsaken, a brush with death, an arrival, a connection
-  made, a miss that paid its price — issue #374 A5). The campaign recap no
+- the Chronicle's automatic entries are a view of the session record (issue
+  #382 slice 4): when a narration of play — a move's, a paced line's, a Batch
+  Mode round's — is written to the record, `record/chronicleView.js`
+  schedules the scribe for its beat (`scheduleChronicleEntry`; one entry per
+  round, kind `round`, which the writer's prompt knows — issue #340), and the
+  scribe is given FACTS, the PLAYER'S LINE and the NARRATION as the telling,
+  which may lend a word, never an event. Every entry carries its narration's
+  `narrationId`, the record's `eventId` and a `sourceHash`, so the X-Card's
+  finish removes it (`retractNarrationChronicle`) and a scribe still running
+  when the card lands writes nothing (XCARD-CHRONICLE); a telling an upgrade
+  superseded before the scribe ran writes nothing either; a strike takes back
+  the automatic entries of the beat whose narration set the struck truth, by
+  that narration — a pinned or edited one stays (the record's `truth.struck`
+  → `retractChronicleOfNarrations`, STRIKE-CHRONICLE; it was a word-overlap
+  match); and a name the table changed is read as the new one
+  (`getChronicleEntries`). An entry is kept when the scribe rates it at or
+  above the Chronicle's floor — or, whatever its rating, when its beat
+  changed something lasting (the record's `lasting`, from
+  `chronicleKeeps.js lastingChangeOf`; a round's, the first of its beats': a
+  progress move, a vow sworn or forsaken, a brush with death, an arrival, a
+  connection made, a miss that paid its price — issue #374 A5). The campaign recap no
   longer retells the Chronicle (issue #382 slice 2): it is a view of the
   session record — its facts, the players' own words, how things stand read
   live — and is given a player's own Chronicle entries as their notes, and a
@@ -777,18 +789,19 @@ regressions, all are known scope cuts:
    maintained, session-scoped prose "story so far" that *complements* the
    verbatim ring (the original sketch's "replace last-N cards" was not taken —
    the ring carries phrasing the summary flattens). Summarised **from source**
-   (the full session card feed, never summary-of-summary) via one Haiku call,
-   **debounced at K = round(1.5 × N)** cards (N = `narratorContextCards`), so
-   most turns are a free cached read. Stored on `campaignState.sessionSummary`
-   (keyed by `sessionId`; a copy of the latest store, on the GM's
-   campaignState write chain — CACHE-MUTATED-BEFORE-WRITE), rendered as
-   system-prompt §[4c] *STORY SO FAR (THIS
-   SESSION)*, and written to the World Journal Session Log at End Session for
-   subsequent use. GM-gated + fail-open; toggle `narratorSessionSummary`
-   (default on). A summary whose call stopped at its length cap
-   (`ROLLING_SUMMARY_MAX_TOK`, 700) keeps only its whole sentences
-   (`wholeSentences`); with none it is not stored and the earlier one stands
-   (issue #374 A12 — a recorded live call had stopped mid-word). Drop priority + the "not a fact store" invariant: decisions.md
+   (since issue #382 slice 3: the session record read with the table's
+   corrections — each beat's facts and TOLD AS its narration — never
+   summary-of-summary) via one Haiku call, **debounced at K = round(1.5 × N)**
+   beats (N = `narratorContextCards`), so most turns are a free cached read.
+   Kept on the session's Session Log page as a view of the record
+   (`sessionRecord.views.summary`, valid while the span it was made from
+   reads the same — `src/record/summaryView.js`), rendered as system-prompt
+   §[4c] *STORY SO FAR (THIS SESSION)*, and as the page's "Session summary".
+   Canonical-GM-written + fail-open; toggle `narratorSessionSummary` (default
+   on). Its reply is cited sentences (a JSON list, `ROLLING_SUMMARY_MAX_TOK`
+   1200): one citing no beat is dropped, an untold LASTING beat sends it back
+   once, a reply that is not the JSON is asked for once more and then the one
+   that stood stays. Drop priority + the "not a fact store" invariant: decisions.md
    → "Rolling session summary: a debounced trailing memory tier".
 7. **Pacing interaction (F9) — shipped (Cluster D, 2026-06-10).** The
    pacing classifier now receives the scene frame in its context (the

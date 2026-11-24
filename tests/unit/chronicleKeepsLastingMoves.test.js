@@ -49,9 +49,13 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 
 import { requestChronicleEdit } from '../../src/character/chronicle.js';
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
-import { lastingChangeOf, roundLastingChange } from '../../src/character/chronicleKeeps.js';
-import { narrateResolution, narrateRound } from '../../src/narration/narrator.js';
+import { lastingChangeOf } from '../../src/character/chronicleKeeps.js';
+import { scribeArgsFor, registerChronicleScribe } from '../../src/record/chronicleView.js';
+import { readRecord } from '../../src/record/read.js';
+import { recordEvent, recordSettled, _resetRecordForTests } from '../../src/record/record.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { recordedEvent, recordSourceOf, seedSessionRecord } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const STATE = { currentSessionId: 'sess-1', sessionNumber: 1, characterIds: [] };
@@ -103,11 +107,19 @@ describe('issue #374 A5 — which resolved moves change something lasting', () =
     expect(lastingChangeOf({ moveId, outcome })).toBeNull();
   });
 
-  it('a round is kept when any of its rolled entries is', () => {
-    const round = (...inputs) => inputs.map(input => ({ input }));
-    expect(roundLastingChange(round({ kind: 'narrative' }, { kind: 'move', moveId: 'face_danger', outcome: 'weak_hit' }))).toBeNull();
-    expect(roundLastingChange(round({ kind: 'move', moveId: 'compel', outcome: 'strong_hit' }, { kind: 'move', moveId: 'set_a_course', outcome: 'strong_hit' }))).toBe('an arrival');
-    expect(roundLastingChange(null)).toBeNull();
+  it('a Batch Mode round is kept when any of its rolled entries is (its beats, read from the session record)', () => {
+    /** A round's entries — a line each, rolled or not — told once; what the scribe is told lasted. */
+    const lastingOfRound = (id, entries) => {
+      const events = [];
+      entries.forEach(([actor, moveId, outcome], i) => {
+        events.push(recordedEvent(id, 'line', { who: { actor }, ref: { round: id }, d: { via: 'round' }, text: `I act (${i + 1}).` }));
+        if (moveId) events.push(recordedEvent(id, 'move.resolved', { who: { actor }, ref: { res: `${id}-r${i}`, round: id }, d: { moveId, moveName: moveId, outcome } }));
+      });
+      events.push(recordedEvent(id, 'narration', { ref: { nar: `nar-${id}`, round: id }, d: { mode: 'round' }, text: 'The round is told.' }));
+      return scribeArgsFor(events.at(-1), readRecord({ session: id }, recordSourceOf(id, events))).lasting;
+    };
+    expect(lastingOfRound('rd-1', [['pc-mira', null], ['pc-ren', 'face_danger', 'weak_hit']])).toBeNull();
+    expect(lastingOfRound('rd-2', [['pc-mira', 'compel', 'strong_hit'], ['pc-ren', 'set_a_course', 'strong_hit']])).toBe('an arrival');
   });
 });
 
@@ -145,12 +157,13 @@ describe('issue #374 A5 — the Chronicle keeps them whatever the scribe rates t
   });
 });
 
-describe('issue #374 A5 — the narrator names the lasting change (the real narration paths)', () => {
-  const state = () => game.settings.get(MODULE_ID, 'campaignState');
+describe('issue #374 A5 — the record names the lasting change (the scribe\'s one trigger, issue #382 slice 4)', () => {
   const scribeRan = (n = 1) => vi.waitFor(() => expect(scribeRequests.length).toBeGreaterThanOrEqual(n), { timeout: 6000, interval: 100 });
+  let journals;
 
   beforeEach(() => {
-    global.game.messages = { get contents() { return ChatMessage._created; } };
+    journals = installJournalMock();
+    _resetRecordForTests();
     global.game.users = Object.assign([{ id: 'gm-1', isGM: true, active: true }], {
       get: (id) => (id === 'gm-1' ? { id: 'gm-1', isGM: true, active: true } : null),
     });
@@ -159,16 +172,28 @@ describe('issue #374 A5 — the narrator names the lasting change (the real narr
       ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1,
       currentSceneId: 'sc-1', sceneTruths: [],
     });
+    registerChronicleScribe();
     silenceConsoleErrors();
+  });
+  afterEach(() => journals.restore());
+
+  /** A rolled move's line and roll, on the record. */
+  const rolled = (res, moveId, outcome) => [
+    recordedEvent('sess-1', 'line', { who: { actor: 'pc-mira' }, ref: { line: `m-${res}` }, d: { via: 'typed' }, text: 'I act.' }),
+    recordedEvent('sess-1', 'move.resolved', { who: { actor: 'pc-mira' }, ref: { res }, d: { moveId, moveName: moveId, outcome } }),
+  ];
+  /** Its narration, recorded as its card posts (record/cards.js). */
+  const narrated = (res) => recordEvent('narration', {
+    session: 'sess-1', who: { actor: 'pc-mira' }, ref: { nar: `nar-${res}`, res }, d: { mode: 'move', actorId: 'pc-mira' },
+    text: 'Bleakhold Station swells in the viewport.',
   });
 
   it('a session of rolls rated "scene": the arrival and the paid miss are kept, the clean hit is not', async () => {
-    const roll = (id, moveId, outcome) => narrateResolution({
-      _id: id, moveId, moveName: moveId, outcome, outcomeLabel: outcome, playerNarration: 'I act.',
-    }, state(), {});
-    await roll('res-1', 'face_danger', 'strong_hit');
-    await roll('res-2', 'face_danger', 'miss');
-    await roll('res-3', 'set_a_course', 'strong_hit');
+    await seedSessionRecord('sess-1', [
+      ...rolled('res-1', 'face_danger', 'strong_hit'), ...rolled('res-2', 'face_danger', 'miss'), ...rolled('res-3', 'set_a_course', 'strong_hit'),
+    ], { number: 1 });
+    for (const res of ['res-1', 'res-2', 'res-3']) narrated(res);
+    await recordSettled();
     await scribeRan(3);
     await vi.waitFor(() => expect(requestChronicleEdit.mock.calls.length).toBe(2), { timeout: 3000, interval: 50 });
     expect(requestChronicleEdit.mock.calls.map(c => c[1].entry.moveId).sort()).toEqual(['face_danger', 'set_a_course']);
@@ -177,14 +202,16 @@ describe('issue #374 A5 — the narrator names the lasting change (the real narr
   }, 30_000);
 
   it('a round with an arrival in it is kept', async () => {
-    const round = {
-      id: 'round-1', number: 1, sessionId: 'sess-1', acting: ['gm-1'],
-      entries: { 'gm-1': { userId: 'gm-1', actorId: 'pc-mira', actorName: 'Mira Kestrel', userName: 'GM', text: 'I set a course for Bleakhold.',
-        rolled: { moveId: 'set_a_course', outcome: 'strong_hit', narrationInput: { kind: 'move', moveId: 'set_a_course', moveName: 'Set a Course', outcome: 'strong_hit', outcomeLabel: 'Strong hit' } } } },
-    };
-    expect((await narrateRound({ round, campaignState: state() }))?.posted).toBe('card');
+    await seedSessionRecord('sess-1', [
+      recordedEvent('sess-1', 'line', { who: { actor: 'pc-mira' }, ref: { round: 'round-1' }, d: { via: 'round' }, text: 'I set a course for Bleakhold.' }),
+      recordedEvent('sess-1', 'move.resolved', { who: { actor: 'pc-mira' }, ref: { res: 'round-1-res', round: 'round-1' },
+        d: { moveId: 'set_a_course', moveName: 'Set a Course', outcome: 'strong_hit' } }),
+    ], { number: 1 });
+    recordEvent('narration', { session: 'sess-1', ref: { nar: 'nar-round-1', round: 'round-1' }, d: { mode: 'round' }, text: 'Bleakhold Station swells in the viewport.' });
+    await recordSettled();
     await scribeRan(1);
     await vi.waitFor(() => expect(requestChronicleEdit.mock.calls.length).toBe(1), { timeout: 3000, interval: 50 });
     expect(scribeRequests[0].message).toContain('(an arrival)');
+    expect(scribeRequests[0].message).toContain('Character: Mira Kestrel');
   }, 30_000);
 });

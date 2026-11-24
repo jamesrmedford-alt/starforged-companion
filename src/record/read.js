@@ -26,8 +26,9 @@
  *      new one in every words, label and prose field (nameChanges.js
  *      writeNewNames) — and a field with an actor id is written with that
  *      actor's current name.
- *   4. Cutaways. A closing vignette is a beat of kind `cutaway`: an NPC
- *      elsewhere, not something the characters did.
+ *   4. Cutaways. A closing vignette and Begin's Spotlight Vignette are beats
+ *      of kind `cutaway`: a scene elsewhere, hidden from the characters — not
+ *      something they did.
  *
  * `hash` is FNV-1a over the corrected value: any correction changes it, and a
  * view stores the hash of the read it was made from (a stale view is never
@@ -44,6 +45,9 @@ import { RECORD_EVENTS } from './events.js';
 import { recordSource } from './pages.js';
 import { withNameChange, writeNewNames } from '../factContinuity/nameChanges.js';
 import { lastingChangeOf } from '../character/chronicleKeeps.js';
+
+/** The events that correct what the record says, read into any span (`scope.through`). */
+const CORRECTION_KINDS = new Set(['truth.struck', 'narration.removed', 'name.changed']);
 
 /** `narration.removed`'s two causes. */
 const BY_XCARD = 'xcard';
@@ -98,6 +102,56 @@ function eventsOf(record) {
   return Object.values(map)
     .filter(e => e && typeof e === 'object' && typeof e.k === 'string' && KNOWN_KINDS.has(e.k))
     .sort(byTime);
+}
+
+/**
+ * The narrations that set the given truths — for what a strike of them takes
+ * back (record/chronicleView.js): each truth's `truth.set` names its
+ * narration (`ref.nar`); the `narration` events of those narrations, by id.
+ * Pure but for its default source.
+ *
+ * @param {string[]} truthIds
+ * @param {Object} [source]
+ * @returns {{ narrationIds: string[], eventIds: string[] }}
+ */
+export function narrationsOfTruths(truthIds, source = recordSource()) {
+  const truths = new Set((Array.isArray(truthIds) ? truthIds : []).filter(id => typeof id === 'string' && id));
+  const narrationIds = new Set();
+  const eventIds = new Set();
+  if (!truths.size) return { narrationIds: [], eventIds: [] };
+  const all = (Array.isArray(source?.pages) ? source.pages : []).flatMap(p => eventsOf(p.record));
+  for (const e of all) if (e.k === 'truth.set' && truths.has(e.ref?.truth) && typeof e.ref?.nar === 'string' && e.ref.nar) narrationIds.add(e.ref.nar);
+  for (const e of all) if (e.k === 'narration' && narrationIds.has(e.ref?.nar)) eventIds.add(e.id);
+  return { narrationIds: [...narrationIds], eventIds: [...eventIds] };
+}
+
+/**
+ * The changed names the record holds, folded (uncapped), and the names in
+ * play — what a text written before a correction is read with
+ * (character/chronicle.js getChronicleEntries). Pure but for its default source.
+ *
+ * @param {Object} [source]
+ * @returns {{ names: Array, otherNames: string[] }}
+ */
+export function recordNames(source = recordSource()) {
+  const pages = Array.isArray(source?.pages) ? source.pages : [];
+  return { names: campaignCorrections(pages).names, otherNames: Array.isArray(source?.otherNames) ? source.otherNames : [] };
+}
+
+/**
+ * What a page's record holds, in a few characters — its counter, how many
+ * events it keeps, the newest of their ids (unique, and growing) — for a
+ * reader that keeps a read while nothing it reads has changed
+ * (summaryView.js). The stored map is opened here, as everywhere, by read.js.
+ *
+ * @param {Object|null} record — a page's `sessionRecord` flag
+ * @returns {string}
+ */
+export function recordStamp(record) {
+  const ids = Object.keys(record?.events && typeof record.events === 'object' ? record.events : {});
+  let newest = '';
+  for (const id of ids) if (id > newest) newest = id;
+  return `${record?.seq ?? -1}:${ids.length}:${newest}`;
 }
 
 /**
@@ -351,7 +405,7 @@ function sessionBeats(events, { xcarded, superseded }) {
         // An @scene answer is its question's beat: asked of the narrator, not something that happened.
         if (!beat && d.mode === 'scene_answer' && nar) beat = questionOf.get(nar) ?? null;
         if (!beat && d.mode === 'paced') beat = lineOf(d.actorId ?? e.who?.actor);
-        if (!beat) beat = open(d.mode === 'vignette_close' ? 'cutaway' : 'play', e);
+        if (!beat) beat = open(CUTAWAY_MODES.has(d.mode) ? 'cutaway' : 'play', e);
         if (res) byRes.set(res, beat);
         if (nar) byNar.set(nar, beat);
         if (viaXCard) {
@@ -437,7 +491,13 @@ function sessionBeats(events, { xcarded, superseded }) {
 function correctNames(session, { names, nameOf, otherNames }) {
   const fix = (text) => (typeof text === 'string' && text ? writeNewNames(text, names, { otherNames }) : text);
   const actorName = (id) => (id ? nameOf(id) : null);
-  const subject = (s) => (s && typeof s === 'object' ? { ...s, ...(typeof s.text === 'string' ? { text: fix(s.text) } : {}) } : s);
+  // A truth about a recorded character is about them by their current name —
+  // its subject names them by id (an NPC card is an Actor, FOLDER-002).
+  const subject = (s) => (s && typeof s === 'object' ? {
+    ...s,
+    ...(typeof s.text === 'string' ? { text: fix(s.text) } : {}),
+    ...(s.kind === 'entity' && s.entityId && !s.text ? { name: actorName(s.entityId) ?? fix(s.name) } : {}),
+  } : s);
   for (const beat of session.beats) {
     beat.who.name = actorName(beat.who.actor);
     if (beat.line) beat.line.text = fix(beat.line.text);
@@ -477,12 +537,16 @@ function correctNames(session, { names, nameOf, otherNames }) {
   snapshot(session.ended);
 }
 
+/** The narration modes told out of the characters' sight: a closing vignette, Begin's spotlight. */
+const CUTAWAY_MODES = new Set(['vignette_close', 'vignette_spotlight']);
+
 /**
  * Read the record.
  *
  * @param {Object} [scope]
  * @param {string} [scope.session] — a session id, or "campaign" (every session, oldest first). Default: the current session.
- * @param {number} [scope.through] — one session only: read no event past this counter (`seq`)
+ * @param {number} [scope.through] — one session only: read no event past this counter (`seq`) but
+ *   the table's corrections (`CORRECTION_KINDS`), which apply whenever they are made
  * @param {"beats"} [scope.detail]
  * @param {Object} [source] — what to read (default: the stored pages — pages.js recordSource)
  * @returns {{ sessions: Array<{ sessionId: string, number: number|null, name: string, begun: Object|null, ended: Object|null,
@@ -500,12 +564,16 @@ export function readRecord(scope = {}, source = recordSource()) {
     otherNames: Array.isArray(source?.otherNames) ? source.otherNames : [],
   };
   const through = wanted !== 'campaign' && Number.isFinite(scope?.through) ? scope.through : null;
+  // A span read through a counter is read with the table's corrections made
+  // since — a strike, a removal, a name changed — so a view made from that
+  // span is stale once one of them reaches it (summaryView.js).
+  const inSpan = (e) => (e.seq ?? 0) <= through || CORRECTION_KINDS.has(e.k);
 
   const sessions = [];
   for (const page of pages) {
     if (wanted !== 'campaign' && page.sessionId !== wanted) continue;
     const all = eventsOf(page.record);
-    const events = through === null ? all : all.filter(e => (e.seq ?? 0) <= through);
+    const events = through === null ? all : all.filter(inSpan);
     const legacy = !page.record;
     const read = sessionBeats(events, corrections);
     const session = {

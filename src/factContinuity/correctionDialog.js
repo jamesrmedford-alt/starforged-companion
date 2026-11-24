@@ -24,7 +24,7 @@ import {
   sameStateAttribute,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
-import { propagateRetraction, markSummaryForRegen } from './retractions.js';
+import { propagateRetraction } from './retractions.js';
 import { persistSceneLedgerFields } from './sceneLifecycle.js';
 import { nameSwapOf, withNameChange, recordNameChanged } from './nameChanges.js';
 
@@ -217,7 +217,7 @@ async function handleRowAction(button, ctx) {
       const struck  = strikeTruth(button.dataset.truthId, working, ctx);
       if (!struck) return;
       await propagateRetraction(struck, working);   // issue #286 B6
-      await persistCorrection(working, 'sceneTruths', { regenSummary: true });
+      await persistCorrection(working, 'sceneTruths');
       return;
     }
     case 'replace-truth': {
@@ -236,7 +236,6 @@ async function handleRowAction(button, ctx) {
         : replaced.struck.subject?.kind === 'entity' ? (resolveEntityById(replaced.struck.subject.entityId)?.data?.name ?? null)
           : null;
       await persistCorrection(working, 'sceneTruths', {
-        regenSummary: true,
         nameChange: swap ? { ...swap, kind: 'corrected', about } : null,
       });
       return;
@@ -357,24 +356,23 @@ function escape(s) {
 /**
  * Persist a correction's ledger field onto the latest store
  * (persistSceneLedgerFields: truths unioned by id with a retraction
- * sticking; nothing when the scene closed meanwhile) and, after a Strike or
- * Replace, the regen mark on the stored rolling summary. Failures are logged
+ * sticking; nothing when the scene closed meanwhile), with the name a Replace
+ * corrected. A strike reaches the session summary through the session record
+ * (`truth.struck`, recorded where the ledger is saved — record/ledgerDiff.js):
+ * the summary that told it is stale and made again. Failures are logged
  * there, never thrown.
  *
  * @param {Object} working — the corrected copy
  * @param {"sceneTruths"|"sceneState"} field
- * @param {{ regenSummary?: boolean }} [opts]
+ * @param {{ nameChange?: Object|null }} [opts]
  * @returns {Promise<void>}
  */
-async function persistCorrection(working, field, { regenSummary = false, nameChange = null } = {}) {
+async function persistCorrection(working, field, { nameChange = null } = {}) {
   await persistSceneLedgerFields(working, [field], 'correction dialog', {
-    onto: (regenSummary || nameChange) ? (latest) => {
-      if (regenSummary) markSummaryForRegen(latest);
+    onto: nameChange ? (latest) => {
       // The name a Replace corrected, in the same write (issue #377 item 1).
-      if (nameChange) {
-        latest.nameChanges = withNameChange(latest.nameChanges,
-          { ...nameChange, sessionId: latest.currentSessionId ?? working.currentSessionId ?? null });
-      }
+      latest.nameChanges = withNameChange(latest.nameChanges,
+        { ...nameChange, sessionId: latest.currentSessionId ?? working.currentSessionId ?? null });
     } : null,
   });
   // The write landed: the change goes on the session record (issue #382).

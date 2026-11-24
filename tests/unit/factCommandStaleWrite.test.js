@@ -113,7 +113,9 @@ describe('!truth strike on the canonical GM', () => {
     ]);
   });
 
-  it('marks the stored rolling summary for a regen — a summary regenerated meanwhile keeps its text', async () => {
+  // Issue #382 slice 3: the session summary is a view of the session record,
+  // made stale by the strike's `truth.struck` there — no mark is written.
+  it('writes no summary mark — what another writer stored meanwhile stays as it was', async () => {
     await seed(
       { sessionSummary: { text: 'Old summary.', coveredCount: 30, sessionId: 'sess-1', updatedAt: '2026-10-31T10:00:00.000Z' } },
       () => storeMeanwhile(() => ({
@@ -124,7 +126,7 @@ describe('!truth strike on the canonical GM', () => {
     await applyFactContinuityCommand({ text: '!truth strike tr-dock0001' }, { requesterIsGM: true });
 
     expect(game.settings.get(MODULE_ID, 'campaignState').sessionSummary)
-      .toMatchObject({ text: 'Newer summary.', coveredCount: 0 });
+      .toEqual({ text: 'Newer summary.', coveredCount: 31, sessionId: 'sess-1', updatedAt: '2026-10-31T10:05:00.000Z' });
   });
 
   it('writes nothing when the strike matches no truth', async () => {

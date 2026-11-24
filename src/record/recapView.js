@@ -100,10 +100,14 @@ const sessionLabel = (s) => (Number.isFinite(s.number) ? `Session ${s.number}` :
  * @param {string[]} [inputs.standing] — WHERE THINGS STAND, a line each
  * @param {Array<{ who: string, text: string, pinned?: boolean, session?: string|null }>} [inputs.notes]
  * @param {Array<{ label: string, text: string }>} [inputs.earlier] — sessions from before the record
- * @returns {{ text: string, ids: string[], lasting: string[], hash: string, empty: boolean, earlierTexts: string[] }}
- *   `empty`: nothing to retell — no line of the record, the notes or the sessions before it
+ * @param {string|null} [inputs.currentSessionId] — the session under way
+ * @returns {{ text: string, ids: string[], lasting: string[], hash: string, empty: boolean, before: boolean, earlierTexts: string[] }}
+ *   `empty`: nothing to retell — no line of the record, the notes or the sessions before it;
+ *   `before`: a session before the current one is in it — a recorded session that holds a
+ *   beat, or one from before the record (what a session's start is told — narrator.js
+ *   sessionStartRecap; known-issues RECAP-AT-THE-FIRST-BEGIN)
  */
-export function recapSource({ read, standing = [], notes = [], earlier = [] } = {}) {
+export function recapSource({ read, standing = [], notes = [], earlier = [], currentSessionId = null } = {}) {
   const sessions = (read?.sessions ?? []).filter(s => !s.legacy);
   const ids = [];
   const lasting = [];
@@ -189,7 +193,10 @@ export function recapSource({ read, standing = [], notes = [], earlier = [] } = 
   // it — is no recap, whatever stands on the sheets (a campaign's first
   // narration asks for none).
   const empty = !ids.some(id => !id.startsWith('now-'));
-  return { text, ids, lasting, hash: recordHash(text), empty, earlierTexts };
+  // A campaign's first session has no session before it, however many beats
+  // it has played — the vow sworn in Begin is its own first beat.
+  const before = earlier.length > 0 || sessions.some(s => s.sessionId !== currentSessionId && s.beats.length > 0);
+  return { text, ids, lasting, hash: recordHash(text), empty, before, earlierTexts };
 }
 
 /** The JSON a reply holds — the object or the list — or null. */
@@ -376,7 +383,7 @@ export async function standingLines(campaignState) {
  *
  * @param {Object} campaignState
  * @param {{ chronicle?: Array<Object> }} [opts] — every PC's Chronicle entries, oldest first (`_actorId` on each)
- * @returns {Promise<{ read: Object, standing: string[], notes: Object[], earlier: Object[] }>}
+ * @returns {Promise<{ read: Object, standing: string[], notes: Object[], earlier: Object[], currentSessionId: string|null }>}
  */
 export async function collectRecapInputs(campaignState, { chronicle = [] } = {}) {
   const read = readRecord({ session: 'campaign' });
@@ -414,7 +421,7 @@ export async function collectRecapInputs(campaignState, { chronicle = [] } = {})
   for (const texts of fromChronicle.values()) {
     for (const text of texts) earlier.push({ label: 'An earlier session, the Chronicle', text });
   }
-  return { read, standing, notes, earlier };
+  return { read, standing, notes, earlier, currentSessionId: campaignState?.currentSessionId ?? null };
 }
 
 /**

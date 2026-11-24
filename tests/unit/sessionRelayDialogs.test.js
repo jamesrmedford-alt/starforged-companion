@@ -31,10 +31,6 @@ vi.mock("../../src/narration/narrator.js", async (importOriginal) => ({
   narrateSessionVignette:   vi.fn(async () => null),
   narrateClockAdvancement:  vi.fn(async () => null),
 }));
-vi.mock("../../src/world/worldJournal.js", async (importOriginal) => ({
-  ...(await importOriginal()),
-  writeSessionLog: vi.fn(async () => { calls.push("sessionLog"); }),
-}));
 vi.mock("../../src/clocks/clocks.js", async (importOriginal) => ({
   ...(await importOriginal()),
   advanceCampaignClocksForBeginSession: vi.fn(async () => {
@@ -69,7 +65,6 @@ import {
 import { SessionPanelApp } from "../../src/ui/sessionPanel.js";
 import { applyMeterChanges } from "../../src/character/actorBridge.js";
 import { getRollingSessionSummary } from "../../src/narration/narrator.js";
-import { writeSessionLog } from "../../src/world/worldJournal.js";
 import { simulateTable, USERS } from "../helpers/multiClient.js";
 
 const MODULE_ID = "starforged-companion";
@@ -257,7 +252,8 @@ describe("Begin a Session", () => {
 
     await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
     expect(state().currentSessionId).not.toBe(first);
-    expect(calls).toEqual(["clocks"]);
+    // The mint brings the ended session's summary up to date first (issue #382).
+    expect(calls).toEqual(["summary", "clocks"]);
   });
 
   it("a session that went idle is begun anew, although nobody ended it", async () => {
@@ -271,7 +267,7 @@ describe("Begin a Session", () => {
     await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
     expect(state().currentSessionId).not.toBe("s-old");
     expect(state().sessionStartedId).toBe(state().currentSessionId);
-    expect(calls).toEqual(["clocks"]);
+    expect(calls).toEqual(["summary", "clocks"]);
     // The new session's gate opens now, not "since last week" (issue #321 U12).
     expect(state().sessionActive).toBe(true);
     expect(Date.now() - Date.parse(state().sessionActiveStartedAt)).toBeLessThan(60_000);
@@ -325,7 +321,6 @@ describe("End a Session", () => {
       "momentum:a2:1",
       "endScene",
       "summary",
-      "sessionLog",
     ]);
     expect(state()).toMatchObject({ sessionActive: false, questFocus: "Find the beacon", connectionFocus: "Mara" });
     expect(Hooks.callAll).toHaveBeenCalledWith(`${MODULE_ID}.sessionStateChanged`, { active: false });
@@ -355,12 +350,10 @@ describe("End a Session", () => {
 
     expect(state()).toMatchObject({ sessionActive: false, questFocus: "Find the beacon", pendingMove: false });
     expect(state().sessionLogs.s1).toEqual([{ moveId: "face_danger" }]);
-    expect(writeSessionLog).toHaveBeenCalledWith(expect.objectContaining({
-      pendingMove: false, sessionLogs: { s1: [{ moveId: "face_danger" }] },
-    }));
   });
 
-  it("no focus → no momentum; sessionLogAutoWrite=false skips the log", async () => {
+  // The Session Log page is the session record's view (issue #382): End writes nothing onto it.
+  it("no focus → no momentum; and End writes nothing to the Session Log", async () => {
     game.settings._store.set(`${MODULE_ID}.sessionLogAutoWrite`, false);
     await applyEndSession({ questFocus: "", connectionFocus: "" }, {});
     expect(calls).toEqual(["endScene", "summary"]);
@@ -378,7 +371,7 @@ describe("End a Session", () => {
       game.settings._store.set(`${MODULE_ID}.campaignState`, live());
       await expect(applyEndSession({ questFocus: "Find the archive" }, {}))
         .resolves.toEqual({ alreadyEnded: false });
-      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary", "sessionLog"]);
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary"]);
       expect(vi.getTimerCount()).toBe(1);
 
       calls.length = 0;
@@ -399,7 +392,7 @@ describe("End a Session", () => {
         applyEndSession({ connectionFocus: "Mara" }, {}),
       ]);
       expect(results.map(r => r.alreadyEnded)).toEqual([false, true]);
-      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary", "sessionLog"]);
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary"]);
       expect(state()).toMatchObject({ questFocus: "Find the archive", connectionFocus: "Mara" });
     });
 
@@ -655,7 +648,7 @@ describe("across a booted table", () => {
         await Promise.all([table.client("pl-1").chat("!end-session"), table.client("pl-2").chat("!end-session")]);
         await table.settle();
         expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2"]);
-        expect(calls.filter(c => c === "endScene" || c === "sessionLog")).toEqual(["endScene", "sessionLog"]);
+        expect(calls.filter(c => c === "endScene")).toEqual(["endScene"]);
         expect(cs()).toMatchObject({ sessionActive: false, sessionEndedId: "s1" });
         const note = sessionCards().filter(c => c.author === "gm-1");
         expect(note).toHaveLength(1);

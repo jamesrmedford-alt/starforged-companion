@@ -265,12 +265,10 @@ async function applyMetersOrNote(actor, changes, failures, opts = null, cause = 
 //                                   among them (SUPPLY-TWO-PC-TIE)
 //       deletedChatMessages         narrator.js persistDeletedRecord (a card deleted);
 //                                   cleared by the session mint
-//       unsummarisedSession         set by the session mint, cleared by narrator.js
-//                                   catchUpUnsummarisedSession — which runs after every
-//                                   narrator card, i.e. inside the pipeline (issue #347 AB15)
 //       sessionPerspective          session/lifecycle.js beginSession (Begin relays);
 //                                   cleared by the mint (issue #348 PT03)
-//     The last four were left off the list, so a move's record put back the
+//     The last three were left off the list (with `unsummarisedSession`,
+//     since removed — issue #382 slice 3), so a move's record put back the
 //     value they had when the move began — the crew's supply its own Pay the
 //     Price had just stored among them (issue #362 AC55).
 //
@@ -280,7 +278,6 @@ async function applyMetersOrNote(actor, changes, failures, opts = null, cause = 
 //     union, store first.
 //   artAssetIds — the art index (asset id → journal entry name), a map both
 //     sides add to (a portrait stored during the move): every entry kept.
-//   sessionSummary — whichever record has the newer updatedAt.
 //   legacyTracks — the store's, with the ticks the working copy marked
 //     (pipeline addLegacyTicks, recorded by the copy) applied to it
 //     (legacyTracks.js legacyTracksWithCopyMarks): a concurrent `!bond` or
@@ -328,7 +325,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'sessionNumber',
   'lastSessionTimestamp',
   'sessionEndedId',
-  'previousSessionSummary',
   'customOracles',
   'recentOracles',
   'sessionRetractions',
@@ -349,7 +345,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'loreRecap',
   'crewSupply',
   'deletedChatMessages',
-  'unsummarisedSession',
   'sessionPerspective',
 ]);
 
@@ -381,10 +376,6 @@ function mergeWithLatestState(working, latestRaw, markedCopy = null) {
   // working copy's index dropped entries stored meanwhile (issue #300 F14).
   if (latest.artAssetIds || working.artAssetIds) {
     working.artAssetIds = mergeArtIndex(latest.artAssetIds, working.artAssetIds);
-  }
-
-  if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
-    working.sessionSummary = latest.sessionSummary;
   }
 
   const legacy = legacyTracksWithCopyMarks(latest.legacyTracks, working.legacyTracks, markedCopy);
@@ -423,12 +414,6 @@ function artEntryHolds(assetId, entryName) {
   if (entryName && journal?.getName?.(entryName)) return true;
   const entries = journal?.contents ?? [];
   return entries.some(e => e?.flags?.[MODULE_ID]?.entityType === 'artAsset' && e.flags[MODULE_ID].assetId === assetId);
-}
-
-function isNewerRecord(storeRec, workingRec) {
-  if (!storeRec) return false;
-  if (!workingRec) return true;
-  return String(storeRec.updatedAt ?? '') > String(workingRec.updatedAt ?? '');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

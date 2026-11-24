@@ -77,7 +77,7 @@ import {
   registerDeletedChatHook,
   registerPublishedReflectionHook,
   narratorMemoryCard,
-  catchUpUnsummarisedSession,
+  refreshStaleSummaries,
   narratePacedInput,
   tellPacedLineNotNarrated,
 } from "./narration/narrator.js";
@@ -156,6 +156,7 @@ import {
   initWorldJournals,
   parseJournalCommand,
   executeJournalCommand,
+  keepPreRecordSummaries,
 } from "./world/worldJournal.js";
 import { registerJournalSplitMerge } from "./world/journalSplitMerge.js";
 import { registerSceneChallengeOffer } from "./moves/sceneChallengeOffer.js";
@@ -235,6 +236,7 @@ import { recordPlaceArrival } from "./record/tableSnapshot.js";
 import { registerRecordCardHook } from "./record/cards.js";
 import { registerSheetWatch } from "./record/sheetWatch.js";
 import { registerSessionLogView } from "./record/sessionLogView.js";
+import { registerChronicleScribe } from "./record/chronicleView.js";
 import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -355,9 +357,9 @@ function registerCoreSettings() {
     // that actually holds a key (see gmGate.js / advertiseClaudeKeyPresence).
     onChange: () => {
       advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused);
-      // A session the mint closed out short, while this browser had no key,
-      // gets its LAST SESSION now (issue #347 AB15).
-      catchUpUnsummarisedSession().catch(() => {});
+      // An earlier session's summary owed while this browser had no key is
+      // made now (issue #382; issue #347 AB15's case).
+      refreshStaleSummaries().catch(() => {});
     },
   });
 
@@ -10185,10 +10187,15 @@ Hooks.once("ready", () => {
     }, "session start"))).then(async () => {
       noteSessionReplaced();
       if (staleLockCleared) await postMoveLockReleasedCard(staleLockReleasedText(staleLock?.holder ?? null));
-      // A session closed out short — by this mint, or one before it on a
-      // client with no key — gets its LAST SESSION, if this GM has a key
-      // (issue #347 AB15).
-      catchUpUnsummarisedSession().catch(() => {});
+      // A world's LAST SESSION and a mid-session summary from before the
+      // summary was a view of the record are copied, once, onto their
+      // sessions' Session Log pages (issue #382 section 9); then the earlier
+      // sessions' summaries the record says are owed are made, if this GM
+      // has a key (issue #347 AB15's case).
+      keepPreRecordSummaries(game.settings.get(MODULE_ID, "campaignState"))
+        .catch(() => {})
+        .then(() => refreshStaleSummaries())
+        .catch(() => {});
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours
@@ -10434,6 +10441,7 @@ Hooks.once("ready", () => {
   registerSheetWatch();
   registerRecordCardHook({ inMemory: narratorMemoryCard });
   registerSessionLogView();
+  registerChronicleScribe();   // issue #382 slice 4: the Chronicle's automatic entries, written from the record
   // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions
   // are one fact: the native impacts canonical, the asset's conditions their
   // mirror (STARSHIP-ASSET-CONDITIONS-UNSYNCED).

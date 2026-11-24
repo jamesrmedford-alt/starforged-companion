@@ -36,7 +36,6 @@ vi.mock('../../src/narration/narrator.js', async (orig) => ({
   narrateClockAdvancement:  vi.fn(async () => null),
   // End a Session's summary call: held, as long as the test says (forever, for a tab that closed).
   getRollingSessionSummary: vi.fn(() => (control.summary ? control.summary : Promise.resolve(''))),
-  finalizeSessionSummary:   vi.fn(async () => null),
   getCampaignRecap:         vi.fn(async () => ''),
 }));
 vi.mock('../../src/character/actorBridge.js', async (orig) => ({

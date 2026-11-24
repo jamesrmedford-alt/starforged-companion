@@ -263,12 +263,4 @@ describe("persistResolution — concurrent writes survive the stale working copy
     expect(stored().currentSessionId).toBe("sess-2");
     expect(stored()).not.toHaveProperty("sessionLogs");   // retired (issue #326 W58)
   });
-
-  it("keeps the newer rolling session summary", async () => {
-    const snapshot = pipelineSnapshot();
-    snapshot.sessionSummary = { text: "old",   updatedAt: "2026-10-17T10:00:00.000Z" };
-    stored().sessionSummary = { text: "newer", updatedAt: "2026-10-17T10:05:00.000Z" };
-    await persistResolution(resolution(), snapshot);
-    expect(stored().sessionSummary.text).toBe("newer");
-  });
 });

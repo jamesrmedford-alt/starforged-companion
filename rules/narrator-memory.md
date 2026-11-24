@@ -154,9 +154,9 @@ layers. This file is the never-break list.
    state — never as where the campaign is set; do not send a recap the
    ACTIVE SCENE block, a session summary, or the narration. A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
-   Session mint, and the mint keeps the closing session's summary as
-   `previousSessionSummary` (LAST SESSION) — the one prose surface that
-   crosses sessions besides the campaign recap. A scene is never minted over
+   Session mint; LAST SESSION — the closing session's summary, read from the
+   session record — is the one prose surface that crosses sessions besides
+   the campaign recap. A scene is never minted over
    a live one: a caller whose snapshot holds no scene while the store has one
    adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), scene
    starts run one at a time on the canonical GM — a start waits for the one
@@ -373,40 +373,29 @@ layers. This file is the never-break list.
      anchor named ENTITIES IN SCENE, which a snapshot request does not
      have — issue #362 AC66).
 
-8. **The rolling session summary is a droppable convenience, not a fact
-   store.** It is summarised *from source* (never summary-of-summary),
-   debounced at `round(1.5 × narratorContextCards)`, and must never be retained
-   at the expense of any §6.5 ledger tier or the never-dropped facts (frame /
+8. **The session summary is a droppable convenience, not a fact store.** It
+   is a view of the session record (invariant 9; issue #382 slice 3 —
+   `src/record/summaryView.js`): made from the session read with the table's
+   corrections — each beat's facts, and TOLD AS the narration, which may lend
+   wording and never an event — never summary-of-summary, debounced at
+   `round(1.5 × narratorContextCards)` beats, and must never be retained at
+   the expense of any §6.5 ledger tier or the never-dropped facts (frame /
    binding truths / ship position) — those defend load-bearing facts; the
-   summary only carries narrative texture. Keep it GM-gated + fail-open: a
-   summary error returns the prior text and never blocks a narration. Regen
-   runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
-   never inside `buildNarratorExtras`, which only reads the cached text — a
-   regen is a Haiku call over the whole session (issue #286 B7). Its source
-   carries, under a move's entry, what the move settled for good
-   (`summarySourceEntry`, from the card's `moveId` / `outcome`): a new move
-   card flag that changes the sheet for good belongs in
-   `chronicleKeeps.settledByMove`. LAST
-   SESSION (`previousSessionSummary`) is the same kind of text and follows the
-   same rules after the mint that kept it: a narration posted into the session
-   it names — a Batch Mode round narrated late — marks that session
-   `unsummarisedSession` again and the catch-up makes its text again from the
-   session's cards, on the canonical GM (`bringLastSessionUpToDate` →
-   `catchUpUnsummarisedSession`), keeping what a mint folded onto it from a
-   session nobody began (`lastSessionTextParts`), and rewrites that
-   session's Session Log story with it when the story was written before the
-   newest card it was made from (`restoreSessionLogStory`'s `through`, issue
-   #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY); an X-Card that removes such
-   a narration drops the session's own text and marks it the same way
-   (`dropLastSessionTelling`); and when the mint carried no summary for the
-   card's session nothing is made up (issue #364
-   LATE-ROUND-NOT-IN-LAST-SESSION) — a begun session whose Batch Mode round
-   was still to be narrated at the mint is recorded as LAST SESSION's session
-   with no text and marked owed, the record it displaced told meanwhile and
-   LAST SESSION again when nothing comes (`lastSessionToTell` /
-   `lastSessionSettled`, LATE-ROUND-NO-LAST-SESSION-RECORD). The mark outlives a later mint while LAST
-   SESSION goes on naming its session (`rollSessionIfDue`,
-   LAST-SESSION-OWED-LOST-AT-MINT). Full drop
+   summary only carries narrative texture. It is kept on its session's page
+   (`sessionRecord.views.summary`) and shown only while the span it was made
+   from reads the same: a correction — an X-Card, a strike, a changed name,
+   an upgrade's supersede — makes it stale, and it is made again; there is no
+   drop, mark or catch-up of its own to add. Keep it canonical-GM-written and
+   fail-open: a summary error returns what stood and never blocks a
+   narration. It is made after a narrator card posts
+   (`registerRollingSummaryRefreshHook`, which also makes an earlier
+   session's owed one — `refreshStaleSummaries`), at End a Session and at the
+   closing session's mint, never inside `buildNarratorExtras`, which only
+   reads the view. A move that settles something for good is a LASTING beat
+   in its source (`chronicleKeeps.lastingChangeOf`), and every LASTING beat is
+   told. LAST SESSION is read from the record by one accessor
+   (`lifecycle.js` `lastSessionToTell`): the newest earlier begun session's
+   summary, then what a session nobody began played, as facts. Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 9. **The session record is one record of what happened** (issue #382;
@@ -426,7 +415,8 @@ layers. This file is the never-break list.
    X-Card, which blanks what it removed (decision D3). A view of it — the
    Session Log page, the campaign recap (its source: the record's facts, no
    narration, and how things stand read live; its reply cited sentences) — is
-   a cache keyed by the hash of the source it was made from. Hidden plans
+   a cache keyed by the hash of the source it was made from, the session
+   summary (invariant 8) among them. Hidden plans
    (and their clocks), Private Lines, whispers and Private Channel turns are
    never recorded. A new kind is a row with its writer and its reader in the
    same commit, and a new relay row is a recorded `choice` or says why not

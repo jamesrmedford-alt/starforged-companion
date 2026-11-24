@@ -48,6 +48,13 @@ export const RECORD_REFS = Object.freeze([
  * no key here, and on a module here that does not call `readRecord`.
  */
 export const RECORD_VIEWS = Object.freeze({
+  // The session summary (STORY SO FAR, LAST SESSION, the snapshot's earlier
+  // sessions, the Session Log page's "Session summary"): its cache is the
+  // session page's `views.summary` (slice 3).
+  summary: 'src/record/summaryView.js',
+  // The Chronicle's automatic entries (slice 4): written from a beat of the
+  // record, kept in each PC's Chronicle journal (character/chronicle.js).
+  chronicle: 'src/record/chronicleView.js',
   log:   'src/record/sessionLogView.js',
   // The campaign recap: its cache is campaignState's `campaignRecapCache`,
   // keyed by its source's hash (narrator.js getCampaignRecap).

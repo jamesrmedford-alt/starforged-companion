@@ -8,12 +8,14 @@
 // table's corrections — and a strike is named under "Corrected by the table".
 // Through the real `!truth` command and the real page render.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
 import { renderSessionLog } from '../../src/record/sessionLogView.js';
 import { recordSettled, _resetRecordForTests } from '../../src/record/record.js';
-import { writeSessionLog, JOURNAL_NAMES } from '../../src/world/worldJournal.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
+import { getRollingSessionSummary } from '../../src/narration/narrator.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -63,17 +65,24 @@ describe('the Session Log lists no struck fact as the session\'s (issue #326 W64
     expect(section(html, 'Corrected by the table')).toMatch(/Struck: .*<s>is dead<\/s>/);
   });
 
-  it('End a Session\'s write copies no lore list onto the page (decision D6) — the story alone, and the record\'s lists stay', async () => {
+  it('the page\'s "Session summary" is the session summary — a view of the record — and copies no lore list (decision D6)', async () => {
     await applyFactContinuityCommand({ text: '!truth set "The Iron Gate" opens at dawn' }, { requesterIsGM: true });
     await settledPage();
-    const cs = { ...game.settings.get(MODULE_ID, 'campaignState'), sessionSummary: { sessionId: SESSION, text: 'The crew waited for dawn at the Iron Gate.' } };
-    await writeSessionLog(cs);
-    await recordSettled();
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => ({ content: [{ type: 'text', text: citedSummaryReply(['The crew waited for dawn at the Iron Gate.']) }], usage: {} }),
+    }));
+    try {
+      await getRollingSessionSummary(game.settings.get(MODULE_ID, 'campaignState'), { forceRefresh: true });
+    } finally {
+      fetch.mockRestore();
+      game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    }
+    const html = await settledPage();
 
-    const summary = page().flags[MODULE_ID].sessionLogPage.summary;
-    expect(summary).not.toHaveProperty('lore');
-    expect(summary).not.toHaveProperty('threats');
-    const html = page().text.content;
+    expect(page().flags[MODULE_ID].sessionLogPage.summary ?? null).toBeNull();   // nothing is copied onto the page's flag
+    expect(page().flags[MODULE_ID].sessionRecord.views.summary.text).toBe('The crew waited for dawn at the Iron Gate.');
     expect(section(html, 'Session summary')).toContain('waited for dawn');
     expect(section(html, 'Established and standing')).toContain('opens at dawn');
   });

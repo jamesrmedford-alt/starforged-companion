@@ -30,8 +30,10 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 
 import {
   nameSwapOf, withNameChange, mentionsOldName, dueNameChanges, formatNameChangesBlock,
-  formatNameChangesForSource, nameCorrectionOf, NAME_CHANGES_HEADING, NAME_CHANGES_CAP,
+  nameCorrectionOf, NAME_CHANGES_HEADING, NAME_CHANGES_CAP,
 } from '../../src/factContinuity/nameChanges.js';
+import { readRecord } from '../../src/record/read.js';
+import { summarySource } from '../../src/record/summaryView.js';
 import { buildNarratorSystemBlocks } from '../../src/narration/narratorPrompt.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
 import { syncEntityRecordNameOnUpdate } from '../../src/index.js';
@@ -110,10 +112,6 @@ describe('when a change is told (dueNameChanges)', () => {
     // and written again" — and the recap recorded "now goes by".
     expect(note).toMatch(/The change is the table's correction, not something that happened in the story/);
     expect(note).toMatch(/nobody renamed anyone, crossed a name out\s+or wrote it again/);
-    expect(formatNameChangesForSource([ASHEN_TO_CINDER], { texts: ['The Ashen Wake holds station'] }))
-      .toMatch(/never write that someone was renamed or "now goes by" a name/);
-    expect(formatNameChangesForSource([ASHEN_TO_CINDER], { texts: ['The Ashen Wake holds station'] }))
-      .toContain('"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.');
   });
 });
 
@@ -152,10 +150,23 @@ describe('an old name cut short is told too (CORRECTED-NAME-SHORT-FORM)', () => 
     expect(mentionsOldName('the cutter left an ashen wake', ASHEN_TO_CINDER)).toBe(false);
   });
 
-  it('the session summary\'s source: session 3 was written from "the Wake\'s registry" with no note', () => {
-    const note = formatNameChangesForSource([ASHEN_TO_CINDER], { texts: [PLAYER_A61], sessionId: 'sess-3' });
-    expect(note).toContain('"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.');
-    expect(note).toContain(`${SHORT} for "the Wake" write "the Wren".`);
+  // Issue #382 slice 3: the summary's source is the session record, read
+  // with every changed name written as the new one — short forms too — so it
+  // needs no note: what session 3's summary was written from says "the Wren".
+  it('the session summary\'s source: session 3 was written from "the Wake\'s registry" — now the Cinder Wren\'s', () => {
+    const said = PLAYER_A61.replace(/^PLAYER — Mira Kestrel wrote: "|"$/g, '');
+    const ev = (id, k, extra) => ({ id, k, at: Number(id.slice(1)), seq: Number(id.slice(1)), s: 'sess-3', scene: null, who: {}, ref: {}, d: {}, ...extra });
+    const events = [
+      ev('e1', 'session.begun', { d: { number: 3 } }),
+      ev('e2', 'name.changed', { d: { from: 'Ashen Wake', to: 'Cinder Wren', how: 'corrected', about: 'raider cutter' } }),
+      ev('e3', 'line', { who: { actor: 'pc-mira' }, d: { via: 'typed' }, text: said }),
+    ];
+    const page = { pageId: 'p3', sessionId: 'sess-3', number: 3, name: 'Session 3', createdAt: 1, story: '',
+      record: { v: 1, sessionId: 'sess-3', seq: 3, events: Object.fromEntries(events.map(e => [e.id, e])) } };
+    const read = readRecord({ session: 'sess-3' }, { pages: [page], currentSessionId: 'sess-3', nameOf: () => 'Mira Kestrel', otherNames: ['Mira Kestrel'] });
+    const { text } = summarySource(read.sessions[0]);
+    expect(text).toContain('the Cinder Wren\'s registry');
+    expect(text).not.toMatch(/Wake/);
     expect(dueNameChanges([ASHEN_TO_CINDER], { texts: [PLAYER_A61], sessionId: 'sess-3' })).toHaveLength(1);
   });
 

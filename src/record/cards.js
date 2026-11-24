@@ -36,7 +36,11 @@ function narrationMode(f) {
   if (f.vowSceneCard) return 'vow';
   if (f.pacedNarrative) return 'paced';
   if (f.sceneResponse) return 'scene_answer';
-  if (f.sessionVignetteCard) return f.vignetteKind === 'npc_end' ? 'vignette_close' : 'vignette_open';
+  if (f.sessionVignetteCard) {
+    // Begin's Spotlight Vignette is a cutaway the characters did not see (issue #381 slice 3).
+    if (f.vignetteKind === 'spotlight_begin') return 'vignette_spotlight';
+    return f.vignetteKind === 'npc_end' ? 'vignette_close' : 'vignette_open';
+  }
   if (f.incitingMeta) return 'inciting';
   if (f.clockVignetteCard) return 'clock';
   if (f.publishedReflection) return 'reflection';

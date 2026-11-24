@@ -267,10 +267,8 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
 /**
  * Where the last session stopped — the one read of it. Two things say so:
  *
- *   - the summary of the session before this one
- *     (`campaignState.previousSessionSummary` — LAST SESSION, kept when this
- *     session was minted; lifecycle.js lastSessionToTell), unless the record
- *     is this session's own;
+ *   - the summary of the session before this one (LAST SESSION, read from
+ *     the session record — lifecycle.js lastSessionToTell, issue #382);
  *   - the last narration the table read, word for word, from the chat's cards
  *     (narrator.js getLastStoryNarration — the ring's own source, no store of
  *     its own). The summary can be off, late or wrong; this is what was read.
@@ -283,7 +281,7 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
  * @returns {Promise<{ text: string, sessionNumber: number|null, lastNarration: string, lastNarrationThisSession: boolean }|null>}
  */
 async function whereLastSessionStopped(campaignState) {
-  const prev = lastSessionToTell(campaignState?.previousSessionSummary);
+  const prev = lastSessionToTell(campaignState);
   const own  = !!prev?.sessionId && prev.sessionId === campaignState?.currentSessionId;
   const text = !own && typeof prev?.text === "string" ? prev.text.trim() : "";
   // Loaded when asked for: the narrator is this scene's caller, and nothing

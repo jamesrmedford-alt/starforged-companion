@@ -31,6 +31,8 @@ import {
   _resetNarratorDebugForTests,
 } from '../../src/narration/narratorDebug.js';
 import { narrateVowSwearing, getRollingSessionSummary } from '../../src/narration/narrator.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { seedSessionRecord, playedBeats, citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 import {
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
@@ -184,18 +186,18 @@ describe('!narrator debug — the last narration\'s request', () => {
     apiPost.mockResolvedValueOnce(narratorReply('Kira swears.'));
     await narrateVowSwearing({ vow: VOW, campaignState: { currentSceneId: 'scene-1' } });
 
-    game.messages = { contents: [1, 2, 3].map(i => ({
-      flags: { [MODULE_ID]: { narratorCard: true, sessionId: 'sess-1', narrationText: `Beat ${i}.` } },
-    })) };
-    apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text: 'The crew swore an oath.' }] });
+    // The session's record: the summary is a view of it (issue #382).
+    const journals = installJournalMock();
+    await seedSessionRecord('sess-1', playedBeats('sess-1', ['Beat 1.', 'Beat 2.', 'Beat 3.']));
+    apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text: citedSummaryReply(['The crew swore an oath.']) }] });
     await getRollingSessionSummary({ currentSessionId: 'sess-1' }, { forceRefresh: true });
-    delete game.messages;
+    journals.restore();
 
     const html = (await debugCard()).content;
     expect(html).toMatch(/<p class="sf-narrator-debug-meta"><strong>narrateVowSwearing<\/strong>/);
     expect(html).toContain('Earlier in this browser');
     expect(html).toContain('<strong>getRollingSessionSummary</strong> (background)');
-    expect(html).not.toContain('SESSION NARRATION (oldest first)');   // the summary's prompt isn't detailed
+    expect(html).not.toContain('THE SESSION (oldest first)');   // the summary's prompt isn't detailed
   });
 
   it('says when the response carried no fact block, or one that could not be read', async () => {

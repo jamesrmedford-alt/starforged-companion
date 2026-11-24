@@ -209,6 +209,11 @@ describe('corrections, in order — the stored events never change', () => {
     const events = [ev('narration', { ref: { nar: 'n-v' }, d: { mode: 'vignette_close' }, text: 'On the quay, Vance mends a net.' })];
     expect(read([page(S1, events)]).sessions[0].beats[0].kind).toBe('cutaway');
   });
+
+  it('Begin\'s Spotlight Vignette is a cutaway too — a scene hidden from the characters (issue #381 slice 3)', () => {
+    const events = [ev('narration', { ref: { nar: 'n-s' }, d: { mode: 'vignette_spotlight' }, text: 'Far off, a courier burns a letter.' })];
+    expect(read([page(S1, events)]).sessions[0].beats[0].kind).toBe('cutaway');
+  });
 });
 
 describe('the hash a view is keyed by', () => {

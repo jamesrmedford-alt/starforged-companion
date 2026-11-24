@@ -57,6 +57,8 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { journalsKeepPages, tableSummaryOf } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
@@ -83,10 +85,15 @@ function reply(prose, sidecar = EMPTY_SIDECAR) {
   return `${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
 }
 
+// The session record is kept on the Session Log's pages (issue #382): the
+// table's journals keep their pages, so the summary — a view of the record —
+// is made from what was played.
+let restoreJournals = () => {};
 beforeAll(async () => {
   table = await simulateTable({ users: [USERS.GM, USERS.P1] });
+  restoreJournals = journalsKeepPages(table, makeJournal);
 }, 30_000);
-afterAll(() => table?.teardown());
+afterAll(() => { restoreJournals(); return table?.teardown(); });
 
 beforeEach(async () => {
   replies.length = 0;
@@ -95,6 +102,9 @@ beforeEach(async () => {
     sessionActive: true, currentSessionId: 'sess-1', sessionStartedId: 'sess-1', sessionNumber: 3, currentSceneId: 'sc-1', sceneTruths: [],
   } } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
+  // A fresh world each test: the GM's record opens its session anew (its
+  // resumed `session.begun` — the reset world's journals are empty).
+  (await table.client('gm-1').import('../../src/record/record.js'))._resetRecordForTests();
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
   table.claude.respond((call) => {
     if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
@@ -336,7 +346,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
     table.claude.respond((call) => {
       if (call.system.includes('continuity scribe')) {
         summaryCalls.push(call.client);
-        return held.then(() => 'Kira bargained with the dockmaster for a berth.');
+        return held.then(() => JSON.stringify([{ text: 'Kira bargained with the dockmaster for a berth.', because: ['2'] }]));
       }
       if (call.model === NARRATION_MODEL) return reply('The deck shudders underfoot.');
       return '{}';
@@ -345,7 +355,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
     await narrateMove('I check the docking clamps one by one.');
     await narrateMove('I wave down the dockmaster for a berth.');
     expect(summaryCalls).toEqual([]);
-    await narrateMove('I offer the dockmaster half our fuel.');   // the 3rd card: the regen is due
+    await narrateMove('I offer the dockmaster half our fuel.');   // the 3rd beat: the regen is due
     expect(summaryCalls).toEqual(['gm-1']);
 
     // The regen is still waiting on Haiku; the next narration goes out anyway.
@@ -354,7 +364,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
 
     release();
     await table.settle();
-    expect(world().sessionSummary).toMatchObject({ text: 'Kira bargained with the dockmaster for a berth.', sessionId: 'sess-1' });
+    expect(tableSummaryOf(table, 'sess-1')).toMatchObject({ text: 'Kira bargained with the dockmaster for a berth.' });
     const after = await narrateMove('I head for the berth.');
     expect(after.system).toContain('## STORY SO FAR (THIS SESSION)');
     expect(after.system).toContain('Kira bargained with the dockmaster for a berth.');
@@ -376,7 +386,7 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
       if (call.userText.includes('SIGNIFICANT new development')) {
         return JSON.stringify({ updates: [{ entityId: kael, detail: 'Kael has a scar along his jaw.', salience: 'notable' }] });
       }
-      if (call.system.includes('continuity scribe')) return 'Kira met Kael in the cargo office.';
+      if (call.system.includes('continuity scribe')) return JSON.stringify([{ text: 'Kira met Kael in the cargo office.', because: ['1'] }]);
       return call.model === NARRATION_MODEL ? reply('The station hums.') : '{}';
     });
     await gm.run(() => appendGenerativeTierUpdates('Kael\'s jaw is scarred.', [{ journalId: kael, type: 'connection' }], 'sess-1', 3));
@@ -395,9 +405,10 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
     const next = await narrateMove('I walk the empty docking ring.');   // a new scene
     expect(next.system).toMatch(/CORRECTED[^\n]*\n[^\n]*\n {2}Kael Dros — has a ragged scar along his jaw/);
 
-    await narrateMove('I wait for the next shuttle.');   // the 3rd card: the summary regen is due
+    await narrateMove('I wait for the next shuttle.');   // the 3rd beat: the summary regen is due
     const summary = table.claude.calls.find(c => c.system.includes('continuity scribe'));
-    expect(summary.userText).toContain('## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n- Kael Dros — has a ragged scar along his jaw');
+    expect(summary.userText).toContain('## STRUCK BY THE TABLE — did not happen\n\n- Kael Dros — has a ragged scar along his jaw');
+    expect(summary.userText).not.toMatch(/established[^\n]*has a ragged scar/);
   });
 });
 
@@ -452,7 +463,7 @@ describe('a session carries into the next one (C3, C4)', () => {
 
   beforeEach(async () => {
     table.claude.respond((call) => {
-      if (call.system?.includes('continuity scribe')) return SUMMARY;
+      if (call.system?.includes('continuity scribe')) return JSON.stringify([{ text: SUMMARY, because: ['1'] }]);
       // The recap answers in cited sentences (issue #382 D11), citing a line it was sent.
       if (isRecapCall(call)) {
         const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(call.userText ?? '')?.[1] ?? 'now-1';
@@ -477,15 +488,14 @@ describe('a session carries into the next one (C3, C4)', () => {
     await narrateMove('I pay Vex for the beacon code.');
     table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="questFocus"]': '', 'input[name="connectionFocus"]': '' }));
     await type('gm-1', '!end-session');
-    expect(world()).toMatchObject({ sessionEndedId: 'sess-1', sessionSummary: { sessionId: 'sess-1', text: SUMMARY } });
+    expect(world()).toMatchObject({ sessionEndedId: 'sess-1' });
+    // End brought the summary up to date: a view of the session's record (issue #382).
+    expect(tableSummaryOf(table, 'sess-1')?.text).toBe(SUMMARY);
 
     table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="vignette"]': false, 'input[name="galleyVignette"]': false }));
     await type('gm-1', '!begin-session');
     expect(world().currentSessionId).not.toBe('sess-1');
-    expect(world()).toMatchObject({
-      sessionActive: true, sessionNumber: 4, sessionEndedId: null,
-      previousSessionSummary: { sessionId: 'sess-1', sessionNumber: 3, text: SUMMARY },
-    });
+    expect(world()).toMatchObject({ sessionActive: true, sessionNumber: 4, sessionEndedId: null });
 
     // The recap is a view of the record and of where things stand (issue
     // #382): Begin's own start effects moved the sheets, so the recap made
