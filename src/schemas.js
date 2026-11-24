@@ -600,14 +600,16 @@ export const CampaignStateSchema = {
   //   { sessionId, quest, connection }
   sessionFocus:         null,
 
-  // The chronicle a recap was made from — getCampaignRecap and the session's
-  // first narration use the text only while the chronicle still matches
-  // (narrator.js campaignRecapCacheKey, issue #301 B04).
+  // The campaign recap, a view of the session record (issue #382): getCampaignRecap
+  // and the session's first narration use the text only while the source it
+  // was made from hashes the same (narrator.js campaignRecapCacheKey). `cites`
+  // is each paragraph's sentences' beat ids. A cache from before the record
+  // (`chronicleLength` / `chronicleHash`, issue #301 B04) is made again once.
   campaignRecapCache: {
-    text:            "",
-    generatedAt:     null,
-    chronicleLength: 0,
-    chronicleHash:   null,
+    text:        "",
+    cites:       [],
+    generatedAt: null,
+    sourceHash:  null,
   },
 
   // Pacing classifier state (see issue #220 (Pacing))

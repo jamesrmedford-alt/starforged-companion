@@ -365,7 +365,7 @@ scenario written against hand-made replies meets what the model does:
 - A check on what the model wrote cannot name what the model will call it.
   `journalPage` takes `pageMatches` and a list of journals for that; a
   contract on a section whose words are the model's pins that the section
-  holds something (the recap's `CAMPAIGN CHRONICLE` holds a dated entry), not
+  holds something (the recap's `THE RECORD` holds a line of session 1, `[s1-`), not
   a name (the live scribe wrote "Oduya" where the placeholder wrote "Vance
   Oduya").
 - **The Chronicle's floor.** The scribe's replies were stored only at
@@ -373,8 +373,11 @@ scenario written against hand-made replies meets what the model does:
   below that: no chronicle, so no campaign recap call, and the step that
   requires one reports it MISSING. The default is "notable" now (known-issues
   CHRONICLE-EMPTY-AFTER-LIVE-SESSION); first-session still pins
-  `chronicleSalienceThreshold` to "scene", so its recap does not depend on
-  how a scribe rates four beats.
+  `chronicleSalienceThreshold` to "scene". The recap's source is the session
+  record now (issue #382), so a session with any beat has a recap call
+  whatever the scribe kept; its reply is cited JSON, and a recorded prose
+  reply is asked for once more (an UNEXPECTED second call) — re-record a
+  scenario's recap step after the recap's prompt changes.
 - The step's wait for its required calls is five times longer in record mode:
   a session's end makes its calls one after another, and each live reply
   takes seconds.

@@ -34,7 +34,6 @@ beforeEach(() => {
   }));
   spies = {
     recordLoreDiscovery:     vi.spyOn(wj, 'recordLoreDiscovery').mockResolvedValue(undefined),
-    appendSessionLogBeat:    vi.spyOn(wj, 'appendSessionLogBeat').mockResolvedValue(undefined),
     getConfirmedLore:        vi.spyOn(wj, 'getConfirmedLore').mockReturnValue([]),
     getNarratorAssertedLore: vi.spyOn(wj, 'getNarratorAssertedLore').mockReturnValue([]),
   };

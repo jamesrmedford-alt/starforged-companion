@@ -313,6 +313,11 @@ Hooks.on("quenchReady", (quench) => {
   // parent with its own system data still readable. Each is run on real
   // documents, through the hook index.js registers.
   registerDocumentHookAssumptionTests(quench);
+  // Session record (issue #382, decision D1) — an append to a session's
+  // record is one dotted key of its page's flag; on real documents, what goes
+  // over the socket is that event and the counter, never the session's other
+  // events (the storage rests on it; the fallback is a page a scene).
+  registerSessionRecordTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2623,18 +2628,26 @@ function registerWorldJournalTests(quench) {
           assert.isAtLeast(after, Math.max(before, 1));
         });
 
-        it("appendSessionLogBeat appends a scene beat to the running session page", async function () {
+        it("the Session Log page is the session record's view: a line recorded for a session is listed on its page (issue #382)", async function () {
           this.timeout(20000);
+          const { isCanonicalGM } = await import(`${MODULE_PATH}/multiplayer/gmGate.js`);
+          if (!game.user.isGM || !isCanonicalGM()) { this.skip(); return; }
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const title = `QUENCH TEST — Scene beat ${Date.now()}`;
+          const { recordEvent, recordSettled } = await import(`${MODULE_PATH}/record/record.js`);
+          const { renderSessionLog } = await import(`${MODULE_PATH}/record/sessionLogView.js`);
+          // A session of the test's own: the world's own record is never written here.
+          const session = `quench-record-${Date.now()}`;
+          const words = `QUENCH TEST — a line of play ${Date.now()}`;
 
-          const page = await wj.appendSessionLogBeat(state, { kind: "lore", title, text: "transient detail" });
+          recordEvent("line", { session, d: { via: "typed" }, text: words });
+          await recordSettled();
+          await renderSessionLog(session);
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
+          const page = slJournal?.pages?.contents?.find(p => p.flags?.[MODULE]?.sessionLogPage?.sessionId === session) ?? null;
           if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
-          assert.isObject(page, "appendSessionLogBeat should return the running page");
-          assert.include(page?.text?.content ?? "", title, "the beat should appear in the page body");
-          assert.include(page?.text?.content ?? "", "Scene log", "the running scene-log section should be present");
+          assert.isObject(page, "the record's first write made the session's page");
+          assert.include(page?.text?.content ?? "", words, "the line is listed under What happened");
+          assert.notInclude(page?.text?.content ?? "", "Scene log", "the detector's Scene log is retired (issue #382 D6)");
         });
       });
 
@@ -5532,7 +5545,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds          = [];
-          state.campaignRecapCache    = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache    = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5555,7 +5568,10 @@ function registerRecapEndToEndTests(quench) {
                 } catch (err) {
                   console.warn(`${MODULE_ID} | quench: recap body capture failed:`, err);
                 }
-                return { content: [{ type: "text", text: "QUENCH recap text." }] };
+                // The recap answers in cited sentences (issue #382 D11): its one
+                // cites the first line it was sent.
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(capturedUserMessage ?? "")?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap text.", because: [id] }]] }) }] };
               },
             ]], async () => {
               return await getCampaignRecap(
@@ -5592,7 +5608,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition + invalidate cache.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds       = [];
-          state.campaignRecapCache = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5611,7 +5627,13 @@ function registerRecapEndToEndTests(quench) {
 
             await withStubbedFetch([[
               "api.anthropic.com",
-              () => ({ content: [{ type: "text", text: "QUENCH recap card text." }] }),
+              // A cited sentence (issue #382 D11), citing the first line it was sent.
+              (_target, init) => {
+                let user = "";
+                try { user = JSON.stringify(JSON.parse(init?.body ?? "{}")?.messages ?? []); } catch { user = ""; }
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(user)?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap card text.", because: [id] }]] }) }] };
+              },
             ]], async () => {
               await postCampaignRecap(
                 game.settings.get(MODULE_ID, "campaignState"),
@@ -12456,7 +12478,7 @@ function registerPromptContractTests(quench) {
           campaignState: state(),
         });
       } };
-      const RECAP = { name: "campaign recap", marker: "## CAMPAIGN CHRONICLE", run: async () => {
+      const RECAP = { name: "campaign recap", marker: "Write a campaign recap", run: async () => {
         const { getCampaignRecap } = await narrator();
         await getCampaignRecap(state(), { forceRefresh: true });
       } };
@@ -12594,12 +12616,15 @@ function registerPromptContractTests(quench) {
           for (const text of sent.slice(1)) assert.equal(text, sent[0], "the standing block differs between two modes");
         });
 
-        it("campaign recap: nothing is sent without a chronicle", async function () {
-          if (fx.otherPcs.length) { this.skip(); return; }   // their chronicles count
+        it("campaign recap: nothing is sent with nothing to retell", async function () {
+          // Its source is the session record (issue #382): a world whose record,
+          // notes and earlier sessions hold nothing gets no recap call.
+          const { campaignRecapSourceOf } = await import(`${MODULE_PATH}/record/recapView.js`);
+          if (!(await campaignRecapSourceOf(state())).empty) { this.skip(); return; }
           const since = stub.requests.length;
           await RECAP.run();
           assert.isFalse(stub.requests.slice(since).some(r => r.user.includes(RECAP.marker)),
-            "with no chronicle entry the recap makes no call");
+            "with nothing on the record the recap makes no call");
         });
 
         it("Private Channel: no shared story", async function () {
@@ -12673,8 +12698,9 @@ function registerPromptContractTests(quench) {
               establishedAt: new Date().toISOString(),
             },
           };
-          // The recap's cache, made from the chronicle as it stands: the
-          // narrator uses one only while it matches (issue #301 B04).
+          // The recap's cache, made from its source as it stands — the
+          // session record, the sheets, the notes: the narrator uses one
+          // only while that source hashes the same (issue #382).
           const { campaignRecapCacheKey } = await import(`${MODULE_PATH}/narration/narrator.js`);
           cs.campaignRecapCache = {
             text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(),
@@ -12796,9 +12822,11 @@ function registerPromptContractTests(quench) {
           ]);
         });
 
-        it("campaign recap: the chronicle and the premise, none of the live-scene sections", async function () {
+        it("campaign recap: the record's sessions and the premise, none of the live-scene sections", async function () {
           const request = await capture(RECAP);
-          carries(request, "CAMPAIGN CHRONICLE", RECAP.name, [N.chronicle]);
+          // The fixture's automatic Chronicle entry is of a session with no
+          // record (issue #382): the recap is given it as an earlier session's.
+          carries(request, "EARLIER SESSIONS, FROM THE CHRONICLE AND THE SESSION LOG", RECAP.name, [N.chronicle]);
           carries(request, "CAMPAIGN PREMISE", RECAP.name, [N.premise]);
           carries(request, "CHARACTER", RECAP.name);
           carries(request, "PARTY", RECAP.name, [N.pcA, N.pcB]);
@@ -12807,17 +12835,16 @@ function registerPromptContractTests(quench) {
           }
         });
 
-        // A recap is told how things stand beside the Chronicle it retells
-        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN): the open scene's
-        // facts, as the later word on them — never as the binding ACTIVE
-        // SCENE block issue #374 A1 took out (lacked, above).
-        it("campaign recap: where things stand now — the open scene's facts, under its own heading", async function () {
+        // A recap is told how things stand beside the record it retells
+        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN), read live from the
+        // sheets and tracks (issue #382) — never as the binding ACTIVE SCENE
+        // block issue #374 A1 took out (lacked, above).
+        it("campaign recap: where things stand — read from the sheets, under its own heading", async function () {
           const request = await capture(RECAP);
-          const section = carries(request, "WHERE THINGS STAND NOW", RECAP.name, [N.truth]);
-          assert.include(section.text, "not where the campaign is set", "the scene is one moment of the campaign");
+          const section = carries(request, "WHERE THINGS STAND", RECAP.name, [N.pcA]);
           assert.notInclude(section.text, "binding", "nothing of it is given as binding");
           assert.include(request.system, "A recap says only what its sources say.", "the recap's sources rule");
-          assert.include(request.user, "Nothing inferred, nothing filled in between two entries", "…said again under the chronicle");
+          assert.include(request.user, "Nothing inferred, nothing filled in between two lines", "…said again under the record");
         });
 
         it("Private Channel: the shared story, and only its player's own Private Lines (#286 D1)", async function () {
@@ -13683,5 +13710,70 @@ function registerDocumentHookAssumptionTests(quench) {
       });
     },
     { displayName: "STARFORGED: Document Hook Assumptions (issue #364)", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION RECORD — an append sends one event (issue #382)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSessionRecordTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sessionRecord",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      let journal = null;
+
+      before(async function () {
+        this.timeout(15000);
+        if (!game.user.isGM) { this.skip(); return; }
+        // A scratch journal: the world's own Session Log is never written here.
+        journal = await JournalEntry.create({
+          name: "Quench — session record scratch",
+          pages: [{ name: "Scratch", type: "text", text: { format: 1, content: "" } }],
+        });
+      });
+
+      after(async function () {
+        await journal?.delete().catch(err =>
+          console.warn(`${MODULE_ID} | quench sessionRecord: cleanup — deleting the scratch journal failed:`, err?.message ?? err));
+      });
+
+      describe("an append to the record is one event on the wire (store.js appendRecordEvents)", function () {
+        it("a dotted update of one key of the record's events sends that key and the counter alone", async function () {
+          this.timeout(15000);
+          const page = journal.pages.contents[0];
+          const base = `flags.${MODULE_ID}.sessionRecord`;
+          const bulky = "x".repeat(4000);
+          await page.update({
+            [`${base}.v`]: 1,
+            [`${base}.events.evFirst`]: { id: "evFirst", k: "line", text: bulky },
+            [`${base}.seq`]: 1,
+          });
+
+          const sent = [];
+          const emit = game.socket.emit;
+          game.socket.emit = function (event, ...args) {
+            if (event === "modifyDocument") sent.push(JSON.parse(JSON.stringify(args[0] ?? null)));
+            return emit.call(this, event, ...args);
+          };
+          try {
+            await page.update({ [`${base}.events.evSecond`]: { id: "evSecond", k: "line", text: "y" }, [`${base}.seq`]: 2 });
+          } finally {
+            game.socket.emit = emit;
+          }
+
+          const request = sent.find(r => r?.action === "update" && r?.type === "JournalEntryPage");
+          assert.ok(request, "the append was sent as a JournalEntryPage update");
+          const record = request.operation?.updates?.[0]?.flags?.[MODULE_ID]?.sessionRecord ?? null;
+          assert.deepEqual(Object.keys(record?.events ?? {}), ["evSecond"], "only the new event went over the socket");
+          assert.equal(record?.seq, 2);
+          assert.notInclude(JSON.stringify(request), bulky, "the session's earlier event was not resent");
+          // The world merged it: both events stand on the page.
+          assert.deepEqual(Object.keys(page.flags[MODULE_ID].sessionRecord.events).sort(), ["evFirst", "evSecond"]);
+        });
+      });
+    },
+    { displayName: "STARFORGED: Session record — an append sends one event" },
   );
 }

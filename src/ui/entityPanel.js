@@ -38,6 +38,8 @@ import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 import { plannedSubjects } from '../world/secrets.js';
 import { offerNewPerson } from '../entities/entityExtractor.js';
+import { isRecordWrite } from '../record/events.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
 
 /** The GM's "has a plan" marker (issue #353 Phase 4): a sign, no content. */
 const PLAN_MARKER = '<span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>';
@@ -1127,7 +1129,11 @@ export class EntityPanelApp extends ApplicationV2 {
       // same command-vehicle position update, so the narrator's current
       // location and SHIP POSITION agree (issue #321 U56). Clearing the
       // location moves nothing, like a bare `!at`.
-      if (!isAlreadyCurrent) await moveShipToLocation(journalId, campaignState);
+      if (!isAlreadyCurrent) {
+        // An arrival on the session record (issue #382), once the write landed.
+        void recordPlaceArrival(campaignState, { how: 'panel' });
+        await moveShipToLocation(journalId, campaignState);
+      }
       this.render();
     })();
     // Expose the in-flight promise so integration tests (clickAction) can
@@ -1201,9 +1207,12 @@ export class EntityPanelApp extends ApplicationV2 {
     // (canonicalLocked toggle, generative-tier edits, portraitId writes) only
     // surface via this hook — updateJournalEntry does not fire for embedded
     // page changes.
-    Hooks.on('updateJournalEntryPage', (page, change) => {
+    Hooks.on('updateJournalEntryPage', (page, change, options) => {
       const instance = EntityPanelApp.#instance;
       if (!instance?.rendered) return;
+      // The session record appends to a Session Log page on every beat
+      // (issue #382): nothing this panel lists.
+      if (isRecordWrite(options)) return;
       if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}`)) return;
       instance.render();
     });

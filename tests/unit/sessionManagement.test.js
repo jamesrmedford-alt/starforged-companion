@@ -131,8 +131,11 @@ describe('CampaignStateSchema', () => {
     expect(cache).toBeDefined();
     expect(cache.text).toBe('');
     expect(cache.generatedAt).toBeNull();
-    expect(cache.chronicleLength).toBe(0);
-    expect(cache.chronicleHash).toBeNull();   // the chronicle a recap was made from (issue #301 B04)
+    expect(cache.cites).toEqual([]);
+    expect(cache.sourceHash).toBeNull();      // the record's source a recap was made from (issue #382)
+    // The Chronicle's key is retired (issue #301 B04's count and hash).
+    expect(cache).not.toHaveProperty('chronicleLength');
+    expect(cache).not.toHaveProperty('chronicleHash');
   });
 });
 

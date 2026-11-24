@@ -73,6 +73,7 @@ import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
+import { campaignRecapSourceOf, citedRecap, recapText, recapReplyAgain, recapLastingUntold } from '../record/recapView.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { lastingChangeOf, roundLastingChange } from '../character/chronicleKeeps.js';
 import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
@@ -438,10 +439,6 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     extras.previousSessionSummary = previousSessionSummaryFor(campaignState);
     extras.campaignRecap          = await sessionStartRecap(campaignState);
   }
-  // A recap retells the Chronicle, and is told how things stand beside it
-  // (WHERE THINGS STAND NOW, RECAP-STATES-WHAT-DID-NOT-HAPPEN): the latest
-  // session's summary, when it covers the whole of that session.
-  if (mode === 'campaign_recap') extras.recapSummary = recapSummaryFor(campaignState);
 
   // Clocks and the session's focus (issue #286 C5) — in no prompt before.
   // Read from the store: a move narrates from a snapshot taken before its own
@@ -1021,54 +1018,6 @@ function previousSessionSummaryFor(campaignState) {
     sessionNumber: number,
     isLast:        number === null || !Number.isFinite(current) || number === current - 1,
   };
-}
-
-/** A session's closing cutaway: an NPC somewhere the characters are not (endSessionVignette.js). */
-const isClosingCutaway = (m) => {
-  const f = m?.flags?.[MODULE_ID];
-  return f?.sessionVignetteCard === true && f.vignetteKind === 'npc_end';
-};
-
-/**
- * The session summary a campaign recap is told how things stand from
- * (narratorPrompt.js formatStandsNowBlock; known-issues
- * RECAP-STATES-WHAT-DID-NOT-HAPPEN), or null. A recap is later than any
- * Chronicle entry only when the summary is whole, so:
- *   - this session's, when it covers every narration of the session but a
- *     closing cutaway posted since — End a Session finalises the summary,
- *     posts the cutaway, then refreshes the recap. One made at the debounce,
- *     with narrations after it, is behind the Chronicle and is left out;
- *   - else, in a session with no narration yet (the recap refreshed as a new
- *     session is minted), the summary of the session before (LAST SESSION),
- *     when that is the last one played;
- *   - else none: the open scene's own facts and state say how things stand.
- * The summary and the recap of one End a Session were each written from a
- * source the other never saw, and contradicted each other (the long haul's
- * third live run, a76: "remains unanswered" against "a question you can now
- * answer"; the needle "settled on north" against "swinging harder toward the
- * dark lane"). No API call.
- *
- * @param {Object} campaignState
- * @returns {{ text: string, sessionNumber: number|null, current: boolean }|null}
- */
-function recapSummaryFor(campaignState) {
-  if (!rollingSummaryEnabled()) return null;
-  const sessionId = campaignState?.currentSessionId ?? null;
-  let cards = [];
-  try { cards = sessionId ? sessionNarratorCards(sessionId) : []; }
-  catch { return null; }
-  let stored = null;
-  try { stored = game.settings.get(MODULE_ID, 'campaignState')?.sessionSummary ?? null; }
-  catch { stored = null; }
-  for (const summary of [stored, campaignState?.sessionSummary]) {
-    if (!sessionId || summary?.sessionId !== sessionId || typeof summary.text !== 'string' || !summary.text.trim()) continue;
-    if (!cards.slice(Number(summary.coveredCount) || 0).every(isClosingCutaway)) continue;
-    const number = Number(campaignState?.sessionNumber);
-    return { text: summary.text.trim(), sessionNumber: Number.isFinite(number) ? number : null, current: true };
-  }
-  if (!cards.every(isClosingCutaway)) return null;
-  const prev = previousSessionSummaryFor(campaignState);
-  return prev && prev.isLast !== false ? { text: prev.text, sessionNumber: prev.sessionNumber, current: false } : null;
 }
 
 /**
@@ -2742,6 +2691,21 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
 }
 
 /**
+ * Whether a card is a narration of its own session that narrator memory
+ * reads (inNarratorMemory, for the session the card names) — the cards the
+ * session record takes as `narration` events as they post
+ * (record/cards.js, issue #382), so the record and the narrator's memory keep
+ * one rule for what a narration is.
+ *
+ * @param {Object} m — a ChatMessage
+ * @returns {boolean}
+ */
+export function narratorMemoryCard(m) {
+  const sessionId = m?.flags?.[MODULE_ID]?.sessionId;
+  return typeof sessionId === 'string' && !!sessionId && inNarratorMemory(m, sessionId);
+}
+
+/**
  * Whether a narration card was posted late into an earlier session: filed
  * under a session other than the one current in `cs`, in that session's
  * narrator memory, and posted since the current session was minted
@@ -3606,9 +3570,18 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
 
 /**
  * Get the campaign recap text — from cache if valid, or generate via Claude.
- * The cache is valid while the chronicle is exactly what it was made from
- * (campaignRecapCacheKey — issue #301 B04). A stale cache is never returned:
- * with no key to regenerate, the result is ''.
+ *
+ * Its source is the session record (issue #382, slice 2 — record/recapView.js):
+ * each session's turning points and the latest session in full, as facts;
+ * WHERE THINGS STAND read live from the sheets and tracks; the players' own
+ * Chronicle notes; a session from before the record as its Session Log story
+ * and Chronicle entries had it. The reply is cited sentences: one that cites
+ * nothing the source holds is dropped, a lasting beat no sentence cites sends
+ * it back once, and a reply that is not the JSON asked for is asked for once
+ * more before the recap that stood stays. The cache is valid while the source
+ * hashes the same (campaignRecapCacheKey): a correction anywhere in the record
+ * moves the hash. A stale cache is never returned: with no key to make it
+ * again, the result is ''. A reply made across a correction is discarded.
  *
  * @param {Object} campaignState
  * @param {Object} [options]
@@ -3616,57 +3589,68 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
  * @returns {Promise<string>}
  */
 export async function getCampaignRecap(campaignState, options = {}) {
-  const cache     = campaignState?.campaignRecapCache;
-  const chronicle = await _recapChronicle(campaignState);
-  const key       = chronicleRecapKey(chronicle);
+  const cache  = campaignState?.campaignRecapCache;
+  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
 
-  if (!options.forceRefresh && isRecapCacheCurrent(cache, key)) {
+  if (!options.forceRefresh && isRecapCacheCurrent(cache, source)) {
     return cache.text;
   }
 
   const apiKey = getApiKey();
   if (!apiKey) return '';
-
-  const chronicleEntries = formatRecapEntries(chronicle);
-  if (!chronicleEntries.length) return '';
+  if (source.empty) return '';
 
   const settings    = getNarratorSettings();
   const character   = getActiveCharacter(campaignState);
   const extras      = await buildNarratorExtras('campaign_recap', campaignState, { character });
-  // The Chronicle may name someone by a name the table has since changed
-  // (issue #377 item 1): the recap is told the new one where it does.
-  extras.nameChangeTexts = chronicleEntries;
+  // The record's lines are written with every changed name; a session from
+  // before the record is given as it was written, with the names note it
+  // gets wherever an old name reaches a prompt (issue #377 item 1).
+  extras.nameChangeTexts = source.earlierTexts;
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
-  const userMessage  = buildCampaignRecapUserMessage(chronicleEntries);
+  const userMessage  = buildCampaignRecapUserMessage(source);
+  const ask = (message) => callNarratorAPI({
+    label: 'getCampaignRecap', apiKey, systemPrompt, userMessage: message,
+    model: settings.narrationModel, maxTokens: maxTokensWithSidecar(16000),
+  });
 
   try {
-    const text = await callNarratorAPI({
-      label: 'getCampaignRecap',
-      apiKey,
-      systemPrompt,
-      userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
-    });
+    let cited = citedRecap(await ask(userMessage), source);
+    if (!cited.ok) {
+      cited = citedRecap(await ask(`${userMessage}\n\n${recapReplyAgain()}`), source);
+    } else if (cited.missing.length) {
+      const again = citedRecap(await ask(`${userMessage}\n\n${recapLastingUntold(cited.missing)}`), source);
+      if (again.ok && again.paragraphs.length) cited = again;
+    }
+    // Fail-open: the recap that stood stays — while it is still current.
+    if (!cited.ok || !cited.paragraphs.length) return isRecapCacheCurrent(cache, source) ? cache.text : '';
+    const text = recapText(cited.paragraphs, source);
+    // A correction landed while the call was out: the reply retells a record that no longer stands.
+    const now = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
+    if (now.hash !== source.hash) return '';
 
     // Written on a copy of the latest store: `get` hands back the cached
     // value, and a refused write left the GM's cache holding a recap the
     // world lacked — served as current on this client alone (issue #331
     // X25). One emitter: the canonical GM. Read at its turn on the client's
     // campaignState write chain (CAMPSTATE-CHAIN-REST).
-    if (text?.trim() && isCanonicalGM()) {
+    if (text && isCanonicalGM()) {
       await serialiseCampaignStateWrite(() => {
         const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
         cs.campaignRecapCache = {
-          text:            text,
-          generatedAt:     new Date().toISOString(),
-          ...key,          // the chronicle it was made from
+          text,
+          // UNWIRED: the playtest runner's recap review (each sentence beside
+          // the beats it cites — issue #382 design 11.4) is its reader; that
+          // runner change is outside this module (known-issues RECAP-CITES-UNREAD).
+          cites:       cited.paragraphs.map(p => p.map(sentence => sentence.because)),
+          generatedAt: new Date().toISOString(),
+          sourceHash:  source.hash,       // the record it was made from
         };
         return game.settings.set(MODULE_ID, 'campaignState', cs);
       }, 'campaign recap cache');
     }
 
-    return text ?? '';
+    return text;
   } catch (err) {
     console.error(`${MODULE_ID} | getCampaignRecap failed:`, err);
     return '';
@@ -7939,23 +7923,23 @@ async function _collectAllChronicleEntries(campaignState) {
 }
 
 /**
- * What a campaign recap's cache is checked against (issue #301 B04): the
- * entry count and a hash of exactly what the recap prompt is built from —
- * each entry's text, timestamp and session number, in campaign order (pins
- * and type changes do not count). The count alone kept serving a recap made
- * before a correction that kept the count: "Vex died." edited to "Vex
- * survived.", or a wrong entry deleted and a right one added, left the old
- * recap in the cache and in every session-opening narration. Exported for
- * the tests and Quench checks that seed a cache.
+ * What a campaign recap's cache is checked against: the hash of the source it
+ * would be made from now (record/recapView.js — the session record read with
+ * the table's corrections, where things stand, the players' notes, the
+ * sessions from before the record). Any correction moves it (issue #382); it
+ * was a hash of the Chronicle's text (issue #301 B04). Exported for the tests
+ * and Quench checks that seed a cache. No API call.
  *
  * @param {Object} campaignState
- * @returns {Promise<{ chronicleLength: number, chronicleHash: string }>}
+ * @returns {Promise<{ sourceHash: string }>}
  */
 export async function campaignRecapCacheKey(campaignState) {
-  return chronicleRecapKey(await _recapChronicle(campaignState));
+  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
+  return { sourceHash: source.hash };
 }
 
-// Every PC's chronicle entries for the recap — [] when they cannot be read.
+// Every PC's chronicle entries — the players' own notes, and the sessions
+// from before the record (recapView.js) — [] when they cannot be read.
 async function _recapChronicle(campaignState) {
   try {
     return await _collectAllChronicleEntries(campaignState);
@@ -7965,37 +7949,12 @@ async function _recapChronicle(campaignState) {
   }
 }
 
-function chronicleRecapKey(entries) {
-  let h = 0x811c9dc5;                                   // FNV-1a, 32-bit
-  for (const e of entries) {
-    const s = `${e?.timestamp ?? ''}\u0000${e?.sessionNumber ?? ''}\u0000${e?.text ?? e?.content ?? ''}\u0001`;
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-  }
-  return { chronicleLength: entries.length, chronicleHash: (h >>> 0).toString(16).padStart(8, '0') };
-}
-
-// A recap cache is current when it was made from the chronicle as it stands
-// now. One from before the hash existed is not — it is regenerated once.
+// A recap cache is current when it was made from the source as it stands
+// now: `key` is campaignRecapCacheKey's, or a source (its `hash`). One from
+// before the record (a Chronicle hash) is not — it is made again once.
 function isRecapCacheCurrent(cache, key) {
-  return typeof cache?.text === 'string' && cache.text.trim() !== ''
-    && cache.chronicleLength === key.chronicleLength
-    && cache.chronicleHash === key.chronicleHash;
-}
-
-/**
- * Chronicle entries as formatted strings for the campaign recap prompt.
- */
-function formatRecapEntries(entries) {
-  return entries.map(e => {
-    const date    = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
-    const session = e.sessionNumber ? `Session ${e.sessionNumber}` : '';
-    const header  = [session, date].filter(Boolean).join(' — ');
-    const body    = e.text ?? e.content ?? '';
-    return header ? `[${header}]\n${body}` : body;
-  }).filter(Boolean);
+  const hash = key?.sourceHash ?? key?.hash ?? null;
+  return typeof cache?.text === 'string' && cache.text.trim() !== '' && !!hash && cache.sourceHash === hash;
 }
 
 // How many earlier positions a narrated move keeps (`position.previous`),

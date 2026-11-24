@@ -29,8 +29,8 @@ trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
 sidecar/latitude, and of the scene ledger [6.5] the ship's position alone —
-issue #374 A1; how things stand reaches it in a section of its own, [6.5m]
-WHERE THINGS STAND NOW, below), round_resolution (a Batch Mode round, issue
+issue #374 A1; its source — the session record, and how things stand read
+live — is its user message, below), round_resolution (a Batch Mode round, issue
 #340 — see below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
@@ -538,8 +538,8 @@ the id its card carries since issue #335 Y03 — the inciting capture) hands the
 `routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
 auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
 each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the
-versions before as `previous`, newest first, up to three), Session Log beat,
-tier detail and placeholder rename (`renamedBy` on the card — the X-Card puts
+versions before as `previous`, newest first, up to three), tier detail and
+placeholder rename (`renamedBy` on the card — the X-Card puts
 the placeholder name back unless the card was renamed since), and on the
 ◈ New Entities card it queues (its rows still pending are withdrawn —
 `xCarded`, no Confirm / Dismiss, out of PENDING DRAFTS and the
@@ -556,18 +556,20 @@ deleted card go back to its name: MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED); th
 finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
-threat, faction or place page, takes the beats off the Session Log page and
-drops the tier details — a detail the GM had promoted takes the line its ⤴
+threat, faction or place page and drops the tier details — a detail the GM had promoted takes the line its ⤴
 Promote appended with it (the entry keeps `promotedText` beside its
 `narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
 of the record's notes (issue #338 D7); a Promote never promotes an X-carded
 narration's detail, and one whose Notes write the X-Card overtook takes its
 own line back off the tab (issue #342 Z44) — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. Last, the summary End a Session
-wrote on the session's Session Log page (`retractSessionLogSummary`): its
-"Story so far" goes when the pause dropped the rolling summary it was
-written from, and "Lore this session" loses the titles whose lore the undo
-or the propagation retracted — an X-Card played after End left the page
+`propagateRetraction` never reached them. First of all, the finish puts the
+removal on the session record (`recordNarrationsRemoved`, issue #382 —
+docs/flows/session-record-flow.md), awaited: the removed narration's prose
+and what it established are blanked in the stored record (decision D3), and
+every view of the record — the Session Log page among them — reads without
+them. Last, the story End a Session wrote on the session's Session Log page
+(`retractSessionLogSummary`): it goes when the pause dropped the rolling
+summary it was written from — an X-Card played after End left the page
 telling the removed beat (issue #345 AA27); the story is rebuilt from the
 summary the next mint regenerates without the beat (`restoreSessionLogStory`
 at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
@@ -1216,46 +1218,43 @@ Channel aside: it is canon, not a narration, and published first it took the
 narration's recap (issue #345 AA32) — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
 LAST KNOWN, established lore and the campaign premise. The recap cache stores
-the chronicle it was made from (`chronicleLength` + `chronicleHash`, over
-each entry's text, timestamp and session number — `campaignRecapCacheKey`);
-`getCampaignRecap` and the session-opening read use it only while that still
-matches, so a corrected entry is never recapped in its old form, and with no
-key to regenerate there is no recap rather than a stale one (issue #301 B04 —
-the check was the entry count alone, and the session-opening read had none).
-With no Chronicle entry there is no recap at all: what the Chronicle keeps is
-the scribe's rating against the floor, and — whatever the rating — a resolved
-move that changed something lasting (`chronicleKeeps.js`, issue #374 A5; a
-live session of four rolls had kept none and opened the next with no recap).
+the hash of the source it was made from (`sourceHash` — `campaignRecapCacheKey`,
+issue #382; it was the Chronicle's text, issue #301 B04); `getCampaignRecap`
+and the session-opening read use it only while that still matches, so a
+correction anywhere in the record, or a change to where things stand, makes it
+again, and with no key to regenerate there is no recap rather than a stale
+one. With nothing to retell — no beat on the record, no player's note, no
+session from before the record — there is no recap at all.
 
 **What a recap is told** (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN — the
 long haul's third live run's four recaps held fourteen sentences the story
-does not support). It retells the Chronicle (`buildCampaignRecapUserMessage`,
-the entries oldest first), under a role that says a recap says only what its
-sources say: nothing inferred (no cause, link or verdict no entry gives, no
-answer to a question left open), nothing filled in between two entries (one
-may be missing because the table took that moment out), whose things are
-whose (only the character is "you"; a "her" an entry leaves open keeps the
-entry's names — "first pick of her hauls" was the wrong woman's in all four),
-and how a thing stands now is its latest word. Beside it, **[6.5m] WHERE
-THINGS STAND NOW** (`narratorPrompt.formatStandsNowBlock`, meta mode only) —
-later than any entry, and already in other prompts:
-- the latest session's summary, when it covers the whole of its session
-  (`extras.recapSummary`, `narrator.recapSummaryFor`): this session's when
-  every narration since it was made is a closing cutaway — End a Session
-  finalises the summary, posts the cutaway, then refreshes the recap — else,
-  in a session with no narration yet, the last session's (LAST SESSION). A
-  summary made at the debounce, with narrations after it, is behind the
-  Chronicle and is left out;
-- the open scene's facts, corrections and state (every subject — a recap has
-  no player line for relevance to match), with where it is and its "Now" line.
-It is given as the later word on how things stand — where the two differ, the
-recap follows it — never as a binding scene, without the cast or the scene
-question, and with the line that the scene is one moment of the campaign: the
-ACTIVE SCENE block itself is still not sent (issue #374 A1 — told, under
-"binding", the frame of End a Session's closing cutaway, a recap set the whole
-campaign there; that scene now ends before the recap is written). The recap's
-cache is still keyed by the Chronicle alone: a recap is made again when an
-entry changes, not when only the scene or the summary has.
+does not support; issue #382 slice 2 — docs/flows/session-record-flow.md). Its
+source is the session record (`record/recapView.js`, read through
+`readRecord` with the table's corrections), in the user message
+(`buildCampaignRecapUserMessage`): THE RECORD — each session's turning points
+(its lasting beats: a move's lasting change, `chronicleKeeps.lastingChangeOf`,
+or what play did — a vow sworn, fulfilled or forsaken, a bond forged, an
+arrival…) and the latest session in full, each beat a line with an id: who
+acted and the words their player wrote, the move and its outcome, what changed
+on a sheet, what play did, what was established and stands, and what the table
+struck. Facts only — no narration (decision D4). Then WHERE THINGS STAND, read
+live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
+the vows and their progress, the connections, the open tracks, the current
+place, the open scene's state and its question, answered or not); THE PLAYERS'
+OWN NOTES (their Chronicle entries — written, edited or pinned by a player);
+and EARLIER SESSIONS, a session from before the record as its Session Log story
+and Chronicle entries had it, labelled. The role says a recap says only what
+its sources say: nothing inferred, nothing filled in between two lines (a beat
+may be missing because the table took it out), what a player wrote is the
+character's claim, whose things are whose, how a thing stands is WHERE THINGS
+STAND's word, one name for everyone. The reply is cited sentences (decision
+D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
+no sentence cites sends it back once, a reply that is not the JSON is asked
+for once more before the recap that stood stays, and the text kept has every
+changed name written as the new one (`recapText`). Nothing of the open scene
+is in the recap's system prompt — no binding ACTIVE SCENE block (issue #374
+A1), and no section built from the session summary (the WHERE THINGS STAND NOW
+section, `formatStandsNowBlock` / `recapSummaryFor`, is retired).
 
 **Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
 position line alone of this block, never the frame, truths, corrections or
@@ -1300,6 +1299,12 @@ reads, present and absent. **A section added to the prompt, or a new mode,
 gets a check there.**
 
 ## 2. Write-back side — how output becomes memory
+
+What happened at the table — lines, moves, sheet changes, narrations, truths
+set and struck, names changed, removals — is also kept as one record a
+session on the session's Session Log page, read with the table's corrections
+(issue #382): `docs/flows/session-record-flow.md`. The Session Log page is its
+view; the summaries below do not read it yet.
 
 Prose + fenced JSON sidecar → `extractSidecar`
 (`src/factContinuity/sidecarParser.js`: the sidecar's fence is ```` ```json ````,

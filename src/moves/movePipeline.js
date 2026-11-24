@@ -85,6 +85,7 @@ import { swearSharedVowForAll } from "../session/swearVow.js";
 import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
 import { decidePacing, classifierReadingOf } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
+import { recordEvent } from "../record/record.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1863,6 +1864,26 @@ async function rollAndApply({
     rollerActor?.id ?? null,
     awaitingUpgrade ? { ...(cardFlags ?? {}), awaitingUpgrade } : cardFlags,
   );
+
+  // The roll is on the table: on the session record (issue #382). Free flow
+  // and a Batch Mode round both come through here. A roll whose card the
+  // world refused records nothing.
+  if (moveResultMessage) {
+    recordEvent("move.resolved", {
+      who: { user: game.user?.id ?? null, actor: rollerActor?.id ?? speakerActorId ?? null },
+      ref: { res: resolution._id ?? null, round: cardFlags?.roundId ?? null },
+      d: {
+        moveId: resolution.moveId, moveName: resolution.moveName, rollKind: resolution.rollKind,
+        statUsed: resolution.statUsed, statValue: resolution.statValue, adds: resolution.adds,
+        actionDie: resolution.actionDie, actionDieCancelled: resolution.actionDieCancelled,
+        challengeDice: resolution.challengeDice, actionScore: resolution.actionScore,
+        progressScore: resolution.progressScore, isMatch: resolution.isMatch, outcome: resolution.outcome,
+        target: (interpretation.moveTarget || interpretation.moveTargetId)
+          ? { name: interpretation.moveTarget ?? null, id: interpretation.moveTargetId ?? null } : null,
+        held: !!awaitingUpgrade,
+      },
+    });
+  }
 
   // A held result's card is where its choice is made: with no card saved
   // nothing can be chosen, so the price it held is paid now, as it always

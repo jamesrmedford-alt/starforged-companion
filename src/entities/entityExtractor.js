@@ -9,8 +9,8 @@
  * and to the World Journal write functions.
  *
  * Routing rule (world-journal scope §4):
- *   - Lore   → WJ when salience clears the lore floor, else the running session log
- *   - Threat → WJ when salience clears the threat floor, else the running session log
+ *   - Lore   → WJ when salience clears the lore floor, else nothing (issue #382, D6)
+ *   - Threat → WJ when salience clears the threat floor, else nothing
  *   - Faction → WJ only if no entity record with that name exists, else
  *     handled via the entity generative tier
  *   - Location → same rule as faction
@@ -46,6 +46,7 @@ import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern, namesOneWordName } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
+import { recordEvent }                     from "../record/record.js";
 import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
 import {
@@ -55,7 +56,6 @@ import {
   recordLocation,
   promoteLoreToConfirmed,
   applyStateTransition as wjApplyStateTransition,
-  appendSessionLogBeat,
   getConfirmedLore,
   getNarratorAssertedLore,
   getActiveThreats,
@@ -1619,7 +1619,7 @@ function findEntityForLoreRouting(entityName, campaignState) {
  * Whether a lore item is about a player character (issue #354 P2-17): the
  * detector named one as its entity, or led its title with one ("Isaac Sutton:
  * committed the Savela to fly…"). What a PC decided or did is the story, not
- * a fact about the world — it goes to the Session Log, never the Lore journal.
+ * a fact about the world — it is the session record's, never the Lore journal's.
  *
  * @param {{ title?: string, entityName?: string|null }} lore
  * @returns {boolean}
@@ -1669,7 +1669,7 @@ function lowerSalience(a, b) {
  *   - State transitions: applyStateTransition (delegates by entryType)
  *
  * Each record is stamped with the narration it came from (`narrationId`):
- * a lore, threat, faction or place entry, a Session Log beat and a tier
+ * a lore, threat, faction or place entry and a tier
  * detail alike, so an X-Card on that narration undoes them (issue #329 X01;
  * rules/narrator-memory.md 6b) — and the entry a state transition changes
  * (XCARD-CAPTURE-TRANSITIONS). Nothing is written once an X-Card has
@@ -1688,14 +1688,17 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
   const removed = () => isNarrationXCarded(narrationId);
 
-  // Below-threshold lore/threat items are transient scene beats: route them to
-  // the running session log (D7 / F18) instead of spawning a WJ entry each.
-  // Fail-open items (unrated salience) clear the gate and are recorded as
-  // durable, never rerouted.
+  // Below-threshold lore/threat items are transient scene beats: no World
+  // Journal entry is made for one. They used to be listed on the Session Log
+  // page as first written (its "Scene log", D7 / F18) — a model's reading of
+  // the narration, never revised; the page is the session record's view now,
+  // which holds what the narration established as its own truths (issue #382,
+  // decision D6). Fail-open items (unrated salience) clear the gate and are
+  // recorded as durable, never dropped.
   const loreThreshold = getSalienceThreshold("lore");
   // A fact about one recorded entity is card material at the tier pass's own
   // floor, lower than the world-lore one (issue #286 D4: the lore floor ran
-  // first, so a "notable" NPC fact went to the Session Log, never the card).
+  // first, so a "notable" NPC fact never reached the card).
   const entityLoreThreshold = lowerSalience(loreThreshold, TIER_SALIENCE_FLOOR);
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
@@ -1706,7 +1709,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // entity record where the narrator can use it, not as world-level canon.
     // Entity not found (no record yet) — the lore gate and WJ lore as usual.
     // A player character's own doings are the story so far, not world lore
-    // (issue #354 P2-17): the Session Log's, whatever their salience. Who it
+    // (issue #354 P2-17): the session record's, whatever their salience. Who it
     // is about (issue #362 AC41): a PC named in full is the PC; a record of
     // exactly the name the detector used is that record's — before the PC
     // rule's part names, which took "Captain Sutton", on record, for PC Isaac
@@ -1714,10 +1717,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     // by part of their name, or leading the title; then a record the name
     // answers to.
     const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
-    if (namesPlayerCharacterInFull(lore.entityName) || (!entityRef?.exact && loreIsAboutPlayerCharacter(lore))) {
-      await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
-      continue;
-    }
+    if (namesPlayerCharacterInFull(lore.entityName) || (!entityRef?.exact && loreIsAboutPlayerCharacter(lore))) continue;
     if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
       // The fact is its text, else its title (issue #362 AC45: `text ?? title`
       // kept an empty "text", so a blank detail went on the card — another
@@ -1739,10 +1739,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
       );
       continue;
     }
-    if (!passesSalience(lore.salience, loreThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "lore", title: loreTitle(lore.title), text: lore.text ?? "", ...fromNarration });
-      continue;
-    }
+    if (!passesSalience(lore.salience, loreThreshold)) continue;
     // Auto-confirm (Task C): narrator-detected lore goes straight to confirmed
     // state; promotedAt is set by recordLoreDiscovery when confirmed === true.
     // Filed under one spelling of its title (issue #354 P2-17).
@@ -1760,10 +1757,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
     if (removed()) return;
-    if (!passesSalience(threat.salience, threatThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
-      continue;
-    }
+    if (!passesSalience(threat.salience, threatThreshold)) continue;
     // `fromDetection`: a variant of a recorded threat's name is that threat
     // (issue #354 P2-15) — it started a second page.
     const recorded = await recordThreat(threat.name, { ...threat, ...fromNarration, fromDetection: true }, campaignState);
@@ -3134,6 +3128,14 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   // The X-Card's finish reopened the row with the card it deleted.
   if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
+  // A new entity on record, on the session record (issue #382): a detector's
+  // draft is a guess, its confirmation a fact of the table's.
+  if (record) {
+    recordEvent("entity.confirmed", {
+      ref: { entity: record.__hostId ?? record.journalId ?? record.actorId ?? record._id ?? null, nar: opts.narrationId ?? null },
+      d: { type: draft.type ?? null, name: record.name ?? draft.name ?? "" },
+    });
+  }
   return record;
 }
 

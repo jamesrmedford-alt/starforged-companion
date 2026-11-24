@@ -22,7 +22,10 @@
  *
  * Fixed: the X-Card's finish (safety.js finishXCardRemoval → worldJournal.js
  * retractSessionLogSummary) drops the page's story when the X-Card dropped the
- * summary it was written from, and takes retracted lore off its list.
+ * summary it was written from. Since issue #382 the page's lists are the
+ * session record's view: the X-Card reaches them as `narration.removed` —
+ * what the removed narration established leaves the page with it, and is
+ * blanked in the stored record (decision D3) — and End copies no lore list.
  *
  * Controls: the X-Card did reach the campaignState summary (emptied); an
  * X-Card whose beat stops short of the summarised narration leaves the story.
@@ -42,7 +45,10 @@ vi.mock('../../src/api-proxy.js', () => ({
 import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/narrator.js';
 import { suppressScene } from '../../src/context/safety.js';
 import { applyEndSession } from '../../src/safety/sessionLifecycleDialogs.js';
-import { JOURNAL_NAMES, recordLoreDiscovery, restoreSessionLogStory } from '../../src/world/worldJournal.js';
+import { JOURNAL_NAMES, restoreSessionLogStory } from '../../src/world/worldJournal.js';
+import { persistSceneLedgerFields } from '../../src/factContinuity/sceneLifecycle.js';
+import { recordSettled } from '../../src/record/record.js';
+import { renderSessionLog } from '../../src/record/sessionLogView.js';
 import { rollSessionIfDue } from '../../src/session/lifecycle.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
 
@@ -117,21 +123,40 @@ describe("issue #345 AA27 — an X-Card played after End a Session takes the rem
 
     expect(sessionLogSummary()?.narrative ?? '').not.toMatch(/small body/);
   });
-  it('"Lore this session" no longer names lore the removed narration recorded; lore that stands stays', async () => {
-    await recordLoreDiscovery('The collapsed bulkhead', { text: 'The bulkhead came down on the child', confirmed: true, narratorAsserted: true, narrationId: 'nar-last' }, stored());
-    await recordLoreDiscovery('Bleakhold', { text: 'A mining hold on the rim', confirmed: true }, stored());
+  it('what the removed narration established leaves the page — and the stored record — with it; a GM\'s truth stays', async () => {
+    // The narration's fact block, persisted as the narrator persists it (the
+    // real ledger write the session record observes), and a GM's own truth.
+    const working = JSON.parse(JSON.stringify(stored()));
+    applyNarratorSidecar(
+      'The bulkhead lies across the corridor.\n```json\n{"newTruths":[{"subject":"the corridor bulkhead","fact":"came down on the child"}],"stateChanges":[]}\n```',
+      working, { narrationId: 'nar-last' },
+    );
+    await persistSceneLedgerFields(working, ['sceneTruths'], 'the narration\'s fact block (test)');
+    const gmWorking = JSON.parse(JSON.stringify(stored()));
+    gmWorking.sceneTruths.push({ id: 'tr-gm-1', subject: { kind: 'text', text: 'Bleakhold' }, fact: 'is a mining hold on the rim',
+      sessionId: SESSION, sceneId: 'sc-1', asserter: 'gm', retracted: false, retractedBy: null, correctedTo: null });
+    await persistSceneLedgerFields(gmWorking, ['sceneTruths'], 'a GM truth (test)');
     await lastNarration();
     await applyEndSession({}, { local: true });
     await until(() => ChatMessage._created.some(m => m.flags?.[MODULE_ID]?.sessionVignetteCard));
     await ticks();
     syncChat();
-    expect(sessionLogSummary()?.lore).toEqual(['The collapsed bulkhead', 'Bleakhold']);   // setup: End listed both
+    await recordSettled();
+    await renderSessionLog(SESSION);
+    const body = () => journals.journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents[0]?.text?.content ?? '';
+    expect(body()).toContain('came down on the child');                       // setup: established, on the page
+    expect(sessionLogSummary()).not.toHaveProperty('lore');                    // End copied no lore list (D6)
 
     expect(await suppressScene({}, { local: true })).toBe(true);
     await ticks();
     expect(stored().xCardedNarrationIds).toEqual(expect.arrayContaining(['nar-last']));
+    await recordSettled();
+    await renderSessionLog(SESSION);
 
-    expect(sessionLogSummary()?.lore).toEqual(['Bleakhold']);
+    expect(body()).not.toContain('came down on the child');
+    expect(body()).toContain('is a mining hold on the rim');
+    const flag = JSON.stringify(journals.journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents[0]?.flags?.[MODULE_ID]?.sessionRecord);
+    expect(flag).not.toContain('came down on the child');
     expect(sessionLogSummary()?.narrative ?? '').not.toMatch(/small body/);
   });
 

@@ -54,6 +54,7 @@ import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { resolveNarrationPerspective } from "../narration/narratorPrompt.js";
 import { settledWithin } from "../multiplayer/settleWithin.js";
 import { storedRound, isResolving } from "../batch/round.js";
+import { recordSessionEdge } from "../record/tableSnapshot.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -688,6 +689,12 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (campaignState.currentSessionId) await keepHeldResultsOfClosingSession(campaignState);
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
+  // A begun session that End a Session never closed ends here, by idleness:
+  // its record's last event, on its own page (issue #382). End a Session
+  // records its own; a session nobody began has nothing to end.
+  if (closing && !ended && campaignState.sessionStartedId === closing) {
+    void recordSessionEdge("session.ended", campaignState, { reason: "idle" }, { session: closing });
+  }
   // Whether the closing session's summary covers it now. The finalise is
   // fail-open — no key on this client yet, or its one call failed — and the
   // mint goes ahead regardless; a session closed out short is marked, and

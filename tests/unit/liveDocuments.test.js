@@ -81,7 +81,13 @@ describe('Items are documents', () => {
     expect(seen.map(s => s.client).sort()).toEqual(['gm-1', 'pl-1', 'pl-2']);
     for (const s of seen) {
       expect(s.args[1]).toEqual({ system: { current: 8 } });
-      expect(s.args[2]).toEqual({ [MODULE_ID]: { marker: true } });
+      // The caller's options arrive as sent; beside them, the vow's facts as
+      // they stood, stamped by the requesting client for the session record
+      // (record/sheetWatch.js — a PC's vow Item, issue #382).
+      const { recordBefore, ...sent } = s.args[2][MODULE_ID];
+      expect(sent).toEqual({ marker: true });
+      expect(recordBefore?.vow).toMatchObject({ name: 'Find Kade', ticks: 0 });
+      expect(Object.keys(s.args[2])).toEqual([MODULE_ID]);
       expect(s.args[3]).toBe('pl-1');
     }
   });

@@ -7,7 +7,7 @@
  *
  * A narration posts; its capture (the combined detection pass, ~2 s later,
  * routeWorldJournalResults) records what the prose established — a confirmed
- * Lore entry, a below-salience beat on the Session Log page, a threat, a tier
+ * Lore entry, a threat, a tier
  * detail. The X-Card retracted the sidecar's entries by `narrationId` and
  * reached lore only where it restated a retracted truth about its subject
  * (propagateRetraction), so the capture's records stayed: the lore was handed
@@ -116,18 +116,18 @@ const capture = (narrationId = 'nar-torch') => routeWorldJournalResults({
 }, stored(), { narrationId });
 
 const loreTitles = () => getConfirmedLore(stored()).map(e => e.title);
-const sessionLogBeats = () => (journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents ?? [])
-  .flatMap(p => p.flags[MODULE_ID]?.sessionLogPage?.beats ?? []).map(b => b.title);
 
 describe('issue #329 X01 — what the capture wrote from an X-carded narration leaves canon with it', () => {
-  it('control: before the X-Card the capture\'s lore is confirmed canon and its beat is on the Session Log', async () => {
+  it('control: before the X-Card the capture\'s lore is confirmed canon, and its below-floor line is filed nowhere', async () => {
     await narrate('nar-torch', "The interrogator lifts the cutting torch toward the prisoner's hand.", TORCH);
     await capture();
     expect(loreTitles()).toEqual(expect.arrayContaining(['The interrogation rig', "The prisoner's burned hand"]));
-    expect(sessionLogBeats()).toContain('Guard rotation');
+    // Below the lore floor: no World Journal entry (issue #382 — the Session
+    // Log's list of the detector's lines is gone; its page is the session record's view).
+    expect(loreTitles()).not.toContain('Guard rotation');
   });
 
-  it('after the X-Card on the narration, its captured lore is out of ESTABLISHED LORE and its beat off the Session Log', async () => {
+  it('after the X-Card on the narration, its captured lore is out of ESTABLISHED LORE', async () => {
     await narrate('nar-torch', "The interrogator lifts the cutting torch toward the prisoner's hand.", TORCH);
     await capture();
     syncChat();
@@ -138,9 +138,8 @@ describe('issue #329 X01 — what the capture wrote from an X-carded narration l
     expect(loreTitles()).not.toContain("The prisoner's burned hand");
 
     // The rig lore leaves canon (the next narration's ESTABLISHED LORE would
-    // hand the removed beat back) and the beat leaves the Session Log.
+    // hand the removed beat back).
     expect(loreTitles()).not.toContain('The interrogation rig');
-    expect(sessionLogBeats()).not.toContain('Guard rotation');
   });
 });
 

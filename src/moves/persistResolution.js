@@ -42,6 +42,9 @@ import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 import { legacyTracksWithCopyMarks, payDeferredLegacyXp } from './legacyTracks.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { recordLedgerChanges } from '../record/ledgerDiff.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
+import { recordCause } from '../record/sheetWatch.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -105,11 +108,13 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     // a hit's momentum is the ally's (issue #325 W17).
     const ally = resolution.consequences?.beneficiary === "ally" && targets?.allyActorId
       ? getActor(targets.allyActorId) : null;
+    // What caused the change rides the write, for the session record (issue #382).
+    const cause = recordCause({ kind: 'move', res: resolution._id ?? null });
     if (ally && ally.id !== actor.id && meterChanges.momentum) {
-      await applyMetersOrNote(ally, { momentum: meterChanges.momentum }, meterFailures, { allyActorId: ally.id });
+      await applyMetersOrNote(ally, { momentum: meterChanges.momentum }, meterFailures, { allyActorId: ally.id }, cause);
       meterChanges.momentum = 0;
     }
-    await applyMetersOrNote(actor, meterChanges, meterFailures);
+    await applyMetersOrNote(actor, meterChanges, meterFailures, null, cause);
 
     // 4. Suffer prompt (F16 Phase D) — posts the non-blocking suffer-choice
     //    card that resolves the rulebook-mandated player choice into one or
@@ -133,14 +138,22 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   // landed: read inside the pause's round trip, the store-owned fields took
   // the cache's `xCardActive: false` and lifted the pause (CAMPSTATE-CHAIN-PARTIAL).
   const updated = await serialiseCampaignStateWrite(async () => {
+    const stored = game.settings.get(MODULE_ID, 'campaignState');
     const merged = mergeWithLatestState(
       foundry.utils.deepClone(campaignState ?? {}),
-      game.settings.get(MODULE_ID, 'campaignState'),
+      stored,
       campaignState,
     );
     merged.updatedAt = new Date().toISOString();
     try {
       await game.settings.set(MODULE_ID, 'campaignState', merged);
+      // The save landed: the truths it carried that the store did not hold
+      // go on the session record (issue #382; sceneLifecycle.js's twin), and
+      // the arrival it carried — a current place the store did not have.
+      recordLedgerChanges(stored, merged);
+      if (merged.currentLocationId && merged.currentLocationId !== (stored?.currentLocationId ?? null)) {
+        void recordPlaceArrival(merged, { res: resolution._id ?? null, how: 'move' });
+      }
     } catch (err) {
       // The roller's meters (written above) stand, unless they were refused
       // too; what the working copy alone holds — a legacy mark, an arrival, a
@@ -179,9 +192,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
  * @param {Object} [opts]
  * @returns {Promise<void>}
  */
-async function applyMetersOrNote(actor, changes, failures, opts = null) {
+async function applyMetersOrNote(actor, changes, failures, opts = null, cause = undefined) {
   try {
-    await applyMeterChanges(actor, changes);
+    await applyMeterChanges(actor, changes, cause);
   } catch (err) {
     console.error(`${MODULE_ID} | the world did not save ${actor?.name ?? "the roller"}'s meters:`, err);
     const error = String(err?.message ?? err);

@@ -40,6 +40,9 @@ import { buildNarratorExtras, getCampaignRecap, campaignRecapCacheKey } from '..
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
 const reply = (text) => ({ content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' });
+// The recap answers in cited sentences (issue #382 D11); the Chronicle entry
+// below is a player's note to it, [note-1].
+const cited = (text) => JSON.stringify({ paragraphs: [[{ text, because: ['note-1'] }]] });
 const RELEVANCE = { resolvedClass: 'interaction', entityIds: [], entityTypes: [], matchedNames: [], needsClarification: false, referenceType: 'none' };
 
 let setSpy = null;
@@ -74,7 +77,7 @@ describe('X25 — the campaign recap cache is written on a copy', () => {
   it("a refused cache write leaves no recap cache on the GM's cached campaignState", async () => {
     const cs = { currentSessionId: 'sess-2', sessionNumber: 2, characterIds: [] };
     game.settings._store.set(KEY, cs);
-    apiPost.mockResolvedValue(reply('The crew fled Bleakhold with the charts.'));
+    apiPost.mockResolvedValue(reply(cited('The crew fled Bleakhold with the charts.')));
     refuseCampaignStateWrites();
     expectConsoleError(/getCampaignRecap failed/);
 
@@ -89,7 +92,7 @@ describe('X25 — the campaign recap cache is written on a copy', () => {
     global.game.users = [{ id: 'gm-0', isGM: true, active: true }, { id: 'gm-1', isGM: true, active: true }];
     const cs = { currentSessionId: 'sess-2', sessionNumber: 2, characterIds: [] };
     game.settings._store.set(KEY, cs);
-    apiPost.mockResolvedValue(reply('The crew fled Bleakhold with the charts.'));
+    apiPost.mockResolvedValue(reply(cited('The crew fled Bleakhold with the charts.')));
     const set = vi.spyOn(game.settings, 'set');
 
     await getCampaignRecap(cs, { forceRefresh: true });
@@ -101,7 +104,7 @@ describe('X25 — the campaign recap cache is written on a copy', () => {
   it('control: a write that lands caches the recap', async () => {
     const cs = { currentSessionId: 'sess-2', sessionNumber: 2, characterIds: [] };
     game.settings._store.set(KEY, cs);
-    apiPost.mockResolvedValue(reply('The crew fled Bleakhold with the charts.'));
+    apiPost.mockResolvedValue(reply(cited('The crew fled Bleakhold with the charts.')));
 
     const text = await getCampaignRecap(cs, { forceRefresh: true });
 

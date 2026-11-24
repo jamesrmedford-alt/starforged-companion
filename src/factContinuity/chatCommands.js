@@ -47,7 +47,7 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
-import { nameCorrectionOf, withNameChange } from "./nameChanges.js";
+import { nameCorrectionOf, withNameChange, recordNameChanged } from "./nameChanges.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -337,6 +337,8 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
           }
         } : null,
       });
+      // The write landed: the change goes on the session record (issue #382).
+      if (renamed) recordNameChanged(renamed);
     }
 
     // A lift brings back the lore copies the strike retracted, so the fact

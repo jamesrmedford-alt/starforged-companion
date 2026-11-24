@@ -71,6 +71,7 @@ import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_V
 import { moveDisplayName } from "../system/i18n.js";
 import { checkedTokenDragCourse } from "../sectors/sectorSceneHooks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
+import { recordEvent } from "../record/record.js";
 import {
   ROUND_PHASE,
   ENTRY_STATUS,
@@ -1129,6 +1130,18 @@ async function rollRound(claim) {
       round = getStoredRound();
       const entry = round?.entries?.[userId];
       if (!entry || entry.status === ENTRY_STATUS.RECORDED || entry.status === ENTRY_STATUS.REFUSED) continue;
+      // The acting player's line goes on the session record as the round
+      // takes it (issue #382) — rolled or told with no roll alike. Not again
+      // for an entry whose roll had begun before the round stopped.
+      if (!rollBegun(entry) && !entry.rolled?.cardId && typeof entry.text === "string" && entry.text.trim()) {
+        recordEvent("line", {
+          ...(round.sessionId ? { session: round.sessionId } : {}),
+          who:  { user: userId, actor: entry.actorId ?? null },
+          ref:  { round: round.id },
+          d:    { via: "round" },
+          text: entry.text,
+        });
+      }
       await rollEntry(round, entry);
     }
 
