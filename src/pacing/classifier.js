@@ -280,6 +280,23 @@ line that only mentions such a thing in passing is not setting about it.
     → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove reach_a_milestone. NOT
     plain NARRATIVE.
 
+  - SOMETHING DONE FOR A CONNECTION — the speaker does something for one of
+    their connections (the Connections of the SITUATION) that costs the
+    speaker something or meets a real need of that person's: a gift of value,
+    a risk taken for them, a favour that costs the speaker time or standing,
+    bringing them what they need. That deepens the relationship, and only
+    develop_your_relationship marks it, so offer it — MOVE when the
+    connection is bonded (it is rolled then) and the social dial calls for
+    one. Nothing need be at risk and nothing need be rolled: with a connection
+    not yet bonded the move is no roll at all, a mark of progress.
+    Small talk, news traded, a plain question and a courtesy that costs
+    nothing are still narration (TALKING IS NOT A MOVE). And this is about
+    the speaker's connections only: the same deed done for anyone else is
+    read by the other rules, as it was.
+    Example: "I offer to watch Tamsin's counter for an hour while she rests."
+    with Tamsin Okoro among the Connections → NARRATIVE_WITH_MOVE_AVAILABLE,
+    suggestedMove develop_your_relationship. NOT plain NARRATIVE.
+
 A LINE THAT NAMES ITS MOVE ASKS FOR IT — when the player names the move they
 are making ("…, to Develop Your Relationship", "I Face Danger to cross the
 gap", "I forge a bond with her"), that is explicit intent at any dial: classify

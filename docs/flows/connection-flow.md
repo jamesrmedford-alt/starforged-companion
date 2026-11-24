@@ -396,6 +396,24 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 2. Develop (relationship progress)
 
+- **Something done for a connection, said in the fiction, is at least
+  *offered* Develop Your Relationship** (known-issues
+  FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A gift of value, a risk taken for
+  them, a favour that costs the character time or standing, bringing them
+  what they need: the pacing classifier's WHAT ONLY A MOVE CHANGES IS ALWAYS
+  OFFERED block names it as its third thing (`pacing/classifier.js` — the
+  speaker's connections reach it in the SITUATION block, §3), so the line is
+  never plain NARRATIVE; MOVE when the connection is bonded and the social
+  dial calls for one. Small talk, news traded, a plain question and a
+  courtesy that costs nothing stay narration, and the interpreter's rule 10
+  reads both the same way. The readers' plain-line test had "I offer to watch
+  Tamsin's counter for an hour while she rests" and a gift of salvage rights
+  narrated with nothing offered three readings of four on Haiku 5.5 ("a kind
+  offer… with no roll-worthy risk… is plain conversation") — the rule is
+  stated whatever the model. The offer's Roll (`cardActions.applyPacedRoll`)
+  forces the move with no target and asks no reader, so the connection is
+  found from the player's line — the next bullet's `enrichBondedDevelop`
+  (`favourPacedRollDevelopsNamedConnection.test.js` walks it).
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
   one name inside the other as whole words, either way — "Lorenzo" is not Ren,
@@ -404,7 +422,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
   resolves the connection before the dice — the picker's host id, else the
-  name — stamps `moveTargetId` / `moveTarget` so this branch marks the same
+  name, else, for a Develop Your Relationship that carries no target at all
+  (a paced card's Roll), the one active connection the player's line names
+  (`namedOnce`: the full name, or a first or last name no other shares —
+  with no target it took the sole bonded connection, whoever the line was
+  about, and with several known and none bonded it marked nothing) — stamps
+  `moveTargetId` / `moveTarget` so this branch marks the same
   one, and makes the rank the stat (`BOND_ROLL_ADDS`, +1 troublesome … +5
   epic; the card reads "+epic (5)" — issue #314 Q06, the pipeline rolled +0
   while `!bond` rolled +rank); the outcome pays `BONDED_DEVELOP_OUTCOMES`
@@ -425,8 +448,10 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   with their box XP, `writeLegacyTicks` — and a match's rank raise; a Test
   Your Relationship from a miss develops then): the upgrade did not re-run
   the branch, so a bonded development burned to a strong hit marked nothing
-  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named)
-  silently no-ops. `selectConnection`'s `strict` option is for an
+  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named —
+  for a Develop Your Relationship, none or two named by the line either)
+  silently no-ops; a Test Your Relationship with no target still takes the
+  sole-bonded / sole-active fallback alone. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name resolves the connection it names
   exactly, else the one connection whose name holds it as whole words (the
   typed name a fragment OF the record's name — `!sever Lyssa Chen` severed

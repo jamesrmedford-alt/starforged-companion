@@ -95,7 +95,8 @@ describe('the plain lines that ship', () => {
       ['I treat my wounds with the ship\'s medkit.', { moves: ['heal'] }, 'bleakhold-after-fight'],
       ['I plot the course and take the Kobayashi IV to Bleakhold Station.', { moves: ['set_a_course'] }, null],
       ['I work the docks asking traders who saw the raiders last, pressing hard even though it may cost me Tamsin\'s trust and draw the wrong eyes.', { moves: ['gather_information'] }, null],
-      ['I raise Tamsin on the comm and trade news with her, asking how the docks have been.', { moves: ['develop_your_relationship'] }, null],
+      // News traded is talk: the run's charter took it for Develop Your Relationship, and the pacing reader's rules say it is not.
+      ['I raise Tamsin on the comm and trade news with her, asking how the docks have been.', { none: true }, null],
       ['I offer to watch Tamsin\'s counter for an hour while she rests.', { moves: ['develop_your_relationship'] }, 'spire-stall'],
       ['I now have proof the raids are fed by dock clerks selling cargo routes.', { moves: ['reach_a_milestone'] }, 'bleakhold-clerk'],
       ['I restock the ship at Bleakhold\'s market.', { moves: ['resupply'] }, 'bleakhold-after-fight'],
@@ -111,6 +112,25 @@ describe('the plain lines that ship', () => {
     }
     // The wounded context says so: health 3 of 5, supply 2 of 5.
     expect(LIST.contexts['bleakhold-after-fight'].state).toMatchObject({ location: 'Bleakhold Station', health: 3, supply: 2 });
+  });
+
+  it('something done for a connection wants Develop Your Relationship; news traded with her is its control', () => {
+    const deeds = LIST.cases.filter(c => (c.want.moves ?? []).includes('develop_your_relationship'));
+    // A favour that costs her time, a gift of value, bringing her what she needs.
+    expect(deeds.map(c => c.id)).toEqual(['develop-2', 'develop-3', 'develop-4']);
+    for (const c of deeds) {
+      expect(c.family, c.id).toBe('connection');
+      expect(LIST.contexts[c.context].state.connection, `${c.id}: a connection to do it for`).toMatchObject({ name: 'Tamsin Okoro', bonded: false });
+      expect(c.line, `${c.id}: it names her`).toMatch(/Tamsin/);
+    }
+    // The line run 2's charter took for the move: talk, by the rules and by the reader's — kept, as a control.
+    const news = LIST.cases.find(c => c.id === 'develop-1');
+    expect(news).toMatchObject({ family: 'control', want: { none: true }, source: 'run 2 a59, without its move name' });
+    expect(news.line).toMatch(/trade news/);
+    // Small talk and plain questions put to the same connection are controls too.
+    for (const id of ['none-tea', 'none-which-ship', 'none-quiet-crossing', 'none-manifest']) {
+      expect(LIST.cases.find(c => c.id === id), id).toMatchObject({ family: 'control', want: { none: true } });
+    }
   });
 
   it('two recovery lines with nothing to recover want no move — one of them the live run\'s own words', () => {

@@ -925,9 +925,13 @@ constants; `api-proxy.js` sends the model's form). The classifier's rules hold
 one block for what narration can never do — WHAT ONLY A MOVE CHANGES IS ALWAYS
 OFFERED: a line that sets about it is never plain NARRATIVE, at any dial, but
 at least NARRATIVE_WITH_MOVE_AVAILABLE with the move on the card's Roll. It
-names recovery (heal, resupply, repair, hearten, sojourn — issue #377 item 3)
-and a step toward one of the speaker's open vows said in the fiction
-(reach_a_milestone — `vow-flow.md` §2 has the hops to the vow's track). The
+names recovery (heal, resupply, repair, hearten, sojourn — issue #377 item 3),
+a step toward one of the speaker's open vows said in the fiction
+(reach_a_milestone — `vow-flow.md` §2 has the hops to the vow's track) and
+something done for one of the speaker's connections — a gift of value, a risk
+taken for them, a favour that costs time or standing, bringing them what they
+need (develop_your_relationship — `connection-flow.md` §2; small talk, news
+traded and plain questions stay narration). The
 interpreter's rules 7 and 10 say the same of a line it is handed. What the
 classifier reads the line against is the SITUATION above.
 
