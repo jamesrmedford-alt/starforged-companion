@@ -26,10 +26,17 @@
  *
  * Telemetry: every classifier decision is recorded via the telemetry helper
  * (src/pacing/telemetry.js) so dials can be tuned from real session data.
+ *
+ * Where the code holds the classifier to its rules (decidePacing, in order):
+ * in an open fight an offer is a MOVE; a social move against a fellow player
+ * character is narrated; a recovery move the speaker's sheet has nothing for
+ * is narrated with no offer (moves/situation.js nothingToRecover); at a dial
+ * of 0–2 an unsure MOVE is an offer.
  */
 
 import { classifyInput, effectiveDial, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
+import { readSituation, isRecoveryMove, nothingToRecover, nothingToRecoverReason } from "../moves/situation.js";
 import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated, lineIsToAFellowPlayerCharacter } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
@@ -163,8 +170,9 @@ const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
 /**
  * Decide how a paced player input should be handled — the classifier's
  * decision, without acting on it: the pacing master switch, a `!roll` force,
- * the classifier, the combat backstop, the recent-density window and the
- * telemetry. routePacedInput dispatches the narration for a NARRATIVE
+ * the classifier, the combat backstop, the fellow-PC rule, the recovery move
+ * with nothing to recover, the low-dial hold, the recent-density window and
+ * the telemetry. routePacedInput dispatches the narration for a NARRATIVE
  * decision; a Batch Mode round's reading (src/moves/movePipeline.js
  * readAction) shows the decision in the player's Round window instead — so
  * it passes `ignoreForceMove`: a round's readings ignore `!roll` (the window
@@ -247,6 +255,23 @@ export async function decidePacing({
     result.decision      = PACING_DECISION.NARRATIVE;
     result.suggestedMove = null;
     result.reasoning     = `[spoken to a fellow player character: roleplay, not a roll] ${result.reasoning ?? ""}`.trim();
+  }
+
+  // Nothing to recover. A recovery move the speaker's sheet has nothing for
+  // is neither rolled nor offered: in the long haul's live runs a Heal at 5
+  // health of 5 was offered, pressed and rolled — "0 health (now 5)" for 2
+  // supply — twice (known-issues HEAL-ROLLED-AT-FULL-HEALTH). The classifier
+  // is told the meters and the rule; this holds it where the sheet alone
+  // settles the question — Hearten, and Heal with nobody else to treat
+  // (situation.js nothingToRecover, `sheetAlone`). Not in a fight (the
+  // backstop above), and not the fallback for a call that failed. A `!roll`
+  // never comes here, so a player who means it can still roll it.
+  if (!combatActive && result.fallback !== true && result.decision !== PACING_DECISION.NARRATIVE
+      && isRecoveryMove(result.suggestedMove)
+      && nothingToRecover(result.suggestedMove, speakerSituation(character, campaignState), { sheetAlone: true })) {
+    result.reasoning     = `[nothing to recover: ${nothingToRecoverReason(result.suggestedMove)} — narrated, ${result.suggestedMove} not offered] ${result.reasoning ?? ""}`.trim();
+    result.decision      = PACING_DECISION.NARRATIVE;
+    result.suggestedMove = null;
   }
 
   // The dial holds. At 0–2 the table has said "narrate unless the player
@@ -416,6 +441,26 @@ export async function routePacedInput({
     confidence: pacing.confidence,
     reasoning: pacing.reasoning,
   };
+}
+
+/**
+ * The speaker's sheet as both readers are told it (moves/situation.js
+ * readSituation) — for what the code decides of a recovery move. Null with no
+ * player character behind the line, or when it cannot be read: then nothing
+ * is decided from it.
+ *
+ * @param {{ name?: string|null, actorId?: string|null }|null} character — the speaker
+ * @param {Object|null} campaignState — for the command vehicle
+ * @returns {ReturnType<typeof readSituation>}
+ */
+function speakerSituation(character, campaignState) {
+  try {
+    const actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null;
+    return readSituation(actor, { campaignState });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | pacing: the speaker's sheet could not be read — nothing is decided from it:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**

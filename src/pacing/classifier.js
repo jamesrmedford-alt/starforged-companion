@@ -242,7 +242,25 @@ line that only mentions such a thing in passing is not setting about it.
     (resupply), repairing a vehicle or gear (repair), finding comfort or a
     community to recover in (hearten, sojourn).
     Example: "I treat my wounds with the ship's medkit" at a downtime dial of
-    1 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal. NOT plain NARRATIVE.
+    1, with Health 3 of 5 → NARRATIVE_WITH_MOVE_AVAILABLE, suggestedMove heal.
+    NOT plain NARRATIVE.
+    THE EXCEPTION — NOTHING TO RECOVER. A recovery move with nothing to
+    recover is no move, and is not offered: answer plain NARRATIVE,
+    suggestedMove null. Read it from the Meters and the Command vehicle of the
+    SITUATION:
+      · heal — Health is full and the character is not wounded (unless the
+        care is plainly for someone else: an ally, a companion);
+      · hearten — Spirit is full and the character is not shaken;
+      · resupply — Supply is full and the character is not unprepared (unless
+        the line is after one particular item it needs);
+      · repair — the command vehicle's integrity is full and it is not
+        battered (unless the line is about something else that is damaged:
+        another vehicle, a module, a companion, a device).
+    A meter the SITUATION gives as unknown, or no command vehicle recorded, is
+    not "nothing": offer the move as above.
+    Example: "I treat my wounds with the ship's medkit" with Health 5 of 5
+    (full, not wounded) → NARRATIVE, suggestedMove null. There is no wound to
+    treat; rolled, it would buy nothing and could cost supply.
 
   - A STEP TOWARD A VOW — a line that states a real step toward one of the
     speaker's open vows (the Open vows of the SITUATION): proof found, an

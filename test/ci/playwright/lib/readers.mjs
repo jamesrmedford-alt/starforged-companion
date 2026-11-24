@@ -124,8 +124,11 @@ export function stateNotSet(state) {
 
 /**
  * What each recovery move restores, on the sheet a context's state gives: the
- * readers are told the meters, so a line cannot want a recovery move its
- * sheet has nothing for. True when the move has something to do.
+ * readers are told the meters, and a recovery move with nothing to recover is
+ * no move (src/moves/situation.js nothingToRecover). So a line cannot want a
+ * recovery move its sheet has nothing for — and a control may say its line
+ * sets about one the sheet has nothing for (`nothingToRecover`). True when
+ * the move has something to do.
  */
 const RECOVERS = {
   heal:     (sheet) => sheet.health < METER_MAX || sheet.impacts.wounded,
@@ -159,7 +162,9 @@ function contextProblem(moveId, state) {
  * a case in a context the list does not have, a move id the module does not
  * know, a line that names a move or uses a rules word, a case that wants
  * neither a move nor none, an id used twice, a wanted move its context cannot
- * hold — a recovery move with nothing on the sheet to recover among them.
+ * hold — a recovery move with nothing on the sheet to recover among them —
+ * and a control that says its line is a recovery with nothing to recover
+ * (`nothingToRecover: "heal"`) in a context whose sheet has something.
  *
  * @param {{ world?: Object, contexts?: Object, cases?: Object[] }} file
  * @returns {string[]}
@@ -229,7 +234,13 @@ export function validateCases(file) {
     const moves = c?.want?.moves;
     if (none && moves !== undefined) problems.push(`${at}: it wants both a move and none`);
     else if (!none && !(Array.isArray(moves) && moves.length)) problems.push(`${at}: it wants neither a move (want.moves) nor none (want.none)`);
-    else if (!none) {
+    else if (c.nothingToRecover !== undefined) {
+      // A control whose line sets about a recovery move its sheet has nothing for.
+      const has = RECOVERS[c.nothingToRecover];
+      if (!none) problems.push(`${at}: nothingToRecover is for a control (want.none)`);
+      else if (!has) problems.push(`${at}: nothingToRecover names one of ${Object.keys(RECOVERS).join(", ")} — not "${c.nothingToRecover}"`);
+      else if (context?.state && has(sheetOf(context.state))) problems.push(`${at}: its context's sheet has something for ${c.nothingToRecover} to recover`);
+    } else if (!none) {
       for (const id of moves) {
         if (!Object.hasOwn(MOVES, id)) { problems.push(`${at}: unknown move id "${id}"`); continue; }
         const needs = context?.state ? contextProblem(id, context.state) : null;

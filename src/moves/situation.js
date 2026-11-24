@@ -28,14 +28,23 @@
  * pacing reader already reads from src/moves/ (sceneChallenge.js). The move
  * reader importing from src/pacing/ would be a new edge the other way.
  *
- * Reads only — the sheet through src/character/actorBridge.js, the command
+ * Reads only — the sheet through src/character/actorBridge.js, live (its
+ * meters and impacts are not taken from the cached snapshot), the command
  * vehicle through src/entities/ship.js (getCommandVehicle: its STARSHIP
  * asset's Integrity track, the starship's native battered impact). No write,
  * no model call, and it never throws: what cannot be read is said to be
- * unknown.
+ * unknown, and an unknown is never "nothing to recover".
+ *
+ * Where code decides instead of a reader (nothingToRecover): a recovery move
+ * the sheet has nothing for is not offered by the pacing router
+ * (src/pacing/router.js decidePacing) and is not rolled or offered by the
+ * move pipeline (src/moves/movePipeline.js readMove). The readers' rules say
+ * the same of the same block.
  */
 
-import { isPlayerCharacterActor, readCharacterSnapshot, readVows, readConnections } from "../character/actorBridge.js";
+import {
+  isPlayerCharacterActor, getPlayerActors, readMeters, readDebilities, readVows, readConnections, listCompanionAssets,
+} from "../character/actorBridge.js";
 import { getCommandVehicle } from "../entities/ship.js";
 
 const MODULE_ID = "starforged-companion";
@@ -70,9 +79,12 @@ const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0))
  *   vehicle: { name: string, integrity: number|null, max: number, battered: boolean }|null,
  *   vows: Array<{ name: string, rank: string, ticks: number, swornTo: string|null }>,
  *   connections: Array<{ name: string, rank: string, ticks: number, bonded: boolean, full: boolean }>,
- * }|null}
+ *   othersToTreat: number|null,
+ * }|null} `othersToTreat`: the other player characters and the speaker's
+ *   companions — who else a Heal of theirs could be for. Not in the block:
+ *   it is for nothingToRecover.
  */
-function readSituation(actor, { campaignState = null } = {}) {
+export function readSituation(actor, { campaignState = null } = {}) {
   let isPc = false;
   try { isPc = isPlayerCharacterActor(actor); } catch { isPc = false; }
   if (!isPc) return null;
@@ -84,15 +96,21 @@ function readSituation(actor, { campaignState = null } = {}) {
     vehicle: null,
     vows: [],
     connections: [],
+    othersToTreat: null,
   };
   const unread = (what, err) =>
     console.warn(`${MODULE_ID} | situation: ${situation.name}'s ${what} could not be read — told to the readers as unknown:`, err?.message ?? err);
 
+  // Read live (never the cached snapshot): a recovery move is held back on
+  // what this says, and a sheet edited a moment ago must be what it says.
   try {
-    const sheet = readCharacterSnapshot(actor);
-    for (const key of Object.keys(situation.meters))  situation.meters[key]  = whole(sheet?.meters?.[key]);
-    for (const key of Object.keys(situation.impacts)) situation.impacts[key] = sheet?.debilities ? sheet.debilities[key] === true : null;
+    const meters = readMeters(actor);
+    for (const key of Object.keys(situation.meters)) situation.meters[key] = whole(meters?.[key]);
   } catch (err) { unread("meters", err); }
+  try {
+    const impacts = readDebilities(actor);
+    for (const key of Object.keys(situation.impacts)) situation.impacts[key] = impacts?.[key] === true;
+  } catch (err) { unread("impacts", err); }
 
   try {
     const ship = getCommandVehicle(campaignState ?? {});
@@ -121,6 +139,10 @@ function readSituation(actor, { campaignState = null } = {}) {
         return { name: clean(c.name), rank: clean(c.rank), ticks, bonded, full: !bonded && ticks >= TRACK_TICKS };
       });
   } catch (err) { unread("connections", err); }
+
+  try {
+    situation.othersToTreat = getPlayerActors().filter(a => a?.id !== actor.id).length + listCompanionAssets(actor).length;
+  } catch (err) { unread("allies and companions", err); }
 
   return situation;
 }
@@ -190,4 +212,76 @@ function renderSituation(situation) {
  */
 export function buildSituationBlock(actor, opts = {}) {
   return renderSituation(readSituation(actor, opts));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Where code decides: a recovery move with nothing to recover
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The moves that restore a meter or clear its impact — the ones nothingToRecover answers for. */
+const RECOVERY_MOVES = new Set(["heal", "hearten", "resupply", "repair"]);
+
+const isFull = (value, max = METER_MAX) => Number.isFinite(value) && value >= max;
+
+/** Whether `moveId` is one of the recovery moves nothingToRecover answers for. */
+export function isRecoveryMove(moveId) {
+  return RECOVERY_MOVES.has(moveId);
+}
+
+/**
+ * Whether `moveId` is a recovery move the sheet shows nothing for: Heal with
+ * health full and not wounded, Hearten with spirit full and not shaken,
+ * Resupply with supply full and not unprepared, Repair with the command
+ * vehicle's integrity full and it not battered. In live play a Heal at 5
+ * health of 5 was offered, pressed and rolled — "0 health (now 5)" for 2
+ * supply — twice (known-issues HEAL-ROLLED-AT-FULL-HEALTH).
+ *
+ * The readers are told the same in their rules; this is for the places code
+ * decides. Anything unknown is not "nothing": an unread meter, no command
+ * vehicle, no sheet. Any other move: false.
+ *
+ * `sheetAlone` — only the sheet speaks for it: no reader has read the line as
+ * no move. Then it answers only where the sheet settles the question:
+ * Hearten (the character's own spirit), and Heal when there is nobody else
+ * the care could be for — no other player character, no companion. A
+ * Resupply can still be after one particular item, and a Repair for a
+ * support vehicle, a module, a companion or a device; the meters show none of
+ * those, so they are left to the readers.
+ *
+ * @param {string|null} moveId
+ * @param {ReturnType<typeof readSituation>} situation
+ * @param {{ sheetAlone?: boolean }} [opts]
+ * @returns {boolean}
+ */
+export function nothingToRecover(moveId, situation, { sheetAlone = false } = {}) {
+  if (!situation || !RECOVERY_MOVES.has(moveId)) return false;
+  const { meters, impacts, vehicle } = situation;
+  switch (moveId) {
+    case "heal":
+      return isFull(meters.health) && impacts.wounded === false && (!sheetAlone || situation.othersToTreat === 0);
+    case "hearten":
+      return isFull(meters.spirit) && impacts.shaken === false;
+    case "resupply":
+      return !sheetAlone && isFull(meters.supply) && impacts.unprepared === false;
+    case "repair":
+      return !sheetAlone && !!vehicle && isFull(vehicle.integrity, vehicle.max) && vehicle.battered === false;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Why there is nothing to recover, for a rationale or a telemetry line —
+ * "health is full and no wound is marked".
+ *
+ * @param {string} moveId — a recovery move nothingToRecover answered true for
+ * @returns {string}
+ */
+export function nothingToRecoverReason(moveId) {
+  return ({
+    heal:     "health is full and no wound is marked",
+    hearten:  "spirit is full and the character is not shaken",
+    resupply: "supply is full and the character is not unprepared",
+    repair:   "the command vehicle's integrity is full and it is not battered",
+  })[moveId] ?? "there is nothing to recover";
 }

@@ -519,6 +519,22 @@ export function readConnections(actor) {
 }
 
 /**
+ * The sheet's health, spirit and supply as they stand — read live, never from
+ * the cached snapshot (as readMomentumState reads momentum): what both
+ * readers of a typed line are told of the sheet, and what decides whether a
+ * recovery move has anything to recover (moves/situation.js), must be what
+ * the sheet holds now. A meter the sheet does not carry is null.
+ *
+ * @param {Actor} actor
+ * @returns {{ health: number|null, spirit: number|null, supply: number|null }}
+ */
+export function readMeters(actor) {
+  const sys = actor?.system ?? {};
+  const live = (meter) => (meter == null ? null : meterValue(meter));
+  return { health: live(sys.health), spirit: live(sys.spirit), supply: live(sys.supply) };
+}
+
+/**
  * Read active debilities as a flat boolean map.
  * @param {Actor} actor
  * @returns {Object}

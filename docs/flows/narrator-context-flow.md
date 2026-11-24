@@ -931,6 +931,31 @@ and a step toward one of the speaker's open vows said in the fiction
 interpreter's rules 7 and 10 say the same of a line it is handed. What the
 classifier reads the line against is the SITUATION above.
 
+The block's one exception is **a recovery move with nothing to recover**
+(known-issues HEAL-ROLLED-AT-FULL-HEALTH — a Heal offered, pressed and rolled
+at 5 health of 5, "0 health (now 5)" for 2 supply, twice in live play): heal
+with health full and not wounded, hearten with spirit full and not shaken,
+resupply with supply full and not unprepared, repair with the command
+vehicle's integrity full and it not battered are plain NARRATIVE with nothing
+offered, and the interpreter's rule 10 answers NO MOVE for them — each unless
+the line is plainly about something the meters do not show (care for an ally
+or a companion; one particular item; a support vehicle, a module, a companion
+or a device). Where the sheet settles it the code decides
+(`moves/situation.js nothingToRecover`, from the same `readSituation` the
+block is rendered from), outside a fight:
+- `router.decidePacing` turns the classifier's MOVE or offer of Hearten — or
+  of Heal when there is nobody else the care could be for (no other player
+  character, no companion) — into NARRATIVE with no move, and its reasoning
+  says why (`[nothing to recover: …]`, in the Pacing Telemetry journal);
+- `movePipeline.readMove` narrates the interpreter's own reading of such a
+  move instead of rolling it, and never offers a recovery move with nothing to
+  recover on the card of a line read as no move — the classifier's nominated
+  Heal was what that card carried. With the interpreter's "no move" beside
+  the sheet that holds for all four; on the sheet alone, for the two above.
+A forced move (a card's button) and a roll that was asked for (`!roll`, a
+round's "Roll a move instead") are made as they always were: a player who
+means it can still roll it. Sojourn is not held to one meter.
+
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
 session is over once End a Session marks it (`sessionEndedId`) or after four

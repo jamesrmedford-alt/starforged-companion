@@ -113,6 +113,23 @@ describe('the plain lines that ship', () => {
     expect(LIST.contexts['bleakhold-after-fight'].state).toMatchObject({ location: 'Bleakhold Station', health: 3, supply: 2 });
   });
 
+  it('two recovery lines with nothing to recover want no move — one of them the live run\'s own words', () => {
+    const moot = LIST.cases.filter(c => c.nothingToRecover);
+    expect(moot.map(c => [c.id, c.nothingToRecover])).toEqual([['none-heal-whole', 'heal'], ['none-hearten-whole', 'hearten']]);
+    for (const c of moot) {
+      expect(c, c.id).toMatchObject({ family: 'control', want: { none: true } });
+      // Its context's sheet says so — and the runner sets it, and both readers are told it.
+      const sheet = sheetOf(LIST.contexts[c.context].state);
+      expect(c.nothingToRecover === 'heal' ? [sheet.health, sheet.impacts.wounded] : [sheet.spirit, sheet.impacts.shaken], c.id).toEqual([5, false]);
+    }
+    // The Heal the third live run rolled at 5 health of 5: the same words as heal-1, which wants Heal where there is a wound.
+    const whole = LIST.cases.find(c => c.id === 'none-heal-whole');
+    const hurt  = LIST.cases.find(c => c.id === 'heal-1');
+    expect(whole.line).toBe(hurt.line);
+    expect(whole.source).toBe('run 3 a58');
+    expect([sheetOf(LIST.contexts[hurt.context].state).health, sheetOf(LIST.contexts[whole.context].state).health]).toEqual([3, 5]);
+  });
+
   it('a step toward a vow is asked for with no fight open — one of them with none behind it either — and a thought about the quest is a control', () => {
     const steps = LIST.cases.filter(c => (c.want.moves ?? []).includes('reach_a_milestone'));
     expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4']);
@@ -320,6 +337,24 @@ describe('validateCases', () => {
     const recovering = LIST.cases.filter(c => (c.want.moves ?? []).some(m => ['heal', 'hearten', 'resupply', 'repair'].includes(m)));
     expect(recovering.length).toBeGreaterThanOrEqual(7);
     expect(new Set(recovering.map(c => c.context))).toEqual(new Set(['bleakhold-after-fight']));
+  });
+
+  it('holds a control that says "nothing to recover" to a sheet that has nothing', () => {
+    const scene = ['You wait at the stall.'];
+    const control = (id, context, move) => ({ ...good, id, context, line: 'I see to it.', want: { none: true }, nothingToRecover: move });
+    const problems = validateCases({
+      ...file([
+        control('whole', 'whole', 'heal'),
+        control('hurt', 'hurt', 'heal'),
+        control('no-such', 'whole', 'sojourn'),
+        { ...control('wants-it', 'hurt', 'heal'), want: { moves: ['heal'] } },
+      ], { whole: { scene, state: { ...state, health: 5 } }, hurt: { scene, state: { ...state, health: 3 } } }),
+    });
+    expect(problems).toEqual([
+      'case "hurt": its context\'s sheet has something for heal to recover',
+      'case "no-such": nothingToRecover names one of heal, hearten, resupply, repair — not "sojourn"',
+      'case "wants-it": nothingToRecover is for a control (want.none)',
+    ]);
   });
 });
 
