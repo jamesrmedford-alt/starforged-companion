@@ -224,7 +224,13 @@ export const BEAT_CHECKS = {
     return done(`session ${c.n ?? 1} is closed${v.now.session.questFocus ? `; the focus noted: "${v.now.session.questFocus}"` : ""}`);
   },
 
-  /** Every probe of the set has been asked, in the charter's words. */
+  /**
+   * Every probe of the set has been asked, in the charter's words — and, with
+   * `recap`, the campaign recap posted with something in it: a card that says
+   * "No campaign history available yet" is no recap (the module posts one
+   * when the recap comes back empty, as it does when the reply was not the
+   * cited JSON it asks for — issue #382).
+   */
   probesAsked(v, c) {
     if (c.session) {
       const begun = new Set(v.marks.filter(k => k.table?.session?.active && k.table.session.id).map(k => k.table.session.id));
@@ -234,8 +240,10 @@ export const BEAT_CHECKS = {
     const baits = (v.charter.baits ?? []).filter(b => (c.baits ?? []).includes(b.id));
     const asked = [...probes, ...baits].filter(p => v.linesInWindow.some(m => isProbeLine(m.text, p)));
     const total = probes.length + baits.length;
-    const recap = c.recap ? v.allCards.some(k => k.recap && v.inWindow(k)) : true;
-    if (asked.length < total || !recap) return notYet(`${c.session ? `session ${c.session} is open; ` : ""}${asked.length} of ${total} asked${c.recap && !recap ? "; no recap card yet" : ""}`, 1 + asked.length + (c.recap && recap ? 1 : 0));
+    const recaps = c.recap ? v.allCards.filter(k => k.recap && v.inWindow(k)) : [];
+    const recap = c.recap ? recaps.some(k => k.recap.recapEmpty !== true) : true;
+    const noRecap = recaps.length ? "; the recap card came up empty" : "; no recap card yet";
+    if (asked.length < total || !recap) return notYet(`${c.session ? `session ${c.session} is open; ` : ""}${asked.length} of ${total} asked${c.recap && !recap ? noRecap : ""}`, 1 + asked.length + (c.recap && recap ? 1 : 0));
     return done(`probe set ${c.set}: ${probes.length} question(s) asked${baits.length ? `, ${baits.length} bait(s)` : ""}${c.recap ? "; the recap was posted" : ""}`);
   },
 

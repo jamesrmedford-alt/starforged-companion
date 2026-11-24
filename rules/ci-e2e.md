@@ -771,9 +771,13 @@ and the rules that go with each:
   its beat was not exercised — and "Her name is Tamsin Vey", which was right,
   was scored three times as a refusal of the name she never took. Two rules from
   the first reviewed run are built in: **what the helpers wrote is read
-  against the ledger too** (every summary, Chronicle entry and recap; a
-  refusal there fails the fact at the stored layer whatever the narrator
-  answers), and **a scene that restates a fact before it is asked about is
+  against the ledger too** (every summary, Chronicle entry, recap and Session
+  Log page; a refusal there fails the fact at the stored layer whatever the
+  narrator answers — a page rendered from the session record, issue #382, by
+  its own words: the player's lines and questions it quotes and a fact it
+  shows struck are not the page saying so, `table.mjs` `sessionLogOwnText`,
+  while what it keeps of a fact is read from the whole page), and **a scene
+  that restates a fact before it is asked about is
   recorded, its own prompt scored, and the question after it is not counted
   as recall**. A hidden plan's truth stated before its reveal is a suspected
   leak (`scoreLeaks`, by content). Every refusal and leak is reported with its
@@ -973,6 +977,13 @@ option and a window by its title on the screen its prompt shows; waits a few
 turns for one that is not there yet; skips what the table never offered; and
 drops an entry whose `beat` the pointer has passed. `rehearsalDice` scripts
 the rolls the six do not, so that a rehearsal walks the same road every time.
+Both stand-ins answer the campaign recap as the module asks for it since its
+source is the session record (issue #382; `citedRecapReply`): JSON
+sentences, each fact a line of the source holds told with that line's id,
+and every beat marked LASTING told — a reply that is not that JSON leaves the
+recap empty, and the forgetful stand-in tells no fact. The recap beat
+(`probesAsked` with `recap`) wants a recap with something in it: the card
+that says "No campaign history available yet" is not one.
 **Walk every beat in a rehearsal, and read the prompts it produced
 (`requests.json`), before a live run is paid for** (issue #373, spending rule
 2). Four rehearsals found, for nothing: the runner taking a pause for the end

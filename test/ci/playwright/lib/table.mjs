@@ -63,12 +63,61 @@ export function parsePriceLine(text) {
 export const uniformFor = (face, faces) => (face - 0.5) / faces;
 export const faceOf = (uniform, faces) => Math.floor(uniform * faces) + 1;
 
+const cleanText = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+const stripHtml = (html) => cleanText(String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+
+/**
+ * A Session Log page's own words — what the module wrote on it, which is what
+ * the ledger holds against the facts for refusals (lib/ledger.mjs) — or null
+ * for a page from before the session record, which is read whole. Pure.
+ *
+ * Since issue #382 the page is rendered from the record
+ * (src/record/sessionLogView.js renderSessionLogBody). Under "What happened"
+ * each beat's line quotes its player's own words, and a question put to the
+ * narrator is quoted as one; under "Corrected by the table" a struck fact is
+ * shown struck through. None of those is the page saying so: a player's "Do
+ * you still have the manifest, Tamsin?", quoted, is no refusal of the
+ * manifest left with Tamsin, and a fact struck as not having happened is no
+ * claim that it did. The page's own words are the rest — who acted, the move
+ * and its outcome, what changed, what play did, what stands, the story — and
+ * a name the table changed is written there as its new one, so an old one
+ * there is the page's. (What the page keeps of a fact is read from the whole
+ * page: the record keeps the player's words, and the recap is given them.)
+ *
+ * @param {string} html — the page's body
+ * @param {string} [narrative] — its story (the flag's `summary.narrative`)
+ * @returns {string|null}
+ */
+export function sessionLogOwnText(html, narrative = "") {
+  const s = String(html ?? "");
+  const from = s.search(/<h3>\s*What happened\s*<\/h3>/i);
+  if (from < 0) return null;
+  const next = s.slice(from + 4).search(/<h3>/i);
+  const to = next < 0 ? s.length : from + 4 + next;
+  const happened = s.slice(from, to)
+    .replace(/<li>\s*<em>\s*Asked of the narrator:\s*<\/em>[\s\S]*?<\/li>/gi, " ")
+    .replace(/“[^”]*”/g, " ");
+  const own = `${s.slice(0, from)}${happened}${s.slice(to)}`.replace(/<s>[\s\S]*?<\/s>/gi, " ");
+  return cleanText(`${stripHtml(own)} ${narrative ?? ""}`);
+}
+
 /**
  * The table, as data.
  *
  * @returns {Promise<object>} see the fields below
  */
-export function readTable(gm) {
+export async function readTable(gm) {
+  const table = await readTableOnPage(gm);
+  // A Session Log page's body goes no further than this: its own words are
+  // kept beside its text (`own`), for the ledger's refusals.
+  table.helpers.sessionLog = table.helpers.sessionLog.map(({ html, narrative, ...p }) => {
+    const own = sessionLogOwnText(html, narrative);
+    return own === null ? p : { ...p, own };
+  });
+  return table;
+}
+
+function readTableOnPage(gm) {
   return gm.page.evaluate((MODULE_ID) => {
     const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
     const strip = (html) => clean(String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
@@ -159,7 +208,10 @@ export function readTable(gm) {
       if (!/Session Log/i.test(j.name)) continue;
       for (const p of j.pages?.contents ?? []) {
         const log = flagsOf(p).sessionLogPage ?? null;
-        sessionLog.push({ name: p.name, text: clean(`${strip(p.text?.content)} ${log?.summary?.narrative ?? ""}`) });
+        sessionLog.push({
+          name: p.name, text: clean(`${strip(p.text?.content)} ${log?.summary?.narrative ?? ""}`),
+          html: String(p.text?.content ?? ""), narrative: String(log?.summary?.narrative ?? ""),
+        });
       }
     }
 
@@ -256,7 +308,7 @@ export function readCards(gm) {
       if (f.forgeABondCard) card.forged = pick(f, ["connectionName", "legacyTicks"]);
       if (f.reachMilestoneCard) card.milestone = true;
       if (f.oracleCommandCard) card.oracle = { answer: f.oracleMemory?.answer ?? null, question: f.oracleMemory?.question ?? null };
-      if (f.recapCard) card.recap = pick(f, ["recapType", "sessionNumber"]);
+      if (f.recapCard) card.recap = pick(f, ["recapType", "sessionNumber", "recapEmpty"]);
       if (f.draftEntityCard) card.drafts = (f.drafts ?? []).map(d => pick(d, ["name", "type", "status", "index"]));
       if (f.xcardCard || f.type === "xcard") card.xcard = true;
       if (f.xcardClearedCard) card.xcardCleared = true;

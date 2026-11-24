@@ -46,6 +46,40 @@ function parse(body) {
 
 const flexible = (variant) => new RegExp(String(variant).trim().split(/[\s-]+/).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*"), "i");
 
+/** A line of the recap's source: `[s3-2] …`, `[now-1] …`, `[note-1] …`, `[old-1] …` (record/recapView.js recapSource). */
+const SOURCE_LINE = /^\[((?:s\d+|now|note|old)-\d+)\] (.*)$/gm;
+
+/**
+ * The campaign recap's reply, as the module asks for it since the recap is a
+ * view of the session record (issue #382, slice 2; narratorPrompt.js
+ * buildCampaignRecapUserMessage): JSON paragraphs of sentences, each citing
+ * the ids of the source lines it rests on — a sentence that cites none is
+ * dropped in code, a beat marked LASTING that no sentence cites sends the
+ * reply back once, and a reply that is not the JSON leaves the recap empty
+ * (narrator.js getCampaignRecap). The stand-in states each fact a line of the
+ * source holds, citing those lines — none when it is forgetful — and gives
+ * every LASTING beat a sentence of its own that cites it, so it is sent back
+ * for neither. Pure.
+ *
+ * @param {string} user — the recap's user message
+ * @param {{ facts?: object[], holds: (text: string, fact: object) => boolean, forget?: boolean }} o
+ * @returns {string}
+ */
+export function citedRecapReply(user, { facts = [], holds, forget = false }) {
+  const lines = [...String(user ?? "").matchAll(SOURCE_LINE)].map(m => ({ id: m[1], text: m[2] }));
+  const told = (forget ? [] : facts).flatMap((fact) => {
+    const because = lines.filter(l => holds(l.text, fact)).map(l => l.id);
+    return because.length ? [{ text: fact.statement, because }] : [];
+  });
+  const cited = new Set(told.flatMap(s => s.because));
+  const lasting = lines.flatMap((l) => {
+    const what = / — LASTING: (.+)$/.exec(l.text)?.[1]?.trim();
+    return what && !cited.has(l.id) ? [{ text: `That stood: ${what}.`, because: [l.id] }] : [];
+  });
+  const opening = lines.length ? [{ text: "The story so far, as the record has it.", because: [lines[0].id] }] : [];
+  return JSON.stringify({ paragraphs: [[...opening, ...told], lasting].filter(p => p.length) });
+}
+
 /**
  * The stand-in's answerer for one charter. Pure but for the player's turn
  * counter: `reply(body)` → the `content` and `stop_reason` of a reply.
@@ -93,6 +127,9 @@ export function createRehearsal({ charter, forget = false }) {
     }
     if (system.includes("continuity scribe")) {
       return text(knows ? `${pc} went about the day's business. ${fact.statement}` : `${pc} went about the day's business.`);
+    }
+    if (system.includes("## THIS SUMMARY")) {
+      return text(citedRecapReply(user, { facts: fact ? [fact] : [], holds: (t) => holds(t), forget }));
     }
     if (system.includes("NARRATOR ROLE AND VOICE")) {
       const prose = knows ? `You stop for a moment. ${fact.statement}` : "The moment passes. Nothing more comes of it.";
@@ -393,10 +430,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
         renames: [], worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
       }));
     }
-    if (system.includes("## THIS SUMMARY")) {
-      const said = forget ? [] : facts.filter(f => holds(`${system}\n${user}`, f)).map(f => f.statement);
-      return text(`The story so far, as the chronicle has it. ${said.join(" ")}`.trim());
-    }
+    if (system.includes("## THIS SUMMARY")) return text(citedRecapReply(user, { facts, holds, forget }));
     if (system.includes("NARRATOR ROLE AND VOICE") || system.startsWith("You are the narrator for an Ironsworn: Starforged campaign")) return text(narrate(system, user));
     return text("{}");
   }
