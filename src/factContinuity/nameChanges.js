@@ -44,6 +44,7 @@
 
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { subjectKey, XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY } from './ledgers.js';
+import { recordEvent } from '../record/record.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -215,9 +216,12 @@ export function normaliseNameChange(change) {
  *
  * @param {Array} list — campaignState.nameChanges
  * @param {Object} change
+ * @param {{ cap?: number }} [opts] — how many are kept, the newest: the stored
+ *   list's cap; `Infinity` for the session record's fold of every change the
+ *   campaign made (record/read.js)
  * @returns {Array}
  */
-export function withNameChange(list, change) {
+export function withNameChange(list, change, { cap = NAME_CHANGES_CAP } = {}) {
   const c = normaliseNameChange(change);
   const kept = (Array.isArray(list) ? list : []).filter(e => normaliseNameChange(e));
   if (!c) return kept;
@@ -230,7 +234,7 @@ export function withNameChange(list, change) {
     next.push(carried);
   }
   next.push(c);
-  return next.slice(-NAME_CHANGES_CAP);
+  return Number.isFinite(cap) ? next.slice(-cap) : next;
 }
 
 function escapeRegExp(s) {
@@ -386,6 +390,64 @@ export function mentionsOldName(text, change) {
   return !!c && shortFormsInUse(c, [t], [c]).length > 0;
 }
 
+/**
+ * A text with each changed name written as its new one — what a view of the
+ * session record shows (record/read.js; issue #382, decision D5). The stored
+ * text is not changed: nothing in a store is rewritten (decisions.md, "A
+ * correction of a name"). Three forms of an old name are written anew, each
+ * where it stands as a name, as written (a name's capitals), whole words only:
+ *   - the whole name ("Ashen Wake" → "Cinder Wren");
+ *   - the part the new name does not share, as that part of the new name
+ *     ("Vey" → "Okoro" for Tamsin Vey → Tamsin Okoro);
+ *   - its short form — the last capitalised word of a name of several words —
+ *     when it follows "the" or carries "'s", does not open its sentence, is
+ *     not part of another name beside it ("Silent Wake", "Wake Station") and
+ *     is a word of no other name in play: the new name whole ("the Wake's
+ *     registry" → "the Cinder Wren's registry").
+ * Pure.
+ *
+ * @param {string} text
+ * @param {Array} changes — the changes in play, folded (withNameChange)
+ * @param {{ otherNames?: string[] }} [opts] — the other names in play (the
+ *   records' current names): a word of one of them is never a short form
+ * @returns {string}
+ */
+export function writeNewNames(text, changes, { otherNames = [] } = {}) {
+  let out = typeof text === 'string' ? text : '';
+  const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
+  if (!out || !all.length) return out;
+  const asWord = (s) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(s)}(?![\\p{L}\\p{N}])`, 'gu');
+  for (const c of all) {
+    out = out.replace(asWord(c.from), c.to);
+    const part = distinctivePart(c.from, c.to);
+    if (part) out = out.replace(asWord(part), distinctivePart(c.to, c.from) || c.to);
+    const words = nameWordsOf(c.from);
+    const last = words.length >= 2 ? words.at(-1) : null;
+    if (!last || ownWordsOf(c.to).has(last.toLowerCase())) continue;
+    const lower = last.toLowerCase();
+    const taken = [...otherNames, ...all.filter(o => !same(o.to, c.to)).flatMap(o => [o.from, o.to])]
+      .filter(n => !same(n, c.from) && !same(n, c.to))
+      .some(n => ownWordsOf(n).has(lower));
+    if (taken) continue;
+    const own = ownWordsOf(c.from);
+    const bare = c.to.replace(/^the\s+/i, '');
+    out = out.replace(asWord(last), (match, index, whole) => {
+      const prev = WORD_BEFORE.exec(whole.slice(Math.max(0, index - 64), index))?.[1] ?? null;
+      const rest = whole.slice(index + match.length, index + match.length + 64);
+      const next = WORD_AFTER.exec(rest)?.[1] ?? null;
+      if (!prev) return match;                                                     // opens its sentence
+      if (own.has(prev.toLowerCase()) || (next && own.has(next.toLowerCase()))) return match;
+      if (next && isCapitalised(next) && !/^I(?:['’]|$)/u.test(next)) return match; // part of another name
+      if (isCapitalised(prev) && !LEAD_WORDS.has(prev.toLowerCase())) return match;
+      const article = prev.toLowerCase() === 'the';
+      const possessive = /^['’]s(?![\p{L}\p{N}])/u.test(rest);
+      if (!article && !possessive) return match;
+      return article ? bare : c.to;
+    });
+  }
+  return out;
+}
+
 /** The texts a call sends, as given: the non-empty strings. */
 function sourcesOf(texts) {
   return (Array.isArray(texts) ? texts : [texts]).filter(t => typeof t === 'string' && t);
@@ -479,6 +541,30 @@ export function formatNameChangesForSource(changes, opts = {}) {
 }
 
 /**
+ * Put a changed name on the session record (issue #382) — called by each
+ * writer of `campaignState.nameChanges` once its write has landed, so every
+ * view of the record writes the new name: the stored list is capped and tells
+ * the narrator; the record keeps every change the campaign made. A change the
+ * store does not hold (its write was refused, or its scene changed) is not
+ * recorded. tests/unit/sessionRecordEvents.test.js fails on a `withNameChange`
+ * writer that does not call this.
+ *
+ * @param {Object} change — { from, to, kind?, about?, entityId? }
+ * @returns {boolean} whether it was recorded
+ */
+export function recordNameChanged(change) {
+  const c = normaliseNameChange(change);
+  if (!c) return false;
+  let stored = [];
+  try { stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState')?.nameChanges ?? []; } catch { stored = []; }
+  if (!(Array.isArray(stored) ? stored : []).some(e => same(e?.from, c.from) && same(e?.to, c.to))) return false;
+  return recordEvent('name.changed', {
+    ref: { entity: c.entityId },
+    d: { from: c.from, to: c.to, how: c.kind, about: c.about },
+  });
+}
+
+/**
  * Record a change on the stored campaignState, on this client's write chain —
  * the canonical GM's, which every caller already is (the sidebar's rename sync,
  * `!truth` on its relay). Never throws.
@@ -500,6 +586,7 @@ export async function recordNameChange(change, label = 'name change') {
       written = true;
       return globalThis.game.settings.set(MODULE_ID, 'campaignState', cs);
     }, label);
+    if (written) recordNameChanged(change);
     return written;
   } catch (err) {
     console.warn(`${MODULE_ID} | recording the name change "${change?.from}" → "${change?.to}" failed:`, err?.message ?? err);

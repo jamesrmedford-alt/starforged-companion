@@ -184,6 +184,16 @@ CLAUDE.md "audit consumers" rule):
   `sessionNarratorCards` keeps yet, save a published reflection — canon, but
   not a narration; published first, it took the narration's recap (issue
   #345 AA32)
+- the session record's card hook (`registerRecordCardHook`,
+  `src/record/cards.js`, issue #382) — on the canonical GM, each card narrator
+  memory takes (`narratorMemoryCard` — `inNarratorMemory` for the card's own
+  session: no fallback, no whisper, no contradiction, recap or draft card,
+  nothing struck or superseded) is recorded as a `narration` event, its
+  `narrationText` copied once, its mode read from its flags (`roundId`,
+  `oracleNarrationCard`, `vowSceneCard`, `pacedNarrative`, `sceneResponse`,
+  `sessionVignetteCard` + `vignetteKind`, `incitingMeta`, `clockVignetteCard`,
+  `publishedReflection`, else a move's); a new card type's flags need a mode
+  there (docs/flows/session-record-flow.md)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button
@@ -318,7 +328,7 @@ write as the pause; the ids are kept on `xCardedNarrationIds`, so
 relayed sidecar of that narration is dropped. What the narration's capture
 (the detection and tier passes) recorded carries the same id — World Journal
 entries (with the versions they replaced; a faction the draft routing
-surfaces, issue #335 Y02), Session Log beats, tier details (one the GM had
+surfaces, issue #335 Y02), tier details (one the GM had
 promoted takes the line its Promote added to the notes with it, issue #338
 D7), a placeholder figure's rename (the X-Card puts the placeholder name back), the draft card
 it queued (its pending rows are withdrawn, issue #338 D6(i)), a connection a

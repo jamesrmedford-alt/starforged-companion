@@ -485,7 +485,9 @@ describe("companionTakesAHit", () => {
     expect(r.before).toBe(3);
     expect(r.after).toBe(2);
     expect(a.__item.system.track.value).toBe(2);
-    expect(a.__item.update).toHaveBeenCalledWith({ "system.track.value": 2 });
+    // What caused it rides the write, for the session record (issue #382): no
+    // move named here, so a move's price with no resolution id.
+    expect(a.__item.update).toHaveBeenCalledWith({ "system.track.value": 2 }, { "starforged-companion": { recordCause: { kind: "move" } } });
   });
 
   it("with no item id (the any-picker's button), the only companion takes it", async () => {

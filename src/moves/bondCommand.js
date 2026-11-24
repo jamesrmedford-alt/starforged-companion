@@ -124,7 +124,13 @@ export async function handleBondCommand(message) {
     : `Develop Your Relationship (bonded, ${escapeHtml(rank)})`;
   await ChatMessage.create({
     content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${dieCancelled ? `<s>${actionDie}</s> (cancelled by momentum -${actionDie})` : actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
-    flags:   { [MODULE_ID]: { bondCommandCard: true } },
+    // The roll, as the session record takes it from the card on the canonical
+    // GM (record/cards.js, issue #382): `!bond` rolls on its author's client,
+    // and a miss sends the GM nothing else.
+    flags:   { [MODULE_ID]: { bondCommandCard: true, bondRoll: {
+      actorId: rollerId ?? null, outcome, isMatch, actionDie, actionDieCancelled: dieCancelled, adds, actionScore,
+      challengeDice, target: target ? { name: target.name ?? null, id: target.__hostId ?? null } : null,
+    } } },
   });
 
   if (!effect.ticks && !effect.momentum && !raiseRank) {

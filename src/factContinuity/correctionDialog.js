@@ -26,7 +26,7 @@ import {
 import { resolveEntityById } from '../entities/registry.js';
 import { propagateRetraction, markSummaryForRegen } from './retractions.js';
 import { persistSceneLedgerFields } from './sceneLifecycle.js';
-import { nameSwapOf, withNameChange } from './nameChanges.js';
+import { nameSwapOf, withNameChange, recordNameChanged } from './nameChanges.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -377,6 +377,8 @@ async function persistCorrection(working, field, { regenSummary = false, nameCha
       }
     } : null,
   });
+  // The write landed: the change goes on the session record (issue #382).
+  if (nameChange) recordNameChanged(nameChange);
 }
 
 // Avoid unused-parameter lint when subjectKey is imported only for the type

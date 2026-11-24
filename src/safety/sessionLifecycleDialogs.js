@@ -40,6 +40,8 @@ import { proseToHtml } from "../audio/segments.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { RANKS } from "../schemas.js";
 import { costsOwedSentence } from "../moves/sufferCard.js";
+import { recordCause } from "../record/sheetWatch.js";
+import { recordSessionEdge } from "../record/tableSnapshot.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -364,6 +366,14 @@ async function beginSessionOnce(payload) {
     noteSessionReplaced();
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
+    // The session's first event on its record: the table as play begins
+    // (issue #382), before the start effects below change it — its sheets are
+    // read as this call is made; the record's write never holds up Begin.
+    void recordSessionEdge("session.begun", cs, {
+      number:      cs.sessionNumber ?? null,
+      perspective: cs.sessionPerspective?.sessionId === sessionId ? (cs.sessionPerspective.perspective ?? null) : null,
+      focus:       { quest, connection },
+    });
     // The session's first narrator call takes a new world snapshot (issue #357).
     reportSnapshotEvent("session_begin");
   } catch (err) {
@@ -801,6 +811,11 @@ async function endSessionOnce(payload, ctx = {}) {
   }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
+  // The session's last event on its record: the table as it stands at the
+  // end (issue #382), before a noted focus's momentum — its sheets are read as
+  // this call is made; the record's write never holds up End (it never throws).
+  void recordSessionEdge("session.ended", state, { reason: "end", focus: { quest: questFocus, connection: connectionFocus } });
+
   // The +1 momentum a noted focus earns, as soon as the gate write says the
   // session ended with one — never after the scene close and the summary's
   // Claude call, which it does not need: a GM who left during those seconds
@@ -1085,7 +1100,7 @@ async function applyMomentumToAllPlayers(delta, { sessionId = null, award = null
   const failures = [];
   for (const a of getPlayerActors()) {
     try {
-      await applyMeterChanges(a, { momentum: delta });
+      await applyMeterChanges(a, { momentum: delta }, recordCause({ kind: "session" }));
     } catch (err) {
       console.warn(`${MODULE_ID} | momentum delta failed for ${a.name}:`, err?.message ?? err);
       failures.push({ step: "momentum", pcId: a.id, amount: delta, sessionId, award,

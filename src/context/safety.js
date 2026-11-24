@@ -346,8 +346,17 @@ function removeXCardedNarration(narrator, cs) {
  */
 async function finishXCardRemoval(narrator, removal) {
   if (!removal.cards.length) return;
-  await narrator.flagXCardedCards(removal.cards);
   const ids = removal.cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === "string" && id);
+  // First, the session record (issue #382): the removal is recorded and what
+  // the narrations wrote there is blanked — awaited, so no view of the record
+  // is made again from what the table removed.
+  try {
+    const { recordNarrationsRemoved } = await import("../record/record.js");
+    await recordNarrationsRemoved(ids, { by: "xcard", session: removal.sessionId ?? null });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the removal could not be put on the session record:`, err?.message ?? err);
+  }
+  await narrator.flagXCardedCards(removal.cards);
   // A ship move the removed narration made is undone with its ledger facts
   // (issue #325 W07): the position record carries the narration's id.
   if (typeof narrator.restoreShipPositionAfterXCard === "function") {

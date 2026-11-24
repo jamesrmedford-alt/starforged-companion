@@ -139,7 +139,13 @@ longer special-cases them).
   that does, record a name change (`nameChanges.js` `nameCorrectionOf` /
   `nameSwapOf`, on `campaignState.nameChanges` in the same write as the ledger;
   only where the words before the name say it is one). So does a GM's rename of
-  a card in the sidebar (index.js `syncEntityRecordNameOnUpdate`). CORRECTED is
+  a card in the sidebar (index.js `syncEntityRecordNameOnUpdate`). Each of the
+  three writers puts the change on the session record once its write has landed
+  (`recordNameChanged` → `name.changed`, issue #382 —
+  docs/flows/session-record-flow.md), as the ledger saves put the set and the
+  struck truth there (`truth.set` / `truth.struck`): every view of the record
+  — the Session Log page — writes the new name, its short form too, at read
+  (`writeNewNames`); the stored list (capped) still tells the narrator. CORRECTED is
   its scene's (and its place's); the change is told past both — NAMES THE TABLE
   CHANGED in the narrator's context, every mode, and in the session summary's
   source — wherever the old name still reaches a prompt. In the long haul's

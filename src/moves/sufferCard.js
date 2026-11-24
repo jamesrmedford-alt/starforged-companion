@@ -876,7 +876,9 @@ async function handleSufferPick(message, dataset) {
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
-  const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
+  // `recordRes`: the move this pick pays for, as the session record groups
+  // its sheet changes (issue #382) — a key of the record's alone.
+  const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null, recordRes: f.resolutionId ?? null });
   // A resist roll whose post the world refused rolled nothing: the card is
   // handed back, and its move's Burn / Improve with it, as when a posted roll
   // is then not made (cardActions.js releaseSourceCard, issue #347 AB06). It

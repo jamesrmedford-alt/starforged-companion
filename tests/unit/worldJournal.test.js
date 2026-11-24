@@ -18,7 +18,7 @@ import {
   promoteLoreToConfirmed,
   applyStateTransition,
   writeSessionLog,
-  appendSessionLogBeat,
+  getOrCreateSessionLogPage,
   parseJournalCommand,
   executeJournalCommand,
   getConfirmedLore,
@@ -516,20 +516,24 @@ describe("writeSessionLog", () => {
     expect(page.text.content).toContain("Session 3");
   });
 
-  // D7: the End-Session summary lands on the SAME running page the scene log was
-  // appended to during play — one page per session, not one per call.
-  it("fills the summary section on the running page without spawning a new one", async () => {
-    const cs = campaign({ sessionNumber: 5, currentSessionId: "ses-5" });
-    await appendSessionLogBeat(cs, { kind: "lore", title: "Scorch marks", text: "faint" });
+  // D7: the End-Session story lands on the SAME page the session already has
+  // (the one its record is kept on) — one page per session, not one per call.
+  // Issue #382 D6: the lore titles End used to copy beside it are gone — a
+  // second, never-revised record of the session; the page's lists are the
+  // session record's view (src/record/sessionLogView.js).
+  it("writes the story onto the session's page without spawning a new one, and lists no lore titles", async () => {
+    const cs = campaign({ sessionNumber: 5, currentSessionId: "ses-5", sessionSummary: { text: "The crew found the munitions.", sessionId: "ses-5" } });
+    const made = await getOrCreateSessionLogPage(cs);
     await recordLoreDiscovery("Wartime munitions", { text: "real", sessionId: "ses-5" }, cs);
     const page = await writeSessionLog(cs);
 
     const journal = _journals.get(JOURNAL_NAMES.sessionLog);
     expect(journal.pages.contents).toHaveLength(1);          // one page for the session
-    expect(page.text.content).toContain("Scene log");        // running beats kept
-    expect(page.text.content).toContain("Scorch marks");
-    expect(page.text.content).toContain("Session summary");  // wrap-up added
-    expect(page.text.content).toContain("Wartime munitions");
+    expect(page).toBe(made.page);
+    expect(page.text.content).toContain("found the munitions");
+    expect(page.text.content).not.toContain("Wartime munitions");
+    expect(page.flags[MODULE_ID].sessionLogPage.summary).not.toHaveProperty("lore");
+    expect(page.flags[MODULE_ID].sessionLogPage.summary).not.toHaveProperty("threats");
   });
 
   // Rolling session summary (architecture §8.6) — the finalised "story so far"
@@ -557,53 +561,39 @@ describe("writeSessionLog", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// appendSessionLogBeat — running scene log (D7 / F18)
+// getOrCreateSessionLogPage — a session's one page (D7 / F18; issue #382)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("appendSessionLogBeat", () => {
-  afterEach(() => { game.settings._store.delete(`${MODULE_ID}.sessionLogAutoWrite`); });
-
-  it("creates the running session page on the first beat", async () => {
-    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "Unmarked cases", text: "serials filed off" });
-    expect(page).not.toBeNull();
+describe("getOrCreateSessionLogPage", () => {
+  it("makes the session's page on the first call — its title alone, flagged with its session", async () => {
+    const made = await getOrCreateSessionLogPage(campaign({ currentSessionId: "ses-1", sessionNumber: 1 }));
+    expect(made?.page).toBeTruthy();
     const journal = _journals.get(JOURNAL_NAMES.sessionLog);
     expect(journal.pages.contents).toHaveLength(1);
-    expect(page.text.content).toContain("Scene log");
-    expect(page.text.content).toContain("Unmarked cases");
-    expect(page.text.content).toContain("serials filed off");
+    expect(made.page.flags[MODULE_ID].sessionLogPage).toMatchObject({ sessionId: "ses-1", sessionNumber: 1, summary: null });
+    expect(made.page.flags[MODULE_ID].sessionLogPage).not.toHaveProperty("beats");
+    expect(made.page.text.content).toMatch(/^<h2>Session 1 — /);
   });
 
-  it("appends later beats to the same page instead of spawning new pages", async () => {
-    const cs = campaign();
-    await appendSessionLogBeat(cs, { kind: "lore",   title: "Scorch marks",     text: "a" });
-    await appendSessionLogBeat(cs, { kind: "threat", title: "Airlock cycling",  text: "b" });
-    const page = await appendSessionLogBeat(cs, { kind: "lore", title: "Proximity blip", text: "c" });
-
-    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
-    expect(journal.pages.contents).toHaveLength(1);
-    expect(page.text.content).toContain("Scorch marks");
-    expect(page.text.content).toContain("Airlock cycling");
-    expect(page.text.content).toContain("Proximity blip");
-    expect(page.text.content).toContain("Threat:");          // kind label rendered
+  it("finds the same page for the same session", async () => {
+    const cs = campaign({ currentSessionId: "ses-2", sessionNumber: 2 });
+    const first  = await getOrCreateSessionLogPage(cs);
+    const second = await getOrCreateSessionLogPage(cs);
+    expect(second.page).toBe(first.page);
+    expect(_journals.get(JOURNAL_NAMES.sessionLog).pages.contents).toHaveLength(1);
   });
 
-  it("no-ops when sessionLogAutoWrite is disabled", async () => {
-    game.settings._store.set(`${MODULE_ID}.sessionLogAutoWrite`, false);
-    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "Dropped beat" });
-    expect(page).toBeNull();
-    expect(_journals.has(JOURNAL_NAMES.sessionLog)).toBe(false);
-  });
-
-  it("returns null for a beat with no title", async () => {
-    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "" });
-    expect(page).toBeNull();
+  it("two makers in one tick — the record's first write and End's story — share one creation (rules/reachability.md §7)", async () => {
+    const cs = campaign({ currentSessionId: "ses-3", sessionNumber: 3 });
+    const [a, b] = await Promise.all([getOrCreateSessionLogPage(cs), getOrCreateSessionLogPage(cs)]);
+    expect(b.page).toBe(a.page);
+    expect(_journals.get(JOURNAL_NAMES.sessionLog).pages.contents).toHaveLength(1);
   });
 
   it("keeps separate pages for separate sessions", async () => {
-    await appendSessionLogBeat(campaign({ currentSessionId: "ses-A", sessionNumber: 1 }), { kind: "lore", title: "A-beat" });
-    await appendSessionLogBeat(campaign({ currentSessionId: "ses-B", sessionNumber: 2 }), { kind: "lore", title: "B-beat" });
-    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
-    expect(journal.pages.contents).toHaveLength(2);
+    await getOrCreateSessionLogPage(campaign({ currentSessionId: "ses-A", sessionNumber: 1 }));
+    await getOrCreateSessionLogPage(campaign({ currentSessionId: "ses-B", sessionNumber: 2 }));
+    expect(_journals.get(JOURNAL_NAMES.sessionLog).pages.contents).toHaveLength(2);
   });
 });
 

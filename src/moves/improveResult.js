@@ -45,6 +45,7 @@ import { getCurrentSiteKind }          from "../entities/location.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import { refusePress }                   from "../multiplayer/gmRelay.js";
+import { recordEvent }                   from "../record/record.js";
 import { moveDisplayName }               from "../system/i18n.js";
 import {
   revertPayThePrice,
@@ -385,7 +386,13 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   }
 
   const allyId = upgradeAllyId(improve, actor.id);
-  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences, allyId) }, failures);
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences, allyId), res: improve.resolutionId ?? null }, failures);
+  // The upgraded outcome is applied: on the session record (issue #382).
+  recordEvent("move.upgraded", {
+    who: { user: game.user?.id ?? null, actor: actor.id },
+    ref: { res: improve.resolutionId ?? null },
+    d: { how: "improve", from: improve.originalOutcome ?? null, to: improve.improveTo ?? null },
+  });
   // Aid Your Ally: the strong hit's momentum is the ally's, less what the
   // recorded hit already paid them (AID-ALLY-UPGRADE).
   // An ally gone since the move takes none of it, nor does the improver: a

@@ -455,8 +455,8 @@ the id its card carries since issue #335 Y03 — the inciting capture) hands the
 `routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
 auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
 each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the
-versions before as `previous`, newest first, up to three), Session Log beat,
-tier detail and placeholder rename (`renamedBy` on the card — the X-Card puts
+versions before as `previous`, newest first, up to three), tier detail and
+placeholder rename (`renamedBy` on the card — the X-Card puts
 the placeholder name back unless the card was renamed since), and on the
 ◈ New Entities card it queues (its rows still pending are withdrawn —
 `xCarded`, no Confirm / Dismiss, out of PENDING DRAFTS and the
@@ -473,18 +473,20 @@ deleted card go back to its name: MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED); th
 finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
-threat, faction or place page, takes the beats off the Session Log page and
-drops the tier details — a detail the GM had promoted takes the line its ⤴
+threat, faction or place page and drops the tier details — a detail the GM had promoted takes the line its ⤴
 Promote appended with it (the entry keeps `promotedText` beside its
 `narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
 of the record's notes (issue #338 D7); a Promote never promotes an X-carded
 narration's detail, and one whose Notes write the X-Card overtook takes its
 own line back off the tab (issue #342 Z44) — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. Last, the summary End a Session
-wrote on the session's Session Log page (`retractSessionLogSummary`): its
-"Story so far" goes when the pause dropped the rolling summary it was
-written from, and "Lore this session" loses the titles whose lore the undo
-or the propagation retracted — an X-Card played after End left the page
+`propagateRetraction` never reached them. First of all, the finish puts the
+removal on the session record (`recordNarrationsRemoved`, issue #382 —
+docs/flows/session-record-flow.md), awaited: the removed narration's prose
+and what it established are blanked in the stored record (decision D3), and
+every view of the record — the Session Log page among them — reads without
+them. Last, the story End a Session wrote on the session's Session Log page
+(`retractSessionLogSummary`): it goes when the pause dropped the rolling
+summary it was written from — an X-Card played after End left the page
 telling the removed beat (issue #345 AA27); the story is rebuilt from the
 summary the next mint regenerates without the beat (`restoreSessionLogStory`
 at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
@@ -1157,6 +1159,12 @@ reads, present and absent. **A section added to the prompt, or a new mode,
 gets a check there.**
 
 ## 2. Write-back side — how output becomes memory
+
+What happened at the table — lines, moves, sheet changes, narrations, truths
+set and struck, names changed, removals — is also kept as one record a
+session on the session's Session Log page, read with the table's corrections
+(issue #382): `docs/flows/session-record-flow.md`. The Session Log page is its
+view; the summaries below do not read it yet.
 
 Prose + fenced JSON sidecar → `extractSidecar`
 (`src/factContinuity/sidecarParser.js`: the sidecar's fence is ```` ```json ````,

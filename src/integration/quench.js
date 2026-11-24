@@ -313,6 +313,11 @@ Hooks.on("quenchReady", (quench) => {
   // parent with its own system data still readable. Each is run on real
   // documents, through the hook index.js registers.
   registerDocumentHookAssumptionTests(quench);
+  // Session record (issue #382, decision D1) — an append to a session's
+  // record is one dotted key of its page's flag; on real documents, what goes
+  // over the socket is that event and the counter, never the session's other
+  // events (the storage rests on it; the fallback is a page a scene).
+  registerSessionRecordTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13626,5 +13631,70 @@ function registerDocumentHookAssumptionTests(quench) {
       });
     },
     { displayName: "STARFORGED: Document Hook Assumptions (issue #364)", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION RECORD — an append sends one event (issue #382)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSessionRecordTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sessionRecord",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      let journal = null;
+
+      before(async function () {
+        this.timeout(15000);
+        if (!game.user.isGM) { this.skip(); return; }
+        // A scratch journal: the world's own Session Log is never written here.
+        journal = await JournalEntry.create({
+          name: "Quench — session record scratch",
+          pages: [{ name: "Scratch", type: "text", text: { format: 1, content: "" } }],
+        });
+      });
+
+      after(async function () {
+        await journal?.delete().catch(err =>
+          console.warn(`${MODULE_ID} | quench sessionRecord: cleanup — deleting the scratch journal failed:`, err?.message ?? err));
+      });
+
+      describe("an append to the record is one event on the wire (store.js appendRecordEvents)", function () {
+        it("a dotted update of one key of the record's events sends that key and the counter alone", async function () {
+          this.timeout(15000);
+          const page = journal.pages.contents[0];
+          const base = `flags.${MODULE_ID}.sessionRecord`;
+          const bulky = "x".repeat(4000);
+          await page.update({
+            [`${base}.v`]: 1,
+            [`${base}.events.evFirst`]: { id: "evFirst", k: "line", text: bulky },
+            [`${base}.seq`]: 1,
+          });
+
+          const sent = [];
+          const emit = game.socket.emit;
+          game.socket.emit = function (event, ...args) {
+            if (event === "modifyDocument") sent.push(JSON.parse(JSON.stringify(args[0] ?? null)));
+            return emit.call(this, event, ...args);
+          };
+          try {
+            await page.update({ [`${base}.events.evSecond`]: { id: "evSecond", k: "line", text: "y" }, [`${base}.seq`]: 2 });
+          } finally {
+            game.socket.emit = emit;
+          }
+
+          const request = sent.find(r => r?.action === "update" && r?.type === "JournalEntryPage");
+          assert.ok(request, "the append was sent as a JournalEntryPage update");
+          const record = request.operation?.updates?.[0]?.flags?.[MODULE_ID]?.sessionRecord ?? null;
+          assert.deepEqual(Object.keys(record?.events ?? {}), ["evSecond"], "only the new event went over the socket");
+          assert.equal(record?.seq, 2);
+          assert.notInclude(JSON.stringify(request), bulky, "the session's earlier event was not resent");
+          // The world merged it: both events stand on the page.
+          assert.deepEqual(Object.keys(page.flags[MODULE_ID].sessionRecord.events).sort(), ["evFirst", "evSecond"]);
+        });
+      });
+    },
+    { displayName: "STARFORGED: Session record — an append sends one event" },
   );
 }

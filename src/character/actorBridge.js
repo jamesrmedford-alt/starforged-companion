@@ -426,6 +426,66 @@ export function readCharacterSnapshot(actor) {
 }
 
 /**
+ * What a PC's sheet holds that the session record keeps the changes of — its
+ * meters, its impacts, its legacy tracks and the XP the sheet shows — read
+ * live, never from the cached snapshot: the record's sheet watch reads it
+ * before and after a write and records what moved (record/sheetWatch.js). The
+ * sheet's field paths stay in this file.
+ *
+ * @param {Actor|null} actor
+ * @returns {{ health: number, spirit: number, supply: number, momentum: number, xp: number,
+ *   impacts: Object<string, boolean>, legacies: Object<string, number> }|null}
+ */
+export function readSheetFacts(actor) {
+  if (!actor) return null;
+  const sys = actor.system ?? {};
+  const legacies = {};
+  for (const track of SHEET_LEGACY_TRACKS) legacies[track] = readSheetLegacy(actor, track);
+  return {
+    health:   meterValue(sys.health),
+    spirit:   meterValue(sys.spirit),
+    supply:   meterValue(sys.supply),
+    momentum: meterValue(sys.momentum),
+    xp:       sheetXp(sys).value,
+    impacts:  readDebilities(actor),
+    legacies,
+  };
+}
+
+/**
+ * The condition track of an asset Item the session record keeps the changes
+ * of: a companion's health, or a vehicle's integrity (the command vehicle's
+ * asset on its starship, a support vehicle's on its PC). Null for any other
+ * Item, and for a track that is switched off.
+ *
+ * @param {Item|null} item
+ * @returns {{ what: "companion-health"|"integrity", value: number }|null}
+ */
+export function readAssetTrackFact(item) {
+  if (item?.type !== 'asset') return null;
+  const track = item.system?.track;
+  if (!track || track.enabled === false) return null;
+  const value = Number(track.value ?? 0);
+  if (!Number.isFinite(value)) return null;
+  if (String(item.system?.category ?? '').toLowerCase().includes('companion')) return { what: 'companion-health', value };
+  if (String(track.name ?? '').trim().toLowerCase() === 'integrity') return { what: 'integrity', value };
+  return null;
+}
+
+/**
+ * Whether this client is writing to the Actor through this bridge right now —
+ * a module write, as against a hand's edit of the sheet. True only on the
+ * client making the write, while it is in flight (the same mark that has the
+ * system's change note said by the system, reattributeSystemNote).
+ *
+ * @param {string|null} actorId
+ * @returns {boolean}
+ */
+export function moduleWriteInFlight(actorId) {
+  return typeof actorId === 'string' && _moduleWritesInFlight.has(actorId);
+}
+
+/**
  * Read the character's ironsworn `asset`-type Items (Paths, Companions,
  * Modules, Rituals, Combat Talents, etc) as plain-data snapshots for
  * narrator context. Only enabled abilities are surfaced — disabled
@@ -662,9 +722,11 @@ export function readMomentumState(actor) {
  * (issue #316 T01). The bases are the sheet's; the module never writes them.
  * @param {Actor} actor
  * @param {{ health?: number, spirit?: number, supply?: number, momentum?: number }} meterChanges
+ * @param {Object} [options] — passed to Actor#update: a writer that knows what
+ *   caused the change says so for the session record (record/sheetWatch.js recordCause)
  * @returns {Promise<void>}
  */
-export async function applyMeterChanges(actor, meterChanges) {
+export async function applyMeterChanges(actor, meterChanges, options = undefined) {
   if (!actor) return;
 
   const sys   = actor.system ?? {};
@@ -705,7 +767,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   if (Object.keys(updates).length) {
     refuseStaleActorWrite('applyMeterChanges');
     console.log(`actorBridge | applyMeterChanges update:`, updates);
-    await moduleUpdate(actor, updates);
+    await moduleUpdate(actor, updates, options);
     invalidateActorCache(actor.id);
   }
 }
@@ -1150,10 +1212,11 @@ export async function setVehicleAssetBattered(actor, itemId, battered = true) {
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null, restore?: boolean }} [opts] — the vehicle asset
+ * @param {{ itemId?: string|null, restore?: boolean, options?: Object }} [opts] — the vehicle asset;
+ *   `options`: passed to the Item's update (what caused it, for the session record — record/sheetWatch.js recordCause)
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
  */
-export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false } = {}) {
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false, options = undefined } = {}) {
   const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
   if (!asset) {
     console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -1167,7 +1230,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   if (after === before) return { ok: true, ...at, after };
   try {
     refuseStaleActorWrite('vehicle integrity');
-    await moduleUpdate(asset, { 'system.track.value': after });
+    await moduleUpdate(asset, { 'system.track.value': after }, options);
   } catch (err) {
     console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -1183,10 +1246,11 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null }} [opts] — the companion (getCompanionAsset)
+ * @param {{ itemId?: string|null, options?: Object }} [opts] — the companion (getCompanionAsset);
+ *   `options`: passed to the Item's update (what caused it, for the session record — record/sheetWatch.js recordCause)
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: string, error?: string }>}
  */
-export async function applyCompanionHealthChange(actor, delta, { itemId = null } = {}) {
+export async function applyCompanionHealthChange(actor, delta, { itemId = null, options = undefined } = {}) {
   const companion = getCompanionAsset(actor, itemId);
   if (!companion) {
     console.warn(`actorBridge | companion health: no companion${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -1199,7 +1263,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
   if (after === before) return { ok: true, ...at, after };
   try {
     refuseStaleActorWrite('companion health');
-    await moduleUpdate(companion, { 'system.track.value': after });
+    await moduleUpdate(companion, { 'system.track.value': after }, options);
   } catch (err) {
     console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };

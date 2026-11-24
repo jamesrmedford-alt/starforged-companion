@@ -76,6 +76,7 @@ import {
   registerXCardRedirectHook,
   registerDeletedChatHook,
   registerPublishedReflectionHook,
+  narratorMemoryCard,
   catchUpUnsummarisedSession,
   narratePacedInput,
   tellPacedLineNotNarrated,
@@ -228,6 +229,10 @@ import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
+import { recordEvent } from "./record/record.js";
+import { registerRecordCardHook } from "./record/cards.js";
+import { registerSheetWatch } from "./record/sheetWatch.js";
+import { registerSessionLogView } from "./record/sessionLogView.js";
 import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -861,6 +866,36 @@ async function narrateUpgradedResolution(resolution, campaignState, options = {}
   return narrateResolution(resolution, campaignState, { speakerActorId: options.speakerActorId ?? null });
 }
 
+// The card claims whose button posts an earlier line again, word for word: a
+// paced card's Roll <move> (`rolled`) and a "Not rolled" notice's Narrate it
+// — no move (`narrated`) — cardActions.js applyPacedRoll / applyNotRolledNarrate.
+const REPOSTING_CLAIMS = new Set(["rolled", "narrated"]);
+
+/**
+ * Record a line of play (issue #382): how it reached the pipeline is read
+ * from the message's own flags — typed, a card's button, a ship token's drop,
+ * or a "Narrate it — no move" — and a line a button posted again, word for
+ * word, is marked `repost` (the read keeps it with the line it repeats).
+ *
+ * @param {ChatMessage} message
+ * @param {string|null} speakerActorId
+ */
+function recordLine(message, speakerActorId) {
+  const f = message.flags?.[MODULE_ID] ?? {};
+  const forcedMoveId = typeof f.forcedMoveId === "string" && f.forcedMoveId ? f.forcedMoveId : null;
+  const via = f.narrateOnly === true ? "narrate-only"
+    : f.tokenDragSetCourse ? "token"
+      : (f.bypassPacing === true || forcedMoveId) ? "button"
+        : "typed";
+  const repost = REPOSTING_CLAIMS.has(f.sourceCard?.claim);
+  recordEvent("line", {
+    who:  { user: messageAuthorId(message), actor: speakerActorId },
+    ref:  { line: message.id ?? null },
+    d:    { via, ...(forcedMoveId ? { forcedMoveId } : {}), ...(repost ? { repost: true } : {}) },
+    text: String(message.content ?? ""),
+  });
+}
+
 /**
  * Intercept outgoing chat messages and route player narration through
  * the move interpretation pipeline.
@@ -988,6 +1023,11 @@ export function registerChatHook() {
       await keepHeldResultsOf(speakerActorId).catch(err =>
         console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next line:`, err?.message ?? err));
     }
+
+    // The line goes on the session record (issue #382): the table's own
+    // words, by whoever typed them, for the character they speak for — what
+    // the recap and the summary are given in place of a telling of it.
+    recordLine(message, speakerActorId);
 
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -3739,6 +3779,32 @@ function sheetRolledVowIds(source, actorId) {
 }
 
 /**
+ * A progress roll a player made on the system's own sheet (Fulfill Your Vow,
+ * Forge a Bond), put on the session record by the canonical GM whoever
+ * narrates it (issue #382): a move rolled outside the move pipeline, under the
+ * resolution id its narration carries (`native-<card id>`). The system's
+ * action rolls are not read by the module, and are not recorded.
+ *
+ * @param {ChatMessage} message — the system's roll card
+ */
+function recordSheetProgressRoll(message) {
+  if (!isCanonicalGM() || !rolledByPlayerCharacter(message)) return;
+  const parsed = parseIronswornProgressRoll(String(message?.content ?? ""));
+  const moveId = parsed ? classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-roll record")) : null;
+  if (!moveId) return;
+  const dice = Array.isArray(parsed.challengeDice) ? parsed.challengeDice : [];
+  recordEvent("move.resolved", {
+    who: { user: messageAuthorId(message), actor: message.speaker.actor },
+    ref: { res: `native-${message.id}` },
+    d: {
+      moveId, moveName: moveId === "fulfill_your_vow" ? "Fulfill Your Vow" : "Forge a Bond", rollKind: "progress",
+      progressScore: parsed.score, challengeDice: dice, isMatch: dice.length >= 2 && dice[0] === dice[1],
+      outcome: parsed.outcome, target: parsed.source ? { name: parsed.source, id: null } : null,
+    },
+  });
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -3768,6 +3834,11 @@ function sheetRolledVowIds(source, actorId) {
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
+      try {
+        recordSheetProgressRoll(message);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | native-roll: the roll was not put on the session record:`, err?.message ?? err);
+      }
       // Every client reads the same keyed-GM registry and user list, so one
       // decides it narrates and the others stand down — not a failure, so no
       // log. A participant's roll in Batch Mode is the round's: decided on
@@ -10333,6 +10404,12 @@ Hooks.once("ready", () => {
   registerRoundWindowHooks();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
+  // Issue #382 — the session record's observers: every sheet change (each
+  // client stamps what its own edit changes; the canonical GM records), every
+  // narration card as it posts, and the Session Log pages kept in step.
+  registerSheetWatch();
+  registerRecordCardHook({ inMemory: narratorMemoryCard });
+  registerSessionLogView();
   // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions
   // are one fact: the native impacts canonical, the asset's conditions their
   // mirror (STARSHIP-ASSET-CONDITIONS-UNSYNCED).

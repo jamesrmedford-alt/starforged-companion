@@ -7,6 +7,8 @@
 // entity records and WJ pages — building them inline in every spec is
 // noisy, so this helper centralises the setup.
 
+import { applyUpdate } from "./documentStubs.js";
+
 const MODULE_ID = "starforged-companion";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,7 +28,9 @@ export function makePage(doc) {
       page.flags[mod][key] = val;
     },
     getFlag: (mod, key) => page.flags?.[mod]?.[key],
-    update:  async (data) => Object.assign(page, data),
+    // A Foundry update: dotted keys expanded, objects merged key by key (the
+    // session record's appends are dotted keys of one flag — issue #382).
+    update:  async (data) => applyUpdate(page, data),
     delete:  async () => {},
   };
   return page;

@@ -2660,6 +2660,21 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
 }
 
 /**
+ * Whether a card is a narration of its own session that narrator memory
+ * reads (inNarratorMemory, for the session the card names) — the cards the
+ * session record takes as `narration` events as they post
+ * (record/cards.js, issue #382), so the record and the narrator's memory keep
+ * one rule for what a narration is.
+ *
+ * @param {Object} m — a ChatMessage
+ * @returns {boolean}
+ */
+export function narratorMemoryCard(m) {
+  const sessionId = m?.flags?.[MODULE_ID]?.sessionId;
+  return typeof sessionId === 'string' && !!sessionId && inNarratorMemory(m, sessionId);
+}
+
+/**
  * Whether a narration card was posted late into an earlier session: filed
  * under a session other than the one current in `cs`, in that session's
  * narrator memory, and posted since the current session was minted

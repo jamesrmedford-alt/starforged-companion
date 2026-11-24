@@ -220,7 +220,7 @@ layers. This file is the never-break list.
    from (`tokenBefore` — the X-Card puts the token back, issue #342 Z12), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced — a faction the draft routing surfaces too, issue #335 Y02),
-   Session Log beats, tier details (a promoted one's line in the notes too,
+   tier details (a promoted one's line in the notes too,
    issue #338 D7), a placeholder's rename, the draft card
    it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
    connection it auto-creates or confirms from a pending draft row, deleted
@@ -389,6 +389,26 @@ layers. This file is the never-break list.
    SESSION goes on naming its session (`rollSessionIfDue`,
    LAST-SESSION-OWED-LOST-AT-MINT). Full drop
    priority in `decisions.md` → "Rolling session summary".
+
+9. **The session record is one record of what happened** (issue #382;
+   `docs/flows/session-record-flow.md`). Each event kind is written at one
+   place, through `recordEvent` against one table (`RECORD_EVENTS`,
+   `src/record/events.js`), by the canonical GM, after the write it
+   describes has landed — on the session's own Session Log page as one
+   dotted key of its `sessionRecord` flag, never in campaignState. Its
+   observed kinds are taken where one place sees every writer: a narration
+   card as it posts (the flag family above — a new card type needs its mode
+   in `record/cards.js`), a sheet change in the update hooks (a module writer
+   that knows the cause passes `recordCause` in the update's options), a
+   truth set or struck by diffing the two ledger saves. It is read through
+   `readRecord` alone, with the corrections applied at read — an X-Carded or
+   superseded narration and all it set gone, a strike gone, every changed name
+   written as the new one — and nothing stored is rewritten but by the
+   X-Card, which blanks what it removed (decision D3). A view of it (the
+   Session Log page) is a cache keyed by the hash of the read it was made
+   from. Hidden plans, Private Lines, whispers and Private Channel turns are
+   never recorded. A new kind is a row with its writer and its reader in the
+   same commit (`tests/unit/sessionRecordEvents.test.js`).
 
 ## Tuning knobs (don't add new ones before using these)
 

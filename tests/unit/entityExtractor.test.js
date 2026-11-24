@@ -67,7 +67,6 @@ beforeEach(() => {
     recordLocation:             vi.spyOn(wj, "recordLocation").mockResolvedValue(undefined),
     promoteLoreToConfirmed:     vi.spyOn(wj, "promoteLoreToConfirmed").mockResolvedValue(undefined),
     applyStateTransition:       vi.spyOn(wj, "applyStateTransition").mockResolvedValue(undefined),
-    appendSessionLogBeat:       vi.spyOn(wj, "appendSessionLogBeat").mockResolvedValue(undefined),
     getConfirmedLore:           vi.spyOn(wj, "getConfirmedLore").mockReturnValue([]),
     getNarratorAssertedLore:    vi.spyOn(wj, "getNarratorAssertedLore").mockReturnValue([]),
     getActiveThreats:           vi.spyOn(wj, "getActiveThreats").mockReturnValue([]),
@@ -577,7 +576,7 @@ describe("routeWorldJournalResults", () => {
   });
 
   // Issue #286 D4: the lore floor (default "significant") ran before entity
-  // routing, so a "notable" NPC fact went to the Session Log, never the card.
+  // routing, so a "notable" NPC fact never reached the card.
   it("routes a notable entity fact to the card — the card's own floor, not the world-lore one", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
@@ -719,17 +718,12 @@ describe("routeWorldJournalResults — salience gate", () => {
   beforeEach(() => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
   afterEach(()  => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
 
-  it("reroutes a below-floor lore item to the session log, not Lore (F17/F18)", async () => {
+  it("makes no Lore entry for a below-floor lore item (F17/F18; the session record holds the scene's facts — issue #382)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       lore: [{ title: "Container C-47 scorch marks", text: "faint scorch", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).not.toHaveBeenCalled();
-    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1);
-    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
-      fixture.campaignState,
-      expect.objectContaining({ kind: "lore", title: "Container C-47 scorch marks", text: "faint scorch" }),
-    );
     fixture.restore();
   });
 
@@ -742,7 +736,6 @@ describe("routeWorldJournalResults — salience gate", () => {
       ],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(2);
-    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
@@ -752,20 +745,15 @@ describe("routeWorldJournalResults — salience gate", () => {
       lore: [{ title: "Unrated but kept", text: "x" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
-    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
-  it("reroutes a scene-level threat to the session log, not Threats (F15/F18)", async () => {
+  it("makes no Threats entry for a scene-level threat (F15/F18)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       threats: [{ name: "External airlock intrusion", severity: "immediate", summary: "now", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordThreat).not.toHaveBeenCalled();
-    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
-      fixture.campaignState,
-      expect.objectContaining({ kind: "threat", title: "External airlock intrusion", text: "now" }),
-    );
     fixture.restore();
   });
 
@@ -775,7 +763,6 @@ describe("routeWorldJournalResults — salience gate", () => {
       threats: [{ name: "Hegemony purge fleet", severity: "looming", summary: "inbound", salience: "defining" }],
     }, fixture.campaignState);
     expect(spies.recordThreat).toHaveBeenCalledTimes(1);
-    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
@@ -786,7 +773,6 @@ describe("routeWorldJournalResults — salience gate", () => {
       lore: [{ title: "Kept once the floor is lowered", text: "x", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
-    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
@@ -797,7 +783,6 @@ describe("routeWorldJournalResults — salience gate", () => {
       threats: [{ name: "Scene blip", severity: "immediate", summary: "now", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordThreat).not.toHaveBeenCalled();          // threat floor still 'significant'
-    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1); // rerouted instead
     fixture.restore();
   });
 });

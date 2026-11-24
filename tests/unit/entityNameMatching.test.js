@@ -100,7 +100,6 @@ describe('issue #362 AC17 — two people whose names differ in a vowel are two p
   beforeEach(() => {
     global.game.actors._set('npc-soren', npc('npc-soren', 'Soren Okoro'));
     vi.spyOn(wj, 'recordLoreDiscovery').mockResolvedValue(undefined);
-    vi.spyOn(wj, 'appendSessionLogBeat').mockResolvedValue(undefined);
     vi.spyOn(wj, 'getConfirmedLore').mockReturnValue([]);
     vi.spyOn(wj, 'getNarratorAssertedLore').mockReturnValue([]);
   });

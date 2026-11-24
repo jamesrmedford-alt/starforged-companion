@@ -38,6 +38,7 @@ import { rememberSessionRetractions, rememberNarratedTruths, retractNarrationCap
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, findEquivalentTruth, findSessionStrike } from './ledgers.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
+import { recordLedgerChanges } from '../record/ledgerDiff.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -1133,6 +1134,10 @@ async function writeSceneLedgerFields(campaignState, fields, label, onto) {
     }
     if (typeof onto === 'function') onto(target);
     await game.settings.set(MODULE_ID, 'campaignState', target);
+    // The save landed: what it established or struck goes on the session
+    // record (issue #382) — every ledger writer saves through here, or
+    // through the move's record (persistResolution.js).
+    if (ledgersWritten) recordLedgerChanges(latest, target);
     return ledgersWritten;
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
