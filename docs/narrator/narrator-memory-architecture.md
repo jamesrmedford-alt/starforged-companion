@@ -29,7 +29,7 @@ skeleton, the one surface that holds what has *not* been stated):
 |---|---|---|---|---|
 | **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone (system prompt §6.5; issue #374 A1) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
-| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call but the campaign recap's (top of §6.5); scoping + relevance unions | ~30–60 tokens |
+| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response — a session vignette's without its question; never an `@scene` answer's) | every narrator call but the campaign recap's (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
 | **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
@@ -402,18 +402,56 @@ position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
 ## 4. Surface 3 — the scene frame
 
 `campaignState.sceneFrame = { location, present[], situation, question?,
-questionAnswered?, sceneId, updatedAt }`. The narrator emits a
+questionAnswered?, questionBeats?, sceneId, updatedAt }`. The narrator emits a
 **full-replacement snapshot** in every sidecar (`sceneFrame` key); an omitted
 frame keeps the previous one. The **scene question** (issue #353 R2) is the
-exception to full replacement: what the scene is deciding, set on its first
-beat and kept by `applySceneFrame` (`sceneQuestion`) — a later snapshot cannot
-reword it — until a beat marks it answered (`questionAnswered`), after which
-the next beat's question is the scene's. The answering beat is told to end on
-a cut forward; no beat ends a scene (scenes stay manual — decisions.md). Applied
+exception to full replacement: what the scene is deciding — what the player's
+latest line sets out to settle. While the frame holds one, `applySceneFrame`
+(`sceneQuestion`) keeps it — a later snapshot cannot reword it — until a beat
+marks it answered (`questionAnswered`), after which the next beat's question
+is the scene's. The answering beat is told to end on a cut forward; no beat
+ends a scene (scenes stay manual — decisions.md). Applied
 by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
 replaces as a bounded `previous` chain (never rendered), so an X-Card on a
 narration puts back the frame its narration replaced (issue #345 D3);
-cleared by `startScene`/`endScene` (`sceneLifecycle.js`). Rendered at the top of §6.5:
+cleared by `startScene`/`endScene` (`sceneLifecycle.js`).
+
+**How long a question stands** (known-issues NARRATOR-REFRAINS; applied
+around `applySceneFrame` in `narrator.js applySidecarSideData`). Nothing ends a scene but the table, so a
+session is usually one scene, and "kept for the scene" meant kept for the
+session: in the long haul's third live run the opening vignette's closing hook
+— "What is the speaker over the hatch about to say?" — was the question in 22
+of session 3's prompts, and 23 narrations of 23 ended on it. Two rules:
+
+- **A session vignette is a bookend, not a beat of play** (`bookendFrame`;
+  `narrateSessionVignette` applies its sidecar with `bookend: true`). Its frame
+  never sets, rewords or answers the question — the one part of a frame a
+  later snapshot cannot replace — and it is not counted against one. It still
+  writes where / present / now, as any narration does (decided, not left
+  over): the closing cutaway's scene is its own (it ends with its card —
+  invariant 6) and its facts are filed by the place its frame names; the
+  galley's frame is where the table has just been shown the characters, the
+  never-dropped tier would otherwise be empty on a session's first prompt,
+  and the first line of play replaces it. Its truths and state are recorded
+  as before. The vignette's mode block says so (`BOOKEND_FRAME_RULE`); the
+  apply drops a question whatever the model sends.
+- **A question play leaves unanswered is released** (`countSceneQuestionBeat`).
+  The frame carries `questionBeats` — 0 on the beat that set the question, one
+  more for each later beat that left it open — and at `SCENE_QUESTION_BEATS`
+  (3) the frame keeps no question. The count is on the frame, beside the
+  question it counts: stored and merged with it (it survives a reload) and
+  carried in the `previous` chain (an X-Card on a beat puts back the count
+  that beat changed). An `@scene` answer writes no frame and is no beat.
+
+A frame with no question asks the next beat for one: SCENE FRAME's last line
+reads `Question: none stands — set the one the scene turns on now, from the
+player's latest line.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per
+mode by `SCENE_QUESTION_ASK`) — in the modes whose fact block may set it, never
+in a vignette's prompt, an `@scene` answer's, the recap's, the consistency
+audit's or the Private Channel's. The sidecar rule says a question is never a
+hook of the narrator's own that the player's line did not take up, and that a
+dropped one is not brought back, in the block or in the prose; HOW A BEAT ENDS
+says such a hook is not rung twice. Rendered at the top of §6.5:
 
 ```
 SCENE FRAME (the scene as it stands):
@@ -424,7 +462,8 @@ SCENE FRAME (the scene as it stands):
 ```
 
 (An answered question reads `Question (answered): … — the scene has moved
-past it; set the question it turns on now.`)
+past it; set the question it turns on now.`; a frame with none, `Question:
+none stands — …` as above.)
 
 Two side effects beyond display:
 1. `present` names are treated as mentioned for ledger scoping (§3).
@@ -607,6 +646,7 @@ truths alone; backlog §8.8 keeps the elide option if playtests show it.
 | NPC's location / condition drifts | ledger writes | inspect `campaignState.sceneState.bySubject` — if empty, the required-emission rules aren't being honoured by the model; strengthen wording in `appendSidecarInstruction` before adding machinery |
 | Premise / stakes drift | ledger truths | inspect `campaignState.sceneTruths`; if the inciting facts are missing, check the `inciting_incident` addendum fired (mode threading) |
 | Whole-scene wobble: wrong place, wrong cast | frame | inspect `campaignState.sceneFrame`; if stale, the model is omitting the key — tighten the "EVERY response" rule or consider re-asserting the frame in the user message |
+| Every beat ends on the same hook; one question in every prompt | frame question | inspect `campaignState.sceneFrame.question` / `questionBeats`; a question is released after `SCENE_QUESTION_BEATS` (`narrator.js`) — if a refrain still runs longer, the model is re-setting the same hook from a line that did not take it up: tighten the sidecar's `question` rule before lowering the number |
 | Conversation partner forgotten on short turns | frame `present` + scoping | confirm the name appears in `present`; confirm `resolvePathRelevance` unioned it (matched cards in prompt) |
 | Established entity facts not surfacing | entity records + scoping | is the entity confirmed? are its truths entity-keyed (not text)? did relevance match it? |
 | Prompt too large / cost creep | budgets | lower `narratorContextCards` / `maxLedgerTokens`; frame is ~30–60 tokens and not the culprit |

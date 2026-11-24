@@ -163,7 +163,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   as a crew member of her own ship). Each bookend's message lists the earlier
   ones of its kind as already used — the newest three, read from the chat's
   cards (`vignetteHistory.js earlierVignettes`; a closing's card names whom it
-  featured, `vignetteNpc`) — issue #377 item 5.
+  featured, `vignetteNpc`) — issue #377 item 5. A vignette is a bookend, not a
+  beat of play: its mode block says its fact block sets no scene question (`A
+  VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`
+  — the frame's where / present / now are written, the question never (§2;
+  known-issues NARRATOR-REFRAINS: the galley's closing hook was its session's
+  question in every prompt).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -756,8 +761,12 @@ which name is current; the session summary's source carries the same note,
 name — a player's line, the recent scene, a bookend's EARLIER list — has it
 added at that message's end, `narrator.js callNarratorAPI` →
 `withNameChangesNoted`) · [6.5] active-scene ledger
-(SCENE FRAME — with the scene's question, kept for the scene and marked
-when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
+(SCENE FRAME — with the scene's question, shown while it stands, marked
+when answered (issue #353 R2), released when play has left it unanswered for
+`SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
+the one the scene turns on now, from the player's latest line
+(`askSceneQuestion`; never in a vignette's, an `@scene` answer's or the
+recap's prompt — known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
 never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
@@ -1247,7 +1256,13 @@ keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
 the active sector's, as `!at` resolves it: the older sector's "Derelict
 Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
 `position` stateChanges routed to the §20 ship record, `applySceneFrame`
-full-replacement snapshot — each truth, state value and the frame stamped
+full-replacement snapshot — a session vignette's with its question taken off
+(`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
+play — it sets no question and changes none), every other beat's then counted
+against the question the frame keeps (`countSceneQuestionBeat` →
+`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the frame keeps none —
+known-issues NARRATOR-REFRAINS: an opening vignette's hook was its session's
+question in 22 prompts) — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the
 X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,

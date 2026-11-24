@@ -184,14 +184,25 @@ export function appendSidecarInstruction(options = {}) {
       '  present or directly engaged (include characters on comms), and the',
       '  situation in one sentence. Include it on EVERY response — it',
       '  replaces the previous snapshot. Keep names exactly as established.',
-      '- "question" (inside "sceneFrame") is what this scene is deciding, in a',
-      '  few words. Set it on the scene\'s first beat; afterwards copy it',
-      '  unchanged from SCENE FRAME — it is kept for the scene. When this beat',
+      // Known-issues NARRATOR-REFRAINS: the rule read "Set it on the scene's
+      // first beat; afterwards copy it unchanged … it is kept for the scene",
+      // and nothing ends a scene but the table — a session's opening hook was
+      // its question for the whole session, rung at the end of every beat. A
+      // question is the player's line's, and one play leaves unanswered is
+      // released (narrator.js SCENE_QUESTION_BEATS; SCENE FRAME then asks
+      // for the next — buildLedgerBlock's `askSceneQuestion`).
+      '- "question" (inside "sceneFrame") is what this scene is deciding now, in a',
+      '  few words: what the player\'s latest line sets out to settle — on a beat',
+      '  no line prompted, what that beat puts in front of the characters — never',
+      '  a hook of your own that their line did not take up. While SCENE FRAME',
+      '  shows a question, copy it unchanged. When this beat',
       '  answers it, add "questionAnswered": true and end the beat on a cut',
       '  forward — to the consequence, the next place or a later hour — not on',
-      '  another exchange in the same room. Once it is answered, set the',
-      '  question the scene turns on now. Never end the scene: the table ends',
-      '  scenes.',
+      '  another exchange in the same room. When SCENE FRAME shows none, or one',
+      '  marked answered, set the one the scene turns on now. A question left',
+      '  unanswered for a few beats is dropped from SCENE FRAME: do not bring it',
+      '  back, in the block or in your prose, unless the player\'s line takes it',
+      '  up. Never end the scene: the table ends scenes.',
     );
   }
 
@@ -307,6 +318,8 @@ const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
  * @param {number} [options.maxTokens] — soft cap; state lines shed when exceeded
  *   (location / vessel / condition last)
  * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
+ * @param {string} [options.askSceneQuestion] — what SCENE FRAME's Question line says when the
+ *   frame holds no question (the narration is asked to set one); '' or omitted: no line
  * @returns {{ header: string, truths: string, state: string,
  *             shipPosition: string, combined: string,
  *             tokenEstimates: { header: number, truths: number, state: number, ship: number } }}
@@ -398,11 +411,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
     if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
     if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
     if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
-    // What the scene is deciding (issue #353 R2).
+    // What the scene is deciding (issue #353 R2). With none standing — a
+    // scene's first beats, one a session vignette opened, one whose question
+    // play left unanswered and was released (narrator.js
+    // countSceneQuestionBeat) — a narration
+    // that can set one is asked for it, in its caller's words
+    // (`askSceneQuestion`; known-issues NARRATOR-REFRAINS).
+    const ask = typeof options?.askSceneQuestion === 'string' ? options.askSceneQuestion.trim() : '';
     if (typeof frame.question === 'string' && frame.question.trim()) {
       frameLines.push(frame.questionAnswered === true
         ? `  Question (answered): ${frame.question.trim()} — the scene has moved past it; set the question it turns on now.`
         : `  Question: ${frame.question.trim()}`);
+    } else if (ask && frameLines.length) {
+      frameLines.push(`  Question: ${ask}`);
     }
   }
   const frameBlock = frameLines.length
@@ -1283,6 +1304,9 @@ const BEAT_ENDING_RULE =
   `a reflective or atmospheric line.\n` +
   `A recurring motif must change, or be dropped: do not repeat an image from the recent ` +
   `scene as it was.\n` +
+  // Known-issues NARRATOR-REFRAINS: 23 narrations of 23 ended on the opening's hook.
+  `A hook the player's line did not take up is not rung again: do not end on it, or ` +
+  `restate the question it posed, a second time.\n` +
   `The hook is something that happens in the story, never a menu of options — it ` +
   `follows "depict, do not offer". Keep it within the narrator permissions in this ` +
   `prompt: where only embellishment is allowed, the change is small and immediate (a ` +
@@ -1522,8 +1546,10 @@ function formatEntityCardsBlock(entityCards) {
  * toggle are on. '' otherwise, or when nothing is in scope. With
  * `shipPositionOnly` (a meta mode's — the campaign recap), the ship's
  * position line alone: the scene's frame, truths and state are a scene's.
+ * `askSceneQuestion` is buildLedgerBlock's: the narrator prompt's alone, for
+ * the modes whose fact block may set the scene's question.
  */
-function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false } = {}) {
+function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '' } = {}) {
   const {
     factContinuityEnabled         = true,
     factContinuityLedgerInContext = true,
@@ -1537,6 +1563,7 @@ function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = 
     maxTokens:         factContinuityMaxLedgerTokens,
     entityNamesById,
     sceneFrameEnabled: factContinuitySceneFrame,
+    askSceneQuestion,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -1658,6 +1685,41 @@ const META_STANDING_ROLE =
   `You are the narrator for an Ironsworn: Starforged campaign. The rules in this first ` +
   `part hold throughout. THIS SUMMARY, after them, says what you are asked to write; ` +
   `CONTEXT FOR THIS SUMMARY, last, is the campaign as it stands now.`;
+
+/**
+ * What SCENE FRAME's Question line says when the frame holds none, by the mode
+ * of the narration reading it (known-issues NARRATOR-REFRAINS): the modes
+ * whose fact block may set the scene's question are asked for it — from the
+ * player's line where one prompted the beat. A session vignette (a bookend:
+ * BOOKEND_FRAME_RULE), an `@scene` answer (it writes nothing back) and the
+ * recap have no entry, and are shown no such line.
+ */
+const SCENE_QUESTION_ASK = Object.freeze({
+  move_resolution:   `none stands — set the one the scene turns on now, from the player's latest line.`,
+  paced_narrative:   `none stands — set the one the scene turns on now, from the player's latest line.`,
+  round_resolution:  `none stands — set the one the scene turns on now, from the players' lines this round.`,
+  oracle_followup:   `none stands — set the one the scene turns on now.`,
+  clock_advance:     `none stands — set the one the scene turns on now.`,
+  vow_swearing:      `none stands — set the one the scene turns on now.`,
+  inciting_incident: `none stands — set the one the scene turns on now.`,
+});
+
+/**
+ * What a session vignette's fact block leaves alone (known-issues
+ * NARRATOR-REFRAINS): the scene's question. A vignette is told to "end on a
+ * beat that hands the scene to the players", and the hook it closed on — "What
+ * is the speaker over the hatch about to say?" — was set as the question of the
+ * scene it opened: all 22 of that session's prompts carried it. The apply
+ * drops a vignette's question whatever it sends (narrator.js bookendFrame);
+ * this keeps it from being written. In the vignette's mode
+ * block: the standing block's sidecar instruction is the same for every mode.
+ */
+const BOOKEND_FRAME_RULE =
+  `## A VIGNETTE IS NOT THE SCENE\n\n` +
+  `This vignette brackets the session; the scene the players are in is not its to set. In its ` +
+  `"sceneFrame" give where the vignette is set, who is in it and what is happening, and no ` +
+  `"question": never set one, and never copy or mark answered one that SCENE FRAME shows. What ` +
+  `the session's scene turns on is decided by the players' first line, not by how this vignette ends.`;
 
 /**
  * The line that closes the per-narration context when the fact-continuity
@@ -1967,6 +2029,8 @@ export function buildNarratorSystemBlocks(
   if (sidecarEnabled) {
     const addendum = sidecarModeAddendum(resolvedMode);
     if (addendum) modeParts.push(`## THE OPENING SCENE\n\n${addendum}`);
+    // …and what a session vignette's leaves alone: the scene's question.
+    if (factContinuitySceneFrame && resolvedMode === 'session_vignette') modeParts.push(BOOKEND_FRAME_RULE);
   }
 
   // ── The beat block ─────────────────────────────────────────────────────────
@@ -2129,7 +2193,12 @@ export function buildNarratorSystemBlocks(
   const namesAt = parts.length;
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
-  }, { matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode });
+  }, {
+    matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode,
+    // A frame with no question asks for one — of the narrations whose fact
+    // block may set it (never a vignette's, an `@scene` answer's or a recap's).
+    askSceneQuestion: sidecarEnabled && factContinuitySceneFrame ? (SCENE_QUESTION_ASK[resolvedMode] ?? '') : '',
+  });
   if (ledgerBlock) parts.push(ledgerBlock);
 
   // [6.6] UNREVEALED — the narrative skeleton (issue #353): the hidden plans

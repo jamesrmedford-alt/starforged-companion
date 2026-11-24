@@ -102,8 +102,15 @@ layers. This file is the never-break list.
 
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only — the frame's scene
-   question with it (issue #353 R2: kept for the scene, never carried into
-   the next; no narration ends a scene), and the scene's unanswered hidden
+   question with it (issue #353 R2: never carried into the next scene; no
+   narration ends a scene; within its scene it stands until a beat answers
+   it or play has left it unanswered for `SCENE_QUESTION_BEATS` beats, when
+   the frame keeps none and the next beat's is the scene's — its count,
+   `questionBeats`, is on the frame beside it and nowhere else, and a session
+   vignette, a bookend, never sets, changes or counts against it:
+   `narrator.js` `countSceneQuestionBeat` / `bookendFrame`, known-issues
+   NARRATOR-REFRAINS), and the
+   scene's unanswered hidden
    mysteries with their clocks, retired at every scene end (issue #362 D4).
    Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing

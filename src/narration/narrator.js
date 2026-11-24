@@ -4829,7 +4829,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState, { narrationId });   // its NPCs' developments → their cards (#286 D4)
     return text;
@@ -4844,7 +4844,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState, { narrationId });
         return text;
@@ -6666,6 +6666,8 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // The plans the narration was asked to decide (issue #353): the GM files them.
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      // A session vignette's frame is a bookend's (applySidecarSideData).
+      ...(ctx.bookend === true ? { bookend: true } : {}),
       ...(forced.length ? { forced: {
         reveals: forced,
         ...(typeof cause.clockId === 'string' && cause.clockId ? { clockId: cause.clockId } : {}),
@@ -6780,6 +6782,7 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
     moveId: payload.moveId ?? null, narrationId, planRequests, relayed: true,
+    bookend: payload.bookend === true,
   });
 }
 
@@ -6817,6 +6820,105 @@ async function standingForcedReveals(forced, campaignState) {
     console.warn(`${MODULE_ID} | factContinuity: a relayed narration's forced step could not be checked — dropped:`, err?.message ?? err);
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// How long a scene's question stands (known-issues NARRATOR-REFRAINS)
+// ---------------------------------------------------------------------------
+//
+// The scene frame's `question` (issue #353 R2) is what the scene is deciding.
+// ledgers.js applySceneFrame keeps it, word for word, until a beat marks it
+// answered — and nothing ends a scene but the table, so a session is one
+// scene. In the long haul's third live run a session's opening vignette set
+// "What is the speaker over the hatch about to say?", the player never took
+// the hook up, and it stood in 22 of the session's prompts: 23 narrations of
+// 23 ended on the speaker, the drawer, the needle or the lamp.
+//
+// Two rules, applied around applySceneFrame (applySidecarSideData):
+//   - a session vignette is a bookend, not a beat of play: its frame never
+//     sets, rewords or answers the question (bookendFrame), and it is not
+//     counted against one;
+//   - a question play has not answered in SCENE_QUESTION_BEATS beats is
+//     released (countSceneQuestionBeat): the frame holds none, and the next
+//     prompt asks for the one the scene turns on now (narratorPrompt.js
+//     buildLedgerBlock's `askSceneQuestion`).
+//
+// The count is `questionBeats`, on the frame beside the question it counts —
+// the one store of both (campaignState.sceneFrame): saved and merged with the
+// frame, so it survives a reload, and carried in the frame's `previous` chain,
+// so an X-Card on a beat puts back the count that beat changed.
+
+/**
+ * How many beats of play a scene's question stands unanswered before it is
+ * released. From the long haul's third live run: no question was answered
+ * later than its second beat (a2 → a3), and by the second, third and fifth
+ * beat the narrator's own fact block had moved to another question (a12,
+ * a25, a62 — each refused, the old one kept). Three leaves a question the
+ * player takes up its approach and its answer, and lets go before a refrain
+ * sets in (that run's ran eleven to thirteen narrations).
+ */
+export const SCENE_QUESTION_BEATS = 3;
+
+/** A frame's open question — '' with none, or once it is answered. */
+function openSceneQuestion(frame) {
+  if (!frame || typeof frame !== 'object' || frame.questionAnswered === true) return '';
+  return typeof frame.question === 'string' ? frame.question.trim() : '';
+}
+
+/**
+ * The frame a session vignette's fact block writes: where it is set, who is
+ * in it and what is happening — never a question. A vignette brackets the
+ * session (the galley before play, a cutaway to an NPC after it) and is told
+ * to close on a hook; that hook is not what the players' scene turns on, and
+ * the question is the one part of a frame a later snapshot cannot replace.
+ * With the question taken off, applySceneFrame keeps whatever the scene's
+ * frame already holds — its question, and whether it is answered.
+ *
+ * Where / present / now are written as any narration's are (a full
+ * replacement the next beat replaces in turn): the closing cutaway's scene is
+ * its own (rules/narrator-memory.md invariant 6), its facts filed at that
+ * scene's end by the place its frame names; the galley's frame is where the
+ * table has just been shown the characters, and stands until the first line
+ * of play moves it.
+ *
+ * @param {Object|null} frame — the vignette's sidecar frame (normalised)
+ * @returns {Object|null} the frame to apply
+ */
+export function bookendFrame(frame) {
+  if (!frame || typeof frame !== 'object') return null;
+  const rest = { ...frame };
+  delete rest.question;
+  delete rest.questionAnswered;
+  return rest;
+}
+
+/**
+ * Count one beat against the scene's question, on the frame applySceneFrame
+ * has just written. A question this beat set starts at 0; one kept from the
+ * frame before stands one beat longer; at SCENE_QUESTION_BEATS it is released
+ * — the frame keeps no question, so the next beat's is the scene's. An
+ * answered question is not counted (its mark already hands over to the next).
+ * A bookend's frame (`bookend`) is no beat of play: the count stays as it was.
+ *
+ * @param {Object|null} frame — the scene's new frame
+ * @param {Object|null} prior — the frame it replaced
+ * @param {{ bookend?: boolean }} [opts]
+ * @returns {Object|null} the frame with its count, or without its question
+ */
+export function countSceneQuestionBeat(frame, prior, { bookend = false } = {}) {
+  if (!frame || typeof frame !== 'object') return frame;
+  const rest = { ...frame };
+  delete rest.questionBeats;
+  const question = openSceneQuestion(frame);
+  if (!question) return rest;
+  const sameScene = !!prior && typeof prior === 'object' && (prior.sceneId ?? null) === (frame.sceneId ?? null);
+  if (!sameScene || openSceneQuestion(prior) !== question) return { ...rest, questionBeats: 0 };
+  const stood = Number.isInteger(prior.questionBeats) && prior.questionBeats > 0 ? prior.questionBeats : 0;
+  const beats = bookend ? stood : stood + 1;
+  if (beats < SCENE_QUESTION_BEATS) return { ...rest, questionBeats: beats };
+  delete rest.question;
+  delete rest.questionAnswered;
+  return rest;
 }
 
 /**
@@ -6910,7 +7012,19 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       console.debug?.(`${MODULE_ID} | factContinuity: sceneFrame setting read failed:`, err?.message ?? err);
     }
     if (frameEnabled && sidecar.sceneFrame) {
-      applySceneFrame(sidecar.sceneFrame, campaignState, { narrationId });
+      // How long the scene's question stands (known-issues NARRATOR-REFRAINS;
+      // SCENE_QUESTION_BEATS, above): a session vignette is a bookend — its frame says
+      // where, who and what, never the question — and every other beat is
+      // counted against the question the frame keeps, which is released once
+      // play has left it unanswered for SCENE_QUESTION_BEATS. A session's
+      // opening vignette used to set the question its whole session was then
+      // asked, beat after beat.
+      const bookend = ctx.bookend === true;
+      const prior = campaignState.sceneFrame ?? null;
+      const frame = bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame;
+      if (frame && applySceneFrame(frame, campaignState, { narrationId })) {
+        campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend });
+      }
     }
 
     // Persist only the ledger fields the sidecar wrote, merged onto the

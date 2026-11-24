@@ -12,6 +12,11 @@
  *   - The X-Card on a beat puts back the question it changed (the frame's
  *     superseded chain).
  *   - It is gone when the scene ends; no narration ends a scene.
+ *
+ * Since known-issues NARRATOR-REFRAINS the question is the player's line's,
+ * a session vignette sets none, and one left unanswered is released after a
+ * few beats — sceneQuestionNotTheOpeningsHook.test.js. What is here stands:
+ * while a question is in the frame, a later snapshot may not reword it.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
@@ -41,7 +46,7 @@ describe('issue #353 R2 — the sidecar\'s scene question', () => {
   it('the narrator is asked for it, told to keep it, to cut forward when it is answered, and never to end the scene', () => {
     const text = appendSidecarInstruction({ mode: 'move_resolution' });
     expect(text).toContain('"question":  "Will Vance let them board?"');
-    expect(text).toContain('Set it on the scene\'s first beat; afterwards copy it');
+    expect(text).toContain('While SCENE FRAME\n  shows a question, copy it unchanged.');
     expect(text).toContain('"questionAnswered": true and end the beat on a cut');
     expect(text).toContain('Never end the scene: the table ends');
     expect(appendSidecarInstruction({ mode: 'move_resolution', sceneFrameEnabled: false })).not.toContain('"question"');
