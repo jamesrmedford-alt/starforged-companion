@@ -56,6 +56,7 @@ import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { upgradeStampOwed, upgradeClosedByRound, isResolving } from "../batch/round.js";
+import { findThresholdCard } from "./combatThreshold.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1620,13 +1621,45 @@ function openCostChoice(input) {
 }
 
 /**
+ * Where the fight an Enter the Fray offered stands when that roll is narrated
+ * (known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — the long haul's third live
+ * run, a27: under a card reading "Your Enter the Fray is rolled, but the
+ * fight's track is not made yet … or look for a way out instead", the
+ * narration already had "Your first salvo takes her forward plating"; had the
+ * player taken the way out, the salvo would have stood). "Combat is offered,
+ * not forced" (decisions.md): the fight's card — the threshold card, posted
+ * after the roll's card and before its narration — decides whether there is a
+ * fight, so until it is answered the narration stops at the moment before the
+ * first blow (stakes.js formatFightOfferBlock). Read from the card the roll
+ * posted, by its resolution's id (combatThreshold.js findThresholdCard):
+ * "offered" while it is unanswered, "declined" once the way out is taken, and
+ * null once the fight is begun — or when the roll posted no card: an open
+ * fight with that foe was resumed, and nothing was offered.
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {{ status: "offered"|"declined", position: "in_control"|"bad_spot"|null }|null}
+ */
+function fightOfferOf(input) {
+  if (input?.moveId !== "enter_the_fray") return null;
+  const card = [input.upgradeOf, input._id, input.resolutionId]
+    .filter(id => typeof id === "string" && id).map(findThresholdCard).find(Boolean) ?? null;
+  const f = card?.flags?.[MODULE_ID];
+  if (!f || f.thresholdTaken === "fray") return null;
+  return {
+    status:   f.thresholdTaken === "wayOut" ? "declined" : "offered",
+    position: f.position === "in_control" || f.position === "bad_spot" ? f.position : null,
+  };
+}
+
+/**
  * A result as its narration takes it, with what the table has still to
  * answer about it (narrator.js — beside settlePriceChoice): `openChoice`, the
- * cost that is its player's to choose and not yet chosen (openCostChoice).
- * The narration is told to stop short of it (stakes.js formatOpenChoiceBlock).
- * The input itself when nothing is open. Any client may ask: the cards are
- * the table's. Never throws — a card that cannot be read leaves the result as
- * it was.
+ * cost that is its player's to choose and not yet chosen (openCostChoice),
+ * and `fightOffer`, the fight an Enter the Fray offered and no one has begun
+ * (fightOfferOf). The narration is told to stop short of each (stakes.js
+ * formatOpenChoiceBlock, formatFightOfferBlock). The input itself when
+ * nothing is open. Any client may ask: the cards are the table's. Never
+ * throws — a card that cannot be read leaves the result as it was.
  *
  * @param {Object|null} input — a resolution, or a round entry's narration input
  * @returns {Object|null}
@@ -1635,7 +1668,10 @@ export function withUnansweredCards(input) {
   if (!input || typeof input !== "object") return input;
   try {
     const openChoice = openCostChoice(input);
-    return openChoice ? { ...input, openChoice } : input;
+    const fightOffer = fightOfferOf(input);
+    return (openChoice || fightOffer)
+      ? { ...input, ...(openChoice ? { openChoice } : {}), ...(fightOffer ? { fightOffer } : {}) }
+      : input;
   } catch (err) {
     console.warn(`${MODULE_ID} | the table's cards could not be read for the narration:`, err?.message ?? err);
     return input;

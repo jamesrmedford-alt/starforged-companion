@@ -274,13 +274,22 @@ export function stakesShown(stakes) {
  * the cost … the move outcome names", the narration paid one before the card
  * had asked (the long haul's third live run, a59).
  *
+ * An Enter the Fray whose fight is still only offered, or was declined for a
+ * way out (`fightOffer`, resultUpgrade.js withUnansweredCards), delivers its
+ * hit as the opening the roll won, never as a blow struck: its stated hit —
+ * "open with a clean salvo before she can bring her own guns to bear" — was
+ * to be delivered "as stated", and was, under a card still asking whether to
+ * fight (the same run, a27). The block on the fight says how far to go
+ * (formatFightOfferBlock).
+ *
  * @param {Object|null} stakes — the resolution's
  * @param {string|null} outcome — "strong_hit" | "weak_hit" | "miss"
- * @param {{ priceChoice?: { status?: string, instead?: string }|null, openChoice?: Object|null }} [opts] — the
- *   resolution's price choice, as it stands, and the cost still its player's to choose
+ * @param {{ priceChoice?: { status?: string, instead?: string }|null, openChoice?: Object|null,
+ *   fightOffer?: { status?: string }|null }} [opts] — the resolution's price choice, as it stands; the cost
+ *   still its player's to choose; the fight its Enter the Fray offered, while no one has begun it
  * @returns {string}
  */
-export function formatStakesBlock(stakes, outcome, { priceChoice = null, openChoice = null } = {}) {
+export function formatStakesBlock(stakes, outcome, { priceChoice = null, openChoice = null, fightOffer = null } = {}) {
   const shown = stakesShown(stakes);
   if (!shown.length) return "";
   const lines = ["## STAKES STATED BEFORE THE ROLL", "", "The player saw these before rolling:"];
@@ -290,7 +299,10 @@ export function formatStakesBlock(stakes, outcome, { priceChoice = null, openCho
   const hit  = shown.some(s => s.kind === "hit");
   const miss = shown.some(s => s.kind === "miss");
   let deliver = "";
-  if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
+  if ((outcome === "strong_hit" || outcome === "weak_hit") && hit && fightNotBegun(fightOffer)) {
+    deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: the hit as stated is the opening this roll has won — ` +
+      "where it puts them — not a blow already struck. The block on the fight, below, says how far the narration goes.";
+  } else if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
   else if (outcome === "weak_hit" && hit && openChoice) deliver = "This is a weak hit: deliver the hit as stated. Its cost is the player's choice, and is not chosen yet — the block on the cost, below, says how to leave it.";
   else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
   else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the block on the price, below, says where it stands.`;
@@ -438,5 +450,54 @@ export function formatOpenChoiceBlock(openChoice) {
     "What every option has in common has happened: narrate it. Where they differ is the cost, and no cost has been paid: " +
     `narrate none of them as taken — ${NO_COST_PAID}. Bring the beat to where the cost falls due, and stop there. ` +
     "Never mention the card or the choice.",
+  ].join("\n");
+}
+
+/** Whether an Enter the Fray's fight has not been begun: still offered, or declined for a way out. */
+function fightNotBegun(fightOffer) {
+  return fightOffer?.status === "offered" || fightOffer?.status === "declined";
+}
+
+/**
+ * The narrator's block for an Enter the Fray whose fight has not been begun
+ * when its roll is narrated (`fightOffer` — resultUpgrade.js
+ * withUnansweredCards; known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN).
+ * "Combat is offered, not forced" (decisions.md): the roll posts a card that
+ * asks whether to begin the fight or look for a way out, and its narration,
+ * written under that card, had already fired — "Your first salvo takes her
+ * forward plating" (the long haul's third live run, a27). While the card is
+ * unanswered the narration brings the scene to the moment before the first
+ * blow — positions taken, the footing the roll gave — and no further; once
+ * the way out is taken, no blow is struck at all. '' once the fight is begun,
+ * and for any other move.
+ *
+ * @param {{ status?: string, position?: string|null }|null} fightOffer
+ * @returns {string}
+ */
+export function formatFightOfferBlock(fightOffer) {
+  if (!fightNotBegun(fightOffer)) return "";
+  const footing = fightOffer.position === "in_control" ? " The footing this roll gave them: the upper hand."
+    : fightOffer.position === "bad_spot" ? " The footing this roll gave them: the back foot."
+      : "";
+  if (fightOffer.status === "declined") {
+    return [
+      "## THE FIGHT WAS NOT BEGUN",
+      "",
+      "This Enter the Fray is rolled, and the player chose to look for a way out instead of beginning the fight. " +
+      "No blow is struck by either side: no shot is fired, and nothing and no one is hit, damaged or hurt. " +
+      "Show the stand-off at its edge — where each side stands, what is drawn or aimed — and leave how they get clear " +
+      `untold: the move that decides it comes after this narration.${footing}`,
+    ].join("\n");
+  }
+  return [
+    "## THE FIGHT IS STILL ONLY OFFERED",
+    "",
+    "This Enter the Fray is rolled, but the fight has not begun: a card asks the player whether to begin it or look " +
+    "for a way out, and they have not answered.",
+    "Bring the scene to the moment before the first blow, and stop there: where each side stands, what is drawn, " +
+    `aimed or closing, and who has the advantage.${footing}`,
+    "Nobody has struck yet: no shot is fired, no blow lands, nothing and no one is hit, damaged or hurt, and neither " +
+    "side breaks off or gives way. Where the stakes or the player's line have the fight opening — a first salvo, a " +
+    "first strike — show it as what they are placed to do, about to happen, never as done. Never mention the card or the choice.",
   ].join("\n");
 }

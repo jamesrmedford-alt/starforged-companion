@@ -5,7 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock, formatPriceChoiceBlock, formatOpenChoiceBlock } from '../moves/stakes.js';
+import { formatStakesBlock, formatPriceChoiceBlock, formatOpenChoiceBlock, formatFightOfferBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -3136,10 +3136,16 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // narrator.js reads the table's cards, resultUpgrade.js withUnansweredCards):
   // the narration stops short of it (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
   const openChoice = resolution?.openChoice ?? null;
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice, openChoice });
+  // An Enter the Fray whose fight no one has begun yet (`fightOffer`, read
+  // from its card the same way): the narration stops before the first blow
+  // (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN).
+  const fightOffer = resolution?.fightOffer ?? null;
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice, openChoice, fightOffer });
   if (stakes) parts.push(stakes);
   const priceBlock = formatPriceChoiceBlock(priceChoice);
   if (priceBlock) parts.push(priceBlock);
+  const fightBlock = formatFightOfferBlock(fightOffer);
+  if (fightBlock) parts.push(fightBlock);
   const choiceBlock = formatOpenChoiceBlock(openChoice);
   if (choiceBlock) parts.push(choiceBlock);
 
@@ -3256,10 +3262,13 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       // The stakes shown before this entry's roll (issue #353 R1), and where
       // a price that is its player's choice stands (issue #364).
       const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null,
-        { priceChoice: input.priceChoice ?? null, openChoice: input.openChoice ?? null });
+        { priceChoice: input.priceChoice ?? null, openChoice: input.openChoice ?? null, fightOffer: input.fightOffer ?? null });
       if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
       const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
       if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
+      // A fight its Enter the Fray offered and no one has begun (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN)…
+      const fightBlock = formatFightOfferBlock(input.fightOffer ?? null);
+      if (fightBlock) lines.push(fightBlock.replace(/^## /gm, '#### '));
       // …and a cost still its player's to choose (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
       const choiceBlock = formatOpenChoiceBlock(input.openChoice ?? null);
       if (choiceBlock) lines.push(choiceBlock.replace(/^## /gm, '#### '));
