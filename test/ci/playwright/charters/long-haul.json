@@ -717,7 +717,7 @@
       "needs": [
         "b2"
       ],
-      "tell": "Grow closer to Tamsin, one line each time — raise her on the comm, trade news, do her a favour: each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her.",
+      "tell": "Grow closer to Tamsin, one line each time: do something that costs you or matters to her — give her something of value, take a risk on her behalf, bring her what you have learned about the raids. Each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her.",
       "check": {
         "type": "bondForged"
       },
@@ -733,7 +733,8 @@
       "wants": [
         "develop_your_relationship",
         "forge_a_bond"
-      ]
+      ],
+      "lastResortAfter": 1
     },
     {
       "id": "b23",

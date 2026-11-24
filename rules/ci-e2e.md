@@ -922,6 +922,29 @@ line goes unread.
   line named a move (`lib/moveNames.mjs`: a count to start reading from).
   `rescore.mjs` applies it to a kept run by what its beats want now.
 
+**The readers' plain-line test** (`./scripts/cloud.sh readers`;
+`playwright/readers.mjs`, `readers/plain-lines.json`, `lib/readers.mjs`) asks
+the same question without a table: about fifty plain lines of play, none
+naming a move (a unit test holds the list to that), each with the reading it
+should get — a move, one of two, or none — put through the pacing reader
+(`decidePacing`) and, where that calls a move, the move reader
+(`interpretMove`, as `readMove` calls it), in the live world with each line's
+context set (the scene's last narration, the scene frame, the place, the
+connection and its track, the vow). Nothing is rolled or narrated; no other
+call may reach a model (the runner's gate refuses any). Dry by default: the
+prompts are built and written, the readings are stubs. `--live` reads them on
+each model of `READERS_ARMS` (the readers' own model, then any other: the
+proxy rewrites the request's model and its thinking-off form), `READERS_REPEATS`
+times, and stops at `READERS_CAP_USD`. **It spends money: a live run is
+refused without `READERS_QUESTIONS`**, the spending rules above apply, and its
+report (`report.md`: the questions with a place for their answers, the
+headline, by family, where the models differ, the lines none read, cost and
+time, what the test does not show) is answered and kept under
+`readers/runs/`. The first, 2026-11-24, cost $0.71: Haiku 5.5 read 71 of 90
+right and Sonnet 5.5 77, and a step toward a vow said in the fiction was read
+by neither (known-issues PLAIN-LINE-GOES-UNREAD). Run it after a change to
+either reader's prompt, before a live run is bought to see the same thing.
+
 ## Quench batch coupling — shared defaults and hooks
 
 Settings defaults and module hooks are **shared state across all Quench

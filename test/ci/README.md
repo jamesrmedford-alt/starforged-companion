@@ -293,6 +293,24 @@ scorecard's **Plain lines** row says what each line of play became —
 rolled, offered a move, or narrated with nothing offered — and whether it
 named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
 
+**The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
+calls that read every line of play — is it a move, and which — tried on about
+fifty plain in-fiction lines that name no move, each with the reading it
+should get, with nothing rolled or narrated. Dry by default (no key: the
+prompts are built, the readings are stubs); `--live` reads them on Haiku 5.5
+and Sonnet 5.5 and needs `READERS_QUESTIONS`, as a live exploration needs its
+own:
+
+```bash
+READERS_QUESTIONS="$(cat questions.txt)" READERS_REPEATS=2 ./scripts/cloud.sh readers --live
+```
+
+`READERS_ARMS`, `READERS_REPEATS`, `READERS_CAP_USD` (default $2.00) and
+`READERS_ONLY` (line ids, for a pilot) are the caller's. Evidence goes to
+`playwright/artifacts/readers/<run>/`; a run that is kept has its answered
+`report.md`, `results.json` and `run.json` under `playwright/readers/runs/`.
+The first (2026-11-24, $0.71) is there.
+
 Its rehearsal rolls: the stand-in's classifier calls a move where the script
 makes the line one, so the move path — confirmation, held result, price,
 victory card — is walked with no key. A long run also writes `beats.json`,

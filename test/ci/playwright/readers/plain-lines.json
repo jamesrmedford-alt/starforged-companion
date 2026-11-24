@@ -1,0 +1,204 @@
+{
+  "description": "Plain in-fiction lines for the two readers of every line of play: the pacing reader (src/pacing/router.js decidePacing) and the move reader (src/moves/interpreter.js interpretMove). No line names a move or uses a rules word (lib/moveNames.mjs movesNamedIn finds nothing in any of them): decisions.md, 'A player is never made to name a move'. Each case says the reading its line should get — the moves the rules allow (want.moves; more than one where two readings are right), or that no move is being made (want.none). A context is what the line follows: one or two paragraphs of narration, posted as narrator cards so both readers see them as the recent scene, and a state that says what the world must hold. Of the state, the runner sets what a reader's prompt reads — location and frame (the pacing reader), connection (both), vow by name (the move reader), tracks (both) — and leaves the rest as a record of the fiction: the sheet's meters reach neither prompt. Cases marked with a source are lines the long haul's second live run played (explorations/long-haul-live-20261123-1459), as plain as the player first tried them. Run by readers.mjs; scored by lib/readers.mjs.",
+  "world": {
+    "pc": { "name": "Mira Kestrel", "pronouns": "she/her" },
+    "sector": { "name": "Cinder Expanse", "region": "terminus", "regionLabel": "Terminus", "trouble": "Pirates raid the lanes" },
+    "settlements": [
+      { "name": "Hollow Spire", "authority": "None / lawless", "trouble": "Water rationing" },
+      { "name": "Bleakhold Station", "authority": "Corporate", "trouble": "Smuggling" },
+      { "name": "Vigil Reach", "authority": "Tolerated", "trouble": "A failing reactor" }
+    ]
+  },
+  "contexts": {
+    "spire-stall": {
+      "about": "At Tamsin Okoro's ledger stall on the Hollow Spire docks. Mira is well; Tamsin is her connection, the relationship part-way along.",
+      "scene": [
+        "The docks of Hollow Spire run dry and dim at this hour, ration notices pasted over older ration notices. Tamsin Okoro's stall sits at the far end under its one lamp, her ledger open in front of her as thick as a door. She looks up when your shadow crosses the page, and nods you to the stool she keeps for people she does not mind.",
+        "\"Three freighters overdue this month, all on the Bleakhold run,\" Tamsin says, turning the ledger so you can read the column. Her finger stops on the last name. \"The Lark's Tithe. My sister's boy, Joss, crewed her.\" Two stalls down, Idris Vane the water-seller is counting ration chits into a tin and pretending not to listen. Traders drift past in ones and twos, and none of them meets your eye for long."
+      ],
+      "state": {
+        "location": "Hollow Spire",
+        "frame": {
+          "location": "Tamsin Okoro's ledger stall, the docks of Hollow Spire",
+          "present": ["Mira Kestrel", "Tamsin Okoro", "Idris Vane"],
+          "situation": "Tamsin has shown Mira three freighters overdue on the Bleakhold run, her nephew Joss aboard the last; the dock traders are keeping their distance"
+        },
+        "health": 5, "spirit": 5, "supply": 4,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 16, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 8 }
+      }
+    },
+    "spire-reckoning": {
+      "about": "Back at Tamsin's stall with the proof: the quest is at its end, and the relationship track is full.",
+      "scene": [
+        "Hollow Spire's docks are loud tonight, for once: word has run ahead of you that the Bleakhold clerk talked. You set the sealed ledger on Tamsin Okoro's counter and she reads the seal twice. It is the harbourmaster's own. Corvin Hale of Bleakhold Station has been buying the freighter schedules and sending the cutters after them, and the proof of it lies under her lamp.",
+        "Warden Ysolde Marr of the lane authority stands at the end of the counter in her grey sash, hands folded, waiting to hear it from you. Tamsin has not let go of your sleeve since you came in. \"All these months,\" she says quietly, \"and you kept coming back to this stall.\""
+      ],
+      "state": {
+        "location": "Hollow Spire",
+        "frame": {
+          "location": "Tamsin Okoro's ledger stall, the docks of Hollow Spire",
+          "present": ["Mira Kestrel", "Tamsin Okoro", "Warden Ysolde Marr"],
+          "situation": "Mira has brought back sealed proof that Bleakhold's harbourmaster Corvin Hale is behind the raids; the lane warden is waiting to hear it from her"
+        },
+        "health": 5, "spirit": 5, "supply": 4,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 40, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 32 }
+      }
+    },
+    "aboard-at-spire": {
+      "about": "Alone in the cockpit of the Kobayashi IV, docked at Hollow Spire and about to leave. One charted destination and one that is on no chart.",
+      "scene": [
+        "The Kobayashi IV sits against Hollow Spire's docking collar with her reactor idling, and you are alone in the cockpit with the pre-flight board. Tamsin Okoro's last message is still on the comm panel: the Bleakhold run is the one the raiders keep hitting, four days out along the marked lane, and Bleakhold Station is where the missing freighters were bound.",
+        "Under it she has added a second line: a set of coordinates with no name against them, a debris drift well off the charts where a salvager swears he saw a cutter lying dark. The lockers behind your seat have not been gone through since the last port, and the lamps of the Spire's docks slide slowly across the viewport as the ship turns on her clamp."
+      ],
+      "state": {
+        "location": "Hollow Spire",
+        "frame": {
+          "location": "Cockpit of the Kobayashi IV, docked at Hollow Spire",
+          "present": ["Mira Kestrel"],
+          "situation": "Mira is readying to leave; Tamsin has sent word of the Bleakhold run, and a set of uncharted coordinates where a raider cutter was seen"
+        },
+        "health": 5, "spirit": 5, "supply": 4,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 16, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 8 }
+      }
+    },
+    "bleakhold-after-fight": {
+      "about": "Aboard at Bleakhold Station after a fight with a raider cutter: Mira hurt and shaken, the stores low, the ship damaged.",
+      "scene": [
+        "The Kobayashi IV made Bleakhold Station on one good thruster, and the clamps took her with a groan. The raider cutter that jumped you on the lane is scrap now, drifting somewhere behind you, but her last volley opened the port hull plating and cooked a power relay, and the damage board shows more amber than green. The dockmaster, Oren Halvard, logged your scorched hull without a word and waved off the first night's berth fee.",
+        "You are in the galley now, with the hatch sealed. Your ribs ache where the harness caught you, blood has dried along your forearm from the relay fire, and your hands have not quite stopped shaking. The stores locker is close to bare, because the fight and the long burn here ate most of what you carried. Beyond the hatch, Bleakhold's market hums through the deck."
+      ],
+      "state": {
+        "location": "Bleakhold Station",
+        "frame": {
+          "location": "Galley of the Kobayashi IV, docked at Bleakhold Station",
+          "present": ["Mira Kestrel"],
+          "situation": "Mira has limped into Bleakhold after the fight with the raider cutter: hurt, shaken, low on stores, the ship damaged"
+        },
+        "health": 3, "spirit": 3, "supply": 2, "integrity": 3,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 16, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 16 }
+      }
+    },
+    "ashfall-drift": {
+      "about": "Mid-expedition in uncharted debris, two days past the last marker: a wrecked relay station ahead, a wall of debris beyond it.",
+      "scene": [
+        "Two days past the last charted marker, the debris drift closes around the Kobayashi IV like a slow tide: hull plates, ice, the ribs of ships older than the lanes. You have been feeling your way toward the coordinates Tamsin Okoro passed on, where a salvager swore he saw a raider cutter lying dark. Nothing out here has a name on any chart you own.",
+        "Ahead, half buried in the drift, hangs the wreck of a relay station, its dish torn and its docking ring still slowly turning. Beyond it the debris thickens into a tumbling wall with one narrow gap. Your scanner paints a faint, regular heat trace somewhere on the far side."
+      ],
+      "state": {
+        "location": null,
+        "frame": {
+          "location": "The Ashfall Drift, uncharted debris beyond the Cinder Expanse lanes",
+          "present": ["Mira Kestrel"],
+          "situation": "Mid-expedition toward a salvager's coordinates: a wrecked relay station ahead, a wall of tumbling debris with one gap, a heat trace beyond it"
+        },
+        "health": 5, "spirit": 4, "supply": 3,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 16, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 8 },
+        "tracks": [{ "type": "expedition", "label": "The Ashfall Drift", "rank": "dangerous", "ticks": 8 }]
+      }
+    },
+    "bleakhold-clerk": {
+      "about": "The records office at Bleakhold Station: a clerk has just been shown to pass freight schedules to the raiders' man.",
+      "scene": [
+        "Bleakhold Station's records office is a long, cold room of filing drums, and at this hour it holds one clerk. Devan Roe has the Hollow Spire freight schedules open on his desk and a second, smaller ledger half hidden under his sleeve. When you put the copied sailing times in front of him, the same times the raiders struck, the colour leaves his face.",
+        "\"I only pass them along,\" Roe says, too fast. \"A man collects them at the cargo lock, every tenth day. I never asked who he works for.\" His hand is still on the second ledger. Behind him the drum that holds the outbound manifests stands unlocked, and through the office window you can see the cargo lock he means, empty for now."
+      ],
+      "state": {
+        "location": "Bleakhold Station",
+        "frame": {
+          "location": "Records office, Bleakhold Station",
+          "present": ["Mira Kestrel", "Devan Roe"],
+          "situation": "The clerk Devan Roe has just admitted passing freight schedules to a man who collects them at the cargo lock; he is guarding a second ledger"
+        },
+        "health": 5, "spirit": 5, "supply": 4,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 24, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 16 }
+      }
+    },
+    "lane-ambush": {
+      "about": "On the marked lane half a day out of Bleakhold: a raider cutter has come out of hiding and ordered Mira to stand by. No fight has begun.",
+      "scene": [
+        "Half a day out of Bleakhold Station on the marked lane, the Kobayashi IV's proximity alarm goes off like a dropped tray. A cutter has come up out of the sensor shadow of a dead freighter, close enough to read the name burned into her prow: the Cinder Wren. Her gun ports are open.",
+        "\"Kobayashi IV, cut your drive and stand by to be boarded,\" a voice says on the open channel, bored, as if reading from a card. A warning shot crosses your bow and scatters into the dark. The dead freighter's hulk drifts between you, trailing a slow cloud of spilled cargo, and the lane behind you is empty all the way back to Bleakhold."
+      ],
+      "state": {
+        "location": null,
+        "frame": {
+          "location": "Aboard the Kobayashi IV, on the marked lane half a day out of Bleakhold Station",
+          "present": ["Mira Kestrel"],
+          "situation": "The raider cutter Cinder Wren has come out from behind a dead freighter, fired a warning shot and ordered Mira to stand by to be boarded"
+        },
+        "health": 5, "spirit": 5, "supply": 4, "integrity": 5,
+        "connection": { "name": "Tamsin Okoro", "role": "salvage broker", "rank": "dangerous", "ticks": 16, "bonded": false },
+        "vow": { "name": "Find who is raiding the Cinder Expanse lanes", "rank": "dangerous", "ticks": 16 }
+      }
+    }
+  },
+  "cases": [
+    { "id": "heal-1", "family": "recovery", "context": "bleakhold-after-fight", "line": "I treat my wounds with the ship's medkit.", "want": { "moves": ["heal"] }, "source": "run 2 a49" },
+    { "id": "heal-2", "family": "recovery", "context": "bleakhold-after-fight", "line": "I find the station's medic and let her clean and stitch the burn on my arm.", "want": { "moves": ["heal"] } },
+    { "id": "resupply-1", "family": "recovery", "context": "bleakhold-after-fight", "line": "I restock the ship at Bleakhold's market.", "want": { "moves": ["resupply"] }, "source": "run 2 a51" },
+    { "id": "resupply-2", "family": "recovery", "context": "bleakhold-after-fight", "line": "I go round the market stalls trading what salvage I have left for ration packs, fuel cells and water.", "want": { "moves": ["resupply"] } },
+    { "id": "repair-1", "family": "recovery", "context": "bleakhold-after-fight", "line": "I pull the cooked power relay and spend the night rebuilding it from spares.", "want": { "moves": ["repair"] } },
+    { "id": "repair-2", "family": "recovery", "context": "bleakhold-after-fight", "line": "I suit up and go out on the hull to patch the plating the cutter opened.", "want": { "moves": ["repair"] } },
+    { "id": "hearten-1", "family": "recovery", "context": "bleakhold-after-fight", "line": "I dim the galley lights, put the kettle on, and sit with a hot cup until my hands stop shaking.", "want": { "moves": ["hearten"] } },
+    { "id": "sojourn-1", "family": "recovery", "context": "bleakhold-after-fight", "line": "I mean to stay on at Bleakhold a few days and get properly back on my feet among its people: rest, hot meals, whatever the station can offer a worn-out pilot.", "want": { "moves": ["sojourn"] } },
+
+    { "id": "connect-1", "family": "connection", "context": "spire-stall", "line": "Idris Vane has watched these docks longer than anyone. I sit down beside his barrel, give him my name, and set about making a friend of him. I want him on my side for as long as I fly out of Hollow Spire.", "want": { "moves": ["make_a_connection"] } },
+    { "id": "connect-2", "family": "connection", "context": "bleakhold-after-fight", "line": "Oren Halvard did me a kindness with that berth fee. I find him at the end of his shift, stand him a drink, and set about earning a lasting place in his good books.", "want": { "moves": ["make_a_connection"] } },
+    { "id": "develop-1", "family": "connection", "context": "aboard-at-spire", "line": "I raise Tamsin on the comm and trade news with her, asking how the docks have been.", "want": { "moves": ["develop_your_relationship"] }, "source": "run 2 a59, without its move name", "note": "The run's charter took this for the move; read strictly it is close to plain talk, so a reading of no move is the least surprising miss in the list." },
+    { "id": "develop-2", "family": "connection", "context": "spire-stall", "line": "I offer to watch Tamsin's counter for an hour while she rests.", "want": { "moves": ["develop_your_relationship"] }, "source": "run 2 a60, without its move name" },
+    { "id": "develop-3", "family": "connection", "context": "spire-stall", "line": "I slide the salvage rights to the wreck I found off Vigil Reach across the counter. They are Tamsin's now, no charge, for everything she has done for me.", "want": { "moves": ["develop_your_relationship"] } },
+    { "id": "test-1", "family": "connection", "context": "spire-stall", "line": "I tell Tamsin straight that I am breaking my word to her: I promised to be back before the next tide of cargo, and I won't be.", "want": { "moves": ["test_your_relationship"] } },
+    { "id": "test-2", "family": "connection", "context": "spire-stall", "line": "Tamsin wants the name of the trader who talked to me. I refuse her, because I gave him my word, and I hold to it even when I see what it costs me with her.", "want": { "moves": ["test_your_relationship"] } },
+    { "id": "bond-1", "family": "connection", "context": "spire-reckoning", "line": "Tamsin, will you stand with me for good, whatever comes?", "want": { "moves": ["forge_a_bond"] } },
+    { "id": "bond-2", "family": "connection", "context": "spire-reckoning", "line": "I cover Tamsin's hand with mine on the ledger and tell her she is kin to me now. Not a broker, not a contact: kin. And I mean it to hold.", "want": { "moves": ["forge_a_bond"] } },
+
+    { "id": "swear-1", "family": "vow", "context": "spire-stall", "line": "I draw my knife, lay my palm flat on the blade, and tell Tamsin I will bring Joss home.", "want": { "moves": ["swear_an_iron_vow"] } },
+    { "id": "swear-2", "family": "vow", "context": "spire-stall", "line": "I give Tamsin my word, on iron and on my ship: I will find the Lark's Tithe and whoever took her.", "want": { "moves": ["swear_an_iron_vow"] } },
+    { "id": "progress-1", "family": "vow", "context": "bleakhold-clerk", "line": "I now have proof the raids are fed by dock clerks selling cargo routes.", "want": { "moves": ["reach_a_milestone"] }, "source": "run 2 a71, without its rules word" },
+    { "id": "progress-2", "family": "vow", "context": "bleakhold-clerk", "line": "That is the link I was missing: the schedules leave this office, and the cutters are waiting where they say. I am a real step closer to whoever is behind the raids.", "want": { "moves": ["reach_a_milestone"] } },
+    { "id": "progress-3", "family": "vow", "context": "bleakhold-after-fight", "line": "The cutter that jumped me is scrap, and she was one of theirs. That is one raider fewer on the lanes, and a long stride toward finding who sends them.", "want": { "moves": ["reach_a_milestone"] } },
+    { "id": "done-1", "family": "vow", "context": "spire-reckoning", "line": "I put the sealed ledger in Warden Marr's hands and tell her all of it: Corvin Hale bought the schedules, and Corvin Hale sent the cutters. The lanes' raider has a name now.", "want": { "moves": ["fulfill_your_vow"] } },
+    { "id": "done-2", "family": "vow", "context": "spire-reckoning", "line": "It is done. I set out to learn who was raiding the Cinder Expanse lanes, and now I know, with proof. I say so aloud, to Tamsin and the warden both, and call the work finished.", "want": { "moves": ["fulfill_your_vow"] } },
+
+    { "id": "course-1", "family": "travel", "context": "aboard-at-spire", "line": "I plot the course and take the Kobayashi IV to Bleakhold Station.", "want": { "moves": ["set_a_course"] }, "source": "run 2 a20" },
+    { "id": "course-2", "family": "travel", "context": "aboard-at-spire", "line": "I cast off from the Spire and fly the marked lane out to Bleakhold Station.", "want": { "moves": ["set_a_course"] } },
+    { "id": "course-3", "family": "travel", "context": "aboard-at-spire", "line": "Vigil Reach is closer. I take the Kobayashi IV there along the old charted route to ask after the freighters.", "want": { "moves": ["set_a_course"] } },
+    { "id": "expedition-1", "family": "travel", "context": "aboard-at-spire", "line": "I punch in the coordinates Tamsin sent and take the ship out past the charts, toward the drift where the cutter was seen.", "want": { "moves": ["undertake_an_expedition"] } },
+    { "id": "expedition-2", "family": "travel", "context": "aboard-at-spire", "line": "No lane goes where that salvager was. I leave the marked route behind and feel my way out into the debris toward his coordinates.", "want": { "moves": ["undertake_an_expedition"] } },
+    { "id": "expedition-3", "family": "travel", "context": "ashfall-drift", "line": "I leave the relay behind and press on deeper into the drift toward the salvager's coordinates.", "want": { "moves": ["undertake_an_expedition"] } },
+    { "id": "waypoint-1", "family": "travel", "context": "ashfall-drift", "line": "I bring the ship in close to the wrecked relay station and go over it properly: dish, docking ring, whatever is left inside.", "want": { "moves": ["explore_a_waypoint"] } },
+    { "id": "waypoint-2", "family": "travel", "context": "ashfall-drift", "line": "That old relay is worth an hour. I dock with its ring and take a look around inside.", "want": { "moves": ["explore_a_waypoint"] } },
+
+    { "id": "gather-1", "family": "action", "context": "spire-stall", "line": "I work the docks asking traders who saw the raiders last, pressing hard even though it may cost me Tamsin's trust and draw the wrong eyes.", "want": { "moves": ["gather_information"] }, "source": "run 2 a8" },
+    { "id": "gather-2", "family": "action", "context": "spire-stall", "line": "I go down Tamsin's ledger line by line, hunting for whatever the three lost freighters had in common.", "want": { "moves": ["gather_information"] } },
+    { "id": "gather-3", "family": "action", "context": "bleakhold-clerk", "line": "While Roe sweats, I go through the unlocked drum of outbound manifests looking for every sailing that was passed along.", "want": { "moves": ["gather_information"] } },
+    { "id": "danger-1", "family": "action", "context": "ashfall-drift", "line": "I thread the Kobayashi IV through the gap in the debris wall before it tumbles shut.", "want": { "moves": ["face_danger", "undertake_an_expedition"] }, "note": "Crossing one hazard is Face Danger; pressing on through it as the journey's next leg is the expedition's own move. Either is right." },
+    { "id": "danger-2", "family": "action", "context": "lane-ambush", "line": "I slam the throttle open and dive for the dead freighter's cargo cloud to lose her.", "want": { "moves": ["face_danger", "enter_the_fray"] }, "note": "Running from an imminent threat is Face Danger; a table may as rightly open a fight whose objective is to get away. Either is right." },
+    { "id": "advantage-1", "family": "action", "context": "aboard-at-spire", "line": "Before I cast off I spend an hour with the charts and the comm chatter, working out where a cutter would lie in wait along the Bleakhold run.", "want": { "moves": ["secure_an_advantage", "gather_information"] }, "note": "Preparing for the run is Secure an Advantage; studying for an answer is Gather Information. Either is right." },
+    { "id": "advantage-2", "family": "action", "context": "ashfall-drift", "line": "Before I commit to that gap I hold position and time the tumble of the debris, looking for the rhythm in it.", "want": { "moves": ["secure_an_advantage"] } },
+    { "id": "compel-1", "family": "action", "context": "spire-stall", "line": "I put a week's water chits on Idris Vane's counter and ask him to tell me which trader has been selling the freighter schedules.", "want": { "moves": ["compel"] } },
+    { "id": "compel-2", "family": "action", "context": "bleakhold-clerk", "line": "I tell Roe he can give me the name of the man at the cargo lock, or explain that second ledger to the station's auditors.", "want": { "moves": ["compel"] } },
+    { "id": "gear-1", "family": "action", "context": "aboard-at-spire", "line": "I dig through the lockers behind my seat for a spare signal flare. I will want one out in that drift.", "want": { "moves": ["check_your_gear"] } },
+
+    { "id": "fight-1", "family": "fight entry", "context": "lane-ambush", "line": "I swing the Kobayashi IV's nose around and open fire on the Cinder Wren before she can board me.", "want": { "moves": ["enter_the_fray"] } },
+    { "id": "fight-2", "family": "fight entry", "context": "lane-ambush", "line": "I have run from these people long enough. I arm the guns, pick my ground behind the dead freighter, and turn to fight her.", "want": { "moves": ["enter_the_fray"] } },
+    { "id": "fight-3", "family": "fight entry", "context": "lane-ambush", "line": "I answer the hail with my forward battery.", "want": { "moves": ["enter_the_fray"] } },
+
+    { "id": "none-compass", "family": "control", "context": "spire-stall", "line": "I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.", "want": { "none": true }, "source": "run 2 a9", "note": "A reflective line." },
+    { "id": "none-manifest", "family": "control", "context": "spire-stall", "line": "I leave the cargo manifest with Tamsin for safekeeping.", "want": { "none": true }, "source": "run 2 a10", "note": "Handing something over." },
+    { "id": "none-tea", "family": "control", "context": "spire-stall", "line": "I ask Tamsin whether that is the same tea she was drinking yesterday, and take the cup she pushes across.", "want": { "none": true }, "note": "Small talk with a connection, nothing at stake." },
+    { "id": "none-which-ship", "family": "control", "context": "spire-stall", "line": "I ask Tamsin to tell me again which of the three freighters Joss crewed.", "want": { "none": true }, "note": "A question about what is already established." },
+    { "id": "none-quiet-crossing", "family": "control", "context": "spire-reckoning", "line": "I tell Tamsin the crossing back from Bleakhold was quiet, for once.", "want": { "none": true }, "note": "Small talk with a connection whose relationship track is full." },
+    { "id": "none-viewport", "family": "control", "context": "aboard-at-spire", "line": "I watch the Spire's dock lamps slide across the viewport and wonder how many of them Ilse saw.", "want": { "none": true }, "note": "A reflective line." },
+    { "id": "none-reread", "family": "control", "context": "aboard-at-spire", "line": "I read Tamsin's message again. How many days out did she say Bleakhold was?", "want": { "none": true }, "note": "A question about what is already established." },
+    { "id": "none-damage-board", "family": "control", "context": "bleakhold-after-fight", "line": "I look over the damage board again. What did that last volley hit?", "want": { "none": true }, "note": "A question about what is already established, beside a ship that wants repair." },
+    { "id": "none-say-again", "family": "control", "context": "bleakhold-clerk", "line": "I ask Roe to say again how often the man comes to the cargo lock.", "want": { "none": true }, "note": "A question about what he has already said." },
+    { "id": "none-chart-mark", "family": "control", "context": "ashfall-drift", "line": "I mark the wrecked relay on my own chart and pencil a name beside it: Dead Ear.", "want": { "none": true }, "note": "An everyday action with nothing at risk." }
+  ]
+}

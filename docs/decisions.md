@@ -45,7 +45,12 @@ the fiction, just not forcing the player to do so in their freeform input."
   involved with an @scene"), one of each set kept as a line of play. The
   scorecard says what each line of play became (`rules/ci-e2e.md` → "A
   charter's player stays in the fiction"; known-issues
-  PLAIN-LINE-GOES-UNREAD is where the count is kept).
+  PLAIN-LINE-GOES-UNREAD is where the count is kept). And without a table:
+  the readers' plain-line test puts some fifty plain lines through the two
+  readers on each model (`./scripts/cloud.sh readers`). Its first run
+  (2026-11-24): 71 of 90 readings right on Haiku 5.5 as shipped, 77 on
+  Sonnet 5.5, and a step toward a vow read by neither — so the pain is
+  about one part the model and two parts what the readers are told.
 
 ## The long haul's second round: the fight's card follows its roll, a move only a move can make is always offered, a named move asks for itself, and a name change is the table's (issue #373 round 2, after issue #377) (2026-11)
 

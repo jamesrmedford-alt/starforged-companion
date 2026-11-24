@@ -75,6 +75,8 @@
 #                                              refused without
 #                                              EXPLORE_QUESTIONS: what it is to
 #                                              answer, one question to a line.
+#   ./scripts/cloud.sh readers [--live]        plain lines through the pacing and move readers, model against model
+#                                              (dry by default: no key, no spend; --live needs READERS_QUESTIONS)
 #   ./scripts/cloud.sh multiplayer             the second-client suite
 #   ./scripts/cloud.sh quench                  the Quench batches
 #   ./scripts/cloud.sh status                  what is running
@@ -357,6 +359,32 @@ cmd_explore() {
     run_suite explore.mjs
 }
 
+# Plain lines through the two readers of every line of play, on each model of
+# READERS_ARMS (playwright/readers.mjs). Dry unless asked. READERS_ARMS,
+# READERS_REPEATS, READERS_CAP_USD and READERS_ONLY are the caller's, and
+# reach the suite as they are.
+cmd_readers() {
+  local mode="${READERS_MODE:-dry}"
+  case "${1:-}" in
+    "")     ;;
+    --live) mode=live ;;
+    --dry)  mode=dry ;;
+    *)      die "readers takes --live, --dry, or nothing (a dry run)" ;;
+  esac
+  [[ "${mode}" == live || "${mode}" == dry ]] || die "READERS_MODE is dry or live, not ${mode}"
+  if [[ "${mode}" == live ]]; then
+    [[ -n "$(claude_key)" ]] || die "a live run calls Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first — or run it dry"
+    [[ -n "${READERS_QUESTIONS:-}" ]] || die "a live run is given its questions first: set READERS_QUESTIONS — what this run is to answer that a dry run cannot, one question to a line"
+    export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"
+    log "reading the plain lines LIVE — real models (${READERS_ARMS:-claude-haiku-5-5,claude-sonnet-5-5}), spend capped at ${READERS_CAP_USD:-2.00} dollars"
+  else
+    unset ANTHROPIC_API_KEY
+    log "reading the plain lines (dry: no key, no model call — the readings are stubs)"
+  fi
+  READERS_MODE="${mode}" READERS_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)" \
+    run_suite readers.mjs
+}
+
 cmd_status() {
   docker info >/dev/null 2>&1 || { log "the Docker daemon is not running"; return 0; }
   log "container: $(docker ps -a --filter "name=^${CONTAINER}\$" --format '{{.Status}}' | head -1 || true)"
@@ -367,10 +395,11 @@ case "${1:-}" in
   up)           shift; cmd_up "$@" ;;
   playthroughs) shift; cmd_playthroughs "$@" ;;
   explore)      shift; cmd_explore "$@" ;;
+  readers)      shift; cmd_readers "$@" ;;
   multiplayer)  log "running the multiplayer suite"; run_suite multiplayer.mjs ;;
   quench)       log "running the Quench batches"; run_suite quench.mjs ;;
   status)       cmd_status ;;
   down)         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true; log "container removed (./data is kept)" ;;
-  -h|--help|"") sed -n '2,83p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|"") sed -n '2,85p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)            die "unknown command: $1 (try --help)" ;;
 esac

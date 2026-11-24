@@ -51,6 +51,7 @@
 // name (appendGenerativeTierUpdates).
 
 import { createHash } from "node:crypto";
+import { thinkingOffFor } from "../../../../src/narration/thinking.js";
 
 const ANTHROPIC_HOST = "api.anthropic.com";
 const SIDECAR_SECTION = "## RESPONSE FORMAT — MANDATORY SIDECAR";
@@ -273,6 +274,31 @@ function stubText({ system, user }) {
   return /json/i.test(system) || /json/i.test(user) ? "{}" : STUB_PROSE;
 }
 
+/**
+ * A request body addressed to another model, or null when there is no model
+ * to put or the body is not JSON. Its `model` is replaced — and its
+ * thinking-off form with it: the module sends every body with the form of the
+ * model it names (src/api-proxy.js, src/narration/thinking.js), and the form
+ * is per model. Haiku 5.5's `{ type: "disabled" }` is a 400 on Sonnet 5.5,
+ * whose own `{ type: "between_tools" }` is a 400 on every other model. A body
+ * that carries the asked model's form is given the new model's (none, for a
+ * model that has none); a `thinking` the caller set otherwise is left as it is.
+ */
+function swapModel(body, model) {
+  if (typeof model !== "string" || !model) return null;
+  let asked = null;
+  try { asked = JSON.parse(body); } catch { return null; }
+  if (!asked || typeof asked !== "object" || Array.isArray(asked)) return null;
+  const formOf = (id) => thinkingOffFor(id).thinking ?? null;
+  const next = { ...asked, model };
+  if (JSON.stringify(asked.thinking ?? null) === JSON.stringify(formOf(asked.model))) {
+    const form = formOf(model);
+    if (form) next.thinking = form;
+    else delete next.thinking;
+  }
+  return { model, body: JSON.stringify(next) };
+}
+
 function messageJson(text, model, n) {
   return JSON.stringify({
     id: `msg_playthrough_${n}`, type: "message", role: "assistant", model: model ?? "playthrough-stub",
@@ -285,9 +311,13 @@ function messageJson(text, model, n) {
 
 /**
  * @param {{ mode: "replay"|"record", recording?: object, apiKey?: string, strict?: boolean, log?: Function,
- *   gate?: { before: (call: object) => Promise<{ ok: boolean, id?: number, reason?: string }>|object, after: (id: number, result: object) => void } }} options
+ *   gate?: { before: (call: object) => Promise<{ ok: boolean, id?: number, reason?: string }>|object, after: (id: number, result: object) => void },
+ *   model?: (kind: string, liveModel: string|null) => string|null }} options — `model`: a run that compares
+ *   models (readers.mjs) names the model a call of `kind` is sent to in place of the one the page asked for,
+ *   or null to leave the call as it is; it applies to calls that are forwarded (record mode), whose body is
+ *   given the new model and that model's thinking-off form (swapModel)
  */
-export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log, gate = null }) {
+export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log, gate = null, model = null }) {
   if (mode === "record" && !apiKey) throw new Error("record mode needs ANTHROPIC_API_KEY");
   const exchanges = Array.isArray(recording?.exchanges) ? recording.exchanges : [];
   const used      = new Set();
@@ -336,6 +366,17 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
   }
 
   async function forward({ url, headers, body }, live, entry) {
+    // A run that compares models sends this call to another one: the body is
+    // rewritten, and the entry, the gate and the recording carry the model
+    // the call goes to — the one it is priced at. The entry keeps the model
+    // the page asked for beside it.
+    const swapped = typeof model === "function" ? swapModel(body, model(entry.kind, live.model)) : null;
+    if (swapped && swapped.model !== live.model) {
+      entry.modelAsked = live.model;
+      entry.model = swapped.model;
+      body = swapped.body;
+      live = { ...live, model: swapped.model };
+    }
     // A run with a spending cap (explore.mjs) passes a gate: it reserves the
     // call's worst cost before the request leaves, and is told what the call
     // used. A call it refuses is not sent — the page gets the neutral stub, so
