@@ -1129,13 +1129,38 @@ const ORACLE_ANSWER_BINDS =
   `contradicts the answer. A table's result is read with latitude; it is never turned ` +
   `into its reverse.`;
 
+/** The oracle's own word for a doubled roll stays out of the prose too (NARRATION-NAMES-THE-OUTCOME). */
+const ORACLE_MATCH_RULE =
+  `A result that came with a match is the answer at its most extreme, or with a twist: ` +
+  `tell that as what happens. The word "match" is the table's and is never written.`;
+
+/**
+ * The dice's own words stay out of the prose (known-issues
+ * NARRATION-NAMES-THE-OUTCOME). The move's outcome block reads "[OUTCOME:
+ * Strong Hit with a Match [MATCH]]", and the rule against repeating it named
+ * no word: two live runs wrote them in — "Strong hit, and a match: he throws
+ * in a sealed ration crate…" (run 2, a51) and "The match flares bright on the
+ * scope" (run 3, a27), an image made from the word with nothing in the scene
+ * to be one. Nor was the narrator told what a match is for. In the move and
+ * round roles, beside that rule.
+ */
+const OUTCOME_WORDS_RULE =
+  `The outcome's own words are the table's, never the story's. "Strong hit", "weak hit", ` +
+  `"miss" and "match" never appear in the narration as such: not as the roll's name ("a ` +
+  `strong hit", "it's a miss", "and a match"), not as a remark on the dice, and not as an ` +
+  `image made out of the word (a match that flares, a hit that lands "strong"). Narrate ` +
+  `what happens instead. A match is told as its twist — on a hit, something unexpected or ` +
+  `a new opening; on a miss, the turn that makes it worse — as an event in the scene, ` +
+  `with no name for it.`;
+
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
     `narrate the mechanical consequences of move outcomes as plain, concrete prose ` +
     `that serves the story.\n\n` +
     `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
-    `Keep the player in the fiction.`,
+    `Keep the player in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   round_resolution:
     `You are the narrator for an Ironsworn: Starforged campaign played by several players ` +
@@ -1144,7 +1169,8 @@ const ROLE_DESCRIPTIONS = {
     `prose that serves the story.\n\n` +
     `Do not repeat a mechanical outcome verbatim. Transform each into narrative, in the ` +
     `order given, and keep every action with the character who took it. Keep the players ` +
-    `in the fiction.`,
+    `in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   paced_narrative:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1176,7 +1202,8 @@ const ROLE_DESCRIPTIONS = {
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
     `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
     `the literal table text — transform it into narrative.\n\n` +
-    ORACLE_ANSWER_BINDS,
+    `${ORACLE_ANSWER_BINDS}\n\n` +
+    ORACLE_MATCH_RULE,
 
   session_vignette:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
@@ -3127,11 +3154,21 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     `Narrate the consequence in ${lengthPhrase(sentenceTarget, lengthOpts)}. ` +
     `${sentenceRule(sentenceTarget, lengthOpts)} ` +
     `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
+    (resolution?.isMatch === true ? ` ${MATCH_TOLD_AS_TWIST}` : '') +
     (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
 }
+
+/**
+ * Said again where a roll came with a match (NARRATION-NAMES-THE-OUTCOME): the
+ * outcome block just above the narrator's ask reads "[MATCH]", and the word
+ * went into the prose ("The match flares bright on the scope").
+ */
+const MATCH_TOLD_AS_TWIST =
+  `This roll came with a match: tell its twist as something that happens in the scene, ` +
+  `and never write the word "match".`;
 
 /** A round's narration grows this many sentences for each acting entry past the first. */
 export const ROUND_EXTRA_SENTENCES_PER_ENTRY = 2;
@@ -3218,6 +3255,7 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
+      if (input.isMatch === true) lines.push(MATCH_TOLD_AS_TWIST);
     } else if (input.kind === 'refused') {
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}: not rolled`);
       lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);
