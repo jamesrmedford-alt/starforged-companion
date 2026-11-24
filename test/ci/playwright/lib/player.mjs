@@ -14,8 +14,9 @@
 // itself. The prompt does not grow with the run: sent every action so far, a
 // ninety-action run's player alone would pass the cost of everything else.
 
-import { chat } from "./foundry.mjs";
+import { MODULE_ID, chat } from "./foundry.mjs";
 import { callClaude } from "./anthropic.mjs";
+import { optionFor } from "./cast.mjs";
 
 export const MAX_WAIT_SECONDS = 20;
 export const PLAYER_ACTIONS = ["say", "click", "choose", "dialog", "close", "wait", "stop"];
@@ -52,66 +53,78 @@ export const ACTION_TOOL = {
 };
 
 /**
- * What the player's page shows, as data. Runs in the page.
+ * What the player's page shows, as data.
  * @returns {Promise<object>} { character, windows, messages }
  */
 export function snapshotScreen(client, { chatTail = 12, openEarlier = 6, ignoreWindows = [] } = {}) {
-  return client.page.evaluate(({ chatTail, openEarlier, ignoreWindows }) => {
-    const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-    const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
-    // What a person reads: the rendered text (line breaks between blocks, no
-    // stylesheet's source), not the markup's.
-    const read = (el) => clean(el ? (shown(el) && typeof el.innerText === "string" ? el.innerText : el.textContent) : "");
-    const pc = game.user?.character ?? null;
-    const meter = (k) => pc?.system?.[k]?.value ?? null;
-    const character = pc ? { name: pc.name, health: meter("health"), spirit: meter("spirit"), supply: meter("supply"), momentum: meter("momentum") } : null;
+  return client.page.evaluate(screenOf, { chatTail, openEarlier, ignoreWindows, moduleId: MODULE_ID });
+}
 
-    const windows = [...document.querySelectorAll("dialog[open], .application.dialog, .application.window-app, .application")]
-      .filter(el => shown(el) && !el.closest("#sidebar") && !el.matches("#sidebar, #ui-left, #ui-right, #hotbar, #players, #navigation, #controls, #scene-controls"))
-      .map(el => ({ el, title: clean(el.querySelector(".window-title, header h1, header h4")?.textContent) }))
-      .filter(w => w.title && !ignoreWindows.includes(w.title))
-      .filter((w, i, all) => all.findIndex(x => x.el === w.el) === i)
-      .slice(0, 4)
-      .map(({ el, title }) => ({
-        title,
-        text: read(el.querySelector(".window-content, form, .dialog-content")).slice(0, 500),
-        fields: [...el.querySelectorAll("input[name], select[name], textarea[name]")].filter(f => f.type !== "hidden").slice(0, 12).map(f => ({
-          name: f.name, type: f.tagName === "SELECT" ? "select" : (f.type || "text"),
-          label: clean(f.closest("label")?.textContent || document.querySelector(`label[for="${f.id}"]`)?.textContent || f.placeholder || ""),
-          value: f.type === "checkbox" ? String(f.checked) : String(f.value ?? ""),
-          options: f.tagName === "SELECT" ? [...f.options].map(o => clean(o.textContent)).slice(0, 12) : undefined,
-        })),
-        buttons: [...el.querySelectorAll("button, [data-action]")].filter(b => shown(b) && !b.disabled && clean(b.textContent)).slice(0, 8)
-          .map(b => clean(b.textContent).slice(0, 60)),
-      }));
+/**
+ * The screen, read where it is shown: runs in the page (`game`, `document`),
+ * and closes over nothing.
+ *
+ * A narration the X-Card took back is not on it. The module flags the card
+ * (`flags[module].xCarded`) and leaves its prose in the chat log; the third
+ * live run's player went on reading it for twenty-two turns and brought what
+ * it said back as its vow's proof. What the table took back, a player at the
+ * table is not shown again.
+ */
+export function screenOf({ chatTail, openEarlier, ignoreWindows, moduleId }) {
+  const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+  const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+  // What a person reads: the rendered text (line breaks between blocks, no
+  // stylesheet's source), not the markup's.
+  const read = (el) => clean(el ? (shown(el) && typeof el.innerText === "string" ? el.innerText : el.textContent) : "");
+  const pc = game.user?.character ?? null;
+  const meter = (k) => pc?.system?.[k]?.value ?? null;
+  const character = pc ? { name: pc.name, health: meter("health"), spirit: meter("spirit"), supply: meter("supply"), momentum: meter("momentum") } : null;
 
-    const describe = (m, ref, chars) => {
-      const el = document.querySelector(`#chat [data-message-id="${m.id}"], .chat-log [data-message-id="${m.id}"]`);
-      const body = el?.querySelector(".message-content") ?? null;
-      const text = body ? read(body) : clean(String(m.content ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
-      const buttons = el ? [...el.querySelectorAll(".message-content button, .message-content a[data-action]")]
-        .map((b, n) => ({ n: n + 1, label: clean(b.textContent).slice(0, 70), disabled: !!b.disabled })) : [];
-      const selects = el ? [...el.querySelectorAll(".message-content select")].filter(sel => !sel.disabled)
-        .map((sel, n) => ({
-          n: n + 1,
-          label: clean(sel.closest("label")?.textContent?.replace(sel.textContent, "") || sel.getAttribute("aria-label") || sel.name || "").slice(0, 60),
-          value: clean(sel.selectedOptions?.[0]?.textContent ?? ""),
-          options: [...sel.options].map(o => clean(o.textContent)).filter(Boolean).slice(0, 14),
-        })) : [];
-      return { ref, id: m.id, speaker: clean(m.alias ?? m.author?.name ?? "?"), text: text.slice(0, chars), buttons, selects };
-    };
-    const visible = game.messages.contents.filter(m => m.visible !== false);
-    const tail = visible.slice(-chatTail).map((m, i) => describe(m, `m${i + 1}`, 1400));
-    // A card further up that can still be answered — a vow's card, a choice
-    // left open. A person scrolls up to it; a view of the last lines alone
-    // hides it (the long haul's third rehearsal: the vow card was thirteen
-    // messages up when its Link was wanted).
-    const earlier = visible.slice(0, -chatTail).map(m => describe(m, "", 320))
-      .filter(m => m.selects.length || m.buttons.some(b => !b.disabled))
-      .slice(-openEarlier).map((m, i) => ({ ...m, ref: `e${i + 1}`, earlier: true }));
-    const messages = [...earlier, ...tail];
-    return { character, windows, messages };
-  }, { chatTail, openEarlier, ignoreWindows });
+  const windows = [...document.querySelectorAll("dialog[open], .application.dialog, .application.window-app, .application")]
+    .filter(el => shown(el) && !el.closest("#sidebar") && !el.matches("#sidebar, #ui-left, #ui-right, #hotbar, #players, #navigation, #controls, #scene-controls"))
+    .map(el => ({ el, title: clean(el.querySelector(".window-title, header h1, header h4")?.textContent) }))
+    .filter(w => w.title && !ignoreWindows.includes(w.title))
+    .filter((w, i, all) => all.findIndex(x => x.el === w.el) === i)
+    .slice(0, 4)
+    .map(({ el, title }) => ({
+      title,
+      text: read(el.querySelector(".window-content, form, .dialog-content")).slice(0, 500),
+      fields: [...el.querySelectorAll("input[name], select[name], textarea[name]")].filter(f => f.type !== "hidden").slice(0, 12).map(f => ({
+        name: f.name, type: f.tagName === "SELECT" ? "select" : (f.type || "text"),
+        label: clean(f.closest("label")?.textContent || document.querySelector(`label[for="${f.id}"]`)?.textContent || f.placeholder || ""),
+        value: f.type === "checkbox" ? String(f.checked) : String(f.value ?? ""),
+        options: f.tagName === "SELECT" ? [...f.options].map(o => clean(o.textContent)).slice(0, 12) : undefined,
+      })),
+      buttons: [...el.querySelectorAll("button, [data-action]")].filter(b => shown(b) && !b.disabled && clean(b.textContent)).slice(0, 8)
+        .map(b => clean(b.textContent).slice(0, 60)),
+    }));
+
+  const describe = (m, ref, chars) => {
+    const el = document.querySelector(`#chat [data-message-id="${m.id}"], .chat-log [data-message-id="${m.id}"]`);
+    const body = el?.querySelector(".message-content") ?? null;
+    const text = body ? read(body) : clean(String(m.content ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+    const buttons = el ? [...el.querySelectorAll(".message-content button, .message-content a[data-action]")]
+      .map((b, n) => ({ n: n + 1, label: clean(b.textContent).slice(0, 70), disabled: !!b.disabled })) : [];
+    const selects = el ? [...el.querySelectorAll(".message-content select")].filter(sel => !sel.disabled)
+      .map((sel, n) => ({
+        n: n + 1,
+        label: clean(sel.closest("label")?.textContent?.replace(sel.textContent, "") || sel.getAttribute("aria-label") || sel.name || "").slice(0, 60),
+        value: clean(sel.selectedOptions?.[0]?.textContent ?? ""),
+        options: [...sel.options].map(o => clean(o.textContent)).filter(Boolean).slice(0, 14),
+      })) : [];
+    return { ref, id: m.id, speaker: clean(m.alias ?? m.author?.name ?? "?"), text: text.slice(0, chars), buttons, selects };
+  };
+  const visible = game.messages.contents.filter(m => m.visible !== false && m.flags?.[moduleId]?.xCarded !== true);
+  const tail = visible.slice(-chatTail).map((m, i) => describe(m, `m${i + 1}`, 1400));
+  // A card further up that can still be answered — a vow's card, a choice
+  // left open. A person scrolls up to it; a view of the last lines alone
+  // hides it (the long haul's third rehearsal: the vow card was thirteen
+  // messages up when its Link was wanted).
+  const earlier = visible.slice(0, -chatTail).map(m => describe(m, "", 320))
+    .filter(m => m.selects.length || m.buttons.some(b => !b.disabled))
+    .slice(-openEarlier).map((m, i) => ({ ...m, ref: `e${i + 1}`, earlier: true }));
+  const messages = [...earlier, ...tail];
+  return { character, windows, messages };
 }
 
 /** The snapshot as the text the player model reads. Pure. */
@@ -175,8 +188,11 @@ function validateKind(a, snapshot, reason) {
       if (!message) return { ok: false, problem: `no message ${JSON.stringify(a.message)} on screen` };
       const select = (message.selects ?? []).find(s => s.n === Number(a.button));
       if (!select) return { ok: false, problem: `message ${message.ref} has no dropdown ${a.button}` };
-      const option = String(a.option ?? "").replace(/\s+/g, " ").trim();
-      if (!select.options.includes(option)) return { ok: false, problem: `dropdown ${select.n} on ${message.ref} has no option "${option}" (it has: ${select.options.join(", ")})` };
+      // The option as it is written — or the one it plainly means: "Tamsin
+      // Vey" asked for where her card, and so the option, is "Tamsin".
+      const asked = String(a.option ?? "").replace(/\s+/g, " ").trim();
+      const option = optionFor(asked, select.options);
+      if (option == null) return { ok: false, problem: `dropdown ${select.n} on ${message.ref} has no option "${asked}" (it has: ${select.options.join(", ")})` };
       return { ok: true, action: { action: "choose", messageId: message.id, message: message.ref, select: select.n, option, reason } };
     }
     case "close": {
@@ -403,6 +419,7 @@ export function playerSystemPrompt(charter) {
     `- What you type is in the fiction: what your character does or says, and nothing else. Never write the name of a move, a stat or a rule in it ("Face Danger", "roll", "milestone", "+heart"), and never say what move a line is: the table reads your line and decides. Buttons and cards may name moves; pressing one is not naming it.`,
     `- Chat commands exist: !begin-session opens the session, !end-session closes it. Each opens a window you fill in and submit.`,
     `- After you act, the table needs time: if the narrator has not answered yet, wait rather than repeat yourself.`,
+    ...(beats.length ? [`- A roll is not the end of a beat, and neither is an answer. Each turn the observer says what it sees of the beat. When it says the beat is NOT done, waiting will not finish it: do what the beat asks again, another way. Wait only where a beat says it is the table's and not yours.`] : []),
     `- A card that asks you to choose — "Resolve consequence", a cost to pick, with its choices as buttons — is waiting on you. Answer it with a click before you type anything else: a cost you owe stays owed until you do, and the table will not stop you from typing past it.`,
     `- You know only what your screen shows. Do not invent what the narrator said.`,
     `- You are shown your last ${HISTORY_ACTIONS} actions and your notebook, nothing older. When something will matter later — a name, a thing you established, what you have finished — put one short line in \`note\`.`,
@@ -437,7 +454,10 @@ export function playerTurnPrompt({ history, snapshot, notebook = [], beat = null
     : "YOUR ACTIONS SO FAR: none";
   const parts = [];
   if (beat) {
+    // What the observer has to say plainly stands on a line of its own,
+    // above the count: a note in brackets was read past (the third live run).
     parts.push(`CURRENT BEAT: ${beat.n} of ${beat.of} [session ${beat.session}] — ${beat.title}${beat.tell ? `\n${beat.tell}` : ""}`
+      + (beat.alert ? `\nTHE OBSERVER: ${beat.alert}` : "")
       + `\n(${beat.actions} action${beat.actions === 1 ? "" : "s"} spent on this beat so far${beat.note ? `; ${beat.note}` : ""}.)`);
   }
   parts.push(notebook.length ? `YOUR NOTEBOOK:\n${notebook.map(n => `- ${n}`).join("\n")}` : "YOUR NOTEBOOK: empty");

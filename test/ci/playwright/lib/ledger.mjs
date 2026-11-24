@@ -320,6 +320,21 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
       const at = order.get(line);
       const next = messages.findIndex((m, i) => i > at && m.fromPlayer);
       const answers = messages.slice(at + 1, next < 0 ? undefined : next).filter(m => m.narrator && !m.vignette);
+      // A fact that was never planted cannot be recalled, lost or refused:
+      // its question was asked of a table that was never told. It is shown
+      // as asked, with what was answered, and counted for nothing — the
+      // third live run's rename was never made (its beat was not exercised),
+      // and "Her name is Tamsin Vey", which was right, was scored a refusal
+      // of the name she never took.
+      if (!plantStep) {
+        return {
+          id: probe.id, set: probe.set ?? null, ask: probe.ask, asked: true, step: line.step, phase: line.phase, line: line.text,
+          distance: null, band: null, answered: answers.length > 0,
+          stored: false, stores: [], inPrompt: false, promptSections: [], inAnswer: false, answerExcerpt: answers[0]?.text.slice(0, 200) ?? null,
+          refused: false, refusals: [], named: false, primedBy: null,
+          counted: false, notPlanted: true, failingLayer: null,
+        };
+      }
       const named = factIn(line.text, fact) && !fact.anchor?.length;
       // Was the fact on the table again before the question — in this phase,
       // by the narrator or by the player?
@@ -376,7 +391,7 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
     const counted = asked.filter(p => p.counted);
     // Recall is earned only by a counted question; it is lost by any that
     // was answered without the fact (a line nothing answered is no answer).
-    const missed = asked.filter(p => p.answered && !p.inAnswer);
+    const missed = asked.filter(p => !p.notPlanted && p.answered && !p.inAnswer);
     const refusedAnywhere = [...narrated, ...written, ...sent, ...asked.flatMap(p => p.refusals.map(r => ({ ...r, step: p.step, where: `the answer to probe ${p.id}` })))];
     const seenRefusals = new Set();
     const refusals = refusedAnywhere.filter(r => { const k = `${r.step}|${r.sentence}`; if (seenRefusals.has(k)) return false; seenRefusals.add(k); return true; });

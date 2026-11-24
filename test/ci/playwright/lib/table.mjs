@@ -124,6 +124,8 @@ export function readTable(gm) {
       id: t.id, label: t.label, type: t.type, rank: t.rank, ticks: num(t.ticks) ?? 0, completed: t.completed === true,
       linkedVowName: t.linkedVowName ?? null, linkedVowId: t.linkedVowId ?? null, combatState: t.combatState ?? null,
       objective: t.objective ?? null,
+      // An expedition's destination, where the table recorded one (the site it charts when it is finished).
+      siteId: t.siteId ?? null,
     }));
     const legacyOf = (t) => ({ ticks: num(cs.legacyTracks?.[t]?.ticks) ?? 0, cleared: cs.legacyTracks?.[t]?.cleared === true, cycles: num(cs.legacyTracks?.[t]?.cycles) ?? 0 });
     const sectorScene = game.scenes.contents.find(sc => flagsOf(sc).sectorScene);
@@ -243,6 +245,11 @@ export function readCards(gm) {
       if (f.combatThresholdCard) card.threshold = pick(f, ["label", "position", "actorId", "thresholdTaken"]);
       if (f.combatTrackCard) card.trackCard = pick(f, ["created", "trackId", "trackLabel"]);
       if (f.setACourseFeedback) card.course = pick(f, ["outcome", "destination", "tokenMoved"]);
+      // An expedition's cards: progress marked (and, where `created`, the
+      // track begun), its end, the recommit a missed finish offers.
+      if (f.expeditionProgressCard) card.expedition = pick(f, ["created", "trackId", "trackLabel", "actorId", "expeditionFinishAttempted"]);
+      if (f.expeditionFinishCard) card.expeditionFinished = pick(f, ["legacyTicks"]);
+      if (f.recommitOfferCard) card.recommit = pick(f, ["trackId", "trackLabel", "recommitted"]);
       if (f.legacyXpCard) card.legacyXp = pick(f, ["track", "boxes", "xp", "cleared"]);
       if (f.forgeABondCard) card.forged = pick(f, ["connectionName", "legacyTicks"]);
       if (f.reachMilestoneCard) card.milestone = true;

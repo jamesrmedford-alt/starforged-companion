@@ -1,8 +1,9 @@
 // The world a run plays in — shared by the scripted playthroughs
 // (playthrough.mjs) and the AI exploration runs (explore.mjs): the dice hook
 // on the GM's page, the wait for a world that has stopped changing, and the
-// seed (a player with a character, the command vehicle, a sector and its
-// settlements, the settings a run pins) with its restore.
+// seed (a player with a character and the vows they come with, the command
+// vehicle, a sector and its settlements, the settings a run pins) with its
+// restore.
 
 import { MODULE_ID, MODULE_SRC } from "./foundry.mjs";
 import { PAGE_KEY } from "./claude.mjs";
@@ -103,6 +104,32 @@ export function installDiceScript() {
 
 // ── GM-side world setup ──────────────────────────────────────────────────────
 
+/** The ranks a vow may be seeded at, as the module writes them. */
+const VOW_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
+
+/**
+ * The vows a seed puts on its character's sheet before play (`seed.pc.vows`:
+ * `[{ name, rank }]`), as the module's own vow maker takes them: a name, a
+ * rank it knows (dangerous where the seed names none or another), and an id —
+ * so that the module treats each as a vow it made, and offers no "New vow
+ * recorded" card for it. Pure.
+ *
+ * The first vow on a sheet is the character's background vow to the module
+ * (src/session/openThreads.js `questVows`): a quest sworn in play is counted
+ * as one only when something stands before it. The long haul's character had
+ * none, so Begin a Session said "No character has a vow in play besides a
+ * background vow" with her quest sworn (the third live run, a19 and a50).
+ *
+ * @param {{ pc?: { vows?: Array<{ name?: string, rank?: string }> } }} seed
+ * @returns {Array<{ name: string, rank: string, vowId: string }>}
+ */
+export function seedVows(seed) {
+  return (seed?.pc?.vows ?? [])
+    .map(v => ({ name: String(v?.name ?? "").replace(/\s+/g, " ").trim(), rank: String(v?.rank ?? "").toLowerCase() }))
+    .filter(v => v.name)
+    .map((v, i) => ({ name: v.name, rank: VOW_RANKS.includes(v.rank) ? v.rank : "dangerous", vowId: `seed-vow-${i + 1}` }));
+}
+
 /**
  * Wait until the GM's world has stopped changing. `game.ready` is where the
  * module's world-load work starts, not where it ends: its repairs, a stale
@@ -174,7 +201,7 @@ export async function setUpWorld(gm, scenario) {
   // Begin a Session opened no dialog (CI run 45050276295). So the answers
   // land first, and the reset goes on the module's own write chain.
   await waitForQuietWorld(gm, { quietMs: 2000 });
-  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario }) => {
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows }) => {
     const { serialiseCampaignStateWrite } = await import(`${MODULE_SRC}/multiplayer/campaignStateChain.js`);
     const writeState = (state, label) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState", state), label);
 
@@ -214,6 +241,15 @@ export async function setUpWorld(gm, scenario) {
       ownership: { default: 0, [user.id]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER },
     });
     await user.update({ character: pc.id });
+    // The vows the character comes to the table with — the first of them
+    // their background vow — made as the module makes a vow.
+    if (vows.length) {
+      const { createCharacterVowItem } = await import(`${MODULE_SRC}/character/actorBridge.js`);
+      for (const vow of vows) {
+        const item = await createCharacterVowItem(pc, vow);
+        if (!item) throw new Error(`the seed's vow "${vow.name}" could not be put on ${pc.name}'s sheet`);
+      }
+    }
 
     // A PC of the GM's own (`seed.gmPc`): a GM takes part in a Batch Mode
     // round only with an assigned PC. Unassigned again after the run.
@@ -277,7 +313,7 @@ export async function setUpWorld(gm, scenario) {
       }
     }
     return { gmId: game.user.id, playerId: user.id, pcId: pc.id, gmPcId };
-  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario });
+  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows: seedVows(scenario.seed) });
 }
 
 export async function restoreWorld(gm, log = console.log) {

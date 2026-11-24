@@ -412,7 +412,7 @@ scripted playthroughs' sibling: the same two browsers and the same Claude
 harness, with the script replaced by a model that is given a goal. Run it
 with `test/ci/scripts/cloud.sh explore [--rehearse | --replay <run folder>]`;
 `EXPLORE_CHARTER` picks the charter — `memory` (two short sessions, one fact)
-or `long-haul` (three sessions and twenty-six beats, issue #373; below).
+or `long-haul` (three sessions and twenty-seven beats, issue #373; below).
 **Nothing in CI runs it, and nothing may** — a live run spends money and its
 result is one sample.
 
@@ -453,9 +453,34 @@ hold still, and could not be replayed. The rules: a proposed move's
 confirmation is accepted as proposed; "Who are you interacting with?" is
 answered with the charter's named NPC when the player's line names them and
 the window offers them, else "No specific entity", which is what closing it
-means; a draft whose name is in the charter's `cast` is confirmed, as the
+means; a draft for someone in the charter's `cast` is confirmed, as the
 player character's connection, and every other draft is left. Nothing else is
 answered.
+
+**A cast member's draft is theirs under a part of the name** (`lib/cast.mjs`,
+`draftToConfirm` in `lib/gm.mjs`). The third live long haul's player named
+"Tamsin Vey" in full, the narrator wrote "Tamsin", the module proposed a card
+for "Tamsin" — and the rule, which wanted the exact name, left it: beats 2, 3,
+18, 22 and 23 were lost with the card. A GM at a table would have pressed it.
+So a pending draft is confirmed when its name is a cast member's, or a
+whole-word part of one that is no other member's ("Tamsin", "Vey"; not "Tam"),
+is a person's draft, and that member has no card yet — never a second card
+for someone who has one. Everything that then looks for the card asks the
+same question: a beat's `connection(name)` and `castConnection` (the card the
+cast member was made as, by `castCardId`, followed by its id), the rename the
+runner makes (by that id), and the option a player picks in a dropdown
+(`optionFor`: "Tamsin Vey" asked for, "Tamsin" offered). A cast entry that is
+another's later name says so (`was`): the long haul's `renamed` is its
+`connection` after the rename, one person. **A kept run replays under its own
+charter's cast**: the third run's lists the two names as two people, "Tamsin"
+is then part of two members' names, and its replay leaves the draft as the
+run's GM did.
+
+**An expedition asks the GM nothing new.** Each of its three rolls comes to
+the GM as a move's confirmation — a course read as an expedition among them —
+and is accepted as proposed; the finish's dice are scripted there. The place
+it is for is not a cast member, so a draft for it is left. "Which
+expedition?" is asked of the roller, on a card, and only with two open.
 
 **The budget is not advisory** (`lib/budget.mjs`, `explore.config.json`).
 Every model call of a run goes through it — the module's (the harness's
@@ -539,6 +564,55 @@ charter or touch the runner:
   somebody else's.
 - **The game system's first-start window** is open on a new player's screen;
   the player is not shown it (`ignoreWindows`).
+- **A pressed button is settled when the table has taken it up.** A card's
+  button reaches the GM's client by a relay, and the move it asks for starts
+  when the relay lands. The first rehearsal with an expedition pressed "🗺
+  Finish the Expedition", saw 3.5 s of quiet and typed its next line — into
+  the finish's roll, which the relay began some five seconds after the press
+  ("Not rolled — another move was being resolved"). `settle` now holds a
+  press — a card's button, a window's — until something has happened since
+  it: a write in the GM's world, a model call, the move lock — or
+  `PRESS_WAIT_MS` (20 s) has passed with nothing. **The press that keeps or
+  burns a held result is settled when the result has been narrated**
+  (`HELD_RESULT_PRESS`): its narration comes only then, and without the move
+  lock — a rehearsal took a burn for settled before its narration had begun,
+  the GM's page was reloaded next (the interruption), and the narration and
+  the fight's new position went with it (`burn` violated, the reload's beat
+  failed).
+- **Quiet is longer on a busy machine.** Each of those was a rehearsal made
+  beside other work — the unit suite, other sessions' tests: a load of
+  seventeen on four cores — where the pages answer slowly and a table takes
+  seconds between two of its own writes. `settle` stretches its quiet clock
+  by how long the pages took to say how they stand (`stretched`, up to ten
+  seconds), and a run is still best made with nothing heavy beside it — or
+  with priority over it (`nice -n -10 ./scripts/cloud.sh explore …`, and the
+  Foundry container's processes reniced): a Begin a Session's +1 momentum
+  landed a step late the same way (`session-momentum` violated), and a
+  rehearsal that takes fifteen minutes alone took thirty-four.
+- **What the table took back, the player is not shown again.** The X-Card
+  flags a narration (`flags[module].xCarded`) and leaves its prose in the
+  chat log. The third live run's player went on reading it for twenty-two
+  turns and brought its content back as the vow's proof. `screenOf`
+  (`lib/player.mjs`, the page function behind `snapshotScreen`) leaves a
+  flagged message off the screen, and the view's last twelve are twelve
+  messages the player is shown.
+- **The first vow on a sheet is the background vow.** The module counts a
+  quest as "in play" only when something stands before it
+  (`src/session/openThreads.js` `questVows`): the long haul's character had
+  no other vow, so Begin a Session said "No character has a vow in play
+  besides a background vow" with her quest sworn. A seed may put vows on the
+  sheet (`seed.pc.vows`, `seedVows` in `lib/world.mjs` — made by the module's
+  own vow maker, with an id, so no "New vow recorded" card is offered for
+  them); the beats' checks read the quest, not a seeded vow (`questVows`).
+- **A place the story names becomes a place only in a sector with map
+  data.** Undertake an Expedition records its destination as an unexplored
+  site — a location, the track's link to it — when the active sector has
+  `mapData` (`siteDiscovery.recordUnchartedDestination`), and Finish an
+  Expedition then docks the ship there and posts "◈ Site Discovered". The
+  runner's hand-made sector had none, so the finish arrived nowhere
+  ("… is not a tracked location — currentLocation unchanged") and the sheet
+  still said Hollow Spire. The long haul's seed gives its sector an empty
+  `mapData` (`seed.sector` is the sector record as it is stored).
 - **A card that waits on the player.** The third live run's player left two
   "Resolve consequence" cards unanswered and typed on; the table does not
   hold a move for them, so two weak hits' costs went unpaid and the run
@@ -584,16 +658,26 @@ and the rules that go with each:
   something the player is asked to bring about, with a result checked in the
   world (`BEAT_CHECKS`, by `check.type`). The player is told every beat in its
   standing instructions and, each turn, which one is current and what the
-  observer sees of it. **The player is never asked whether a beat is done.** A
+  observer sees of it. **The player is never asked whether a beat is done —
+  and is never left to take a roll for the end of one.** The third live
+  run's player rolled a move that was not the beat's, twice, and each time
+  waited six turns for the observer to move it on ("Beat appears done; wait
+  for observer"). When the last roll on a beat is not one the beat wants
+  (`wantsOf`) and the beat has not moved since, or the player has waited
+  twice running on a beat that has not moved, `brief()` says so on a line of
+  its own (`alert`; "THE OBSERVER: …" in the turn prompt): what was rolled,
+  that the beat is NOT done, that waiting will not finish it. Not on a beat
+  that is the table's (an interruption): there waiting is right. A
   beat that makes no progress in eight actions (`STALL_ACTIONS`; a beat with
   parts — four facts to plant, a track to fill — counts from the last time it
   moved), or that `needs` a beat never done, is `not-exercised` and the run
   goes on. Never call an unreached beat a pass. What happened in the step
   that finished a beat belongs to that beat: the next one's window opens after
   it.
-- **Six decisive rolls are scripted, the rest are real, all are recorded**
-  (decision 3; a beat's `dice`). They are armed at the GM's confirmation, by
-  the move it names — never by whichever roll comes first — and used once.
+- **Seven decisive rolls are scripted, the rest are real, all are recorded**
+  (decision 3's six, and the expedition's finish; a beat's `dice`). They are
+  armed at the GM's confirmation, by the move it names — never by whichever
+  roll comes first — and used once.
   `scriptedDice` gives a miss (10, 9, action 1), a weak hit (1, 10, action 6)
   or a strong hit (1, 2, action 6; progress 1, 2) whatever the stat;
   `burnable` is a weak hit that burning momentum improves, worked out in the
@@ -602,6 +686,24 @@ and the rules that go with each:
   (`price`: Pay the Price's d100), so that the suffer card is reached every
   time and not one time in four. A replay scripts nothing: its dice are the
   run's, as they fell.
+- **An expedition, begun and ended in one beat** (`b7a`, the eighth; added
+  on the maintainer's word after the third live run). The character leaves
+  the charted lane after a clipped distress call and looks over what she
+  finds. At the table (`docs/flows/exploration-flow.md`): a hit on Undertake
+  an Expedition begins a track under the destination's working label — at
+  the rank the move reader inferred, dangerous unless it says — marks it
+  once, and posts an "Expedition" card with "🗺 Finish the Expedition (n/10)";
+  a weak hit also posts a cost to choose, a miss pays the price and begins
+  nothing. Explore a Waypoint's strong hit posts a choice card ("Mark
+  expedition progress" or "+2 momentum"), its weak hit gives +1 momentum, its
+  miss pays the price. All of these are the player's to answer. **An
+  expedition left open is told to every later narration as under way, its
+  hidden plan in play**, so the beat ends it before the course for Bleakhold:
+  the card's Finish is a progress roll, scripted (challenge 1 and 2 — a
+  strong hit from three boxes, a weak hit from two; either completes it).
+  `BEAT_CHECKS.expedition`: a track begun while the beat was current,
+  progress marked on it, a waypoint explored with its choice made, and —
+  `finished` — the track complete.
 - **Four interruptions are the runner's own actions** (a beat's
   `interruption`; `lib/gm.mjs`): the GM's page reloads mid-fight, End a
   Session is opened and closed unanswered, the X-Card is played on one
@@ -616,7 +718,12 @@ and the rules that go with each:
   rank and by box, the two mirrors (bond Item ↔ card, vow link ↔ card's name),
   an effect landing once on the roller (a move's momentum, a milestone, a
   suffer cost, a recovery, a burn), a session's momentum once each way, the
-  lock free once settled, every line answered once. **Their expectations come
+  lock free once settled, every line answered once — and an expedition's
+  (`expedition-progress`: one mark of its rank for a hit that undertakes it,
+  none and no track for a miss, one for a waypoint's "Mark expedition
+  progress"; its finish scored by its boxes, `progress-score`, and paid on
+  the discoveries legacy by its rank, one rank lower on a weak hit,
+  `legacy-reward`). **Their expectations come
   from `tests/helpers/sequence/rules.js` — the game's text — and import
   nothing from `src/`**: an expectation computed with the module's own
   function agrees with the module whatever it does. A check that could not be
@@ -629,7 +736,12 @@ and the rules that go with each:
   with no other name between — or a phrase `anywhere`), and `probes` —
   questions in the charter's own words, never
   naming the fact, asked again in each session. A probe is scored stored / in
-  the prompt / in the answer, and fails outright on a refusal. Two rules from
+  the prompt / in the answer, and fails outright on a refusal. **A fact that
+  was never planted is not scored**: its questions are shown as asked, with
+  what was answered, counted for nothing, and no refusal is raised from
+  their answers (`notPlanted`). The third live run's rename was never made —
+  its beat was not exercised — and "Her name is Tamsin Vey", which was right,
+  was scored three times as a refusal of the name she never took. Two rules from
   the first reviewed run are built in: **what the helpers wrote is read
   against the ledger too** (every summary, Chronicle entry and recap; a
   refusal there fails the fact at the stored layer whatever the narrator
@@ -745,7 +857,15 @@ the rolls the six do not, so that a rehearsal walks the same road every time.
 of a turn, a result held where a price was expected, a vow card with no Link
 (a defect of the module's, fixed), a view that hid a card thirteen messages
 up, a renamed connection looked for under its old name, and a ledger rule
-that failed the module for telling the narrator a value was corrected.
+that failed the module for telling the narrator a value was corrected. The
+rehearsals of the expedition beat found two more: a pressed button taken for
+settled before its relay had landed, and a destination that became no place
+for want of map data in the seed's sector. **A charter's rehearsal walks the
+road the last live run walked**: the long haul's stand-in detector proposes
+the cast's connection as "Tamsin" (a script entry's `detects`), so the draft
+confirmed under a part of the name, the vow's Link, the rename and the bond
+are all rehearsed on that card — the exact-name road is the first two kept
+runs' replays.
 
 **Every live run ends with a review** (the maintainer's standing instruction,
 2026-11-23; issue #373, modelled on issue #374). You made the run: you read
@@ -769,10 +889,12 @@ first ("Read it cold before you score it", below), then four parts:
    runner's, as in the first live run, saying so.
 2. **The scorecard** (`scorecard.md`; its arithmetic rows are generated
    from `review-data.json` — the run's questions with a place for each
-   answer, the goal or the beats, speed by call kind and from a line to
-   its reply, caching and cost by call kind, prompt length against the action
-   number, repetition by content between scenes of one kind — and "The
-   reading" is left to write). One row per dimension with its result,
+   answer, the goal or the beats, speed by call kind and from a line of play
+   to its reply — a scene question's wait apart: it skips the readers and is
+   answered sooner — caching and cost by call kind, prompt length against the
+   action number, repetition by content between scenes of one kind, what each
+   session's narrations keep returning to ("Refrains") — and "The reading" is
+   left to write). One row per dimension with its result,
    its basis and how far to trust it — goal, mechanics, continuity in what
    the narrator said and in what the helpers wrote, agency, friction,
    narrator quality, speed, length, cost — then the detail. Say what was
@@ -829,7 +951,14 @@ Five rules for the reading that follows, each from that review:
   pattern nobody has counted yet.
 - **Read the run whole as well as step by step.** A note under each step
   cannot see what crosses steps: a refrain, every beat closing the same way,
-  one device carrying a third of the session.
+  one device carrying a third of the session. The scorecard's "Refrains" row
+  and section (`refrainsOf`, `lib/review.mjs`) count the part of it that is
+  said in the same words: per session, the content words and the phrases in
+  a third or more of its narrations with the longest run of narrations in a
+  row that hold each ("over the hatch": 17 of the third run's session 3's
+  23, eleven running), names apart, and the narrations that end on someone
+  waiting, watching or still. A device said in new words each time is still
+  for the reading.
 - **Judge whether it makes sense, not only whether the arithmetic is
   right.** A roll worked correctly for a move there was no reason to make is
   a finding, and so is an offer accepted that the fiction cannot support.
@@ -881,7 +1010,14 @@ goal (`scoreMemory`). A charter with `beats` is a long run: `caps`, `cast`
 `beats` (`id`, `n`, `session`, `title`, `tell` — what the player is told —
 `check`, and where they apply `needs`, `dice`, `interruption`, `after`,
 `playerTitle`, `wants`, `setupLines`, `lastResort`, `lastResortAfter`), and
-`rehearsalDice`. A beat whose result nothing in `BEAT_CHECKS` can see needs a
+`rehearsalDice`. **A beat's `id` is its name for good and `n` is where it
+stands now**: a kept run's beats, a fact's `plantedBy` and a beat's `needs`
+are told by the id, so a beat added in the middle takes a new id (`b7a`, the
+expedition, eighth) and the rest are renumbered, not renamed. The tests that
+hold a kept run's checks to the charter's compare them by id, a beat the run
+never had being no part of it. A seed may give its character vows
+(`seed.pc.vows`) and its sector `mapData`; a cast entry may say whose later
+name it is (`was`). A beat whose result nothing in `BEAT_CHECKS` can see needs a
 new check there, pure and tested, before it is run — and
 `exploreLongHaul.test.js` holds the charter that ships to itself: every
 question told apart from every other, none naming what it asks about, every
@@ -905,9 +1041,10 @@ line goes unread.
   ids; `setupLines`: how many of its first lines are scene-setting and want
   none) **and how to name it at the last** (`lastResort`). The observer tells
   the player its last resort only after two plain lines (`lastResortAfter`)
-  have brought nothing about, so the beats that depend on this one are still
-  reached; the beat keeps that it came to it (`lastResort: true` in
-  `beats.json`).
+  have brought nothing about — or once a roll has come that is not one of the
+  beat's, or the player has waited twice running on a beat that has not
+  moved — so the beats that depend on this one are still reached; the beat
+  keeps that it came to it (`lastResort: true` in `beats.json`).
 - **A memory question is asked with `@scene`**, the module's own way to ask
   about what is established: it skips the pacing reader and is answered as
   "a camera, not a writer". Typed as a line of play it is continued as

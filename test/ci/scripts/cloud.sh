@@ -69,7 +69,7 @@
 #                                              no key. EXPLORE_CHARTER picks
 #                                              the charter: memory (default),
 #                                              or long-haul (issue #373: three
-#                                              sessions, 26 beats; its
+#                                              sessions, 27 beats; its
 #                                              rehearsal rolls and takes about
 #                                              fifteen minutes). A live run is
 #                                              refused without

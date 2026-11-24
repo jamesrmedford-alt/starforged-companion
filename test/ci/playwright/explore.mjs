@@ -74,7 +74,7 @@ import {
 } from "./lib/player.mjs";
 import { createObserver, scoreMemory, healthOf, classifyRun, costsOwedText } from "./lib/observer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
-import { BEAT_CHECKS, createPointer, classifyLongRun } from "./lib/beats.mjs";
+import { BEAT_CHECKS, castCardId, createPointer, classifyLongRun } from "./lib/beats.mjs";
 import { scoreLongRun } from "./lib/longrun.mjs";
 import { GM_ANSWERS, startGmRules, reloadGm, cancelEndSession, playXCard, renameConnection } from "./lib/gm.mjs";
 import {
@@ -136,8 +136,9 @@ const ASKING = "dialog[open], .application.dialog, .application.sf-window";
 
 // The GM's half of the table is fixed rules, no model (lib/gm.mjs): a proposed
 // move accepted as proposed, "Who are you interacting with?" answered, a draft
-// for someone in the charter's cast confirmed. A window on the GM's screen the
-// rules do not answer is left open, and the run says so.
+// for someone in the charter's cast confirmed — under their name or a part of
+// it. A window on the GM's screen the rules do not answer is left open, and
+// the run says so.
 
 /** The GM's world keeps the time of its last write (a document or a setting), for settle(). */
 const trackWorldWrites = (gm) => gm.page.evaluate(() => {
@@ -171,10 +172,25 @@ const tableState = (gm, player, ignore = []) => Promise.all([
 
 const QUIET_MS        = 3500;   // the passes a narration schedules start two seconds after it
 const DIALOG_QUIET_MS = 1500;
+// On a busy machine the pages answer slowly, and a table takes longer between
+// two of its own writes: the quiet clock is stretched by how long the pages
+// took to say how they stand (`stretched`), up to this much. A rehearsal
+// made beside other work read a burned result's fight a write short, and the
+// reload after it was failed for the write that then landed.
+const QUIET_STRETCH_MAX_MS = 10_000;
+/** The quiet a table must keep, given how long its pages took to answer the last few times. Pure. */
+const stretched = (quietMs, lags) => quietMs + Math.min(QUIET_STRETCH_MAX_MS, 6 * Math.max(0, ...lags));
 const WAITING_ON_GM_MS = 20_000;
 // How long a line of play is given to be answered at all before the table is
 // taken to have settled without answering it.
 const REPLY_WAIT_MS   = MODE === "live" ? 150_000 : 45_000;
+// How long a pressed button is given for the table to take it up at all. A
+// card's button, and a session window's, reach the GM's client by a relay,
+// and what they ask for starts when the relay lands. On a busy machine the
+// Finish the Expedition press of the first rehearsal with an expedition was
+// taken up some five seconds on — after the quiet clock had run out — and the
+// next line was typed into its roll.
+const PRESS_WAIT_MS   = 20_000;
 
 /** The ids of the messages the GM's world holds now. */
 const messageIds = (gm) => gm.page.evaluate(() => game.messages.contents.map(m => m.id));
@@ -208,20 +224,38 @@ const answeredSince = (gm, known) => gm.page.evaluate(({ id, known }) => {
  * the first line of a session — and a rehearsal took the pause for the end.
  * The next line then arrived while the first was being resolved, and was not
  * rolled. A line nothing answers in REPLY_WAIT_MS settles as `unanswered`.
+ *
+ * A pressed button — on a card, or a window's — (`pressedAt`: when it was
+ * pressed) is not settled until the table has done something since — a write in the GM's world, a model
+ * call, the move lock — or PRESS_WAIT_MS has passed with nothing: quiet
+ * since the press is what a table looks like before the press has reached
+ * it.
  */
-async function settle({ gm, player, harness, ignoreWindows }, actedAt, { line = null } = {}) {
+async function settle({ gm, player, harness, ignoreWindows }, actedAt, { line = null, pressedAt = null } = {}) {
   const started = Date.now();
   let state = null;
   let answered = !line;
+  let takenUp = pressedAt == null;
+  const lags = [];
   while (Date.now() - started < SETTLE_MS) {
+    const askedAt = Date.now();
     state = await tableState(gm, player, ignoreWindows);
+    lags.push(Date.now() - askedAt);
+    if (lags.length > 5) lags.shift();
+    const quietNeeded = stretched(QUIET_MS, lags);
     const calls = harness.quietMs();
     const quiet = Math.min(calls, state.worldQuietMs, Date.now() - actedAt);
     const busy = state.pendingMove || state.beingAnswered || calls === 0;
     if (!answered) answered = await answeredSince(gm, line);
     const unanswered = !answered && Date.now() - started >= REPLY_WAIT_MS;
-    if (!busy && quiet >= QUIET_MS && (answered || unanswered)) return { settled: true, ms: Date.now() - started, ...(unanswered ? { unanswered: true } : {}) };
-    if (state.playerDialogs.length && !state.beingAnswered && calls > 0 && quiet >= DIALOG_QUIET_MS) {
+    // Something has happened since the press: the table has it.
+    if (!takenUp) {
+      const since = Date.now() - pressedAt;
+      takenUp = busy || state.worldQuietMs < since || calls < since || since >= PRESS_WAIT_MS;
+    }
+    if (!busy && takenUp && quiet >= quietNeeded && (answered || unanswered)) return { settled: true, ms: Date.now() - started, ...(unanswered ? { unanswered: true } : {}) };
+    // (A window just submitted is still up until the table takes the press.)
+    if (takenUp && state.playerDialogs.length && !state.beingAnswered && calls > 0 && quiet >= DIALOG_QUIET_MS) {
       return { settled: true, waitingOnPlayer: state.playerDialogs, ms: Date.now() - started };
     }
     // A window on the GM's screen the autopilot does not answer: the table is
@@ -386,7 +420,7 @@ async function main() {
       cast: Object.values(charter.cast ?? {}), pcId: ids.pcId, log,
       state: () => ({ armed: armedNow(), lastLine }),
       onAnswer: (a) => {
-        accepted.push({ step: stepNow, did: a.did, note: a.note ?? null });
+        accepted.push({ step: stepNow, did: a.did, note: a.note ?? null, ...(a.cast ? { cast: a.cast } : {}) });
         log(`  (GM) ${a.did}${a.note ? ` — ${a.note}` : ""}${a.scripted ? ` — scripted dice ${a.scripted.join(", ")}${a.price ? `, its price ${a.price}` : ""}` : ""}`);
         if (a.price) pricedAt = a.beat;
         const cur = pointer?.current();
@@ -416,7 +450,9 @@ async function main() {
       gmReload: () => reloadGm(gm, { reinstall: () => trackWorldWrites(gm) }),
       endSessionCancelled: () => cancelEndSession(player),
       xCard: () => playXCard(player, gm),
-      rename: (beat) => renameConnection(gm, beat.check.from, beat.check.to),
+      // The card the cast member was made as, whatever it is called: it may
+      // have been confirmed under a part of the name (lib/cast.mjs).
+      rename: (beat) => renameConnection(gm, beat.check.from, beat.check.to, { id: castCardId(observer.marks, charter.cast, beat.check.from) }),
     };
 
     /**
@@ -518,15 +554,21 @@ async function main() {
         stopped = `the player stopped: ${action.reason || "no reason given"}`;
         break;
       }
-      pointer?.record(stepNow);
+      pointer?.record(stepNow, action);
       if (action.action === "say" && !action.text.startsWith("!")) lastLine = action.text;
       const callsBefore = harness.requests.length;
       const t0 = Date.now();
-      // A line of play in an open session is settled once it has been answered.
+      // A line of play in an open session is settled once it has been answered
+      // — and so is the press that keeps or burns a held result: its narration
+      // comes only then, and without the move lock. A rehearsal on a busy
+      // machine took a burn for settled before its narration had begun; the
+      // GM's page was reloaded next (the interruption), and the narration and
+      // the fight's new position went with it.
       const isLine = action.action === "say" && !action.text.startsWith("!") && observer.marks.at(-1)?.session?.active === true;
-      const known = isLine ? await messageIds(gm) : null;
+      const endsHold = action.action === "click" && HELD_RESULT_PRESS.test(action.label ?? "");
+      const known = isLine || endsHold ? await messageIds(gm) : null;
       const outcome = await executeAction(player, action);
-      const settled = action.action === "wait" || !outcome.ok ? { settled: true, ms: 0 } : await settle(table, Date.now(), { line: known });
+      const settled = action.action === "wait" || !outcome.ok ? { settled: true, ms: 0 } : await settle(table, Date.now(), { line: known, pressedAt: action.action === "click" || action.action === "dialog" ? t0 : null });
       if (settled.unanswered) log(`      nothing answered the line in ${Math.round(REPLY_WAIT_MS / 1000)} s`);
       if (!outcome.ok) log(`      the action did not land: ${outcome.detail}`);
       if (!settled.settled) { stalls.push({ step: stepNow, detail: settled.detail, waitingOnGm: settled.waitingOnGm ?? [] }); log(`      STALL ${settled.detail}`); }
@@ -696,7 +738,7 @@ async function main() {
       for (const v of long.mechanics.violations) log(`  ${v.step} ${v.check}: ${v.detail}`);
       const t = long.ledger.totals;
       log(`ledger: ${t.recalled} recalled, ${t.carriedUnasked} carried unasked, ${t.lost} lost, ${t.refused} refused, ${t.notProbed} not probed, ${t.notPlanted} not planted of ${t.facts}`);
-      for (const f of long.ledger.facts) log(`  ${f.id} ${f.verdict}${f.failingLayer ? ` (${f.failingLayer})` : ""} — planted ${f.plantedAt ?? "never"}; probes ${f.probes.filter(p => p.asked).map(p => `${p.id}@${p.step}:${p.inAnswer ? "answered" : p.failingLayer}${p.counted ? "" : "(not counted)"}`).join(" ") || "none"}`);
+      for (const f of long.ledger.facts) log(`  ${f.id} ${f.verdict}${f.failingLayer ? ` (${f.failingLayer})` : ""} — planted ${f.plantedAt ?? "never"}; probes ${f.probes.filter(p => p.asked).map(p => `${p.id}@${p.step}:${p.notPlanted ? "asked" : p.inAnswer ? "answered" : p.failingLayer}${p.counted ? "" : "(not counted)"}`).join(" ") || "none"}`);
     }
     for (const failure of health.failures) log(`health: ${failure}`);
     if (health.costsOwed.length) log(`left owed: ${health.costsOwed.length} cost card(s) nobody answered — ${costsOwedText(health.costsOwed)}`);
@@ -714,6 +756,8 @@ async function main() {
 
 /** Actions a beat's interruption waits for a line of play before it is given up. */
 const STALL_LINES = 8;
+/** The buttons of a held result: pressing one is what has it paid for and narrated. */
+const HELD_RESULT_PRESS = /Burn Momentum|^Keep the result/i;
 
 main().catch((err) => {
   log(`FAIL  ${err?.stack ?? err}`);

@@ -107,7 +107,7 @@ describe('the long-haul charter keeps its player in the fiction', () => {
       expect(prompt).toContain(`${beat.n}. [session ${beat.session}] ${shown}`);
       expect(prompt, 'the last resort is the observer\'s to give, not in the list of beats').not.toContain(beat.lastResort);
     }
-    expect(CHARTER.beats.filter(b => b.wants).map(b => b.n)).toEqual([2, 4, 8, 9, 10, 11, 13, 21, 22, 23, 24]);
+    expect(CHARTER.beats.filter(b => b.wants).map(b => b.id)).toEqual(['b2', 'b4', 'b7a', 'b8', 'b9', 'b10', 'b11', 'b13', 'b21', 'b22', 'b23', 'b24']);
   });
 
   it('asks its memory questions through @scene — all but one of each set, and one of the two baits, kept as lines of play to compare', () => {
@@ -309,7 +309,10 @@ describe('the third live run of the long haul, kept as a replay (explorations/lo
     const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
     expect(RUN.charter.facts).toEqual(now.facts);
     expect(RUN.charter.baits).toEqual(now.baits);
-    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+    // By beat id: a beat added since the run (the expedition, b7a) is no part of it.
+    const checksById = (beats) => Object.fromEntries(beats.filter(b => RUN.charter.beats.some(x => x.id === b.id)).map(b => [b.id, b.check]));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats));
+    expect(now.beats.filter(b => !RUN.charter.beats.some(x => x.id === b.id)).map(b => b.id)).toEqual(['b7a']);
   });
 
   it('a fight beat takes any attack the readers make of a plain line: "I press my advantage" was Gain Ground', () => {

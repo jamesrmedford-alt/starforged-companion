@@ -231,7 +231,9 @@ guards. See `rules/ci-e2e.md` → "Cloud sessions".
 its own screen and types, clicks and fills dialogs. The GM's client runs the
 real pipeline, and fixed rules — no model — answer what the module asks of
 the GM (the move's confirmation; "Who are you interacting with?"; a draft for
-someone in the charter's cast). An **observer** reads the
+someone in the charter's cast — under their name, or a whole-word part of it
+that is nobody else's: the third live run's card for Tamsin Vey was proposed
+as "Tamsin"). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model. The run is then **reviewed by whoever made it** — the full
 transcript annotated, a scorecard, the action items as an issue, what it cost
@@ -265,10 +267,20 @@ prompt for that question, in the answer — so a miss says where it was lost:
 and about ninety player actions that load the narrator's memory and the
 mechanics together:
 
-- **26 beats**, each with a result the observer checks in the world. The
+- **27 beats**, each with a result the observer checks in the world. The
   player is told the beats and which is current; the observer marks a beat
   done and moves on, and a beat not reached in eight actions is
-  `not-exercised`.
+  `not-exercised`. A beat's `id` is its name for good and `n` where it stands
+  now: the expedition, added after the third live run, is `b7a` and stands
+  eighth.
+- **An expedition** (beat 8, `b7a`): the character leaves the charted lane
+  after a clipped distress call — Undertake an Expedition, which begins a
+  track and marks it — looks over what she finds — Explore a Waypoint, whose
+  strong hit offers a mark or momentum on a card — and ends the journey with
+  the card's "🗺 Finish the Expedition", so that no expedition is told to the
+  narrator as under way while she flies to Bleakhold. Its check
+  (`BEAT_CHECKS.expedition`): a track begun while the beat was current,
+  progress marked on it, a waypoint explored, the track complete.
 - **A ledger of seven facts** — a possession, a name and its pronouns, an
   item handed over, a promise, where the ship is, a correction, a rename —
   each asked about in every later session, scored stored / in the prompt / in
@@ -277,10 +289,11 @@ mechanics together:
   the helpers wrote.
 - **Mechanical checks after every action**, from the game's text: each roll
   recomputed from the dice on its card, meters and tracks in bounds, progress
-  and rewards by rank, an effect landing once, the lock free, every line
-  answered once.
-- **Six decisive rolls scripted, the rest real, all recorded**; the GM is
-  fixed rules.
+  and rewards by rank — an expedition's mark, and its finish on the
+  discoveries legacy, among them — an effect landing once, the lock free,
+  every line answered once.
+- **Seven decisive rolls scripted, the rest real, all recorded** — the
+  issue's six and the expedition's finish; the GM is fixed rules.
 - **Four interruptions** made by the runner: the GM's page reloads mid-fight,
   End a Session is opened and closed unanswered, the X-Card is played, the
   connection's card is renamed.
@@ -288,10 +301,20 @@ mechanics together:
 Its player stays in the fiction: no beat gives it a move's name to type, a
 question about what is established is asked with `@scene` (one of each set
 is kept as a line of play, to compare), and a beat's move is named only as a
-last resort the observer unlocks after two plain lines bring nothing. The
+last resort the observer unlocks after two plain lines bring nothing — or
+once a roll has come that is not the beat's, or the player has waited twice
+running on a beat that has not moved. Then the observer also says, on a line
+of its own, that the beat is NOT done and that waiting will not finish it:
+the third live run's player took a roll for the end of a beat twice, and
+waited six turns each time. The
 scorecard's **Plain lines** row says what each line of play became —
 rolled, offered a move, or narrated with nothing offered — and whether it
 named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+Its **Refrains** row and section count what each session's narrations keep
+returning to — the words and phrases in a third or more of them, with the
+longest run in a row, and the narrations that end on someone waiting,
+watching or still — and **Speed** gives a line of play's wait apart from a
+scene question's.
 
 **The third live run of the long haul** (2026-11-24, $1.71) is kept at
 `playwright/explorations/long-haul-live-20261124-0321/`: the first with a player

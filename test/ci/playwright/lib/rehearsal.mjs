@@ -30,6 +30,8 @@
 // dropdown options (`choose`) and closes windows, finding each on the screen
 // its prompt shows, and skips what the table never offered.
 
+import { castMembers, castMemberFor, optionFor } from "./cast.mjs";
+
 const API_HOST = "api.anthropic.com";
 
 const textOf = (content) => (typeof content === "string" ? content : (content ?? []).map(c => c?.text ?? "").join(""));
@@ -139,6 +141,10 @@ export function readScreenText(user) {
  *             front of the narrator;
  *   bait    — a bait id: corrected if its fact is in front of the narrator;
  *   names   — names the narration of this line uses (so the detector sees them);
+ *   detects — names the detector reports from this line's narration as they
+ *             are written there, where the cast's full name is not: a cast
+ *             member under a part of the name ("Tamsin" for Tamsin Vey — what
+ *             the third live run's detector proposed);
  *   patience — how many turns to wait for a button or window that is not on
  *             screen before the entry is skipped (default 4; `optional` = 1).
  */
@@ -147,6 +153,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
   const facts = charter.facts ?? [];
   const pc = charter.seed?.pc?.name ?? "the character";
   const cast = Object.values(charter.cast ?? {}).filter(c => c?.name);
+  const members = castMembers(charter.cast);
   const holds = (text, fact) => {
     const sentences = String(text ?? "").split(/(?<=[.!?])\s+|\n+/);
     const has = (t, words) => words.some(w => flexible(w).test(t));
@@ -200,11 +207,14 @@ export function createRollingRehearsal({ charter, forget = false }) {
         return input;
       }
       case "choose": {
+        // The option that holds the words — else the one they plainly mean
+        // ("Tamsin Vey" where the card, and so the option, is "Tamsin").
         const want = String(entry.option).toLowerCase();
-        const m = screen.messages.filter(x => x.selects.some(sel => sel.options.some(o => o.toLowerCase().includes(want)))).at(-1);
+        const offered = (sel) => sel.options.find(o => o.toLowerCase().includes(want)) ?? optionFor(entry.option, sel.options);
+        const m = screen.messages.filter(x => x.selects.some(sel => offered(sel) != null)).at(-1);
         if (!m) return null;
-        const sel = m.selects.find(x => x.options.some(o => o.toLowerCase().includes(want)));
-        input.message = m.ref; input.button = sel.n; input.option = sel.options.find(o => o.toLowerCase().includes(want));
+        const sel = m.selects.find(x => offered(x) != null);
+        input.message = m.ref; input.button = sel.n; input.option = offered(sel);
         return input;
       }
       default: return input;
@@ -292,7 +302,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
       return text(JSON.stringify({
         moveId: move.id, moveName: TITLE(move.id), statUsed: move.stat ?? null, statValue: 0,
         isProgressMove: move.progress === true, progressTicks: 0, moveTarget: move.target ?? null,
-        expeditionRank: null, combatRank: move.rank ?? null, healSituation: move.heal ?? null,
+        expeditionRank: move.expeditionRank ?? null, combatRank: move.rank ?? null, healSituation: move.heal ?? null,
         rationale: `Rehearsal: the script makes this line ${TITLE(move.id)}.`,
       }));
     }
@@ -309,8 +319,13 @@ export function createRollingRehearsal({ charter, forget = false }) {
     // The detector's instructions travel in its message, not its system prompt.
     if (`${system}\n${user}`.includes("analysing an Ironsworn: Starforged narration")) {
       const seen = cast.filter(c => user.includes(c.name));
+      // …and, where the script says so, a cast member under the part of the
+      // name the narration used.
+      const memberOf = (n) => castMemberFor(n, members)?.name ?? null;
+      const parts = (entry.detects ?? []).filter(n => user.includes(n) && memberOf(n) && !seen.some(c => memberOf(c.name) === memberOf(n)))
+        .map(n => ({ ...castMemberFor(n, members), name: n }));
       return text(JSON.stringify({
-        entities: seen.map(c => ({ type: "connection", name: c.name, description: c.description ?? "", pronouns: c.pronouns ?? "", role: c.role ?? null, goal: null, confidence: "high" })),
+        entities: [...seen, ...parts].map(c => ({ type: "connection", name: c.name, description: c.description ?? "", pronouns: c.pronouns ?? "", role: c.role ?? null, goal: null, confidence: "high" })),
         renames: [], worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
       }));
     }

@@ -297,14 +297,15 @@ describe('the ledger, scored layer by layer', () => {
 
   it('a probe is looked for among the lines of the beat that asks it: a short question\'s words elsewhere are not the question', () => {
     const { messages, marks } = run([
+      { who: 'player', step: 'a20', phase: 'session-2', text: '!truth set "raider cutter" is named the Cinder Wren' },
       { who: 'player', step: 'a21', phase: 'session-2', text: 'The raider cutter Ashen Wake cuts across my bow — I enter the fray.' },
       { who: 'narrator', step: 'a21', phase: 'session-2', text: 'The cutter comes about.' },
       { who: 'player', step: 'a48', phase: 'session-3', text: 'What is the raider cutter called?' },
       { who: 'narrator', step: 'a48', phase: 'session-3', text: 'The Cinder Wren.' },
     ]);
-    const loose = scoreLedger({ facts: [CUTTER], marks, messages, requests: [] });
+    const loose = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], planted: { F6: 'a20' } });
     expect(loose.facts[0].probes[0], 'two of the question\'s three words are in the line of play').toMatchObject({ asked: true, step: 'a21' });
-    const scoped = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], probeSteps: { B: ['a47', 'a48'] } });
+    const scoped = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], planted: { F6: 'a20' }, probeSteps: { B: ['a47', 'a48'] } });
     expect(scoped.facts[0].probes[0]).toMatchObject({ asked: true, step: 'a48', inAnswer: true });
   });
 
@@ -712,7 +713,7 @@ describe('a long run\'s class', () => {
 
 // ── the GM's scripted dice ───────────────────────────────────────────────────
 
-describe('the six scripted rolls', () => {
+describe('the scripted rolls', () => {
   it('each gives the roll it promises, whatever the stat — by the game\'s own arithmetic', () => {
     for (const [roll, outcome] of [['miss', 'miss'], ['weak_hit', 'weak_hit'], ['strong_hit', 'strong_hit']]) {
       const { faces, queue } = scriptedDice({ roll });
@@ -1190,13 +1191,25 @@ describe('the generated layers of the review', () => {
 // ── the charter that ships ───────────────────────────────────────────────────
 
 describe('the long-haul charter', () => {
-  it('has the issue\'s twenty-six beats over three sessions, its four interruptions and its six scripted rolls', () => {
-    expect(CHARTER.beats.map(b => b.n)).toEqual(Array.from({ length: 26 }, (_, i) => i + 1));
-    expect(CHARTER.beats.filter(b => b.session === 1).length + CHARTER.beats.filter(b => b.session === 2).length + CHARTER.beats.filter(b => b.session === 3).length).toBe(26);
-    expect(CHARTER.beats.filter(b => b.interruption).map(b => `${b.n}:${b.interruption}`)).toEqual(['12:gmReload', '14:endSessionCancelled', '15:xCard', '18:rename']);
+  it('has twenty-seven beats over three sessions — the issue\'s twenty-six and the expedition — its four interruptions and its seven scripted rolls', () => {
+    expect(CHARTER.beats.map(b => b.n)).toEqual(Array.from({ length: 27 }, (_, i) => i + 1));
+    expect(CHARTER.beats.filter(b => b.session === 1).length + CHARTER.beats.filter(b => b.session === 2).length + CHARTER.beats.filter(b => b.session === 3).length).toBe(27);
+    expect(CHARTER.beats.filter(b => b.interruption).map(b => `${b.n}:${b.interruption}`)).toEqual(['13:gmReload', '15:endSessionCancelled', '16:xCard', '19:rename']);
     expect(CHARTER.beats.filter(b => b.dice).map(b => `${b.n}:${b.dice.moves[0]}:${b.dice.roll}`))
-      .toEqual(['2:make_a_connection:strong_hit', '10:strike:miss', '11:strike:burnable', '13:take_decisive_action:strong_hit', '22:forge_a_bond:strong_hit', '24:fulfill_your_vow:strong_hit']);
+      .toEqual(['2:make_a_connection:strong_hit', '8:finish_an_expedition:strong_hit', '11:strike:miss', '12:strike:burnable', '14:take_decisive_action:strong_hit', '23:forge_a_bond:strong_hit', '25:fulfill_your_vow:strong_hit']);
     for (const b of CHARTER.beats) for (const need of b.needs ?? []) expect(CHARTER.beats.some(x => x.id === need), `beat ${b.n} needs ${need}`).toBe(true);
+  });
+
+  // A beat's id is its name for good: the kept runs' beats, the facts'
+  // `plantedBy` and the beats' `needs` are told by it. Its number is where it
+  // stands now. The expedition was added eighth and took no other beat's id.
+  it('a beat keeps its id when another is added before it: the issue\'s twenty-six are b1…b26 still, in order, and the expedition is b7a', () => {
+    expect(CHARTER.beats.map(b => b.id)).toEqual([...Array.from({ length: 7 }, (_, i) => `b${i + 1}`), 'b7a', ...Array.from({ length: 19 }, (_, i) => `b${i + 8}`)]);
+    expect(new Set(CHARTER.beats.map(b => b.id)).size).toBe(27);
+    expect(CHARTER.beats.find(b => b.id === 'b7a')).toMatchObject({ n: 8, session: 2, check: { type: 'expedition', finished: true } });
+    expect(CHARTER.beats.find(b => b.id === 'b8')).toMatchObject({ n: 9, check: { type: 'arrived', settlement: 'Bleakhold Station' } });
+    expect(CHARTER.facts.filter(f => f.plantedBy).map(f => `${f.id}:${f.plantedBy}:${CHARTER.beats.find(b => b.id === f.plantedBy).check.type}`))
+      .toEqual(['F5:b8:arrived', 'F6:b16:corrected', 'F7:b18:renamed']);
   });
 
   it('its facts are the issue\'s — a possession, a name, a handover, a promise, the ship, a correction, a rename — each with what refuses it', () => {
@@ -1218,7 +1231,7 @@ describe('the long-haul charter', () => {
   });
 
   it('every question of a set is in the beat that asks it, word for word — and the planted lines hold their facts', () => {
-    for (const [set, n] of [['A', 7], ['B', 20], ['C', 25]]) {
+    for (const [set, n] of [['A', 7], ['B', 21], ['C', 26]]) {
       const tell = CHARTER.beats.find(b => b.n === n).tell;
       for (const f of CHARTER.facts) for (const p of f.probes.filter(x => x.set === set)) expect(tell, `${p.id} in beat ${n}`).toContain(p.ask);
     }
@@ -1236,6 +1249,14 @@ describe('the long-haul charter', () => {
 });
 
 // ── the first live run, kept as a replay ─────────────────────────────────────
+
+/**
+ * Each beat's check by the beat's id — the current charter's held against a
+ * kept run's by the beats that run had. A beat added since (the expedition,
+ * `b7a`) is no part of a run made before it, and a beat's number is only
+ * where it stands now.
+ */
+const checksById = (beats, among = beats) => Object.fromEntries(beats.filter(b => among.some(x => x.id === b.id)).map(b => [b.id, b.check]));
 
 describe('the first live run of the long haul, kept as a replay (explorations/long-haul-live-20261123)', () => {
   const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261123');
@@ -1258,6 +1279,7 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
 
   it('expects what the corrected checks found in it: every beat done, no rule broken — and says it was scored again, and what the run first said', () => {
     expect(Object.keys(RUN.expected.beats)).toHaveLength(26);
+    expect(Object.keys(RUN.expected.beats), 'the beats it had: the expedition was added after it').toEqual(RUN.charter.beats.map(b => b.id));
     expect(Object.values(RUN.expected.beats).every(status => status === 'done')).toBe(true);
     expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
     expect(RUN.rescored.was).toMatchObject({ classification: 'product-failure' });
@@ -1266,7 +1288,7 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
     const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
     expect(RUN.charter.facts).toEqual(now.facts);
     expect(RUN.charter.baits).toEqual(now.baits);
-    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats, RUN.charter.beats));
   });
 
   it('holds what its review says of it, in the narrator\'s own recorded words', () => {
@@ -1322,7 +1344,7 @@ describe('the second live run of the long haul, kept as a replay (explorations/l
     const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
     expect(RUN.charter.facts).toEqual(now.facts);
     expect(RUN.charter.baits).toEqual(now.baits);
-    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats, RUN.charter.beats));
   });
 
   it('holds what its review says of it, in the recorded replies', () => {

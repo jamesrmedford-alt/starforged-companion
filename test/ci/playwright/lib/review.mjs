@@ -35,24 +35,31 @@ const spread = (values) => ({
 });
 
 /**
- * Each call kind's latency, and the time from a player's line to the first
- * narration that answers it.
+ * Each call kind's latency, and the time from what a player typed to the
+ * first narration that answers it — a line of play and a scene question
+ * (`@scene …`) apart. A scene question skips the pacing reader and the move
+ * path, so it is answered sooner; counted together, the third live run's
+ * sixteen questions (p50 3.6 s) made its fifteen lines of play (p50 6.0 s)
+ * look a second and more quicker than a player waited.
  *
  * @param {object} o
  * @param {Array<{ kind: string, ms?: number|null }>} o.requests — the module's calls, each with how long it took
  * @param {Array<{ step: string, action?: object, saidAt?: number|null, repliedAt?: number|null }>} o.actions
+ * @returns {{ calls: object, allCalls: object, lineToReply: object, sceneQuestionToReply: object, unanswered: string[] }}
+ *   `lineToReply` is lines of play alone
  */
 export function speedOf({ requests = [], actions = [] }) {
   const byKind = {};
   for (const r of requests) (byKind[r.kind] ??= []).push(r.ms);
-  const waits = actions
-    .filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!") && Number.isFinite(a.saidAt) && Number.isFinite(a.repliedAt))
-    .map(a => a.repliedAt - a.saidAt);
+  const typed = actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!") && Number.isFinite(a.saidAt));
+  const asksScene = (a) => /^@scene\b/i.test(String(a.action.text ?? "").trim());
+  const waits = (list) => list.filter(a => Number.isFinite(a.repliedAt)).map(a => a.repliedAt - a.saidAt);
   return {
     calls: Object.fromEntries(Object.entries(byKind).map(([kind, ms]) => [kind, spread(ms)])),
     allCalls: spread(requests.map(r => r.ms)),
-    lineToReply: spread(waits),
-    unanswered: actions.filter(a => a.action?.action === "say" && !String(a.action.text ?? "").startsWith("!") && Number.isFinite(a.saidAt) && !Number.isFinite(a.repliedAt)).map(a => a.step),
+    lineToReply: spread(waits(typed.filter(a => !asksScene(a)))),
+    sceneQuestionToReply: spread(waits(typed.filter(asksScene))),
+    unanswered: typed.filter(a => !Number.isFinite(a.repliedAt)).map(a => a.step),
   };
 }
 
@@ -256,6 +263,144 @@ export function repetitionOf(messages = []) {
   return out;
 }
 
+// ── refrains: what a session's narrations keep returning to ──────────────────
+
+/** Words that carry no image: a refrain is counted in the words that do. */
+const REFRAIN_STOP = new Set((`the a an and or but of to in on at for with from by as is are was were be been being it its this that these those
+you your yours she her hers he his him they them their there here then than so not no nor do does did done have has had having
+into onto over under up down out off away back again once more most some any each every all both one two three first last next
+when while where what which who whom whose why how if because though although until before after since still just only very too
+now never ever always also yet already even much many such own same other another mine ours can could would should
+will shall may might must about above below between through across against toward towards behind beside along around near
+says said say asks asked ask tells told tell like something nothing anything everything someone anyone`).split(/\s+/));
+/** A narration that ends on someone waiting, watching or holding still. */
+const REFRAIN_WAITS = new RegExp("\\b(wait(?:s|ed|ing)?|watch(?:es|ed|ing)?|listen(?:s|ed|ing)?|hold(?:s|ing)?\\s+(?:still|steady)|goes? (?:still|quiet)|"
+  + "gone (?:still|quiet)|silence|silent|pause[sd]?|does not (?:move|answer|look)|has not (?:moved|looked)|stays? (?:on|where)|"
+  + "hang(?:s|ing)?|linger(?:s|ed|ing)?|stops?|stopped|until you|for you to|to see what you)\\b", "i");
+/** The share of a session's narrations a word or a phrase must be in to be listed as a refrain. */
+export const REFRAIN_SHARE = 1 / 3;
+/** Fewer narrations than this are no session to count a refrain in. */
+const REFRAIN_MIN_NARRATIONS = 4;
+
+/** What may stand between a preposition and the word it places: "over the hatch", "under her slate". */
+const REFRAIN_ARTICLES = new Set(["the", "a", "an", "her", "his", "its", "your", "their", "that", "this"]);
+/** A preposition a phrase may open on, with one content word after it. */
+const REFRAIN_PREPOSITIONS = new Set(["over", "under", "at", "by", "in", "on", "from", "behind", "beside", "across", "against", "through", "above", "below", "toward", "towards", "into", "onto", "along", "around", "near", "past", "inside", "outside", "beyond"]);
+const refrainTokens = (text) => String(text ?? "").toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+const carries = (w) => w.length > 3 && !REFRAIN_STOP.has(w);
+const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; i++) { cur = hits.has(i) ? cur + 1 : 0; best = Math.max(best, cur); } return best; };
+
+/**
+ * What a run's narrations keep returning to, session by session (known-issues
+ * NARRATOR-REFRAINS). A note under each step cannot see it: in the third
+ * live run "hatch" was in 18 of session 3's 23 narrations — the speaker over
+ * the hatch, eleven narrations running — and in the second "Tamsin's chair
+ * creaks" closed seven of the last thirteen.
+ *
+ * For each session's narrations (the opening and closing scenes apart —
+ * `repetitionOf` compares those):
+ *
+ *   words    the content words (four letters or more, no common word), by
+ *            how many narrations hold each and the longest run of narrations
+ *            in a row that do;
+ *   phrases  two to four words side by side that end on a content word and
+ *            hold two — or begin on a preposition and hold one ("over the
+ *            hatch") — counted the same way; a phrase that is in no more
+ *            narrations than a longer one holding it is left to the longer;
+ *   endings  the narrations whose last two sentences leave someone waiting,
+ *            watching or still.
+ *
+ * `refrains` are the words and phrases in a third or more of the session's
+ * narrations (REFRAIN_SHARE), and at least three; `worst` is the one in the
+ * largest share of a session's, names apart (`name`: a word the session
+ * never writes without its capital). A count to start reading from: it finds
+ * what is said in the same words, not a device said in new ones each time.
+ *
+ * @param {Array<{ step: string, phase: string, narrator?: boolean, vignette?: string|null, text: string }>} messages
+ * @returns {{ sessions: object[], worst: object|null }}
+ */
+export function refrainsOf(messages = []) {
+  const byPhase = new Map();
+  for (const m of messages) {
+    if (!m.narrator || m.vignette || !/^session-/.test(String(m.phase ?? ""))) continue;
+    if (!byPhase.has(m.phase)) byPhase.set(m.phase, []);
+    byPhase.get(m.phase).push(m);
+  }
+  const sessions = [];
+  for (const [phase, narrations] of byPhase) {
+    const n = narrations.length;
+    const words = new Map();
+    const grams = new Map();
+    const hold = (map, key, i) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(i); };
+    // A name — a word the session never writes without its capital (Tamsin,
+    // Bleakhold) — is counted and said to be one: who a session is about is
+    // in most of its narrations, and is no refrain for that.
+    const lower = new Set(narrations.flatMap(m => String(m.text ?? "").match(/(?<![A-Za-z'’-])[a-z][a-z'’-]*/g) ?? []).map(t => t.replace(/['’]s$/, "")));
+    const isName = (what) => what.split(" ").filter(t => carries(t.replace(/['’]s$/, ""))).every(t => !lower.has(t.replace(/['’]s$/, "")));
+    narrations.forEach((m, i) => {
+      // A phrase does not run across a sentence's end.
+      for (const sentence of sentencesOf(m.text)) {
+        const toks = refrainTokens(sentence);
+        // A word is counted with its possessive ("Tamsin's" is Tamsin); a phrase is kept as written.
+        for (const w of toks.map(t => t.replace(/['’]s$/, ""))) if (carries(w)) hold(words, w, i);
+        for (let size = 2; size <= 4; size++) {
+          for (let j = 0; j + size <= toks.length; j++) {
+            const g = toks.slice(j, j + size);
+            if (!carries(g[size - 1])) continue;
+            const content = g.filter(carries).length;
+            // "galley lamp", "visitor at the hatch" — or "over the hatch": a
+            // place said the same way each time.
+            const whereItIs = size >= 3 && REFRAIN_PREPOSITIONS.has(g[0]) && g.slice(1, -1).every(w => REFRAIN_ARTICLES.has(w));
+            if (!((content >= 2 && carries(g[0])) || (content === 1 && whereItIs))) continue;
+            hold(grams, g.join(" "), i);
+          }
+        }
+      }
+    });
+    const floor = Math.max(3, Math.ceil(n * REFRAIN_SHARE - 1e-9));
+    const row = (what, hits) => ({
+      what, in: hits.size, of: n, share: Number((hits.size / n).toFixed(3)), run: longestRun(hits, n),
+      steps: [...new Set([...hits].sort((a, b) => a - b).map(i => narrations[i].step))], ...(isName(what) ? { name: true } : {}),
+    });
+    const byCount = (a, b) => b.in - a.in || b.run - a.run || a.what.localeCompare(b.what);
+    const wordRows = [...words].filter(([, hits]) => hits.size >= 3).map(([w, hits]) => row(w, hits)).sort(byCount);
+    // A phrase a longer one holds, in no more narrations than it: the longer says it.
+    const kept = [...grams].filter(([, hits]) => hits.size >= 3);
+    const phraseRows = kept
+      .filter(([g, hits]) => !kept.some(([longer, more]) => longer !== g && longer.length > g.length && ` ${longer} `.includes(` ${g} `) && more.size >= hits.size))
+      .map(([g, hits]) => row(g, hits)).sort(byCount);
+    const endings = narrations.map((m) => {
+      const plain = String(m.text ?? "").replace(/\*[^*]*\*\s*$/, "").trim();          // an offered move's aside is not the ending
+      const sentences = sentencesOf(plain);
+      const last = sentences.slice(-2).join(" ");
+      return { step: m.step, waiting: REFRAIN_WAITS.test(last), sentence: (sentences.at(-1) ?? "").slice(0, 160) };
+    });
+    const counted = n >= REFRAIN_MIN_NARRATIONS;
+    sessions.push({
+      phase, narrations: n, counted,
+      words: wordRows.slice(0, 20), phrases: phraseRows.slice(0, 20),
+      refrains: counted ? { words: wordRows.filter(r => r.in >= floor), phrases: phraseRows.filter(r => r.in >= floor) } : { words: [], phrases: [] },
+      endings: { waiting: endings.filter(e => e.waiting).length, of: n, steps: endings.filter(e => e.waiting).map(e => ({ step: e.step, sentence: e.sentence })) },
+    });
+  }
+  const worst = sessions.filter(x => x.counted).flatMap(x => [...x.refrains.words, ...x.refrains.phrases].filter(r => !r.name).map(r => ({ phase: x.phase, ...r })))
+    .sort((a, b) => b.share - a.share || b.in - a.in)[0] ?? null;
+  return { sessions, worst };
+}
+/** The scorecard's one line of refrainsOf. */
+function refrainsResult(r) {
+  const counted = r.sessions.filter(x => x.counted);
+  if (!counted.length) return "too few narrations in any session to count";
+  const own = (x) => [...x.refrains.words, ...x.refrains.phrases].filter(r => !r.name).length;
+  const total = counted.reduce((n, x) => n + own(x), 0);
+  const waiting = counted.reduce((n, x) => n + x.endings.waiting, 0);
+  const of = counted.reduce((n, x) => n + x.narrations, 0);
+  const w = r.worst;
+  return `${w ? `"${w.what}" in ${w.in} of ${w.phase}'s ${w.of} narrations (${w.run} in a row)` : "nothing in a third of any session's narrations"}; `
+    + `${total} word(s) and phrase(s), names apart, in a third or more of a session's narrations (${counted.map(x => `${x.phase}: ${own(x)}`).join(", ")}); `
+    + `${waiting} of ${of} narrations end on someone waiting, watching or still`;
+}
+
 // ── agency and friction ──────────────────────────────────────────────────────
 
 /**
@@ -406,6 +551,14 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
   };
 }
 
+/** The scorecard's one line of speedOf: a line of play's wait, and a scene question's, apart. */
+function speedResult(speed) {
+  const play = speed.lineToReply;
+  const scene = speed.sceneQuestionToReply ?? null;
+  return `a line of play to its reply: p50 ${secs(play.p50)}, p95 ${secs(play.p95)} (${play.n} lines)`
+    + (scene?.n ? `; a scene question to its answer: p50 ${secs(scene.p50)}, p95 ${secs(scene.p95)} (${scene.n})` : "");
+}
+
 /** The scorecard's one line of freeformOf. */
 function plainLinesResult(f) {
   const w = f.wanted;
@@ -464,6 +617,7 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       cost: costSplit(spend, { actions: actions.length, lines }),
       length: lengthOf(allCalls),
       repetition: repetitionOf(messages),
+      refrains: refrainsOf(messages),
       friction: frictionOf({ actions, beats, autopilot, messages }),
       agency: spokenFor(messages),
       slips: slipsOf(messages),
@@ -571,7 +725,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, friction = null, agency = [], slips = null, freeform = null }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, friction = null, agency = [], slips = null, freeform = null }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -594,7 +748,8 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ...(freeform ? [["Plain lines", plainLinesResult(freeform), "each line of play's reading, from the two readers' own replies; the move its beat wanted; a move's name looked for in the line", "medium: a count — whether a line should have been a move is the charter's say for its move beats only, and a named move is a phrase match, to be read"]] : []),
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
-      ["Speed", speed ? `a line to its reply: p50 ${secs(speed.lineToReply.p50)}, p95 ${secs(speed.lineToReply.p95)} (${speed.lineToReply.n} lines)` : "not recorded", "each call's latency; the time from a line to the first narration after it", "high"],
+      ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations, the opening and closing scenes apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
+      ["Speed", speed ? speedResult(speed) : "not recorded", "each call's latency; the time from a line of play, and from a scene question, to the first narration after it", "high"],
       ["Length", length ? Object.entries(length).filter(([, v]) => v.calls >= 3).sort((a, b) => Math.abs(b[1].charsPerAction) - Math.abs(a[1].charsPerAction)).slice(0, 2).map(([k, v]) => `${k}: ${v.charsPerAction >= 0 ? "+" : ""}${v.charsPerAction} chars/action`).join("; ") || "too few calls to fit" : "not recorded", "prompt size against the action number, per call kind", "high"],
       ["Caching", caching ? `${pct(caching.total.readShare)} of prompt tokens read from cache; saved ${usd(caching.total.savedUsd)}; ${caching.writesNeverRead.length} kind(s) write and never read` : "not recorded", "usage per call kind", "high"],
       ["Cost", cost ? `${usd(cost.total)} — the module ${usd(cost.module.usd)} (${pct(cost.module.share)}), the test's own models ${usd(cost.test.usd)} (${pct(cost.test.share)})` : "not recorded", "the budget's tally by role and the price table", "high for tokens; prices are entered by hand"],
@@ -619,10 +774,12 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
     out.push("## The fact ledger", "", table(["Fact", "Kind", "Planted", "Verdict", "Layer", "Refusals"],
       ledger.facts.map(f => [f.id, f.kind, f.plantedAt ?? "never", (f.lostAt ?? []).length ? `${f.verdict} (at ${f.lostAt.join(", ")})` : f.verdict, f.failingLayer ?? "", f.refusals.length])), "");
     out.push("### Probes", "", table(["Fact", "Probe", "At", "Distance", "Stored", "In the prompt", "In the answer", "Counted", "Answer"],
+      // A question about a fact that was never planted is shown as asked,
+      // with its answer, and scored at no layer.
       ledger.facts.flatMap(f => f.probes.map(p => [f.id, p.id, p.asked ? p.step : "not asked", p.distance != null ? `${p.distance} (${p.band})` : "",
-        p.asked ? (p.stored ? "yes" : "no") : "", p.asked ? (p.inPrompt ? p.promptSections.join(", ") : "no") : "",
-        p.asked ? (p.refused ? "REFUSED" : p.inAnswer ? "yes" : "no") : "",
-        p.asked ? (p.counted ? "yes" : p.named ? "no — the question named it" : `no — restated first by ${p.primedBy?.by} (${p.primedBy?.step})`) : "",
+        p.asked && !p.notPlanted ? (p.stored ? "yes" : "no") : "", p.asked && !p.notPlanted ? (p.inPrompt ? p.promptSections.join(", ") : "no") : "",
+        p.asked && !p.notPlanted ? (p.refused ? "REFUSED" : p.inAnswer ? "yes" : "no") : "",
+        p.asked ? (p.counted ? "yes" : p.notPlanted ? "no — the fact was never planted" : p.named ? "no — the question named it" : `no — restated first by ${p.primedBy?.by} (${p.primedBy?.step})`) : "",
         p.answerExcerpt ?? ""]))), "");
     const restated = ledger.facts.flatMap(f => f.restatements.map(r => [f.id, r.step, r.scene, r.inItsPrompt ? r.promptSections.join(", ") : "not in its prompt", r.excerpt ?? ""]));
     if (restated.length) out.push("### Restated unasked", "", table(["Fact", "At", "Scene", "In that scene's own prompt", "Text"], restated), "");
@@ -650,6 +807,19 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
     out.push(`## Repetition by content — ${kind}`, "", table(["Earlier", "Later", "Content words shared", "Who is doing what, again"],
       r.pairs.map(p => [p.earlier, p.later, `${p.shared} of ${p.words} (${pct(p.sharedShare)})`, p.repeatedActs.map(a => `${a.who}: ${a.doing.join(" ")}`).join("; ")])), "");
   }
+  if (refrains?.sessions.some(x => x.counted)) {
+    out.push("## Refrains — what each session's narrations keep returning to", "",
+      "The words and the phrases that are in a third or more of a session's narrations (and at least three), with the longest run of narrations in a row that hold each — and how the narrations end. A name (a word the session never writes without its capital) is listed as one: who a session is about is no refrain. The opening and closing scenes are apart (above). A count to start reading from: what is said in the same words.", "");
+    for (const x of refrains.sessions.filter(y => y.counted)) {
+      const rows = [...x.refrains.words.map(r => ["word", r]), ...x.refrains.phrases.map(r => ["phrase", r])];
+      out.push(`### ${x.phase} — ${x.narrations} narrations`, "");
+      if (rows.length) out.push(table(["", "What", "In", "Longest run", "At"], rows.map(([kind, r]) => [r.name ? "name" : kind, r.what, `${r.in} of ${r.of} (${pct(r.share)})`, r.run, r.steps.join(" ")])), "");
+      else out.push("Nothing is in a third of them.", "");
+      const below = x.phrases.filter(r => !x.refrains.phrases.includes(r)).slice(0, 6);
+      if (below.length) out.push(`Phrases in fewer: ${below.map(r => `"${r.what}" ${r.in} (${r.steps.join(" ")})`).join("; ")}.`, "");
+      out.push(`Endings that leave someone waiting, watching or still: ${x.endings.waiting} of ${x.endings.of}${x.endings.steps.length ? ` — ${x.endings.steps.map(e => `${e.step}: …${cell(e.sentence.slice(-90))}`).join("; ")}` : ""}.`, "");
+    }
+  }
   if (agency.length) out.push("## Spoken for the character", "", table(["At", "Scene", "Sentence"], agency.map(a => [a.step, a.scene ?? "", a.sentence])), "");
   const slipRows = slips ? [
     ...slips.directives.map(s => ["an instruction written as prose", s.step, s.scene ?? "", s.sentence]),
@@ -674,7 +844,9 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
   }
   if (speed) out.push("## Speed", "", table(["Call kind", "Calls", "p50", "p95", "Longest"],
     Object.entries(speed.calls).map(([k, v]) => [k, v.n, secs(v.p50), secs(v.p95), secs(v.max)])), "",
-  `A line to its reply: p50 ${secs(speed.lineToReply.p50)}, p95 ${secs(speed.lineToReply.p95)}, longest ${secs(speed.lineToReply.max)} over ${speed.lineToReply.n} lines.${speed.unanswered.length ? ` Unanswered: ${speed.unanswered.join(", ")}.` : ""}`, "");
+  `A line of play to its reply: p50 ${secs(speed.lineToReply.p50)}, p95 ${secs(speed.lineToReply.p95)}, longest ${secs(speed.lineToReply.max)} over ${speed.lineToReply.n} lines.`
+    + (speed.sceneQuestionToReply?.n ? ` A scene question to its answer: p50 ${secs(speed.sceneQuestionToReply.p50)}, p95 ${secs(speed.sceneQuestionToReply.p95)}, longest ${secs(speed.sceneQuestionToReply.max)} over ${speed.sceneQuestionToReply.n}.` : "")
+    + (speed.unanswered.length ? ` Unanswered: ${speed.unanswered.join(", ")}.` : ""), "");
   if (length) out.push("## Prompt length against the action number", "", table(["Call kind", "Calls", "First", "Last", "Largest", "Chars per action"],
     Object.entries(length).map(([k, v]) => [k, v.calls, v.first, v.last, v.max, v.charsPerAction])), "");
   if (caching) {
