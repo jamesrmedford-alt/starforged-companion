@@ -267,12 +267,20 @@ export function stakesShown(stakes) {
  * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; Sojourn's —
  * SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE).
  *
+ * A weak hit whose cost is its player's choice, not yet made (`openChoice`,
+ * resultUpgrade.js withUnansweredCards — Heal's "Lose Momentum (-2) OR
+ * Sacrifice Resources (-2)"), delivers the hit and leaves the cost to the
+ * block that says how (formatOpenChoiceBlock): told to deliver the hit "with
+ * the cost … the move outcome names", the narration paid one before the card
+ * had asked (the long haul's third live run, a59).
+ *
  * @param {Object|null} stakes — the resolution's
  * @param {string|null} outcome — "strong_hit" | "weak_hit" | "miss"
- * @param {{ priceChoice?: { status?: string, instead?: string }|null }} [opts] — the resolution's price choice, as it stands
+ * @param {{ priceChoice?: { status?: string, instead?: string }|null, openChoice?: Object|null }} [opts] — the
+ *   resolution's price choice, as it stands, and the cost still its player's to choose
  * @returns {string}
  */
-export function formatStakesBlock(stakes, outcome, { priceChoice = null } = {}) {
+export function formatStakesBlock(stakes, outcome, { priceChoice = null, openChoice = null } = {}) {
   const shown = stakesShown(stakes);
   if (!shown.length) return "";
   const lines = ["## STAKES STATED BEFORE THE ROLL", "", "The player saw these before rolling:"];
@@ -283,6 +291,7 @@ export function formatStakesBlock(stakes, outcome, { priceChoice = null } = {}) 
   const miss = shown.some(s => s.kind === "miss");
   let deliver = "";
   if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
+  else if (outcome === "weak_hit" && hit && openChoice) deliver = "This is a weak hit: deliver the hit as stated. Its cost is the player's choice, and is not chosen yet — the block on the cost, below, says how to leave it.";
   else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
   else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the block on the price, below, says where it stands.`;
   else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
@@ -383,5 +392,51 @@ export function formatPriceChoiceBlock(priceChoice) {
     "",
     `${told.offered}${price ? ` The price it offers: ${price}` : ""}`,
     told.show,
+  ].join("\n");
+}
+
+// What no cost still to be chosen may be narrated as, whichever it turns out to be.
+const NO_COST_PAID = "nothing spent, used up, run short, lost or damaged, no harm or strain taken, and no time or ground lost";
+
+/**
+ * The narrator's block for a result whose cost is its player's choice, not
+ * yet made when the narration is written (`openChoice` — resultUpgrade.js
+ * withUnansweredCards; known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN): the
+ * outcome line names the costs it may be ("Lose Momentum (-2) OR Sacrifice
+ * Resources (-2)"), the card that asks which posts after the narration, and
+ * the narration chose for the player — "the cracked tube gives out half-used,
+ * and the tape runs short", before Lose Momentum or Sacrifice Resources was
+ * picked (the long haul's third live run, a59). The narration tells what
+ * every option has in common and stops short of what differs: the cost.
+ * '' with no such choice open.
+ *
+ * @param {{ kind?: string, options?: string[], amount?: number|null, count?: number|null }|null} openChoice
+ * @returns {string}
+ */
+export function formatOpenChoiceBlock(openChoice) {
+  if (!openChoice || typeof openChoice !== "object") return "";
+  const options = (Array.isArray(openChoice.options) ? openChoice.options : [])
+    .map(o => stakesLine(o)).filter(Boolean);
+  if (openChoice.kind === "any") {
+    const amount = Number.isFinite(openChoice.amount) && openChoice.amount > 0 ? ` (-${openChoice.amount})` : "";
+    const times  = Number.isFinite(openChoice.count) && openChoice.count > 1 ? `${openChoice.count} suffer moves` : "a suffer move";
+    return [
+      "## THE COST IS THE PLAYER'S CHOICE",
+      "",
+      `This result costs ${times}${amount}, and which is the player's to choose: momentum, health, spirit, supply, ` +
+      "a companion's health or the vehicle's integrity. A card asks them after this narration; they have not chosen.",
+      "Show the trouble that brings the cost — what goes wrong, what presses on them — and stop before saying what it takes: " +
+      `${NO_COST_PAID}. Which of those it is, the player decides. Never mention the card or the choice.`,
+    ].join("\n");
+  }
+  if (!options.length) return "";
+  return [
+    "## THE COST IS THE PLAYER'S CHOICE",
+    "",
+    "Part of this result is the player's to choose, on a card they have not answered yet. It offers:",
+    ...options.map(o => `- ${o}`),
+    "What every option has in common has happened: narrate it. Where they differ is the cost, and no cost has been paid: " +
+    `narrate none of them as taken — ${NO_COST_PAID}. Bring the beat to where the cost falls due, and stop there. ` +
+    "Never mention the card or the choice.",
   ].join("\n");
 }

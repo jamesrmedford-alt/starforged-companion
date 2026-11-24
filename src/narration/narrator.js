@@ -79,7 +79,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
-import { priceChoiceStatus } from '../moves/resultUpgrade.js';
+import { priceChoiceStatus, withUnansweredCards } from '../moves/resultUpgrade.js';
 // What the long haul's third live run turned up (a line of its own, apart from the block above).
 import { formatOracleAnswerRule } from './narratorPrompt.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
@@ -1511,6 +1511,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
 function movePlanRequests(resolution, campaignState, refBase) {
   let move = resolution;
   if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
+  // What the table has still to answer about the result — a cost that is the
+  // player's choice, not yet chosen: its narration stops short of it.
+  move = withUnansweredCards(move);
   if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
   if (!skeletonsEnabled()) return { resolution: move, planRequests: [], planIds: [] };
   const asked = forResolution([move?.upgradeOf, move?._id].find(id => typeof id === 'string' && id) ?? null,
@@ -1724,6 +1727,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const entries = roundNarrationEntries(round)
     .map(e => (e.input?.priceChoice
       ? { ...e, input: settlePriceChoice(e.input, priceChoiceStatus(e.input.resolutionId ?? null)) } : e))
+    // …and so is a cost still its player's to choose (narrateResolution's rule).
+    .map(e => (e.input?.kind === 'move' ? { ...e, input: withUnansweredCards(e.input) } : e))
     .map(e => (globalThis.game?.user?.isGM === true
       ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };

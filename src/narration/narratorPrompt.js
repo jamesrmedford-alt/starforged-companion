@@ -5,7 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock, formatPriceChoiceBlock } from '../moves/stakes.js';
+import { formatStakesBlock, formatPriceChoiceBlock, formatOpenChoiceBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -3132,10 +3132,16 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // Waypoint's match), is told as it stands (issue #364
   // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
   const priceChoice = resolution?.priceChoice ?? null;
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice });
+  // A cost that is its player's choice and not chosen yet (`openChoice` —
+  // narrator.js reads the table's cards, resultUpgrade.js withUnansweredCards):
+  // the narration stops short of it (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
+  const openChoice = resolution?.openChoice ?? null;
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice, openChoice });
   if (stakes) parts.push(stakes);
   const priceBlock = formatPriceChoiceBlock(priceChoice);
   if (priceBlock) parts.push(priceBlock);
+  const choiceBlock = formatOpenChoiceBlock(openChoice);
+  if (choiceBlock) parts.push(choiceBlock);
 
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
@@ -3249,10 +3255,14 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
       // The stakes shown before this entry's roll (issue #353 R1), and where
       // a price that is its player's choice stands (issue #364).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null, { priceChoice: input.priceChoice ?? null });
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null,
+        { priceChoice: input.priceChoice ?? null, openChoice: input.openChoice ?? null });
       if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
       const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
       if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
+      // …and a cost still its player's to choose (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
+      const choiceBlock = formatOpenChoiceBlock(input.openChoice ?? null);
+      if (choiceBlock) lines.push(choiceBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
       if (input.isMatch === true) lines.push(MATCH_TOLD_AS_TWIST);

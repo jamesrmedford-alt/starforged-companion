@@ -1553,6 +1553,95 @@ export function priceChoiceStatus(resolutionId) {
   return made.includes("paid") ? "paid" : "pending";
 }
 
+// The meters an option's step takes from when its number is below zero.
+const COST_METERS = Object.freeze(["momentum", "health", "spirit", "supply", "integrity", "companionHealth"]);
+
+/** Whether one step of a choice option takes something from the character: a suffer move, a loss, a price, a complication. */
+function stepCosts(step) {
+  if (!step || typeof step !== "object") return false;
+  if (typeof step.suffer === "string" && step.suffer) return true;
+  if (step.kind === "any" || step.complication === true || step.route === "pay_the_price") return true;
+  return COST_METERS.some(k => Number(step[k]) < 0);
+}
+
+/**
+ * Whether a result's choice puts a cost in the player's hands: "Make a suffer
+ * move" (`kind: "any"`), or an enumerated choice one of whose options — or a
+ * step of its `chain` — is a cost (Heal's weak hit: the recovery, "then Lose
+ * Momentum (-2)" or "then Sacrifice Resources (-2)"). A choice between gains
+ * alone (+2 momentum, or +1 on the next move) offers none, and neither does a
+ * hit's recovery whose options differ only by what the sheet allows.
+ *
+ * @param {Object|null} prompt — a sufferPrompt (resolver.js mapConsequences)
+ * @returns {boolean}
+ */
+function promptOffersCost(prompt) {
+  if (prompt?.kind === "any") return true;
+  return (Array.isArray(prompt?.options) ? prompt.options : [])
+    .some(o => (Array.isArray(o?.chain) ? o.chain : [o]).some(stepCosts));
+}
+
+/**
+ * The cost of a result that is still its player's to choose when the result
+ * is narrated (known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN — the long
+ * haul's third live run, a59: a Heal weak hit's narration spent the supplies,
+ * "the cracked tube gives out half-used, and the tape runs short", and the
+ * card under it then asked: Lose Momentum, or Sacrifice Resources?). Read
+ * from the table's cards, as priceChoiceStatus reads a price's: the outcome's
+ * own choice card posts after a free-flow narration, before a held result's
+ * and before a Batch Mode round's, so it may not be there yet, or may be
+ * answered already. Open when no card of the outcome has a pick and the
+ * choice — the first such card's, else the resolution's own
+ * (`consequences.sufferPrompt`) — offers a cost. Null once a pick is made, for
+ * a choice that costs nothing, and for a miss's price that is a choice of its
+ * own (`priceChoice` — its block tells that one).
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {{ kind: "any"|"enumerated", options: string[], amount: number|null, count: number|null }|null}
+ */
+function openCostChoice(input) {
+  if (!input || typeof input !== "object" || input.priceChoice) return null;
+  const upgradeOf = typeof input.upgradeOf === "string" && input.upgradeOf ? input.upgradeOf : null;
+  const ids = [upgradeOf, input._id, input.resolutionId].filter(id => typeof id === "string" && id);
+  // The upgraded outcome's own choice card carries the original's id and
+  // `upgraded` (reconcileChoices); a price's cards are no choice of the outcome.
+  const cards = ids.length ? allMessages().map(m => m?.flags?.[MODULE_ID]).filter(f =>
+    f?.sufferCard === true && f.sufferPrompt && ids.includes(f.resolutionId)
+    && f.superseded !== true && f.priceCard !== true && (f.upgraded === true) === !!upgradeOf) : [];
+  if (cards.some(f => chosen(f) || (Array.isArray(f.pickedSuffers) && f.pickedSuffers.length > 0))) return null;
+  const prompt = cards[0]?.sufferPrompt ?? input.consequences?.sufferPrompt ?? null;
+  if (!prompt || !promptOffersCost(prompt)) return null;
+  return {
+    kind:    prompt.kind === "any" ? "any" : "enumerated",
+    options: (Array.isArray(prompt.options) ? prompt.options : []).map(o => String(o?.label ?? "").trim()).filter(Boolean),
+    amount:  Number.isFinite(Number(prompt.amount)) && prompt.kind === "any" ? Number(prompt.amount) : null,
+    count:   Number.isFinite(Number(prompt.count)) && prompt.kind === "any" ? Number(prompt.count) : null,
+  };
+}
+
+/**
+ * A result as its narration takes it, with what the table has still to
+ * answer about it (narrator.js — beside settlePriceChoice): `openChoice`, the
+ * cost that is its player's to choose and not yet chosen (openCostChoice).
+ * The narration is told to stop short of it (stakes.js formatOpenChoiceBlock).
+ * The input itself when nothing is open. Any client may ask: the cards are
+ * the table's. Never throws — a card that cannot be read leaves the result as
+ * it was.
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {Object|null}
+ */
+export function withUnansweredCards(input) {
+  if (!input || typeof input !== "object") return input;
+  try {
+    const openChoice = openCostChoice(input);
+    return openChoice ? { ...input, openChoice } : input;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the table's cards could not be read for the narration:`, err?.message ?? err);
+    return input;
+  }
+}
+
 /**
  * Which upgrade replaced a resolution's result — its move card's claimed burn
  * or improvement — or null. A pick on a choice card of the superseded outcome
