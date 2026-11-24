@@ -14,7 +14,9 @@
  * Now the narration names its PC (credit the roller — CLAUDE.md): a move's
  * roller and a paced line's speaker (`actorId`), and for a round the acting
  * character the scribe names among the round's characters (`characters`).
- * The first PC is only the fallback for a narration that names none.
+ * The first PC is only the fallback for a narration that names none. Since
+ * issue #382 slice 4 the beat is read from the session record
+ * (record/chronicleView.js scribeArgsFor), the scribe's one trigger.
  */
 
 /* global makeTestActor */
@@ -29,6 +31,10 @@ vi.mock('../../src/character/chronicle.js', async (importOriginal) => ({
 import { apiPost } from '../../src/api-proxy.js';
 import { requestChronicleEdit } from '../../src/character/chronicle.js';
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
+import { scribeArgsFor } from '../../src/record/chronicleView.js';
+import { readRecord } from '../../src/record/read.js';
+import { recordedEvent, recordSourceOf } from '../helpers/sessionRecordSeed.js';
+import { productionSources } from '../helpers/sourceScan.js';
 
 const MODULE_ID = 'starforged-companion';
 const STATE = { currentSessionId: 'session-1', sessionNumber: 1, characterIds: [] };
@@ -101,12 +107,29 @@ describe('CHRONICLE-FIRST-PC — the automatic entry goes to the narration\'s ow
   });
 });
 
-describe('CHRONICLE-FIRST-PC — the narrator passes its PC to the writer', () => {
-  it('every scheduleChronicleEntry call in the narrator names its PC or the round\'s characters', async () => {
-    const fs = await import('node:fs');
-    const src = fs.readFileSync(new URL('../../src/narration/narrator.js', import.meta.url), 'utf8');
-    const calls = [...src.matchAll(/scheduleChronicleEntry\(\{([\s\S]*?)\}\);/g)].map(m => m[1]);
-    expect(calls.length).toBeGreaterThanOrEqual(5);
-    for (const body of calls) expect(body).toMatch(/actorId:|characters:/);
+describe('CHRONICLE-FIRST-PC — the record hands the writer its PC (issue #382 slice 4)', () => {
+  it('the scribe has one trigger, the session record — no narration path schedules it itself', () => {
+    const callers = productionSources()
+      .filter(s => s.file !== 'src/character/chronicleWriter.js' && /\bscheduleChronicleEntry\s*\(/.test(s.mask))
+      .map(s => s.file);
+    expect(callers).toEqual(['src/record/chronicleView.js']);
+  });
+
+  it('a move\'s beat names its roller, a paced line\'s its speaker, a round its acting characters', () => {
+    const events = [
+      recordedEvent('s-1', 'line', { who: { actor: 'pc-ren' }, ref: { line: 'm-1' }, d: { via: 'typed' }, text: 'I duck the blade.' }),
+      recordedEvent('s-1', 'move.resolved', { who: { actor: 'pc-ren' }, ref: { res: 'r-1' }, d: { moveId: 'face_danger', moveName: 'Face Danger', outcome: 'miss' } }),
+      recordedEvent('s-1', 'narration', { who: { actor: 'pc-ren' }, ref: { nar: 'n-1', res: 'r-1' }, d: { mode: 'move', actorId: 'pc-ren' }, text: 'The blade bites.' }),
+      recordedEvent('s-1', 'line', { who: { actor: 'pc-ash' }, ref: { line: 'm-2' }, d: { via: 'typed' }, text: 'I keep the promise.' }),
+      recordedEvent('s-1', 'narration', { who: { actor: 'pc-ash' }, ref: { nar: 'n-2' }, d: { mode: 'paced', actorId: 'pc-ash' }, text: 'Ash nods.' }),
+      recordedEvent('s-1', 'line', { who: { actor: 'pc-kira' }, ref: { round: 'rd-1' }, d: { via: 'round' }, text: 'I cover the door.' }),
+      recordedEvent('s-1', 'line', { who: { actor: 'pc-ren' }, ref: { round: 'rd-1' }, d: { via: 'round' }, text: 'I talk him down.' }),
+      recordedEvent('s-1', 'narration', { ref: { nar: 'n-3', round: 'rd-1' }, d: { mode: 'round' }, text: 'Kira covers the door while Ren talks.' }),
+    ];
+    const read = readRecord({ session: 's-1' }, recordSourceOf('s-1', events, { names: { 'pc-kira': 'Kira', 'pc-ren': 'Ren', 'pc-ash': 'Ash' } }));
+    const [move, paced, round] = events.filter(e => e.k === 'narration').map(e => scribeArgsFor(e, read));
+    expect(move).toMatchObject({ kind: 'move', actorId: 'pc-ren' });
+    expect(paced).toMatchObject({ kind: 'paced', actorId: 'pc-ash' });
+    expect(round.characters.map(c => c.actorId)).toEqual(['pc-kira', 'pc-ren']);
   });
 });

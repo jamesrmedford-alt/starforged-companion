@@ -13,9 +13,10 @@
  *   - propagateRetraction(truth, campaignState) — on Strike / Replace: drop
  *     the subject entity's same-session tier details that state the fact,
  *     take same-session lore that states it about the same subject out of
- *     confirmed canon, drop the same-session Chronicle entries the scribe
- *     wrote stating it (STRIKE-CHRONICLE), and mark the rolling summary for
- *     a regen (markSummaryForRegen).
+ *     confirmed canon. The session summary and the Chronicle's automatic
+ *     entries are views of the session record, reached by the strike's
+ *     `truth.struck` there (issue #382: record/summaryView.js,
+ *     record/chronicleView.js — STRIKE-CHRONICLE).
  *   - rememberSessionRetractions(campaignState) — at scene end: keep the
  *     scene's bare strikes for the rest of the session, so the CORRECTED
  *     block and the summary prompt still name them.
@@ -101,16 +102,17 @@ export function factsOverlap(a, b) {
 
 /**
  * Carry a Strike (or the struck half of a Replace) to the stores that copied
- * the fact. Mutates campaignState (the summary's regen mark); the caller
- * persists it with the ledger. Runs on the canonical GM — every caller is a
+ * the fact: an entity's tier details, the session's lore. The session summary
+ * and the Chronicle are views of the session record, reached by its
+ * `truth.struck` (issue #382). Runs on the canonical GM — every caller is a
  * GM-side correction path. Fail-open: never throws.
  *
  * @param {Object} truth          — the struck sceneTruths entry
  * @param {Object} campaignState
- * @returns {Promise<{ tierDetails: number, lore: number, chronicle: number }>}
+ * @returns {Promise<{ tierDetails: number, lore: number }>}
  */
 export async function propagateRetraction(truth, campaignState) {
-  const out = { tierDetails: 0, lore: 0, chronicle: 0 };
+  const out = { tierDetails: 0, lore: 0 };
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return out;
   const sessionId = truth.sessionId ?? campaignState?.currentSessionId ?? null;
@@ -135,22 +137,13 @@ export async function propagateRetraction(truth, campaignState) {
     } catch (err) {
       console.warn(`${MODULE_ID} | retraction: lore propagation failed:`, err?.message ?? err);
     }
-    // The session's Chronicle entries the scribe wrote stating it: the
-    // Chronicle feeds the campaign recap and, pinned, the CHARACTER block
-    // (STRIKE-CHRONICLE). Matched as lore is; a pinned or player-edited
-    // entry stays.
-    try {
-      const { retractStruckChronicle } = await import('../character/chronicle.js');
-      const label = subjectLabel(truth.subject);
-      out.chronicle = await retractStruckChronicle(sessionId,
-        (entry) => loreStatesStrike({ text: entry?.text ?? '' }, truth.subject, label, fact));
-    } catch (err) {
-      console.warn(`${MODULE_ID} | retraction: Chronicle propagation failed:`, err?.message ?? err);
-    }
   }
 
   // The session summary that told it is stale by the strike's `truth.struck`
-  // on the session record, and made again (record/summaryView.js, issue #382).
+  // on the session record, and made again (record/summaryView.js, issue #382);
+  // the Chronicle entries written from the beat that set it are taken back by
+  // the same event (record/chronicleView.js — STRIKE-CHRONICLE, by the
+  // narration that set the truth, not by its words).
   return out;
 }
 

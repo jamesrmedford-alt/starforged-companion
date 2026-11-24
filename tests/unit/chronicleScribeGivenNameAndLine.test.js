@@ -19,8 +19,10 @@
  * the player's line established.
  *
  * Two parts: the writer's message (writeChronicleEntry), and the wiring —
- * the real narratePacedInput / narrateResolution / narrateRound, whose scribe
- * request is read off the (mocked) API boundary.
+ * since issue #382 slice 4 the session record: a narration of play written to
+ * it schedules the scribe for its beat (record/chronicleView.js), whose line
+ * is the record's own `line` event; the scribe request is read off the
+ * (mocked) API boundary.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -50,8 +52,10 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 });
 
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
-import { narratePacedInput, narrateResolution, narrateRound } from '../../src/narration/narrator.js';
+import { registerChronicleScribe } from '../../src/record/chronicleView.js';
+import { recordEvent, recordNarrationsRemoved, recordSettled, _resetRecordForTests } from '../../src/record/record.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -155,13 +159,16 @@ describe('issue #374 A2 — what the Chronicle scribe is sent', () => {
   });
 });
 
-describe('issue #374 A2 — the narrator hands the scribe the line (the real narration paths)', () => {
-  const state = () => game.settings.get(MODULE_ID, 'campaignState');
-  /** The scribe runs about two seconds after its narration. */
+describe('issue #374 A2 — the record hands the scribe the line (its one trigger, issue #382 slice 4)', () => {
+  /** The scribe runs about two seconds after its narration is written to the record. */
   const scribeRan = (n = 1) => vi.waitFor(() => expect(scribeRequests.length).toBeGreaterThanOrEqual(n), { timeout: 6000, interval: 100 });
+  const asked = (text) => scribeRequests.find(r => r.message.includes(text))?.message ?? '';
+  const who = { actor: 'pc-mira' };
+  let journals;
 
   beforeEach(() => {
-    global.game.messages = { get contents() { return ChatMessage._created; } };
+    journals = installJournalMock();
+    _resetRecordForTests();
     global.game.users = Object.assign([{ id: 'gm-1', isGM: true, active: true }], {
       get: (id) => (id === 'gm-1' ? { id: 'gm-1', isGM: true, active: true } : null),
     });
@@ -172,42 +179,50 @@ describe('issue #374 A2 — the narrator hands the scribe the line (the real nar
     });
     game.actors._reset();
     game.actors._set('pc-mira', makeTestActor({ id: 'pc-mira', name: 'Mira Kestrel' }));
+    registerChronicleScribe();
     silenceConsoleErrors();
   });
+  afterEach(() => journals.restore());
 
   it('a paced line, a move and a round each reach the scribe with the character and the player\'s words', async () => {
-    await narratePacedInput(LINE, state(), { speakerActorId: 'pc-mira' });
-    await scribeRan(1);
-    expect(scribeRequests[0].message).toContain('Character: Mira Kestrel');
-    expect(scribeRequests[0].message).toContain(`## PLAYER'S LINE\n\n${LINE}`);
-
-    await narrateResolution({
-      _id: 'res-1', moveId: 'set_a_course', moveName: 'Set a Course', outcome: 'strong_hit', outcomeLabel: 'Strong hit',
-      playerNarration: 'I set a course for Bleakhold Station.',
-    }, state(), {});
-    await scribeRan(2);
-    expect(scribeRequests[1].message).toContain('Move: set_a_course');
-    expect(scribeRequests[1].message).toContain('Character: Mira Kestrel');
-    expect(scribeRequests[1].message).toContain('## PLAYER\'S LINE\n\nI set a course for Bleakhold Station.');
-
-    const round = {
-      id: 'round-1', number: 1, sessionId: 'sess-1', acting: ['gm-1'],
-      entries: { 'gm-1': { userId: 'gm-1', actorId: 'pc-mira', actorName: 'Mira Kestrel', userName: 'GM', text: 'I hold the line.' } },
-    };
-    expect((await narrateRound({ round, campaignState: state() }))?.posted).toBe('card');
+    // As the table records them: the typed line (index.js), the move (the pipeline), the card (cards.js).
+    recordEvent('line', { who, ref: { line: 'm-1' }, d: { via: 'typed' }, text: LINE });
+    recordEvent('narration', { who, ref: { nar: 'nar-paced' }, d: { mode: 'paced', actorId: 'pc-mira' }, text: PROSE });
+    recordEvent('line', { who, ref: { line: 'm-2' }, d: { via: 'typed' }, text: 'I set a course for Bleakhold Station.' });
+    recordEvent('move.resolved', { who, ref: { res: 'res-1' }, d: { moveId: 'set_a_course', moveName: 'Set a Course', statUsed: 'supply', outcome: 'strong_hit' } });
+    recordEvent('narration', { who, ref: { nar: 'nar-move', res: 'res-1' }, d: { mode: 'move', actorId: 'pc-mira' }, text: 'Bleakhold Station swells ahead.' });
+    recordEvent('line', { who, ref: { round: 'round-1' }, d: { via: 'round' }, text: 'I hold the line.' });
+    recordEvent('narration', { ref: { nar: 'nar-round', round: 'round-1' }, d: { mode: 'round' }, text: 'Mira holds the line.' });
+    await recordSettled();
     await scribeRan(3);
-    expect(scribeRequests[2].message).toContain('Character: Mira Kestrel');
-    expect(scribeRequests[2].message).toContain('## PLAYER\'S LINE\n\nI hold the line.');
+
+    expect(asked(PROSE)).toContain('Character: Mira Kestrel');
+    expect(asked(PROSE)).toContain(`## PLAYER'S LINE\n\n${LINE}`);
+    expect(asked('Bleakhold Station swells ahead.')).toContain('Move: set_a_course');
+    expect(asked('Bleakhold Station swells ahead.')).toContain('Character: Mira Kestrel');
+    expect(asked('Bleakhold Station swells ahead.')).toContain('## PLAYER\'S LINE\n\nI set a course for Bleakhold Station.');
+    expect(asked('Bleakhold Station swells ahead.')).toContain('## FACTS\n\n- Set a Course (+supply), strong hit');
+    expect(asked('Mira holds the line.')).toContain('Character: Mira Kestrel');
+    expect(asked('Mira holds the line.')).toContain('## PLAYER\'S LINE\n\nI hold the line.');
   }, 30_000);
 
-  it('a Burn Momentum re-narration carries a marker, not a line: the scribe is shown none', async () => {
-    await narrateResolution({
-      _id: 'res-2', moveId: 'face_danger', moveName: 'Face Danger', outcome: 'strong_hit', outcomeLabel: 'Strong hit',
-      inputMethod: 'burn', playerNarration: '(momentum burned)',
-    }, state(), {});
+  it('a Burn Momentum re-narration is the scribe\'s alone, told with the line the player wrote — never a marker', async () => {
+    recordEvent('line', { who, ref: { line: 'm-3' }, d: { via: 'typed' }, text: 'I brace and push through the breach.' });
+    recordEvent('move.resolved', { who, ref: { res: 'res-2' }, d: { moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', outcome: 'miss' } });
+    recordEvent('narration', { who, ref: { nar: 'nar-miss', res: 'res-2' }, d: { mode: 'move', actorId: 'pc-mira' }, text: 'The breach holds you back.' });
+    // The burn (burnMomentum.js / resultUpgrade.js), then the re-narration's card.
+    recordEvent('move.upgraded', { ref: { res: 'res-2' }, d: { how: 'burn', from: 'miss', to: 'strong_hit', momentum: 6 } });
+    await recordNarrationsRemoved(['nar-miss'], { by: 'superseded', session: 'sess-1', res: 'res-2' });
+    recordEvent('narration', { who, ref: { nar: 'nar-burn', res: 'res-2' }, d: { mode: 'move', upgradeOf: 'res-2', actorId: 'pc-mira' }, text: 'You tear through the breach.' });
+    await recordSettled();
     await scribeRan(1);
-    expect(scribeRequests[0].message).toContain('Character: Mira Kestrel');
-    expect(scribeRequests[0].message).not.toMatch(/PLAYER'?S'? LINE/);
-    expect(scribeRequests[0].message).not.toContain('momentum burned');
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    expect(scribeRequests.map(r => r.message).filter(m => m.includes('The breach holds you back.'))).toEqual([]);   // the superseded telling writes nothing
+    const message = asked('You tear through the breach.');
+    expect(message).toContain('Character: Mira Kestrel');
+    expect(message).toContain('## PLAYER\'S LINE\n\nI brace and push through the breach.');
+    expect(message).not.toContain('momentum burned');
+    expect(message).toContain('Face Danger (+iron), miss, made a strong hit by burning momentum');
   }, 30_000);
 });

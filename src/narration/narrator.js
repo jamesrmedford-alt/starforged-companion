@@ -78,8 +78,6 @@ import {
 import { writeRecordView } from '../record/store.js';
 import { recordSettled } from '../record/record.js';
 import { renderSessionLog } from '../record/sessionLogView.js';
-import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { lastingChangeOf, roundLastingChange } from '../character/chronicleKeeps.js';
 import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
@@ -1409,17 +1407,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
     reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
-    scheduleChronicleEntry({
-      narrationText: narration,
-      campaignState,
-      moveId:        resolution.moveId,
-      outcome:       resolution.outcome,
-      kind:          'move',
-      actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
-      playerText:    writtenLine(resolution),      // what the roller's player wrote (issue #374 A2)
-      lasting:       lastingChangeOf(resolution),  // kept whatever its rating (issue #374 A5)
-      narrationId,
-    });
+    // Its Chronicle entry is written from the session record's beat once the
+    // card's narration is recorded (record/chronicleView.js, issue #382 slice 4).
     return narration;
 
   } catch (err) {
@@ -1453,17 +1442,6 @@ export async function narrateResolution(resolution, campaignState, options = {},
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
           reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
-          scheduleChronicleEntry({
-            narrationText: narration,
-            campaignState,
-            moveId:        resolution.moveId,
-            outcome:       resolution.outcome,
-            kind:          'move',
-            actorId:       character?.actorId ?? null,
-            playerText:    writtenLine(resolution),
-            lasting:       lastingChangeOf(resolution),
-            narrationId,
-          });
           return narration;
         }
         failure = EMPTY_REPLY_REASON;
@@ -1857,14 +1835,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
       });
-      // The acting character the beat is about (CHRONICLE-FIRST-PC).
-      scheduleChronicleEntry({
-        narrationText: narration, campaignState, kind: 'round', narrationId,
-        // Each with the line its player wrote (issue #374 A2).
-        characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName, text: e.text ?? '' })),
-        // Kept whatever its rating when one of its moves changed something lasting (issue #374 A5).
-        lasting: roundLastingChange(entries),
-      });
+      // Its Chronicle entry — about the acting character the scribe names — is
+      // written from the session record's round (record/chronicleView.js).
       return { posted: 'card', narrationId, card };
     } catch (err) {
       failure = claudeFailureReason(err);
@@ -5048,14 +5020,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-      scheduleChronicleEntry({
-        narrationText: text,
-        campaignState,
-        kind:          'paced',
-        actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
-        playerText,                                  // what the speaker's player wrote (issue #374 A2)
-        narrationId,
-      });
+      // Its Chronicle entry is written from the session record's beat (record/chronicleView.js).
       return text;
     } catch (err) {
       let failure = claudeFailureReason(err);   // the notice's cause (ERROR-TEXT-BLAMES-KEY)
@@ -5080,14 +5045,6 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-            scheduleChronicleEntry({
-              narrationText: text,
-              campaignState,
-              kind:          'paced',
-              actorId:       character?.actorId ?? null,
-              playerText,
-              narrationId,
-            });
             return text;
           }
           failure = EMPTY_REPLY_REASON;

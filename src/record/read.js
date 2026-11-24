@@ -105,6 +105,40 @@ function eventsOf(record) {
 }
 
 /**
+ * The narrations that set the given truths — for what a strike of them takes
+ * back (record/chronicleView.js): each truth's `truth.set` names its
+ * narration (`ref.nar`); the `narration` events of those narrations, by id.
+ * Pure but for its default source.
+ *
+ * @param {string[]} truthIds
+ * @param {Object} [source]
+ * @returns {{ narrationIds: string[], eventIds: string[] }}
+ */
+export function narrationsOfTruths(truthIds, source = recordSource()) {
+  const truths = new Set((Array.isArray(truthIds) ? truthIds : []).filter(id => typeof id === 'string' && id));
+  const narrationIds = new Set();
+  const eventIds = new Set();
+  if (!truths.size) return { narrationIds: [], eventIds: [] };
+  const all = (Array.isArray(source?.pages) ? source.pages : []).flatMap(p => eventsOf(p.record));
+  for (const e of all) if (e.k === 'truth.set' && truths.has(e.ref?.truth) && typeof e.ref?.nar === 'string' && e.ref.nar) narrationIds.add(e.ref.nar);
+  for (const e of all) if (e.k === 'narration' && narrationIds.has(e.ref?.nar)) eventIds.add(e.id);
+  return { narrationIds: [...narrationIds], eventIds: [...eventIds] };
+}
+
+/**
+ * The changed names the record holds, folded (uncapped), and the names in
+ * play — what a text written before a correction is read with
+ * (character/chronicle.js getChronicleEntries). Pure but for its default source.
+ *
+ * @param {Object} [source]
+ * @returns {{ names: Array, otherNames: string[] }}
+ */
+export function recordNames(source = recordSource()) {
+  const pages = Array.isArray(source?.pages) ? source.pages : [];
+  return { names: campaignCorrections(pages).names, otherNames: Array.isArray(source?.otherNames) ? source.otherNames : [] };
+}
+
+/**
  * What a page's record holds, in a few characters — its counter, how many
  * events it keeps, the newest of their ids (unique, and growing) — for a
  * reader that keeps a read while nothing it reads has changed

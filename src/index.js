@@ -236,6 +236,7 @@ import { recordPlaceArrival } from "./record/tableSnapshot.js";
 import { registerRecordCardHook } from "./record/cards.js";
 import { registerSheetWatch } from "./record/sheetWatch.js";
 import { registerSessionLogView } from "./record/sessionLogView.js";
+import { registerChronicleScribe } from "./record/chronicleView.js";
 import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -10440,6 +10441,7 @@ Hooks.once("ready", () => {
   registerSheetWatch();
   registerRecordCardHook({ inMemory: narratorMemoryCard });
   registerSessionLogView();
+  registerChronicleScribe();   // issue #382 slice 4: the Chronicle's automatic entries, written from the record
   // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions
   // are one fact: the native impacts canonical, the asset's conditions their
   // mirror (STARSHIP-ASSET-CONDITIONS-UNSYNCED).

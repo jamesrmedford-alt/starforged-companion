@@ -98,6 +98,27 @@ export async function seedLegacySessionPage(sessionId, story, { number = 1, crea
   return page;
 }
 
+/**
+ * What `readRecord` reads (its `source`), holding one session's events — no
+ * journal: for a pure read of a beat (record/chronicleView.js scribeArgsFor).
+ *
+ * @param {string} sessionId
+ * @param {Object[]} events
+ * @param {{ number?: number|null, names?: Object<string, string> }} [opts] — `names`: actor id → name
+ * @returns {Object}
+ */
+export function recordSourceOf(sessionId, events, { number = 1, names = {} } = {}) {
+  return {
+    pages: [{
+      pageId: `page-${sessionId}`, sessionId, number, name: number ? `Session ${number}` : 'Session', createdAt: 1, story: '',
+      record: { v: 1, sessionId, createdAt: 1, seq: Math.max(0, ...events.map(e => e.seq ?? 0)), events: Object.fromEntries(events.map(e => [e.id, e])), views: {} },
+    }],
+    currentSessionId: sessionId,
+    nameOf: (id) => names[id] ?? null,
+    otherNames: Object.values(names),
+  };
+}
+
 /** A session's page, by its id. */
 export function sessionPageOf(sessionId) {
   const journal = globalThis.game.journal.getName(JOURNAL_NAMES.sessionLog);
@@ -125,7 +146,7 @@ export function citedSummaryReply(sentences) {
  */
 export function journalsKeepPages(table, makeJournal) {
   const saved = globalThis.JournalEntry;
-  globalThis.JournalEntry = { async create(data) { const j = makeJournal(data.name); if (data.flags) j.flags = structuredClone(data.flags); table.journal._set(j.id, j); return j; } };
+  globalThis.JournalEntry = { async create(data) { const j = makeJournal(data.name); if (data.flags) j.flags = globalThis.structuredClone(data.flags); table.journal._set(j.id, j); return j; } };
   return () => { globalThis.JournalEntry = saved; };
 }
 

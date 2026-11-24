@@ -68,18 +68,3 @@ export function lastingChangeOf(move) {
   if (outcome === 'miss' && missPaysPrice(moveId)) return 'a miss, and its price paid';
   return null;
 }
-
-/**
- * The first lasting change among a round's rolled entries — a Batch Mode
- * round writes one Chronicle entry, and it is kept when any of its moves is.
- *
- * @param {Array<{ input?: Object }>} entries — the round's narration entries
- * @returns {string|null}
- */
-export function roundLastingChange(entries) {
-  for (const e of Array.isArray(entries) ? entries : []) {
-    const change = e?.input?.kind === 'move' ? lastingChangeOf(e.input) : null;
-    if (change) return change;
-  }
-  return null;
-}

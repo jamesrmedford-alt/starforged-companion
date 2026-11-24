@@ -271,18 +271,27 @@ CLAUDE.md "audit consumers" rule):
   truths relabelled `xcard` (issue #347 D2)
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
-- the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
-  `round`, which the writer's prompt knows (issue #340); every entry the
-  scribe writes carries its narration's `narrationId`, so the X-Card's finish
-  removes it (`retractNarrationChronicle`) and a scribe still running when
-  the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
-  session's automatic entries that state the struck fact
-  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE).
-  An entry is kept when the scribe rates it at or above the Chronicle's
-  floor — or, whatever its rating, when its move changed something lasting
-  (`chronicleKeeps.js` → `lastingChangeOf` / `roundLastingChange`: a progress
-  move, a vow sworn or forsaken, a brush with death, an arrival, a connection
-  made, a miss that paid its price — issue #374 A5). The campaign recap no
+- the Chronicle's automatic entries are a view of the session record (issue
+  #382 slice 4): when a narration of play — a move's, a paced line's, a Batch
+  Mode round's — is written to the record, `record/chronicleView.js`
+  schedules the scribe for its beat (`scheduleChronicleEntry`; one entry per
+  round, kind `round`, which the writer's prompt knows — issue #340), and the
+  scribe is given FACTS, the PLAYER'S LINE and the NARRATION as the telling,
+  which may lend a word, never an event. Every entry carries its narration's
+  `narrationId`, the record's `eventId` and a `sourceHash`, so the X-Card's
+  finish removes it (`retractNarrationChronicle`) and a scribe still running
+  when the card lands writes nothing (XCARD-CHRONICLE); a telling an upgrade
+  superseded before the scribe ran writes nothing either; a strike takes back
+  the automatic entries of the beat whose narration set the struck truth, by
+  that narration — a pinned or edited one stays (the record's `truth.struck`
+  → `retractChronicleOfNarrations`, STRIKE-CHRONICLE; it was a word-overlap
+  match); and a name the table changed is read as the new one
+  (`getChronicleEntries`). An entry is kept when the scribe rates it at or
+  above the Chronicle's floor — or, whatever its rating, when its beat
+  changed something lasting (the record's `lasting`, from
+  `chronicleKeeps.js lastingChangeOf`; a round's, the first of its beats': a
+  progress move, a vow sworn or forsaken, a brush with death, an arrival, a
+  connection made, a miss that paid its price — issue #374 A5). The campaign recap no
   longer retells the Chronicle (issue #382 slice 2): it is a view of the
   session record — its facts, the players' own words, how things stand read
   live — and is given a player's own Chronicle entries as their notes, and a
