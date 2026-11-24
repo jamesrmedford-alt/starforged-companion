@@ -74,7 +74,8 @@ import {
 } from "./lib/player.mjs";
 import { createObserver, scoreMemory, healthOf, classifyRun, costsOwedText } from "./lib/observer.mjs";
 import { installRehearsal } from "./lib/rehearsal.mjs";
-import { BEAT_CHECKS, castCardId, createPointer, classifyLongRun } from "./lib/beats.mjs";
+import { castCardId, createPointer, classifyLongRun } from "./lib/beats.mjs";
+import { charterProblem } from "./lib/charter.mjs";
 import { scoreLongRun } from "./lib/longrun.mjs";
 import { GM_ANSWERS, startGmRules, reloadGm, cancelEndSession, playXCard, renameConnection } from "./lib/gm.mjs";
 import {
@@ -91,6 +92,9 @@ const API_KEY     = MODE === "live" ? process.env.ANTHROPIC_API_KEY || null : MO
 const SETTLE_MS   = MODE === "live" ? 180_000 : 60_000;
 // What the run is to answer, one question to a line.
 const QUESTIONS   = questionsOf(process.env.EXPLORE_QUESTIONS);
+// Where the run's evidence goes, when its caller says (a suite puts each
+// scenario's run in its own folder: suite.mjs); else artifacts/explore/<run>.
+const OUT_DIR     = process.env.EXPLORE_OUT ? path.resolve(process.env.EXPLORE_OUT) : null;
 
 const log = (...args) => console.log("[explore]", ...args);
 
@@ -112,21 +116,6 @@ function writer(dir) {
 function stamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
-}
-
-/** Why a charter can't run, or null. */
-function charterProblem(charter) {
-  if (!charter?.persona || !charter?.goal) return "it needs a persona and a goal";
-  if (!charter?.seed?.pc?.name) return "its seed needs a player character";
-  if (!Array.isArray(charter.facts) || !charter.facts.some(f => f.required !== false)) return "it needs at least one required fact";
-  if (charter.facts.some(f => !f.id || !Array.isArray(f.variants) || !f.variants.length)) return "every fact needs an id and its accepted variants";
-  // A charter with beats: each one named, numbered and checked by something the observer knows.
-  const beats = charter.beats ?? [];
-  const bad = beats.find(b => !b.id || !Number.isInteger(b.n) || !b.title || !BEAT_CHECKS[b.check?.type]);
-  if (bad) return `beat ${bad.n ?? bad.id ?? "?"} needs an id, a number, a title and a check the observer knows (${bad.check?.type ?? "none"})`;
-  const unknown = beats.flatMap(b => (b.needs ?? []).filter(id => !beats.some(x => x.id === id)).map(id => `${b.id} needs ${id}`));
-  if (unknown.length) return `a beat needs one that is not in the charter (${unknown[0]})`;
-  return null;
 }
 
 // ── the table ────────────────────────────────────────────────────────────────
@@ -320,7 +309,7 @@ async function main() {
   const caps = { ...config.caps, ...(charter.caps ?? {}) };
   const startedAt = new Date();
   const runId = `${charter.name}-${MODE}-${stamp(startedAt)}`;
-  const dir = path.join(ARTIFACTS, "explore", runId);
+  const dir = OUT_DIR ?? path.join(ARTIFACTS, "explore", runId);
   const out = writer(dir);
   const budget = createBudget({ caps, prices: config.prices.usdPerMillionTokens });
   const runnerRequests = [];     // the player's calls

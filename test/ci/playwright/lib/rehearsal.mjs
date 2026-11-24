@@ -109,6 +109,25 @@ export function createRehearsal({ charter, forget = false }) {
 
 const TITLE = (id) => String(id ?? "").split("_").map(w => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
 
+/**
+ * The vow truths a narration's system prompt asks to have told: each plan
+ * its THIS BEAT ENDS A VOW block names (by id), with the Truth line the same
+ * prompt's UNREVEALED block gives it (narratorPrompt.js vowEndingLines,
+ * formatSkeletonEntry). Pure.
+ *
+ * @param {string} system
+ * @returns {Array<{ id: string, truth: string }>}
+ */
+export function vowTruthsToTell(system) {
+  const block = /### THIS BEAT ENDS A VOW\n([\s\S]*?)(?:\n### |\n## |$)/.exec(String(system ?? ""))?.[1] ?? "";
+  const ids = [...new Set([...block.matchAll(/\(id (\S+?)\)/g)].map(m => m[1]))];
+  return ids.map((id) => {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const truth = new RegExp(`### [^\\n]*\\(id ${escaped}\\)\\n(?:[A-Z][^\\n:]*): ([^\\n]+)`).exec(String(system ?? ""))?.[1] ?? "";
+    return { id, truth: truth.replace(/\s*\(already revealed[^)]*\)\s*$/, "").trim() };
+  }).filter(e => e.truth);
+}
+
 /** What the player's prompt shows: its messages' buttons and dropdowns, its windows, its current beat. Pure. */
 export function readScreenText(user) {
   const messages = [];
@@ -145,8 +164,22 @@ export function readScreenText(user) {
  *             are written there, where the cast's full name is not: a cast
  *             member under a part of the name ("Tamsin" for Tamsin Vey — what
  *             the third live run's detector proposed);
+ *   offer   — on a `say`: the move the classifier offers for the line rather
+ *             than makes (`{ id }`: NARRATIVE_WITH_MOVE_AVAILABLE), so the
+ *             narration carries a "Roll …" button — a step toward a vow said
+ *             in the fiction is offered its milestone so;
+ *   sidecar — a fact block the narrator sends with this line's reply whether
+ *             or not one was asked for: an @scene answer is asked for none,
+ *             and the module drops one that comes anyway;
  *   patience — how many turns to wait for a button or window that is not on
  *             screen before the entry is skipped (default 4; `optional` = 1).
+ *
+ * And, where the charter says so (`rehearsalPlan.tellsVowTruth`), the
+ * stand-in narrator tells a vow's hidden truth where its prompt says the beat
+ * ends that vow (THIS BEAT ENDS A VOW) — states it in the prose and records it
+ * revealed — as a narrator that follows its instructions does, so that a
+ * rehearsal walks the reveal (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED).
+ * It tells nothing a prompt does not ask for.
  */
 export function createRollingRehearsal({ charter, forget = false }) {
   const script = charter.rehearsal ?? [];
@@ -268,7 +301,16 @@ export function createRollingRehearsal({ charter, forget = false }) {
       prose = "The moment passes. Nothing more comes of it.";
     }
     for (const name of entry.names ?? []) if (!prose.includes(name)) prose += ` ${name} is there, watching how you take it.`;
+    // A vow this beat ends: its truth, as the plan gives it, told — and
+    // recorded told — where the charter's stand-in is one that does
+    // (`rehearsalPlan.tellsVowTruth`): the long haul's every plan has one
+    // truth, and a vow's told would read as another plan's leaked.
+    const ending = charter.rehearsalPlan?.tellsVowTruth ? vowTruthsToTell(`${system}\n${user}`) : [];
+    if (ending.length) prose += ` ${ending.map(e => e.truth).join(" ")}`;
+    // A fact block sent whether or not one was asked for (`sidecar`).
+    if (entry.sidecar) return `${prose}\n\n\`\`\`json\n${JSON.stringify({ newTruths: [], stateChanges: [], ...entry.sidecar }, null, 2)}\n\`\`\``;
     if (!system.includes("MANDATORY SIDECAR")) return prose;
+    if (ending.length) sidecar.reveals = ending.map(e => ({ id: e.id, revealed: ["truth"], resolved: true }));
     // A plan the narration is asked to decide: decided, and never shown.
     const decide = /### DECIDE NOW([\s\S]*?)(?:\n### |\n## |$)/.exec(system)?.[1] ?? "";
     const ids = [...decide.matchAll(/^- id (\S+):/gm)].map(m => m[1]);
@@ -293,6 +335,9 @@ export function createRollingRehearsal({ charter, forget = false }) {
 
     if (tool === "take_action") return toolUse(playerInput(user));
     if (system.includes("pacing pre-classifier")) {
+      if (entry.offer && entry.action === "say") {
+        return text(JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE", suggestedMove: entry.offer.id, sceneChallenge: null, category: entry.offer.category ?? "progress", confidence: 0.9, reasoning: `rehearsal: the script offers this line ${entry.offer.id}` }));
+      }
       return text(JSON.stringify(entry.move && entry.action === "say"
         ? { decision: "MOVE", suggestedMove: entry.move.id, sceneChallenge: null, category: entry.move.category ?? "action", confidence: 0.95, reasoning: `rehearsal: the script makes this line ${entry.move.id}` }
         : { decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));

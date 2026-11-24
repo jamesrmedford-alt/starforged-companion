@@ -226,7 +226,9 @@ export function readCards(gm) {
         };
       }
       if (f.narratorCard) {
-        card.narration = pick(f, ["moveId", "outcome", "isMatch", "resolutionId", "narrationId", "upgradeOf", "burnSuperseded", "xCarded", "playerText", "pacedNarrative", "oracleNarrationCard", "sessionNumber"]);
+        // `suggestedMove`: the move a paced narration's "Roll …" button
+        // offers; `sceneResponse`: an @scene question's answer.
+        card.narration = pick(f, ["moveId", "outcome", "isMatch", "resolutionId", "narrationId", "upgradeOf", "burnSuperseded", "xCarded", "playerText", "pacedNarrative", "oracleNarrationCard", "sessionNumber", "suggestedMove", "sceneResponse"]);
       }
       // Two cards carry `sufferCard`: one that asks the player to choose a
       // cost (or what a recovery gives), and one that says what a cost took

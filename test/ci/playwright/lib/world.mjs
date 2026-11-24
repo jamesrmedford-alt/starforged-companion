@@ -130,6 +130,61 @@ export function seedVows(seed) {
     .map((v, i) => ({ name: v.name, rank: VOW_RANKS.includes(v.rank) ? v.rank : "dangerous", vowId: `seed-vow-${i + 1}` }));
 }
 
+/** The character's meters a seed may set, each with the bounds the sheet holds it to. */
+const SEED_METERS = { health: [0, 5], spirit: [0, 5], supply: [0, 5], momentum: [-6, 10] };
+/** The impacts a seed may mark, as the game system's sheet names them (actorBridge.js IMPACT_KEYS). */
+export const SEED_IMPACTS = ["wounded", "shaken", "unprepared", "permanentlyharmed", "traumatized", "doomed", "tormented", "indebted", "battered", "cursed"];
+const STATS = ["edge", "heart", "iron", "shadow", "wits"];
+
+/**
+ * The state of the character's sheet a seed asks for before play — where a
+ * scenario starts mid-adventure (lib/suite.mjs): its meters (`seed.pc.meters`:
+ * health, spirit, supply, momentum) and its impacts (`seed.pc.impacts`: a
+ * wound, a shaken spirit). What the seed does not give is the sheet as a new
+ * character has it. Pure.
+ *
+ * @param {{ pc?: { meters?: Record<string, number>, impacts?: string[] } }} seed
+ * @returns {{ meters: Record<string, number>, impacts: string[] }}
+ */
+export function seedSheet(seed) {
+  const meters = Object.fromEntries(Object.entries(seed?.pc?.meters ?? {}).filter(([k, v]) => SEED_METERS[k] && Number.isInteger(v)));
+  const impacts = [...new Set((seed?.pc?.impacts ?? []).map(i => String(i).toLowerCase()).filter(i => SEED_IMPACTS.includes(i)))];
+  return { meters, impacts };
+}
+
+/**
+ * Why a seed cannot be made, or null — what seedVows and seedSheet would
+ * otherwise pass over in silence: a vow with no name or a rank the module
+ * does not know, a meter out of the sheet's bounds, an impact the sheet does
+ * not have, a stat out of range, a place the seed puts the ship that it does
+ * not make. Pure.
+ *
+ * @param {object} seed
+ * @returns {string|null}
+ */
+export function seedProblem(seed) {
+  const pc = seed?.pc ?? {};
+  for (const [k, v] of Object.entries(pc.stats ?? {})) {
+    if (!STATS.includes(k)) return `the character has no stat "${k}"`;
+    if (!Number.isInteger(v) || v < 0 || v > 4) return `the character's ${k} (${v}) is not 0 to 4`;
+  }
+  for (const v of pc.vows ?? []) {
+    if (!String(v?.name ?? "").trim()) return "a vow has no name";
+    if (v.rank != null && !VOW_RANKS.includes(String(v.rank).toLowerCase())) return `the vow "${v.name}" has a rank the module does not know (${v.rank})`;
+  }
+  for (const [k, v] of Object.entries(pc.meters ?? {})) {
+    const bounds = SEED_METERS[k];
+    if (!bounds) return `the character has no meter "${k}"`;
+    if (!Number.isInteger(v) || v < bounds[0] || v > bounds[1]) return `the character's ${k} (${v}) is not ${bounds[0]} to ${bounds[1]}`;
+  }
+  for (const i of pc.impacts ?? []) if (!SEED_IMPACTS.includes(String(i).toLowerCase())) return `the sheet has no impact "${i}"`;
+  const places = (seed?.settlements ?? []).map(s => s?.name);
+  if (new Set(places).size !== places.length) return "two settlements share a name";
+  if (seed?.at && !places.includes(seed.at)) return `the ship is put at "${seed.at}", which the seed does not make`;
+  if (seed?.map?.shipAt && !places.includes(seed.map.shipAt)) return `the ship's token is put at "${seed.map.shipAt}", which the seed does not make`;
+  return null;
+}
+
 /**
  * Wait until the GM's world has stopped changing. `game.ready` is where the
  * module's world-load work starts, not where it ends: its repairs, a stale
@@ -201,7 +256,7 @@ export async function setUpWorld(gm, scenario) {
   // Begin a Session opened no dialog (CI run 45050276295). So the answers
   // land first, and the reset goes on the module's own write chain.
   await waitForQuietWorld(gm, { quietMs: 2000 });
-  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows }) => {
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows, sheetWanted }) => {
     const { serialiseCampaignStateWrite } = await import(`${MODULE_SRC}/multiplayer/campaignStateChain.js`);
     const writeState = (state, label) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState", state), label);
 
@@ -249,6 +304,27 @@ export async function setUpWorld(gm, scenario) {
         const item = await createCharacterVowItem(pc, vow);
         if (!item) throw new Error(`the seed's vow "${vow.name}" could not be put on ${pc.name}'s sheet`);
       }
+    }
+    // The sheet as the seed has it — a scenario that starts mid-adventure
+    // (lib/suite.mjs): the impacts first (an impact lowers what a meter and
+    // momentum can hold), then each meter by its difference from what the
+    // sheet holds, through the module's own writers, with the game system's
+    // change notes held back (nothing here is a line of play). Read back, and
+    // failed by name if the sheet does not hold what was asked.
+    if (sheetWanted.impacts.length || Object.keys(sheetWanted.meters).length) {
+      const sheet = await import(`${MODULE_SRC}/character/actorBridge.js`);
+      const held = () => { sheet.invalidateActorCache(pc.id); return sheet.readCharacterSnapshot(pc); };
+      await sheet.withoutSystemNotes(async () => {
+        for (const impact of sheetWanted.impacts) await sheet.setDebility(pc, impact, true);
+        const now = held().meters;
+        const change = Object.fromEntries(Object.entries(sheetWanted.meters).map(([meter, value]) => [meter, value - (now[meter] ?? 0)]));
+        if (Object.values(change).some(Boolean)) await sheet.applyMeterChanges(pc, change);
+      });
+      const after = held();
+      for (const [meter, value] of Object.entries(sheetWanted.meters)) {
+        if (after.meters[meter] !== value) throw new Error(`the seed's ${meter} (${value}) did not take: the sheet holds ${after.meters[meter]}`);
+      }
+      for (const impact of sheetWanted.impacts) if (after.debilities?.[impact] !== true) throw new Error(`the seed's impact "${impact}" did not take`);
     }
 
     // A PC of the GM's own (`seed.gmPc`): a GM takes part in a Batch Mode
@@ -313,7 +389,7 @@ export async function setUpWorld(gm, scenario) {
       }
     }
     return { gmId: game.user.id, playerId: user.id, pcId: pc.id, gmPcId };
-  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows: seedVows(scenario.seed) });
+  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows: seedVows(scenario.seed), sheetWanted: seedSheet(scenario.seed) });
 }
 
 export async function restoreWorld(gm, log = console.log) {

@@ -248,6 +248,7 @@ code or rewrites a recording: it writes evidence.
 ./scripts/cloud.sh explore                 # LIVE: real models, real money, up to the caps
 ./scripts/cloud.sh explore --replay playwright/artifacts/explore/<run>   # an earlier run again, no key
 EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse           # the long haul, rehearsed (about 15 minutes)
+./scripts/cloud.sh explore --suite scenarios --rehearse   # the short scenarios, one flow each, rehearsed — see below
 ```
 
 | Mode | Key | What it tells you |
@@ -346,6 +347,33 @@ makes the line one, so the move path — confirmation, held result, price,
 victory card — is walked with no key. A long run also writes `beats.json`,
 `mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
 model calls, 60 minutes, $15.
+
+**The short scenarios, beside the long haul** (`playwright/suites/scenarios.json`,
+run by `playwright/suite.mjs`). The long haul stays as it is — the
+memory-stability test — but one early fault there costs every beat that
+depends on it (the third live run lost five beats to one card that was never
+made). A scenario is a short charter with beats — 3 to 8, its own caps (at most
+15 actions, 60 model calls, 10 minutes, $1.50) — that starts from a seeded
+state of its own, in a world cleared and seeded for it, so each flow is tested
+whatever happens to the others: a fight from its first blow to Take Decisive
+Action (`scenario-fight`), a connection made and bonded (`scenario-connection`),
+a vow sworn, marked and fulfilled with its truth told (`scenario-vow`), a wound
+healed and nothing offered once whole (`scenario-recovery`), an expedition
+(`scenario-expedition`), and `@scene` answered plainly with nothing written
+back (`scenario-scene-answer`). Each run is a long run's evidence in a folder of
+its own; the suite writes one `summary.md` / `summary.json` over them (per
+scenario: its class, each beat's result, the checks, calls, cost, the folder).
+
+```bash
+./scripts/cloud.sh explore --suite scenarios --rehearse                    # all six, no key
+EXPLORE_SUITE_ONLY=scenario-fight,scenario-vow ./scripts/cloud.sh explore --suite scenarios --rehearse
+./scripts/cloud.sh explore --suite scenarios --replay playwright/artifacts/explore/suite-scenarios-rehearsal-<time>
+```
+
+A live suite is paid for like any live run (its questions first, a rehearsal
+and its prompts read first, the maintainer's go-ahead), each scenario under its
+own caps and the suite under its `total` ($9). None has been made. See
+`rules/ci-e2e.md` → "A suite of short scenarios".
 
 Every run that calls a model — either charter — writes `review-data.json`
 and the generated layers of its review: `annotated-transcript.md` and

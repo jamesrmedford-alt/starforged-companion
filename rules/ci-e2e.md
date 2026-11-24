@@ -412,7 +412,9 @@ scripted playthroughs' sibling: the same two browsers and the same Claude
 harness, with the script replaced by a model that is given a goal. Run it
 with `test/ci/scripts/cloud.sh explore [--rehearse | --replay <run folder>]`;
 `EXPLORE_CHARTER` picks the charter — `memory` (two short sessions, one fact)
-or `long-haul` (three sessions and twenty-seven beats, issue #373; below).
+or `long-haul` (three sessions and twenty-seven beats, issue #373; below) —
+and `--suite scenarios` runs the short scenarios beside it, one flow each
+(below, "A suite of short scenarios").
 **Nothing in CI runs it, and nothing may** — a live run spends money and its
 result is one sample.
 
@@ -789,6 +791,95 @@ and the rules that go with each:
   `pass`.
 - **Its caps are the charter's** (`caps`: 100 actions, 400 calls, 60 minutes,
   $15 — issue #373 decision 1), over the config's.
+
+**A suite of short scenarios, beside the long haul** (`suites/scenarios.json`,
+`suite.mjs`, `lib/suite.mjs`; the maintainer's "overhaul 7", an addition and
+not a replacement). The long haul is the memory-stability test — three
+sessions with every flow loaded at once — and stays as it is, caps and all. In
+it one early fault costs every later beat that depends on it: the third live
+run lost beats 2, 3, 18, 22 and 23 to one card that was never made. A scenario
+starts from a seeded state of its own, so each flow is put to the test
+whatever happens to the others.
+
+- **A scenario is a charter with beats** (`charters/scenario-<flow>.json`),
+  run by `explore.mjs` as any long run is — the pointer, `BEAT_CHECKS`, the
+  mechanical checks after every action, the ledger where it has facts, the
+  review's layers, `replay.json` — and so replayed and re-scored as one is.
+  What a suite asks of it besides (`scenarioProblem`, checked for every
+  scenario before the first starts): a `name` and a `flow` (what it is about,
+  for the summary); three to eight beats numbered in order, each with a check
+  the observer knows; `caps` of its own, each within the suite's `ceiling` (15
+  actions, 60 calls, 10 minutes, $1.50); a seed the seed writer can make
+  (`seedProblem`); a rehearsal on its own beats; and a player who stays in the
+  fiction — nothing it is given to type names a move, and a beat that wants
+  one of a plain line shows a title that names none and says how to name it
+  at the last. A charter with beats needs no fact (`lib/charter.mjs`
+  `charterProblem`, moved out of `explore.mjs`); one without beats still does.
+- **Every scenario begins with the table's own Begin a Session** (no
+  vignette) and starts where its flow does: the seed may put meters and
+  impacts on the sheet (`seed.pc.meters`, `seed.pc.impacts`; `seedSheet` in
+  `lib/world.mjs` — through `setDebility` and `applyMeterChanges`, impacts
+  first, read back and failed by name if the sheet does not hold them) and
+  vows beside the background vow (`seed.pc.vows`).
+- **The first set, one per flow**, each aimed at what round 3 found:
+  `scenario-fight` (Enter the Fray to Take Decisive Action, a scripted miss
+  paid, a burn); `scenario-connection` (Tamsin Vey met and made under a part
+  of her name, two favours, a bond forged — the road round 3 lost);
+  `scenario-vow` (sworn in Begin a Session's window, a step said in the
+  fiction offered as its milestone, fulfilled with its truth told);
+  `scenario-recovery` (wounded: Heal; whole again: nothing offered);
+  `scenario-expedition` (the long haul's `b7a` on its own); and
+  `scenario-scene-answer` (`@scene` answered plainly, and nothing of the
+  answer written back). The suite's `toAdd` lists the ones not built yet —
+  an oracle's answer kept, a scene question that lapses, a correction's short
+  form — each with what it needs; the summary prints them.
+- **The checks the scenarios added** (`lib/beats.mjs`, each held to the
+  defect it catches in `exploreScenarios.test.js`): `moveOffered` (a move
+  offered on a narration's "Roll …" button or rolled — or, `offered: false`,
+  a line answered with neither: a Heal at full health is the beat brought
+  about wrongly); `milestoneMarked` (a quest vow's progress marked while the
+  beat was current); `relationshipDeveloped` (the cast connection's track
+  moved, followed by its card's id); `sceneAnswered` (the latest `@scene`
+  question answered, with no truth of its narration, no draft card, no plan
+  and no change to the scene's frame); and `vowFulfilled` with `told` (the
+  plan the table decided for the vow revealed by the fulfilment — the module
+  marks a truth revealed only where the prose states it). `readCards` keeps a
+  paced narration's `suggestedMove` and an answer's `sceneResponse` for them.
+- **What the stand-in does for them** (`lib/rehearsal.mjs`): a script entry's
+  `offer` (the classifier offers the move rather than makes it, so the
+  narration carries a "Roll …" button), `sidecar` (a fact block sent with the
+  reply whether or not one was asked for — an `@scene` answer is asked for
+  none, and the module must drop it), and, where the charter's
+  `rehearsalPlan.tellsVowTruth` says so, a narrator that tells a vow's truth
+  when its prompt says the beat ends the vow (THIS BEAT ENDS A VOW) and
+  records it revealed. The long haul's stand-in does not: its plans share one
+  truth, and one told would read as another's leaked. In the recovery
+  scenario the stand-in reader calls Heal both times — it is the module's own
+  rule (`situation.js` `nothingToRecover`) that must say no to the second.
+- **How it runs** (`./scripts/cloud.sh explore --suite scenarios --rehearse`;
+  `--replay <suite folder>`; `EXPLORE_SUITE_ONLY=<a,b>` runs those alone, in
+  the suite's order). `suite.mjs` runs each scenario's charter with
+  `explore.mjs` in a child process — one browser at a time, each in a world
+  `setUpWorld` clears and seeds for it, its evidence in its own folder
+  (`EXPLORE_OUT`) — and writes one summary, after every scenario:
+  `artifacts/explore/suite-<name>-<mode>-<time>/summary.json` and
+  `summary.md` (per scenario its class, each beat's result, its checks made
+  and violated, calls, cost, minutes and run folder; the totals; a verdict
+  that counts, and never calls a scenario that did not run a pass). Its exit
+  code is 1 when a charter cannot run (nothing is started), or a scenario
+  crashed, was an infrastructure error or, replayed, diverged.
+- **It is paid for like any live run, and none has been made.** A live suite
+  needs `EXPLORE_QUESTIONS` (one set, kept in every scenario's `run.json`),
+  is rehearsed first and its prompts read, and runs only on the maintainer's
+  go-ahead. Each scenario runs under its own caps; the suite's `total` ($9 —
+  six scenarios at their ceiling) is never passed: a scenario whose dollar
+  cap would take the suite past it is not started (`mayStart`). A scenario's
+  live run is reviewed as any live run is (below); one that is kept goes under
+  `explorations/` beside the long haul's.
+- **Adding a scenario**: a charter as above, its name in the suite's
+  `scenarios`; `exploreScenarios.test.js` holds every scenario the suite names
+  to the suite's rules with no change to the test. A flow nothing in
+  `BEAT_CHECKS` can see needs a check there first, pure and tested.
 
 **Replay.** Every run writes `replay.json`: the player's actions with no
 document ids in them (a click is its button's label and which message

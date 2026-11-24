@@ -1,0 +1,254 @@
+{
+  "name": "scenario-scene-answer",
+  "flow": "@scene: a question about what is established answered plainly, one about what is not answered as not established, and nothing of either written back",
+  "description": "A scenario of the suite (suites/scenarios.json): what `@scene` is for — a question about what is established, answered as \"an answer, not narration\", with nothing of the answer recorded (known-issues SCENE-ANSWER-NOT-A-CAMERA: each of the third live run's answers added scenery that invented, and each was applied to the scene's record). A keepsake is stated in a line of play and asked after; then something the story never said is asked after, and the answer must not make it so. In the rehearsal the stand-in sends a fact block with each answer although none is asked for: the module must drop it.",
+  "caps": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play one short scene by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type, use exactly those words.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides.",
+    "A question about what is already established is not a line of play. Where a beat writes a question with @scene in front, type it exactly so: the narrator answers it plainly, with no roll.",
+    "Never say the answer to a question a beat has you ask: the point is to learn what the narrator remembers.",
+    "Mira has her background vow on her sheet, to find the lost colony ship Verity's Hope, which no beat touches. Wherever a card or a dropdown asks which vow, choose the one this scene is about, not that one.",
+    "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "If the narrator has not answered yet, wait rather than repeat yourself."
+  ],
+  "cast": {},
+  "facts": [
+    {
+      "id": "K1",
+      "kind": "possession",
+      "statement": "Mira carries her sister Ilse's brass star-compass.",
+      "variants": [
+        "star-compass",
+        "star compass",
+        "brass compass",
+        "compass"
+      ],
+      "anchor": [],
+      "required": true,
+      "refusals": [
+        {
+          "id": "lost, sold or given away",
+          "near": [
+            "lost",
+            "sold",
+            "pawned",
+            "gave away",
+            "given away",
+            "no longer carry",
+            "no longer have",
+            "left it with"
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "K1-A",
+          "set": "A",
+          "ask": "@scene Remind me, which keepsake of my sister's is on me?"
+        }
+      ]
+    }
+  ],
+  "beats": [
+    {
+      "id": "q1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session",
+      "tell": "Type !begin-session. In the window that opens leave vignette unticked and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1
+      }
+    },
+    {
+      "id": "q2",
+      "title": "Say what she carries",
+      "needs": [
+        "q1"
+      ],
+      "tell": "In a line of play, type exactly: \"I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.\"",
+      "check": {
+        "type": "factsPlanted",
+        "facts": [
+          "K1"
+        ]
+      },
+      "playerTitle": "Say what you carry",
+      "n": 2,
+      "session": 1
+    },
+    {
+      "id": "q3",
+      "title": "Ask after it",
+      "needs": [
+        "q2"
+      ],
+      "tell": "Type exactly: @scene Remind me, which keepsake of my sister's is on me?",
+      "check": {
+        "type": "sceneAnswered"
+      },
+      "playerTitle": "Ask what you carry",
+      "n": 3,
+      "session": 1
+    },
+    {
+      "id": "q4",
+      "title": "Ask after what the story never said",
+      "needs": [
+        "q1"
+      ],
+      "tell": "Type exactly: @scene What colour is the dockmaster's coat?",
+      "check": {
+        "type": "sceneAnswered"
+      },
+      "playerTitle": "Ask after what nobody has said",
+      "n": 4,
+      "session": 1
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      },
+      "vows": [
+        {
+          "name": "Find the lost colony ship Verity's Hope",
+          "rank": "epic"
+        }
+      ]
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes",
+      "mapData": {
+        "settlements": [],
+        "discoveries": []
+      }
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [],
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "false"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.",
+      "plants": [
+        "K1"
+      ]
+    },
+    {
+      "beat": 3,
+      "action": "say",
+      "text": "@scene Remind me, which keepsake of my sister's is on me?",
+      "probe": "K1",
+      "sidecar": {
+        "newTruths": [
+          {
+            "subject": "Mira Kestrel",
+            "fact": "The star-compass sits in Mira's left coat pocket, wrapped in oilcloth."
+          }
+        ],
+        "sceneFrame": {
+          "location": "the Kobayashi IV's galley",
+          "present": [
+            "Mira Kestrel"
+          ],
+          "situation": "Mira turns the compass over",
+          "question": "Where did Ilse get the compass?"
+        }
+      }
+    },
+    {
+      "beat": 4,
+      "action": "say",
+      "text": "@scene What colour is the dockmaster's coat?",
+      "sidecar": {
+        "newTruths": [
+          {
+            "subject": "the dockmaster",
+            "fact": "The dockmaster wears a long red coat with brass buttons."
+          }
+        ]
+      }
+    }
+  ]
+}

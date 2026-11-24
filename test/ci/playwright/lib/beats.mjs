@@ -403,6 +403,100 @@ export const BEAT_CHECKS = {
     return done(`${roll.moveId} came up ${roll.outcome} at ${roll.step}`);
   },
 
+  /**
+   * One of the named moves was offered — a narration's "Roll …" button — or
+   * rolled while the beat was current. With `offered: false` the opposite: a
+   * line of play was answered and none of them was offered or rolled — a
+   * recovery move with nothing to recover (known-issues
+   * HEAL-ROLLED-AT-FULL-HEALTH: the third live run's "I treat my wounds" was
+   * offered Heal at 5 health of 5, pressed and rolled). An offer or a roll
+   * then is the beat brought about wrongly.
+   */
+  moveOffered(v, c) {
+    const moves = c.moves ?? [];
+    const sheet = v.pc ? `${v.pc.name} at health ${v.pc.health}, spirit ${v.pc.spirit}, supply ${v.pc.supply}${v.pc.debilities?.length ? `, ${v.pc.debilities.join(", ")}` : ", no impact marked"}` : "";
+    const offers = v.allCards.filter(k => k.narration?.suggestedMove && v.inWindow(k) && moves.includes(k.narration.suggestedMove))
+      .map(k => ({ step: v.firstSeen.get(k.id), moveId: k.narration.suggestedMove, how: "offered on the narration's Roll button" }));
+    const made = v.rolls.filter(r => moves.includes(r.moveId)).map(r => ({ step: r.step, moveId: r.moveId, how: r.rolled ? `rolled (${OUTCOME[r.outcome] ?? r.outcome})` : "made" }));
+    const seen = [...offers, ...made].sort((a, b) => v.marks.findIndex(k => k.step === a.step) - v.marks.findIndex(k => k.step === b.step));
+    if (c.offered === false) {
+      if (seen.length) return failed(`${moveTitle(seen[0].moveId)} was ${seen[0].how} at ${seen[0].step}, with ${sheet || "the sheet as it was"}`);
+      const answered = v.linesInWindow.filter(m => !isSceneQuestion(m.text)).find(l => v.messagesInWindow.some(m => m.narrator && m.step === l.step && !m.vignette));
+      if (!answered) return notYet("no line of play has been answered yet");
+      return done(`the line at ${answered.step} was narrated with nothing of ${moves.map(moveTitle).join(" / ")} offered or rolled — ${sheet}`);
+    }
+    if (!seen.length) return notYet(`none of ${moves.map(moveTitle).join(" / ")} has been offered or rolled${sheet ? ` (${sheet})` : ""}`);
+    return done(`${moveTitle(seen[0].moveId)} was ${seen[0].how} at ${seen[0].step}${sheet ? `, with ${sheet}` : ""}`);
+  },
+
+  /**
+   * Progress was marked on a quest vow while the beat was current — a step
+   * toward it said in the fiction, offered as the milestone it is (known-issues
+   * VOW-STEP-SAID-IN-FICTION-NOT-READ: "I now have proof…" was narrated with
+   * nothing offered, twelve readings of twelve). The size of the mark is the
+   * mechanical checks' (`progress-per-mark`, `milestone-once`).
+   */
+  milestoneMarked(v) {
+    const before = new Map(((v.entered?.pcs?.[0]?.vows) ?? []).map(x => [x.id, x.ticks]));
+    const gained = v.questVows().filter(x => !x.completed && x.ticks > (before.get(x.id) ?? 0));
+    const offer = v.allCards.find(k => k.narration?.suggestedMove === "reach_a_milestone" && v.inWindow(k)) ?? null;
+    if (!gained.length) {
+      const open = v.questVows().find(x => !x.completed);
+      return notYet(`${open ? `the vow "${open.name}" stands at ${open.ticks} ticks` : "no quest vow is open"}${offer ? `; the milestone was offered at ${v.firstSeen.get(offer.id)} and is not marked` : "; no milestone has been offered or marked"}`, offer ? 1 : 0);
+    }
+    const vow = gained[0];
+    return done(`the vow "${vow.name}" went from ${before.get(vow.id) ?? 0} to ${vow.ticks} ticks${offer ? `, the milestone offered at ${v.firstSeen.get(offer.id)}` : ""}`);
+  },
+
+  /**
+   * The relationship with the cast's connection (or the one named) moved
+   * forward while the beat was current — Develop Your Relationship, which
+   * marks progress and rolls nothing while the two are not bonded. A favour
+   * done for them is at least offered it (known-issues
+   * FAVOUR-TO-A-CONNECTION-READ-AS-TALK).
+   */
+  relationshipDeveloped(v, c) {
+    const conn = c.name ? v.connection(c.name)[0] : v.castConnection();
+    if (!conn) return notYet("no such connection");
+    const was = (v.entered?.connections ?? []).find(x => x.hostId === conn.hostId)?.ticks ?? 0;
+    const offer = v.allCards.find(k => k.narration?.suggestedMove === "develop_your_relationship" && v.inWindow(k)) ?? null;
+    if (conn.ticks <= was) return notYet(`the relationship with ${conn.name} stands at ${conn.ticks} of 40 ticks${offer ? `; Develop Your Relationship was offered at ${v.firstSeen.get(offer.id)}` : ""}`, offer ? 1 : 0);
+    return done(`the relationship with ${conn.name} went from ${was} to ${conn.ticks} of 40 ticks`);
+  },
+
+  /**
+   * A scene question (`@scene …`) was answered, and nothing of the answer was
+   * written back: no truth of its narration, no draft card, no hidden plan,
+   * the scene's frame as it was (known-issues SCENE-ANSWER-NOT-A-CAMERA: each
+   * of the third live run's answers added scenery that invented, and each was
+   * applied to the scene's record — frame, truths, lore, draft cards). The
+   * answer's words are quoted, and how many sentences it ran to: whether it
+   * is plain is for the reading.
+   */
+  sceneAnswered(v) {
+    const asked = [...v.linesInWindow].reverse().find(m => isSceneQuestion(m.text)) ?? null;
+    if (!asked) return notYet("no scene question has been asked");
+    const answer = v.messagesInWindow.find(m => m.step === asked.step && m.narrator && (m.card ?? []).includes("sceneResponse")) ?? null;
+    if (!answer) return notYet(`the scene question at ${asked.step} has had no answer`, 1);
+    const i = v.marks.findIndex(k => k.step === asked.step);
+    const was = v.marks[i - 1]?.table ?? v.entered;
+    const then = v.marks[i]?.table ?? v.now;
+    const card = v.allCards.find(k => k.id === answer.id);
+    const narrationId = card?.narration?.narrationId ?? null;
+    const problems = [];
+    const truths = (then?.scene?.truths ?? []).filter(t => narrationId && t.narrationId === narrationId);
+    if (truths.length) problems.push(`${truths.length} truth(s) of it stand ("${truths[0].fact.slice(0, 80)}")`);
+    const drafts = v.allCards.filter(k => k.drafts?.length && v.firstSeen.get(k.id) === asked.step);
+    if (drafts.length) problems.push(`a draft card was raised from it (${drafts.flatMap(k => k.drafts.map(d => `"${d.name}"`)).join(", ")})`);
+    const plansWas = new Set((was?.plans ?? []).map(p => p.id));
+    const plans = (then?.plans ?? []).filter(p => !plansWas.has(p.id));
+    if (plans.length) problems.push(`a hidden plan was decided in its step ("${plans[0].subject}")`);
+    if (JSON.stringify(was?.scene?.frame ?? null) !== JSON.stringify(then?.scene?.frame ?? null)) problems.push("the scene's frame changed");
+    const sentences = String(answer.text ?? "").split(/(?<=[.!?])\s+/).filter(s => s.trim()).length;
+    if (problems.length) return failed(`the scene question at ${asked.step} was answered and written back: ${problems.join("; ")}`);
+    return done(`the scene question at ${asked.step} was answered in ${sentences} sentence(s), and nothing of the answer was written back: "${String(answer.text ?? "").slice(0, 160)}"`);
+  },
+
   /** The relationship's track is full and the bond is forged. */
   bondForged(v, c) {
     const conn = c.name ? v.connection(c.name)[0] : v.castConnection();
@@ -423,12 +517,32 @@ export const BEAT_CHECKS = {
     return done(`the bonded Develop Your Relationship was rolled at ${roll.step} (${roll.outcome}); no progress was marked`);
   },
 
-  /** The vow is fulfilled; a bonded connection's track is untouched and its bonded roll offered once. */
+  /**
+   * The vow is fulfilled; a bonded connection's track is untouched and its
+   * bonded roll offered once. With `told`, its truth is told too: the hidden
+   * plan the table decided for the vow — what it was sworn to find — is
+   * revealed by the fulfilment's narration (known-issues
+   * VOW-FULFILLED-WITH-NOBODY-NAMED: the third live run's vow ended on "both
+   * are named now", with no name anywhere, and its truth was recorded as
+   * revealed). The module marks a plan's truth revealed only where the prose
+   * states it, so the mark is the check; the narration is quoted, to be read.
+   */
   vowFulfilled(v, c) {
     const vow = v.questVows().find(x => x.completed) ?? null;
     const open = v.questVows().find(x => !x.completed) ?? null;
     if (!vow) return notYet(open ? `the vow "${open.name}" stands at ${open.ticks} ticks` : "no vow on the sheet", open?.ticks ?? 0);
     const roll = v.rolls.find(r => r.moveId === "fulfill_your_vow");
+    let told = "";
+    if (c.told) {
+      if (!roll) return notYet(`the vow "${vow.name}" is complete and no Fulfill Your Vow was rolled for it`, 1);
+      const narrated = v.allCards.find(k => k.narration?.resolutionId && k.narration.resolutionId === roll.card.move.resolutionId && !k.narration.upgradeOf);
+      if (!narrated) return notYet(`the vow "${vow.name}" is fulfilled (${roll.outcome}); its narration has not come`, 2);
+      const plan = (v.now?.plans ?? []).find(p => p.kind === "vow" && same(p.subject, vow.name)) ?? null;
+      const prose = v.messagesInWindow.find(m => m.id === narrated.id)?.text ?? "";
+      if (!plan) return failed(`the vow "${vow.name}" is fulfilled (${roll.outcome}) and no plan was ever decided for it: there was no truth to tell`);
+      if (!plan.truthRevealed) return failed(`the vow "${vow.name}" is fulfilled (${roll.outcome}) and its truth was not told — "${plan.truth.slice(0, 120)}" is not revealed; the narration: "${prose.slice(0, 160)}"`);
+      told = `; its truth is told ("${plan.truth.slice(0, 120)}") — the narration: "${prose.slice(0, 160)}"`;
+    }
     const conn = vow.linkedConnectionId ? (v.now.connections ?? []).find(x => x.hostId === vow.linkedConnectionId) : null;
     if (conn?.bonded && roll && c.bondedPayoff !== false) {
       const i = v.marks.findIndex(k => k.step === roll.step);
@@ -436,9 +550,9 @@ export const BEAT_CHECKS = {
       if (before && before.bonded && before.ticks !== conn.ticks) return failed(`the fulfilment marked the bonded connection's track: ${before.ticks} → ${conn.ticks} ticks`);
       const offers = v.allCards.filter(k => k.picker && v.inWindow(k) && k.picker.pickAction === "develop" && k.picker.choices?.length === 1 && k.picker.choices[0].hostId === conn.hostId);
       if (offers.length !== 1) return failed(`the vow was fulfilled for the bonded ${conn.name}; ${offers.length} bonded roll(s) offered, not one`);
-      return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered`);
+      return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered${told}`);
     }
-    return done(`the vow "${vow.name}" is fulfilled${roll ? ` (${roll.outcome})` : ""}`);
+    return done(`the vow "${vow.name}" is fulfilled${roll ? ` (${roll.outcome})` : ""}${told}`);
   },
 
   // ── the interruptions: the runner acts, the world is compared ──────────────
