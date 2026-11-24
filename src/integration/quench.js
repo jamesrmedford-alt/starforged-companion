@@ -12425,6 +12425,18 @@ function registerPromptContractTests(quench) {
           ?? { userMessage: closing.buildEndSessionVignetteUserMessage({ kind: "settlement", name: N.settlement }, cs), seeds: null };
         await narrateSessionVignette({ userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds });
       } };
+      const SPOTLIGHT = { name: "Begin Session spotlight vignette", marker: "SPOTLIGHT VIGNETTE", run: async () => {
+        const spotlight = await import(`${MODULE_PATH}/session/spotlightVignette.js`);
+        const { narrateSessionVignette } = await narrator();
+        const cs = state();
+        // As Begin a Session composes it (issue #381 D3): from the Begin
+        // card's d100 — 85, "Peril lies ahead", which needs no record.
+        const scene = spotlight.composeSpotlightScene(cs, { roll: 85 });
+        await narrateSessionVignette({
+          userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds,
+          narratorClass: scene.narratorClass, detect: true,
+        });
+      } };
       const CLOCK = { name: "clock vignette", marker: `The clock "${N.clock}"`, run: async () => {
         const { narrateClockAdvancement } = await narrator();
         await narrateClockAdvancement({
@@ -12759,6 +12771,12 @@ function registerPromptContractTests(quench) {
           const request = await capture(GALLEY);
           assert.include(request.user, `${N.pcA} [she/her]`, "the first PC and her pronouns");
           assert.include(request.user, `${N.pcB} [he/him]`, "the second PC and his pronouns");
+        });
+
+        it("Begin Session spotlight vignette: the Begin card's result, at the interaction latitude (issue #381 D3)", async function () {
+          const request = await capture(SPOTLIGHT);
+          assert.include(request.user, "1. What the vignette shows — Spotlight Vignette (85): Peril lies ahead or lurks just out of view");
+          assert.include(request.system, "NARRATOR PERMISSIONS — INTERACTION MODE");
         });
 
         it("End Session vignette: the NPC, with his pronouns (PLAYTEST-1712 R)", async function () {

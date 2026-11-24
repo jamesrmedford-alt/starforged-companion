@@ -24,7 +24,7 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
 paced_narrative, scene_interrogation (an `@scene` question — answered, not
 narrated: see "An `@scene` answer" below), oracle_followup, session_vignette
-(the session's set-pieces: its opening and its closing cutaway), clock_advance (a clock's advance or
+(the session's set-pieces: its opening, its closing cutaway and the spotlight vignette), clock_advance (a clock's advance or
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
@@ -266,6 +266,31 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and "familiar adversary" tiers, the list of mundane tasks, the list of
   gestures, the role's three example closings, `selectEndSessionNPC`. Kept
   (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
+  pressed the d100 is rolled for the Begin card as before, and — when a
+  narration will follow (`narrationEnabled`, a keyed GM connected, the
+  X-Card down — `spotlightWillBeNarrated`) — sent to the canonical GM as a
+  number alone (`spotlightRoll`); otherwise the card says the result is the
+  table's to envision. The GM reads the result off `spotlight_vignette`
+  itself and writes a short cutaway (`spotlightVignette.composeSpotlightScene`
+  → `narrateSessionVignette` → `postSpotlightVignetteCard`, kind
+  `spotlight_begin`) first of Begin's narrations — after the clock card,
+  before the clock vignettes and the opening, each of which waits for it,
+  bounded. Its material: the card's result (never rolled again), a die among
+  the records its row names (the PCs at the table, connections, settlements,
+  factions, open quest vows, named threats, the table's clocks — no hidden
+  plan's — `sceneRecords.js`; two of them for a row that connects two
+  situations; none for "peril lies ahead"), Action + Theme, Descriptor +
+  Focus. It runs at the interaction latitude (`narratorClass`), discovery
+  when its row introduces someone and nobody is on record; its capture runs
+  detection (`detect`, as a clock vignette's). Its scene is its own: ended
+  with its card (`spotlight_vignette`), unless the table already had one
+  open. In the ring and the summary's source its entry is headed as a
+  cutaway the characters did not see (`ringEntryText`); it is no part of the
+  last narration the next opening is told. A narration due and not written
+  leaves one line, no narrator card. The move narration's unshown spotlight
+  seed for a line read as Begin a Session (`buildOracleSeeds`
+  `begin_a_session`) is removed.
   A vignette is a bookend, not a
   beat of play: its mode block says its fact block sets no scene question (`A
   VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`

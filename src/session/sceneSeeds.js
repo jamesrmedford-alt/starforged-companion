@@ -241,6 +241,48 @@ export function rollClosingSeeds({ subject = null, lastKnown = "" } = {}, draw =
 }
 
 /**
+ * The spotlight vignette's material (spotlightVignette.js
+ * composeSpotlightScene). In the order drawn:
+ *
+ *   1. what the vignette shows — the Begin card's own Spotlight Vignette
+ *      roll, handed in: never rolled again, and with no second result (the
+ *      card has shown it);
+ *   2. whom or what it is about — a die among the records its row names
+ *      (`about`); two of them, the second among the rest, for a row that
+ *      connects two situations; left out with none on record;
+ *   3. what happens — Action + Theme;
+ *   4. what it looks like — Descriptor + Focus.
+ *
+ * @param {{ roll: number, tableName?: string, result: string,
+ *   about?: { label: string, pool: string, options: Object[], two?: boolean }|null }} spotlight
+ * @param {(faces: number) => number} [draw]
+ * @returns {Object[]} the seeds
+ */
+export function rollSpotlightSeeds({ roll, tableName = "Spotlight Vignette", result = "", about = null } = {}, draw = drawDie) {
+  const text = String(result ?? "").trim();
+  if (!text || !Number.isInteger(roll)) return [];
+  return [
+    { slot: "spotlight", label: "What the vignette shows", from: "oracle",
+      tables: [{ id: "spotlight_vignette", name: tableName, roll, result: text }], result: text, used: null },
+    about ? made(() => aboutSeed(about, draw)) : null,
+    made(() => pairSeed("happens", "What happens", ["action", "theme"], draw)),
+    made(() => pairSeed("looks", "What it looks like", ["descriptor", "focus"], draw)),
+  ].filter(Boolean);
+}
+
+/** Whom or what a spotlight is about: one record by die, or two for a row that connects two situations. */
+function aboutSeed({ label, pool, options, two = false }, draw) {
+  const first = chooseSeed("about", label, pool, options, draw);
+  if (!first) return null;
+  if (!two) return first.seed;
+  const second = chooseSeed("about", label, pool, options.filter(o => o !== first.pick), draw);
+  if (!second) return first.seed;
+  return { slot: "about", label, from: "state", source: pool,
+    tables: [...first.seed.tables, ...second.seed.tables],
+    result: `${first.seed.result}; ${second.seed.result}`, used: null };
+}
+
+/**
  * Whether a set-piece's narration writes a fact block — fact continuity on
  * (on when the setting cannot be read): the MATERIAL block asks for the
  * account (`builtFrom`) only then.
@@ -284,11 +326,13 @@ function numbered(seeds) {
  * '' with no seed.
  *
  * @param {Object[]} seeds
- * @param {{ account?: boolean }} [opts] — `account` false when the narration
- *   writes no fact block (fact continuity off)
+ * @param {{ account?: boolean, spotlight?: boolean }} [opts] — `account` false
+ *   when the narration writes no fact block (fact continuity off);
+ *   `spotlight`: the spotlight vignette's material, whose first result is what
+ *   the vignette shows happening — a turn of the plot is what it is for
  * @returns {string}
  */
-export function formatMaterial(seeds, { account = true } = {}) {
+export function formatMaterial(seeds, { account = true, spotlight = false } = {}) {
   const list = numbered(seeds);
   if (!list.length) return "";
   const lines = ["MATERIAL — rolled for this scene on the game's oracles. Build the scene from it."];
@@ -299,10 +343,17 @@ export function formatMaterial(seeds, { account = true } = {}) {
   });
   lines.push(
     "",
-    "- Each numbered result is in the scene, recognisably. Read it as a Starforged",
-    "  oracle is read: for what the words mean here, at the size of a quiet moment",
-    "  (a chore, a habit, an object, a small trouble). Never the words themselves,",
-    "  and never a turn of the plot.",
+    ...(spotlight ? [
+      "- Each numbered result is in the scene, recognisably. Read it as a Starforged",
+      "  oracle is read: for what the words mean here. (1) is what the vignette shows",
+      "  happening; the others are what it is about, what happens in it and what it",
+      "  looks like. Never the words themselves.",
+    ] : [
+      "- Each numbered result is in the scene, recognisably. Read it as a Starforged",
+      "  oracle is read: for what the words mean here, at the size of a quiet moment",
+      "  (a chore, a habit, an object, a small trouble). Never the words themselves,",
+      "  and never a turn of the plot.",
+    ]),
     "- A result that cannot be true here, or that the table's safety settings rule",
     "  out, gives way to the one in brackets under it — once, and only then.",
     "- The scene has no business and no featured thing of its own. Nothing is",

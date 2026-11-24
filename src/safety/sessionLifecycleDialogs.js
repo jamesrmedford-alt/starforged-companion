@@ -10,7 +10,9 @@
  *     Session ("Focus from last session: …").
  *   - Offers an optional Spotlight Vignette roll (d100, 10 entries) —
  *     uses src/oracles/tables/sessionVignette.js. On roll, all players
- *     take +1 momentum.
+ *     take +1 momentum, and the narrator writes the result as a short
+ *     cutaway of its own before the opening (issue #381 D3) — or, with no
+ *     narration to follow, the card says it is the table's to envision.
  *   - Says so when no character has an open vow besides a background vow,
  *     and offers to swear one on the user's own character (issue #353 R3).
  *
@@ -35,6 +37,7 @@
 import { settledWithin } from "../multiplayer/settleWithin.js";
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { proseToHtml } from "../audio/segments.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
@@ -216,11 +219,18 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
 
   let vignetteBlock  = "";
   let vignetteRolled = false;
+  let spotlightRoll  = null;
   if (rollVignette) {
     try {
       const r = rollOracle("spotlight_vignette");
-      vignetteBlock = `<p><strong>Spotlight vignette:</strong> ${escapeHtml(r.result)}</p><p>All players take <strong>+1 momentum</strong>.</p>`;
+      // The narrator writes it as a short cutaway of its own when a narration
+      // will follow (issue #381 D3): the canonical GM is sent the d100 alone
+      // and reads the result off the table itself. With none to follow, the
+      // result is the table's to envision — the move's own second way.
+      const narrated = spotlightWillBeNarrated(state);
+      vignetteBlock = `<p><strong>Spotlight vignette:</strong> ${escapeHtml(r.result)}${narrated ? "" : " — yours to envision."}</p><p>All players take <strong>+1 momentum</strong>.</p>`;
       vignetteRolled = true;
+      if (narrated) spotlightRoll = r.roll;
     } catch (err) {
       console.warn(`${MODULE_ID} | openBeginSessionDialog: vignette roll failed:`, err);
     }
@@ -251,13 +261,38 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
-  await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false, pickUp });
+  await requestGmActionSafely("session.begin", {
+    vignetteRolled, includeGalley: includeGalley !== false, pickUp, ...(spotlightRoll ? { spotlightRoll } : {}),
+  });
 
   // The vow the "no vow in play" offer was given, after the session's start
   // (so its swear roll meets a begun session): on the user's own character.
   if (quest?.inPlay === false && quest.newVow && quest.swearer?.id) {
     await swearSessionVow(quest.swearer.id, quest.newVow, quest.newVowRank);
   }
+}
+
+/**
+ * Whether the Spotlight Vignette will be narrated (issue #381 D3), read where
+ * Begin was pressed from what every client can read: narration switched on
+ * (a world setting), a GM with a Claude key connected (the keyed-GM
+ * registry), the X-Card down. The canonical GM narrates only a roll it is
+ * sent. Fail-closed: a check that cannot be made says the table envisions it.
+ *
+ * @param {Object} state — campaignState
+ * @returns {boolean}
+ */
+function spotlightWillBeNarrated(state) {
+  try {
+    return game.settings.get(MODULE_ID, "narrationEnabled") !== false && hasKeyedActiveGM() && state?.xCardActive !== true;
+  } catch {
+    return false;
+  }
+}
+
+/** Relay-payload d100 → a face of the table's die, else null (it crossed the socket). */
+function cleanD100(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
 }
 
 /** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
@@ -295,7 +330,8 @@ const SESSION_CHAIN_WAIT_MS = 5 * 60_000;
 
 /**
  * How long Begin's galley vignette waits for its clock vignettes (issue #335
- * Y05): each is a bounded Claude call, so this only passes one that hangs.
+ * Y05), and each of them for the spotlight vignette (issue #381): each is a
+ * bounded Claude call, so this only passes one that hangs.
  */
 const OPENING_VIGNETTE_WAIT_MS = 60_000;
 
@@ -325,8 +361,10 @@ async function warmNarratorCacheAfterBegin() {
  * vignette. The start effects run once per session: Begin again on a session
  * already begun posts a note and changes nothing (issue #300 F11).
  *
- * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string }} payload —
- *   `pickUp`: the table's own word on where and when the session picks up
+ * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string, spotlightRoll?: number }} payload —
+ *   `pickUp`: the table's own word on where and when the session picks up;
+ *   `spotlightRoll`: the Begin card's Spotlight Vignette d100, sent when a
+ *   narration of it will follow
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
@@ -343,6 +381,9 @@ async function beginSessionOnce(payload) {
   // The table's own word on where and when the session picks up (issue #381
   // D8): cleaned again here — it crossed the socket from the pressing client.
   const pickUp         = cleanPickUp(payload.pickUp);
+  // The Begin card's Spotlight Vignette d100 (issue #381 D3): the number
+  // alone crosses the socket — the result is read off the table here.
+  const spotlightRoll  = vignetteRolled ? cleanD100(payload.spotlightRoll) : null;
 
   // Start a new session when the last one is over — End a Session closed it,
   // or it went idle (issue #286 C4: End → Begin used to keep the same session
@@ -408,6 +449,13 @@ async function beginSessionOnce(payload) {
     await applyMomentumToAllPlayers(1, { sessionId, award: "Begin a Session — the Spotlight Vignette" });
   }
 
+  // The spotlight vignette — its own short cutaway, first of Begin's
+  // narrations (issue #381 D3): after the clock card, which the clocks' roll
+  // below posts, or at once with no clock card. The clock vignettes and the
+  // opening each wait for it, bounded.
+  let spotlight = null;
+  const startSpotlight = () => { if (spotlightRoll && !spotlight) spotlight = narrateSpotlightAtBegin(spotlightRoll); };
+
   // Campaign clocks — roll Ask the Oracle for each at session start (play
   // kit: campaign clocks advance at Begin a Session via the clock's
   // advanceOdds). The session is stamped begun above, so a second Begin
@@ -432,6 +480,7 @@ async function beginSessionOnce(payload) {
         content: `<div class="sf-clock-card"><strong>⏳ Campaign clocks — Begin a Session</strong><ul>${rows}</ul></div>`,
         flags:   { [MODULE_ID]: { clockCard: true, beginSessionAdvance: true } },
       });
+      startSpotlight();
       const unsaved = clockResults.filter(r => r.advanced && r.saved === false);
       if (unsaved.length) {
         try {
@@ -453,6 +502,8 @@ async function beginSessionOnce(payload) {
       if (advanced.length) {
         clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
+            // After the spotlight vignette, whose scene ends before theirs opens.
+            if (spotlight) await settledWithin(spotlight, OPENING_VIGNETTE_WAIT_MS, "spotlight vignette");
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
             const { clockStillTriggered } = await import("../clocks/payThePriceClocks.js");
             // A working copy — each vignette applies its sidecar on it (issue #329 X09).
@@ -496,6 +547,7 @@ async function beginSessionOnce(payload) {
   } catch (err) {
     console.warn(`${MODULE_ID} | campaign clock session-start roll failed:`, err?.message ?? err);
   }
+  startSpotlight();
 
   // Fire-and-forget opening scene — narrator-generated, four to six
   // sentences: the PCs at the table in a quiet moment where the last session
@@ -511,7 +563,7 @@ async function beginSessionOnce(payload) {
     // snapshot) is written now, so the session's first narration reads it and
     // is not the slow one (issue #357). An opening narration writes it itself.
     // Not awaited: Begin a Session does not wait on a Claude round trip.
-    if (!clockVignettes) warmNarratorCacheAfterBegin();
+    if (!clockVignettes && !spotlight) warmNarratorCacheAfterBegin();
     return;
   }
   setTimeout(async () => {
@@ -519,6 +571,8 @@ async function beginSessionOnce(payload) {
     // continues the scene they opened with their beat in it. Together, each
     // minted a scene on its own copy and the one on the losing scene lost its
     // facts (issue #335 Y05). A vignette is a Claude call — the wait is bounded.
+    // The spotlight vignette is first of all (issue #381 D3).
+    if (spotlight) await settledWithin(spotlight, OPENING_VIGNETTE_WAIT_MS, "spotlight vignette");
     if (clockVignettes) await settledWithin(clockVignettes, OPENING_VIGNETTE_WAIT_MS, "galley vignette");
     try {
       const { collectGalleyParticipants, composeOpeningScene, postGalleyVignetteCard }
@@ -550,6 +604,89 @@ async function beginSessionOnce(payload) {
   }, 0);
 }
 
+
+/**
+ * Begin a Session's spotlight vignette (issue #381 D3), in the background:
+ * settled once it is written — or found it cannot be — and never rejected.
+ *
+ * @param {number} roll — the Begin card's d100
+ * @returns {Promise<void>}
+ */
+function narrateSpotlightAtBegin(roll) {
+  return new Promise(resolve => setTimeout(() => {
+    writeSpotlightVignette(roll).catch(err => {
+      console.warn(`${MODULE_ID} | Begin a Session: the spotlight vignette failed:`, err?.message ?? err);
+    }).finally(resolve);
+  }, 0));
+}
+
+/**
+ * The spotlight vignette, on the canonical GM: built from the Begin card's
+ * Spotlight Vignette roll and rolled material (session/spotlightVignette.js),
+ * narrated, and posted as its own card; then its scene — the cutaway's own —
+ * is ended, as the closing's is, so the opening starts the session's scene
+ * clean. A scene that was already open is the table's, and is left as it
+ * was. A narration that was due and was not written leaves a line saying the
+ * result is the table's to envision — no narrator card. A named function:
+ * the playthrough harness names a Claude call by its two nearest callers.
+ *
+ * @param {number} roll
+ * @returns {Promise<void>}
+ */
+async function writeSpotlightVignette(roll) {
+  let cs = null;
+  let sceneBefore = null;
+  let narrated = false;
+  try {
+    const { composeSpotlightScene, postSpotlightVignetteCard } = await import("../session/spotlightVignette.js");
+    const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+    const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
+    // A working copy, as the opening's (issue #335 Y04).
+    cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+    sceneBefore = cs.currentSceneId ?? null;
+    // Its dice are the table's: rolled once, here, for a scene that will be narrated.
+    const scene = sessionVignetteWillRun(cs) ? composeSpotlightScene(cs, { roll }) : null;
+    if (scene) {
+      const narrationId = newNarrationId();
+      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({
+        userMessage: scene.userMessage, campaignState: cs, narrationId, actorIds, seeds: scene.seeds,
+        narratorClass: scene.narratorClass, detect: true,
+      });
+      if (text) {
+        await postSpotlightVignetteCard({ text, sessionId: cs.currentSessionId ?? "", narrationId, seeds: scene.seeds });
+        narrated = true;
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: the spotlight vignette was not written:`, err?.message ?? err);
+  }
+  if (!narrated) await postSpotlightUnwrittenCard(roll);
+  try {
+    if (cs?.currentSceneId && !sceneBefore) {
+      const { endScene } = await import("../factContinuity/sceneLifecycle.js");
+      await endScene(cs, { reason: "spotlight_vignette" });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the spotlight vignette's scene was not ended:`, err?.message ?? err);
+  }
+}
+
+/**
+ * The Begin card promised a narration of its Spotlight Vignette and none was
+ * written: one line says the result is the table's to envision. A Begin a
+ * Session note, not a narrator card — nothing of it is story.
+ *
+ * @param {number} roll
+ */
+async function postSpotlightUnwrittenCard(roll) {
+  let result = "";
+  try { result = rollOracle("spotlight_vignette", { roll }).result; } catch { result = ""; }
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Spotlight vignette</strong><p>${result ? `${escapeHtml(result)} — ` : ""}the narrator did not write it: yours to envision.</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the spotlight note failed:`, err?.message ?? err));
+}
 
 /**
  * Begin a Session's start write was refused: nothing began. Posted where the

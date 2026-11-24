@@ -2562,6 +2562,9 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
   }
 }
 
+/** What heads a cutaway's entry in the ring and the summary's source (ringEntryText, issue #381). */
+const CUTAWAY_LINE = 'CUTAWAY — the table saw this; the characters did not, and know nothing of it:';
+
 /** How many cards the last narration the table read is told in. */
 const LAST_STORY_CARDS = 2;
 /** …and the most of it told, the newest kept. */
@@ -2656,6 +2659,10 @@ function ringEntryText(message) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const prose = typeof f.narrationText === 'string' ? f.narrationText.trim() : '';
   if (!prose) return '';
+  // A spotlight vignette is a cutaway the characters are not in (issue #381
+  // D3): its entry says so, so the beats after it — the ring, the session
+  // summary's source — do not have them know it.
+  if (f.sessionVignetteCard === true && f.vignetteKind === 'spotlight_begin') return `${CUTAWAY_LINE}\n${prose}`;
   // A Batch Mode round's card (issue #340): one line for each player who
   // acted, in the round's order, then the prose.
   if (Array.isArray(f.roundEntries) && f.roundEntries.length) {
@@ -5010,9 +5017,14 @@ export function sessionVignetteWillRun(campaignState) {
  * @param {Object[]|null} [args.seeds] — the scene's rolled material, as its
  *   user message gives it (session/sceneSeeds.js): each seed is marked in
  *   place with the narration's account of it (`builtFrom`, issue #381)
+ * @param {string|null} [args.narratorClass] — the latitude, over the mode's
+ *   (embellishment): the spotlight vignette brings a new danger into play,
+ *   so it runs at interaction — discovery when it introduces someone
+ * @param {boolean} [args.detect] — its capture runs the detection pass too,
+ *   as a clock vignette's does (the spotlight's — detection follows latitude)
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false }) {
   if (!sessionVignetteWillRun(campaignState)) return null;
   const settings = getNarratorSettings();
   const xCard = watchXCard(campaignState);
@@ -5027,6 +5039,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     : { character: getActiveCharacter(campaignState), roundCharacters: null };
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
   if (roundCharacters) extras.roundCharacters = roundCharacters;
+  // A spotlight vignette's latitude (issue #381 D3), over the mode's own.
+  if (narratorClass) extras.narratorClass = narratorClass;
+  const capture = detect ? { narrationId, detect: true, source: 'spotlight_vignette' } : { narrationId };
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -5041,7 +5056,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     if (xCard.interrupted('narrateSessionVignette')) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
     if (!text?.trim()) return null;
-    scheduleNarrationCapture(text, campaignState, { narrationId });   // its NPCs' developments → their cards (#286 D4)
+    scheduleNarrationCapture(text, campaignState, capture);   // its NPCs' developments → their cards (#286 D4)
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -5056,7 +5071,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
         if (xCard.interrupted('narrateSessionVignette')) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
         if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { narrationId });
+        scheduleNarrationCapture(text, campaignState, capture);
         return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);

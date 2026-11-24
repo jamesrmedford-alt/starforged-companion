@@ -4,7 +4,9 @@
  * is cast among (issue #381).
  *
  * A closing cutaway shows someone the campaign has, or a place the table
- * knows, chosen by a die among them (endSessionVignette.js). Each reader
+ * knows, chosen by a die among them (endSessionVignette.js); a spotlight
+ * vignette is about one of the records its row names (spotlightVignette.js).
+ * Each reader
  * here gives the options for sceneSeeds.js chooseSeed: the name the narrator
  * and the table are told, its `kind`, a stable `ref` — the record's own id,
  * which "never the same twice running" compares (rules/reachability.md §6:
@@ -16,6 +18,8 @@
 import { listConnections } from "../entities/connection.js";
 import { getSettlement } from "../entities/settlement.js";
 import { getActiveThreats } from "../world/worldJournal.js";
+import { listFactions } from "../entities/faction.js";
+import { tableVows, questVows, distinctOpenVows } from "./openThreads.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -121,4 +125,41 @@ export function sectorSettlements(campaignState) {
     const id = s.hostId ?? s.id ?? s._id ?? null;
     return { name: clean(s.name), kind: "settlement", ref: id ? `settlement:${id}` : null, id, hint: settlementHint(s) };
   });
+}
+
+/**
+ * The factions on record (a retired one, `active: false`, is none).
+ *
+ * @param {Object} campaignState
+ * @returns {Array<{ name: string, kind: string, ref: string|null }>}
+ */
+export function recordedFactions(campaignState) {
+  return readOr(() => listFactions(campaignState ?? {}), "the factions")
+    .filter(f => f && f.active !== false && clean(f.name))
+    .map(f => ({ name: clean(f.name), kind: "faction", ref: f._id ? `faction:${f._id}` : null }));
+}
+
+/**
+ * The open quest vows — a shared vow's copies are one, and a character's
+ * background vow is no quest (session/openThreads.js).
+ *
+ * @returns {Array<{ name: string, kind: string, ref: string|null }>}
+ */
+export function openVowsOnRecord() {
+  return readOr(() => distinctOpenVows(questVows(tableVows())), "the open vows")
+    .filter(v => clean(v?.name))
+    .map(v => ({ name: clean(v.name), kind: "vow", ref: v.key ? `vow:${v.key}` : null }));
+}
+
+/**
+ * The table's running clocks — active and not full. A hidden plan's clock
+ * (`planId`) is left out: it paces what the table has not been shown.
+ *
+ * @param {Object} campaignState
+ * @returns {Array<{ name: string, kind: string, ref: string|null }>}
+ */
+export function tableClocksOnRecord(campaignState) {
+  return (Array.isArray(campaignState?.clocks) ? campaignState.clocks : [])
+    .filter(c => c && c.active !== false && !c.planId && clean(c.name) && (Number(c.filled) || 0) < (Number(c.segments) || 0))
+    .map(c => ({ name: clean(c.name), kind: "clock", ref: c._id ? `clock:${c._id}` : null }));
 }

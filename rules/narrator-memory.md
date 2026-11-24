@@ -11,7 +11,9 @@ layers. This file is the never-break list.
    narrator should remember MUST carry `narratorCard: true`,
    `narrationText: <prose>`, and `sessionId`. Error/fallback cards must NOT.
    As of 2026-07 this covers move, paced, @scene, inciting, galley /
-   end-session vignettes, vow-swearing scenes, all three clock-vignette post
+   end-session vignettes (and since issue #381 the spotlight vignette,
+   `spotlight_begin` — in the ring and the summary's source its entry is
+   headed as a cutaway the characters did not see), vow-swearing scenes, all three clock-vignette post
    sites, and oracle follow-up narrations — "mood piece" is not an
    exemption. An `@scene` answer keeps it though it is no longer fiction and
    nothing of it is recorded (known-issues SCENE-ANSWER-NOT-A-CAMERA): what
@@ -138,7 +140,9 @@ layers. This file is the never-break list.
    boundaries (2026-07): End Session (`session_close`), End a Session's
    closing vignette once its card is posted (`closing_vignette` — a cutaway's
    scene is its own, and left open it was the campaign's active scene between
-   sessions: issue #374 A1), the close-out before
+   sessions: issue #374 A1), Begin a Session's spotlight vignette once its
+   card is posted (`spotlight_vignette`, issue #381 D3 — a cutaway too; a
+   scene the table already had open is left as it was), the close-out before
    a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
    session that went idle) — do not add a session boundary
    that leaves a scene open, and do not leave a cutaway's scene open behind

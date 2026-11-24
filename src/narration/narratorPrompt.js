@@ -1339,6 +1339,8 @@ const ROLE_DESCRIPTIONS = {
     `CLOSING — a cutaway to someone or somewhere the table knows, away from the ` +
     `characters, at something small: the world going on without them. TONE OVERRIDE ` +
     `for CLOSING: WRY AND OBSERVED — specific, small, almost tender.\n\n` +
+    `SPOTLIGHT — a cutaway or a flashback the characters do not see: the Spotlight ` +
+    `Vignette result the table rolled, happening. The campaign's own tone.\n\n` +
     `All of them: do not describe a move, do not propose a mechanical action. The user ` +
     `message gives the scene's length in sentences: that is a limit, not a guide — ` +
     `count them, and stop at the last one.`,
