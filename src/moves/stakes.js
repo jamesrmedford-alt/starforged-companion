@@ -436,7 +436,7 @@ export function formatOpenChoiceBlock(openChoice) {
       "## THE COST IS THE PLAYER'S CHOICE",
       "",
       `This result costs ${times}${amount}, and which is the player's to choose: momentum, health, spirit, supply, ` +
-      "a companion's health or the vehicle's integrity. A card asks them after this narration; they have not chosen.",
+      "a companion's health or the vehicle's integrity. A card asks them; they have not chosen.",
       "Show the trouble that brings the cost — what goes wrong, what presses on them — and stop before saying what it takes: " +
       `${NO_COST_PAID}. Which of those it is, the player decides. Never mention the card or the choice.`,
     ].join("\n");
