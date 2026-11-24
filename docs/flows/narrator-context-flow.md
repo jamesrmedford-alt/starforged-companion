@@ -744,10 +744,14 @@ shows its goal, a lost or forged bond and its last three `history` events —
 C5) · **[6.4] NAMES THE TABLE CHANGED** (issue #377 item 1: the changes on
 `campaignState.nameChanges` — a GM's rename of a card, a table's correction of a
 name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
-each told while it is this session's or while its old name, whole or the part
-the new one does not share, is in what the call sends: the cached blocks, the
-context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the recap's
-included; per-beat. It says the old name is no alias, and that the change is
+each told while it is this session's or while its old name, whole, the part
+the new one does not share, or cut short to one word of it used on its own
+("the Wake" for the Ashen Wake), is in what the call sends: the cached blocks,
+the context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the
+recap's included; per-beat. Its line names each such short form the call's text
+uses and what to write for it — never a word the new name keeps or another
+name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
+`narrator-consistency-flow.md` §2). It says the old name is no alias, and that the change is
 the table's correction, not something that happened in the story (the long
 haul's second run made it a story of a crossed-out name — known-issues
 NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says

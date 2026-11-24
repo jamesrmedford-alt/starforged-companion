@@ -66,6 +66,28 @@ describe('an old name only the user message holds is noted there (issue #377 ite
     expect(userOf(body).trimEnd()).toMatch(/## NAMES THE TABLE CHANGED[\s\S]*"Tamsin Vey" is now "Tamsin Okoro" \(a person\) — renamed by the table\.$/);
   });
 
+  // Known-issues CORRECTED-NAME-SHORT-FORM — the long haul's third live run,
+  // a61: the player's own line cut the corrected cutter's old name short, a
+  // session after the correction, and nothing in the call said so.
+  it('the player cuts an old name short: "the Wake\'s registry"', async () => {
+    const corrected = { ...STATE, nameChanges: [{ from: 'Ashen Wake', to: 'Cinder Wren', kind: 'corrected', about: 'raider cutter', sessionId: 'sess-2', at: 1 }] };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, corrected);
+    const line = 'I lay the Bleakhold manifest stamp from the crate lid beside the Wake\'s registry and the voice\'s own words.';
+    await narratePacedInput(line, JSON.parse(JSON.stringify(corrected)), { speakerActorId: 'a-actor' });
+    const [body] = narrations();
+    expect(systemOf(body)).not.toContain(NAME_CHANGES_HEADING);
+    expect(userOf(body)).toContain(line);
+    expect(userOf(body).trimEnd()).toMatch(/## NAMES THE TABLE CHANGED[\s\S]*"Ashen Wake" is now "Cinder Wren" \(raider cutter\) — corrected by the table\. The old name cut short is the old name too: for "the Wake" write "the Wren"\.$/);
+  });
+
+  it('control: the word in its common sense — nothing is added', async () => {
+    const corrected = { ...STATE, nameChanges: [{ from: 'Ashen Wake', to: 'Cinder Wren', kind: 'corrected', about: 'raider cutter', sessionId: 'sess-2', at: 1 }] };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, corrected);
+    await narratePacedInput('I ride the wake of her engines. Wake the crew, I tell the deck.', JSON.parse(JSON.stringify(corrected)), { speakerActorId: 'a-actor' });
+    const [body] = narrations();
+    expect(userOf(body)).not.toContain(NAME_CHANGES_HEADING);
+  });
+
   it('control: no old name anywhere — nothing is added', async () => {
     await narratePacedInput('I raise Tamsin on the comm.', JSON.parse(JSON.stringify(STATE)), { speakerActorId: 'a-actor' });
     const [body] = narrations();

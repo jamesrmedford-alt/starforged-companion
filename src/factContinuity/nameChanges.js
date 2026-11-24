@@ -25,6 +25,16 @@
  * ("Vey") — is in the text the call sends. Nothing is rewritten in the stores
  * (option 2): the note is what says which name is current.
  *
+ * A name is also written cut short — "the Wake" for the Ashen Wake, "Vey" for
+ * Tamsin Vey — and the note gave the old name whole: one step after "Ashen
+ * Wake" was corrected to "Cinder Wren" the narrator wrote "The Wake's boarding
+ * lock", from a recent scene that said "the Wake" (the long haul's third live
+ * run, a46; known-issues CORRECTED-NAME-SHORT-FORM). A change's line now names
+ * each short form the call's own text uses on its own, and what to write for
+ * it (`shortFormsInUse`); such a form alone also makes an earlier session's
+ * change due. Never a word the new name keeps, nor one another name in play
+ * holds: "Tamsin" is no old name of Tamsin Okoro's.
+ *
  * Not recorded: a placeholder figure's identity revealed by a narration
  * (entityExtractor.js applyEntityRenames — the narrator named them itself,
  * and the rename is the X-Card's to take back) and that take-back. Both write
@@ -239,10 +249,130 @@ function distinctivePart(from, to) {
   return part;
 }
 
+/** Whether a text holds a change's old name whole, or the part the new name does not share, as written. */
+function holdsOldName(text, change) {
+  const forms = [clean(change?.from), distinctivePart(change?.from, change?.to)].filter(Boolean);
+  return forms.some(f => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(f)}(?![\\p{L}\\p{N}])`, 'u').test(text));
+}
+
 /**
- * Whether a text names a change's old name — whole, or by the part the new
- * name does not share — as a name: matched as written (a name's capitals),
- * whole words only. Pure.
+ * Words that stand before a name without being part of it, capitalised or
+ * not: a sentence's opening word ("The Wake's guns", "Then Vey laughs") and a
+ * title ("Captain Vey"). Any other capitalised word beside a name's word makes
+ * the two one name ("Juro Vey", "Silent Wake").
+ */
+const LEAD_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'but', 'or', 'so', 'yet', 'then', 'when', 'while', 'if', 'as', 'at', 'in', 'on', 'to',
+  'for', 'from', 'with', 'without', 'by', 'of', 'off', 'into', 'onto', 'over', 'under', 'behind', 'before', 'after',
+  'beyond', 'beside', 'between', 'across', 'against', 'aboard', 'above', 'below', 'near', 'past', 'through',
+  'toward', 'towards', 'inside', 'outside', 'until', 'since', 'once', 'now', 'here', 'there', 'where', 'that',
+  'this', 'not', 'only', 'even', 'still', 'both', 'her', 'his', 'their', 'its', 'your', 'my', 'our',
+  'captain', 'commander', 'doctor', 'dr', 'mr', 'mrs', 'ms', 'miss', 'sir', 'lady', 'lord', 'madam', 'chief',
+  'officer', 'lieutenant', 'sergeant', 'admiral', 'governor', 'brother', 'sister', 'father', 'mother', 'elder', 'master',
+]);
+
+// The word right before, and right after, a name's word in its sentence:
+// spaces between them, and the marks a name is set off with ("the *Wake*").
+const WORD_BEFORE = /([\p{L}\p{N}][\p{L}\p{N}'’-]*)[ \t]+[*_"“‘]*$/u;
+const WORD_AFTER  = /^[*_"”’]*[ \t]+[*_"“‘]*([\p{L}\p{N}][\p{L}\p{N}'’-]*)/u;
+
+/** A name's words that can stand for it alone: capitalised, three letters or more, no connector. */
+function nameWordsOf(name) {
+  return wordsOf(name).filter(w => isCapitalised(w) && w.length >= 3 && !NAME_CONNECTORS.has(w.toLowerCase()));
+}
+
+/** A name's own words, lower-cased, its connectors aside ("The Wake of Ashes": wake, ashes). */
+const ownWordsOf = (name) => new Set(wordsOf(name).map(w => w.toLowerCase()).filter(w => !NAME_CONNECTORS.has(w)));
+
+/**
+ * How the texts use one word of a name, as written (a name's capital, whole
+ * words): `alone` — as a name by itself, a word before it in its sentence
+ * ("the Wake's guns", "calls me Vey", "Captain Vey"), `article` of those after
+ * "the"; `other` — beside another capitalised word, so part of another name
+ * ("Juro Vey", "Silent Wake", "Wake Station"). A use inside the name it is a
+ * word of — written whole, or beside another of its words — and one with
+ * nothing before it — its capital may only open the sentence ("Wake up.") —
+ * count as neither. Pure.
+ *
+ * @param {string[]} texts
+ * @param {string} word
+ * @param {string} name — the name it is a word of
+ * @returns {{ alone: number, other: number, article: number }}
+ */
+function usesOfNameWord(texts, word, name) {
+  const uses = { alone: 0, other: 0, article: 0 };
+  const asWord = (s) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(s)}(?![\\p{L}\\p{N}])`, 'gu');
+  const own = ownWordsOf(name);
+  for (const text of texts) {
+    const whole = [...text.matchAll(asWord(clean(name)))].map(m => [m.index, m.index + m[0].length]);
+    for (const m of text.matchAll(asWord(word))) {
+      if (whole.some(([from, to]) => m.index >= from && m.index < to)) continue;                       // the name itself
+      const prev = WORD_BEFORE.exec(text.slice(Math.max(0, m.index - 64), m.index))?.[1] ?? null;
+      const next = WORD_AFTER.exec(text.slice(m.index + word.length, m.index + word.length + 64))?.[1] ?? null;
+      if ((prev && own.has(prev.toLowerCase())) || (next && own.has(next.toLowerCase()))) continue;   // …or its words, otherwise arranged
+      if (next && isCapitalised(next) && !/^I(?:['’]|$)/u.test(next)) { uses.other += 1; continue; }
+      if (!prev) continue;
+      if (isCapitalised(prev) && !LEAD_WORDS.has(prev.toLowerCase())) { uses.other += 1; continue; }
+      uses.alone += 1;
+      if (prev.toLowerCase() === 'the') uses.article += 1;
+    }
+  }
+  return uses;
+}
+
+/**
+ * The short forms of a change's old name that the texts use on their own, and
+ * what to write for each: "the Wake" → "the Wren" for "Ashen Wake" → "Cinder
+ * Wren", "Vey" → "Okoro" for "Tamsin Vey" → "Tamsin Okoro" (known-issues
+ * CORRECTED-NAME-SHORT-FORM). A short form is one word of the old name. Never
+ * a word the new name keeps ("Tamsin"), a word of another name the table
+ * changed, or one the texts also use inside another name ("Juro Vey") — that
+ * word is not this name's alone. What is written for it is the new name's
+ * word in the same place (its first for a first, its last for a last) when
+ * that word is the new name's alone too, else the new name whole. Pure.
+ *
+ * @param {Object} change — normalised
+ * @param {string[]} texts — what the call sends
+ * @param {Array} [changes] — every stored change, normalised: the other names in play
+ * @returns {Array<{ old: string, write: string }>}
+ */
+function shortFormsInUse(change, texts, changes = []) {
+  const oldWords = nameWordsOf(change.from);
+  if (oldWords.length < 2 || !texts.length) return [];
+  const ownOld = ownWordsOf(change.from);
+  const ownNew = ownWordsOf(change.to);
+  const others = new Set();
+  for (const o of changes) {
+    if (same(o.to, change.to)) continue;   // this name, or an earlier name of the same thing
+    for (const w of [...ownWordsOf(o.from), ...ownWordsOf(o.to)]) others.add(w);
+  }
+  const newWords = nameWordsOf(change.to);
+  const forms = [];
+  for (const word of new Set(oldWords)) {
+    const lower = word.toLowerCase();
+    if (ownNew.has(lower) || others.has(lower)) continue;
+    const uses = usesOfNameWord(texts, word, change.from);
+    if (!uses.alone || uses.other) continue;
+    const twin = newWords.length < 2 ? null
+      : word === oldWords.at(-1) ? newWords.at(-1)
+        : word === oldWords[0] ? newWords[0]
+          : null;
+    const twinIsOwn = !!twin && !ownOld.has(twin.toLowerCase()) && !others.has(twin.toLowerCase())
+      && !usesOfNameWord(texts, twin, change.to).other;
+    const article = uses.article * 2 >= uses.alone;
+    const write = twinIsOwn ? twin : change.to;
+    forms.push({
+      old:   article ? `the ${word}` : word,
+      write: article && !/^the\s/i.test(write) ? `the ${write}` : write,
+    });
+  }
+  return forms;
+}
+
+/**
+ * Whether a text names a change's old name — whole, by the part the new name
+ * does not share, or cut short to one word of it on its own ("the Wake") — as
+ * a name: matched as written (a name's capitals), whole words only. Pure.
  *
  * @param {string} text
  * @param {Object} change
@@ -251,41 +381,70 @@ function distinctivePart(from, to) {
 export function mentionsOldName(text, change) {
   const t = typeof text === 'string' ? text : '';
   if (!t) return false;
-  const forms = [clean(change?.from), distinctivePart(change?.from, change?.to)].filter(Boolean);
-  return forms.some(f => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(f)}(?![\\p{L}\\p{N}])`, 'u').test(t));
+  if (holdsOldName(t, change)) return true;
+  const c = normaliseNameChange(change);
+  return !!c && shortFormsInUse(c, [t], [c]).length > 0;
+}
+
+/** The texts a call sends, as given: the non-empty strings. */
+function sourcesOf(texts) {
+  return (Array.isArray(texts) ? texts : [texts]).filter(t => typeof t === 'string' && t);
 }
 
 /**
  * The changes a call is told: each made this session, and each whose old name
- * is in a text the call sends. Pure.
+ * — whole, in part or cut short — is in a text the call sends. Pure.
  *
  * @param {Array} changes — campaignState.nameChanges
  * @param {{ texts?: string[], sessionId?: string|null }} [opts]
  * @returns {Array}
  */
 export function dueNameChanges(changes, { texts = [], sessionId = null } = {}) {
-  const sources = (Array.isArray(texts) ? texts : [texts]).filter(t => typeof t === 'string' && t);
+  const sources = sourcesOf(texts);
   return (Array.isArray(changes) ? changes : [])
     .map(normaliseNameChange)
     .filter(Boolean)
     .filter(c => (sessionId && c.sessionId === sessionId) || sources.some(t => mentionsOldName(t, c)));
 }
 
-function changeLine(c) {
-  const how = c.kind === 'corrected' ? 'corrected by the table' : 'renamed by the table';
-  return `- "${c.from}" is now "${c.to}"${c.about ? ` (${c.about})` : ''} — ${how}.`;
+/**
+ * A note's lines: one for each change due, with the short forms of its old
+ * name the call's texts use — read over all of them together, beside every
+ * stored change, so a word another name holds anywhere in the call is not
+ * listed. '' when no change is due.
+ *
+ * @param {Array} changes — campaignState.nameChanges
+ * @param {{ texts?: string[], sessionId?: string|null }} [opts]
+ * @returns {string}
+ */
+function changeLines(changes, opts = {}) {
+  const due = dueNameChanges(changes, opts);
+  if (!due.length) return '';
+  const sources = sourcesOf(opts.texts ?? []);
+  const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
+  return due.map((c) => {
+    const how = c.kind === 'corrected' ? 'corrected by the table' : 'renamed by the table';
+    // The old name as the call's own text cuts it short, and what to write for it.
+    const forms = shortFormsInUse(c, sources, all);
+    const short = forms.length
+      ? ` The old name cut short is the old name too: ${forms.map(f => `for "${f.old}" write "${f.write}"`).join('; ')}.`
+      : '';
+    return `- "${c.from}" is now "${c.to}"${c.about ? ` (${c.about})` : ''} — ${how}.${short}`;
+  }).join('\n');
 }
 
 /**
- * The narrator's note (its context, every mode): the changes due, or ''.
+ * The narrator's note (its context, every mode, and a call's user message
+ * when that alone holds an old name): the changes due, each with the short
+ * forms of its old name the texts use, or ''.
  *
  * @param {Array} changes
  * @param {{ texts?: string[], sessionId?: string|null }} [opts]
  * @returns {string}
  */
 export function formatNameChangesBlock(changes, opts = {}) {
-  const due = dueNameChanges(changes, opts);
-  if (!due.length) return '';
+  const lines = changeLines(changes, opts);
+  if (!lines) return '';
   return `${NAME_CHANGES_HEADING}\n\n` +
     `Each of these is one person, place or ship with one name. Older lines in this prompt ` +
     `(earlier sessions, lore, plans, clocks, truths, the recent scene) may still use the old name: ` +
@@ -298,25 +457,25 @@ export function formatNameChangesBlock(changes, opts = {}) {
     `The change is the table's correction, not something that happened in the story: in the ` +
     `fiction the new name has always been the name — nobody renamed anyone, crossed a name out ` +
     `or wrote it again, and no character remembers it otherwise.\n\n` +
-    due.map(changeLine).join('\n');
+    lines;
 }
 
 /**
  * The same note for a helper that writes from the session's prose (the session
- * summary): the changes due, or ''.
+ * summary): the changes due, each with the short forms the prose uses, or ''.
  *
  * @param {Array} changes
  * @param {{ texts?: string[], sessionId?: string|null }} [opts]
  * @returns {string}
  */
 export function formatNameChangesForSource(changes, opts = {}) {
-  const due = dueNameChanges(changes, opts);
-  if (!due.length) return '';
+  const lines = changeLines(changes, opts);
+  if (!lines) return '';
   return `## NAMES THE TABLE CHANGED — one name each\n\n` +
     `Where the narration above uses an old name, it means the new one. Write only the new name; ` +
     `the old one is not an alias or another name they go by, and the change is the table's ` +
     `correction, not an event of the session — never write that someone was renamed or "now goes by" a name.\n\n` +
-    due.map(changeLine).join('\n');
+    lines;
 }
 
 /**

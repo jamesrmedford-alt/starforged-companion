@@ -117,8 +117,106 @@ describe('when a change is told (dueNameChanges)', () => {
   });
 });
 
+// Known-issues CORRECTED-NAME-SHORT-FORM — the long haul's third live run
+// (explorations/long-haul-live-20261124-0321). One step after "Ashen Wake" was
+// corrected to "Cinder Wren" (a45), with the note in its prompt, the narrator
+// wrote "The Wake's boarding lock cycles open" (a46): the note gave the old
+// name whole, and the lore and the recent scene in the same prompt said "the
+// Wake". The player's own a61 line said "the Wake's registry", and session 3's
+// summary was written from it with no note at all.
+describe('an old name cut short is told too (CORRECTED-NAME-SHORT-FORM)', () => {
+  // The run's own lines: a lore line of session 2 (in the a46 system prompt),
+  // the a46 narration, the player's a61 line.
+  const LORE_A46   = 'Session 2: The Kobayashi IV swung round to engage the Wake at close range, knocking out two of the Wake\'s gun mounts and silencing her return fire.';
+  const NARRATED   = 'The question gets its answer from the dark side of the hull. The Wake\'s boarding lock cycles open to a corridor with no lamp lit in it.';
+  const PLAYER_A61 = 'PLAYER — Mira Kestrel wrote: "I lay the Bleakhold manifest stamp from the crate lid beside the Wake\'s registry and the voice\'s own words: the raids on the Cinder Expanse lanes trace back to one hand, and I can prove it."';
+  const SHORT = 'The old name cut short is the old name too:';
+
+  it('"the Wake" is the Ashen Wake: the line says so, and what to write', () => {
+    const note = formatNameChangesBlock([ASHEN_TO_CINDER], { texts: [LORE_A46], sessionId: 'sess-2' });
+    expect(note).toContain(`"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table. ${SHORT} for "the Wake" write "the Wren".`);
+  });
+
+  it('a card renamed with its article: "The Ashen Wake" is "the Wake" too', () => {
+    const renamed = { from: 'The Ashen Wake', to: 'The Cinder Wren', kind: 'renamed', about: 'a ship', sessionId: 'sess-2' };
+    const note = formatNameChangesBlock([renamed], { texts: [LORE_A46], sessionId: 'sess-3' });
+    expect(note).toContain(`"The Ashen Wake" is now "The Cinder Wren" (a ship) — renamed by the table. ${SHORT} for "the Wake" write "the Wren".`);
+  });
+
+  it('a text that holds the short form alone still names the old name', () => {
+    expect(mentionsOldName(NARRATED, ASHEN_TO_CINDER)).toBe(true);
+    expect(mentionsOldName(PLAYER_A61, ASHEN_TO_CINDER)).toBe(true);
+    expect(mentionsOldName('You bring the *Kobayashi IV* round on the *Wake* again.', ASHEN_TO_CINDER)).toBe(true);
+    // A capital that only opens a sentence is no name.
+    expect(mentionsOldName('Wake up. The cutter is drifting.', ASHEN_TO_CINDER)).toBe(false);
+    expect(mentionsOldName('the cutter left an ashen wake', ASHEN_TO_CINDER)).toBe(false);
+  });
+
+  it('the session summary\'s source: session 3 was written from "the Wake\'s registry" with no note', () => {
+    const note = formatNameChangesForSource([ASHEN_TO_CINDER], { texts: [PLAYER_A61], sessionId: 'sess-3' });
+    expect(note).toContain('"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.');
+    expect(note).toContain(`${SHORT} for "the Wake" write "the Wren".`);
+    expect(dueNameChanges([ASHEN_TO_CINDER], { texts: [PLAYER_A61], sessionId: 'sess-3' })).toHaveLength(1);
+  });
+
+  it('"Vey" is Tamsin Vey — and "Tamsin" is never an old name of Tamsin Okoro\'s', () => {
+    const texts = ['"Tamsin Okoro. Though the docks swear she\'s Vey," the clerk says. Tamsin wipes her hands and tells Tamsin\'s runner to wait.'];
+    const note = formatNameChangesBlock([VEY_TO_OKORO], { texts, sessionId: 'sess-2' });
+    expect(note).toContain(`${SHORT} for "Vey" write "Okoro".`);
+    expect(note).not.toMatch(/for "(?:the )?Tamsin"/);
+  });
+
+  it('not a word another name in play holds', () => {
+    expect(formatNameChangesBlock([VEY_TO_OKORO], { texts: ['The docks still call her Vey.'], sessionId: 'sess-2' }))
+      .toContain(`${SHORT} for "Vey" write "Okoro".`);
+    // Her brother keeps the surname: "Vey" is not hers alone.
+    const brother = formatNameChangesBlock([VEY_TO_OKORO], {
+      texts: ['Juro Vey keeps the ledgers, and the docks still call her Vey.'], sessionId: 'sess-2',
+    });
+    expect(brother).toContain('"Tamsin Vey" is now "Tamsin Okoro" (a person) — renamed by the table.');
+    expect(brother).not.toContain(SHORT);
+    // Another cutter: "the Wake" may be either.
+    const cutters = formatNameChangesBlock([ASHEN_TO_CINDER], {
+      texts: ['The Silent Wake holds off Bleakhold while the Wake\'s guns go dark.'], sessionId: 'sess-2',
+    });
+    expect(cutters).not.toContain(SHORT);
+    // Another name the table changed holds the word.
+    const twoChanges = formatNameChangesBlock([VEY_TO_OKORO, { from: 'Juro Vey', to: 'Juro Hale', kind: 'renamed', sessionId: 'sess-2' }], {
+      texts: ['The docks still call her Vey.'], sessionId: 'sess-2',
+    });
+    expect(twoChanges).not.toContain(SHORT);
+  });
+
+  it('only a form the call\'s text uses is listed', () => {
+    const note = formatNameChangesBlock([ASHEN_TO_CINDER], { texts: ['Tension: Ashen Wake — 0/4'], sessionId: 'sess-2' });
+    expect(note).toContain('"Ashen Wake" is now "Cinder Wren" (raider cutter) — corrected by the table.');
+    expect(note).not.toContain(SHORT);
+    // …and "the Ashen" is not listed because "the Wake" is.
+    const both = formatNameChangesBlock([ASHEN_TO_CINDER], { texts: ['Tension: Ashen Wake — 0/4', LORE_A46], sessionId: 'sess-2' });
+    expect(both).toContain(`${SHORT} for "the Wake" write "the Wren".`);
+    expect(both).not.toMatch(/for "(?:the )?Ashen"/);
+  });
+
+  it('the new name whole, where its matching word is another name\'s too', () => {
+    // "Cinder" is the Cinder Expanse's as well: "the Ashen" is not "the Cinder".
+    const note = formatNameChangesBlock([ASHEN_TO_CINDER], {
+      texts: ['The Ashen holds station off the Cinder Expanse lanes.'], sessionId: 'sess-2',
+    });
+    expect(note).toContain(`${SHORT} for "the Ashen" write "the Cinder Wren".`);
+  });
+});
+
 describe('the narrator is told (buildNarratorSystemBlocks)', () => {
   const STATE = { currentSessionId: 'sess-3', sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+
+  it('an earlier session\'s correction, when the prompt holds only "the Wake"', () => {
+    const blocks = buildNarratorSystemBlocks({ ...STATE, nameChanges: [ASHEN_TO_CINDER] }, {}, null, '', {
+      mode: 'paced_narrative',
+      rollingSummary: 'The Kobayashi IV swung round to engage the Wake at close range.',
+    });
+    expect(blocks.beat).toContain(NAME_CHANGES_HEADING);
+    expect(blocks.beat).toContain('for "the Wake" write "the Wren".');
+  });
 
   it('above the scene\'s truths, when the prompt still uses the old name', () => {
     const blocks = buildNarratorSystemBlocks({ ...STATE, nameChanges: [VEY_TO_OKORO] }, {}, null, '', {

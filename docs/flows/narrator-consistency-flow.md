@@ -145,7 +145,28 @@ longer special-cases them).
   source — wherever the old name still reaches a prompt. In the long haul's
   first live run the old cutter name stayed in 37 later prompts with nothing
   saying it was corrected, and the narrator made a renamed NPC's old surname an
-  alias.
+  alias. **The old name cut short is told too** (known-issues
+  CORRECTED-NAME-SHORT-FORM): a change's line names each short form of its old
+  name the call's own text uses on its own, and what to write for it — "The
+  old name cut short is the old name too: for "the Wake" write "the Wren"."
+  (`shortFormsInUse`; both renderers, `formatNameChangesBlock` and
+  `formatNameChangesForSource`). A short form is one word of the old name, used
+  as a name with a word before it in its sentence ("the Wake's guns", "calls me
+  Vey", "Captain Vey" — `usesOfNameWord`); what is written for it is the new
+  name's word in the same place (last for last, first for first) when that
+  word is the new name's alone in the text, else the new name whole. Never
+  listed: a word the new name keeps ("Tamsin" of Tamsin Vey → Tamsin Okoro), a
+  word of another name the table changed, and a word the text also uses beside
+  another capitalised word — part of another name in play ("Juro Vey", "Silent
+  Wake"). A short form on its own also makes an earlier session's change due
+  (`mentionsOldName`): for a name the new one shares no word with, only the
+  whole old name did, so the third live run's session 3 summary was written
+  from "the Wake's registry" with no note. The note gave the old name whole
+  until then, and one step after the correction the narrator wrote "The Wake's
+  boarding lock" from a prompt that said "the Wake" six times. Not covered: a
+  short form only the user message holds while the system prompt already
+  carries the note for another reason — `withNameChangesNoted` adds nothing
+  to a call that has the heading.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)
   posts the same card WITHOUT the retract button — WJ lore's correction
   affordance is the `!journal` command family (reaffirmed 2026-07).
