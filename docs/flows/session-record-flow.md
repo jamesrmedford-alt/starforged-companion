@@ -104,9 +104,15 @@ one memo of a read by.
 2. a paced narration joins its speaker's latest line that has no telling;
    a line a button posted again joins that line while nothing came of it;
 3. a round's one narration goes on the round's last untold beat;
-4. a truth joins the beat of the narration that set it;
+4. a truth joins the beat of the narration that set it — whichever was
+   recorded first: a fact block's save (its truths) is sent before its card
+   (the narration), and the server answers them in that order, so a truth
+   recorded before its narration waits for it by `ref.nar` (`read.js`
+   `joinNarration`; known-issues NARRATOR-TRUTHS-NOT-ON-THEIR-BEAT — they were
+   "At the table" beats of their own);
 5. what play did (a vow sworn, an arrival, a clock's advance, a choice…) joins
-   its move's beat by `ref.res`, else its narration's by `ref.nar`;
+   its move's beat by `ref.res`, else its narration's by `ref.nar`, the same
+   way;
 6. an `@scene` question is a beat of its own, kind `question`, its answer's
    narration with it;
 7. anything left (a causeless sheet edit, a GM's `!truth`) is a table beat.

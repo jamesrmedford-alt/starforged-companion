@@ -254,6 +254,7 @@ function sessionBeats(events, { xcarded, superseded }) {
   const byNar = new Map();
   const openLine = new Map();          // actor → the latest line beat with no telling yet
   const truths = new Map();            // truth id → { beat, entry }
+  const setTruths = new Set();         // every truth id read so far, on a beat or waiting for one
   const struck = [];
   const renames = [];
   let begun = null;
@@ -271,12 +272,40 @@ function sessionBeats(events, { xcarded, superseded }) {
     if (e.k === 'move.resolved' && e.ref?.res) rollerOf.set(e.ref.res, e.who?.actor ?? null);
   }
 
+  // What a narration wrote may be recorded before the narration is: its fact
+  // block's save (its truths, ledgerDiff.js) is sent as its sidecar is
+  // applied, its card (the narration, cards.js) after it, and the server
+  // answers them in that order — a paced line's truths were beats of their
+  // own, "At the table", beside the beat that told them (known-issues
+  // NARRATOR-TRUTHS-NOT-ON-THEIR-BEAT). So an event stamped with a narration
+  // joins that narration's beat whichever was recorded first (design 5.3
+  // rule 3): one recorded before it waits for it, by its id. What a removed
+  // or superseded narration wrote is left out before it waits.
+  const narrated = new Set();
+  for (const e of events) {
+    const nar = e.k === 'narration' ? e.ref?.nar : null;
+    if (typeof nar === 'string' && nar && !superseded.has(nar)) narrated.add(nar);
+  }
+  const waiting = new Map();           // a narration id → [{ e, join }]: what it wrote before it was read
+
   const open = (kind, e) => {
     const beat = newBeat(kind, e);
     beat.where = where;
     beat.scene = e.scene ?? null;
     beats.push(beat);
     return beat;
+  };
+  // `join(beat)` with the beat of the narration `nar` names — now, or once
+  // that narration is read; with none the session records, a table beat.
+  const joinNarration = (nar, e, join) => {
+    const told = nar ? byNar.get(nar) : null;
+    if (told) return join(told);
+    if (nar && narrated.has(nar)) {
+      if (!waiting.has(nar)) waiting.set(nar, []);
+      waiting.get(nar).push({ e, join });
+      return undefined;
+    }
+    return join(open('table', e));
   };
   const lineOf = (actor) => {
     const beat = openLine.get(actor ?? '');
@@ -408,6 +437,9 @@ function sessionBeats(events, { xcarded, superseded }) {
         if (!beat) beat = open(CUTAWAY_MODES.has(d.mode) ? 'cutaway' : 'play', e);
         if (res) byRes.set(res, beat);
         if (nar) byNar.set(nar, beat);
+        // What this narration wrote before it was recorded joins it now.
+        for (const { join } of (nar && waiting.get(nar)) || []) join(beat);
+        if (nar) waiting.delete(nar);
         if (viaXCard) {
           // The table removed this telling: its move and its changes stay,
           // nothing of it is kept — the line it told with it, and for a
@@ -426,16 +458,21 @@ function sessionBeats(events, { xcarded, superseded }) {
 
       case 'truth.set': {
         if (viaXCard) continue;
-        // One truth is set once: a save that carried it back is no new truth (ledgerDiff.js).
-        if (e.ref?.truth && truths.has(e.ref.truth)) continue;
-        beat = (nar && byNar.get(nar)) || open('table', e);
+        // One truth is set once: a save that carried it back is no new truth
+        // (ledgerDiff.js) — though the first is still waiting for its narration.
+        const truthId = e.ref?.truth ?? null;
+        if (truthId && setTruths.has(truthId)) continue;
+        if (truthId) setTruths.add(truthId);
         const entry = {
-          truthId: e.ref?.truth ?? null, subject: d.subject ?? null, fact: typeof d.fact === 'string' ? d.fact : '',
+          truthId, subject: d.subject ?? null, fact: typeof d.fact === 'string' ? d.fact : '',
           by: d.by ?? 'narrator', place: d.place ?? null, replaces: d.replaces ?? null,
         };
-        beat.established.push(entry);
-        if (entry.truthId) truths.set(entry.truthId, { beat, entry });
-        break;
+        joinNarration(nar, e, (b) => {
+          b.established.push(entry);
+          if (entry.truthId) truths.set(entry.truthId, { beat: b, entry });
+          b.events.push(e.id);
+        });
+        continue;
       }
 
       case 'vow.sworn': case 'vow.linked': case 'vow.closed': case 'progress.marked':
@@ -449,12 +486,15 @@ function sessionBeats(events, { xcarded, superseded }) {
         if (key && seenDid.has(key)) continue;
         if (key) seenDid.add(key);
         const res = e.ref?.res ?? null;
-        beat = (res && (byRes.has(res) || rollerOf.has(res)) ? beatOfMove(res, e) : null)
-          || (nar && byNar.get(nar)) || open('table', e);
-        beat.did.push({ kind: e.k, ...d, ...(e.who?.actor && !d.actorId ? { actorId: e.who.actor } : {}) });
-        if (e.k === 'choice') beat.choices.push({ action: d.action ?? null, picked: d.picked ?? null });
-        if (!beat.who.actor) beat.who.actor = e.who?.actor ?? d.actorId ?? null;
-        break;
+        const join = (b) => {
+          b.did.push({ kind: e.k, ...d, ...(e.who?.actor && !d.actorId ? { actorId: e.who.actor } : {}) });
+          if (e.k === 'choice') b.choices.push({ action: d.action ?? null, picked: d.picked ?? null });
+          if (!b.who.actor) b.who.actor = e.who?.actor ?? d.actorId ?? null;
+          b.events.push(e.id);
+        };
+        if (res && (byRes.has(res) || rollerOf.has(res))) join(beatOfMove(res, e));
+        else joinNarration(nar, e, join);
+        continue;
       }
 
       default:
@@ -462,6 +502,9 @@ function sessionBeats(events, { xcarded, superseded }) {
     }
     if (beat) beat.events.push(e.id);
   }
+  // Every narration waited for is read above (`narrated` holds only those);
+  // should one not be, what it wrote is a table beat rather than lost.
+  for (const list of waiting.values()) for (const { e, join } of list) join(open('table', e));
 
   // Strikes: the truth leaves; the beat that told it is given what to leave out.
   const strikes = [];
