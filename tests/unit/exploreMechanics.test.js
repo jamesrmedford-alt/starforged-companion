@@ -169,6 +169,29 @@ describe('the stretch of play, as the module should play it', () => {
   });
 });
 
+// The first rehearsal with the expedition crashed at a70 (the machine out of
+// memory): its dice were never read from the GM's page, the run kept the
+// empty list the runner then started with, and it was scored with fifteen
+// rolls "not among the dice that fell" — every roll it made. A record never
+// read is no record: explore.mjs keeps the dice null until it reads them, and
+// the check is then not made. A record that is there and lacks a card's dice
+// is still a violation.
+describe('the dice as they fell, where the run kept no record of them', () => {
+  it('is not made with no record — the same story is held to its dice when they were read', () => {
+    const run = story();
+    const rolls = checkMechanics(run).rolls.length;
+    expect(checkMechanics({ ...run, dice: null }).byCheck['dice-as-they-fell']).toEqual({ made: 0, violated: 0 });
+    expect(checkMechanics({ ...run, dice: null }).violations).toEqual([]);
+    expect(checkMechanics(run).byCheck['dice-as-they-fell']).toEqual({ made: rolls, violated: 0 });
+  });
+
+  it('a record that is there and holds none of a card\'s dice is a violation, roll by roll', () => {
+    const result = checkMechanics({ ...story(), dice: [] });
+    expect(result.byCheck['dice-as-they-fell'].violated).toBe(result.byCheck['dice-as-they-fell'].made);
+    expect(result.violations[0]).toMatchObject({ step: 'a2', check: 'dice-as-they-fell', detail: 'gather_information: the card\'s dice (Action: 4 + 3 = 7 | Challenge: 2, 5) are not among the dice that fell' });
+  });
+});
+
 describe('each check catches the defect it is for', () => {
   it.each([
     ['roll-score', 'a card whose score is not its dice', ({ card }) => { card('a2', 'm2').move.diceLine = 'Action: 4 + 3 = 9 | Challenge: 2, 5'; }, 'its own dice give 7'],

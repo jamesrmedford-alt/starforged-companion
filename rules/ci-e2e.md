@@ -589,6 +589,14 @@ charter or touch the runner:
   Foundry container's processes reniced): a Begin a Session's +1 momentum
   landed a step late the same way (`session-momentum` violated), and a
   rehearsal that takes fifteen minutes alone took thirty-four.
+- **A run a crash stops has no record of its dice.** The dice are read from
+  the GM's page when the run ends; until then the record is `null`, and a
+  check with no record is not made. The first rehearsal with the expedition
+  crashed at a70 — the machine out of memory, another session's tests beside
+  it — kept the empty list the runner then started with, and was scored with
+  fifteen rolls "not among the dice that fell": every roll it made. The run's
+  class was `infrastructure-error` all the same; read a crashed run's
+  mechanics with that in mind, and make the run again.
 - **What the table took back, the player is not shown again.** The X-Card
   flags a narration (`flags[module].xCarded`) and leaves its prose in the
   chat log. The third live run's player went on reading it for twenty-two
@@ -865,7 +873,15 @@ road the last live run walked**: the long haul's stand-in detector proposes
 the cast's connection as "Tamsin" (a script entry's `detects`), so the draft
 confirmed under a part of the name, the vow's Link, the rename and the bond
 are all rehearsed on that card — the exact-name road is the first two kept
-runs' replays.
+runs' replays. Since the detector is given the player's line (its PLAYER'S
+LINE block, issue #380), which holds the name in full, `detects` is what the
+stand-in reports for the member it names, and the cast's full name is not
+reported beside it: before that, the first rehearsal on the new module read
+"Tamsin Vey" in the player's line and walked the exact-name road. (The
+rehearsal before it had staged its module sixteen seconds before HEAD moved
+to issue #380's fixes, and rehearsed the old one: a run stages the module at
+its start — `stage_module` — so a branch moved under a running chain is
+picked up only by the next run.)
 
 **Every live run ends with a review** (the maintainer's standing instruction,
 2026-11-23; issue #373, modelled on issue #374). You made the run: you read

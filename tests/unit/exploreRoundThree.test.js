@@ -118,6 +118,27 @@ describe('a cast member\'s draft card is confirmed under a part of the name (the
   // lists her two names as two entries and does not say they are one person:
   // "Tamsin" is then part of two members' names, so its replay leaves the
   // draft as the run's GM left it — and reproduces the run.
+  // The detector is given the player's line now (its PLAYER'S LINE block,
+  // issue #380), and the line holds the name in full. The long haul's
+  // rehearsal on that module proposed "Tamsin Vey" and walked the exact-name
+  // road; a script entry's `detects` is what the stand-in detector reports
+  // for the member it names, so the rehearsal still walks the road the third
+  // live run walked.
+  it('the rehearsal\'s detector reports a cast member as the script has it, though the player\'s line names her in full', () => {
+    const entry = CHARTER.rehearsal.find(e => e.beat === 2 && e.detects && !e.move);
+    expect(entry.detects).toEqual(['Tamsin']);
+    const detection = (user) => ({ system: '', messages: [{ role: 'user', content: `You are analysing an Ironsworn: Starforged narration.\n${user}` }] });
+    const turn = { system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: 'CURRENT BEAT: 2 of 27 [session 1] — Meet someone\n\nYOUR SCREEN NOW:\n[m1] Gamemaster: hello' }] };
+    const asked = `PLAYER'S LINE:\n${entry.text}\n\nNarration:\nThe salvage broker looks up from her ledger. Tamsin is there, watching how you take it.`;
+    const r = createRehearsal({ charter: { ...CHARTER, rehearsal: [entry] } });
+    r.reply(turn);
+    expect(JSON.parse(r.reply(detection(asked)).content[0].text).entities.map(e => e.name)).toEqual(['Tamsin']);
+    // A line the script gives no `detects` is read as the table has it: the full name, where it stands.
+    const plain = createRehearsal({ charter: { ...CHARTER, rehearsal: [{ ...entry, detects: undefined }] } });
+    plain.reply(turn);
+    expect(JSON.parse(plain.reply(detection(asked)).content[0].text).entities.map(e => e.name)).toEqual(['Tamsin Vey']);
+  });
+
   it('a run kept from before the rule replays as it was played: its own cast leaves the draft', () => {
     expect(RUN_3.charter.cast.renamed.was).toBeUndefined();
     const then = castMembers(RUN_3.charter.cast);

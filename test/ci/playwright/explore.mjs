@@ -337,7 +337,13 @@ async function main() {
   let infrastructure = null;
   let stopped = null;            // why the player's turns ended
   let diverged = null;           // replay: the first action that could not be taken again
-  let dice = [];
+  // The dice as they fell, read from the GM's page when the run ends — null
+  // until then. A run that a crash stopped before the read has no record of
+  // them, and its `dice-as-they-fell` check is not made: the first rehearsal
+  // with the expedition crashed at a70 (the machine out of memory), kept the
+  // empty list it started with, and was scored with fifteen rolls "not among
+  // the dice that fell" — every roll it made.
+  let dice = null;
   let random = {};               // the module's other randomness, kept by client and by file
   let observer = null;
   let harness = null;
@@ -601,6 +607,9 @@ async function main() {
     infrastructure = `${stepNow}: ${err?.message ?? err}`;
     log(`FAIL  ${err?.stack ?? err}`);
     if (gm && player) await logPageState([gm, player], log).catch(() => {});
+    // What the GM's page still holds of the dice, if it is still there (a
+    // crashed page holds nothing, and the record stays null).
+    if (gm && dice === null) dice = await gm.page.evaluate(() => (Array.isArray(window.__sfcRolled) ? window.__sfcRolled : null)).catch(() => null);
   }
 
   // ── the verdict, and the evidence ──────────────────────────────────────────

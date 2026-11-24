@@ -318,11 +318,17 @@ export function createRollingRehearsal({ charter, forget = false }) {
     }
     // The detector's instructions travel in its message, not its system prompt.
     if (`${system}\n${user}`.includes("analysing an Ironsworn: Starforged narration")) {
-      const seen = cast.filter(c => user.includes(c.name));
-      // …and, where the script says so, a cast member under the part of the
-      // name the narration used.
+      // Where the script says so (`detects`), a cast member is reported under
+      // the part of the name the narration used — and only so: the detector
+      // is given the player's line too (its PLAYER'S LINE block, issue #380),
+      // which holds the name in full, and the road the third live run walked
+      // ("Tamsin" proposed for the Tamsin Vey the player named) is the one
+      // the script asks for.
       const memberOf = (n) => castMemberFor(n, members)?.name ?? null;
-      const parts = (entry.detects ?? []).filter(n => user.includes(n) && memberOf(n) && !seen.some(c => memberOf(c.name) === memberOf(n)))
+      const scripted = (entry.detects ?? []).filter(n => user.includes(n) && memberOf(n));
+      const covered = new Set(scripted.map(memberOf));
+      const seen = cast.filter(c => user.includes(c.name) && !covered.has(memberOf(c.name)));
+      const parts = scripted.filter((n, i) => scripted.findIndex(m => memberOf(m) === memberOf(n)) === i)
         .map(n => ({ ...castMemberFor(n, members), name: n }));
       return text(JSON.stringify({
         entities: [...seen, ...parts].map(c => ({ type: "connection", name: c.name, description: c.description ?? "", pronouns: c.pronouns ?? "", role: c.role ?? null, goal: null, confidence: "high" })),
