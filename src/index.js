@@ -2221,6 +2221,9 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
+ * @param {Array<() => Promise<void>>|null} [args.afterMoveCard] — the pipeline's own list of what
+ *   follows the move's roll card (rollMove): the effects add to it, so whatever stops the roll
+ *   they are still posted. An upgrade passes none
  * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, arrivalPlace: string|null,
  *   applied: string[], notApplied: string[], afterMoveCard: Array<() => Promise<void>> }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
@@ -2229,22 +2232,27 @@ async function expeditionArrival(interpretation, campaignState) {
  *   arrivalPlace — the place an arrival reached, by name (its narration's ARRIVAL line), for
  *   an upgrade of the hit to tell its narration (issue #362 AC06);
  *   applied / notApplied — what the effects did, in words, for an upgrade's card;
- *   afterMoveCard — the cards that summarize the move's roll card, for the pipeline to
- *   post after it (an upgrade's are posted at once)
+ *   afterMoveCard — what follows the move's roll card, for the pipeline to post once that
+ *   card is on the table: the cards that say what the roll caused, and a won fight's payoff
+ *   with its cards (an upgrade's are posted at once)
  */
 async function applyOutcomeEffects({
   resolution, interpretation, campaignState, rollerActor, speakerActor,
-  against = null, targets = null, tokenDragSetCourse = null,
+  against = null, targets = null, tokenDragSetCourse = null, afterMoveCard = null,
 }) {
   const applied    = [];
   const notApplied = [];
-  // afterMoveCard — cards that summarize the roll card, which the pipeline
-  // posts once that card is on the table (issue #348 PT10).
+  // afterMoveCard — what the pipeline posts once the roll card is on the
+  // table (issue #348 PT10): the cards that say what the roll caused. Posted
+  // by the effects as they landed, each stood above the roll it came from —
+  // "Combat progress" over the Clash, "Fight over" and the victory card over
+  // the Take Decisive Action — and a reader takes the top card for the cause
+  // (the long haul's third live run, a38–a40).
   // failures — an upgrade's own writes the world refused, as payoff steps for
   // its card's Retry (issue #362 AC49; the pipeline's are on its copy, for
   // persistResolution's report).
   const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied,
-    afterMoveCard: [], failures: [] };
+    afterMoveCard: Array.isArray(afterMoveCard) ? afterMoveCard : [], failures: [] };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2789,8 +2797,12 @@ async function applyOutcomeEffects({
         }
         if (result?.track) {
           combatProgressTrack = result.track;
-          await postCombatProgressCard(result).catch(err =>
+          // The pipeline's follows the move's roll card; an upgrade's roll
+          // card is on the table already.
+          const postCard = () => postCombatProgressCard(result).catch(err =>
             console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          if (upgrade) await postCard();
+          else out.afterMoveCard.push(postCard);
           applied.push(`progress marked ${times} on ${result.track.label ?? "the fight"}`);
         }
       }
@@ -2888,15 +2900,20 @@ async function applyOutcomeEffects({
         // The fight this move ended, for its card's upgrades: a Battle burned
         // from a miss to a hit wins it (below).
         out.moveFight ??= fin.track;
-        await postCombatFinishCard(fin).catch(err =>
-          console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err));
+        // "Fight over" follows the roll that ended the fight (afterMoveCard).
+        out.afterMoveCard.push(() => postCombatFinishCard(fin).catch(err =>
+          console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err)));
         // Delete the Foundry combat tracker for this track
         await endCombatTracker(fin.track.id).catch(err =>
           console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
         // Won fight that served a vow → surface the milestone (#241). Win =
-        // a hit on Take Decisive Action / Battle (not Face Defeat).
+        // a hit on Take Decisive Action / Battle (not Face Defeat). The
+        // payoff — the victory card, the promised reward and its card —
+        // follows the roll card too, in that order: the reward's card would
+        // otherwise stand above the roll that won it.
         if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && (fin.track.linkedVowName || fin.track.linkedVowId)) {
-          await applyWonFightPayoff(fin.track, resolution.outcome, rollerActor, { resolutionId: resolution._id ?? null });
+          out.afterMoveCard.push(() => applyWonFightPayoff(fin.track, resolution.outcome, rollerActor, { resolutionId: resolution._id ?? null })
+            .catch(err => console.warn(`${MODULE_ID} | won fight payoff failed:`, err?.message ?? err)));
         }
       }
     } catch (err) {

@@ -64,6 +64,8 @@ import {
   setSharedVowReward,
   vowCopyId,
   setBondItemRank,
+  holdingSystemNotes,
+  postSystemNotes,
 } from "../character/actorBridge.js";
 import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } from "../ui/progressTracks.js";
 import { finishExpedition, legacyRewardTicks, selectExpeditionTrack } from "./expedition.js";
@@ -881,8 +883,10 @@ function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
  * stat substitution, the stat and progress enrichment, the "not rolled"
  * guards, the adds owed (Take a Break, the roller's +1, a bond), the dice,
  * the outcome's effects, the per-move branches, a Pay the Price, the
- * narrator's relevance (with the GM's clarification dialog when it asks) and
- * the move result card. Canonical GM, under the move lock.
+ * narrator's relevance (with the GM's clarification dialog when it asks), the
+ * move result card, and what follows that card — the cards that say what the
+ * roll caused (`afterMoveCard`, rollAndApply). Canonical GM, under the move
+ * lock.
  *
  * @param {Object} args
  * @param {Object} args.interpretation — confirmed (confirmInterpretation, or applyConfirmChoices)
@@ -901,11 +905,58 @@ function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
  *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null, held: boolean }>}
  */
-export async function rollMove({
+export async function rollMove(args) {
+  // What follows the move's roll card (rollAndApply): the cards that say what
+  // the roll caused, and the payoffs and prices that post cards of their own.
+  // Their effects have landed — or, for a price, are owed — whatever stops the
+  // roll before or at its card (a refused card, a throw), so what is left is
+  // posted on the way out. Each is taken off the list as it runs: none twice.
+  const afterMoveCard = [];
+  try {
+    return await rollAndApply(args, afterMoveCard);
+  } finally {
+    await postAfterMoveCard(afterMoveCard);
+  }
+}
+
+/**
+ * Run what follows a move's roll card, in the order it was added, each once.
+ * Never throws: each step reports its own failure.
+ *
+ * @param {Array<() => Promise<*>>} afterMoveCard — emptied as it runs
+ * @returns {Promise<void>}
+ */
+async function postAfterMoveCard(afterMoveCard) {
+  while (afterMoveCard.length) {
+    const post = afterMoveCard.shift();
+    try {
+      await post();
+    } catch (err) {
+      console.warn(`${MODULE_ID} | a card that follows the move's roll card failed:`, err?.message ?? err);
+    }
+  }
+}
+
+/**
+ * rollMove's stage. `afterMoveCard` is the caller's list of what follows the
+ * roll card: this adds to it and runs it once that card is on the table.
+ *
+ * A card that says what a roll caused stands below the roll's own card. Posted
+ * as each effect landed, they stood above it — "Pay the Price" over the
+ * Gather Information miss it was the price of, "Combat progress" over the
+ * Clash, "Fight over" and the victory card over the Take Decisive Action, the
+ * vow's "marked completed", its reward note and "Vow Fulfilled" over the
+ * Fulfill Your Vow — and a reader takes the top card for the cause (the long
+ * haul's third live run, a12, a38, a40, a64). The effects still land where
+ * they did; what moves is the posting, and with it a payoff or a price whose
+ * own function posts its cards (a won fight's, a fulfilled vow's, a miss's
+ * Pay the Price that no upgrade can undo, Take Decisive Action's cost).
+ */
+async function rollAndApply({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
   cardFlags = null, onDiceRolled = null, resolutionId = null, holdForUpgrade = false,
-}) {
+}, afterMoveCard) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
     postForgeABondCard, postExpeditionFinishCard, noteUnsavedOnCopy, postSceneFinishCard,
@@ -1172,8 +1223,8 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard, arrivalPlace } = await applyOutcomeEffects({
-    resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
+  const { moveFight, sceneChallenge, thresholdResolutionId, arrivalPlace } = await applyOutcomeEffects({
+    resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse, afterMoveCard,
   });
 
   // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
@@ -1458,25 +1509,36 @@ export async function rollMove({
       // copy's) is the plan's subject (issue #353 Phase 4).
       const vowIds = [...new Set(copies.map(({ item }) => item?.flags?.[MODULE_ID]?.vowId).filter(Boolean))];
       if (vowIds.length) resolution.endingTrackIds = vowIds;
-      const itemDone = await completeVowItemByName(vowName, vowKey);
+      // The vow closes here, before the roll card is built (its suggestions
+      // read the open vows). What says so follows that card, in the order it
+      // was posted before: the system's own "… marked completed" for each
+      // copy — written with the close, so held and posted then
+      // (actorBridge holdingSystemNotes) — the payoff with its cards (the
+      // deepen, the reward or the note that none was chosen), and "⚑ Vow
+      // Fulfilled". They stood above the Fulfill Your Vow that caused them
+      // (the long haul's third live run, a64).
+      const { result: itemDone, notes: closeNotes } = await holdingSystemNotes(() => completeVowItemByName(vowName, vowKey));
+      if (closeNotes.length) afterMoveCard.push(() => postSystemNotes(closeNotes));
+      const payoff = () => payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey }).catch(err =>
+        console.warn(`${MODULE_ID} | fulfill vow payoff failed:`, err?.message ?? err));
 
       if (fin?.track) {
         if (fin.legacyTicks > 0 && !legacyPaid) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
-        await postFulfillVowCard(fin).catch(err =>
-          console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
+        afterMoveCard.push(() => postFulfillVowCard(fin).catch(err =>
+          console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err)));
         // Journal path already paid the quests legacy — deliver only the
         // connection deepen + promised reward. Sets fulfilPaid, so a later
         // native-sheet roll of the same vow can't double-pay.
-        if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey });
+        if (itemDone) afterMoveCard.push(payoff);
       } else if (itemDone) {
         // Item-only vow (no journal twin): legacy on the pipeline's
         // campaignState, deepen + reward via the shared payoff, then a
         // fulfil card synthesized from the item.
         const ticks = legacyPaid ? 0 : legacyRewardTicks(itemDone.rank, ranksDown);
         if (ticks > 0) addLegacyTicks(campaignState, "quests", ticks);
-        await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey });
-        await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks, legacyPaid }).catch(err =>
-          console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
+        afterMoveCard.push(payoff);
+        afterMoveCard.push(() => postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks, legacyPaid }).catch(err =>
+          console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err)));
       } else {
         console.warn(`${MODULE_ID} | fulfil: hit but no vow track or item matched "${vowName ?? "?"}" — nothing completed.`);
       }
@@ -1546,12 +1608,18 @@ export async function rollMove({
   // B1 generic suffer picker so the player can choose which move takes -2.
   // The move's narration depicts this card's cost — the one the table
   // pays; the resolver rolled none for it (TDA-COST-DOUBLE-ROLL).
+  // Rolled and paid once the roll card is on the table — the cost follows the
+  // weak hit it is the cost of (a progress roll is never held or upgraded, so
+  // nothing reads the cost before then); its seed is on the resolution by the
+  // time the stage returns it for narration.
   if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
-    const cost = await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err => {
-      console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err);
-      return null;
+    afterMoveCard.push(async () => {
+      const cost = await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err => {
+        console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err);
+        return null;
+      });
+      resolution.oracleSeeds = withDecisiveActionCostSeed(resolution.oracleSeeds, resolution.moveId, cost?.cost ?? null);
     });
-    resolution.oracleSeeds = withDecisiveActionCostSeed(resolution.oracleSeeds, resolution.moveId, cost?.cost ?? null);
   }
 
   // A result that routes Pay the Price (a Face Danger / Strike / Set a
@@ -1586,22 +1654,39 @@ export async function rollMove({
     // the hit (issue #362 AC01). Its vehicle or companion is the one the
     // move was made against (issue #362 D11).
     const stated = resolution.outcome === "miss" ? statedPrice(resolution.stakes, interpretation) : null;
-    if (hold) {
-      // Paid when the result is kept — or by an upgraded result that pays a
-      // price too (heldResult.js payHeldPrice).
-      heldPrice = { moveName: resolution.moveName ?? null, skipClockIds, stated: stated ?? null };
-    } else {
-      // The price is paid before the card posts, and a resist roll its harm
-      // owes — the roller's next move, which closes the card's upgrades —
-      // says to take them first (issue #336 Y18).
+    // Pay it: its card, its suffer routes, the clocks. The move's narration
+    // depicts this card's price — the one the table pays; the resolver rolled
+    // none for it (issue #321 U03).
+    const payPrice = async () => {
       const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated }).catch(err => {
         console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
         return null;
       });
-      ptpReversals = ptp?.reversals ?? null;
-      // The move's narration depicts this card's price — the one the table
-      // pays; the resolver rolled none for it (issue #321 U03).
       resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
+      return ptp;
+    };
+    if (hold) {
+      // Paid when the result is kept — or by an upgraded result that pays a
+      // price too (heldResult.js payHeldPrice).
+      heldPrice = { moveName: resolution.moveName ?? null, skipClockIds, stated: stated ?? null };
+    } else if (upgradeOffered) {
+      // A result that offers an upgrade and is not held (a Batch Mode round's
+      // entry; free-flow with the hold switched off): the price is paid before
+      // the card posts. The card's Burn / Improve state must carry the
+      // price's receipts from its first write (`ptpReversals`, below) — an
+      // upgrade pressed on a card without them would keep the price beside
+      // the upgraded outcome — and a resist roll its harm owes, the roller's
+      // next move, which closes the card's upgrades, says to take them first
+      // (issue #336 Y18).
+      ptpReversals = (await payPrice())?.reversals ?? null;
+    } else {
+      // No upgrade can undo it, so nothing on the roll card reads it: the
+      // price is paid once that card is on the table, and its card stands
+      // under the move that paid it — as a held result's does once it is
+      // kept. Its seed is on the resolution by the time the stage returns it
+      // for narration. (Paid first, "Pay the Price" stood above the miss it
+      // was the price of — the long haul's third live run, a12.)
+      afterMoveCard.push(payPrice);
     }
   }
 
@@ -1765,10 +1850,14 @@ export async function rollMove({
     resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
   }
 
-  // The cards that summarize the roll card — the Set a Course card — follow
-  // it: posted by the effects above, the summary came before the roll it
-  // summarized (issue #348 PT10). Each posts its own failure.
-  for (const post of afterMoveCard ?? []) await post();
+  // What follows the roll card, now it is on the table: the cards that say
+  // what the roll caused — posted by the effects above, each came before the
+  // roll it came from (issue #348 PT10; known-issues
+  // FIGHT-COMMIT-CARD-AFTER-THE-ROLL) — and the payoffs and prices queued with
+  // them, in the order they were added. In this same stage, before it
+  // returns: nothing waits on a person, so a held result's wait, a narration
+  // or a reload after the stage cannot leave one unposted.
+  await postAfterMoveCard(afterMoveCard);
 
   return {
     refused: null,

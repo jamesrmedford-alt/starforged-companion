@@ -884,8 +884,9 @@ function requireActing(round, userId) {
  * (driver.js passes it as rollMove's awaited `onDiceRolled`) — with the
  * resolution id the roll will carry (`rolled.resolutionId`,
  * `rolled.rollingAt`). The round knew of a roll only from its result card
- * on, the last thing rollMove posts: a resolver whose page died in between,
- * or a result card the world refused, left the entry to be rolled again —
+ * on, then the last thing rollMove posted (the cards that say what the roll
+ * caused now follow it): a resolver whose page died in between, or a result
+ * card the world refused, left the entry to be rolled again —
  * new dice, a second price (issue #347 AB20). A begun entry is never rolled
  * again: recovery and Send now report it (recoveryPlan's `unrecorded`). A
  * roll that fails before its dice is not stamped, and is rolled when the

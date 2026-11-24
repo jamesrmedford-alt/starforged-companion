@@ -562,6 +562,21 @@ or improved to a strong hit is paid the difference once —
 `upgradeLinkedVowReward`, issue #362 D7; its claim refused, it is a
 `rewardUpgrade` step on the GMs' payoff card, whose Retry runs it again —
 issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY).
+**What the fulfilment posts follows its roll card** (`movePipeline.rollMove`'s
+`afterMoveCard`; `combat-flow.md`, "A move's cards follow its roll card"). The
+vow closes before the roll card is built — its suggestions read the open vows
+— and what says so is posted after it, in the order it always was: the
+ironsworn system's own "… marked completed" for each copy, which the close's
+write posts, so it is held for the span of that write and posted then
+(`actorBridge.holdingSystemNotes` → `postSystemNotes`: re-spoken as any
+system note for a module write is, by no Actor, the PC's name leading); the
+payoff with its cards (the deepen, "🎁 Reward earned" or the note that no
+reward was chosen), run then; and "⚑ Vow Fulfilled". They stood above the
+Fulfill Your Vow that caused them (the long haul's third live run, a64). The
+Quests legacy is still marked on the pipeline's working copy before the card.
+A roll card the world refuses loses none of it: the list is run on the
+stage's way out. The miss's recommit offer, Forsake Your Vow's card and Reach
+a Milestone's are not on the list — posted before their roll card still.
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**

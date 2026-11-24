@@ -22,7 +22,9 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 
-import { applyMeterChanges, registerSystemNoteAttribution, withoutSystemNotes } from '../../src/character/actorBridge.js';
+import {
+  applyMeterChanges, registerSystemNoteAttribution, withoutSystemNotes, holdingSystemNotes, postSystemNotes,
+} from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 const EMOTE = 3;
@@ -225,4 +227,65 @@ describe('PT14 — a paced card\'s Roll keeps the speaker its line was typed und
     expect(post.speaker?.alias).toBe('Pat');
     expect(post.content).toBe(LINE);
   }, 30_000);
+});
+
+// A move's cards follow its roll (the long haul's third live run, a64): the
+// system's "… marked completed" for a fulfilled vow is written with the vow's
+// close, before the Fulfill Your Vow's own roll card is posted, and stood above
+// it. A note whose place is after a card still to come is held for the span of
+// the write and posted by its caller (movePipeline.js rollMove's afterMoveCard;
+// the pipeline's own order is tests/unit/moveCardsFollowTheirRoll.test.js).
+describe('a change whose note follows a card still to be posted is held for its caller (holdingSystemNotes)', () => {
+  let isaac;
+  let posted;      // every system change log, with whether its create went ahead
+
+  beforeAll(() => registerSystemNoteAttribution());
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    isaac = makeTestActor({ id: 'pc-isaac', name: 'Isaac Sutton' });
+    game.actors._set('pc-isaac', isaac);
+    posted = [];
+    const raw = isaac.update;
+    isaac.update = async (changes, options) => {
+      if (changes['system.momentum.value'] !== undefined) {
+        const data = { content: `<em>+1 momentum (now ${changes['system.momentum.value']})</em>`, style: EMOTE, speaker: { actor: isaac.id } };
+        const message = pendingMessage(data);
+        posted.push({ went: createGoesAhead(message, data), data: message.data });
+      }
+      return raw(changes, options);
+    };
+  });
+  afterEach(() => game.actors._reset());
+
+  it('the system\'s create is cancelled, and the caller posts the note — said by no Actor, the PC named', async () => {
+    const { notes } = await holdingSystemNotes(() => applyMeterChanges(isaac, { momentum: 1 }));
+
+    expect(posted.map(p => p.went)).toEqual([false]);
+    expect(ChatMessage._created).toEqual([]);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toMatch(/^<em>Isaac Sutton: \+1 momentum \(now \d+\)<\/em>$/);
+    expect(notes[0].speaker.actor).toBeNull();
+    expect(notes[0].flags[MODULE_ID].systemNote).toBe(true);
+
+    await postSystemNotes(notes);
+    expect(ChatMessage._created.map(m => m.content)).toEqual([notes[0].content]);
+
+    // Outside the span the system's note is posted as it always was.
+    await applyMeterChanges(isaac, { momentum: 1 });
+    expect(posted.map(p => p.went)).toEqual([false, true]);
+  });
+
+  it('a write that throws part-way has what it logged posted at once, and the error goes on', async () => {
+    await expect(holdingSystemNotes(async () => {
+      await applyMeterChanges(isaac, { momentum: 1 });
+      throw new Error('the world refused the rest');
+    })).rejects.toThrow('the world refused the rest');
+
+    expect(ChatMessage._created.map(m => m.content)).toEqual([expect.stringMatching(/^<em>Isaac Sutton: \+1 momentum/)]);
+    // The span is over: the next note is not held.
+    await applyMeterChanges(isaac, { momentum: 1 });
+    expect(posted.map(p => p.went)).toEqual([false, true]);
+  });
 });

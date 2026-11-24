@@ -5,7 +5,7 @@ verified against source. File references name the owning function; line numbers
 drift, so search by symbol. Sibling docs: `vow-flow.md`, `connection-flow.md`,
 `exploration-flow.md` (same treatment for the other lifecycles).
 
-Two cross-cutting facts to hold onto:
+Three cross-cutting facts to hold onto:
 
 - **The move pipeline runs only on the canonical GM client** (`isCanonicalGM()`
   gate at the top of the narration handler in `src/index.js`, whose stages —
@@ -204,6 +204,38 @@ Two cross-cutting facts to hold onto:
   same as a typed move's. A card button's fight move pressed during a round —
   ⚔ Attempt to Finish the Fight, a Which-fight pick — becomes its roller's
   entry (or waits for the next round while one resolves).
+- **A move's cards follow its roll card.** What a roll caused is posted below
+  the roll's own card (`movePipeline.rollMove`'s `afterMoveCard` — a list the
+  stage owns, hands to `applyOutcomeEffects`, and runs once `postMoveResult`
+  has posted, in the order it was filled, each entry once). Posted as each
+  effect landed, they stood above it, and a reader takes the top card for the
+  cause — the long haul's third live run: "Pay the Price" over the Gather
+  Information miss it was the price of (a12), "Combat progress" over the Clash
+  (a38), "Fight over" and the victory card over the Take Decisive Action
+  (a40), a vow's "marked completed", reward note and "⚑ Vow Fulfilled" over
+  the Fulfill Your Vow (a64; `vow-flow.md` §4). On the list: the Set a Course
+  card (issue #348 PT10), the fight's threshold card (§1), **Combat progress**
+  (§2), **Fight over** and the **won fight's payoff** — its victory card, the
+  promised reward and its card (§3, §4) — **Take Decisive Action's cost** (§3),
+  and a miss's **Pay the Price** when the result offers no upgrade (below). The
+  effects land where they always did (the marks, the track's end, the vow's
+  close); what moved is the posting, and with it a payoff or price whose own
+  function posts its cards. The list is run in the same stage, before it
+  returns — nothing on it waits on a person, a held result's wait or a
+  narration — and on the way out when anything stops the roll before or at
+  its card (a roll card the world refuses, a throw: `rollMove`'s `finally`),
+  so what the effects owe is still posted and paid. An upgrade's cards post at
+  once: its roll card is on the table. **Not on it** (posted before the roll
+  card still): the price of a result that offers Burn Momentum or Improve
+  Result and is *not* held — a Batch Mode round's entry, or free-flow with
+  `holdResultForUpgrade` off: the card's `burn` / `improve` state must carry
+  the price's receipts (`ptpReversals`) from its first write, or an upgrade
+  pressed on it would keep the price beside the upgraded outcome; and the
+  cards of the other per-move branches, which were not part of this change —
+  expedition progress, a legacy mark, the scene-challenge card, Develop Your
+  Relationship, Reach a Milestone, a sworn vow's oath scene, Forge a Bond,
+  Finish an Expedition and its site, Finish the Scene, the recommit offers,
+  Forsake Your Vow.
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -297,6 +329,9 @@ and for what an upgrade adds over it): Strike hits mark 2; Clash marks 2 (strong
 Ground marks only when the player picks that option in its choose-one; React
 Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 8
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
+The marks land before the move's roll card is built; the "Combat progress"
+card that says so is posted after it (`afterMoveCard`, above) — for a held
+result too: the marks are the roll's, only its price and narration wait.
 A move's marks create a fight only when none is open (`applyCombatProgress`):
 with fights open and none selected — or the fight named by id over — it marks
 nothing and says why (`reason: "ambiguous" | "gone"`; the applier warns and
@@ -392,8 +427,9 @@ Stations guidance (`src/moves/battleStations.js`).
 ## 3. Ending a fight
 
 `endCombat` fires on Take Decisive Action strong/weak, any `battle` outcome,
-or Face Defeat (always). The branch completes the track, posts the finish
-card, and deletes the Combat doc.
+or Face Defeat (always). The branch completes the track and deletes the Combat
+doc; its "Fight over" card, and the won fight's payoff with its cards (§4),
+are posted after the move's roll card (`afterMoveCard`, above).
 
 **Take Decisive Action** is a progress move: `enrichProgressTicks`
 (`src/moves/statEnrichment.js`) copies the resolved combat track's live ticks
@@ -443,7 +479,9 @@ open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
 `exploration-flow.md` §1). A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
-pick) — once: the card's cost seeds the move's narration
+pick) — once, and once the roll card is on the table (`afterMoveCard`; a
+progress roll is never held or upgraded, so nothing reads the cost before
+then): the card's cost seeds the move's narration
 (`withDecisiveActionCostSeed`), and `buildOracleSeeds` rolls none of its own
 (`rollsDecisiveActionCost`; the narration depicted one cost and the card
 another — TDA-COST-DOUBLE-ROLL, the U03 shape). A TDA **miss** does not end the fight — it routes Pay the Price.
@@ -477,7 +515,11 @@ trip erased the answer).
 
 **One price per result.** A routed Pay the Price (`routePayThePrice` — Face
 Defeat on every outcome, the misses above) is rolled once, for its card
-(`postMovePayThePriceCard`, which every routed price posts through), and
+(`postMovePayThePriceCard`, which every routed price posts through) — paid
+under the move that paid it: once its roll card is on the table when the
+result offers no upgrade (`afterMoveCard`), at its keep when it is held, and
+before the card only for a result that offers an upgrade and is not held (the
+card's Burn / Improve state carries the price's receipts) — and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 price at all (its "advisory" roll for a miss that neither routed nor offered
@@ -583,7 +625,8 @@ a vow — by its id (`linkedVowId`, the panel's add: found among the PCs' vow
 copies, under the name it carries now — `fightLinkedVow`; by the name it was
 linked under, a vow renamed mid-fight left the victory card naming a vow
 nobody held, issue #362 AC46), else by `linkedVowName` (a threshold link) —
-the pipeline posts the **victory card**
+the pipeline posts the **victory card** — after the winning move's roll card,
+and after "Fight over" (`afterMoveCard`, above) —
 (`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
 `marks`, `connectionName`, `vowRank` and the roller's `actorId`):
 **⚑ Mark milestone (×N)** — N scales with the *fight's* rank

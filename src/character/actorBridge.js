@@ -139,12 +139,71 @@ export function registerSystemNoteAttribution() {
     // A change the module shows on a card of its own: the system's note for
     // it is not posted at all (withoutSystemNotes) — false cancels the create.
     if (_quietNotes > 0 && systemNoteOfModuleWrite(data) !== null) return false;
+    // A change whose note follows a card still to be posted: held for the
+    // caller, who posts it then (holdingSystemNotes) — the create is cancelled.
+    const holder = _noteHolders.at(-1);
+    const held = holder ? heldNoteData(data) : null;
+    if (held) { holder.push(held); return false; }
     reattributeSystemNote(message, data);
     return undefined;
   });
 }
 
 let _quietNotes = 0;
+
+// The lists system notes are being held in, the newest span last (holdingSystemNotes).
+const _noteHolders = [];
+
+/**
+ * Run a module write with the ironsworn system's change notes for it held
+ * rather than posted, and return them with the write's result — for a change
+ * whose note belongs after a card that is not on the table yet. A fulfilled
+ * vow's "… marked completed" is written before the Fulfill Your Vow's own roll
+ * card is posted, and stood above it as if it were the cause (the long haul's
+ * third live run, a64). The caller posts the notes once that card is up
+ * (postSystemNotes); each is re-spoken as a posted one is (the system's line,
+ * said by no Actor, the PC's name leading it). Only notes for Actors this
+ * client's bridge is writing are held, as withoutSystemNotes drops them. A
+ * write that throws has what it logged before then posted at once — a held
+ * note is never lost with its span — and the error goes on to the caller.
+ *
+ * @param {() => Promise<*>} write
+ * @returns {Promise<{ result: *, notes: Object[] }>} `notes`: ChatMessage creation data, in the order logged
+ */
+export async function holdingSystemNotes(write) {
+  const notes = [];
+  _noteHolders.push(notes);
+  const release = () => {
+    const at = _noteHolders.indexOf(notes);
+    if (at >= 0) _noteHolders.splice(at, 1);
+  };
+  try {
+    const result = await write();
+    release();
+    return { result, notes };
+  } catch (err) {
+    release();
+    await postSystemNotes(notes);
+    throw err;
+  }
+}
+
+/**
+ * Post the system notes a write's span held (holdingSystemNotes), in the order
+ * they were logged. Never throws: a note the world refuses is logged.
+ *
+ * @param {Object[]} notes
+ * @returns {Promise<void>}
+ */
+export async function postSystemNotes(notes) {
+  for (const data of Array.isArray(notes) ? notes : []) {
+    try {
+      await ChatMessage.create(data);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | actorBridge: a held system note could not be posted:`, err?.message ?? err);
+    }
+  }
+}
 
 /**
  * Run a module write whose change the module reports on a card of its own,
@@ -188,6 +247,44 @@ function systemNoteOfModuleWrite(data) {
 }
 
 /**
+ * What re-speaks the system's change-log line for a module write (see
+ * reattributeSystemNote): its content with the Actor's name leading, no Actor
+ * speaking, the module's `systemNote` flag. Null for anything else.
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {{ content: string, style: number, speaker: Object, flags: Object }|null}
+ */
+function respokenNoteFields(data) {
+  const note = systemNoteOfModuleWrite(data);
+  if (note === null) return null;
+  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
+  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
+    style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
+    speaker: { actor: null, token: null, scene: null, alias: null },
+    // A module flag: no longer an emote, the note would otherwise read as a
+    // player's line to the move pipeline (index.js isPlayerNarration skips
+    // any module-flagged message) and run a move of its own.
+    flags:   { [MODULE_ID]: { systemNote: true } },
+  };
+}
+
+/**
+ * A system note for a module write, as creation data of its own: what the
+ * system was about to post, re-spoken (respokenNoteFields) — for a held note,
+ * posted later by its caller (holdingSystemNotes). Null for anything else.
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {Object|null}
+ */
+function heldNoteData(data) {
+  const respoken = respokenNoteFields(data);
+  if (respoken === null) return null;
+  return { ...data, ...respoken, flags: { ...(data.flags ?? {}), ...respoken.flags } };
+}
+
+/**
  * The ironsworn system's change-log line (an emote whose whole content is one
  * `<em>` line, spoken by an Actor) posted while this client's bridge is
  * writing that Actor: re-spoken by no Actor — the author's (the writing
@@ -201,20 +298,10 @@ function systemNoteOfModuleWrite(data) {
  * @returns {boolean} whether it was re-spoken
  */
 function reattributeSystemNote(message, data) {
-  const note = systemNoteOfModuleWrite(data);
-  if (note === null) return false;
-  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
-  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const respoken = respokenNoteFields(data);
+  if (respoken === null) return false;
   try {
-    message?.updateSource?.({
-      content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
-      style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
-      speaker: { actor: null, token: null, scene: null, alias: null },
-      // A module flag: no longer an emote, the note would otherwise read as a
-      // player's line to the move pipeline (index.js isPlayerNarration skips
-      // any module-flagged message) and run a move of its own.
-      flags:   { [MODULE_ID]: { systemNote: true } },
-    });
+    message?.updateSource?.(respoken);
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | actorBridge: re-speaking the system's change note failed:`, err?.message ?? err);
