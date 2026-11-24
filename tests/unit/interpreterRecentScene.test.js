@@ -10,8 +10,9 @@
  * narration cards (narrator.js getRecentSceneForReading) as RECENT SCENE, and
  * the prompt names a target the line only refers to from it.
  *
- * Also: the interpreter's model is its own constant (Haiku 5.5), never the
- * copy a world stored in campaignState.api at creation.
+ * Also: the interpreter's model is its own constant (Sonnet 5.5 — decisions.md,
+ * "The readers run on Sonnet 5.5"), never the copy a world stored in
+ * campaignState.api at creation.
  */
 
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
@@ -63,12 +64,13 @@ describe("interpretMove() — the recent scene", () => {
     expect(body().messages[0].content).not.toContain("RECENT SCENE");
   });
 
-  it("runs on Haiku 5.5 with its own cap — not a world's stored api.model / api.maxTokens", async () => {
+  it("runs on Sonnet 5.5 with its own cap — not a world's stored api.model / api.maxTokens", async () => {
     replyJson({ moveId: "face_danger", statUsed: "edge" });
     await interpretMove("I dive for cover.", {
+      // A world made while the interpreter ran on Haiku holds that model still.
       ...OPTS, campaignState: { api: { model: "claude-haiku-5-5", maxTokens: 1000, promptCachingEnabled: true } },
     });
-    expect(body()).toMatchObject({ model: "claude-haiku-5-5", max_tokens: 1300 });
+    expect(body()).toMatchObject({ model: "claude-sonnet-5-5", max_tokens: 1300 });
   });
 });
 

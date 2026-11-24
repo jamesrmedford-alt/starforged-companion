@@ -1084,20 +1084,25 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
 // not every NPC card. Under FOLDER-002 every named individual is a
 // connection-type card, so the old list (issue #321 U44: every id in
 // `connectionIds`) made every tracked NPC "a Connection", and every line
-// spoken to one leaned toward a roll.
+// spoken to one leaned toward a roll. They are told in the speaker's
+// SITUATION block now (moves/situation.js — readersSituationBlock.test.js),
+// each with its rank and relationship track.
 describe('buildClassifierContext — the speaker\'s own connections', () => {
   afterEach(() => { global.game.actors._reset?.(); });
 
   const bond = (name, extra = {}) => ({ id: `bond-${name}`, type: 'progress', name,
     system: { subtype: 'bond', rank: 'dangerous', current: 0, completed: false, ...(extra.system ?? {}) },
     flags: extra.flags ?? {} });
-  const connectionsLine = (character, campaignState = {}) => buildClassifierContext({
+  const characterSection = (character, campaignState = {}) => buildClassifierContext({
     playerText:        'I lean on Kael Dros for the docking codes.',
     campaignState,
     character,
     recentMoveDensity: { count: 0, window: 5 },
     pacingConfig:      BASE_PACING_CFG,
-  }).userMessage.split('\n').find(l => /connections:/.test(l));
+  }).userMessage.split('## CHARACTER\n')[1].split('\n\n## CURRENT SCENE')[0];
+  const connectionsLine = (character, campaignState = {}) =>
+    characterSection(character, campaignState).split('\n').find(l => /^- Connections:/.test(l)) ?? null;
+  const NO_SHEET = 'SITUATION — no character sheet is known for the speaker: meters, vows and connections are unknown.';
 
   it('lists the connections on the speaker\'s sheet, a forged bond marked, a severed one left out', () => {
     global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira', items: { contents: [
@@ -1106,26 +1111,26 @@ describe('buildClassifierContext — the speaker\'s own connections', () => {
       bond('Old Marrow', { flags: { 'starforged-companion': { lost: true } } }),
     ] } }));
     expect(connectionsLine({ name: 'Kira', actorId: 'pc-kira' }))
-      .toBe("Kira's connections: Kael Dros, Sable (bonded)");
+      .toBe('- Connections: "Kael Dros" (dangerous, relationship 0 of 10 boxes); "Sable" (dangerous, bonded).');
   });
 
   it('an NPC card that is on nobody\'s sheet is not a connection of the speaker', () => {
     const escort = addConnectionEntity(null, { name: 'The Escort', disposition: 'Hostile' });
     global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira' }));
     expect(connectionsLine({ name: 'Kira', actorId: 'pc-kira' }, { connectionIds: [escort.journalId] }))
-      .toBe("Kira's connections: (none)");
+      .toBe('- Connections: none.');
   });
 
   it('another character\'s connection is not the speaker\'s', () => {
     global.game.actors._set('pc-kira', global.makeTestActor({ id: 'pc-kira', name: 'Kira', items: { contents: [bond('Kael Dros')] } }));
     global.game.actors._set('pc-orin', global.makeTestActor({ id: 'pc-orin', name: 'Orin' }));
-    expect(connectionsLine({ name: 'Orin', actorId: 'pc-orin' })).toBe("Orin's connections: (none)");
+    expect(connectionsLine({ name: 'Orin', actorId: 'pc-orin' })).toBe('- Connections: none.');
   });
 
-  it('with no speaker resolved it says none, and never throws', () => {
-    expect(connectionsLine(null)).toBe("The speaker's connections: (none)");
-    expect(connectionsLine({ name: 'Kira' })).toBe("Kira's connections: (none)");
-    expect(connectionsLine({ name: 'Kira', actorId: 'actor-gone' })).toBe("Kira's connections: (none)");
+  it('with no speaker resolved it says no sheet is known, and never throws', () => {
+    expect(characterSection(null)).toBe(`Name: (none set)\n${NO_SHEET}`);
+    expect(characterSection({ name: 'Kira' })).toBe(`Name: Kira\n${NO_SHEET}`);
+    expect(characterSection({ name: 'Kira', actorId: 'actor-gone' })).toBe(`Name: Kira\n${NO_SHEET}`);
   });
 });
 

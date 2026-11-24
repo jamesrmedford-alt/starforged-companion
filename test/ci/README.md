@@ -304,9 +304,9 @@ cause). It replays with no key like the others.
 calls that read every line of play — is it a move, and which — tried on about
 fifty plain in-fiction lines that name no move, each with the reading it
 should get, with nothing rolled or narrated. Dry by default (no key: the
-prompts are built, the readings are stubs); `--live` reads them on Haiku 5.5
-and Sonnet 5.5 and needs `READERS_QUESTIONS`, as a live exploration needs its
-own:
+prompts are built, the readings are stubs); `--live` reads them on Sonnet 5.5
+— the readers' own model — and on Haiku 5.5, which they ran on before, and
+needs `READERS_QUESTIONS`, as a live exploration needs its own:
 
 ```bash
 READERS_QUESTIONS="$(cat questions.txt)" READERS_REPEATS=2 ./scripts/cloud.sh readers --live

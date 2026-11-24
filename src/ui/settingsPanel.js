@@ -418,7 +418,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH, {
     name:    'Scene Response Length (sentences)',
-    hint:    'Target number of sentences for scene interrogation responses. Range: 1–4.',
+    hint:    'The most sentences an @scene answer runs to: it gives the fact asked for and stops. Range: 1–4.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -549,7 +549,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PACING_ENABLED, {
     name:    'Pacing Classifier Enabled',
-    hint:    'Master switch. When enabled, a Haiku pre-classifier decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
+    hint:    'Master switch. When enabled, a pre-classifier (Claude Sonnet 5.5) decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -1527,7 +1527,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         <hr class="mischief-divider">
         <h4 class="mischief-section-heading">Pacing Classifier</h4>
         <p class="pacing-pane-intro">
-          When enabled, a small Haiku call decides whether each undecorated chat input should
+          When enabled, a small Claude call (Sonnet 5.5) decides whether each undecorated chat input should
           trigger a move, be handled as pure narration, or end with an inline move suggestion.
           Dials below set how move-leaning each scene type should be on a 0–10 scale.
           <strong>Combat</strong> is a fight and any other immediate physical danger —
@@ -1766,12 +1766,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="sceneQueryEnabled" ${ctx.sceneQueryEnabled ? 'checked' : ''} ${dis}>
             Enable @scene questions
           </label>
-          <span class="narrator-field-hint">A message starting with @scene asks the narrator to describe the scene, with no move.</span>
+          <span class="narrator-field-hint">A message starting with @scene asks the narrator a question about the story. It answers plainly, with no move, and nothing in the answer is recorded.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene response length (sentences)</label>
           <input class="settings-input narrator-number-input" name="sceneResponseLength"
                  type="number" min="1" max="4" value="${ctx.sceneResponseLength}" ${dis}>
+          <span class="narrator-field-hint">The most sentences an @scene answer runs to — it gives the fact and stops. Default 2.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene context cards</label>
@@ -2041,7 +2042,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Move AI</dt>
-            <dd>claude-haiku-5-5 (Haiku 5.5) · system prompt cached</dd>
+            <dd>claude-sonnet-5-5 (Sonnet 5.5) · reads each line: is it a move, and which · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
