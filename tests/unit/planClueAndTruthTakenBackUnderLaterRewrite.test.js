@@ -58,9 +58,14 @@ async function seedPlan() {
   }));
 }
 
-/** A move narration whose beat does `reveal` to the plan; its narration id. */
+/**
+ * A move narration whose beat does `reveal` to the plan; its narration id.
+ * Its prose tells the plan's truth as it stands — a truth is revealed by
+ * prose that tells it (secrets.js withoutUntoldTruths).
+ */
 async function narrationReveals(plan, reveal) {
-  table.replies = () => ({ prose: 'The escort turns.', sidecar: { newTruths: [], stateChanges: [], reveals: [{ id: plan.id, ...reveal }] } });
+  const prose = `The escort turns. ${planOf(plan.id)?.truth ?? ''}`.trim();
+  table.replies = () => ({ prose, sidecar: { newTruths: [], stateChanges: [], reveals: [{ id: plan.id, ...reveal }] } });
   await narrateMoveOn(table, moveResolution());
   table.replies = plain;
   return lastNarrationId();

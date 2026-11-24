@@ -8,7 +8,11 @@
  * kettle "that has outlasted three owners" twice, the lentils and the burnt
  * pan twice — and its three closings were one scene three times. Nothing told
  * a scene what the earlier ones of its kind had shown. Each bookend's builder
- * now lists them, as already used.
+ * now lists them, as already used — each one whole: shown its first 700
+ * characters, the long haul's fourth opening ended on the first opening's own
+ * last sentence ("the comm panel by the hatch chirps once, soft and
+ * apologetic"), which the cut had taken out of its "already used" list
+ * (third live run, a78 against a2). How a scene ends is as used as its food.
  *
  * Read from the chat log — a bookend's card carries its prose
  * (`narrationText`) and its kind (`vignetteKind`); one the X-Card removed, an
@@ -21,9 +25,6 @@ const MODULE_ID = 'starforged-companion';
 /** How many earlier scenes of a kind a bookend is shown. */
 export const EARLIER_VIGNETTES_MAX = 3;
 
-/** How much of each earlier scene it is shown. */
-const EARLIER_VIGNETTE_CHARS = 700;
-
 function plainProse(text) {
   return String(text ?? '')
     .replace(/<[^>]*>/g, '')          // <npc …> voice markup
@@ -32,7 +33,8 @@ function plainProse(text) {
 }
 
 /**
- * The prose of the newest earlier bookends of these kinds, oldest first.
+ * The prose of the newest earlier bookends of these kinds, each in full,
+ * oldest first.
  *
  * @param {string[]} kinds — `vignetteKind`s ("galley_begin", "npc_end")
  * @param {{ limit?: number, messages?: Object[] }} [opts]
@@ -49,7 +51,9 @@ export function earlierVignettes(kinds, { limit = EARLIER_VIGNETTES_MAX, message
     const text = plainProse(f.narrationText);
     if (!text) continue;
     const title = typeof f.vignetteNpc === 'string' && f.vignetteNpc.trim() ? f.vignetteNpc.trim() : null;
-    found.push({ text: text.length > EARLIER_VIGNETTE_CHARS ? `${text.slice(0, EARLIER_VIGNETTE_CHARS - 1)}…` : text, title });
+    // Whole: a bookend is a handful of sentences, and its last one — the beat
+    // it ends on — is the one most often written again.
+    found.push({ text, title });
   }
   return found.slice(-Math.max(0, limit));
 }

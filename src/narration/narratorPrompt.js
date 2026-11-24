@@ -5,7 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock, formatPriceChoiceBlock } from '../moves/stakes.js';
+import { formatStakesBlock, formatPriceChoiceBlock, formatOpenChoiceBlock, formatFightOfferBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -1108,13 +1108,103 @@ const META_MODES = new Set(['campaign_recap']);
 // sent to every mode, beside the mode's own length (issue #326 W40).
 const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
+/**
+ * What an oracle's answer is to the narration that tells it (known-issues
+ * ORACLE-NO-NARRATED-AS-YES). "Is anyone left alive aboard the wreck?" rolled
+ * NO, and the follow-up wrote "The open comm still hisses with the dry voice's
+ * breathing, which means someone is aboard": the narrator kept what it had
+ * made — a voice on the comm, three beats running — over what the oracle
+ * said. RECENT ORACLE RESULTS already asked it not to contradict the dice;
+ * nothing said which gives way when the scene and the answer disagree. The
+ * scene does. In the mode's role (the same for every follow-up); the user
+ * message says it of the one answer (formatOracleAnswerRule).
+ */
+const ORACLE_ANSWER_BINDS =
+  `The oracle's answer is the table's, not yours, and it binds the story from here. A yes ` +
+  `is narrated as yes and a no as no — never as its opposite, never as doubtful, and never ` +
+  `as something still to be found out. Where the scene so far said otherwise — a voice ` +
+  `heard, a light seen, a thing taken for granted — the scene gives way, not the answer: ` +
+  `reconcile it inside the fiction, in this narration (what was heard was a recording, a ` +
+  `relay or an echo, was mistaken, or has stopped), so that nothing left standing ` +
+  `contradicts the answer. A table's result is read with latitude; it is never turned ` +
+  `into its reverse.`;
+
+/** The heading of a recap's section on how things stand (formatStandsNowBlock); the recap's rules name it. */
+const STANDS_NOW_HEADING = 'WHERE THINGS STAND NOW';
+
+/**
+ * A recap says only what its sources say (known-issues
+ * RECAP-STATES-WHAT-DID-NOT-HAPPEN). The long haul's third live run's four
+ * recaps held fourteen sentences the story does not support (its
+ * review-notes.md lists each); run 2's a76 held three. As read from the
+ * prompts, by cause:
+ *   - inference: "your first hint that the Spire's water shortage and the
+ *     raids might share a source" — no step links them; "it is a question you
+ *     can now answer" — the entry before says the question is still pressed;
+ *   - a gap filled in: "What you found there was the point of it all", of a
+ *     ship never boarded — the Chronicle steps from "won grudging leave to
+ *     board" to the stamp because the step between was X-Carded;
+ *   - a third-person entry turned to "you": "first pick of her hauls" — the
+ *     offer was first pick of the character's own, in all four recaps;
+ *   - an earlier state carried forward: "The compass still swings toward the
+ *     dark lane" — it swung north and stopped; the entry for that step dropped
+ *     the needle, and the recap was sent nothing else of how things stood
+ *     (formatStandsNowBlock is what it is sent now).
+ * The role told it only to "draw only on the chronicle provided".
+ */
+const RECAP_SOURCES_RULE =
+  `A recap says only what its sources say. The Chronicle in the user message is the record of ` +
+  `what happened; ${STANDS_NOW_HEADING}, in the context when it is there, is the later word on ` +
+  `how things stand.\n` +
+  `- Every sentence restates what an entry or the context states. Infer nothing: no cause, motive ` +
+  `or link between two things that no entry gives ("your first hint that…", "which is how…"), no ` +
+  `verdict on what something meant ("the point of it all"), and no answer to a question an entry ` +
+  `leaves open.\n` +
+  `- Fill nothing in between entries. Where the Chronicle steps from one moment to a later one, ` +
+  `the recap steps with it and says nothing of what lay between: an entry may be missing because ` +
+  `the table took that moment out of the story. A place no entry says was entered was not ` +
+  `entered; a thing no entry says was found was not found.\n` +
+  `- Keep whose things are whose. An entry speaks of the player character by name, in the third ` +
+  `person; the recap may call that character "you" — and no one else. Before a "her", "his" or ` +
+  `"their" becomes "your", be certain whose it is: where an entry leaves it open ("first pick of ` +
+  `her hauls", of two women), keep the entry's own names and words.\n` +
+  `- How a thing stands now is its latest word, not its first. Where a later entry, or ` +
+  `${STANDS_NOW_HEADING}, changes what an earlier entry said — where someone or something is, the ` +
+  `state it is in, which way it points, whether a question is answered — say the later one, and ` +
+  `never carry the earlier forward as still true.`;
+
+/** The oracle's own word for a doubled roll stays out of the prose too (NARRATION-NAMES-THE-OUTCOME). */
+const ORACLE_MATCH_RULE =
+  `A result that came with a match is the answer at its most extreme, or with a twist: ` +
+  `tell that as what happens. The word "match" is the table's and is never written.`;
+
+/**
+ * The dice's own words stay out of the prose (known-issues
+ * NARRATION-NAMES-THE-OUTCOME). The move's outcome block reads "[OUTCOME:
+ * Strong Hit with a Match [MATCH]]", and the rule against repeating it named
+ * no word: two live runs wrote them in — "Strong hit, and a match: he throws
+ * in a sealed ration crate…" (run 2, a51) and "The match flares bright on the
+ * scope" (run 3, a27), an image made from the word with nothing in the scene
+ * to be one. Nor was the narrator told what a match is for. In the move and
+ * round roles, beside that rule.
+ */
+const OUTCOME_WORDS_RULE =
+  `The outcome's own words are the table's, never the story's. "Strong hit", "weak hit", ` +
+  `"miss" and "match" never appear in the narration as such: not as the roll's name ("a ` +
+  `strong hit", "it's a miss", "and a match"), not as a remark on the dice, and not as an ` +
+  `image made out of the word (a match that flares, a hit that lands "strong"). Narrate ` +
+  `what happens instead. A match is told as its twist — on a hit, something unexpected or ` +
+  `a new opening; on a miss, the turn that makes it worse — as an event in the scene, ` +
+  `with no name for it.`;
+
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
     `narrate the mechanical consequences of move outcomes as plain, concrete prose ` +
     `that serves the story.\n\n` +
     `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
-    `Keep the player in the fiction.`,
+    `Keep the player in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   round_resolution:
     `You are the narrator for an Ironsworn: Starforged campaign played by several players ` +
@@ -1123,7 +1213,8 @@ const ROLE_DESCRIPTIONS = {
     `prose that serves the story.\n\n` +
     `Do not repeat a mechanical outcome verbatim. Transform each into narrative, in the ` +
     `order given, and keep every action with the character who took it. Keep the players ` +
-    `in the fiction.`,
+    `in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   paced_narrative:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1154,7 +1245,9 @@ const ROLE_DESCRIPTIONS = {
     `mechanical result is given to you verbatim. Render it as 2-3 sentences anchored to ` +
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
     `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
-    `the literal table text — transform it into narrative.`,
+    `the literal table text — transform it into narrative.\n\n` +
+    `${ORACLE_ANSWER_BINDS}\n\n` +
+    ORACLE_MATCH_RULE,
 
   session_vignette:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
@@ -1249,7 +1342,8 @@ const ROLE_DESCRIPTIONS = {
     `This is a meta-summary, not a live scene: do not advance the story, stage new ` +
     `events, introduce new entities, or propose actions. Draw only on the chronicle ` +
     `provided and the established campaign context. Keep it tight and respectful of ` +
-    `what the players have accomplished.`,
+    `what the players have accomplished.\n\n` +
+    RECAP_SOURCES_RULE,
 };
 
 /**
@@ -1539,6 +1633,91 @@ function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = 
     sceneFrameEnabled: factContinuitySceneFrame,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
+}
+
+/**
+ * [6.5m] WHERE THINGS STAND NOW — what a campaign recap is sent of how things
+ * stand, beside the Chronicle it retells (known-issues
+ * RECAP-STATES-WHAT-DID-NOT-HAPPEN). A recap was written from the Chronicle
+ * alone, and a Chronicle entry is one sentence of one beat: the entry for the
+ * beat in which the compass "swings north and stops" kept the vow's
+ * fulfilment and dropped the needle, so two recaps said it "still swings
+ * toward the dark lane"; a recap and the summary of one End a Session
+ * contradicted each other, each written from a source the other never saw.
+ * Two things, both later than any entry and both already in other prompts:
+ *   - the latest session's summary, when it covers the whole of its session
+ *     (`extras.recapSummary`, narrator.js recapSummaryFor — STORY SO FAR, or
+ *     LAST SESSION when the new one has no narration yet);
+ *   - the open scene's facts and current state, as the narrations of that
+ *     scene are given them.
+ * Never as the ACTIVE SCENE block gives them: issue #374 A1 took that block
+ * out of a recap because, told under "binding" the frame of End a Session's
+ * closing cutaway, a recap set the whole campaign there. The cutaway's scene
+ * now ends before the recap is written, and this section says what it is —
+ * how things stand, not where the campaign is set, and not events to retell.
+ * No scene question (it is the narrator's device). '' with neither.
+ *
+ * @param {Object} campaignState — with the live scene ledger laid over it
+ * @param {Object} settings — the factContinuity* settings
+ * @param {{ recapSummary?: { text: string, sessionNumber?: number|null, current?: boolean }|null,
+ *   entityNamesById?: Map<string,string>|Object|null }} [opts]
+ * @returns {string}
+ */
+function formatStandsNowBlock(campaignState, settings = {}, { recapSummary = null, entityNamesById = null } = {}) {
+  const {
+    factContinuityEnabled         = true,
+    factContinuityLedgerInContext = true,
+    factContinuityMaxLedgerTokens = 400,
+    factContinuitySceneFrame      = true,
+  } = settings ?? {};
+  const sections = [];
+
+  const summary = typeof recapSummary?.text === 'string' ? recapSummary.text.trim() : '';
+  if (summary) {
+    const number = Number.isFinite(recapSummary.sessionNumber) ? ` (session ${recapSummary.sessionNumber})` : '';
+    sections.push(`${recapSummary.current === false ? 'THE LAST SESSION PLAYED' : 'THE SESSION JUST PLAYED'}${number}, as its summary has it:\n${summary}`);
+  }
+
+  if (factContinuityEnabled && factContinuityLedgerInContext) {
+    // Every subject the scene holds a fact about: a recap names no one in a
+    // player's line for relevance to match.
+    const ids = new Set();
+    for (const t of Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : []) {
+      if (t?.subject?.kind === 'entity' && t.subject.entityId) ids.add(t.subject.entityId);
+    }
+    for (const key of Object.keys(campaignState?.sceneState?.bySubject ?? {})) {
+      const subject = subjectFromStateKey(key);
+      if (subject?.kind === 'entity' && subject.entityId) ids.add(subject.entityId);
+    }
+    const block = buildLedgerBlock(campaignState, {
+      matchedEntityIds: [...ids], currentLocationId: campaignState?.currentLocationId ?? null,
+      maxTokens: factContinuityMaxLedgerTokens, entityNamesById, sceneFrameEnabled: factContinuitySceneFrame,
+    });
+    const frame = factContinuitySceneFrame && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
+      ? campaignState.sceneFrame : null;
+    const scene = [];
+    if (frame?.location)  scene.push(`  Where: ${String(frame.location).trim()}`);
+    if (frame?.situation) scene.push(`  Now:   ${String(frame.situation).trim()}`);
+    const relabel = (text, label) => (text ? text.replace(/^[^\n]*\n/, `${label}\n`) : '');
+    const parts = [
+      scene.length ? ['THE SCENE IN PLAY (one moment of the campaign — not where the campaign is set):', ...scene].join('\n') : '',
+      relabel(block.truths, 'ESTABLISHED IN THAT SCENE:'),
+      block.corrections,
+      relabel(block.state, 'AS IT STANDS THERE:'),
+    ].filter(Boolean);
+    if (parts.length) sections.push(parts.join('\n\n'));
+  }
+
+  if (!sections.length) return '';
+  return (
+    `## ${STANDS_NOW_HEADING}\n\n` +
+    `Later than any Chronicle entry: how things stand as the story stops. Use it for the recap's ` +
+    `last part, and wherever an entry tells how something stood earlier — where the two differ on ` +
+    `where someone or something is, the state it is in, which way it points or whether a question ` +
+    `is answered, this is the later word and the recap follows it. It is not a list of events to ` +
+    `retell: add no event from it that the Chronicle does not hold.\n\n` +
+    sections.join('\n\n')
+  );
 }
 
 /**
@@ -2118,15 +2297,26 @@ export function buildNarratorSystemBlocks(
   //       (`extras.sceneLedger` — buildNarratorExtras, issue #325 W05): a
   //       move narrates from a snapshot taken before its confirm dialog, and
   //       an X-Card or `!truth strike` made meanwhile is only in the store.
-  //       A meta mode gets the ship's position alone — the one line of the
-  //       block that is no scene's. A recap retells the Chronicle, and the
-  //       scene that happens to be open is not its to honour: told, as
+  //       Of this block a meta mode gets the ship's position alone — the one
+  //       line of it that is no scene's. A recap retells the Chronicle, and
+  //       the scene that happens to be open is not its to honour: told, as
   //       binding, the frame of End a Session's closing cutaway, it set the
-  //       whole campaign there (issue #374 A1).
+  //       whole campaign there (issue #374 A1). What a recap is told of how
+  //       things stand is its own section, [6.5m] below.
   // [6.4] NAMES THE TABLE CHANGED (issue #377 item 1) goes here, just above
   //       the scene's truths, once the rest of the prompt is built (below):
   //       it is told only where an old name still reaches the call.
   const namesAt = parts.length;
+  // [6.5m] A recap's own section on how things stand — the latest session's
+  //        summary and the open scene's facts and state, as the later word on
+  //        them, never as a binding scene (RECAP-STATES-WHAT-DID-NOT-HAPPEN;
+  //        formatStandsNowBlock says why this is not A1's block again).
+  if (isMetaMode) {
+    const standsNow = formatStandsNowBlock(withSceneLedger(campaignState, sceneLedger), {
+      factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
+    }, { recapSummary: extras?.recapSummary ?? null, entityNamesById });
+    if (standsNow) parts.push(standsNow);
+  }
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
   }, { matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode });
@@ -2149,6 +2339,8 @@ export function buildNarratorSystemBlocks(
       plannedSubjects,
       sidecar: factContinuityEnabled,
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
+      // The vows this beat's move fulfils (narrator.js buildNarratorExtras).
+      endingSubjectIds: Array.isArray(extras?.endingTrackIds) ? extras.endingTrackIds : [],
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
   }
@@ -2388,10 +2580,51 @@ function formatSkeletonEntry(r) {
     lines.push(withheld ? 'When the expedition is finished, record it as resolved.'
       : 'When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
   } else if (r.kind === 'vow') {
+    // A vow's end does not reveal its truth; telling it does (known-issues
+    // VOW-FULFILLED-WITH-NOBODY-NAMED: "and "truth" as revealed if it comes
+    // out" was recorded under a fulfilment whose prose told none of it).
     lines.push(withheld ? 'When the vow is fulfilled or forsaken, its story ends: record it as resolved.'
-      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
+      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved. Its truth comes out only by being told: ' +
+        'record "truth" as revealed when your prose states it, never because the vow ended.');
   }
   return lines.join('\n');
+}
+
+/**
+ * [6.6] THIS BEAT ENDS A VOW — for each decided vow plan the beat's move
+ * fulfils (`endingSubjectIds`, the vow's id on the move's `endingTrackIds`;
+ * known-issues VOW-FULFILLED-WITH-NOBODY-NAMED, the long haul's third live
+ * run, a64). "Find who is raiding the Cinder Expanse lanes" was fulfilled
+ * under UNREVEALED's standing rule — "Never state one outright" — and its
+ * narration obeyed: "The thing you swore to find has a hand and a seal, and
+ * both are named now", with no name anywhere in the story, and "truth"
+ * recorded as revealed. The fulfilment is where the vow's truth is told, so
+ * the rule is lifted for that plan, here: the prose states the truth, as far
+ * as the truth goes, and claims nothing it does not hold. '' with no such
+ * plan, and for one whose truth the X-Card withheld (truthWithheld).
+ *
+ * @param {Object[]} decided — the decided plans in play
+ * @param {Iterable<string>} endingSubjectIds
+ * @returns {string[]} lines, [] for none
+ */
+function vowEndingLines(decided, endingSubjectIds) {
+  const ending = new Set(endingSubjectIds ?? []);
+  const vows = decided.filter(r => r?.kind === 'vow' && r.subject?.id && ending.has(r.subject.id) && !truthWithheld(r));
+  if (!vows.length) return [];
+  return [
+    '',
+    '### THIS BEAT ENDS A VOW',
+    `The move this beat narrates fulfils ${vows.map(r => `${skeletonHeading(r)} (id ${r.id})`).join(' and ')}. What that vow set out`,
+    'to find, do or learn is told now, in the prose, as far as the story holds it:',
+    '- For this plan the rule against stating a truth outright is lifted. Where the fulfilment brings its',
+    '  truth out — it does when the vow was sworn to find out who, what or why, and the Truth line is the',
+    '  answer — state that truth in the narration itself, in plain words a player could repeat: who or what',
+    '  it is, where, what they want, as the Truth line gives them. Then record "truth" as revealed. A truth',
+    '  recorded as revealed that the prose did not tell is not revealed.',
+    '- The Truth line is all there is to tell. Where it gives no name, there is no name: say what was found,',
+    '  and say plainly that the rest — who, by name — is still not known.',
+    '- Never write that an answer is "known", "named", "found" or "proved" without saying what it is.',
+  ];
 }
 
 /**
@@ -2424,15 +2657,17 @@ export function formatSnapshotPlan(r) {
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
  * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
- *   coveredIds?: string[] }} [opts] —
+ *   coveredIds?: string[], endingSubjectIds?: string[] }} [opts] —
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
  *   "new" one is one of them (`sameAs`, issue #354 P2-30);
  *   `coveredIds`: the decided plans the world snapshot holds (issue #357) — each is named by its
- *   heading and id, not printed again; a decided plan not among them is printed as before
+ *   heading and id, not printed again; a decided plan not among them is printed as before;
+ *   `endingSubjectIds`: the vows the beat's move fulfils (its `endingTrackIds`) — a vow plan about one
+ *   is told now (THIS BEAT ENDS A VOW, vowEndingLines)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [] } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [] } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
   const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
@@ -2459,6 +2694,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       '  "reveals": [{ "id": "<its id>", "revealed": ["<clue id>", or "truth" when the truth itself comes',
       '  out>], "advanced": "<the escalation step id it played>", "resolved": true when its story ends }].',
       '  Only what this beat actually showed; nothing for a subject it did not touch.',
+      // VOW-FULFILLED-WITH-NOBODY-NAMED: "truth" was recorded under prose that told none of it.
+      '  "truth" only when the prose of this narration states the truth itself, naming what it names: a',
+      '  line saying that something is now known, named or proved, without saying what, reveals nothing.',
       '- Where your narration contradicts something below, your narration stands: record the change in',
       '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
       '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
@@ -2484,6 +2722,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
     );
   }
+  // The vow this beat's move fulfils is told now — with the fact block, which
+  // records it (the Private Channel narrates no move).
+  if (sidecar) lines.push(...vowEndingLines(everyDecided, endingSubjectIds));
 
   if (pending.length || requests.length) {
     lines.push(
@@ -2565,6 +2806,35 @@ export function formatOracleSeedsBlock(seeds) {
 }
 
 /**
+ * The rule an oracle follow-up's user message carries about the one answer it
+ * narrates (known-issues ORACLE-NO-NARRATED-AS-YES; ORACLE_ANSWER_BINDS is the
+ * mode's standing rule). A yes/no answer is read from the result line the raw
+ * card carries ("d100 = 97 → NO", index.js) and said back in plain words with
+ * the question, so the answer is the last thing read before the instruction
+ * to render it: the narration is of a scene in which it is true. '' for a
+ * table roll, a price or a complication — they answer no yes/no question —
+ * and for a line that holds no answer.
+ *
+ * @param {{ kind?: string, question?: string, rolledLine?: string }} oracle
+ * @returns {string}
+ */
+export function formatOracleAnswerRule({ kind = '', question = '', rolledLine = '' } = {}) {
+  if (kind !== 'oracle_yes_no') return '';
+  const answer = /→\s*(yes|no)\b/i.exec(String(rolledLine ?? ''))?.[1]?.toUpperCase() ?? null;
+  if (!answer) return '';
+  const asked = sanitizePlayerText(question);
+  const opposite = answer === 'NO' ? 'yes' : 'no';
+  return (
+    `The answer is ${answer}${asked ? `: to "${asked}", the oracle says ${answer.toLowerCase()}` : ''}. ` +
+    `It is the table's answer and it is not yours to change: narrate a scene in which it is ` +
+    `true. Nothing in the prose may say, show or imply ${opposite}, or leave it open. Where ` +
+    `RECENT NARRATION said otherwise, bring the scene into line with the answer here — what ` +
+    `was seen or heard was a recording, a relay, an echo or a mistake, or it has stopped — ` +
+    `and say so in the story.`
+  );
+}
+
+/**
  * Format the RECENT ORACLE RESULTS block ([3b]) from the entries
  * `readRecentOracleResults` returns (src/oracles/oracleMemory.js). Returns ''
  * when there is nothing to render. Exported for unit testing.
@@ -2584,9 +2854,13 @@ export function formatRecentOraclesBlock(entries) {
     lines.push(`- ${e.name || 'Oracle'}:${q} → ${e.answer}`);
   }
   lines.push('');
+  // Which gives way (known-issues ORACLE-NO-NARRATED-AS-YES): a narration
+  // written before an answer, or beside it, may say otherwise — the answer stands.
   lines.push(
     'The dice established these outcomes. Your narration must not contradict ' +
-    'them — build on what the oracle answered.',
+    'them — build on what the oracle answered. Where earlier narration in this ' +
+    'prompt says otherwise, the answer stands and the story is brought into ' +
+    'line with it, never the answer with the story.',
   );
   return lines.join('\n');
 }
@@ -2850,6 +3124,11 @@ export function buildCampaignRecapUserMessage(chronicleEntries) {
     `- The vows sworn and their current status\n` +
     `- The most significant revelations\n` +
     `- Where things stand now\n\n` +
+    // RECAP-STATES-WHAT-DID-NOT-HAPPEN: the last thing it reads is what it may say.
+    `Each of these only as far as the entries above state it — and, for where things stand, ` +
+    `${STANDS_NOW_HEADING} in your instructions when it is there. Nothing inferred, nothing ` +
+    `filled in between two entries, and no "your" for what an entry does not make certainly ` +
+    `the character's own. A point the entries say nothing of is left out.\n\n` +
     `Write in second person for solo campaigns, third person for multiplayer. ` +
     `Be wry but respectful of what the player has accomplished.`,
   ].join('\n\n');
@@ -3050,10 +3329,26 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // Waypoint's match), is told as it stands (issue #364
   // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
   const priceChoice = resolution?.priceChoice ?? null;
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice });
+  // A cost that is its player's choice and not chosen yet (`openChoice` —
+  // narrator.js reads the table's cards, resultUpgrade.js withUnansweredCards):
+  // the narration stops short of it (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
+  const openChoice = resolution?.openChoice ?? null;
+  // An Enter the Fray whose fight no one has begun yet (`fightOffer`, read
+  // from its card the same way): the narration stops before the first blow
+  // (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN).
+  const fightOffer = resolution?.fightOffer ?? null;
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice, openChoice, fightOffer });
   if (stakes) parts.push(stakes);
   const priceBlock = formatPriceChoiceBlock(priceChoice);
   if (priceBlock) parts.push(priceBlock);
+  const fightBlock = formatFightOfferBlock(fightOffer);
+  if (fightBlock) parts.push(fightBlock);
+  const choiceBlock = formatOpenChoiceBlock(openChoice);
+  if (choiceBlock) parts.push(choiceBlock);
+  // A vow fulfilled says what it asked for, or that it is not yet known
+  // (VOW-FULFILLED-WITH-NOBODY-NAMED).
+  const vowBlock = formatVowFulfilledBlock(resolution?.moveId ?? null, resolution?.outcome ?? null);
+  if (vowBlock) parts.push(vowBlock);
 
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
@@ -3072,11 +3367,51 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     `Narrate the consequence in ${lengthPhrase(sentenceTarget, lengthOpts)}. ` +
     `${sentenceRule(sentenceTarget, lengthOpts)} ` +
     `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
+    (resolution?.isMatch === true ? ` ${MATCH_TOLD_AS_TWIST}` : '') +
     (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
 }
+
+/**
+ * The move user message's block for a vow fulfilled (known-issues
+ * VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live run, a64):
+ * "Find who is raiding the Cinder Expanse lanes" was fulfilled with "The
+ * thing you swore to find has a hand and a seal, and both are named now" —
+ * no name is anywhere in the story; the recap repeated "have a name", and
+ * four steps on an NPC asked "Whose name did you decide on?". A fulfilment
+ * says what the vow asked for as far as the story holds it, or says it is
+ * not yet known; it never claims an answer it does not state. Whether a
+ * hidden plan's truth is told is UNREVEALED's to say (formatUnrevealedBlock,
+ * THIS BEAT ENDS A VOW) — with no plan in play, this block alone applies.
+ * '' for any other move, and for a miss: the vow is not fulfilled.
+ *
+ * @param {string|null} moveId
+ * @param {string|null} outcome
+ * @returns {string}
+ */
+function formatVowFulfilledBlock(moveId, outcome) {
+  if (moveId !== 'fulfill_your_vow' || (outcome !== 'strong_hit' && outcome !== 'weak_hit')) return '';
+  return (
+    `## THE VOW IS FULFILLED\n\n` +
+    `This move fulfils a vow. Say what the vow set out to find, do or learn, and only as far as the ` +
+    `story holds it: what the recent scene and your instructions state — a hidden plan's truth only ` +
+    `where your instructions say this beat ends that vow. Never write that an answer is known, named, ` +
+    `found or proved without stating it in this narration. Where the story holds no answer — no name, ` +
+    `no face, no place — the vow ends on what was done, and the narration says plainly what is still ` +
+    `not known.`
+  );
+}
+
+/**
+ * Said again where a roll came with a match (NARRATION-NAMES-THE-OUTCOME): the
+ * outcome block just above the narrator's ask reads "[MATCH]", and the word
+ * went into the prose ("The match flares bright on the scope").
+ */
+const MATCH_TOLD_AS_TWIST =
+  `This roll came with a match: tell its twist as something that happens in the scene, ` +
+  `and never write the word "match".`;
 
 /** A round's narration grows this many sentences for each acting entry past the first. */
 export const ROUND_EXTRA_SENTENCES_PER_ENTRY = 2;
@@ -3157,12 +3492,23 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
       // The stakes shown before this entry's roll (issue #353 R1), and where
       // a price that is its player's choice stands (issue #364).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null, { priceChoice: input.priceChoice ?? null });
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null,
+        { priceChoice: input.priceChoice ?? null, openChoice: input.openChoice ?? null, fightOffer: input.fightOffer ?? null });
       if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
       const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
       if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
+      // A fight its Enter the Fray offered and no one has begun (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN)…
+      const fightBlock = formatFightOfferBlock(input.fightOffer ?? null);
+      if (fightBlock) lines.push(fightBlock.replace(/^## /gm, '#### '));
+      // …and a cost still its player's to choose (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
+      const choiceBlock = formatOpenChoiceBlock(input.openChoice ?? null);
+      if (choiceBlock) lines.push(choiceBlock.replace(/^## /gm, '#### '));
+      // …and a vow fulfilled says what it asked for (VOW-FULFILLED-WITH-NOBODY-NAMED).
+      const vowBlock = formatVowFulfilledBlock(input.moveId ?? null, input.outcome ?? null);
+      if (vowBlock) lines.push(vowBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
+      if (input.isMatch === true) lines.push(MATCH_TOLD_AS_TWIST);
     } else if (input.kind === 'refused') {
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}: not rolled`);
       lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);

@@ -64,7 +64,8 @@ async function undecidedEnemy() {
 const decides = (id) => () => ({ prose: 'The escort holds position.', sidecar: { newTruths: [], stateChanges: [],
   plans: [{ id, truth: TRUTH, wants: WANTS }] } });
 
-const revealsTruthOf = (id) => () => ({ prose: 'The escort turns its lamps on the hull.', sidecar: { newTruths: [], stateChanges: [],
+// Its prose tells the truth it reveals (secrets.js withoutUntoldTruths).
+const revealsTruthOf = (id) => () => ({ prose: 'The escort turns its lamps on the hull: a Keeper drone, collecting names.', sidecar: { newTruths: [], stateChanges: [],
   reveals: [{ id, revealed: ['truth'] }] } });
 
 describe('issue #362 AC16 — a truth not yet decided cannot be marked revealed', () => {

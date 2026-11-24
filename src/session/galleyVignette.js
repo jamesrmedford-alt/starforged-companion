@@ -20,6 +20,13 @@
  * helper recorded her as a crew member of her own ship). Earlier openings are
  * listed as already used (item 5), and no stat line is sent (#374 A11).
  *
+ * The opening is told where the last session stopped (its summary, kept as
+ * LAST SESSION when this one was minted) and that it picks the story up
+ * there: the long haul's third opening had the character soaking apricots
+ * "for the third time this week" with a raider's boarding lock standing open
+ * beside the ship, and its fourth wrote "since the Wren" of a ship still
+ * grappled alongside (third live run, a50 and a78).
+ *
  * Tone override: regardless of the configured narrator tone, galley
  * vignettes always render `wry + absurd`. The configured tone resumes
  * for the next narration after the session begins.
@@ -29,6 +36,7 @@ import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { proseToHtml } from "../audio/segments.js";
 import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
+import { lastSessionToTell } from "./lifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -108,9 +116,12 @@ export function collectGalleyParticipants(campaignState = null) {
  *
  * @param {{ active: Array, absent: Array }} participants
  * @param {Object} campaignState
+ * @param {{ earlier?: Array|null, lastSession?: { text: string, sessionNumber?: number|null }|null }} [opts] —
+ *   `earlier`: the earlier openings, else read from the chat; `lastSession`:
+ *   how the last session ended, else read from `campaignState` (lastSessionOf)
  * @returns {string}
  */
-export function buildGalleyVignetteUserMessage(participants, campaignState, { earlier = null } = {}) {
+export function buildGalleyVignetteUserMessage(participants, campaignState, { earlier = null, lastSession = undefined } = {}) {
   const { active, absent } = participants;
 
   // No stat line (issue #377 item 4, #374 A11): told "Stats: … wits 3" and to
@@ -185,8 +196,9 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
   const earlierBlock = formatEarlierVignettes(
     "EARLIER OPENINGS",
     Array.isArray(earlier) ? earlier : earlierVignettes(["galley_begin"]),
-    "This one must be different from each: not the same food or drink, objects, noises, jokes or business.",
+    "This one must be different from each: not the same food or drink, objects, noises, jokes or business, and not the beat any of them ends on.",
   );
+  const stoppedBlock = formatLastSessionStopped(lastSession === undefined ? lastSessionOf(campaignState) : lastSession);
 
   return [
     "OPENING VIGNETTE — begin-session ship's galley.",
@@ -197,12 +209,58 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
     ...crewLines,
     "Stay anchored to what the bios establish, and never state a game stat or",
     "any number from a character sheet.",
+    ...(stoppedBlock ? ["", stoppedBlock] : []),
     ...(earlierBlock ? ["", earlierBlock] : []),
     "",
     "TONE OVERRIDE: regardless of any tone configured elsewhere, this",
     "vignette is WRY + ABSURD. Affectionate ribbing, not sneering.",
     "End on a beat that hands the scene to the players — a line of",
     "dialogue, a question, or a small interruption.",
+  ].join("\n");
+}
+
+/**
+ * How the last session ended, as stored: the summary of the session before
+ * this one (`campaignState.previousSessionSummary` — LAST SESSION, kept when
+ * this session was minted; lifecycle.js lastSessionToTell). Null with none —
+ * a campaign's first session, the session summary switched off — or when the
+ * record is this session's own.
+ *
+ * @param {Object|null} campaignState
+ * @returns {{ text: string, sessionNumber: number|null }|null}
+ */
+function lastSessionOf(campaignState) {
+  const prev = lastSessionToTell(campaignState?.previousSessionSummary);
+  const text = typeof prev?.text === "string" ? prev.text.trim() : "";
+  if (!text) return null;
+  if (prev.sessionId && prev.sessionId === campaignState?.currentSessionId) return null;
+  return { text, sessionNumber: Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null };
+}
+
+/**
+ * The opening's block on where the last session stopped, and the rule that
+ * the opening starts there. '' with no summary to tell.
+ *
+ * @param {{ text: string, sessionNumber?: number|null }|null} lastSession
+ * @returns {string}
+ */
+function formatLastSessionStopped(lastSession) {
+  const text = typeof lastSession?.text === "string" ? lastSession.text.replace(/\s+/g, " ").trim() : "";
+  if (!text) return "";
+  const which = Number.isFinite(lastSession.sessionNumber) ? ` (session ${lastSession.sessionNumber}, as its summary has it)` : " (as its summary has it)";
+  return [
+    `WHERE THE LAST SESSION STOPPED${which}:`,
+    text,
+    "",
+    "This opening picks the story up there, and nowhere later. It is a quiet",
+    "moment inside that situation, not after it: whatever was still going on",
+    "when the session stopped is still going on — a ship alongside, a lock",
+    "standing open, a question unanswered, someone waiting — and it has its",
+    "place in this scene, if only at its edge. Do not contradict it, do not",
+    "write as though it were over or behind them (\"since the …\"), and do not",
+    "let more time pass than it allows (\"for the third time this week\"). If",
+    "it left a character away from the ship, this is their first quiet moment",
+    "back aboard, and says nothing of how they got there.",
   ].join("\n");
 }
 

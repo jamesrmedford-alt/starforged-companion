@@ -56,6 +56,7 @@ import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { upgradeStampOwed, upgradeClosedByRound, isResolving } from "../batch/round.js";
+import { findThresholdCard } from "./combatThreshold.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1551,6 +1552,130 @@ export function priceChoiceStatus(resolutionId) {
   const made = outcomeChoiceCards(resolutionId).map(m => m.flags[MODULE_ID]).filter(chosen).map(madePriceChoice);
   if (made.includes("declined")) return "declined";
   return made.includes("paid") ? "paid" : "pending";
+}
+
+// The meters an option's step takes from when its number is below zero.
+const COST_METERS = Object.freeze(["momentum", "health", "spirit", "supply", "integrity", "companionHealth"]);
+
+/** Whether one step of a choice option takes something from the character: a suffer move, a loss, a price, a complication. */
+function stepCosts(step) {
+  if (!step || typeof step !== "object") return false;
+  if (typeof step.suffer === "string" && step.suffer) return true;
+  if (step.kind === "any" || step.complication === true || step.route === "pay_the_price") return true;
+  return COST_METERS.some(k => Number(step[k]) < 0);
+}
+
+/**
+ * Whether a result's choice puts a cost in the player's hands: "Make a suffer
+ * move" (`kind: "any"`), or an enumerated choice one of whose options — or a
+ * step of its `chain` — is a cost (Heal's weak hit: the recovery, "then Lose
+ * Momentum (-2)" or "then Sacrifice Resources (-2)"). A choice between gains
+ * alone (+2 momentum, or +1 on the next move) offers none, and neither does a
+ * hit's recovery whose options differ only by what the sheet allows.
+ *
+ * @param {Object|null} prompt — a sufferPrompt (resolver.js mapConsequences)
+ * @returns {boolean}
+ */
+function promptOffersCost(prompt) {
+  if (prompt?.kind === "any") return true;
+  return (Array.isArray(prompt?.options) ? prompt.options : [])
+    .some(o => (Array.isArray(o?.chain) ? o.chain : [o]).some(stepCosts));
+}
+
+/**
+ * The cost of a result that is still its player's to choose when the result
+ * is narrated (known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN — the long
+ * haul's third live run, a59: a Heal weak hit's narration spent the supplies,
+ * "the cracked tube gives out half-used, and the tape runs short", and the
+ * card under it then asked: Lose Momentum, or Sacrifice Resources?). Read
+ * from the table's cards, as priceChoiceStatus reads a price's: the outcome's
+ * own choice card posts after a free-flow narration, before a held result's
+ * and before a Batch Mode round's, so it may not be there yet, or may be
+ * answered already. Open when no card of the outcome has a pick and the
+ * choice — the first such card's, else the resolution's own
+ * (`consequences.sufferPrompt`) — offers a cost. Null once a pick is made, for
+ * a choice that costs nothing, and for a miss's price that is a choice of its
+ * own (`priceChoice` — its block tells that one).
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {{ kind: "any"|"enumerated", options: string[], amount: number|null, count: number|null }|null}
+ */
+function openCostChoice(input) {
+  if (!input || typeof input !== "object" || input.priceChoice) return null;
+  const upgradeOf = typeof input.upgradeOf === "string" && input.upgradeOf ? input.upgradeOf : null;
+  const ids = [upgradeOf, input._id, input.resolutionId].filter(id => typeof id === "string" && id);
+  // The upgraded outcome's own choice card carries the original's id and
+  // `upgraded` (reconcileChoices); a price's cards are no choice of the outcome.
+  const cards = ids.length ? allMessages().map(m => m?.flags?.[MODULE_ID]).filter(f =>
+    f?.sufferCard === true && f.sufferPrompt && ids.includes(f.resolutionId)
+    && f.superseded !== true && f.priceCard !== true && (f.upgraded === true) === !!upgradeOf) : [];
+  if (cards.some(f => chosen(f) || (Array.isArray(f.pickedSuffers) && f.pickedSuffers.length > 0))) return null;
+  const prompt = cards[0]?.sufferPrompt ?? input.consequences?.sufferPrompt ?? null;
+  if (!prompt || !promptOffersCost(prompt)) return null;
+  return {
+    kind:    prompt.kind === "any" ? "any" : "enumerated",
+    options: (Array.isArray(prompt.options) ? prompt.options : []).map(o => String(o?.label ?? "").trim()).filter(Boolean),
+    amount:  Number.isFinite(Number(prompt.amount)) && prompt.kind === "any" ? Number(prompt.amount) : null,
+    count:   Number.isFinite(Number(prompt.count)) && prompt.kind === "any" ? Number(prompt.count) : null,
+  };
+}
+
+/**
+ * Where the fight an Enter the Fray offered stands when that roll is narrated
+ * (known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — the long haul's third live
+ * run, a27: under a card reading "Your Enter the Fray is rolled, but the
+ * fight's track is not made yet … or look for a way out instead", the
+ * narration already had "Your first salvo takes her forward plating"; had the
+ * player taken the way out, the salvo would have stood). "Combat is offered,
+ * not forced" (decisions.md): the fight's card — the threshold card, posted
+ * after the roll's card and before its narration — decides whether there is a
+ * fight, so until it is answered the narration stops at the moment before the
+ * first blow (stakes.js formatFightOfferBlock). Read from the card the roll
+ * posted, by its resolution's id (combatThreshold.js findThresholdCard):
+ * "offered" while it is unanswered, "declined" once the way out is taken, and
+ * null once the fight is begun — or when the roll posted no card: an open
+ * fight with that foe was resumed, and nothing was offered.
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {{ status: "offered"|"declined", position: "in_control"|"bad_spot"|null }|null}
+ */
+function fightOfferOf(input) {
+  if (input?.moveId !== "enter_the_fray") return null;
+  const card = [input.upgradeOf, input._id, input.resolutionId]
+    .filter(id => typeof id === "string" && id).map(findThresholdCard).find(Boolean) ?? null;
+  const f = card?.flags?.[MODULE_ID];
+  if (!f || f.thresholdTaken === "fray") return null;
+  return {
+    status:   f.thresholdTaken === "wayOut" ? "declined" : "offered",
+    position: f.position === "in_control" || f.position === "bad_spot" ? f.position : null,
+  };
+}
+
+/**
+ * A result as its narration takes it, with what the table has still to
+ * answer about it (narrator.js — beside settlePriceChoice): `openChoice`, the
+ * cost that is its player's to choose and not yet chosen (openCostChoice),
+ * and `fightOffer`, the fight an Enter the Fray offered and no one has begun
+ * (fightOfferOf). The narration is told to stop short of each (stakes.js
+ * formatOpenChoiceBlock, formatFightOfferBlock). The input itself when
+ * nothing is open. Any client may ask: the cards are the table's. Never
+ * throws — a card that cannot be read leaves the result as it was.
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {Object|null}
+ */
+export function withUnansweredCards(input) {
+  if (!input || typeof input !== "object") return input;
+  try {
+    const openChoice = openCostChoice(input);
+    const fightOffer = fightOfferOf(input);
+    return (openChoice || fightOffer)
+      ? { ...input, ...(openChoice ? { openChoice } : {}), ...(fightOffer ? { fightOffer } : {}) }
+      : input;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the table's cards could not be read for the narration:`, err?.message ?? err);
+    return input;
+  }
 }
 
 /**

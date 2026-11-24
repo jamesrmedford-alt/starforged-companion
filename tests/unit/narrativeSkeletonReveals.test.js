@@ -90,7 +90,7 @@ describe('issue #353 Phase 2 — what a beat shows of a plan is recorded', () =>
   it('the X-Card on the revealing narration undoes the reveal, its lore and its ledger truth', async () => {
     const plan = await seedPlan();
     await patSpeaks(table);
-    table.replies = revealing(plan.id, { revealed: ['truth', 'c2'] });
+    table.replies = revealing(plan.id, { revealed: ['truth', 'c2'] }, 'The drone speaks in the Choir\'s voice.');
     await narrateMoveOn(table, moveResolution({ outcome: 'strong_hit', outcomeLabel: 'Strong Hit' }));
     expect(planOf(plan.id).truthRevealed).toBe(true);
 

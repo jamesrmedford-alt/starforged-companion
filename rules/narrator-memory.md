@@ -77,7 +77,12 @@ layers. This file is the never-break list.
    or bare ```` ``` ```` fence holding an object is the sidecar, stripped
    every time (issue #321 U41). A reply with no prose is no narration: its
    caller posts a fallback card (no `narrationId`) or nothing, so nothing of
-   its block is applied or relayed (issue #362 AC39).
+   its block is applied or relayed (issue #362 AC39). A plan's truth is
+   revealed by prose that tells it: "truth" comes off a narration's own
+   `reveals` entry whose prose has none of the truth's words
+   (`secrets.withoutUntoldTruths`, before the ledger and the plans read the
+   block — VOW-FULFILLED-WITH-NOBODY-NAMED). It is a floor; the instruction
+   (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
@@ -122,7 +127,13 @@ layers. This file is the never-break list.
    session that went idle) — do not add a session boundary
    that leaves a scene open, and do not leave a cutaway's scene open behind
    it. A meta mode (the campaign recap) is sent none of the open scene's
-   frame, truths or state — of the ledger block, the ship's position alone. A session is over at End Session or after four
+   frame, truths or state as a binding scene — of the ledger block, the
+   ship's position alone. What it is told of how things stand is a section of
+   its own (WHERE THINGS STAND NOW: the whole session summary, the open
+   scene's facts and state), worded as the later word on them and never as
+   where the campaign is set; do not send a recap the ACTIVE SCENE block, and
+   do not send it a summary that does not cover its whole session
+   (`recapSummaryFor` — one made at the debounce is behind the Chronicle). A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as
    `previousSessionSummary` (LAST SESSION) — the one prose surface that
@@ -352,7 +363,11 @@ layers. This file is the never-break list.
    summary error returns the prior text and never blocks a narration. Regen
    runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
    never inside `buildNarratorExtras`, which only reads the cached text — a
-   regen is a Haiku call over the whole session (issue #286 B7). LAST
+   regen is a Haiku call over the whole session (issue #286 B7). Its source
+   carries, under a move's entry, what the move settled for good
+   (`summarySourceEntry`, from the card's `moveId` / `outcome`): a new move
+   card flag that changes the sheet for good belongs in
+   `chronicleKeeps.settledByMove`. LAST
    SESSION (`previousSessionSummary`) is the same kind of text and follows the
    same rules after the mint that kept it: a narration posted into the session
    it names — a Batch Mode round narrated late — marks that session

@@ -153,7 +153,22 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
     const recap = prompt("campaign_recap");
     expect(recap).not.toMatch(/ACTIVE SCENE — BINDING/);
     expect(recap).not.toMatch(/SCENE FRAME/);
-    expect(recap).not.toMatch(/Toffee burning/);
+    expect(recap).not.toMatch(/They are\s+binding/);
+  });
+
+  // Since known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN (the long haul's third
+  // live run) a recap is told how things stand — the open scene's facts and
+  // state among them — as the later word on them, under a heading of its own:
+  // not as the scene the campaign is set in, which is what A1 took out. The
+  // closing cutaway's scene has ended by the time End a Session's recap is
+  // written (the first describe, above), so nothing of it is in that section.
+  it("what it is told of the open scene is how things stand, not where the campaign is set", () => {
+    const recap = prompt("campaign_recap");
+    expect(recap).toMatch(/## WHERE THINGS STAND NOW/);
+    expect(recap).toMatch(/THE SCENE IN PLAY \(one moment of the campaign — not where the campaign is set\):/);
+    expect(recap).toMatch(/Now: {3}Toffee burning in a skillet/);
+    expect(recap).toMatch(/the skillet — Is cast iron/);
+    expect(recap).toMatch(/It is not a list of events to retell/);
   });
 
   it("control: a narration of that scene still is", () => {
