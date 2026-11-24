@@ -118,7 +118,7 @@ should remember* must carry all three flags:
 |---|---|---|
 | move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` / `isMatch` (session recap); `playerText` / `playerName` (ring, #286) |
 | paced narration (`postPacedNarrativeCard`) | always | `playerText` (also the NWMA Roll button's re-post) / `playerName` |
-| @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions; `sceneQuestion` / `playerName` (ring, #286) |
+| @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions; `sceneQuestion` / `playerName` (ring, #286). Since known-issues SCENE-ANSWER-NOT-A-CAMERA the answer is a plain statement of what is established and **the ring (with the summary's source) is all it feeds**: no fact block is asked for or applied, and no capture runs — see below |
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
@@ -147,6 +147,24 @@ The move narration's "narration unavailable" card (`postFallbackCard`) keeps
 the family so the session recap counts the move, and is marked
 `narrationFallback`, which every memory read leaves out (issue #321 U35 — it
 was fed back as story and counted as the session's first narration).
+
+**An `@scene` answer: said, not recorded** (known-issues
+SCENE-ANSWER-NOT-A-CAMERA; the long haul's third live run). A1 put scene
+answers in the ring because they were narrator prose that established things
+(v1.7.8 F8: invisible to the next call, they were contradicted). They no
+longer establish anything: an answer is the fact, in one or two plain
+sentences, from what the prompt holds — or "the story has not established it"
+— and nothing of it is written back (`interrogateScene` → `sceneAnswerText`:
+no frame, truth, state or plan; no detection, no tier pass; never a Chronicle
+entry). **A1 is kept, deliberately, for the ring**: the table has read the
+answer, so the next beats are shown the question and the reply and do not
+contradict them — and a wrong answer is bounded by the ring's depth instead of
+becoming a fact. The card's other readings were re-audited for the change of
+meaning: the rolling summary's source keeps it (as the ring's twin — its
+`asked` label marks it; issue #286 B5), the session recap lists it, the
+X-Card can remove it; it is **no narration** for the session-start recap gate
+or the X-Card's redirect (both now leave `sceneResponse` cards out, as they
+do a published reflection), and it never took a beat shape.
 
 **Audited consumers of `narratorCard`** (re-audit when adding a card type —
 CLAUDE.md "audit consumers" rule):
@@ -177,7 +195,8 @@ CLAUDE.md "audit consumers" rule):
   C3) — the recap goes to the session's first narration: no card
   `sessionNarratorCards` keeps yet, save a published reflection — canon, but
   not a narration; published first, it took the narration's recap (issue
-  #345 AA32)
+  #345 AA32) — and save an `@scene` answer, which is no narration either
+  (SCENE-ANSWER-NOT-A-CAMERA)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button
@@ -186,7 +205,8 @@ CLAUDE.md "audit consumers" rule):
   removes from `sessionNarratorCards` (the newest still in memory and its
   beat), and `registerXCardRedirectHook` (canonical GM) clears
   `xCardRedirect` when the first narrator card with `narrationText` posts
-  with the X-Card lifted — not a fallback, a published reflection or an
+  with the X-Card lifted — not a fallback, a published reflection, an `@scene`
+  answer (it steers nothing away — SCENE-ANSWER-NOT-A-CAMERA) or an
   X-carded card. A narration card created while the X-Card is active — its
   reply passed its check just before the play, its card on the way while the
   pause's pick ran — is removed as the X-Card removes one, on the canonical
@@ -517,6 +537,7 @@ relevance (as the move pass) — whatever the round's widest class
 |---|---|---|---|
 | `narratorContextCards` | 20 (1–50) | Narrator | ring depth for paced + oracle follow-ups (move narration takes the last 4, bounded by it — issue #286 B1); also sets the rolling-summary debounce K = round(1.5 × N) |
 | `sceneContextCards` | (existing) | Narrator | ring depth for @scene answers |
+| `sceneResponseLength` | 2 (1–4) | Narrator | the most sentences an `@scene` answer runs to (it was a target for "N–N+1 sentences of atmospheric description") |
 | `narratorSessionSummary` | true | Narrator | maintain + render the rolling session summary (surface 5); archived to the Session Log at End Session |
 | `factContinuity.enabled` | true | Fact Continuity | master switch: sidecar instruction + parse + ledger |
 | `factContinuity.ledgerInContext` | true | Fact Continuity | §6.5 block injection |
@@ -787,6 +808,9 @@ regressions, all are known scope cuts:
       (F7 repro inverted).
 - [ ] Ask a no-name follow-up ("what does that mean?") → partner's card +
       state still in prompt (verify via response quality / console).
-- [ ] `@scene` answer fact referenced two cards later survives.
+- [ ] `@scene` answer: one or two plain sentences, no scenery; two cards
+      later the narrator has not contradicted it (the ring), and
+      `cs.sceneFrame` / `cs.sceneTruths` are as they were before the question
+      (nothing written back); no draft card and no new Lore page follow it.
 - [ ] Scene end: truths migrated (entity tiers / WJ Lore), frame cleared.
 - [ ] Telemetry: ring depth setting honoured (prompt size shifts with it).

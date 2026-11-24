@@ -44,7 +44,7 @@ describe("each narrator mode is told one length — its own (issue #326 W40)", (
   it("@scene: the request carries the Scene Response Length, not the move-narration Length", async () => {
     await interrogateScene("what does the hangar smell like?", game.settings.get(MODULE_ID, "campaignState"));
     const [[, , body]] = apiPost.mock.calls;
-    expect(String(body.messages[0].content)).toContain("1–2 sentences");   // control: the scene setting is sent
+    expect(String(body.messages[0].content)).toContain("in one plain sentence");   // control: the scene setting is sent
     // The request's system blocks, joined (issue #354 P2-23: three of them).
     expect(body.system.map(b => b.text).join("\n")).not.toMatch(/^Length: /m);
   });

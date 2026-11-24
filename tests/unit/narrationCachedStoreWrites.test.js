@@ -120,11 +120,15 @@ describe('issue #329 X09 — a narration never applies its facts onto the cached
     expect(gmCache().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
   }, 30_000);
 
-  it('control: @scene with no scene open mints one in the world and files its facts under it', async () => {
+  // An answer records nothing (known-issues SCENE-ANSWER-NOT-A-CAMERA): the
+  // scene it is asked of is started, and the fact block its reply carried is
+  // dropped.
+  it('control: @scene with no scene open mints one in the world, and files none of its reply\'s facts', async () => {
     await table.client('gm-1').chat('@scene What does the loading bay smell like?');
     await table.settle();
     expect(world().currentSceneId).toMatch(/^sc-/);
-    expect(world().sceneTruths.map(t => [t.fact, t.sceneId])).toEqual([['Owes the crew a favour', world().currentSceneId]]);
+    expect(world().sceneTruths ?? []).toEqual([]);
+    expect(world().sceneFrame ?? null).toBeNull();
     expect(gmCache().currentSceneId).toBe(world().currentSceneId);
   }, 30_000);
 });

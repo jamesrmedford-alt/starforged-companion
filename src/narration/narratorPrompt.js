@@ -795,7 +795,10 @@ const NARRATOR_PERMISSION_KEYS = new Set(Object.keys(NARRATOR_PERMISSIONS));
 // so its default is null. campaign_recap is a meta mode with no latitude block
 // (its role description governs). The rest map to the block that matches the
 // mode's job: paced continuation deepens established entities (interaction);
-// scene answers, oracle flavour, and vignettes add texture only (embellishment);
+// oracle flavour and vignettes add texture only (embellishment); an `@scene`
+// answer has no latitude at all — its role description is its whole rule, and
+// the embellishment block's "focus on concrete sensory and emotional detail"
+// was the scenery that invented (known-issues SCENE-ANSWER-NOT-A-CAMERA);
 // the inciting incident opens the campaign and may introduce its central figure,
 // reuse-first (discovery — see its reuse-before-invent rule). An explicit
 // extras.narratorClass always overrides the default.
@@ -805,7 +808,7 @@ const DEFAULT_PERMISSION_CLASS_BY_MODE = {
   // each move's relevance — passed in as extras.narratorClass, as for a move.
   round_resolution:    null,
   paced_narrative:     'interaction',
-  scene_interrogation: 'embellishment',
+  scene_interrogation: null,
   oracle_followup:     'embellishment',
   session_vignette:    'embellishment',
   inciting_incident:   'discovery',
@@ -1153,11 +1156,32 @@ const ROLE_DESCRIPTIONS = {
     `No move was rolled for this turn. Stay in narration; do not announce mechanics. ` +
     `Keep the player in the fiction.`,
 
+  // Known-issues SCENE-ANSWER-NOT-A-CAMERA (the long haul's third live run):
+  // the role said "describe only what is already established — answer the
+  // question, do not invent", the user message asked for "2–3 sentences of
+  // atmospheric description", and the permission block for sensory detail.
+  // Sixteen answers were right and each dressed its fact in scenery that
+  // invented — the compass on a table, in a coat, in a hand, in a drawer, on
+  // a belt. An answer is the fact, said plainly by a narrator who knows what
+  // this prompt holds; it is not narration, and nothing of it is recorded
+  // (narrator.js interrogateScene).
   scene_interrogation:
-    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `answer the player's question about the current scene as plain, concrete prose ` +
-    `that serves the story.\n\n` +
-    `Describe only what is already established — answer the question, do not invent.`,
+    `You are the narrator for an Ironsworn: Starforged solo campaign. The player has ` +
+    `stepped out of the story to ask you a question about it. Your role is to answer ` +
+    `it in your own voice, plainly, as the one who knows everything this prompt holds.\n\n` +
+    `Answer the question and nothing else: the fact asked for, in a sentence or two ` +
+    `(the user message gives the limit). This is an answer, not narration:\n` +
+    `- State only what this prompt holds — the world's records, the active scene, the ` +
+    `recent scene, the character. Where something is, what it looks like, how long it ` +
+    `has been so: these are facts too. If the prompt does not give one, do not supply it.\n` +
+    `- If the prompt does not hold the answer, say plainly that the story has not ` +
+    `established it. Never guess, and never fill the gap.\n` +
+    `- No scenery, no sensory detail, no mood, no comparison, nothing to close on.\n` +
+    `- Nothing happens in an answer: no one speaks or acts, no time passes, the scene ` +
+    `stays exactly as it is.\n` +
+    `- What this prompt marks FOR THE NARRATOR ONLY — a hidden plan, anything under ` +
+    `UNREVEALED — the characters do not know. Never state it; asked about it, say it ` +
+    `is not yet known.`,
 
   vow_swearing:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
@@ -1736,6 +1760,20 @@ const RESPOND_BLOCK =
   `the prose, with everything that section marks REQUIRED.`;
 
 /**
+ * What closes the context of an `@scene` answer, in RESPOND NOW's place
+ * (known-issues SCENE-ANSWER-NOT-A-CAMERA): an answer records nothing, so it
+ * is asked for no fact block. The response format stays in the standing block
+ * — that block is the same for every mode (rules/narrator-memory.md invariant
+ * 7b) — and this says it is not an answer's. A block the model writes anyway
+ * is taken off and dropped (narrator.js sceneAnswerText).
+ */
+const ANSWER_BLOCK =
+  `## ANSWER NOW\n\n` +
+  `Answer the player's question in plain words, from what is above, and stop. An answer ` +
+  `records nothing: RESPONSE FORMAT — MANDATORY SIDECAR above is for narration and does ` +
+  `not apply here. Write no JSON block.`;
+
+/**
  * Build the narrator system prompt as its three blocks (issue #354 P2-23).
  *
  * The request used to carry the whole prompt as one cached block that opened
@@ -2216,7 +2254,9 @@ export function buildNarratorSystemBlocks(
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
-      sidecar: factContinuityEnabled,
+      // An `@scene` answer writes nothing back: the plans in play without the
+      // lines that ask for a record of them, and nothing to decide.
+      sidecar: factContinuityEnabled && resolvedMode !== 'scene_interrogation',
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
@@ -2279,7 +2319,8 @@ export function buildNarratorSystemBlocks(
 
   // [9b] The pointer back to the response format — last, so it is the most
   // recent guidance the narrator reads, as the instruction itself used to be.
-  if (sidecarEnabled) parts.push(RESPOND_BLOCK);
+  //      An `@scene` answer closes on its own: it writes no fact block.
+  if (sidecarEnabled) parts.push(resolvedMode === 'scene_interrogation' ? ANSWER_BLOCK : RESPOND_BLOCK);
 
   return {
     standing: standing.join(SECTION_RULE),
@@ -2967,9 +3008,15 @@ export function sanitizePlayerText(text) {
  * Build the user message for a scene interrogation call.
  * This is uncached — it changes every call with the player's question.
  *
+ * The answer is the fact and nothing else (known-issues
+ * SCENE-ANSWER-NOT-A-CAMERA): this message asked for "N–N+1 sentences of
+ * atmospheric description" beside a role that said "do not invent", and the
+ * description is where each answer invented. The Scene Response Length setting
+ * is now the most sentences an answer runs to.
+ *
  * @param {string} question        — player's question (stripped of @scene prefix)
  * @param {string} recentContext   — recent narration cards joined as text (may be empty)
- * @param {number} sentenceTarget  — how many sentences to produce
+ * @param {number} sentenceTarget  — the most sentences the answer may run to (Scene Response Length)
  * @returns {string}
  */
 export function buildSceneUserMessage(question, recentContext, sentenceTarget, speakerName = null) {
@@ -2988,10 +3035,14 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget, s
     `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(question)}"`,
   );
 
+  const most  = Math.min(4, Math.max(1, Math.floor(Number(sentenceTarget)) || 2));
+  const limit = most === 1
+    ? 'one plain sentence'
+    : `at most ${['', 'one', 'two', 'three', 'four'][most]} plain sentences — one, if one answers it`;
   parts.push(
-    `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
-    `description. Do not introduce new plot elements. Stay grounded in what has already been ` +
-    `established. The narrator is a camera, not a writer, in this mode.` +
+    `Answer this question in ${limit}: the fact asked for and nothing else, in your own ` +
+    `voice. No description, no scenery, nothing new, and nothing happens. If this prompt does ` +
+    `not hold the answer, say that the story has not established it.` +
     (speaker ? ` The character asking is ${speaker}.` : ''),
   );
 

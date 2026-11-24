@@ -1033,7 +1033,9 @@ async function sessionStartRecap(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return '';
   try {
-    if (sessionNarratorCards(sessionId).some(m => !m.flags?.[MODULE_ID]?.publishedReflection)) return '';
+    // …nor is an `@scene` answer (known-issues SCENE-ANSWER-NOT-A-CAMERA): a
+    // question asked before the session's first beat took that beat's recap.
+    if (sessionNarratorCards(sessionId).some(m => !m.flags?.[MODULE_ID]?.publishedReflection && !m.flags?.[MODULE_ID]?.sceneResponse)) return '';
   } catch {
     return '';
   }
@@ -3277,8 +3279,10 @@ function xCardRedirectPending(cs) {
  * — buildNarratorExtras reads it from the store, and while the X-Card is
  * active every narrator path stands down — so the first narrator card posted
  * with the X-Card lifted is one that delivered it. A fallback card (nothing
- * was delivered), a published Private Channel reflection (not a narration)
- * and an X-carded card do not count. On the canonical GM — a single-emitter
+ * was delivered), a published Private Channel reflection (not a narration),
+ * an `@scene` answer (not one either: it moves nothing, so it steers nothing
+ * away — known-issues SCENE-ANSWER-NOT-A-CAMERA) and an X-carded card do not
+ * count. On the canonical GM — a single-emitter
  * world write onto the latest store, read at its turn on the client's
  * campaignState write chain: the Batch Mode round's lock release, read inside
  * this clear's round trip right after its card, wrote the redirect back, and
@@ -3289,7 +3293,7 @@ export function registerXCardRedirectHook() {
     if (!isCanonicalGM()) return;
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
-    if (f.narrationFallback || f.publishedReflection || f.xCarded) return;
+    if (f.narrationFallback || f.publishedReflection || f.sceneResponse || f.xCarded) return;
     clearXCardRedirect().catch(err =>
       console.warn(`${MODULE_ID} | X-Card: clearing the redirect failed:`, err?.message ?? err));
   });
@@ -4282,6 +4286,21 @@ export async function postCampaignRecap(campaignState, options = {}) {
  * Respond to a free-form scene interrogation from the player.
  * Posts a scene card to chat — no dice, no move, no chronicle entry.
  *
+ * The answer is the fact, said plainly, and it is not written back (known-
+ * issues SCENE-ANSWER-NOT-A-CAMERA; the role and the user message are
+ * narratorPrompt.js's): no fact block is asked for or applied — no frame, no
+ * truths or state, no plan — and no capture runs, so no lore, no draft card
+ * and no detail on an NPC's card. Sixteen answers of the long haul's third
+ * live run each wrote the scene's frame, and their invented scenery became
+ * lore and draft locations. What an answer still feeds, deliberately
+ * (docs/narrator/narrator-memory-architecture.md §2, the A1 decision kept):
+ * its card carries the narrator flag family, so the recent-narration ring and
+ * the rolling summary's source hold the question and what was said in reply
+ * — a later beat must not contradict an answer the table has just read. It
+ * is no narration for the session's first-narration recap or the X-Card's
+ * redirect (sessionStartRecap, registerXCardRedirectHook), and it is still
+ * checked against the ledger (the consistency check reads; it writes no fact).
+ *
  * @param {string} question       — the player's question (stripped of @scene prefix)
  * @param {Object} campaignState
  * @param {Object} [options]
@@ -4321,8 +4340,8 @@ export async function interrogateScene(question, campaignState, options = {}) {
   const speakerActorId = options?.speakerActorId ?? options?.actorId ?? null;
   const character      = speakerActorId ? getActiveCharacter(campaignState, speakerActorId) : null;
   // @scene continues the scene in progress (issue #286 A4) — this starts one
-  // only when none is active, so the answer is written against the frame,
-  // truths, state and CORRECTED list it was asked about.
+  // only when none is active, so the question is asked of the frame, truths,
+  // state and CORRECTED list as they stand. The answer adds nothing to them.
   await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
   const extras = await buildNarratorExtras('scene_interrogation', campaignState, {
     playerNarration: question,
@@ -4353,9 +4372,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       await postSceneFallbackCard(question, xCardDiscardReason(campaignState, 'Answer'), sessionId);
       return null;
     }
-    const response = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-    });
+    const response = sceneAnswerText(raw, campaignState, { matchedEntityIds: extras.matchedEntityIds, narrationId });
 
     if (!response?.trim()) {
       await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
@@ -4363,7 +4380,6 @@ export async function interrogateScene(question, campaignState, options = {}) {
     }
 
     await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
-    scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
     return response;
 
   } catch (err) {
@@ -4381,12 +4397,9 @@ export async function interrogateScene(question, campaignState, options = {}) {
           await postSceneFallbackCard(question, xCardDiscardReason(campaignState, 'Answer'), sessionId);
           return null;
         }
-        const response = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-        });
+        const response = sceneAnswerText(raw, campaignState, { matchedEntityIds: extras.matchedEntityIds, narrationId });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
-          scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
           return response;
         }
         failure = EMPTY_REPLY_REASON;
@@ -4402,34 +4415,40 @@ export async function interrogateScene(question, campaignState, options = {}) {
 }
 
 /**
- * Mine an @scene ANSWER for entities, factions, and lore — the same passes
- * the paced-narrative path runs. A direct question ("who is the
- * Triumvirate?") routinely surfaces the richest world detail of the session;
- * without this the narrator's answer reached the chat log and the
- * recent-narration ring but never the World Journal or entity records
- * (playtest v1.7.22).
+ * An `@scene` answer's text, with nothing of it recorded (known-issues
+ * SCENE-ANSWER-NOT-A-CAMERA). The answer is asked for no fact block; one the
+ * model writes anyway is taken off the text and dropped — never applied, and
+ * never relayed from a player's client: no frame, no truth or state, no plan.
+ * Nor is the answer mined: the detection and tier passes it used to run
+ * (playtest v1.7.22 — "a direct question surfaces the richest world detail of
+ * the session") recorded as lore, draft cards and NPC details whatever
+ * scenery the answer added. A plain answer restates what is recorded already.
  *
- * A GM's client only, like scheduleNarrationCapture: both passes write the
- * world (World Journal pages, session-log beats, entity cards, the GM's draft
- * card). @scene runs RUN_ON.CLAUDE, so at a table with no keyed GM it answers
- * on the asking player's client, where those writes are refused (issue #321
- * U36). There the answer's ledger facts still reach the GM through the
- * sidecar relay (applyNarratorSidecar); the passes are skipped. On a GM the
- * capture runs where the answer was narrated — the single emitter its routing
- * chose — not on whoever is canonical when the reply lands: a lower-id keyed
- * GM joining meanwhile dropped it (AA34's gate —
- * CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE).
+ * It is still read against the scene's ledger (the consistency check, on the
+ * canonical GM, fire-and-forget — as applyNarratorSidecar runs it): a wrong
+ * answer is the one thing left to catch, and the check writes no fact.
  *
- * @param {string} response — the answer's prose
- * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
- * @param {Object} campaignState
- * @param {string|null} [actorId] — the asking PC, stamped on any draft card (issue #321 U23)
- * @param {string|null} [narrationId] — the answer's id, stamped on what the passes record (issue #329 X01)
+ * @param {string} raw — the narrator's reply
+ * @param {Object|null} campaignState
+ * @param {{ matchedEntityIds?: string[], narrationId?: string|null }} [ctx]
+ * @returns {string} the answer
  */
-function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null, narrationId = null) {
-  if (!game.user?.isGM) return;
-  schedulePacedDetection(response, campaignState, { actorId, narrationId });
-  schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
+function sceneAnswerText(raw, campaignState, { matchedEntityIds = [], narrationId = null } = {}) {
+  const { prose } = extractSidecar(raw);
+  recordNarratorFactBlock(raw, { skipped: 'an @scene answer records nothing' });
+  const text = typeof prose === 'string' ? prose : (typeof raw === 'string' ? raw : '');
+  // …with fact continuity on, as every narration's audit is: off, nothing
+  // is checked against a ledger nobody keeps.
+  if (factContinuityEnabled() && campaignState && text.trim() && isCanonicalGM()) {
+    runConsistencyCheck(text, auditCampaignState(campaignState), {
+      matchedEntityIds:  Array.isArray(matchedEntityIds) ? matchedEntityIds : [],
+      currentLocationId: campaignState.currentLocationId ?? null,
+      narrationId:       typeof narrationId === 'string' ? narrationId : null,
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
+    );
+  }
+  return text;
 }
 
 /**
@@ -6242,15 +6261,20 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
         sceneResponse: true,
         sceneText:     responseText,
         sceneQuestion: question,
-        // Narrator-memory A1 — scene answers are narrator prose and feed
-        // the recent-narration ring + session recap. Audited consumers:
+        // Narrator-memory A1 — a scene answer is something the narrator
+        // said: it feeds the recent-narration ring, the rolling summary's
+        // source and the session recap, so a later beat does not contradict
+        // it. Kept when the answer stopped being written back (known-issues
+        // SCENE-ANSWER-NOT-A-CAMERA); `sceneResponse` is what keeps it from
+        // counting as a narration where one is meant (the first-narration
+        // recap, the X-Card's redirect). Audited consumers:
         // the correction/audio render hooks no-op (no button markup on
         // this card), burn-supersede requires a resolutionId.
         narratorCard:  true,
         narrationText: responseText,
         sessionId:     sessionId ?? null,
         playerName:    playerName ?? null,   // with sceneQuestion, read back by the ring (ringEntryText)
-        narrationId:   narrationId ?? null,  // its sidecar's ledger entries, for the X-Card (issue #321 U07)
+        narrationId:   narrationId ?? null,  // the X-Card names the answer it removes by it (issue #321 U07)
       },
     },
   });

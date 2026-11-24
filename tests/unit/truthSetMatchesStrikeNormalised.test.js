@@ -17,11 +17,14 @@
  * Entry: chatCommands.js applyFactContinuityCommand ← the
  * `factContinuity.command` relay ← a typed `!truth set`.
  *
- * Harness: the multi-client table; the struck truth is a real @scene answer's.
+ * Harness: the multi-client table; the struck truth is a real narration's — a
+ * line of play's (an `@scene` answer records none since known-issues
+ * SCENE-ANSWER-NOT-A-CAMERA; it still reads the next prompt, nextPrompt).
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
+import { narrateLineOn } from '../helpers/narrateLine.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { findBareStrike } from '../../src/factContinuity/ledgers.js';
 
@@ -51,7 +54,7 @@ beforeAll(async () => {
 afterAll(() => table?.teardown());
 
 beforeEach(async () => {
-  await table.reset({ world: { settings: { campaignState: {
+  await table.reset({ world: { settings: { chronicleAutoEntry: false, campaignState: {
     ...CampaignStateSchema,
     sessionActive: true, currentSessionId: 'sess-7', sessionNumber: 7, currentSceneId: 'sc-1', sceneTruths: [],
     sceneState: { bySubject: {}, sceneId: 'sc-1' },
@@ -60,14 +63,13 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
   table.claude.respond((call) => {
     if (call.model !== NARRATION_MODEL) return '{}';
-    if (/still breathing/.test(call.userText)) {
+    if (/PLAYER NARRATION[\s\S]*still breathing/.test(call.userText)) {
       return 'Vance lies twisted at the foot of the gantry.' + sidecar([{ subject: 'Vance', fact: DEAD }]);
     }
     return 'The dock is quiet; cranes creak overhead.' + sidecar([]);
   });
   // The narrator records "Vance — Is dead"; the GM strikes it.
-  await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
-  await table.settle();
+  await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
   const truth = world().sceneTruths.find(t => t.fact === DEAD);
   await table.client('gm-1').chat(`!truth strike ${truth.id.slice(0, 8)}`);
   await table.settle();

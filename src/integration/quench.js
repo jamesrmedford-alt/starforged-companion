@@ -12811,6 +12811,28 @@ function registerPromptContractTests(quench) {
           carries(await capture(PACED), "RECENT SCENE", "the next narration", ["three klicks sunward"]);
         });
 
+        // Known-issues SCENE-ANSWER-NOT-A-CAMERA: an answer is the fact, said
+        // plainly, and nothing of it is written back — a fact block its reply
+        // carries anyway is dropped.
+        it("an @scene answer is asked for no fact block and records none: the frame and the truths are as they were", async function () {
+          this.timeout(30000); // a narration and a wait for any late write; Mocha's default is 2 s
+          const ledger = () => JSON.stringify([state()?.sceneFrame ?? null, (state()?.sceneTruths ?? []).map(t => t.fact)]);
+          const before = ledger();
+          stub.prose.push("Vance's tug is three klicks sunward.");
+          stub.sidecars.push({
+            newTruths:    [{ subject: N.npc, fact: "QUENCH-SCENE-ANSWER: never recorded" }],
+            stateChanges: [],
+            sceneFrame:   { location: "QUENCH-SCENE-ANSWER", present: [N.npc], situation: "never recorded", question: "never asked?" },
+          });
+          const request = await capture(SCENE);
+          carries(request, "ANSWER NOW", SCENE.name);
+          lacks(request, "RESPOND NOW", SCENE.name);
+          lacks(request, "NARRATOR PERMISSIONS", SCENE.name);
+          assert.notInclude(request.user, "atmospheric", "an answer is asked for no description");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          assert.equal(ledger(), before, "the answer wrote nothing to the scene's frame or truths");
+        });
+
         it("the inciting incident becomes the premise and enters the recent scene (v1.7.8 F7, PLAYTEST-1712 S)", async function () {
           const { runIncitingIncident } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
           stub.prose.push("QUENCH-INCITE: a coded hail from the derelict Morrow's Wake.\n\nSuggested vow: I will board the Morrow's Wake (formidable)");

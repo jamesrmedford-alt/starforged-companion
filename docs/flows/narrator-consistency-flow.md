@@ -20,7 +20,10 @@ ledger, §4 the dispositions.
 auditCampaignState(campaignState), {matchedEntityIds, currentLocationId,
 playerNarration})` on the **canonical GM only**, fire-and-forget (never
 blocks or delays the narration post), for every mode that applies a sidecar
-— all nine narrator paths. Gated on `factContinuity.consistencyCheck`
+— all nine narrator paths — and for an `@scene` answer, which applies none
+(`sceneAnswerText`, known-issues SCENE-ANSWER-NOT-A-CAMERA: an answer records
+nothing, and is still read against the ledger — a wrong answer is the one
+thing left to catch). Gated on `factContinuity.consistencyCheck`
 (**default ON** since 2026-07; the unregistered-settings fallback stays false
 so unit tests never fire API calls).
 

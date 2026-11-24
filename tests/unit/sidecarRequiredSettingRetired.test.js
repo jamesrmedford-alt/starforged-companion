@@ -23,12 +23,15 @@
  * Adapted from the probe: its "unticked, the warning is silenced" and "a
  * production reader exists" asserted the wiring fix; they now assert the
  * retirement. Its control — a reply with no sidecar is warned about — is kept,
- * through the real panel save and an @scene narration on a booted table.
+ * through the real panel save and a line of play narrated on a booted table
+ * (an `@scene` answer is asked for no sidecar — known-issues
+ * SCENE-ANSWER-NOT-A-CAMERA).
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { StubElement } from '../helpers/cardDom.js';
+import { narrateLineOn } from '../helpers/narrateLine.js';
 import { productionSources } from '../helpers/sourceScan.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { PAGES } from '../../src/help/helpJournal.js';
@@ -82,12 +85,11 @@ async function saveFromPanel(boxes = {}) {
   return drawn;
 }
 
-/** The GM asks @scene; the warnings logged while it is answered. */
+/** A line of play is narrated; the warnings logged while it is. */
 async function warningsWhileNarrating() {
   const warn = vi.spyOn(console, 'warn');
   try {
-    await table.client('gm-1').chat('@scene What does the cargo bay look like?');
-    await table.settle();
+    await narrateLineOn(table, 'I look over the cargo bay.');
     await table.drain();
     return warn.mock.calls.map(args => args.map(String).join(' '));
   } finally {

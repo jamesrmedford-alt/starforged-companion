@@ -87,7 +87,9 @@ async function typeAndCapture(userId, line) {
 }
 
 describe('issue #345 AA30 — a PC-less player\'s @scene question', () => {
-  it('Quinn (no PC) asks @scene: it is asked as no one — no Kira CHARACTER block, speaker or card name, and the capture is no one\'s', async () => {
+  // An answer has no capture since known-issues SCENE-ANSWER-NOT-A-CAMERA: no
+  // draft card is queued for anyone (the detection reply names Sable Ortiz).
+  it('Quinn (no PC) asks @scene: it is asked as no one — no Kira CHARACTER block, speaker or card name, and nothing is captured', async () => {
     await typeAndCapture('pl-2', `@scene ${QUESTION}`);
 
     expect(sceneCards()).toHaveLength(1);                      // answered, not refused
@@ -97,11 +99,10 @@ describe('issue #345 AA30 — a PC-less player\'s @scene question', () => {
     expect.soft(call.system, 'no CHARACTER block at all').not.toMatch(/^## CHARACTER$/m);
     expect.soft(call.userText, 'user message').not.toMatch(/asked by Kira/);
     expect.soft(sceneCards()[0].flags['starforged-companion'].playerName ?? null, 'card playerName').toBeNull();
-    expect(draftCard(), 'the answer\'s capture queued Sable Ortiz (setup)').toBeTruthy();
-    expect(draftCard().flags['starforged-companion'].actorId ?? null, 'the draft card is not Kira\'s').toBeNull();
+    expect(draftCard(), 'an answer queues no draft card').toBeUndefined();
   }, 30_000);
 
-  it('control: Pat (Kira\'s player) asks the same and it is Kira\'s question, captured for her', async () => {
+  it('control: Pat (Kira\'s player) asks the same and it is Kira\'s question', async () => {
     await typeAndCapture('pl-1', `@scene ${QUESTION}`);
 
     expect(sceneCards()).toHaveLength(1);
@@ -109,7 +110,7 @@ describe('issue #345 AA30 — a PC-less player\'s @scene question', () => {
     expect(call.system).toMatch(KIRAS_BLOCK);
     expect(call.userText).toMatch(/asked by Kira/);
     expect(sceneCards()[0].flags['starforged-companion'].playerName).toBe('Kira');
-    expect(draftCard().flags['starforged-companion'].actorId).toBe('pc-kira');
+    expect(draftCard(), 'an answer queues no draft card').toBeUndefined();
   }, 30_000);
 });
 

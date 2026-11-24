@@ -481,8 +481,8 @@ describe('a session carries into the next one (C3, C4)', () => {
       previousSessionSummary: { sessionId: 'sess-1', sessionNumber: 3, text: SUMMARY },
     });
 
-    // The new session's first narration — a scene question, which never got
-    // the recap — carries both; the ring is the new session's own.
+    // A scene question asked before the new session's first narration carries
+    // both; the ring is the new session's own.
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What is the beacon doing?');
     const question = table.claude.calls.slice(from).find(isNarration);
@@ -493,9 +493,12 @@ describe('a session carries into the next one (C3, C4)', () => {
     expect(question.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
     expect(question.userText).not.toContain('I pay Vex');
 
+    // The session's first narration still opens with the recap — an answer is
+    // no narration (known-issues SCENE-ANSWER-NOT-A-CAMERA) — and it comes once.
     const move = await narrateMove('I tune the beacon.');
     expect(move.system).toContain(SUMMARY);
-    expect(move.system).not.toContain('CAMPAIGN RECAP');
+    expect(move.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
+    expect((await narrateMove('I listen to it.')).system).not.toContain('CAMPAIGN RECAP');
   });
 
   it('chat activity keeps a long session alive; once idle past four hours it is not revived', async () => {
@@ -570,7 +573,22 @@ describe('what reached no prompt now does (C5)', () => {
 });
 
 describe('a keyless-GM table keeps what a player\'s narration records (D2)', () => {
-  it('@scene on the player\'s own key: the truth it records reaches the ledger through the GM', async () => {
+  // An oracle follow-up: `@scene` runs on the player's key too, but its answer
+  // records nothing (known-issues SCENE-ANSWER-NOT-A-CAMERA) — below.
+  it('an oracle follow-up on the player\'s own key: the truth it records reaches the ledger through the GM', async () => {
+    await table.setClaudeKey('gm-1', '');
+    await table.setClaudeKey('pl-1', 'sk-ant-pat');
+    replies.push(reply('The hatch is welded shut, the seam still warm.', {
+      newTruths: [{ subject: 'scene', fact: 'the hatch is welded shut' }], stateChanges: [],
+    }));
+    const from = table.claude.calls.length;
+    await type('pl-1', '!oracle yes likely is the hatch welded shut');
+    expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
+    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(table.errors).toEqual([]);
+  });
+
+  it('@scene on the player\'s own key: the answer is the player\'s to read, and nothing of it is sent to the GM', async () => {
     await table.setClaudeKey('gm-1', '');
     await table.setClaudeKey('pl-1', 'sk-ant-pat');
     replies.push(reply('The hatch is welded shut, the seam still warm.', {
@@ -579,7 +597,8 @@ describe('a keyless-GM table keeps what a player\'s narration records (D2)', () 
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What about the hatch?');
     expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
-    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(table.cards(f => f.sceneResponse && !f.sceneFallback)).toHaveLength(1);
+    expect(world().sceneTruths ?? []).toEqual([]);
     expect(table.errors).toEqual([]);
   });
 });
