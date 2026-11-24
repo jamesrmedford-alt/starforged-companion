@@ -6,6 +6,25 @@ rejected.
 
 ---
 
+## The session record: one record of what happened, every summary a view of it (issue #382 slices 1–4) (2026-11)
+
+**Decision:** Ordered by the maintainer ("Please implement 3 and 6"); decisions D1–D12 of the design taken at its recommendations, each the maintainer's to take back: D1 the record is kept on the session's own Session Log page (a keyed flag — an append sends one event; Foundry 13.351 sends an update's diff, a flags scope diffs key by key); D2 every event is kept; D3 the X-Card blanks what it removed in the stored record (an upgrade's supersede is hidden at read); D4 the recap is given facts only (the summary and the scribe, in slices 3–4, facts with TOLD AS); D5 a changed name's short form is replaced by rule; D6 the Session Log's Scene log of the detector's lines is removed; D7 the players' own Chronicle entries reach the recap as their notes; D8 the record's readers are as the Session Log journal's ownership allows (default NONE — players cannot open it, though its data reaches their clients); D9 a player's own sheet edit is recorded; D10 sessions before the record are read as they are, labelled, no backfill; D11 the recap's sentences are cited; D12 the slices in the design's order.
+
+Canonical stores, as of slice 2:
+- What happened at the table: the session record (`sessionRecord.events` on each session's page), written only through `recordEvent`, read only through `readRecord` (tests/unit/sessionRecordEvents.test.js).
+- Narration prose: the card's `narrationText` while the card exists (the ring and the X-Card's pick read it); the record's `narration.text` is a write-once copy, changed only by the X-Card's blanking.
+- Whether a narration was removed: for the narrator's live guards, the card flags and `campaignState.xCardedNarrationIds` (capped); for every view, the record's `narration.removed` events (uncapped).
+- A changed name: for the narrator's note, `campaignState.nameChanges` (capped); for every view, the fold of the record's `name.changed` events (uncapped), written by the same three sites in the same function. Nothing stored is rewritten (decisions "A correction of a name" stands).
+- A truth and whether it stands: for the narrator, the scene ledger; for every view, the record's `truth.set` / `truth.struck` by truth id.
+- An oracle's answer: for the narrator, the ring; for views, `oracle.asked`.
+- Where things stand (meters, impacts, vows, connections, tracks, place, the open scene's state and question): the sheets, the tracks and campaignState, read live — never added up from the record.
+- The campaign recap: `campaignState.campaignRecapCache` `{ text, cites, generatedAt, sourceHash }`, valid only while its source — the record read with corrections, where things stand, the notes, the sessions before the record — hashes the same.
+- The Session Log page's body: a mirror of the record (`views.log.sourceHash`); its `sessionLogPage` flag keeps the story End a Session writes until slice 3.
+
+- The session summary (slice 3): its canonical store is the session page's `sessionRecord.views.summary` `{ text, cites, through, sourceHash, madeAt }`, written only by `narrator.js getRollingSessionSummary` (and the GM's `applyRelayedSessionSummary` for a keyless table), read only through `record/summaryView.js` (STORY SO FAR `sessionSummaryText`, LAST SESSION `lastSessionStory` via `lifecycle.js lastSessionToTell`, the snapshot `earlierSessionStories`, the page `sessionStoryOf`). Valid while `summarySource(readRecord({ session, through }))` hashes to `sourceHash`; the read of a span applies corrections made after it. "Rolling session summary: a droppable convenience" stands — it is never a fact store, and nothing marks it owed: the record says so.
+- LAST SESSION follows a session nobody began with that session's facts (no fold of its summary text into the begun one's).
+- The Chronicle (slice 4): it stays the players' book and its own store (one journal a PC, its entries theirs to write, edit, pin, delete). An automatic entry is a cached view of one narration event of the record (`eventId`, `sourceHash`), written once by the scribe on the canonical GM when a play beat's narration is recorded; a correction reaches it at read (a changed name, `getChronicleEntries`) or through the record (a strike: the entries of the narrations that set the truth, pinned or edited kept); the X-Card's removal is unchanged.
+
 ## Session set-pieces are built from the game's oracles (issue #381 slices 1–3) (2026-11)
 
 **Decision** (the maintainer ordered overhaul 6 built, 2026-11-24; the decisions as taken in the entry below this one): the session's opening, its closing cutaway and the spotlight vignette are each built from MATERIAL: a few results rolled
@@ -292,7 +311,8 @@ weak hit whose cost is a choice still to be made, paced narration, a
 vignette. The scribe still writes and rates the entry, and is told in one
 line that it is on record and why, so the entry says what changed. A Batch
 Mode round writes one entry and is kept when any of its rolled moves is
-(`roundLastingChange`). The X-Card and a strike still remove an entry, and
+(`roundLastingChange` until issue #382 slice 4; since then the first of its
+beats' `lasting` in the session record). The X-Card and a strike still remove an entry, and
 `chronicleAutoEntry` off still writes none. The rule is code, so its effect
 on what is kept needs no measuring; what the entries then *say*, and the
 recap made from them, are still a model's and are read on the long haul
