@@ -801,8 +801,11 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
 Sections: [0] role/style per mode (the role in `this narration`, the voice
 rules in `standing`) · [0b]
 campaign recap (a session's first narration in any prose mode, from
-`campaignRecapCache` while it matches the chronicle — issue #286 C3, #301
-B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
+`campaignRecapCache` while it matches its source — issue #286 C3, #301
+B04, #382; only for a session with one before it — the record holds an
+earlier session with a beat, or one from before the record, or the session
+is numbered past the first: a campaign's first session is given no recap of
+its own Begin beats, known-issues RECAP-AT-THE-FIRST-BEGIN) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
 Battle Stations · **[2.6] THE VOW THIS SCENE SERVES** (issue #353 R3 — the
@@ -1174,7 +1177,8 @@ and an End on a session already ended only replaces the focus for next
 session and posts a note — its momentum is paid for the first focus noted,
 once (issue #309 N08). What carries over to the new session's prompts: LAST SESSION ([4c], every
 prose mode), the campaign recap ([0b], the session's first narration — no
-narrator card of the session yet, a reflection published from the Private
+narrator card of the session yet, and a session before it (`recapSource`'s
+`before`, or a session number past the first), a reflection published from the Private
 Channel aside: it is canon, not a narration, and published first it took the
 narration's recap (issue #345 AA32) — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and

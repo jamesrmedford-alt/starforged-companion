@@ -427,6 +427,9 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
   });
 
   it('the campaign recap comes from its cache on the session\'s first narration only, in any mode', async () => {
+    // A session with one before it (a campaign's first session is told no
+    // recap of itself — recapAtFirstBegin.test.js).
+    await seedLegacySessionPage('sess-0', PREV, { number: 2 });
     const state = makeState({ campaignRecapCache: {
       text: 'The campaign so far.', generatedAt: null, ...(await campaignRecapCacheKey(makeState())),
     } });

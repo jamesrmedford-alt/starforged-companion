@@ -1052,6 +1052,13 @@ async function sessionStartRecap(campaignState) {
   try { stored = game.settings.get(MODULE_ID, 'campaignState')?.campaignRecapCache ?? null; }
   catch { stored = null; }
   const key = await campaignRecapCacheKey(campaignState);
+  // A session's start is told what came before it. A campaign's first session
+  // has nothing before it: its own first beats — the vow sworn in Begin — are
+  // no "previously" (known-issues RECAP-AT-THE-FIRST-BEGIN: since the recap
+  // became a view of the record, they made one, and the first narration was
+  // given a recap of the session it opened). A session numbered past the
+  // first had one before it, whatever the record still holds of it.
+  if (!key.before && !(Number(campaignState?.sessionNumber) > 1)) return '';
   for (const cache of [stored, campaignState?.campaignRecapCache]) {
     if (isRecapCacheCurrent(cache, key)) return cache.text;
   }
@@ -7371,15 +7378,17 @@ async function _collectAllChronicleEntries(campaignState) {
  * would be made from now (record/recapView.js — the session record read with
  * the table's corrections, where things stand, the players' notes, the
  * sessions from before the record). Any correction moves it (issue #382); it
- * was a hash of the Chronicle's text (issue #301 B04). Exported for the tests
- * and Quench checks that seed a cache. No API call.
+ * was a hash of the Chronicle's text (issue #301 B04) — and whether a session
+ * before the current one is in that source (`before`, recapView.js), which a
+ * session's start needs for its recap (sessionStartRecap). Exported for the
+ * tests and Quench checks that seed a cache. No API call.
  *
  * @param {Object} campaignState
- * @returns {Promise<{ sourceHash: string }>}
+ * @returns {Promise<{ sourceHash: string, before: boolean }>}
  */
 export async function campaignRecapCacheKey(campaignState) {
   const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
-  return { sourceHash: source.hash };
+  return { sourceHash: source.hash, before: source.before };
 }
 
 // Every PC's chronicle entries — the players' own notes, and the sessions
