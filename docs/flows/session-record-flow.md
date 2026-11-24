@@ -130,7 +130,9 @@ lists its scenes.
    (`withNameChange`, `cap: Infinity`) and written as the new name in every
    words, label and prose field (`nameChanges.js` `writeNewNames` — the whole
    name, the part the new one does not share, and its short form after "the"
-   or before "'s": decision D5); an actor's name is read through its id.
+   or before "'s": decision D5; none where it already stands inside a name as
+   it is now, "Tamsin" in "Tamsin Okoro" — known-issues
+   NEW-NAME-WRITTEN-TWICE); an actor's name is read through its id.
 4. *Cutaways* — a closing vignette (`vignette_close`) and Begin's Spotlight
    Vignette (`vignette_spotlight`, issue #381 slice 3) are `cutaway` beats: told
    out of the characters' sight, never what they did (`read.js` `CUTAWAY_MODES`;

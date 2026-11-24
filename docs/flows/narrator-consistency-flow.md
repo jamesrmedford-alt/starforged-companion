@@ -149,7 +149,12 @@ longer special-cases them).
   docs/flows/session-record-flow.md), as the ledger saves put the set and the
   struck truth there (`truth.set` / `truth.struck`): every view of the record
   — the Session Log page — writes the new name, its short form too, at read
-  (`writeNewNames`); the stored list (capped) still tells the narrator. CORRECTED is
+  (`writeNewNames`), never where the old name already stands inside a name
+  as it is now — its own new one, another change's, another record's, in any
+  case — and each place once, from the text as stored: for "Tamsin" →
+  "Tamsin Okoro" it wrote "tied the vow to Tamsin Okoro Okoro" on the pages
+  and in the recap (known-issues NEW-NAME-WRITTEN-TWICE). The stored list
+  (capped) still tells the narrator. CORRECTED is
   its scene's (and its place's); the change is told past both — NAMES THE TABLE
   CHANGED in the narrator's context, every mode, and in the session summary's
   source — wherever the old name still reaches a prompt. In the long haul's
@@ -168,7 +173,11 @@ longer special-cases them).
   listed: a word the new name keeps ("Tamsin" of Tamsin Vey → Tamsin Okoro), a
   word of another name the table changed, and a word the text also uses beside
   another capitalised word — part of another name in play ("Juro Vey", "Silent
-  Wake"). A short form on its own also makes an earlier session's change due
+  Wake") — or inside another changed name as it stands ("Vey" in "Vey's
+  Lantern"). An old name written inside its new one, or another changed
+  name, is no mention of it: "Tamsin Okoro" names no "Tamsin", and the
+  change was told to every prompt that wrote the new name
+  (NEW-NAME-WRITTEN-TWICE). A short form on its own also makes an earlier session's change due
   (`mentionsOldName`): for a name the new one shares no word with, only the
   whole old name did, so the third live run's session 3 summary was written
   from "the Wake's registry" with no note. The note gave the old name whole

@@ -876,7 +876,9 @@ name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
 each told while it is this session's or while its old name, whole, the part
 the new one does not share, or cut short to one word of it used on its own
 ("the Wake" for the Ashen Wake), is in what the call sends: the cached blocks,
-the context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the
+the context, a recap's Chronicle (`extras.nameChangeTexts`) — never as part
+of a name as it stands now: "Tamsin Okoro" holds no "Tamsin" (known-issues
+NEW-NAME-WRITTEN-TWICE). Every mode, the
 recap's included; per-beat. Its line names each such short form the call's text
 uses and what to write for it — never a word the new name keeps or another
 name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
