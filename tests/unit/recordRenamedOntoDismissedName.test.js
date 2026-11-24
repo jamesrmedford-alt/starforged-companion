@@ -24,14 +24,17 @@
  * own rule is unchanged.
  *
  * Driven end to end: the dismissal through the draft card's Dismiss button;
- * the rename through a player's @scene whose capture's detection reply
+ * the rename through a line of play whose capture's detection reply
  * carries the reveal (scripted Claude replies), or the GM's sidebar rename;
- * the consequence through the next @scene's narrator request.
+ * the consequence through the next line's narrator request. (Both were
+ * `@scene` questions until an answer stopped being recorded or mined —
+ * known-issues SCENE-ANSWER-NOT-A-CAMERA.)
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
+import { narrateLineOn } from '../helpers/narrateLine.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
@@ -116,8 +119,7 @@ async function revealHoodedFigure() {
   // The answer's capture runs 2 s after its card (narrator.js ASYNC_DETECTION_DELAY_MS).
   vi.useFakeTimers({ toFake: ['setTimeout'] });
   try {
-    await table.client('pl-1').chat('@scene Who is the hooded figure watching us?');
-    await table.settle();
+    await narrateLineOn(table, 'Who is the hooded figure watching us?', { actorId: 'pc-kira' });
     await vi.advanceTimersByTimeAsync(2_100);
     await table.settle();
   } finally {
@@ -128,8 +130,8 @@ async function revealHoodedFigure() {
 }
 
 async function askAboutSable() {
-  await table.client('pl-1').chat('@scene What is Sable Ortiz doing now?');
-  await table.settle(); await table.drain();
+  await narrateLineOn(table, 'What is Sable Ortiz doing now?', { actorId: 'pc-kira' });
+  await table.drain();
   const call = sceneCallAbout(/What is Sable Ortiz doing now/);
   expect(call, 'the question was narrated (setup)').toBeTruthy();
   return { ...call, prompt: `${call.system ?? ''}\n${call.userText ?? ''}` };

@@ -6,8 +6,13 @@
 // with no canonical-GM gate — unlike runPostNarrationPasses and
 // scheduleNarrationCapture — so the player's client attempted World Journal,
 // session-log and NPC-card writes it cannot make (issue #321 U36). The capture
-// now runs on the canonical GM only; off it, the answer's ledger facts still
-// reach the GM through the sidecar relay.
+// was then gated to a GM's client, the answer's ledger facts reaching the GM
+// through the sidecar relay.
+//
+// Since known-issues SCENE-ANSWER-NOT-A-CAMERA an `@scene` answer is not
+// written back at all: no capture on any client, and no fact block relayed —
+// the answer is the fact, and the fact is recorded already. What this file
+// held as a gate it now holds as "nowhere".
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -39,6 +44,7 @@ import { apiPost } from '../../src/api-proxy.js';
 import { isCanonicalGM } from '../../src/multiplayer/gmGate.js';
 import { requestGmAction } from '../../src/multiplayer/gmRelay.js';
 import { runCombinedDetectionPass, appendGenerativeTierUpdates } from '../../src/entities/entityExtractor.js';
+import { runConsistencyCheck } from '../../src/factContinuity/consistencyCheck.js';
 
 const MODULE_ID = 'starforged-companion';
 let restoreUser;
@@ -80,7 +86,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('@scene capture runs on the canonical GM only', () => {
+describe('an @scene answer is mined on no client, and relays nothing', () => {
   it('a keyed player\'s client (no keyed GM online) runs neither the detection pass nor the tier pass', async () => {
     restoreUser = asPlayer();
     const reply = await interrogateScene('What is Kael Dros doing at the hatch?', state());
@@ -90,23 +96,44 @@ describe('@scene capture runs on the canonical GM only', () => {
     expect(passCounts()).toEqual({ detection: 0, tierPass: 0 });
   });
 
-  it('there the answer\'s ledger facts still go to the GM through the sidecar relay', async () => {
+  it('there a fact block the reply carries anyway is relayed to no one — and is not on the card', async () => {
     restoreUser = asPlayer();
     apiPost.mockResolvedValue(answer({ newTruths: [{ subject: 'Kael Dros', fact: 'is hiding a datachip' }], stateChanges: [] }));
-    await interrogateScene('What is Kael Dros doing at the hatch?', state());
+    const reply = await interrogateScene('What is Kael Dros doing at the hatch?', state());
     await vi.advanceTimersByTimeAsync(3000);
 
-    const relayed = requestGmAction.mock.calls.filter(([kind]) => kind === 'narrator.sidecar');
-    expect(relayed).toHaveLength(1);
-    expect(relayed[0][1].sidecar.newTruths[0].fact).toBe('is hiding a datachip');
+    expect(reply).toBe('Kael Dros squints at the hatch seals.');
+    expect(requestGmAction.mock.calls.filter(([kind]) => kind === 'narrator.sidecar')).toEqual([]);
     expect(passCounts()).toEqual({ detection: 0, tierPass: 0 });
   });
 
-  it('the canonical GM mines the answer with both passes (control)', async () => {
+  it('the canonical GM mines nothing either, and writes nothing of the block to the scene', async () => {
     isCanonicalGM.mockReturnValue(true);
-    await interrogateScene('What is Kael Dros doing at the hatch?', state());
+    apiPost.mockResolvedValue(answer({
+      newTruths: [{ subject: 'Kael Dros', fact: 'is hiding a datachip' }], stateChanges: [],
+      sceneFrame: { location: 'the hatch', present: ['Kael Dros'], situation: 'Kael squints at the seals', question: 'What is he hiding?' },
+    }));
+    const cs = state();
+    await interrogateScene('What is Kael Dros doing at the hatch?', cs);
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(passCounts()).toEqual({ detection: 1, tierPass: 1 });
+    expect(passCounts()).toEqual({ detection: 0, tierPass: 0 });
+    expect(cs.sceneTruths ?? []).toEqual([]);
+    expect(cs.sceneFrame ?? null).toBeNull();
+    // It is still read against the ledger: the one check an answer keeps.
+    expect(runConsistencyCheck).toHaveBeenCalledTimes(1);
+    expect(runConsistencyCheck.mock.calls[0][0]).toBe('Kael Dros squints at the hatch seals.');
+  });
+
+  it('with fact continuity off a block is still kept off the card, and nothing is checked against a ledger nobody keeps', async () => {
+    isCanonicalGM.mockReturnValue(true);
+    game.settings._store.set(`${MODULE_ID}.factContinuity.enabled`, false);
+    apiPost.mockResolvedValue(answer({ newTruths: [{ subject: 'Kael Dros', fact: 'is hiding a datachip' }], stateChanges: [] }));
+    const reply = await interrogateScene('What is Kael Dros doing at the hatch?', state());
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(reply).toBe('Kael Dros squints at the hatch seals.');
+    expect(runConsistencyCheck).not.toHaveBeenCalled();
+    expect(passCounts()).toEqual({ detection: 0, tierPass: 0 });
   });
 });

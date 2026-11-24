@@ -70,9 +70,11 @@ describe('P2-27 — plain prose, not "vivid, atmospheric"', () => {
     for (const mode of PROSE_MODES) {
       expect(prompt(mode), mode).not.toMatch(/vivid, atmospheric/);
     }
-    for (const mode of ['move_resolution', 'round_resolution', 'paced_narrative', 'scene_interrogation', 'oracle_followup']) {
+    for (const mode of ['move_resolution', 'round_resolution', 'paced_narrative', 'oracle_followup']) {
       expect(prompt(mode), mode).toMatch(/plain, concrete prose/);
     }
+    // An `@scene` answer is not prose narration at all (SCENE-ANSWER-NOT-A-CAMERA).
+    expect(prompt('scene_interrogation')).toMatch(/Your role is to answer\s+it in your own voice, plainly/);
   });
 
   it('every prose mode carries the prose rule: plain, at most one comparison, no chains, no reused image, varied build', () => {

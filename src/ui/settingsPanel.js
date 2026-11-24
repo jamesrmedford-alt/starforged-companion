@@ -418,7 +418,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH, {
     name:    'Scene Response Length (sentences)',
-    hint:    'Target number of sentences for scene interrogation responses. Range: 1–4.',
+    hint:    'The most sentences an @scene answer runs to: it gives the fact asked for and stops. Range: 1–4.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -1766,12 +1766,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="sceneQueryEnabled" ${ctx.sceneQueryEnabled ? 'checked' : ''} ${dis}>
             Enable @scene questions
           </label>
-          <span class="narrator-field-hint">A message starting with @scene asks the narrator to describe the scene, with no move.</span>
+          <span class="narrator-field-hint">A message starting with @scene asks the narrator a question about the story. It answers plainly, with no move, and nothing in the answer is recorded.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene response length (sentences)</label>
           <input class="settings-input narrator-number-input" name="sceneResponseLength"
                  type="number" min="1" max="4" value="${ctx.sceneResponseLength}" ${dis}>
+          <span class="narrator-field-hint">The most sentences an @scene answer runs to — it gives the fact and stops. Default 2.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene context cards</label>

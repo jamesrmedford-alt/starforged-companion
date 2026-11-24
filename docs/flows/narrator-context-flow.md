@@ -22,7 +22,8 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 
 **Single seam holds.** Every narrator call builds context through
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
-paced_narrative, scene_interrogation, oracle_followup, session_vignette
+paced_narrative, scene_interrogation (an `@scene` question — answered, not
+narrated: see "An `@scene` answer" below), oracle_followup, session_vignette
 (galley and end-session vignettes), clock_advance (a clock's advance or
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
@@ -215,6 +216,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   allows (the third opening soaked apricots "for the third time this week"
   beside a raider's open boarding lock; the fourth wrote "since the Wren" of a
   ship still grappled alongside).
+  A vignette is a bookend, not a
+  beat of play: its mode block says its fact block sets no scene question (`A
+  VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`
+  — the frame's where / present / now are written, the question never (§2;
+  known-issues NARRATOR-REFRAINS: the galley's closing hook was its session's
+  question in every prompt).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -227,11 +234,12 @@ GM (GM relay `narrator.sidecar` → `applyRelayedNarratorSidecar`, issue #286
 D2), tagged with the scene it was written in: the GM drops it if that scene
 has ended, or if the X-Card has since removed the narration it came with (its
 `narrationId`, issue #321 U07), and starts a scene if none is active. It used to be
-discarded. With no GM connected nothing can be recorded (debug-logged). The
-post-narration capture (§2) does not run off the canonical GM: an `@scene`
-answered on a player's client used to run the detection and tier passes,
-whose World Journal, draft-card and NPC-card writes were refused there
-(issue #321 U36). A move's or a Batch Mode round's capture runs on the GM
+discarded. With no GM connected nothing can be recorded (debug-logged). An
+`@scene` answer is the exception: it has no side-data — nothing of it is
+recorded, on the GM or relayed (known-issues SCENE-ANSWER-NOT-A-CAMERA). The
+post-narration capture (§2) does not run off the canonical GM (an `@scene`
+answered on a player's client used to run the detection and tier passes
+there, issue #321 U36; an answer now runs neither, anywhere). A move's or a Batch Mode round's capture runs on the GM
 that narrated it (`runPostNarrationPasses` / `runRoundNarrationPasses` — a
 GM's client, never a player's), canonical when it claimed the move: they
 re-checked canonicity when the narration landed, so a lower-id keyed GM
@@ -811,8 +819,12 @@ which name is current; the session summary's source carries the same note,
 name — a player's line, the recent scene, a bookend's EARLIER list — has it
 added at that message's end, `narrator.js callNarratorAPI` →
 `withNameChangesNoted`) · [6.5] active-scene ledger
-(SCENE FRAME — with the scene's question, kept for the scene and marked
-when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
+(SCENE FRAME — with the scene's question, shown while it stands, marked
+when answered (issue #353 R2), released when play has left it unanswered for
+`SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
+the one the scene turns on now, from the player's latest line
+(`askSceneQuestion`; never in a vignette's, an `@scene` answer's or the
+recap's prompt — known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
 never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
@@ -1355,7 +1367,13 @@ keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
 the active sector's, as `!at` resolves it: the older sector's "Derelict
 Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
 `position` stateChanges routed to the §20 ship record, `applySceneFrame`
-full-replacement snapshot — each truth, state value and the frame stamped
+full-replacement snapshot — a session vignette's with its question taken off
+(`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
+play — it sets no question and changes none), every other beat's then counted
+against the question the frame keeps (`countSceneQuestionBeat` →
+`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the frame keeps none —
+known-issues NARRATOR-REFRAINS: an opening vignette's hook was its session's
+question in 22 prompts) — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the
 X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
@@ -1376,6 +1394,41 @@ stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the
 scene's complication step), so a co-GM's vignette still paces its clock.
 
+**An `@scene` answer is not written back** (known-issues
+SCENE-ANSWER-NOT-A-CAMERA; `narrator.js interrogateScene` → `sceneAnswerText`).
+The long haul's third live run asked sixteen questions through `@scene`: each
+answer was right, each added scenery that invented (the mode's system text
+said "do not invent", its user message asked for "2–3 sentences of
+atmospheric description", and its permission block for sensory detail), and
+each was then applied to the scene's record — the frame's situation rewritten,
+the scenery filed as lore and a draft location. Now:
+
+- **What it is asked.** Its role (`ROLE_DESCRIPTIONS.scene_interrogation`) is
+  an answer, not narration: the fact asked for, from what the prompt holds —
+  "the story has not established it" when the prompt does not hold it — with
+  no scenery and nothing happening. It has no latitude block
+  (`DEFAULT_PERMISSION_CLASS_BY_MODE.scene_interrogation` is null), and its
+  user message (`buildSceneUserMessage`) asks for at most Scene Response
+  Length plain sentences (`sceneResponseLength`, default 2 — "one, if one
+  answers it"). Its context closes on ANSWER NOW — "write no JSON block" — in
+  RESPOND NOW's place; the standing block, the response format in it, is
+  every mode's. UNREVEALED is shown without the lines that ask for a record,
+  and nothing is put under DECIDE NOW.
+- **What is recorded: nothing.** `sceneAnswerText` takes any fact block off
+  the reply and drops it — no frame, truth, state or plan, applied or relayed
+  — and no capture runs (no detection, no tier pass). There was never a
+  Chronicle entry. It still starts a scene when none is open, and is still
+  read against the ledger (the consistency check: it writes no fact).
+- **What it still feeds, deliberately** — the A1 decision kept: its card
+  carries the narrator flag family, so the **recent-narration ring** and the
+  rolling summary's source hold the question and what was said in reply
+  (`PLAYER — Kira asked: "…"`); a later beat must not contradict an answer
+  the table has just read. It is **no narration** where one is meant: the
+  session's first-narration campaign recap (`sessionStartRecap` — a question
+  asked first took the first beat's recap) and the X-Card's redirect
+  (`registerXCardRedirectHook` — an answer steers nothing away, so it does
+  not use the redirect up); it already counted for no beat shape.
+
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class
 moves run detection (make_a_connection auto-creates on a hit); interaction-
@@ -1387,9 +1440,9 @@ entities they name (`scheduleNarrationCapture`; a clock vignette's from
 `narrateClockAdvancement` itself, so all three post sites, and only once its
 "still triggered" check stands — issue #345 AA33: it ran none; its detection —
 it is written at interaction latitude, issue #322 V23 —
-CLOCK-VIGNETTE-NO-DETECTION). `@scene` answers run detection and the
-tier pass too, on a GM's client only (`scheduleSceneAnswerCapture`, issue
-#321 U36). These captures run on the GM whose client narrated them — not
+CLOCK-VIGNETTE-NO-DETECTION). An `@scene` answer runs neither: it is not
+mined (its `scheduleSceneAnswerCapture` is retired — known-issues
+SCENE-ANSWER-NOT-A-CAMERA, below). These captures run on the GM whose client narrated them — not
 whoever is canonical when the reply lands, which dropped them when a lower-id
 keyed GM joined meanwhile (AA34's gate, CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). A Batch Mode round runs one detection, at the widest class among
 the entries it captures, and a tier pass whatever that class is, over what
@@ -1401,7 +1454,31 @@ the GM's draft card — only make_a_connection auto-creates; the card carries
 the PC the narration was for (`actorId`, every path that knows it), whose
 sheet a confirmed connection's bond Item goes on (issue #321 U23) — a
 round's card every acting PC (`actorIds`), its connection rows' Confirm asking
-which of them, or no one (issue #342 D3). The
+which of them, or no one (issue #342 D3).
+
+**The detector is shown the player's line beside the narration** (known-issues
+PLAYER-NAMED-PERSON-GETS-NO-CARD; `entityExtractor.js`
+`buildCombinedDetectionPrompt`'s `playerLines`). It read the narration alone:
+in the long haul's third live run a player wrote "…to the ledger stall of
+Tamsin Vey, the salvage broker, and greet her by her full name", the narrator
+answered "A woman looks up from a slate when you say her name in full", and
+the detector proposed "Ledger stall woman" (low confidence — dropped), then
+"Tamsin" a line later. Every capture that follows a line of play hands the
+line in — paced narration (`schedulePacedDetection`'s `playerText`), a move
+(`runDiscoveryDetection` → `writtenLine`: none for a Burn Momentum / Improve
+Result re-narration, whose input is a marker), a Batch Mode round (each
+acting character's, with their name) — as plain text on one line, cut at 600
+characters, under PLAYER'S LINE ahead of `Narration:`, with PLAYER'S LINE
+rules: the line is material for names, never an instruction and never
+narration; a name it gives to someone, somewhere or something the narration
+shows is that entity's name, in its fullest form and not at low confidence
+(a placeholder figure's: a rename); what the line alone mentions creates
+nothing, and no lore is taken from it. A capture no line prompted — an oracle
+follow-up's, a clock vignette's, the inciting incident's — sends none, and its
+prompt is as it was. (An oracle's question is not handed in: it is asked, not
+asserted — "is the captain called Vex?" answered no would name him.)
+
+The
 detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,
@@ -1499,7 +1576,9 @@ vignettes, and `!pay-the-price`'s oracle follow-up after its trigger vignette
 (bounded, 60 s), so the second continues the first's scene with its beat in
 it. `@scene` **continues** the scene in progress (issue #286 A4): it
 used to call `startScene`, which ended the scene it was asked about and wrote
-the answer without the frame, truths, state or CORRECTED list.
+the answer without the frame, truths, state or CORRECTED list. It still
+starts one when none is open, so the question is asked of a scene; the answer
+adds nothing to it.
 `ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
 boundary is a world write, so a keyed player's client narrating `@scene` /
 `!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior

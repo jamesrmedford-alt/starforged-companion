@@ -113,7 +113,8 @@ describe('runPostNarrationPasses — GM gate', () => {
       );
       expect(runCombinedDetectionPass).not.toHaveBeenCalled();
       await vi.runAllTimersAsync();
-      expect(runCombinedDetectionPass).toHaveBeenCalledWith('Some prose.', 'compel', 'strong_hit', { currentSessionId: 's' });
+      // …with the player's line for the detector — none here (PLAYER-NAMED-PERSON-GETS-NO-CARD).
+      expect(runCombinedDetectionPass).toHaveBeenCalledWith('Some prose.', 'compel', 'strong_hit', { currentSessionId: 's' }, { playerLines: [] });
     } finally {
       vi.useRealTimers();
     }
