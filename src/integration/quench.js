@@ -2628,18 +2628,26 @@ function registerWorldJournalTests(quench) {
           assert.isAtLeast(after, Math.max(before, 1));
         });
 
-        it("appendSessionLogBeat appends a scene beat to the running session page", async function () {
+        it("the Session Log page is the session record's view: a line recorded for a session is listed on its page (issue #382)", async function () {
           this.timeout(20000);
+          const { isCanonicalGM } = await import(`${MODULE_PATH}/multiplayer/gmGate.js`);
+          if (!game.user.isGM || !isCanonicalGM()) { this.skip(); return; }
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const title = `QUENCH TEST — Scene beat ${Date.now()}`;
+          const { recordEvent, recordSettled } = await import(`${MODULE_PATH}/record/record.js`);
+          const { renderSessionLog } = await import(`${MODULE_PATH}/record/sessionLogView.js`);
+          // A session of the test's own: the world's own record is never written here.
+          const session = `quench-record-${Date.now()}`;
+          const words = `QUENCH TEST — a line of play ${Date.now()}`;
 
-          const page = await wj.appendSessionLogBeat(state, { kind: "lore", title, text: "transient detail" });
+          recordEvent("line", { session, d: { via: "typed" }, text: words });
+          await recordSettled();
+          await renderSessionLog(session);
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
+          const page = slJournal?.pages?.contents?.find(p => p.flags?.[MODULE]?.sessionLogPage?.sessionId === session) ?? null;
           if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
-          assert.isObject(page, "appendSessionLogBeat should return the running page");
-          assert.include(page?.text?.content ?? "", title, "the beat should appear in the page body");
-          assert.include(page?.text?.content ?? "", "Scene log", "the running scene-log section should be present");
+          assert.isObject(page, "the record's first write made the session's page");
+          assert.include(page?.text?.content ?? "", words, "the line is listed under What happened");
+          assert.notInclude(page?.text?.content ?? "", "Scene log", "the detector's Scene log is retired (issue #382 D6)");
         });
       });
 
