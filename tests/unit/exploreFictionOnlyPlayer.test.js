@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { movesNamedIn, moveLabel } from '../../test/ci/playwright/lib/moveNames.mjs';
-import { LAST_RESORT_AFTER, createPointer, isSceneQuestion } from '../../test/ci/playwright/lib/beats.mjs';
+import { ATTACK_MOVES, BEAT_CHECKS, LAST_RESORT_AFTER, createPointer, isSceneQuestion } from '../../test/ci/playwright/lib/beats.mjs';
 import { playerSystemPrompt } from '../../test/ci/playwright/lib/player.mjs';
 import { isProbeLine, scoreLedger } from '../../test/ci/playwright/lib/ledger.mjs';
 import { freeformOf, moveReadOf, pacingReadOf, scorecard } from '../../test/ci/playwright/lib/review.mjs';
@@ -273,5 +273,85 @@ describe('a memory question asked through @scene is scored like any other', () =
     const probe = scoreLedger({ facts: [COMPASS], marks, messages, requests: [scene] }).facts[0].probes[0];
     expect(probe).toMatchObject({ asked: true, step: 'a16', answered: true, inAnswer: true, inPrompt: true });
     expect(probe.promptSections).toEqual(['ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE']);
+  });
+});
+
+// ── the third live run, kept: the first with a player that names no move ─────
+
+describe('the third live run of the long haul, kept as a replay (explorations/long-haul-live-20261124-0321)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261124-0321');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const said = (step, kind = /narrate|interrogateScene/) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+
+  it('is a run the runner can take again: 78 actions with no document id, its dice, and every reply filed under a step', () => {
+    expect(RUN.actions).toHaveLength(78);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(RAW).not.toMatch(/sk-ant-/);
+  });
+
+  it('its player named no move in anything it typed, and asked its questions as the charter says', () => {
+    const typed = RUN.actions.filter(a => a.action === 'say' && a.text);
+    expect(typed.filter(a => movesNamedIn(a.text).length).map(a => a.text)).toEqual([]);
+    expect(typed.filter(a => isSceneQuestion(a.text))).toHaveLength(16);
+  });
+
+  it('expects what the corrected check found: the connection\'s five beats not exercised, the fight done, no rule broken', () => {
+    const notDone = Object.entries(RUN.expected.beats).filter(([, s]) => s !== 'done').map(([b]) => b);
+    expect(notDone).toEqual(['b2', 'b3', 'b18', 'b22', 'b23']);
+    expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
+    // The run's own verdict had beat 10 not exercised too: its check wanted Strike or Clash.
+    expect(RUN.rescored).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/), was: { beats: { done: 20, notExercised: 6 } } });
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+  });
+
+  it('a fight beat takes any attack the readers make of a plain line: "I press my advantage" was Gain Ground', () => {
+    expect(said('a30', /interpretMove/)).toMatch(/"moveId":\s*"gain_ground"/);
+    expect(ATTACK_MOVES).toEqual(expect.arrayContaining(['strike', 'clash', 'gain_ground', 'react_under_fire']));
+    const mark = (step, cards = []) => ({ step, phase: 'session-2', table: { pcs: [], connections: [], session: { active: true } }, cards });
+    const miss = { id: 'c1', move: { name: 'Gain Ground', shown: 'miss', diceLine: 'Action: 3 + 2 = 5 | Challenge: 9, 8' } };
+    const price = { id: 'c2', price: { text: 'Pay the Price Gain Ground As stated before the roll: the Wake\'s return fire catches the flank. Routes to Withstand Damage (-1).' } };
+    const run = { marks: [mark('a29'), mark('a30', [miss]), mark('a31', [price])], messages: [], actions: [], charter: CHARTER, from: 'a29' };
+    const pointer = createPointer([{ id: 'b10', n: 10, session: 2, title: 't', check: { type: 'sufferPaid', moves: ['strike', 'clash'] } }]);
+    pointer.advance({ ...run, marks: run.marks.slice(0, 1) }, 'a29');
+    const changes = pointer.advance(run, 'a31');
+    expect(changes.map(c => c.status), JSON.stringify(pointer.state[0].detail)).toEqual(['done']);
+    expect(BEAT_CHECKS.sufferPaid).toBeTypeOf('function');
+  });
+
+  it('holds what its review says of it, in the recorded replies', () => {
+    // A person the player named in full got a card under half her name, from the narrator's prose alone.
+    expect(said('a5', /Detection/)).toMatch(/"name":\s*"Tamsin"/);
+    expect(said('a5', /interpretMove/)).toMatch(/"moveId":\s*"compel"/);
+    // A step toward the vow, read as another move.
+    expect(said('a61', /classifyInput/)).toMatch(/gather_information/);
+    // The oracle's NO, narrated as yes — and the corrected name's short form, one step after the correction.
+    expect(said('a46')).toContain('which means someone is aboard');
+    expect(said('a46')).toContain("The Wake's boarding lock");
+    // The vow fulfilled with nobody named.
+    expect(said('a64')).toContain('both are named now');
+    // A scene question answered by the narrator; a question typed as play answered by a voice in the story.
+    expect(said('a73')).toContain('What you left with Tamsin was the manifest');
+    expect(said('a56')).toContain('"Cinder Wren. Registered out of nowhere you\'ve heard of."');
+    // The match, written as a thing in the scene.
+    expect(said('a27')).toContain('The match flares bright on the scope');
+  });
+
+  it('its review is written: the cold read first, every step noted, the questions answered', () => {
+    const card = fs.readFileSync(path.join(FOLDER, 'scorecard.md'), 'utf8');
+    const notes = fs.readFileSync(path.join(FOLDER, 'annotated-transcript.md'), 'utf8');
+    expect(card.indexOf('## The cold read')).toBeGreaterThan(-1);
+    expect(card.indexOf('## The cold read')).toBeLessThan(card.indexOf('## What this run was to answer'));
+    expect(card).toContain('| Plain lines | 8 line(s) where a move was wanted: 4 rolled, 2 offered it, 2 read as another move, 0 narrated with nothing offered; 0 line(s) named a move; 0 beat(s) at last resort; 4 memory question(s) asked as play, 16 as @scene');
+    expect(`${card}\n${notes}`).not.toContain('_To write');
+    expect(fs.existsSync(path.join(FOLDER, 'cold-read.md'))).toBe(true);
+    expect(fs.existsSync(path.join(FOLDER, 'review-notes.md'))).toBe(true);
   });
 });

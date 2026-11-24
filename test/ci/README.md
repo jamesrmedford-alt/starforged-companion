@@ -293,6 +293,13 @@ scorecard's **Plain lines** row says what each line of play became —
 rolled, offered a move, or narrated with nothing offered — and whether it
 named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
 
+**The third live run of the long haul** (2026-11-24, $1.71) is kept at
+`playwright/explorations/long-haul-live-20261124-0321/`: the first with a player
+that names no move, and the first reviewed cold — `cold-read.md` (a reader given
+the transcript alone), `annotated-transcript.md`, `scorecard.md` and
+`review-notes.md` (the recaps checked sentence by sentence, each finding with its
+cause). It replays with no key like the others.
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 fifty plain in-fiction lines that name no move, each with the reading it
