@@ -1,10 +1,15 @@
 /**
  * STARFORGED COMPANION
- * src/session/galleyVignette.js — Begin Session opening vignette.
+ * src/session/galleyVignette.js — Begin a Session's opening scene.
  *
- * Renders a short atmospheric prose card describing the active players'
- * characters together in the ship's galley, bantering humorously and
- * absurdly about what the absent crewmates are up to.
+ * A short scene of the characters whose players are at the table, in a quiet
+ * moment inside the situation the last session left — set where that session
+ * stopped, and built from material rolled on the game's oracles (issue #381;
+ * sceneSeeds.js). The file, `collectGalleyParticipants` and the card kind
+ * `galley_begin` keep their names from when the scene was set in the ship's
+ * galley: every reader of them means "the session's opening scene". The
+ * galley is now one row of a table, rolled only for an opening with nothing
+ * behind it.
  *
  * Player enumeration — important: in this module the GM IS a player
  * (the dominant solo-GM use case has the GM running their own PC).
@@ -13,23 +18,27 @@
  * connected — a player's own PC, or the GM's (one no player has) — see
  * collectGalleyParticipants.
  *
- * Solo play (no other PC registered): the vignette is the lone PC alone with
- * the ship — its noises and habits are the company. No crew is invented,
- * present or absent (issue #377 item 4: told to "invent generic absurd crew",
- * the narrator gave a solo pilot an engineer, a navigator and a cook, and a
- * helper recorded her as a crew member of her own ship). Earlier openings are
- * listed as already used (item 5), and no stat line is sent (#374 A11).
+ * Solo play (no other PC registered): the character is alone. No crew is
+ * invented, present or absent (issue #377 item 4: told to "invent generic
+ * absurd crew", the narrator gave a solo pilot an engineer, a navigator and a
+ * cook, and a helper recorded her as a crew member of her own ship). Earlier
+ * openings are listed as already used (item 5), and no stat line is sent
+ * (#374 A11). What that issue also made of the solo scene — "the ship's
+ * noises and habits are the joke" — is gone (issue #381 D7): a fixed joke is
+ * fixed stock, and both live campaigns' openings told it the same way.
  *
- * The opening is told where the last session stopped (its summary, kept as
- * LAST SESSION when this one was minted) and that it picks the story up
- * there: the long haul's third opening had the character soaking apricots
- * "for the third time this week" with a raider's boarding lock standing open
- * beside the ship, and its fourth wrote "since the Wren" of a ship still
- * grappled alongside (third live run, a50 and a78).
+ * The opening is told where the last session stopped — its summary, kept as
+ * LAST SESSION when this one was minted, and the last narration the table
+ * read, word for word (whereLastSessionStopped) — and is set there: the long
+ * haul's third opening had the character soaking apricots "for the third time
+ * this week" with a raider's boarding lock standing open beside the ship, and
+ * its fourth wrote "since the Wren" of a ship still grappled alongside (third
+ * live run, a50 and a78). The table's own word on where and when it picks up
+ * (Begin a Session's dialog) outranks both.
  *
- * Tone override: regardless of the configured narrator tone, galley
- * vignettes always render `wry + absurd`. The configured tone resumes
- * for the next narration after the session begins.
+ * Tone override: regardless of the configured narrator tone, the opening
+ * always renders `wry + absurd`. The configured tone resumes for the next
+ * narration after the session begins.
  */
 
 import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge.js";
@@ -37,6 +46,7 @@ import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { proseToHtml } from "../audio/segments.js";
 import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 import { lastSessionToTell } from "./lifecycle.js";
+import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags, factBlockWritten } from "./sceneSeeds.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -109,19 +119,27 @@ export function collectGalleyParticipants(campaignState = null) {
 }
 
 /**
- * Build the user-message body for the galley vignette narrator call.
- * Pulls character names, callsigns, biography snippets, and current-
- * vehicle context via the existing actor-bridge snapshot so any future
- * schema rename (e.g. `system.biography`) tracks automatically.
+ * Build the user-message body for the opening scene's narrator call: who is
+ * in it, where the last session stopped (and that the scene is set there),
+ * its MATERIAL (sceneSeeds.js), the earlier openings as already used, how it
+ * ends, and its length last. Pure: what it says of the last session, the
+ * material and the table's word are all handed in (composeOpeningScene).
+ *
+ * Character names, callsigns, pronouns and biography snippets come from the
+ * actor-bridge snapshot, so any future schema rename tracks automatically.
  *
  * @param {{ active: Array, absent: Array }} participants
  * @param {Object} campaignState
- * @param {{ earlier?: Array|null, lastSession?: { text: string, sessionNumber?: number|null }|null }} [opts] —
+ * @param {{ earlier?: Array|null, lastSession?: { text?: string, sessionNumber?: number|null, lastNarration?: string }|null,
+ *   seeds?: Object[]|null, pickUp?: string, account?: boolean }} [opts] —
  *   `earlier`: the earlier openings, else read from the chat; `lastSession`:
- *   how the last session ended, else read from `campaignState` (lastSessionOf)
+ *   where the last session stopped (whereLastSessionStopped); `seeds`: the
+ *   scene's material; `pickUp`: the table's own word on where and when the
+ *   session picks up (Begin a Session's dialog); `account`: false when the
+ *   narration writes no fact block
  * @returns {string}
  */
-export function buildGalleyVignetteUserMessage(participants, campaignState, { earlier = null, lastSession = undefined } = {}) {
+export function buildGalleyVignetteUserMessage(participants, campaignState, { earlier = null, lastSession = null, seeds = null, pickUp = "", account = true } = {}) {
   const { active, absent } = participants;
 
   // No stat line (issue #377 item 4, #374 A11): told "Stats: … wits 3" and to
@@ -142,11 +160,11 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
     if (!snap) return `- ${actor?.name ?? "Unknown"}`;
     const callsign = snap.callsign ? ` ("${snap.callsign}")` : "";
     // Absent crewmates are the subject of the banter, so the narrator still
-    // needs their pronouns to invent theories without misgendering them
+    // needs their pronouns to speak of them without misgendering them
     // (pronoun-propagation cluster, sibling of finding R).
     const pronouns = snap.pronouns ? ` [${snap.pronouns}]` : "";
     // Don't include the full bio for absent players — just enough hook
-    // for the active PCs to invent absurd theories about them.
+    // for the active PCs to speak of them.
     const trait = (snap.biography ?? "").trim();
     return `- ${snap.name}${callsign}${pronouns}${trait ? ` — ${truncate(trait, 80)}` : ""}`;
   };
@@ -162,106 +180,214 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
   // NARRATOR-ADDS-TO-THE-PREMISE; #374 A4): the instruction used to read "(No
   // absent crewmates registered — invent generic absurd crew.)", so a solo
   // pilot's galley got an engineer, a navigator and a cook — and a helper
-  // then recorded her as "a crew member" of her own ship. The PCs are alone
-  // with the ship, and its company is the joke.
+  // then recorded her as "a crew member" of her own ship. What an absent
+  // crewmate is up to is rolled (issue #381): asked for "specific and weird",
+  // two openings had one "recalibrating the gravity in the laundry".
   const crewLines = absent.length
     ? [
       "Absent crewmates (referenced in banter, not present):",
       absent.map(p => summariseAbsent(p.actor)).join("\n"),
       "",
-      `Ship is currently in: ${sectorName}.`,
-      "",
-      "Render a 4-6 sentence opening vignette set in the ship's galley.",
-      "The active PCs are eating, drinking, or otherwise hanging out — pick a",
-      "specific food or drink that fits them. They banter, humorously and",
-      "absurdly, about what each of the absent crewmates is doing elsewhere on",
-      "the ship or out in the sector — specific and weird, true to what is",
-      "known of each.",
+      "The characters present speak, fondly, of what each absent crewmate is up to:",
+      "the MATERIAL says what, for each, and nothing else is made up for them.",
     ]
     : [
       `Nobody else is aboard: no other crewmate is registered, so there is none. Do not invent one, present or absent, and do not have ${active.length > 1 ? "the characters" : "the character"} imagine or pretend one.`,
-      "",
-      `Ship is currently in: ${sectorName}.`,
-      "",
-      "Render a 4-6 sentence opening vignette set in the ship's galley:",
-      `${active.length > 1 ? "the characters, the only people aboard, are" : "the character, the only person aboard, is"} eating, drinking or`,
-      "otherwise passing the time — pick a specific food or drink that fits",
-      "them — with the ship itself as the absurd company: its noises, its",
-      "habits, its small failures. The humour is the ship's and the solitude's.",
     ];
+
+  const picked   = cleanLine(pickUp);
+  const stopped  = formatLastSessionStopped(lastSession, { outranked: !!picked });
+  const behind   = !!(picked || stopped);
+  const material = formatMaterial(seeds, { account });
+  const hasPlace = (Array.isArray(seeds) ? seeds : []).some(s => s?.slot === "place");
+
+  // Where the scene is set (issue #381 D1): where the last session stopped,
+  // never by default the galley. The table's own word outranks the records;
+  // with neither, the dice say where aboard (the MATERIAL's place).
+  const whereLines = [
+    ...(picked ? [
+      "WHERE AND WHEN THE TABLE PICKS UP — the table's own word, which outranks everything under it:",
+      picked,
+      "",
+      "The scene is set there and then.",
+    ] : []),
+    ...(stopped ? [...(picked ? [""] : []), stopped] : []),
+    ...(!behind ? [
+      "No earlier session is on record. Unless this session's own story so far",
+      "already puts the characters somewhere, which stands, the scene is set",
+      hasPlace ? "aboard the ship, in the place the MATERIAL gives." : "aboard the ship.",
+    ] : []),
+  ];
 
   // What the earlier openings showed, as already used (issue #377 item 5,
   // GALLEY-VIGNETTE-REPEATS): four openings of one campaign repeated a quarter
   // of their content — the kettle "that has outlasted three owners" twice.
+  // Kept beside the material until a live run shows it holds without it
+  // (issue #381 D4, not taken).
   const earlierBlock = formatEarlierVignettes(
     "EARLIER OPENINGS",
     Array.isArray(earlier) ? earlier : earlierVignettes(["galley_begin"]),
     "This one must be different from each: not the same food or drink, objects, noises, jokes or business, and not the beat any of them ends on.",
   );
-  const stoppedBlock = formatLastSessionStopped(lastSession === undefined ? lastSessionOf(campaignState) : lastSession);
+
+  // How it ends. Told to "end on … a line of dialogue, a question, or a small
+  // interruption", a character alone had nobody to speak or ask: all eight
+  // openings of two campaigns ended on a device or the ship sounding.
+  const ending = behind
+    ? "Its last sentence returns to what that leaves open, as it stands."
+    : (material ? "It stops with (1) unfinished." : "It stops on something small left unfinished.");
 
   return [
-    "OPENING VIGNETTE — begin-session ship's galley.",
+    "OPENING VIGNETTE — begin-session.",
     "",
-    "Active players (their PCs are physically in the galley together):",
+    "Active players (their PCs are in this scene together):",
     activeList,
     "",
     ...crewLines,
+    "",
+    `Ship is currently in: ${sectorName}.`,
+    "",
+    ...whereLines,
+    ...(material ? ["", material] : []),
+    ...(earlierBlock ? ["", earlierBlock] : []),
+    "",
+    `${ending} Nothing new happens in this scene: the first move is the players'.`,
     "Stay anchored to what the bios establish, and never state a game stat or",
     "any number from a character sheet.",
-    ...(stoppedBlock ? ["", stoppedBlock] : []),
-    ...(earlierBlock ? ["", earlierBlock] : []),
     "",
     "TONE OVERRIDE: regardless of any tone configured elsewhere, this",
     "vignette is WRY + ABSURD. Affectionate ribbing, not sneering.",
-    "End on a beat that hands the scene to the players — a line of",
-    "dialogue, a question, or a small interruption.",
+    "",
+    // The limit is the last thing it reads (issue #354 P2-26's rule for the closing).
+    "Length: four to six sentences, about 110 words — never more than six",
+    "sentences. Count them.",
   ].join("\n");
 }
 
 /**
- * How the last session ended, as stored: the summary of the session before
- * this one (`campaignState.previousSessionSummary` — LAST SESSION, kept when
- * this session was minted; lifecycle.js lastSessionToTell). Null with none —
- * a campaign's first session, the session summary switched off — or when the
- * record is this session's own.
+ * Where the last session stopped — the one read of it. Two things say so:
+ *
+ *   - the summary of the session before this one
+ *     (`campaignState.previousSessionSummary` — LAST SESSION, kept when this
+ *     session was minted; lifecycle.js lastSessionToTell), unless the record
+ *     is this session's own;
+ *   - the last narration the table read, word for word, from the chat's cards
+ *     (narrator.js getLastStoryNarration — the ring's own source, no store of
+ *     its own). The summary can be off, late or wrong; this is what was read.
+ *
+ * Null with neither — a campaign's first session, or a world whose chat is
+ * gone and whose summary is off: nothing is said then, and the opening's
+ * place is rolled. Called from one place, composeOpeningScene.
  *
  * @param {Object|null} campaignState
- * @returns {{ text: string, sessionNumber: number|null }|null}
+ * @returns {Promise<{ text: string, sessionNumber: number|null, lastNarration: string, lastNarrationThisSession: boolean }|null>}
  */
-function lastSessionOf(campaignState) {
+async function whereLastSessionStopped(campaignState) {
   const prev = lastSessionToTell(campaignState?.previousSessionSummary);
-  const text = typeof prev?.text === "string" ? prev.text.trim() : "";
-  if (!text) return null;
-  if (prev.sessionId && prev.sessionId === campaignState?.currentSessionId) return null;
-  return { text, sessionNumber: Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null };
+  const own  = !!prev?.sessionId && prev.sessionId === campaignState?.currentSessionId;
+  const text = !own && typeof prev?.text === "string" ? prev.text.trim() : "";
+  // Loaded when asked for: the narrator is this scene's caller, and nothing
+  // that only builds or posts the scene's card needs it.
+  let last = null;
+  try {
+    const { getLastStoryNarration } = await import("../narration/narrator.js");
+    last = getLastStoryNarration();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | opening scene: the last narration could not be read:`, err?.message ?? err);
+  }
+  if (!text && !last?.text) return null;
+  return {
+    text,
+    sessionNumber: text && Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null,
+    lastNarration: last?.text ?? "",
+    lastNarrationThisSession: !!last?.sessionId && last.sessionId === campaignState?.currentSessionId,
+  };
 }
 
 /**
- * The opening's block on where the last session stopped, and the rule that
- * the opening starts there. '' with no summary to tell.
+ * The opening's block on where the last session stopped — its summary, the
+ * last narration word for word — and the rule that the opening is set there.
+ * '' with neither to tell. `outranked`: the table gave its own word on where
+ * and when the session picks up, which stands over this.
  *
- * @param {{ text: string, sessionNumber?: number|null }|null} lastSession
+ * @param {{ text?: string, sessionNumber?: number|null, lastNarration?: string, lastNarrationThisSession?: boolean }|null} lastSession
+ * @param {{ outranked?: boolean }} [opts]
  * @returns {string}
  */
-function formatLastSessionStopped(lastSession) {
+function formatLastSessionStopped(lastSession, { outranked = false } = {}) {
   const text = typeof lastSession?.text === "string" ? lastSession.text.replace(/\s+/g, " ").trim() : "";
-  if (!text) return "";
+  const last = typeof lastSession?.lastNarration === "string" ? lastSession.lastNarration.trim() : "";
+  if (!text && !last) return "";
   const which = Number.isFinite(lastSession.sessionNumber) ? ` (session ${lastSession.sessionNumber}, as its summary has it)` : " (as its summary has it)";
-  return [
-    `WHERE THE LAST SESSION STOPPED${which}:`,
-    text,
+  const lines = [];
+  if (text) lines.push(`WHERE THE LAST SESSION STOPPED${which}:`, text);
+  if (last) {
+    lines.push(
+      ...(text ? [""] : []),
+      lastSession.lastNarrationThisSession
+        ? "THE LAST NARRATION, word for word — written this session, before it began; what the table last read:"
+        : `${text ? "ITS LAST NARRATION" : "WHERE THE LAST SESSION STOPPED — ITS LAST NARRATION"}, word for word — what the table last read${text ? " (where the two differ, this is the later word)" : ""}:`,
+      last,
+    );
+  }
+  lines.push(
     "",
-    "This opening picks the story up there, and nowhere later. It is a quiet",
-    "moment inside that situation, not after it: whatever was still going on",
-    "when the session stopped is still going on — a ship alongside, a lock",
-    "standing open, a question unanswered, someone waiting — and it has its",
-    "place in this scene, if only at its edge. Do not contradict it, do not",
-    "write as though it were over or behind them (\"since the …\"), and do not",
-    "let more time pass than it allows (\"for the third time this week\"). If",
-    "it left a character away from the ship, this is their first quiet moment",
-    "back aboard, and says nothing of how they got there.",
-  ].join("\n");
+    ...(outranked
+      ? [
+        "That is what lies behind the table's word above: nothing in this scene",
+        "contradicts it, and nothing of it is undone.",
+      ]
+      : [
+        "This opening picks the story up there, and nowhere later. The scene is set",
+        "where that leaves them — aboard or not, at a dock, in a cockpit, wherever",
+        "they were — and no time is skipped to move them. It is a quiet",
+        "moment inside that situation, not after it: whatever was still going on",
+        "when the session stopped is still going on — a ship alongside, a lock",
+        "standing open, a question unanswered, someone waiting — and it has its",
+        "place in this scene, if only at its edge. Do not contradict it, do not",
+        "write as though it were over or behind them (\"since the …\"), and do not",
+        "let more time pass than it allows (\"for the third time this week\").",
+      ]),
+  );
+  return lines.join("\n");
+}
+
+/** The longest "where and when do we pick up?" told to the opening (Begin a Session's field takes as much). */
+const PICK_UP_MAX = 200;
+
+/** A line of the table's own, for a prompt: plain text, one line, bounded. */
+function cleanLine(text) {
+  return (typeof text === "string" ? text : "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, PICK_UP_MAX);
+}
+
+/**
+ * The opening scene, ready to narrate: its rolled material and its user
+ * message. Run once, on the canonical GM, for a scene that will be narrated
+ * (safety/sessionLifecycleDialogs.js beginSessionOnce): this is where the
+ * scene's dice are rolled, and the one place that asks where the last session
+ * stopped — a place aboard is rolled only when neither the records nor the
+ * table say where the scene is set.
+ *
+ * @param {{ active: Array, absent: Array }} participants — collectGalleyParticipants'
+ * @param {Object} campaignState
+ * @param {{ pickUp?: string, draw?: (faces: number) => number }} [opts] —
+ *   `pickUp`: the table's own word (Begin a Session's dialog); `draw`: the die
+ *   (sceneSeeds.js drawDie; a test's script)
+ * @returns {Promise<{ userMessage: string, seeds: Object[] }>}
+ */
+export async function composeOpeningScene(participants, campaignState, { pickUp = "", draw = drawDie } = {}) {
+  const lastSession = await whereLastSessionStopped(campaignState);
+  const picked = cleanLine(pickUp);
+  const nameOf = (p) => String(p?.actor?.name ?? "").trim();
+  const seeds = rollOpeningSeeds({
+    present:    participants.active.map(nameOf).filter(Boolean),
+    absent:     participants.absent.map(nameOf).filter(Boolean),
+    placeKnown: !!(lastSession || picked),
+  }, draw);
+  const userMessage = buildGalleyVignetteUserMessage(participants, campaignState, {
+    lastSession, seeds, pickUp: picked, account: factBlockWritten(),
+  });
+  return { userMessage, seeds };
 }
 
 /** True when `user` owns `actor` (Foundry's permission test, else the ownership map). */
@@ -291,11 +417,13 @@ function truncate(s, max) {
  * @param {string} args.text
  * @param {string} args.kind
  * @param {string|null} [args.sessionId]
+ * @param {Object[]|null} [args.seeds] — the scene's rolled material, marked by its narration
  */
-export async function postGalleyVignetteCard({ text, kind, sessionId = null, narrationId = null }) {
+export async function postGalleyVignetteCard({ text, kind, sessionId = null, narrationId = null, seeds = null }) {
+  const rolled = seedsForFlags(seeds);
   await globalThis.ChatMessage?.create?.({
     content:
-      `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong>` +
+      `<div class="sf-session-vignette-card"><strong>Opening</strong>` +
       `<p class="sf-narration-prose">${proseToHtml(text)}</p>` +
       `<div class="sf-narration-footer">` +
       `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
@@ -315,6 +443,11 @@ export async function postGalleyVignetteCard({ text, kind, sessionId = null, nar
         // The narration's id (narrateSessionVignette stamped it on its
         // sidecar's ledger entries) — what an X-Card on this card retracts.
         narrationId:         narrationId ?? null,
+        // What the scene was built from — its rolls, with the narration's
+        // account of each (issue #381): the one store of them. "Rolled for
+        // this scene" is rendered from here at every render
+        // (sceneSeeds.js renderSceneRolls).
+        ...(rolled.length ? { builtFrom: rolled } : {}),
       },
     },
   });

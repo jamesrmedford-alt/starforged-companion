@@ -16,11 +16,17 @@
  *     since the Wren" of a ship still grappled alongside.
  *
  * The texts below are the run's own.
+ *
+ * Since issue #381 the opening is composed in one place (composeOpeningScene:
+ * where the last session stopped, the scene's rolled material, its message),
+ * and is set where the last session stopped — the sentence that moved a
+ * character "back aboard" is gone. The opening's own tests are in
+ * openingSceneFromMaterial.test.js.
  */
 
 import { describe, it, expect } from 'vitest';
 
-import { buildGalleyVignetteUserMessage } from '../../src/session/galleyVignette.js';
+import { buildGalleyVignetteUserMessage, composeOpeningScene } from '../../src/session/galleyVignette.js';
 import { buildEndSessionVignetteUserMessage } from '../../src/session/endSessionVignette.js';
 import { earlierVignettes } from '../../src/session/vignetteHistory.js';
 
@@ -45,6 +51,8 @@ const SESSION_3_SUMMARY =
 
 const actor = (name) => ({ id: `a-${name}`, name, type: 'character', system: { biography: '' } });
 const mira = { active: [{ actor: actor('Mira Kestrel') }], absent: [] };
+// The opening as Begin a Session composes it, its dice scripted.
+const opening = async (campaignState) => (await composeOpeningScene(mira, campaignState, { draw: () => 50 })).userMessage;
 const card = (kind, text, extra = {}) => ({
   flags: { [MODULE_ID]: { sessionVignetteCard: true, vignetteKind: kind, narrationText: text, ...extra } },
 });
@@ -85,43 +93,56 @@ describe('an opening starts from where the last session stopped', () => {
     previousSessionSummary: { text: SESSION_3_SUMMARY, sessionId: 's-3', sessionNumber: 3 },
   };
 
-  it('it is told how the last session ended, from the summary the mint kept', () => {
-    const msg = buildGalleyVignetteUserMessage(mira, minted, { earlier: [] });
+  it('it is told how the last session ended, from the summary the mint kept', async () => {
+    const msg = await opening(minted);
     expect(msg).toContain('WHERE THE LAST SESSION STOPPED (session 3, as its summary has it):');
     expect(msg).toContain('grappled to the dead flank of the Cinder Wren off Bleakhold Station');
     expect(msg).toContain('The question of whose name Mira has settled on for the seal remains unanswered.');
   });
 
-  it('and that it picks up there: nothing of it is over, behind them, or a week old', () => {
-    const msg = buildGalleyVignetteUserMessage(mira, minted, { earlier: [] });
+  it('and that it picks up there: nothing of it is over, behind them, or a week old', async () => {
+    const msg = await opening(minted);
     expect(msg).toMatch(/This opening picks the story up there, and nowhere later\./);
     expect(msg).toMatch(/whatever was still going on\s+when the session stopped is still going on/);
     expect(msg).toMatch(/Do not contradict it, do not\s+write as though it were over or behind them \("since the …"\)/);
     expect(msg).toMatch(/do not\s+let more time pass than it allows \("for the third time this week"\)/);
   });
 
-  it('the block comes before the list of earlier openings, after the scene\'s own instructions', () => {
-    const msg = buildGalleyVignetteUserMessage(mira, minted, { earlier: [{ text: FIRST_OPENING, title: null }] });
-    expect(msg.indexOf('Render a 4-6 sentence opening vignette')).toBeLessThan(msg.indexOf('WHERE THE LAST SESSION STOPPED'));
-    expect(msg.indexOf('WHERE THE LAST SESSION STOPPED')).toBeLessThan(msg.indexOf('EARLIER OPENINGS'));
+  it('it is set where that leaves them: nobody is moved back aboard (issue #381 D1)', async () => {
+    const msg = await opening(minted);
+    expect(msg).toMatch(/The scene is set\s+where that leaves them/);
+    expect(msg).not.toMatch(/first quiet moment\s+back aboard/);
+    expect(msg).not.toMatch(/says nothing of how they got there/);
   });
 
-  it('a mint\'s record still waiting for its text tells the one it stands in front of', () => {
+  it('the block comes after who is in the scene, and before the material and the earlier openings', () => {
+    const msg = buildGalleyVignetteUserMessage(mira, minted, {
+      earlier: [{ text: FIRST_OPENING, title: null }],
+      lastSession: { text: SESSION_3_SUMMARY, sessionNumber: 3 },
+      seeds: [{ slot: 'moment', label: 'What Mira Kestrel is doing in this lull', from: 'oracle', result: 'Bolster Debt',
+        tables: [{ id: 'action', name: 'Action', roll: 14, result: 'Bolster' }, { id: 'theme', name: 'Theme', roll: 20, result: 'Debt' }] }],
+    });
+    expect(msg.indexOf('Active players')).toBeLessThan(msg.indexOf('WHERE THE LAST SESSION STOPPED'));
+    expect(msg.indexOf('WHERE THE LAST SESSION STOPPED')).toBeLessThan(msg.indexOf('MATERIAL — rolled for this scene'));
+    expect(msg.indexOf('MATERIAL — rolled for this scene')).toBeLessThan(msg.indexOf('EARLIER OPENINGS'));
+  });
+
+  it('a mint\'s record still waiting for its text tells the one it stands in front of', async () => {
     const waiting = { ...minted, previousSessionSummary: { text: '', sessionId: 's-3', sessionNumber: 3,
       displaced: { text: 'Mira left Hollow Spire with her manifest in Tamsin Vey\'s keeping.', sessionId: 's-2', sessionNumber: 2 } } };
-    const msg = buildGalleyVignetteUserMessage(mira, waiting, { earlier: [] });
+    const msg = await opening(waiting);
     expect(msg).toContain('WHERE THE LAST SESSION STOPPED (session 2, as its summary has it):');
     expect(msg).toContain('her manifest in Tamsin Vey\'s keeping');
   });
 
-  it('control: a campaign\'s first session has nothing to pick up, and says nothing', () => {
-    const msg = buildGalleyVignetteUserMessage(mira, { currentSessionId: 's-1', sessionNumber: 1 }, { earlier: [] });
+  it('control: a campaign\'s first session has nothing to pick up, and says nothing', async () => {
+    const msg = await opening({ currentSessionId: 's-1', sessionNumber: 1 });
     expect(msg).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
     expect(msg).not.toMatch(/picks the story up/);
   });
 
-  it('control: a record that is this session\'s own is not "the last session"', () => {
+  it('control: a record that is this session\'s own is not "the last session"', async () => {
     const own = { currentSessionId: 's-3', previousSessionSummary: { text: SESSION_3_SUMMARY, sessionId: 's-3', sessionNumber: 3 } };
-    expect(buildGalleyVignetteUserMessage(mira, own, { earlier: [] })).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
+    expect(await opening(own)).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
   });
 });

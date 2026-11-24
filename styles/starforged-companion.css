@@ -2882,6 +2882,14 @@ body.sf-touch .sf-round-window .sf-round-target { min-height: 44px; }
 .sf-session-panel .open-thread-list .thread-name { font-weight: 600; }
 .sf-session-panel .sf-no-vow { font-style: italic; }
 .sf-begin-session-form .sf-no-vow { border-left: 3px solid var(--sf-suggestion-colour, #B5985A); padding-left: 0.5rem; margin: 0.4rem 0; }
+.sf-begin-session-form .sf-pick-up input { width: 100%; }
+
+/* "Rolled for this scene" — the dice a session set-piece was built from, under
+   its prose: a closed line that opens (issue #381). */
+.sf-scene-rolls { margin: 0.4em 0; font-size: 0.85em; opacity: 0.85; }
+.sf-scene-rolls summary { cursor: pointer; }
+.sf-scene-rolls ul { margin: 0.3em 0 0; padding-left: 1.2em; }
+.sf-scene-roll-unused, .sf-scene-roll-second, .sf-scene-roll-used { font-style: italic; }
 
 .sf-end-session-form .sf-focus-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.15rem 0 0.5rem; }
 .sf-end-session-form .sf-focus-choice { flex: 0 1 auto; width: auto; padding: 0.1rem 0.5rem; font-size: 0.9em; line-height: 1.4; }

@@ -22,6 +22,9 @@ const INCITING = [
 
 vi.mock('../../src/narration/narrator.js', async (importOriginal) => ({
   ...(await importOriginal()),
+  // The stand-in narration will run: Begin a Session asks first, so a scene's
+  // dice are rolled only for a scene that will be narrated (issue #381).
+  sessionVignetteWillRun:  vi.fn(() => true),
   narrateSessionVignette:  vi.fn(async () => 'The galley smells of burnt recaf.'),
   narrateClockAdvancement: vi.fn(async () => 'The net tightens.'),
   narrateIncitingIncident: vi.fn(async () => INCITING),

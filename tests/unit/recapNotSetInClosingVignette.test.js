@@ -66,6 +66,9 @@ beforeEach(async () => {
       lastSessionTimestamp: new Date().toISOString(), sessionEndedId: null,
       currentSceneId: null, sceneTruths: [], sceneState: { bySubject: {}, sceneId: null }, sceneFrame: null, clocks: [],
       characterIds: ["pc-kira"],
+      // A place for End a Session's closing cutaway to show (issue #381 D6: with
+      // nobody on record and nowhere to show, there is no closing).
+      activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
       // A recap from before this session's Chronicle entry: out of date, so
       // End a Session writes a new one once its closing vignette is posted.
       campaignRecapCache: { text: "Previously: nothing yet.", generatedAt: "2026-11-01T00:00:00.000Z", chronicleLength: 0, chronicleHash: "00000000" },

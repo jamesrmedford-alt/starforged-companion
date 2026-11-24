@@ -1721,14 +1721,6 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
         break;
       }
 
-      case "begin_a_session": {
-        // Optional spotlight vignette (play kit p. 1). Always rolled so the
-        // GM/player can use it; +1 momentum applies if they opt in.
-        const vignette = safeRoll("spotlight_vignette");
-        if (vignette) results.push(`Spotlight vignette: ${vignette}`);
-        break;
-      }
-
       case "pay_the_price": {
         // Pay the Price as a deliberate fate move — always roll the d100 table.
         const ptp = safeRoll("pay_the_price");

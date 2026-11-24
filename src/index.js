@@ -204,6 +204,7 @@ import { registerDraftCardHooks, undismissRecordName } from "./entities/entityEx
 import { registerConnectionDeleteHook } from "./entities/connection.js";
 import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook, reconcileUnswornVowCards } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
+import { renderSceneRolls }       from "./session/sceneSeeds.js";
 import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
@@ -2006,6 +2007,10 @@ function renderHeldUntilSessionNote(message, root) {
     `<p class="sf-held-until-session"><em>⏸ Held — no session has begun. This move will be rolled once Begin a Session starts one.</em></p>`);
 }
 onChatMessageRender((message, root) => renderHeldUntilSessionNote(message, root));
+
+// "Rolled for this scene" on a session set-piece's card: its dice, read from
+// the card's flags at every render, on every client (issue #381).
+onChatMessageRender((message, root) => renderSceneRolls(message, root));
 
 // The free-flow pipeline a held forced move is handed back to (registerChatHook).
 let _heldMovePipeline = null;

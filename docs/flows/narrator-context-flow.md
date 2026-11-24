@@ -24,7 +24,7 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
 paced_narrative, scene_interrogation (an `@scene` question — answered, not
 narrated: see "An `@scene` answer" below), oracle_followup, session_vignette
-(galley and end-session vignettes), clock_advance (a clock's advance or
+(the session's set-pieces: its opening, its closing cutaway and the spotlight vignette), clock_advance (a clock's advance or
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
@@ -196,7 +196,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   vignette (every post site) and the inciting incident, which no one PC's
   line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
   rule — issue #362 AC75).
-  The galley's user message (`buildGalleyVignetteUserMessage`) sends no stat
+  The opening's user message (`buildGalleyVignetteUserMessage` — the file and
+  the card kind `galley_begin` keep their names; the scene is no longer set in
+  the galley) sends no stat
   line, and with no other PC registered says nobody else is aboard — no crew is
   invented, present or absent (issue #377 item 4: told to "invent generic
   absurd crew", it gave a solo pilot three crewmates, and a helper recorded her
@@ -207,15 +209,88 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   first 700 characters, a fourth opening ended on the first one's own last
   sentence, which the cut had taken out of the list (the long haul's third
   live run, a78 against a2), and both rules now name how a scene ends as used.
-  **The opening is told where the last session stopped** — WHERE THE LAST
-  SESSION STOPPED, the summary of the session before
+  **The opening is set where the last session stopped** (issue #381 D1/D2) —
+  WHERE THE LAST SESSION STOPPED: the summary of the session before
   (`campaignState.previousSessionSummary` as LAST SESSION tells it,
-  `lifecycle.lastSessionToTell`; nothing in a campaign's first session or with
-  the session summary off) — and that it picks the story up there: nothing
-  still going on is over or behind them, and no more time has passed than it
-  allows (the third opening soaked apricots "for the third time this week"
-  beside a raider's open boarding lock; the fourth wrote "since the Wren" of a
-  ship still grappled alongside).
+  `lifecycle.lastSessionToTell`) and the last narration the table read, word
+  for word (`narrator.getLastStoryNarration`: the newest story card's session,
+  its newest two story cards by the ring's own rule — no session or clock
+  vignette — so it adds no store). Both are read in one call,
+  `galleyVignette.whereLastSessionStopped`, made once, by
+  `composeOpeningScene`; nothing is said with neither (a campaign's first
+  session, a world whose chat is gone and whose summary is off). It picks the
+  story up there: the scene is set where that leaves them, aboard or not —
+  nobody is moved "back aboard" — nothing still going on is over or behind
+  them, and no more time has passed than it allows (the third opening soaked
+  apricots "for the third time this week" beside a raider's open boarding
+  lock; the fourth wrote "since the Wren" of a ship still grappled
+  alongside). The table's own word — Begin a Session's "Where and when do we
+  pick up?" (D8: the `pickUp` payload, cleaned on both clients, shown on the
+  Begin card) — is told above it and outranks it. **The opening is built from
+  rolled material** (`session/sceneSeeds.js`, the one draw site, `drawDie`):
+  Action + Theme for what the characters are doing in this lull, Descriptor +
+  Focus for what the scene's eye rests on, each with a second result drawn at
+  once; a place aboard (Derelict Zone (Starship), then that zone's area table —
+  an instruction row drawn again, up to three times) only when nothing says
+  where the scene is set; and each absent crewmate's business (Action + Theme,
+  three at most). The MATERIAL block (`formatMaterial`) numbers them, says
+  each is in the scene and that the scene has no business of its own, and asks
+  for the fact block's `builtFrom` (§2). Rolled on the canonical GM, after the
+  clock vignettes, and only when the scene will be narrated
+  (`sessionVignetteWillRun` — narration on, the X-Card down, a key here); per
+  call, so in the user message, never in a cached block. The role
+  (`ROLE_DESCRIPTIONS.session_vignette`) names no place, food, talking ship or
+  example scene: the fixed stock that made two separate campaigns' openings
+  one scene is deleted (the galley, "pick a specific food or drink", the ship
+  as the joke, "a line of dialogue, a question, or a small interruption",
+  "the calm before / the calm after").
+  **The closing cutaway shows someone the campaign has, never the same
+  twice running** (issue #381 D6; `endSessionVignette.composeClosingScene`,
+  on the canonical GM, only when the scene will be narrated): End a
+  Session's connection focus when it names a connection in play; else a die
+  among the connections in play and the named threats (`sceneRecords.js`;
+  weighted bonded 3, rank dangerous or above 2, a threat 2, else 1) — not
+  the one the last closing card's `builtFrom` subject names (by its stable
+  `ref`; a card from before it by `vignetteNpc`), and not one the frame of
+  the scene the session ended in had Present, each while there is another;
+  with nobody, a die among the active sector's settlements (their records,
+  else the sector's own list) other than the one the characters are at; with
+  none, no closing — no call, no card, no dice. The frame is kept before End
+  closes the scene (`endedFrame`), and its Where is told as where the
+  characters are. Its material (`sceneSeeds.rollClosingSeeds`): their card's
+  LAST KNOWN location (else a settlement zone and its area — rolled too when
+  the ended scene had them with the characters), Action + Theme for what they
+  are busy with, Descriptor + Focus for the thing in hand. Its user message
+  names whom it shows as "Subject (<kind>): <name>." (the runner's scene
+  counts read that line). Deleted: the "architect of" the sector's trouble
+  and "familiar adversary" tiers, the list of mundane tasks, the list of
+  gestures, the role's three example closings, `selectEndSessionNPC`. Kept
+  (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
+  pressed the d100 is rolled for the Begin card as before, and — when a
+  narration will follow (`narrationEnabled`, a keyed GM connected, the
+  X-Card down — `spotlightWillBeNarrated`) — sent to the canonical GM as a
+  number alone (`spotlightRoll`); otherwise the card says the result is the
+  table's to envision. The GM reads the result off `spotlight_vignette`
+  itself and writes a short cutaway (`spotlightVignette.composeSpotlightScene`
+  → `narrateSessionVignette` → `postSpotlightVignetteCard`, kind
+  `spotlight_begin`) first of Begin's narrations — after the clock card,
+  before the clock vignettes and the opening, each of which waits for it,
+  bounded. Its material: the card's result (never rolled again), a die among
+  the records its row names (the PCs at the table, connections, settlements,
+  factions, open quest vows, named threats, the table's clocks — no hidden
+  plan's — `sceneRecords.js`; two of them for a row that connects two
+  situations; none for "peril lies ahead"), Action + Theme, Descriptor +
+  Focus. It runs at the interaction latitude (`narratorClass`), discovery
+  when its row introduces someone and nobody is on record; its capture runs
+  detection (`detect`, as a clock vignette's). Its scene is its own: ended
+  with its card (`spotlight_vignette`), unless the table already had one
+  open. In the ring and the summary's source its entry is headed as a
+  cutaway the characters did not see (`ringEntryText`); it is no part of the
+  last narration the next opening is told. A narration due and not written
+  leaves one line, no narrator card. The move narration's unshown spotlight
+  seed for a line read as Begin a Session (`buildOracleSeeds`
+  `begin_a_session`) is removed.
   A vignette is a bookend, not a
   beat of play: its mode block says its fact block sets no scene question (`A
   VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`
@@ -1449,6 +1524,25 @@ to play rides apart (`forced`, with its `clockId` or complication scope) and
 stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the
 scene's complication step), so a co-GM's vignette still paces its clock.
+
+**A session set-piece's account of its material** (issue #381): `builtFrom`,
+the one key the `session_vignette` mode adds to the fact block
+(`sidecarModeAddendum`, in the cached mode block — the material itself is
+per call, in the user message). `[{ n, words, second }]`: for each numbered
+MATERIAL result, the words of the prose that are it, and whether the second
+result was taken — normalised by `sidecarParser.normaliseBuiltFrom` (garbage
+is no account; twelve entries at most), and applied by
+`applyNarratorSidecar` with the scene's seeds in `ctx.seeds`
+(`sceneSeeds.markSeedsUsed`): each seed is marked `used` with its words when
+the prose holds them, `false` (with what was `claimed`) when it does not, and
+left `null` when no fact block was read. Nothing is retried on it; the card
+keeps the marked seeds in its `builtFrom` flag — the one store of the
+scene's rolls, which "Rolled for this scene" is rendered from at every
+render (`renderSceneRolls`, the chat render hook, every client) — and shows
+a seed the narration did not account for as "not used". The rolls never
+enter `campaignState.recentOracles`: that ring tells every later narration
+to build on what it holds, which is how one scene's prop becomes the
+session's refrain.
 
 **An `@scene` answer is not written back** (known-issues
 SCENE-ANSWER-NOT-A-CAMERA; `narrator.js interrogateScene` → `sceneAnswerText`).

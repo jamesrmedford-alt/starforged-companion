@@ -99,3 +99,31 @@ export function installSeededRandom(seed) {
     reads: () => reads,
   };
 }
+
+/**
+ * Serve `faces` (in order) to a session set-piece's dice and to nothing else,
+ * until restore(): a read made by `drawDie` (src/session/sceneSeeds.js — the
+ * one place an opening, a closing or a spotlight scene draws, issue #381)
+ * takes the queue's next face; every other caller gets the Math.random in
+ * place before, and so does drawDie once the queue is empty. A face is a d100
+ * face, or `[face, sides]` for a die among the campaign's records. `drawn` is
+ * every value drawDie was given — how a test asserts that a scene that is not
+ * narrated rolled nothing. Told by the stack, as installMoveDice tells a
+ * move's dice.
+ *
+ * @param {Array<number|[number, number]>} faces  mutated in place
+ * @returns {{ restore(): void, drawn: number[] }}
+ */
+export function installSceneDice(faces) {
+  const before = Math.random;
+  const drawn = [];
+  const dice = () => {
+    if (!/\bdrawDie\b[^\n]*[\\/]src[\\/]session[\\/]sceneSeeds\.js/.test(new Error("who rolls").stack ?? "")) return before();
+    const next = faces.length ? faces.shift() : null;
+    const value = next === null ? before() : (Array.isArray(next) ? uniformFor(next[0], next[1]) : uniformFor(next, 100));
+    drawn.push(value);
+    return value;
+  };
+  Math.random = dice;
+  return { restore() { if (Math.random === dice) Math.random = before; }, drawn };
+}

@@ -240,7 +240,8 @@ export function appendSidecarInstruction(options = {}) {
 
 /**
  * What a mode adds to the sidecar instruction — the opening scene's
- * premise-capture rules (narrator-memory architecture A2); '' for every other
+ * premise-capture rules (narrator-memory architecture A2), a session
+ * set-piece's "builtFrom" (issue #381); '' for every other
  * mode. On its own so the instruction itself is the same for every mode: it
  * sits in the system prompt's standing block, which is cached across modes,
  * and this goes in the per-narration block (issue #354 P2-23).
@@ -249,6 +250,22 @@ export function appendSidecarInstruction(options = {}) {
  * @returns {string}
  */
 export function sidecarModeAddendum(mode) {
+  // A session set-piece's account of its rolled material (issue #381): the
+  // one key this mode adds to the fact block. The same text for every call of
+  // the mode — the material itself is in the user message.
+  if (mode === 'session_vignette') {
+    return [
+      'A session set-piece is built from the MATERIAL its user message gives:',
+      'results rolled for this scene. When the message carries MATERIAL, your',
+      'JSON block MUST also carry "builtFrom": one entry for each numbered',
+      'result, with the three to eight words of your prose that are it, exactly',
+      'as you wrote them —',
+      '[{ "n": 1, "words": "<words of your prose>" }, { "n": 2, "words": "…", "second": true }].',
+      '"second": true only when you set a result aside for the one in brackets',
+      'under it. A result the scene did not use gets no entry: never claim one',
+      'the prose does not hold. With no MATERIAL, leave "builtFrom" out.',
+    ].join('\n');
+  }
   if (mode !== 'inciting_incident') return '';
   return [
     'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
@@ -1302,26 +1319,30 @@ const ROLE_DESCRIPTIONS = {
     ORACLE_MATCH_RULE,
 
   session_vignette:
+    // Issue #381: the role named the galley, "vivid specific food or activity"
+    // and the ship as the joke, and two separate campaigns' openings came out
+    // as one scene; its closings were "the cosmic threat eating a sandwich …
+    // the bonded ally watering houseplants", and wrote them. A set-piece is
+    // built from what its user message gives — rolled material and the
+    // campaign's records — and the role names no place, no business and no
+    // example scene.
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
-    `a session-bookend vignette — a short atmospheric scene that brackets the play ` +
-    `session itself.\n\n` +
-    `Two flavours, distinguished by the user message:\n\n` +
-    `BEGIN — the active PCs in a quiet downtime moment aboard their ship (the galley, ` +
-    `etc.). With crewmates registered elsewhere aboard, the PCs banter about what those ` +
-    `crewmates might be up to; with none, the character is alone with the ship, and the ` +
-    `humour is the ship's and the solitude's — no crew is invented, present or absent. ` +
-    `TONE OVERRIDE for BEGIN: WRY AND ABSURD. Vivid specific food or activity, weird ` +
-    `little details of life aboard. Not cynical, not sneering — fond, observed, a little ` +
-    `odd.\n\n` +
-    `END — a single important NPC (an established connection, a recurring threat, a ` +
-    `faction figurehead) caught doing something trivial and mundane, in a place the ` +
-    `players are NOT. TONE OVERRIDE for END: WRY AND OBSERVED, slice-of-life. The ` +
-    `cosmic threat eating a sandwich; the rival captain taking inventory of spare ` +
-    `parts; the bonded ally watering houseplants. Specific, small, almost tender.\n\n` +
-    `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
-    `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
-    `the calm before / the calm after, not the start or end of the action. The user ` +
-    `message gives the vignette's length in sentences: that is a limit, not a guide — ` +
+    `a session set-piece: a short scene that brackets the play session. The user ` +
+    `message says which it is, who is in it and where, and gives its MATERIAL: results ` +
+    `rolled for this scene on the game's oracles, and what the campaign's records hold. ` +
+    `Build the scene from the material.\n\n` +
+    `OPENING — the player characters whose players are at the table, in a quiet moment ` +
+    `inside the situation the last session left. Nothing new happens in it. With ` +
+    `crewmates registered but away, the characters speak of what those crewmates are up ` +
+    `to; with none, no crew is invented, present or absent. TONE OVERRIDE for OPENING: ` +
+    `WRY AND ABSURD — fond, observed, played straight. Not cynical, not sneering.\n\n` +
+    `CLOSING — a cutaway to someone or somewhere the table knows, away from the ` +
+    `characters, at something small: the world going on without them. TONE OVERRIDE ` +
+    `for CLOSING: WRY AND OBSERVED — specific, small, almost tender.\n\n` +
+    `SPOTLIGHT — a cutaway or a flashback the characters do not see: the Spotlight ` +
+    `Vignette result the table rolled, happening. The campaign's own tone.\n\n` +
+    `All of them: do not describe a move, do not propose a mechanical action. The user ` +
+    `message gives the scene's length in sentences: that is a limit, not a guide — ` +
     `count them, and stop at the last one.`,
 
   // A clock beat used the session-vignette role — "depict the calm before /
@@ -2249,10 +2270,11 @@ export function buildNarratorSystemBlocks(
     modeParts.push(NARRATOR_PERMISSIONS[effectiveClass]);
   }
 
-  // [9m] What the mode adds to the sidecar instruction — the opening scene's.
+  // [9m] What the mode adds to the sidecar instruction — the opening scene's,
+  //      and a session set-piece's account of its material (issue #381).
   if (sidecarEnabled) {
     const addendum = sidecarModeAddendum(resolvedMode);
-    if (addendum) modeParts.push(`## THE OPENING SCENE\n\n${addendum}`);
+    if (addendum) modeParts.push(`## ${resolvedMode === 'session_vignette' ? 'THE SCENE\'S MATERIAL' : 'THE OPENING SCENE'}\n\n${addendum}`);
     // …and what a session vignette's leaves alone: the scene's question.
     if (factContinuitySceneFrame && resolvedMode === 'session_vignette') modeParts.push(BOOKEND_FRAME_RULE);
   }
