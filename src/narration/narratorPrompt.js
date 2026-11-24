@@ -1321,9 +1321,11 @@ const ROLE_DESCRIPTIONS = {
   session_vignette:
     // Issue #381: the role named the galley, "vivid specific food or activity"
     // and the ship as the joke, and two separate campaigns' openings came out
-    // as one scene. A set-piece is built from what its user message gives —
-    // rolled material and the campaign's records — and the role names no
-    // place, no business and no example scene.
+    // as one scene; its closings were "the cosmic threat eating a sandwich …
+    // the bonded ally watering houseplants", and wrote them. A set-piece is
+    // built from what its user message gives — rolled material and the
+    // campaign's records — and the role names no place, no business and no
+    // example scene.
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
     `a session set-piece: a short scene that brackets the play session. The user ` +
     `message says which it is, who is in it and where, and gives its MATERIAL: results ` +
@@ -1334,11 +1336,9 @@ const ROLE_DESCRIPTIONS = {
     `crewmates registered but away, the characters speak of what those crewmates are up ` +
     `to; with none, no crew is invented, present or absent. TONE OVERRIDE for OPENING: ` +
     `WRY AND ABSURD — fond, observed, played straight. Not cynical, not sneering.\n\n` +
-    `END — a single important NPC (an established connection, a recurring threat, a ` +
-    `faction figurehead) caught doing something trivial and mundane, in a place the ` +
-    `players are NOT. TONE OVERRIDE for END: WRY AND OBSERVED, slice-of-life. The ` +
-    `cosmic threat eating a sandwich; the rival captain taking inventory of spare ` +
-    `parts; the bonded ally watering houseplants. Specific, small, almost tender.\n\n` +
+    `CLOSING — a cutaway to someone or somewhere the table knows, away from the ` +
+    `characters, at something small: the world going on without them. TONE OVERRIDE ` +
+    `for CLOSING: WRY AND OBSERVED — specific, small, almost tender.\n\n` +
     `All of them: do not describe a move, do not propose a mechanical action. The user ` +
     `message gives the scene's length in sentences: that is a limit, not a guide — ` +
     `count them, and stop at the last one.`,

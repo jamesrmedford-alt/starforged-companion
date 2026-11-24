@@ -46,7 +46,7 @@ import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { proseToHtml } from "../audio/segments.js";
 import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 import { lastSessionToTell } from "./lifecycle.js";
-import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags } from "./sceneSeeds.js";
+import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags, factBlockWritten } from "./sceneSeeds.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -388,15 +388,6 @@ export async function composeOpeningScene(participants, campaignState, { pickUp 
     lastSession, seeds, pickUp: picked, account: factBlockWritten(),
   });
   return { userMessage, seeds };
-}
-
-/** Whether a narration writes a fact block — fact continuity on (on when the setting cannot be read). */
-function factBlockWritten() {
-  try {
-    return (globalThis.game?.settings?.get?.(MODULE_ID, "factContinuity.enabled") ?? true) !== false;
-  } catch {
-    return true;
-  }
 }
 
 /** True when `user` owns `actor` (Foundry's permission test, else the ownership map). */

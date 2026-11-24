@@ -94,6 +94,9 @@ beforeEach(() => {
     lastSessionTimestamp: new Date().toISOString(),
     currentSceneId: 'sc-1', sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc-1' }, sceneFrame: null,
     xCardActive: false, xCardPlays: 0, previousSessionSummary: null,
+    // A place for End a Session's closing cutaway to show (issue #381 D6: with
+    // nobody on record and nowhere to show, there is no closing).
+    activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
   });
   // The summary calls get the summary of what they were given; the vignette its prose.
   apiPost.mockImplementation(async (_url, _headers, body) => {

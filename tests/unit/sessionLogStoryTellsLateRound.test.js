@@ -76,6 +76,9 @@ beforeEach(() => {
     sessionActive: true, sessionStartedId: SESSION, sessionEndedId: null,
     sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc-1' }, sceneFrame: null,
     xCardActive: false, xCardPlays: 0, dismissedEntities: [], clocks: [],
+    // A place for End a Session's closing cutaway to show (issue #381 D6: with
+    // nobody on record and nowhere to show, there is no closing).
+    activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
   });
   replies.summary  = AT_END;
   replies.vignette = 'On the quay, Vance mends a torn cargo net and hums.';

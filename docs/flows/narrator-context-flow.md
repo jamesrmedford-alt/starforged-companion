@@ -244,6 +244,28 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   one scene is deleted (the galley, "pick a specific food or drink", the ship
   as the joke, "a line of dialogue, a question, or a small interruption",
   "the calm before / the calm after").
+  **The closing cutaway shows someone the campaign has, never the same
+  twice running** (issue #381 D6; `endSessionVignette.composeClosingScene`,
+  on the canonical GM, only when the scene will be narrated): End a
+  Session's connection focus when it names a connection in play; else a die
+  among the connections in play and the named threats (`sceneRecords.js`;
+  weighted bonded 3, rank dangerous or above 2, a threat 2, else 1) — not
+  the one the last closing card's `builtFrom` subject names (by its stable
+  `ref`; a card from before it by `vignetteNpc`), and not one the frame of
+  the scene the session ended in had Present, each while there is another;
+  with nobody, a die among the active sector's settlements (their records,
+  else the sector's own list) other than the one the characters are at; with
+  none, no closing — no call, no card, no dice. The frame is kept before End
+  closes the scene (`endedFrame`), and its Where is told as where the
+  characters are. Its material (`sceneSeeds.rollClosingSeeds`): their card's
+  LAST KNOWN location (else a settlement zone and its area — rolled too when
+  the ended scene had them with the characters), Action + Theme for what they
+  are busy with, Descriptor + Focus for the thing in hand. Its user message
+  names whom it shows as "Subject (<kind>): <name>." (the runner's scene
+  counts read that line). Deleted: the "architect of" the sector's trouble
+  and "familiar adversary" tiers, the list of mundane tasks, the list of
+  gestures, the role's three example closings, `selectEndSessionNPC`. Kept
+  (D4): EARLIER CLOSINGS and `vignetteNpc`.
   A vignette is a bookend, not a
   beat of play: its mode block says its fact block sets no scene question (`A
   VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`

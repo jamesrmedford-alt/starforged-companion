@@ -163,12 +163,106 @@ export function rollOpeningSeeds({ present = [], absent = [], placeKnown = false
   ].filter(Boolean);
 }
 
+/**
+ * A seed the campaign's records give with no die — the table's connection
+ * focus, a card's LAST KNOWN place. Null with no result.
+ *
+ * @param {string} slot
+ * @param {string} label
+ * @param {string} source — where it comes from, to the narrator and the table
+ * @param {string} result
+ * @param {{ ref?: string|null, kind?: string|null }} [extra]
+ * @returns {Object|null}
+ */
+export function recordSeed(slot, label, source, result, { ref = null, kind = null } = {}) {
+  const text = String(result ?? "").trim();
+  if (!text) return null;
+  return { slot, label, from: "state", source, tables: [], result: text,
+    ...(ref ? { ref: String(ref) } : {}), ...(kind ? { kind: String(kind) } : {}), used: null };
+}
+
+/**
+ * A die among the campaign's own records — Ask the Oracle's way of choosing
+ * among options — shown and kept as any roll is: one face for each point of
+ * an option's weight, the options in the order given. A pool of one is no
+ * choice, and its seed has no die. Null with no option.
+ *
+ * @param {string} slot
+ * @param {string} label
+ * @param {string} pool — what the die is cast among, to the narrator and the table
+ * @param {Array<{ name: string, weight?: number, ref?: string|null, kind?: string }>} options
+ * @param {(faces: number) => number} [draw]
+ * @returns {{ seed: Object, pick: Object }|null} — `pick`, the option the die chose
+ */
+export function chooseSeed(slot, label, pool, options, draw = drawDie) {
+  const list = (Array.isArray(options) ? options : []).filter(o => o && String(o.name ?? "").trim());
+  if (!list.length) return null;
+  const weight = (o) => Math.max(1, Math.floor(Number(o.weight) || 1));
+  let pick = list[0];
+  let tables = [];
+  if (list.length > 1) {
+    const faces = list.reduce((n, o) => n + weight(o), 0);
+    const roll = draw(faces);
+    let at = 0;
+    pick = list.find(o => (at += weight(o)) >= roll) ?? list[list.length - 1];
+    tables = [{ id: null, name: pool, roll, die: faces, result: String(pick.name).trim() }];
+  }
+  const seed = recordSeed(slot, label, pool, pick.name, { ref: pick.ref ?? null, kind: pick.kind ?? null });
+  return { pick, seed: { ...seed, tables } };
+}
+
+/**
+ * The closing cutaway's material, once whom or where it shows is chosen
+ * (endSessionVignette.js chooseClosingSubject). In the order drawn:
+ *
+ *   1. who or where it shows — the subject's seed, handed in (its die drawn);
+ *   2. where they are — their card's LAST KNOWN location (no die), else a
+ *      settlement zone and its area; for a settlement, where in it;
+ *   3. what they are busy with — Action + Theme;
+ *   4. the thing in hand, or close by — Descriptor + Focus.
+ *
+ * @param {{ subject: Object, lastKnown?: string }} scene
+ * @param {(faces: number) => number} [draw]
+ * @returns {Object[]} the seeds
+ */
+export function rollClosingSeeds({ subject = null, lastKnown = "" } = {}, draw = drawDie) {
+  if (!subject?.result) return [];
+  const name  = subject.result;
+  const place = subject.kind === "settlement";
+  const known = place ? "" : String(lastKnown ?? "").trim();
+  return [
+    subject,
+    known
+      ? recordSeed("place", `Where ${name} is`, "LAST KNOWN on their card", known)
+      : made(() => placeSeed("place", place ? `Where in ${name}` : `Where ${name} is`, "derelict_zone_settlement", "Settlement zone + area", draw)),
+    made(() => pairSeed("busy", place ? "What someone there is busy with" : `What ${name} is busy with`, ["action", "theme"], draw)),
+    made(() => pairSeed("thing", place ? "One thing there" : "The thing in hand, or close by", ["descriptor", "focus"], draw)),
+  ].filter(Boolean);
+}
+
+/**
+ * Whether a set-piece's narration writes a fact block — fact continuity on
+ * (on when the setting cannot be read): the MATERIAL block asks for the
+ * account (`builtFrom`) only then.
+ *
+ * @returns {boolean}
+ */
+export function factBlockWritten() {
+  try {
+    return (globalThis.game?.settings?.get?.(MODULE_ID, "factContinuity.enabled") ?? true) !== false;
+  } catch {
+    return true;
+  }
+}
+
 /** A seed's tables as the narrator is told them: "Action + Theme". */
 function sourceOf(seed) {
   return seed.source ?? (seed.tables ?? []).map(t => t.name).join(" + ");
 }
 
-const rollsOf = (tables) => (tables ?? []).map(t => t.roll).join(", ");
+/** A table entry's roll as it is told: "14" on a d100, "d7: 4" on a die among records. */
+const rollOf = (t) => (Number.isFinite(t?.die) && t.die !== 100 ? `d${t.die}: ${t?.roll}` : `${t?.roll}`);
+const rollsOf = (tables) => (tables ?? []).map(rollOf).join(", ");
 
 /**
  * The seeds a scene's MATERIAL numbers, in order: those with a result. The
@@ -199,7 +293,8 @@ export function formatMaterial(seeds, { account = true } = {}) {
   if (!list.length) return "";
   const lines = ["MATERIAL — rolled for this scene on the game's oracles. Build the scene from it."];
   list.forEach((seed, i) => {
-    lines.push(`${i + 1}. ${seed.label} — ${sourceOf(seed)} (${rollsOf(seed.tables)}): ${seed.result}`);
+    const rolls = rollsOf(seed.tables);
+    lines.push(`${i + 1}. ${seed.label} — ${sourceOf(seed)}${rolls ? ` (${rolls})` : ""}: ${seed.result}`);
     if (seed.second?.result) lines.push(`     (if that cannot be true here: ${seed.second.result})`);
   });
   lines.push(
@@ -279,6 +374,9 @@ export function seedsForFlags(seeds) {
   }));
   return numbered(seeds).map(s => ({
     slot: String(s.slot ?? ""), label: String(s.label ?? ""), from: s.from === "state" ? "state" : "oracle",
+    ...(typeof s.source === "string" && s.source ? { source: s.source } : {}),
+    ...(typeof s.ref === "string" && s.ref ? { ref: s.ref } : {}),
+    ...(typeof s.kind === "string" && s.kind ? { kind: s.kind } : {}),
     tables: tablesOf(s.tables), result: String(s.result),
     ...(s.second?.result ? { second: { tables: tablesOf(s.second.tables), result: String(s.second.result) } } : {}),
     used: typeof s.used === "string" ? s.used : (s.used === false ? false : null),
@@ -300,8 +398,11 @@ export function renderSeedsLine(seeds) {
   const list = numbered(seeds);
   if (!list.length) return "";
   const items = list.map(seed => {
-    const names = (seed.tables ?? []).map(t => t.name).filter(Boolean).join(" + ");
-    const dice  = `${escapeHtml(names)} (${escapeHtml(rollsOf(seed.tables))})`;
+    const names = seed.from === "state"
+      ? String(seed.source ?? "")
+      : (seed.tables ?? []).map(t => t.name).filter(Boolean).join(" + ");
+    const rolls = rollsOf(seed.tables);
+    const dice  = `${escapeHtml(names)}${rolls ? ` (${escapeHtml(rolls)})` : ""}`;
     const taken = seed.tookSecond && seed.second?.result
       ? ` <span class="sf-scene-roll-second">— set aside for its second result: <strong>${escapeHtml(seed.second.result)}</strong> (${escapeHtml(rollsOf(seed.second.tables))})</span>`
       : "";

@@ -749,7 +749,8 @@ let _endChain = Promise.resolve();
  * close the active scene → finalise the rolling session summary → persist
  * End's own fields onto the latest campaignState (+ sessionStateChanged) →
  * Session Log write → +1 momentum to all players when a focus was set →
- * closing NPC vignette, then a campaign-recap refresh.
+ * closing cutaway (endSessionVignette.js — none with nobody and nowhere to
+ * show), then a campaign-recap refresh.
  *
  * A session ends once (issue #309 N08 — every End paid the party momentum
  * again, and closed the session, wrote its log and scheduled its vignette
@@ -846,6 +847,11 @@ async function endSessionOnce(payload, ctx = {}) {
     await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
   }
 
+  // The frame of the scene the session ended in, before it is closed: whom
+  // it had with the characters, and where they are — the closing cutaway
+  // shows someone, or somewhere, they are not (issue #381).
+  const endedFrame = state.sceneFrame ? foundry.utils.deepClone(state.sceneFrame) : null;
+
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
   // session, whose empty ring + empty summary then mixed with stale scene
@@ -884,31 +890,38 @@ async function endSessionOnce(payload, ctx = {}) {
     }
   }
 
-  // Fire-and-forget closing vignette — narrator-generated slice-of-life
-  // featuring a currently-important NPC (bonded connection → recurring
-  // threat → fallback) doing something trivial and mundane. Silent skip
-  // when the Claude key is unset or narration is disabled. Runs here, on
-  // the canonical GM, because that is the client holding the Claude key.
+  // Fire-and-forget closing cutaway — narrator-generated, three to five
+  // sentences: someone the campaign has, chosen by a die and never the same
+  // twice running, or with nobody a settlement the table knows, at something
+  // small, built from rolled material (issue #381). Silent skip when the
+  // Claude key is unset or narration is disabled; none with nobody and
+  // nowhere to show. Runs here, on the canonical GM, because that is the
+  // client holding the Claude key.
   setTimeout(async () => {
     let cs = null;
     try {
-      const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
-        = await import("../session/endSessionVignette.js");
-      const { narrateSessionVignette } = await import("../narration/narrator.js");
-      // A working copy, as the galley's (issue #335 Y04): its scene opens on
+      const { composeClosingScene, postEndSessionVignetteCard } = await import("../session/endSessionVignette.js");
+      const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
+      // A working copy, as the opening's (issue #335 Y04): its scene opens on
       // the copy, never on the cache after End closed the real one.
       cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-      const npc = selectEndSessionNPC(cs);
-      const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
-      const narrationId = newNarrationId();
-      // Its CHARACTER blocks are the PCs at the table, as the galley's — it
-      // took the campaign's first PC, whoever was there (known-issues
-      // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
-      const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
-      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
-      if (text) {
-        await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "", narrationId });
+      // The closing's dice are the table's: rolled once, here on the
+      // canonical GM, and only for a scene that will be narrated.
+      const scene = sessionVignetteWillRun(cs) ? composeClosingScene(cs, { connectionFocus, frame: endedFrame }) : null;
+      if (scene) {
+        const narrationId = newNarrationId();
+        // Its CHARACTER blocks are the PCs at the table, as the opening's —
+        // it took the campaign's first PC, whoever was there (known-issues
+        // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
+        const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+        const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+        const text = await narrateSessionVignette({ userMessage: scene.userMessage, campaignState: cs, narrationId, actorIds, seeds: scene.seeds });
+        if (text) {
+          // The seeds were marked by the narration's own account of them; the
+          // card keeps them (`builtFrom`) — and the next closing reads whom
+          // this one showed from it.
+          await postEndSessionVignetteCard({ text, npcName: scene.subject.name, sessionId: cs.currentSessionId ?? "", narrationId, seeds: scene.seeds });
+        }
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);

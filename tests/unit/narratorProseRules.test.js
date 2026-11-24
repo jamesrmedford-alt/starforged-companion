@@ -287,7 +287,7 @@ describe('P2-21 — levity holds under threat', () => {
 describe('P2-26 — the closing vignette keeps to its length', () => {
   it('its message ends on the limit: three to five sentences, never more', () => {
     const message = buildEndSessionVignetteUserMessage({ kind: 'connection', name: 'Vuldar Archer', hint: 'a broker' }, {});
-    expect(message).toMatch(/Render a 3-5 sentence closing vignette/);     // as before
+    expect(message).toMatch(/A cutaway to Vuldar Archer, somewhere the characters are NOT/);
     const last = message.trim().split('\n').slice(-2).join(' ');
     expect(last).toMatch(/three to five sentences, about 90 words — never more than five\s+sentences/);
     expect(last).toMatch(/Count them/);
