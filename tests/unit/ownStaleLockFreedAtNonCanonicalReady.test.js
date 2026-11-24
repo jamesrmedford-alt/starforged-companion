@@ -35,7 +35,7 @@ vi.mock('../../src/ui/settingsPanel.js', async (orig) => ({
 }));
 vi.mock('../../src/narration/narrator.js', async (orig) => ({
   ...(await orig()),
-  finalizeSessionSummary: vi.fn(async () => {}),
+  getRollingSessionSummary: vi.fn(async () => ''),
   getCampaignRecap:       vi.fn(async () => ''),
   postCampaignRecap:      vi.fn(async () => ''),
 }));

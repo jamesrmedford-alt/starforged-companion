@@ -20,7 +20,6 @@ vi.mock('../../src/narration/narrator.js', async (orig) => ({
   narrateSessionVignette:   vi.fn(async () => null),
   narrateClockAdvancement:  vi.fn(async () => null),
   getRollingSessionSummary: vi.fn(async () => ''),
-  finalizeSessionSummary:   vi.fn(async () => {}),
   getCampaignRecap:         vi.fn(async () => ''),
 }));
 

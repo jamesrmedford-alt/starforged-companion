@@ -920,9 +920,10 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * and frame stayed binding beside the re-narration's (issue #338 D8) — in the
  * store and on the upgrade's working copy (`campaignState`), which the
  * re-narration applies its sidecar to (resultUpgrade.js
- * retractSupersededNarrations). A rolling summary made from it is dropped
- * first, as the X-Card drops one (narrator.js dropSummaryOfSupersededCards,
- * issue #345 AA24).
+ * retractSupersededNarrations). The session summary needs no drop: it is a
+ * view of the session record, which reads a superseded narration as gone
+ * (record/read.js — issue #382; it was narrator.js
+ * dropSummaryOfSupersededCards, issue #345 AA24).
  *
  * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
  * @param {{ kind?: "burn"|"improve", campaignState?: Object|null }} [opts]

@@ -20,7 +20,7 @@ import { StubElement } from '../helpers/cardDom.js';
 
 vi.mock('../../src/narration/narrator.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  finalizeSessionSummary: vi.fn(async () => {}),
+  getRollingSessionSummary: vi.fn(async () => ''),
 }));
 
 import { rollSessionIfDue, SESSION_MINT_FIELDS } from '../../src/session/lifecycle.js';

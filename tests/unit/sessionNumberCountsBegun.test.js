@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../src/narration/narrator.js", async (orig) => ({
-  ...(await orig()), finalizeSessionSummary: vi.fn(async () => {}),
+  ...(await orig()), getRollingSessionSummary: vi.fn(async () => ''),
 }));
 
 import { rollSessionIfDue, sessionNeedsMint, mintSession } from "../../src/session/lifecycle.js";
