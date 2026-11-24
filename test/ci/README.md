@@ -293,7 +293,11 @@ model calls, 60 minutes, $15.
 
 Every run that calls a model — either charter — writes `review-data.json`
 and the generated layers of its review: `annotated-transcript.md` and
-`scorecard.md`, with the reader's notes left to write.
+`scorecard.md`, with the reader's notes left to write. A live run's scorecard
+opens with a place for **the cold read**: the plain transcript read straight
+through, before anything is scored, by a reader who has seen neither the
+charter, the run's questions nor the fixes it was to verify
+(`rules/ci-e2e.md` → "Read it cold before you score it").
 
 **When a check turns out wrong**, a long run is not bought again: its
 evidence is scored again by the checks as they are now.

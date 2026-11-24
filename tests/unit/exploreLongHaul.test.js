@@ -1168,6 +1168,22 @@ describe('the generated layers of the review', () => {
     expect(text).toContain('| F1 | a possession | never | not-planted |');
     expect(text).toContain('## The reading');
   });
+
+  // The long haul's second review was written step by step against its own
+  // eight questions, by the session that wrote the charter and the fixes: it
+  // reported each fix holding and missed what one plain reading showed. The
+  // cold read is written first, so its place is first (rules/ci-e2e.md).
+  it('a live run\'s scorecard opens with the cold read, left to write — above its questions and its rows; a rehearsal has none', () => {
+    const live = scorecard({ charter: CHARTER, run: { ...run, questions: ['Does the correction reach the recap?'] }, beats, mechanics });
+    const at = (s) => live.indexOf(s);
+    expect(at('## The cold read')).toBeGreaterThan(-1);
+    expect(at('## The cold read')).toBeLessThan(at('## What this run was to answer'));
+    expect(at('## The cold read')).toBeLessThan(at('| Dimension |'));
+    expect(live).toContain('a reader who has seen neither the charter, this run\'s questions nor the fixes it was to verify');
+    expect(live).toContain('what the charter itself made the player do');
+    expect(scorecard({ charter: CHARTER, run: { ...run, mode: 'rehearsal' }, beats, mechanics })).not.toContain('The cold read');
+    expect(scorecard({ charter: CHARTER, run: { ...run, mode: 'replay' }, beats, mechanics })).not.toContain('The cold read');
+  });
 });
 
 // ── the charter that ships ───────────────────────────────────────────────────

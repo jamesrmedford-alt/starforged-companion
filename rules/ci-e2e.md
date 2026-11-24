@@ -752,7 +752,8 @@ that failed the module for telling the narrator a value was corrected.
 it, when it completes, without being asked. A run whose evidence is not read
 has bought a verdict and little else — the first run that went the whole way
 reported "achieved" and one flag, and eleven of the twelve things learned
-from it came from reading its prompts and records afterwards. Four parts:
+from it came from reading its prompts and records afterwards. A cold read
+first ("Read it cold before you score it", below), then four parts:
 
 1. **The annotated transcript** (`annotated-transcript.md`, beside the run's
    evidence, and sent). The run generates its layers (`lib/review.mjs`) —
@@ -791,6 +792,49 @@ from it came from reading its prompts and records afterwards. Four parts:
 
 Check your counts against the evidence before you send them: the first
 review reported three draft cards where the run had two.
+
+**Read it cold before you score it** (agreed with the maintainer,
+2026-11-24, after the long haul's second review). Before a question is
+answered or a step annotated, the plain transcript (`transcript.md`) is read
+straight through by a reader who has seen neither the charter, the run's
+questions nor the fixes it was to verify — in a Claude Code session, a
+sub-agent handed that one file and nothing else — and asked what the session
+was like to play: what a player would complain of, what repeats, what makes
+no sense, what the player was made to do. Its findings head the scorecard
+under "The cold read" (a live run's scorecard is generated with that place
+marked, above its questions), each then checked against the evidence like
+any other finding. The second long haul's review was written step by step
+against its own eight questions, by the session that had written the charter
+and the fixes. It reported every fix holding, and missed what the maintainer
+saw on one reading: a player made to name its moves to have them rolled (the
+charter's own instruction — a player is never to need a move's name in what
+they type), twenty memory questions typed as lines of play and answered by
+an all-knowing voice in the fiction (many belonged to `@scene`), one detail
+returning in nine of twelve narrations, an outcome written into the prose
+("Strong hit, and a match:"), a Heal rolled at full health, and three wrong
+sentences in a recap.
+
+Five rules for the reading that follows, each from that review:
+
+- **Say first what the charter itself made happen.** Head the reading with
+  what the charter's beats and player notes made the player do that a person
+  at the table would not — name a move, ask a memory question in play, walk
+  past a hook. What follows from it is the charter's, and a charter that
+  hides the thing to be tested is itself a finding.
+- **A count of nothing is a count of what the counter looks for.** The
+  generated rows count the patterns earlier runs showed (an instruction
+  written as prose, a stat read aloud, a crew role in a solo opening;
+  repetition between scenes of one kind). Report a zero as that — "none of
+  the three counted" — never as "none", and read the narrations for the
+  pattern nobody has counted yet.
+- **Read the run whole as well as step by step.** A note under each step
+  cannot see what crosses steps: a refrain, every beat closing the same way,
+  one device carrying a third of the session.
+- **Judge whether it makes sense, not only whether the arithmetic is
+  right.** A roll worked correctly for a move there was no reason to make is
+  a finding, and so is an offer accepted that the fiction cannot support.
+- **Read each recap sentence by sentence against the transcript**, not for
+  the tracked facts alone.
 
 **Read every alarm before you report it, and re-score when a check was
 wrong.** The first live long haul ended `product-failure` with eight alarms,

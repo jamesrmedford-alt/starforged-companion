@@ -389,6 +389,16 @@ const rescoredLine = (run) => (run.rescored
   ? [`**Re-scored ${String(run.rescored.at ?? "").slice(0, 10)}** from this run's own evidence, by the checks as corrected after it (\`rescore.mjs\`). What the table did is unchanged. The run's own verdict was **${run.rescored.was?.classification ?? "?"}** — ${run.rescored.was?.because ?? ""}`, ""]
   : []);
 const TO_ANSWER = "_To write — the answer to each, with its evidence, or that the run did not answer it._";
+/**
+ * The cold read's place, at the head of a live run's scorecard — above its
+ * questions, because it is written before they are answered (rules/ci-e2e.md,
+ * "Read it cold before you score it"). A rehearsal's narration is stubbed:
+ * there is nothing to read cold.
+ */
+const COLD_READ = [
+  "## The cold read", "",
+  "_To write before anything below — `transcript.md` read straight through by a reader who has seen neither the charter, this run's questions nor the fixes it was to verify (in a Claude Code session, a sub-agent handed that one file), asked what the session was like to play: what a player would complain of, what repeats, what makes no sense, what the player was made to do. Its findings, each then checked against the evidence — and, first, what the charter itself made the player do that a person at the table would not._", "",
+];
 
 /**
  * The annotated transcript with every generated layer filled in: for each
@@ -465,6 +475,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
   const helperRows = (ledger?.facts ?? []).flatMap(f => f.refusals.filter(r => !/narration|answer/.test(r.where)).map(r => ({ fact: f.id, ...r })));
   const out = [`# ${charter.name} — scorecard`, "",
     `Run \`${run.id ?? "?"}\` · ${run.mode} · class **${run.classification ?? "?"}** — ${run.because ?? ""}`, "", ...rescoredLine(run),
+    ...(run.mode === "live" ? COLD_READ : []),
     ...((run.questions ?? []).length ? ["## What this run was to answer", "", ...run.questions.map((q, i) => `${i + 1}. ${q}`), "", TO_ANSWER, ""] : []),
     table(["Dimension", "Result", "Basis", "Trust"], [
       goal

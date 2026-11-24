@@ -6,6 +6,38 @@ rejected.
 
 ---
 
+## A player is never made to name a move: what they type stays in the fiction; cards, buttons and the offer line may name moves (2026-11)
+
+**Decision** (the maintainer, 2026-11-24, on reading the long haul's second
+transcript, `explorations/long-haul-live-20261123-1459/`): "I don't want the
+players to reference them by name. Trying not to break the fiction where
+possible." — and: "It is fine to have buttons that name the move and break
+the fiction, just not forcing the player to do so in their freeform input."
+
+- **What a player types is in the fiction.** A plain line that sets about
+  what a move covers must end in that move rolled, or in the right move
+  offered on a button. A line narrated with nothing offered, or read as
+  another move, is a fault of the readers (the pacing reader, the move
+  interpreter) — never something the player is to mend by naming the move.
+- **The table's apparatus may name moves**: cards, buttons, and the
+  narrator's offer line (*"…would be a Set a Course."*). They are not the
+  player's words.
+- **A line that does name its move is still taken at its word** — the pacing
+  reader's rule from the long haul's second round stays, as tolerance. But
+  nothing may lean on it: no help text presents naming a move as the way to
+  get one, and no test script has its player name a move in what it types.
+- **Why it had to be said.** In that run the AI player named its moves
+  ("…, to Develop Your Relationship", "rolling Heal") from the first line of
+  most beats, because the charter told it to (its beats named the moves, and
+  a player note said "say the line again, plainly, as that move"). The run
+  therefore could not show how often a plain line goes unread — the thing
+  the maintainer felt most on reading it — and its review marked those steps
+  right. The run's four clean samples of a plain line that should have been
+  a move: two rolled (a8, a33), one offered (a20), one ignored (a49).
+- **Rejected:** a rule in code that a named move is always made (proposed
+  2026-11-24). It perfects the case players are not to be in. Balanced
+  Mischief may still pick a neighbouring move for a named one (P2-02).
+
 ## The long haul's second round: the fight's card follows its roll, a move only a move can make is always offered, a named move asks for itself, and a name change is the table's (issue #373 round 2, after issue #377) (2026-11)
 
 **Decision:** what the long haul's second live run (2026-11-23,
@@ -26,7 +58,9 @@ fixed; the rest recorded (known-issues → "The long haul").
   line that sets about one is now never plain NARRATIVE, at any dial — the
   move is at least offered. The low dial's rule (an unsure move is offered,
   not rolled) is otherwise unchanged.
-- **A line that names its move asks for it, to the pacing reader**; and the
+- **A line that names its move asks for it, to the pacing reader** (kept as
+  tolerance only: a player is never made to name a move — the entry above);
+  and the
   move interpreter is told the roller's connections and their relationship
   tracks, so a named Forge a Bond with a full track is not read as Make a
   Connection (NAMED-MOVE-READ-AS-ANOTHER). **Not changed:** Balanced Mischief
