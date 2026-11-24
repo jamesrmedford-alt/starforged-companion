@@ -12767,9 +12767,22 @@ function registerPromptContractTests(quench) {
           carries(request, "CAMPAIGN PREMISE", RECAP.name, [N.premise]);
           carries(request, "CHARACTER", RECAP.name);
           carries(request, "PARTY", RECAP.name, [N.pcA, N.pcB]);
-          for (const name of ["LAST SESSION", "STORY SO FAR", "CLOCKS", "OPEN PROGRESS TRACKS", "NARRATOR PERMISSIONS", "RESPONSE FORMAT"]) {
+          for (const name of ["LAST SESSION", "STORY SO FAR", "CLOCKS", "OPEN PROGRESS TRACKS", "NARRATOR PERMISSIONS", "RESPONSE FORMAT", "ACTIVE SCENE"]) {
             lacks(request, name, RECAP.name);
           }
+        });
+
+        // A recap is told how things stand beside the Chronicle it retells
+        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN): the open scene's
+        // facts, as the later word on them — never as the binding ACTIVE
+        // SCENE block issue #374 A1 took out (lacked, above).
+        it("campaign recap: where things stand now — the open scene's facts, under its own heading", async function () {
+          const request = await capture(RECAP);
+          const section = carries(request, "WHERE THINGS STAND NOW", RECAP.name, [N.truth]);
+          assert.include(section.text, "not where the campaign is set", "the scene is one moment of the campaign");
+          assert.notInclude(section.text, "binding", "nothing of it is given as binding");
+          assert.include(request.system, "A recap says only what its sources say.", "the recap's sources rule");
+          assert.include(request.user, "Nothing inferred, nothing filled in between two entries", "…said again under the chronicle");
         });
 
         it("Private Channel: the shared story, and only its player's own Private Lines (#286 D1)", async function () {
