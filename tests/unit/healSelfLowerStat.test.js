@@ -142,6 +142,9 @@ describe("issue #330 D4 — the move card shows the rule", () => {
     control.interpretation = { moveId: "heal", moveName: "Heal", statUsed: "iron", healSituation: "self",
       adds: 0, rationale: "test", mischiefApplied: false };
     control.dice = WEAK;
+    // There is an arm to stitch: a Heal with nothing to recover is narrated,
+    // not rolled (known-issues HEAL-ROLLED-AT-FULL-HEALTH).
+    kira.system.health.value = 3;
     await table.client("pl-1").chat("Kira stitches her own arm.", { speaker: { actor: kira.id } });
     await table.settle(); await table.drain();
     const card = table.cards(f => f.moveResolution).at(-1);

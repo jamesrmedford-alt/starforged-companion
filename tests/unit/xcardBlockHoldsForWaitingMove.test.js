@@ -68,6 +68,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
+import { narrateLineOn } from '../helpers/narrateLine.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { applySidecar } from '../../src/factContinuity/ledgers.js';
 
@@ -93,7 +94,7 @@ afterAll(() => table?.teardown());
 
 beforeEach(async () => {
   control.confirm = null;
-  await table.reset({ world: { settings: { campaignState: {
+  await table.reset({ world: { settings: { chronicleAutoEntry: false, campaignState: {
     ...CampaignStateSchema,
     sessionActive: true, currentSessionId: 'sess-7', sessionNumber: 7, currentSceneId: 'sc-1', sceneTruths: [],
     sceneState: { bySubject: {}, sceneId: 'sc-1' },
@@ -114,7 +115,7 @@ beforeEach(async () => {
 
 describe('issue #345 AA04 — a move waiting at its confirm dialog cannot re-record what the X-Card or a strike removed meanwhile', () => {
   it('control: a move typed after the X-Card and resume cannot restate the removed fact (same scene)', async () => {
-    await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
+    await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
     await table.settle();
     expect(liveDead()).toHaveLength(1);
 
@@ -139,7 +140,7 @@ describe('issue #345 AA04 — a move waiting at its confirm dialog cannot re-rec
     expect(world().pendingMove).toBe(true);
 
     // Meanwhile Pat asks the scene (no move lock needed): the answer records the death.
-    await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
+    await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
     await table.settle();
     expect(liveDead()).toHaveLength(1);
 
@@ -165,7 +166,7 @@ describe('issue #345 AA04 — a move waiting at its confirm dialog cannot re-rec
   }, 60_000);
 
   it('B: the X-carded narration\'s scene had ended — the move\'s narration does not record it live again', async () => {
-    await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
+    await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
     await table.settle();
     expect(liveDead()).toHaveLength(1);
     await table.client('gm-1').chat('!scene start');
@@ -196,7 +197,7 @@ describe('issue #345 AA04 — a move waiting at its confirm dialog cannot re-rec
     control.confirm = deferred();
     await table.client('pl-2').chat('I walk on toward the docks.', { speaker: { actor: 'pc-quinn' } });
     await table.settle();
-    await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
+    await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
     await table.settle();
     const truth = (world().sceneTruths ?? []).find(t => t.fact === DEAD);
     await table.client('gm-1').chat(`!truth strike ${truth.id.slice(0, 8)}`);
@@ -210,7 +211,7 @@ describe('issue #345 AA04 — a move waiting at its confirm dialog cannot re-rec
   }, 60_000);
 
   it('control B: the same restatement by a move typed after the X-Card is refused (ended scene)', async () => {
-    await table.client('pl-1').chat('@scene Is Vance still breathing?', { speaker: { actor: 'pc-pat' } });
+    await narrateLineOn(table, 'I kneel by Vance. Is he still breathing?', { actorId: 'pc-pat' });
     await table.settle();
     await table.client('gm-1').chat('!scene start');
     await table.settle();

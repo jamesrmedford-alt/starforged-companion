@@ -264,7 +264,8 @@ describe("issue #354 P2-04 — the classifier's rules for talk, connections and 
 
   it("the lean toward a roll is for a pressing or testing line to one of the speaker's own connections", () => {
     expect(prompt()).toMatch(/THE SPEAKER'S CONNECTIONS — when such a pressing or testing line is spoken to/);
-    expect(prompt()).toMatch(/Any other NPC carries no lean, and a connection\s+carries none for plain conversation/);
+    expect(prompt()).toMatch(/the Connections of the SITUATION under\s+CHARACTER, the relationships on that character's own sheet/);
+    expect(prompt()).toMatch(/Any other NPC carries no\s+lean, and a connection carries none for plain conversation/);
     expect(prompt()).not.toMatch(/If the addressee is a Connection/);
     expect(prompt()).not.toMatch(/Random NPCs do not carry this bias/);
   });
@@ -285,7 +286,9 @@ describe("issue #354 P2-04 — the classifier's rules for talk, connections and 
     ] } }));
     scriptCalls({ classifier: { decision: "NARRATIVE", suggestedMove: null, category: "social", confidence: 0.8, reasoning: "A question." } });
     await decidePacing({ playerText: "Tell us the whole story", campaignState: {}, character: { name: "Isaac Sutton", actorId: "pc-isaac" }, apiKey: "k" });
-    expect(classifierCall().messages[0].content).toContain("Isaac Sutton's connections: Vuldar Archer");
+    // In the speaker's SITUATION block (moves/situation.js), with its relationship track.
+    expect(classifierCall().messages[0].content).toContain("SITUATION — Isaac Sutton's sheet as it stands:");
+    expect(classifierCall().messages[0].content).toContain('- Connections: "Vuldar Archer" (dangerous, relationship 0 of 10 boxes).');
   });
 });
 

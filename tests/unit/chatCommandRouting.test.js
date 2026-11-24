@@ -190,15 +190,17 @@ describe('CLAUDE policy — the keyed canonical GM when one is connected, else t
     expect(sceneCards().map(c => c.author)).toEqual(['gm-2']);
   });
 
-  // The world writes stay the GM's: the author's client relays the answer's
-  // side-data, and the GM starts the scene it lands in (issue #286 D2).
-  it('no keyed GM: the keyed author runs it on their own key — and relays the scene start and side-data (world writes) to the GM', async () => {
+  // An answer records nothing (known-issues SCENE-ANSWER-NOT-A-CAMERA), so
+  // the author's client asks no world write of the GM: no side-data is
+  // relayed, and no scene is started for it (issue #286 D2's relay carried an
+  // answer's fact block, and started the scene it landed in).
+  it('no keyed GM: the keyed author runs it on their own key — and asks no world write of the GM', async () => {
     table.world.setSetting('campaignState', { ...state(), currentSceneId: null });
     await setKeys('pl-1');
     await type('pl-1', '@scene what is behind the hatch?');
     expect(callers()).toEqual(['pl-1:sk-ant-pat']);
     expect(sceneCards().map(c => c.author)).toEqual(['pl-1']);
-    expect(state().currentSceneId).toMatch(/^sc-/);
+    expect(state().currentSceneId ?? null).toBeNull();
     expect(table.errors).toEqual([]);
   });
 

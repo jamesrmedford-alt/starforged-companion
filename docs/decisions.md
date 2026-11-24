@@ -6,6 +6,46 @@ rejected.
 
 ---
 
+## The session record and scenes built from oracle rolls: scoped as issues #382 and #381, decisions taken to build (2026-11)
+
+**Decision** (the maintainer, 2026-11-24, of the seven systemic overhauls proposed after the long haul's second and third live runs: "Please implement 3 and 6"):
+
+- **Overhaul 3 — one record of what happened, every summary derived from it** — is scoped as issue #382. Its decisions D1–D12 were taken at the design's recommendations so building could start; each is the maintainer's to take back. Slices 1 (the record and the Session Log page) and 2 (the campaign recap as a view) first, then 3–5.
+- **Overhaul 6 — variety from the game's oracles** — is scoped as issue #381. D1, D2, D3, D5, D6, D7, D8 and D10 were taken at the design's recommendations. **D4 not taken:** the "already used" lists and `vignetteHistory.js` stay until a live run shows rolled material holds without them (deleting them would reverse issue #377 item 5). **D9 not taken:** no separate paid bench; the unit tests and the next live long haul stand in for it.
+- **Overhaul 7 — the playtest as independent scenarios — is an addition, not a replacement** (the maintainer: "it is a separate thing than the long haul, where we also want memory stability. Implement 7 as an addition rather than a replacement"). The long haul stays the memory-stability test; short scenario charters are added beside it.
+
+## The readers run on Sonnet 5.5, are told the character's sheet, and offer what only a move can change (issue #380) (2026-11)
+
+**Decision** (the maintainer, 2026-11-24, on the readers' plain-line test, `test/ci/playwright/readers/runs/readers-live-20261124-0255/`: "upgrade to Sonnet"):
+
+- **Both readers — the pacing classifier and the move interpreter — run on Claude Sonnet 5.5**, hard-coded as before (`MODEL` in `src/pacing/classifier.js` and `src/moves/interpreter.js`), whatever the Narration Model setting says. Measured: 77 of 90 plain-line readings right to Haiku 5.5's 71; a neighbouring move once to eight times; a move offered for none of 20 controls to 5 — for about $0.006 a line against $0.0003, and 1.3 s more a line. **Not built** (the builder's call, the maintainer's to change): a setting to pick the readers' model — the choice rests on a measurement, and the measurement is the readers' test (`./scripts/cloud.sh readers`), which can be re-run. The rules' fixes below are stated whatever the model, so going back to Haiku keeps them.
+- **Both readers are told one SITUATION block** (`src/moves/situation.js`), read live from the sheet: meters with their impacts, the command vehicle's integrity, open vows with rank and progress, connections with rank and relationship track. One builder, the same words in both prompts.
+- **What only a move changes is always offered, when there is something for it to change**: recovery (Heal, Hearten, Resupply, Repair) with something to recover; a step toward an open vow (Reach a Milestone), though nothing is attempted; something done for a connection that costs the character or meets a real need (Develop Your Relationship). A recovery move with nothing to recover is no move — and where the sheet settles it, code decides (`nothingToRecover`), not the model; care for someone else, one particular item or another damaged thing is left to the reader. This amends the second round's "a move only a move can make is always offered" with its one exception.
+- **Forge a Bond is a progress move**: a full relationship track is ready for it; less does not forbid it (at worse odds).
+
+## A scene's question is the scene's and lapses; an `@scene` answer is an answer and records nothing; the detector reads the player's line (issue #380) (2026-11)
+
+**Decision:** the scene frame, `@scene` and entity-detection findings of the long haul's third live run (`explorations/long-haul-live-20261124-0321/`; the maintainer ordered all the module fixes), each fixed at its cause.
+
+- **A vignette is a bookend, not a beat of play.** Its sidecar writes the frame's where / present / now, never its question. A question unanswered for three beats (`SCENE_QUESTION_BEATS`) is dropped — three, because no question in the run was answered after its second beat. The count lives on the frame, so it survives a reload and is in the X-Card's chain. **Rejected:** deriving the count from the `previous` chain, or a new campaignState field; a vignette writing no frame at all (the closing cutaway's scene files its facts by its place).
+- **An `@scene` answer is an answer, not narration** (the maintainer: "having an omnipotent Narrator answer questions rather than invent talking things seems more reasonable"). It states the established fact in at most Scene Response Length sentences, or says the story has not established it; no atmospheric latitude; its sidecar is not applied and nothing is captured from it. It stays in the recent-narration ring and the summary's source. **Rejected:** dropping answers from the ring (later narration must not contradict what the table was told).
+- **The entity detector is given the player's line**, and the embellishment rule excepts a name the player gave; the narrator still introduces no named entity of its own. **Rejected:** excepting the interaction rule (it forbids only the narrator's own names).
+
+## A roll's consequence cards follow its roll card (issue #380) (2026-11)
+
+**Decision:** the cards that say what a roll caused — Pay the Price, Combat progress, Fight over, the victory card, a fulfilled vow's notes and reward, Take Decisive Action's cost — post after the roll card (`afterMoveCard`, owned by `rollMove` and run in a `finally`). The effects land where they did; only the posting moves. **The one exception:** the price of an upgradable result that is not held is paid before its card, because the card's Burn / Improve state must carry the price's receipts from its first write (known-issues CARDS-STILL-ABOVE-THEIR-ROLL lists what is still above its roll).
+
+## The long haul's third round, the narrator: an oracle's answer binds, a truth is revealed by being told, a recap is told how things stand (2026-11)
+
+**Decision:** the seven narrator faults the long haul's third live run found (2026-11-24, `explorations/long-haul-live-20261124-0321/`; the maintainer ordered all seven), each fixed at its cause.
+
+- **An oracle's answer binds the narration; the scene gives way.** The rulebook's "oracle output is prompt, not verdict" still holds for a table's result, which keeps its latitude; a yes or a no is not narrated as its opposite.
+- **A plan's truth is revealed by prose that tells it.** The fulfilling beat lifts UNREVEALED's "never state one outright" for the vow it ends, and a fact block's "truth" stands only when the prose has at least one of the truth's own words. **Rejected:** a higher bar (two words, a share of them) — it turns away plain reveals in other words, and a truth left unrevealed after its prose told it is the worse mistake to make by rule; a new sidecar key quoting the sentence that states the truth — a contract change every recorded fixture would fail. The floor catches the reveal that told nothing; the instruction asks for the rest (narrator-memory invariant 3).
+- **"Combat is offered, not forced" stands.** The track is still made only on the card; while it is unanswered the roll's narration stops before the first blow. **Rejected:** a flag from the move pipeline — the card, posted before the narration, already says where the offer stands.
+- **A cost still to be chosen is not narrated** — read from the table's cards, as a price choice is.
+- **A recap is told how things stand (amends issue #374 A1's second bullet).** A1 took the ACTIVE SCENE block out of a recap because the closing cutaway's frame set the campaign there. The cutaway's scene now ends before the recap is written, and the block is still not sent; but written from the Chronicle alone a recap could not know how anything stood after its last entry on it. It now has WHERE THINGS STAND NOW: the whole session summary and the open scene's facts and state, as the later word on them — never binding, no cast, no scene question. **Rejected:** any session summary (one made at the debounce is behind the Chronicle); re-keying the recap's cache on the scene (a Sonnet call per `!recap`).
+- **The session summary's source says what each move settled** (a vow sworn, fulfilled, forsaken; an expedition finished; a fight won) — only what is true of every result it names.
+
 ## A player is never made to name a move: what they type stays in the fiction; cards, buttons and the offer line may name moves (2026-11)
 
 **Decision** (the maintainer, 2026-11-24, on reading the long haul's second

@@ -13,7 +13,12 @@ layers. This file is the never-break list.
    As of 2026-07 this covers move, paced, @scene, inciting, galley /
    end-session vignettes, vow-swearing scenes, all three clock-vignette post
    sites, and oracle follow-up narrations — "mood piece" is not an
-   exemption. Since issue #286 D1 a reflection a player publishes from the
+   exemption. An `@scene` answer keeps it though it is no longer fiction and
+   nothing of it is recorded (known-issues SCENE-ANSWER-NOT-A-CAMERA): what
+   the narrator said in answer is in the ring so the next beats do not
+   contradict it — and, like a published reflection, it is no narration for
+   the session-start recap gate or the X-Card's redirect. Since issue #286 D1
+   a reflection a player publishes from the
    Private Channel carries it too: published text is canon. So does a Batch
    Mode round's one card (issue #340): `roundId`, `roundNumber` and
    `roundEntries` (the players who acted, no one else) beside the family, its
@@ -64,7 +69,9 @@ layers. This file is the never-break list.
    burn-supersede, the X-Card's card pick and redirect hook) in the same
    commit — the consumer list lives in architecture doc §2.
 
-2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
+2. **The sidecar JSON contract** — every narration's; an `@scene` answer is
+   asked for no fact block and one it sends is dropped, never applied
+   (`sceneAnswerText`) — (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame` — and, for the
    narrative skeleton's `plans` / `openQuestions` / `reveals` / `countdown` /
    `newThreats`, `src/world/skeletons.js`'s
@@ -109,8 +116,15 @@ layers. This file is the never-break list.
 
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only — the frame's scene
-   question with it (issue #353 R2: kept for the scene, never carried into
-   the next; no narration ends a scene), and the scene's unanswered hidden
+   question with it (issue #353 R2: never carried into the next scene; no
+   narration ends a scene; within its scene it stands until a beat answers
+   it or play has left it unanswered for `SCENE_QUESTION_BEATS` beats, when
+   the frame keeps none and the next beat's is the scene's — its count,
+   `questionBeats`, is on the frame beside it and nowhere else, and a session
+   vignette, a bookend, never sets, changes or counts against it:
+   `narrator.js` `countSceneQuestionBeat` / `bookendFrame`, known-issues
+   NARRATOR-REFRAINS), and the
+   scene's unanswered hidden
    mysteries with their clocks, retired at every scene end (issue #362 D4).
    Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing

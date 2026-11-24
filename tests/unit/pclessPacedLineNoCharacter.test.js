@@ -21,9 +21,11 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
+// The narration model — and, since the readers run on Sonnet 5.5, the pacing
+// classifier's too: a narration call is one on this model that is no reader's.
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const NARRATIVE = JSON.stringify({
   decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
@@ -55,7 +57,7 @@ beforeEach(async () => {
 });
 
 const pacedCards = () => table.cards(f => f.narratorCard && f.pacedNarrative === true);
-const narrationCall = () => table.claude.calls.find(c => c.model === NARRATION_MODEL);
+const narrationCall = () => table.claude.calls.find(c => c.model === NARRATION_MODEL && !isReaderCall(c));
 
 describe('Z50 — a PC-less player\'s narrative line', () => {
   it('Quinn (no PC) types a narrative line: it is not narrated as Kira\'s (option A: no character)', async () => {
