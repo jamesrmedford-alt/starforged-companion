@@ -80,6 +80,8 @@ import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
+// What the long haul's third live run turned up (a line of its own, apart from the block above).
+import { formatOracleAnswerRule } from './narratorPrompt.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
@@ -4681,6 +4683,9 @@ function buildOracleUserMessage({
       `it into narrative.`
     );
   }
+  // A yes/no answer binds the narration of it (ORACLE-NO-NARRATED-AS-YES): said
+  // back after the recent scene, which may say otherwise, and before the ask.
+  const binds = formatOracleAnswerRule({ kind, question, rolledLine });
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
@@ -4688,6 +4693,7 @@ function buildOracleUserMessage({
     `Mechanical result: ${rolledLine}\n` +
     seedBlock +
     `${recent}\n\n` +
+    (binds ? `${binds}\n\n` : '') +
     `Render this result as 2-3 sentences of in-fiction prose anchored to ` +
     `the current scene. Do not repeat the dice number or the literal table text — transform ` +
     `it into narrative.`

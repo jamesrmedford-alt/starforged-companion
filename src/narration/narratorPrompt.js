@@ -1108,6 +1108,27 @@ const META_MODES = new Set(['campaign_recap']);
 // sent to every mode, beside the mode's own length (issue #326 W40).
 const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
+/**
+ * What an oracle's answer is to the narration that tells it (known-issues
+ * ORACLE-NO-NARRATED-AS-YES). "Is anyone left alive aboard the wreck?" rolled
+ * NO, and the follow-up wrote "The open comm still hisses with the dry voice's
+ * breathing, which means someone is aboard": the narrator kept what it had
+ * made — a voice on the comm, three beats running — over what the oracle
+ * said. RECENT ORACLE RESULTS already asked it not to contradict the dice;
+ * nothing said which gives way when the scene and the answer disagree. The
+ * scene does. In the mode's role (the same for every follow-up); the user
+ * message says it of the one answer (formatOracleAnswerRule).
+ */
+const ORACLE_ANSWER_BINDS =
+  `The oracle's answer is the table's, not yours, and it binds the story from here. A yes ` +
+  `is narrated as yes and a no as no — never as its opposite, never as doubtful, and never ` +
+  `as something still to be found out. Where the scene so far said otherwise — a voice ` +
+  `heard, a light seen, a thing taken for granted — the scene gives way, not the answer: ` +
+  `reconcile it inside the fiction, in this narration (what was heard was a recording, a ` +
+  `relay or an echo, was mistaken, or has stopped), so that nothing left standing ` +
+  `contradicts the answer. A table's result is read with latitude; it is never turned ` +
+  `into its reverse.`;
+
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1154,7 +1175,8 @@ const ROLE_DESCRIPTIONS = {
     `mechanical result is given to you verbatim. Render it as 2-3 sentences anchored to ` +
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
     `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
-    `the literal table text — transform it into narrative.`,
+    `the literal table text — transform it into narrative.\n\n` +
+    ORACLE_ANSWER_BINDS,
 
   session_vignette:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
@@ -2565,6 +2587,35 @@ export function formatOracleSeedsBlock(seeds) {
 }
 
 /**
+ * The rule an oracle follow-up's user message carries about the one answer it
+ * narrates (known-issues ORACLE-NO-NARRATED-AS-YES; ORACLE_ANSWER_BINDS is the
+ * mode's standing rule). A yes/no answer is read from the result line the raw
+ * card carries ("d100 = 97 → NO", index.js) and said back in plain words with
+ * the question, so the answer is the last thing read before the instruction
+ * to render it: the narration is of a scene in which it is true. '' for a
+ * table roll, a price or a complication — they answer no yes/no question —
+ * and for a line that holds no answer.
+ *
+ * @param {{ kind?: string, question?: string, rolledLine?: string }} oracle
+ * @returns {string}
+ */
+export function formatOracleAnswerRule({ kind = '', question = '', rolledLine = '' } = {}) {
+  if (kind !== 'oracle_yes_no') return '';
+  const answer = /→\s*(yes|no)\b/i.exec(String(rolledLine ?? ''))?.[1]?.toUpperCase() ?? null;
+  if (!answer) return '';
+  const asked = sanitizePlayerText(question);
+  const opposite = answer === 'NO' ? 'yes' : 'no';
+  return (
+    `The answer is ${answer}${asked ? `: to "${asked}", the oracle says ${answer.toLowerCase()}` : ''}. ` +
+    `It is the table's answer and it is not yours to change: narrate a scene in which it is ` +
+    `true. Nothing in the prose may say, show or imply ${opposite}, or leave it open. Where ` +
+    `RECENT NARRATION said otherwise, bring the scene into line with the answer here — what ` +
+    `was seen or heard was a recording, a relay, an echo or a mistake, or it has stopped — ` +
+    `and say so in the story.`
+  );
+}
+
+/**
  * Format the RECENT ORACLE RESULTS block ([3b]) from the entries
  * `readRecentOracleResults` returns (src/oracles/oracleMemory.js). Returns ''
  * when there is nothing to render. Exported for unit testing.
@@ -2584,9 +2635,13 @@ export function formatRecentOraclesBlock(entries) {
     lines.push(`- ${e.name || 'Oracle'}:${q} → ${e.answer}`);
   }
   lines.push('');
+  // Which gives way (known-issues ORACLE-NO-NARRATED-AS-YES): a narration
+  // written before an answer, or beside it, may say otherwise — the answer stands.
   lines.push(
     'The dice established these outcomes. Your narration must not contradict ' +
-    'them — build on what the oracle answered.',
+    'them — build on what the oracle answered. Where earlier narration in this ' +
+    'prompt says otherwise, the answer stands and the story is brought into ' +
+    'line with it, never the answer with the story.',
   );
   return lines.join('\n');
 }
