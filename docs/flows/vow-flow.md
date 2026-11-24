@@ -410,6 +410,18 @@ paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
 records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
+**What the two readers of a typed line are told.** The pacing classifier and
+the move interpreter are both given the speaker's open vows in their
+SITUATION block (`moves/situation.js buildSituationBlock`, through
+`readVows`): `- Open vows: "Find who is raiding the Cinder Expanse lanes"
+(dangerous, 2 of 10 boxes; sworn to Tamsin Okoro).` — the name, the rank, the
+progress in boxes (ticks past a box said too) and the connection the vow is
+linked to (`readVows`' `linkedConnectionName`, the flag
+`setVowLinkedConnection` writes). A fulfilled or forsaken vow is left out.
+Before the block the classifier was told no vow at all, and the interpreter
+the names alone; at a table of several the interpreter is still told the
+other characters' open vows by name, a shared vow once.
+
 **The vow this scene serves** (issue #353 R3 — the vow as the spine). Of
 those three places only THE TABLE'S FOCUS THIS SESSION came with an
 instruction, so the narrator was told what the vows were but not to play

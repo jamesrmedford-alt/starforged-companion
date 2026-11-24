@@ -929,8 +929,11 @@ naming a move (a unit test holds the list to that), each with the reading it
 should get — a move, one of two, or none — put through the pacing reader
 (`decidePacing`) and, where that calls a move, the move reader
 (`interpretMove`, as `readMove` calls it), in the live world with each line's
-context set (the scene's last narration, the scene frame, the place, the
-connection and its track, the vow). Nothing is rolled or narrated; no other
+context set (the scene's last narration, the scene frame, the place, and the
+sheet both readers are told of in their SITUATION block: health, spirit,
+supply and impacts, the ship's integrity, the connection and its track, the
+vow and its progress — written through the module's own writers and read
+back before a line is read). Nothing is rolled or narrated; no other
 call may reach a model (the runner's gate refuses any). Dry by default: the
 prompts are built and written, the readings are stubs. `--live` reads them on
 each model of `READERS_ARMS` (by default the readers' own model, Sonnet 5.5,

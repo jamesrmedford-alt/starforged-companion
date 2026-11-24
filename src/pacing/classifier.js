@@ -15,15 +15,22 @@
  * model's own form of that (narration/thinking.js) — so the reply is the JSON
  * object and nothing else, inside the cap below.
  *
+ * What it is told of the speaker: their name and their SITUATION — the block
+ * the move interpreter is given too (src/moves/situation.js): health, spirit
+ * and supply with the impact each recovery move clears, the command
+ * vehicle's integrity, the open vows with their progress, the connections
+ * with their relationship tracks. It was told the connections' names alone,
+ * and nothing of a meter or a vow.
+ *
  * Transport: all Anthropic calls go through src/api-proxy.js per CLAUDE.md.
  * Prompt caching applies to the system prompt (move catalog summary, decision
  * guidance) so subsequent calls in a session are ~5% of the input cost.
  */
 
 import { apiPost } from "../api-proxy.js";
-import { readConnections, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
+import { buildSituationBlock } from "../moves/situation.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-sonnet-5-5";
@@ -155,6 +162,15 @@ sceneChallenge (null for any other move). A fight is still combat
 (enter_the_fray …) even mid-challenge, and any other move is itself. With no
 scene challenge open, never nominate them.
 
+THE SITUATION — under CHARACTER the user message gives the speaker's sheet as
+it stands: health, spirit and supply, each with the impact that goes with it
+(wounded, shaken, unprepared); the command vehicle's integrity and whether it
+is battered; the open vows, each with its rank and progress; the connections,
+each with its rank and relationship track. It is what a move would change.
+Read the input against it, as you read it against the recent scene: it says
+whether there is a wound to treat, a vow a line could be a step toward, a
+relationship a line could deepen.
+
 READ THE INPUT AGAINST THE RECENT SCENE — a short line takes its meaning from
 what it follows. "We're on our way", "let's go", "head there", "wake me when we
 get there" after the scene set up a destination is travel toward that
@@ -203,10 +219,10 @@ relationship; a line that carries a threat or a danger — implied menace
 counts — is a move too (face_danger, compel).
 
 THE SPEAKER'S CONNECTIONS — when such a pressing or testing line is spoken to
-one of THE SPEAKER'S CONNECTIONS listed under CHARACTER (the relationships on
-that character's own sheet), lean toward MOVE in the social category: the
-relationship is at stake. Any other NPC carries no lean, and a connection
-carries none for plain conversation.
+one of the speaker's connections — the Connections of the SITUATION under
+CHARACTER, the relationships on that character's own sheet — lean toward MOVE
+in the social category: the relationship is at stake. Any other NPC carries no
+lean, and a connection carries none for plain conversation.
 
 AN EVERYDAY ACTION WITH NOTHING AT RISK IS NOT A MOVE — answering a hail,
 opening a channel, powering a system up, walking to a station, picking
@@ -320,7 +336,8 @@ FATE
  * @param {string}   args.playerText
  * @param {Object}   args.campaignState
  * @param {{ name?: string|null, actorId?: string|null }|null} args.character — the
- *   speaker: their name, and their Actor id for their own connections
+ *   speaker: their name, and their Actor id for their own sheet — the
+ *   SITUATION block (meters, vows, connections; moves/situation.js)
  * @param {{count: number, window: number}} args.recentMoveDensity
  * @param {{dials: Object, sceneOverride?: {modifier:number,label:string}|null}} args.pacingConfig
  * @param {boolean} [args.combatActive] — a fight is open (the COMBAT IS ACTIVE rule)
@@ -350,7 +367,7 @@ export function buildClassifierContext({
   const density = recentMoveDensity ?? { count: 0, window: 5 };
   const densityLine = `Last ${density.window} inputs in current scene: ${density.count} were moves.`;
 
-  const connectionLine = formatConnections(character);
+  const situation      = speakerSituation(character, campaignState);
   const sceneLine      = formatScene(campaignState);
   const chartedLine    = formatChartedPlaces(campaignState);
   const combatLine     = combatActive
@@ -381,7 +398,7 @@ export function buildClassifierContext({
     "",
     "## CHARACTER",
     character?.name ? `Name: ${character.name}` : "Name: (none set)",
-    connectionLine,
+    situation,
     "",
     "## CURRENT SCENE",
     ...(combatLine ? [combatLine] : []),
@@ -578,42 +595,36 @@ function fallbackDecision(reason) {
 // CONTEXT EXTRACTION — minimal pure helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The most connections of the speaker's the classifier is told of.
-const SPEAKER_CONNECTIONS_CAP = 8;
-
 /**
- * The speaker's own connections — the relationships on that character's sheet
- * (actorBridge.readConnections: the bond Items a Make a Connection or a
- * confirmed NPC put there), a severed one left out — for the THE SPEAKER'S
- * CONNECTIONS rule (issue #354 P2-04, the maintainer's decision).
+ * The speaker's SITUATION block (moves/situation.js buildSituationBlock) — the
+ * one the move interpreter is given too: their sheet's meters and impacts, the
+ * command vehicle, their open vows and their connections. With no player
+ * character behind the line (no speaker, an Actor that is gone), the block
+ * says no sheet is known.
  *
- * This listed every NPC card (`campaignState.connectionIds`): under FOLDER-002
- * every named individual is a connection-type card, so "the addressee is a
- * Connection → lean toward MOVE" covered every tracked NPC, and every line
- * spoken to one — a question, an answer, "my name is Isaac" — was read as
- * Compel. A Starforged connection is a relationship a character has, so the
- * list is the speaker's own. Never throws.
+ * Its Connections are what THE SPEAKER'S CONNECTIONS rule reads: the
+ * relationships on that character's own sheet (actorBridge.readConnections —
+ * the bond Items a Make a Connection or a confirmed NPC put there), a severed
+ * one left out (issue #354 P2-04, the maintainer's decision). The classifier
+ * once listed every NPC card (`campaignState.connectionIds`): under
+ * FOLDER-002 every named individual is a connection-type card, so "the
+ * addressee is a Connection → lean toward MOVE" covered every tracked NPC,
+ * and every line spoken to one — a question, an answer, "my name is Isaac" —
+ * was read as Compel. A Starforged connection is a relationship a character
+ * has, so the list is the speaker's own. Never throws.
  *
  * @param {{ name?: string|null, actorId?: string|null }|null} character — the speaker
+ * @param {Object|null} campaignState — for the command vehicle
  * @returns {string}
  */
-function formatConnections(character) {
-  const who = character?.name ? `${character.name}'s connections` : "The speaker's connections";
-  let names = [];
+function speakerSituation(character, campaignState) {
+  let actor = null;
   try {
-    const actor = character?.actorId ? globalThis.game?.actors?.get?.(character.actorId) : null;
-    if (isPlayerCharacterActor(actor)) {
-      names = readConnections(actor)
-        .filter(c => c?.name && !c.lost)
-        .map(c => `${String(c.name).replace(/[\r\n]+/g, " ").trim()}${c.completed ? " (bonded)" : ""}`);
-    }
+    actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null;
   } catch (err) {
-    console.warn(`starforged-companion | pacing classifier: the speaker's connections could not be read:`, err?.message ?? err);
+    console.warn(`starforged-companion | pacing classifier: the speaker's character could not be found:`, err?.message ?? err);
   }
-  const unique = [...new Set(names.filter(Boolean))];
-  if (!unique.length) return `${who}: (none)`;
-  const shown = unique.slice(0, SPEAKER_CONNECTIONS_CAP);
-  return `${who}: ${shown.join(", ")}${unique.length > shown.length ? `, +${unique.length - shown.length} more` : ""}`;
+  return buildSituationBlock(actor, { campaignState });
 }
 
 // The most charted places the classifier is told of.

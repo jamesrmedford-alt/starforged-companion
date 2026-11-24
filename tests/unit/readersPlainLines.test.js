@@ -25,7 +25,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  DECISION, OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, stateNotSet, summarise, validateCases,
+  DECISION, OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
 } from '../../test/ci/playwright/lib/readers.mjs';
 import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
 import { createClaudeHarness } from '../../test/ci/playwright/lib/claude.mjs';
@@ -142,11 +142,36 @@ describe('the plain lines that ship', () => {
   });
 
   it('says which of a state reaches a prompt, and what the runner leaves unset', () => {
-    expect(Object.keys(STATE_READ).sort()).toEqual(['connection', 'frame', 'location', 'tracks', 'vow']);
-    const notSet = stateNotSet(LIST.contexts['bleakhold-after-fight'].state).map(n => n.key);
-    expect(notSet).toEqual(expect.arrayContaining(['health', 'spirit', 'supply', 'integrity', 'vow.ticks']));
-    expect(notSet).not.toContain('connection');
-    expect(stateNotSet(LIST.contexts['ashfall-drift'].state).map(n => n.key)).toContain('tracks[].ticks');
+    // The sheet's meters, the ship's integrity and a vow's progress reach both
+    // readers now, in their SITUATION block: the runner sets them. (They were
+    // "not read by either prompt", and the first run's contexts said a wound
+    // only in their narration.)
+    expect(Object.keys(STATE_READ).sort()).toEqual(
+      ['battered', 'connection', 'frame', 'health', 'impacts', 'integrity', 'location', 'spirit', 'supply', 'tracks', 'vow']);
+    for (const key of ['health', 'spirit', 'supply', 'impacts', 'integrity', 'battered', 'vow', 'connection']) {
+      expect(STATE_READ[key], key).toMatch(/^both readers' SITUATION block/);
+    }
+    expect(stateNotSet(LIST.contexts['bleakhold-after-fight'].state)).toEqual([]);
+    expect(stateNotSet(LIST.contexts['ashfall-drift'].state).map(n => n.key)).toEqual(['tracks[].ticks']);
+    expect(stateNotSet({ weather: 'ion storm', vow: { name: 'V', swornTo: 'Tamsin Okoro' } }).map(n => n.key)).toEqual(['weather', 'vow.swornTo']);
+    // Every context's state is set whole: nothing of the list is left to its narration alone.
+    for (const [key, context] of Object.entries(LIST.contexts)) {
+      expect(stateNotSet(context.state).map(n => n.key).filter(k => k !== 'tracks[].ticks'), key).toEqual([]);
+    }
+  });
+
+  it('the sheet a state gives: what it says, and full, clear and unmarked for what it does not', () => {
+    expect(sheetOf(LIST.contexts['bleakhold-after-fight'].state)).toEqual({
+      health: 3, spirit: 3, supply: 2, impacts: { wounded: false, shaken: false, unprepared: false },
+      integrity: 3, battered: false, vowTicks: 16,
+    });
+    expect(sheetOf({ impacts: ['shaken'], battered: true })).toEqual({
+      health: 5, spirit: 5, supply: 5, impacts: { wounded: false, shaken: true, unprepared: false },
+      integrity: 5, battered: true, vowTicks: 0,
+    });
+    expect(sheetOf(undefined)).toMatchObject({ health: 5, integrity: 5, battered: false, vowTicks: 0 });
+    // The list's world has the ship whose integrity its contexts give.
+    expect(LIST.world.ship).toEqual({ name: 'Kobayashi IV' });
   });
 });
 
@@ -225,6 +250,59 @@ describe('validateCases', () => {
     ]);
     expect(validateCases({})).toEqual(['the list has no contexts', 'the list has no cases']);
   });
+
+  it('finds a sheet that is no sheet: a meter off its scale, an impact the block does not name, a ship\'s state with no ship', () => {
+    const scene = ['You wait at the stall.'];
+    const problems = validateCases(file([good], {
+      stall:    { scene, state },
+      overfull: { scene, state: { health: 6, spirit: -1, supply: 2.5, integrity: 9 } },
+      cursed:   { scene, state: { impacts: ['wounded', 'doomed'], battered: 'yes' } },
+      far:      { scene, state: { vow: { name: 'V', ticks: 44 } } },
+      holed:    { scene, state: { integrity: 3 } },
+    }));
+    expect(problems).toEqual([
+      'context "overfull": its health is a whole number from 0 to 5',
+      'context "overfull": its spirit is a whole number from 0 to 5',
+      'context "overfull": its supply is a whole number from 0 to 5',
+      'context "overfull": its integrity is a whole number from 0 to 5',
+      'context "overfull": it gives the ship\'s state, and the world has no command vehicle (world.ship)',
+      'context "cursed": its impacts are a list of wounded, shaken, unprepared',
+      'context "cursed": battered is true or false',
+      'context "cursed": it gives the ship\'s state, and the world has no command vehicle (world.ship)',
+      'context "far": its vow\'s ticks are a whole number from 0 to 40',
+      'context "holed": it gives the ship\'s state, and the world has no command vehicle (world.ship)',
+    ]);
+    // With a ship in the world, a context may say how it stands.
+    const withShip = { ...file([good], { stall: { scene, state }, holed: { scene, state: { integrity: 3, battered: true } } }), world: { settlements: [{ name: 'Hollow Spire' }], ship: { name: 'Kobayashi IV' } } };
+    expect(validateCases(withShip)).toEqual([]);
+  });
+
+  it('finds a recovery move wanted where the sheet has nothing for it to recover: both readers are told the meters', () => {
+    const scene = ['You wait at the stall.'];
+    const whole = { scene, state: { ...state, health: 5, spirit: 5, supply: 5 } };
+    const hurt  = { scene, state: { ...state, health: 3, spirit: 5, supply: 5, impacts: ['shaken', 'unprepared'] } };
+    const wanting = (id, context, move) => ({ ...good, id, context, line: 'I see to it.', want: { moves: [move] } });
+    const list = (extra) => ({
+      ...file([
+        wanting('heal-whole', 'whole', 'heal'), wanting('hearten-whole', 'whole', 'hearten'), wanting('resupply-whole', 'whole', 'resupply'), wanting('repair-whole', 'whole', 'repair'),
+        wanting('heal-hurt', 'hurt', 'heal'), wanting('hearten-shaken', 'hurt', 'hearten'), wanting('resupply-unprepared', 'hurt', 'resupply'),
+        // Sojourn is not held to one meter: it is a stay, and what it mends is chosen on its hit.
+        wanting('sojourn-whole', 'whole', 'sojourn'),
+        ...extra,
+      ], { whole, hurt, holed: { scene, state: { ...state, integrity: 4 } }, dented: { scene, state: { ...state, battered: true } } }),
+      world: { settlements: [{ name: 'Hollow Spire' }], ship: { name: 'Kobayashi IV' } },
+    });
+    expect(validateCases(list([wanting('repair-holed', 'holed', 'repair'), wanting('repair-dented', 'dented', 'repair')]))).toEqual([
+      'case "heal-whole": heal is wanted only where the context\'s sheet has something for it to recover',
+      'case "hearten-whole": hearten is wanted only where the context\'s sheet has something for it to recover',
+      'case "resupply-whole": resupply is wanted only where the context\'s sheet has something for it to recover',
+      'case "repair-whole": repair is wanted only where the context\'s sheet has something for it to recover',
+    ]);
+    // The list that ships: every recovery line it wants has something to recover.
+    const recovering = LIST.cases.filter(c => (c.want.moves ?? []).some(m => ['heal', 'hearten', 'resupply', 'repair'].includes(m)));
+    expect(recovering.length).toBeGreaterThanOrEqual(7);
+    expect(new Set(recovering.map(c => c.context))).toEqual(new Set(['bleakhold-after-fight']));
+  });
 });
 
 describe('contextMismatch', () => {
@@ -233,8 +311,10 @@ describe('contextMismatch', () => {
     scene: context.scene.join('\n\n'),
     location: null,
     frame: { ...context.state.frame },
+    sheet: { health: 5, spirit: 4, supply: 3, impacts: { wounded: false, shaken: false, unprepared: false } },
+    vehicle: { name: 'Kobayashi IV', integrity: 5, battered: false },
     connections: [{ name: 'Tamsin Okoro', rank: 'dangerous', ticks: 16, bonded: false }],
-    vows: ['Find who is raiding the Cinder Expanse lanes'],
+    vows: [{ name: 'Find who is raiding the Cinder Expanse lanes', rank: 'dangerous', ticks: 8 }],
     tracks: [{ type: 'expedition', label: 'The Ashfall Drift' }],
   });
 
@@ -250,6 +330,28 @@ describe('contextMismatch', () => {
     expect(contextMismatch(context, { ...applied(), connections: [...applied().connections, { name: 'Idris Vane', ticks: 0, bonded: false }] })).toMatch(/a connection is on the sheet/);
     expect(contextMismatch(context, { ...applied(), vows: [] })).toMatch(/open vows/);
     expect(contextMismatch(context, { ...applied(), tracks: [] })).toMatch(/open tracks/);
+  });
+
+  it('names a sheet that did not land: a meter, an impact, the vow\'s progress, the ship', () => {
+    const sheet = applied().sheet;
+    expect(contextMismatch(context, { ...applied(), sheet: { ...sheet, spirit: 5 } })).toBe("the sheet's spirit is 5, not 4");
+    expect(contextMismatch(context, { ...applied(), sheet: undefined })).toBe("the sheet's health is unread, not 5");
+    expect(contextMismatch(context, { ...applied(), sheet: { ...sheet, impacts: { ...sheet.impacts, wounded: true } } })).toBe('the sheet is marked wounded, against the context');
+    expect(contextMismatch(context, { ...applied(), vows: [{ name: 'Find who is raiding the Cinder Expanse lanes', ticks: 0 }] })).toBe('the vow stands at 0 ticks, not 8');
+    // The ship is checked where the context gives its state.
+    expect(contextMismatch(context, { ...applied(), vehicle: null }), 'this context gives none').toBeNull();
+    const fought = LIST.contexts['bleakhold-after-fight'];
+    const after = () => ({
+      scene: fought.scene.join('\n\n'), location: 'Bleakhold Station', frame: { ...fought.state.frame },
+      sheet: { health: 3, spirit: 3, supply: 2, impacts: { wounded: false, shaken: false, unprepared: false } },
+      vehicle: { name: 'Kobayashi IV', integrity: 3, battered: false },
+      connections: [{ name: 'Tamsin Okoro', rank: 'dangerous', ticks: 16, bonded: false }],
+      vows: [{ name: 'Find who is raiding the Cinder Expanse lanes', ticks: 16 }], tracks: [],
+    });
+    expect(contextMismatch(fought, after())).toBeNull();
+    expect(contextMismatch(fought, { ...after(), vehicle: { integrity: 5, battered: false } })).toBe("the command vehicle's integrity is 5, not 3");
+    expect(contextMismatch(fought, { ...after(), vehicle: { integrity: 3, battered: true } })).toBe('the command vehicle is battered, against the context');
+    expect(contextMismatch(fought, { ...after(), vehicle: null })).toBe("the world has no command vehicle to hold the ship's state");
   });
 });
 
@@ -492,7 +594,7 @@ describe('report', () => {
   const meta = {
     runId: 'readers-live-20261124-120000', mode: 'live', startedAt: '2026-11-24T12:00:00.000Z', commit: 'ddc4b40d1234567890', repeats: 1, planned: 12,
     questions: ['How often is a plain line read right?', 'How much of the failure is the model?'],
-    notSet: [{ key: 'health', why: '…' }, { key: 'health', why: '…' }, { key: 'vow.ticks', why: '…' }],
+    notSet: [{ key: 'tracks[].ticks', why: '…' }, { key: 'tracks[].ticks', why: '…' }, { key: 'vow.swornTo', why: '…' }],
     dials: { mischiefDial: 'balanced', downtime: 1 },
     thinking: { [HAIKU]: 'disabled', [SONNET]: 'between_tools' },
     own: [SONNET],
@@ -549,7 +651,10 @@ describe('report', () => {
     expect(limits).toContain('**Nothing is rolled or narrated.**');
     expect(limits).toContain('**One reading of a line is one sample**');
     expect(limits).toContain('(mischiefDial balanced, downtime 1)');
-    expect(limits).toContain('(not set in the world: health, vow.ticks)');
+    // The sheet reaches both readers now, and the runner sets it: said as a limit of its own.
+    expect(limits).toContain('**The sheet is set by hand.** Each context\'s health, spirit, supply and impacts, its vow\'s progress and the ship\'s integrity are written to the world before its lines are read, and both readers are told them (their SITUATION block).');
+    expect(limits).toContain('(not set in the world: tracks[].ticks, vow.swornTo)');
+    expect(limits).not.toContain('The sheet does not reach the readers');
     // The prompts are the readers' own model's, wherever that arm stands in the list.
     expect(limits).toContain('**Only the model changes between arms.** Each arm reads the same prompts, written for the readers\' own model (`claude-sonnet-5-5`);');
     expect(report(summary, { ...meta, own: undefined })).toContain('written for the readers\' own model; a prompt tuned to another model');

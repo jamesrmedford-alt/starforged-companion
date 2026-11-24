@@ -133,8 +133,16 @@ describe("buildContextSummary — the roller's support vehicles and companions",
   it("control: no roller, or one with neither, adds no vehicle or companion line", () => {
     expect(buildContextSummary({})).toBe("No active tracks yet.");
     const ren = makeTestActor({ id: "pc-ren", name: "Ren", type: "character", items: { contents: [] } });
-    // The roller is named as the speaker (issue #354 P2-06), and nothing more.
-    expect(buildContextSummary({}, { roller: ren })).toBe("The character speaking and acting this turn is Ren. No active tracks yet.");
+    // The roller is named as the speaker (issue #354 P2-06), with their
+    // SITUATION block (moves/situation.js) — and nothing more.
+    expect(buildContextSummary({}, { roller: ren })).toBe([
+      "The character speaking and acting this turn is Ren.",
+      "SITUATION — Ren's sheet as it stands:",
+      "- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 3 of 5 (not unprepared).",
+      "- Command vehicle: none recorded.",
+      "- Open vows: none.",
+      "- Connections: none.",
+    ].join("\n"));
   });
 });
 
@@ -142,7 +150,10 @@ describe("buildContextSummary — the roller's support vehicles and companions",
 // interpreter read "Tamsin, I ask you to forge a bond with me, to Forge a
 // Bond" — her relationship track full — as Make a Connection: "Forge a Bond
 // … needs an established bond track". Each connection is now listed with its
-// relationship track, and a full one says Forge a Bond can be made.
+// relationship track, and a full one says so — in the roller's SITUATION
+// block (moves/situation.js), which the pacing classifier is given too; the
+// interpreter's rule 10 says a full track is what Forge a Bond is rolled
+// against.
 describe("buildContextSummary — the roller's connections and their relationship tracks", () => {
   const bond = (id, name, extra = {}) => ({ id, name, type: "progress", system: { subtype: "bond", rank: 2, current: 0, completed: false, ...extra } });
 
@@ -154,12 +165,12 @@ describe("buildContextSummary — the roller's connections and their relationshi
       { ...bond("b4", "Ilse"), flags: { [MODULE_ID]: { lost: true } } },
     ]);
     const summary = buildContextSummary({}, { roller: mira });
-    expect(summary).toContain('Connections: "Tamsin Okoro" (dangerous) — relationship 40 of 40 ticks, full: Forge a Bond can be made, "Juro" (dangerous) — relationship 12 of 40 ticks, "Ysolde Marr" (dangerous) — bonded.');
+    expect(summary).toContain('- Connections: "Tamsin Okoro" (dangerous, relationship 10 of 10 boxes — full, no bond forged yet); "Juro" (dangerous, relationship 3 of 10 boxes); "Ysolde Marr" (dangerous, bonded).');
     expect(summary).not.toContain("Ilse");
   });
 
-  it("control: a roller with no connections adds no line", () => {
+  it("control: a roller with no connections says so", () => {
     const ren = installPc("pc-ren", "Ren", []);
-    expect(buildContextSummary({}, { roller: ren })).not.toContain("Connections:");
+    expect(buildContextSummary({}, { roller: ren })).toContain("- Connections: none.");
   });
 });

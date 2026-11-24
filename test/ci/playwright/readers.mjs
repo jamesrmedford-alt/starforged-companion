@@ -82,7 +82,7 @@ import { createBudget } from "./lib/budget.mjs";
 import { questionsOf } from "./lib/review.mjs";
 import { thinkingOffFor } from "../../../src/narration/thinking.js";
 import {
-  OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, stateNotSet, summarise, validateCases,
+  OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
 } from "./lib/readers.mjs";
 
 const list = (text, fallback) => {
@@ -170,18 +170,29 @@ function versionsInPage(MODULE_ID) {
  *     character's sheet, which is what both prompts read.
  *   - the vow: a vow Item on the sheet, made with a module vow id so that the
  *     sheet-made-vow hook offers no setup card and proposes no reward (a
- *     model call).
+ *     model call) — and its progress, which the SITUATION block gives.
+ *   - the sheet: health, spirit, supply and the three impacts a recovery move
+ *     clears, through the module's own writers (the system's change notes for
+ *     them are not posted: nothing here is a line of play).
+ *   - the ship: the command vehicle's integrity and whether it is battered,
+ *     through its record's writer (which writes the starship's own impact).
  *   - the open tracks: the Progress Tracks journal.
  *   - where the character is, the scene frame and the session: campaignState,
  *     written at its turn on the client's write chain.
+ *
+ * `sheetWanted` is the sheet the context's state gives (lib/readers.mjs sheetOf): a
+ * meter the state does not give is full and an impact it does not list is
+ * clear, so nothing of the last context's stays behind.
  */
-async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key, context }) {
+async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key, context, sheetWanted }) {
   const { serialiseCampaignStateWrite } = await import(`${MODULE_SRC}/multiplayer/campaignStateChain.js`);
   const sheet    = await import(`${MODULE_SRC}/character/actorBridge.js`);
   const people   = await import(`${MODULE_SRC}/entities/connection.js`);
+  const ships    = await import(`${MODULE_SRC}/entities/ship.js`);
   const progress = await import(`${MODULE_SRC}/ui/progressTracks.js`);
   const { applySceneFrame } = await import(`${MODULE_SRC}/factContinuity/ledgers.js`);
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
+  const { buildSituationBlock } = await import(`${MODULE_SRC}/moves/situation.js`);
   const stored = () => game.settings.get(MODULE_ID, "campaignState") ?? {};
   const state = context.state ?? {};
   const pc = game.actors.get(pcId);
@@ -253,7 +264,7 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
     await sheet.setBondItemForged(keys, bonded);
   }
 
-  // The vow, by name: the one thing of it a prompt reads.
+  // The vow: its name, its rank and how far it has come.
   const vowItems = () => pc.items.contents.filter(i => i.type === "progress" && i.system?.subtype === "vow");
   const gone = vowItems().filter(i => i.name !== state.vow?.name);
   if (gone.length) await pc.deleteEmbeddedDocuments("Item", gone.map(i => i.id));
@@ -261,6 +272,26 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
     const made = await sheet.createCharacterVowItem(pc, { name: state.vow.name, rank: state.vow.rank ?? "dangerous", vowId: `readers-${foundry.utils.randomID()}` });
     if (!made) throw new Error(`the vow "${state.vow.name}" could not be put on the sheet`);
   }
+  if (state.vow?.name) {
+    const set = await sheet.setVowItemTrack(pc, vowItems()[0].id, { ticks: sheetWanted.vowTicks, rank: state.vow.rank ?? "dangerous" });
+    if (!set.ok) throw new Error(`the vow "${state.vow.name}" could not be set to ${sheetWanted.vowTicks} ticks (${set.reason})`);
+  }
+
+  // The sheet: the impacts first (a marked impact lowers what a meter can
+  // hold), then the meters, each by the difference from what the sheet holds.
+  const held = () => { sheet.invalidateActorCache(pc.id); return sheet.readCharacterSnapshot(pc); };
+  await sheet.withoutSystemNotes(async () => {
+    for (const [impact, marked] of Object.entries(sheetWanted.impacts)) {
+      if ((held().debilities?.[impact] === true) !== marked) await sheet.setDebility(pc, impact, marked);
+    }
+    const meters = held().meters;
+    const change = Object.fromEntries(["health", "spirit", "supply"].map(meter => [meter, sheetWanted[meter] - meters[meter]]));
+    if (Object.values(change).some(Boolean)) await sheet.applyMeterChanges(pc, change);
+  });
+
+  // The ship, where the world has one: its integrity and whether it is battered.
+  const shipId = ships.getCommandVehicleActorId(stored());
+  if (shipId) await ships.updateShip(shipId, { integrity: sheetWanted.integrity, battered: sheetWanted.battered });
 
   // The open tracks, by type and label.
   const wanted = Array.isArray(state.tracks) ? state.tracks : [];
@@ -269,17 +300,26 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
   for (const track of open) if (!wanted.some(w => same(w, track))) await progress.completeProgressTrack(track.id);
   for (const w of wanted) if (!open.some(t => same(w, t))) await progress.addProgressTrack({ label: w.label, type: w.type, rank: w.rank ?? "dangerous" });
 
-  // Read back, from what the readers' prompts are built from.
+  // Read back, from what the readers' prompts are built from — and the block
+  // itself, as both prompts will carry it for this context's lines.
   const cs = stored();
   const here = cs.currentLocationId ? game.actors.get(cs.currentLocationId) : null;
+  const now = held();
+  const ship = ships.getCommandVehicle(cs);
   return {
     session:     cs.currentSessionId ?? null,
     scene:       getRecentSceneForReading(cs.currentSessionId ?? null),
     location:    here ? (here.flags?.[MODULE_ID]?.settlement?.name ?? here.name) : null,
     frame:       cs.sceneFrame ? { location: cs.sceneFrame.location, present: cs.sceneFrame.present, situation: cs.sceneFrame.situation } : null,
+    sheet:       {
+      health: now.meters.health, spirit: now.meters.spirit, supply: now.meters.supply,
+      impacts: { wounded: now.debilities.wounded === true, shaken: now.debilities.shaken === true, unprepared: now.debilities.unprepared === true },
+    },
+    vehicle:     ship ? { name: ship.name, integrity: Number.isFinite(Number(ship.integrity)) ? Number(ship.integrity) : null, battered: ship.battered === true } : null,
     connections: sheet.readConnections(pc).filter(c => !c.lost).map(c => ({ name: c.name, rank: c.rank, ticks: c.ticks, bonded: c.completed })),
-    vows:        sheet.readVows(pc).filter(v => !v.completed).map(v => v.name),
+    vows:        sheet.readVows(pc).filter(v => !v.completed).map(v => ({ name: v.name, rank: v.rank, ticks: v.ticks })),
     tracks:      (await progress.listProgressTracks()).filter(t => !t.completed).map(t => ({ type: t.type, label: t.label })),
+    situation:   buildSituationBlock(pc, { campaignState: cs }),
   };
 }
 
@@ -437,7 +477,8 @@ async function main() {
     assert(!unregistered.length, `the module registers no setting ${unregistered.join(", ")}`);
     const ids = await setUpWorld(gm, {
       settings: { ...dials, ...QUIET },
-      seed:     { pc: file.world.pc, sector: file.world.sector, settlements: file.world.settlements },
+      // The command vehicle too, where the list has one: the SITUATION block gives its integrity.
+      seed:     { pc: file.world.pc, sector: file.world.sector, settlements: file.world.settlements, ...(file.world.ship ? { ship: file.world.ship } : {}) },
     });
     await waitForQuietWorld(gm, { quietMs: 2000 });
     versions = { ...await gm.page.evaluate(versionsInPage, MODULE_ID), browser: `chromium ${browser.version()}` };
@@ -452,15 +493,18 @@ async function main() {
         harness.setStep(stepNow);
         armNow = null;
         const context = file.contexts[c.context];
-        const applied = await gm.page.evaluate(applyContextInPage, { MODULE_ID, MODULE_SRC, pcId: ids.pcId, sessionId, key: c.context, context });
+        const applied = await gm.page.evaluate(applyContextInPage, {
+          MODULE_ID, MODULE_SRC, pcId: ids.pcId, sessionId, key: c.context, context, sheetWanted: sheetOf(context.state),
+        });
         // The module answers those writes with writes of its own; the line is read once they have landed.
         await waitForQuietWorld(gm, { quietMs: 1500, capMs: 30_000 });
         const mismatch = contextMismatch(context, applied);
         assert(!mismatch, `the context ${c.context} did not land: ${mismatch}`);
         world.contexts[c.context] = { set: applied, notSet: stateNotSet(context.state) };
         contextNow = c.context;
-        log(`context ${c.context}: ${applied.location ?? "no charted place"}; connections ${applied.connections.map(x => `${x.name} ${x.bonded ? "bonded" : `${x.ticks}/40`}`).join(", ") || "none"}; `
-          + `vows ${applied.vows.length}; tracks ${applied.tracks.length}; scene ${applied.scene.length} chars`);
+        log(`context ${c.context}: ${applied.location ?? "no charted place"}; health ${applied.sheet.health}, spirit ${applied.sheet.spirit}, supply ${applied.sheet.supply}`
+          + `${applied.vehicle ? `, integrity ${applied.vehicle.integrity}` : ""}; connections ${applied.connections.map(x => `${x.name} ${x.bonded ? "bonded" : `${x.ticks}/40`}`).join(", ") || "none"}; `
+          + `vows ${applied.vows.map(v => `${v.ticks}/40`).join(", ") || "none"}; tracks ${applied.tracks.length}; scene ${applied.scene.length} chars`);
       }
       for (let repeat = 1; repeat <= REPEATS; repeat++) {
         for (const arm of ARMS) {

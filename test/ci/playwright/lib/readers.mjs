@@ -56,15 +56,52 @@ const FULL_TRACK = 40;
  * What of a context's `state` reaches a reader's prompt — which is what the
  * runner sets. Read from the prompts' own builders: the pacing reader's
  * buildClassifierContext (src/pacing/classifier.js) and the move reader's
- * buildContextSummary (src/moves/interpreter.js).
+ * buildContextSummary (src/moves/interpreter.js), and the SITUATION block
+ * both carry (src/moves/situation.js buildSituationBlock).
  */
+const SITUATION = "both readers' SITUATION block";
 export const STATE_READ = Object.freeze({
   location:   "the pacing reader's CURRENT SCENE — \"Current location\", from campaignState.currentLocationId / currentLocationType",
   frame:      "the pacing reader's CURRENT SCENE — \"Scene frame\", from campaignState.sceneFrame",
-  connection: "both readers, from the bond Item on the character's sheet: its name and whether it is bonded (the pacing reader); its name, rank and relationship ticks, or that it is bonded (the move reader)",
-  vow:        "the move reader's \"Open vows\", by name alone, from the vow Item on the character's sheet; the pacing reader is told no vow",
+  connection: `${SITUATION}, from the bond Item on the character's sheet: its name, rank and relationship track, or that it is bonded`,
+  vow:        `${SITUATION}, from the vow Item on the character's sheet: its name, rank and progress`,
   tracks:     "the move reader's \"Open progress tracks\", by type and label; an open fight or scene challenge would reach the pacing reader too",
+  health:     `${SITUATION}, from the sheet's health meter`,
+  spirit:     `${SITUATION}, from the sheet's spirit meter`,
+  supply:     `${SITUATION}, from the sheet's supply meter`,
+  impacts:    `${SITUATION}: wounded, shaken and unprepared, from the sheet's impacts`,
+  integrity:  `${SITUATION}: the command vehicle's integrity, from its ship record (its STARSHIP asset's track where it has one)`,
+  battered:   `${SITUATION}: whether the command vehicle is battered, from the starship's own impact`,
 });
+
+/** The impacts a recovery move clears: the three the SITUATION block names. */
+const IMPACTS = ["wounded", "shaken", "unprepared"];
+const METER_MAX = 5;
+
+/**
+ * The sheet a context's state says the world holds — what the runner sets and
+ * what contextMismatch reads back. A meter the state does not give is full,
+ * an impact it does not list is clear and a vow's progress it does not give
+ * is none: a context says what is wrong, and nothing of the last context's
+ * stays behind.
+ *
+ * @param {Object} state
+ * @returns {{ health: number, spirit: number, supply: number, impacts: Record<string, boolean>,
+ *   integrity: number, battered: boolean, vowTicks: number }}
+ */
+export function sheetOf(state) {
+  const meter = (value) => (Number.isInteger(value) ? value : METER_MAX);
+  const marked = Array.isArray(state?.impacts) ? state.impacts : [];
+  return {
+    health:    meter(state?.health),
+    spirit:    meter(state?.spirit),
+    supply:    meter(state?.supply),
+    impacts:   Object.fromEntries(IMPACTS.map(key => [key, marked.includes(key)])),
+    integrity: meter(state?.integrity),
+    battered:  state?.battered === true,
+    vowTicks:  Number.isInteger(state?.vow?.ticks) ? state.vow.ticks : 0,
+  };
+}
 
 /**
  * The parts of a context's state the runner does not set, each with why: a
@@ -76,19 +113,34 @@ export const STATE_READ = Object.freeze({
 export function stateNotSet(state) {
   const out = [];
   for (const key of Object.keys(state ?? {})) {
-    if (!STATE_READ[key]) out.push({ key, why: "neither reader's prompt reads it (the sheet's meters reach neither)" });
+    if (!STATE_READ[key]) out.push({ key, why: "neither reader's prompt reads it" });
   }
-  if (state?.vow && (state.vow.ticks != null)) out.push({ key: "vow.ticks", why: "the move reader is told an open vow's name and nothing of its progress; the pacing reader is told no vow" });
+  if (state?.vow?.swornTo != null) out.push({ key: "vow.swornTo", why: "the runner links no vow to a connection; the block would name the link, were one made" });
   if ((state?.tracks ?? []).some(t => t?.ticks != null)) out.push({ key: "tracks[].ticks", why: "the move reader is told a track's type and label, not its progress" });
   return out;
 }
 
 // ── the list ─────────────────────────────────────────────────────────────────
 
+/**
+ * What each recovery move restores, on the sheet a context's state gives: the
+ * readers are told the meters, so a line cannot want a recovery move its
+ * sheet has nothing for. True when the move has something to do.
+ */
+const RECOVERS = {
+  heal:     (sheet) => sheet.health < METER_MAX || sheet.impacts.wounded,
+  hearten:  (sheet) => sheet.spirit < METER_MAX || sheet.impacts.shaken,
+  resupply: (sheet) => sheet.supply < METER_MAX || sheet.impacts.unprepared,
+  repair:   (sheet) => sheet.integrity < METER_MAX || sheet.battered,
+};
+
 /** What a wanted move needs its context to hold, or null. */
 function contextProblem(moveId, state) {
   const connection = state?.connection ?? null;
   const tracks = Array.isArray(state?.tracks) ? state.tracks : [];
+  if (RECOVERS[moveId] && !RECOVERS[moveId](sheetOf(state))) {
+    return `${moveId} is wanted only where the context's sheet has something for it to recover`;
+  }
   if (["develop_your_relationship", "test_your_relationship", "forge_a_bond"].includes(moveId) && !connection?.name) {
     return `${moveId} needs a connection in its context`;
   }
@@ -102,10 +154,12 @@ function contextProblem(moveId, state) {
 
 /**
  * Problems with a list of plain lines (empty when it can run): a context
- * that is no scene, a case in a context the list does not have, a move id
- * the module does not know, a line that names a move or uses a rules word, a
- * case that wants neither a move nor none, an id used twice, a wanted move
- * its context cannot hold.
+ * that is no scene, a sheet that is no sheet (a meter off its scale, an
+ * impact the block does not name), a ship's state with no ship in the world,
+ * a case in a context the list does not have, a move id the module does not
+ * know, a line that names a move or uses a rules word, a case that wants
+ * neither a move nor none, an id used twice, a wanted move its context cannot
+ * hold — a recovery move with nothing on the sheet to recover among them.
  *
  * @param {{ world?: Object, contexts?: Object, cases?: Object[] }} file
  * @returns {string[]}
@@ -133,6 +187,22 @@ export function validateCases(file) {
       if (!Number.isInteger(c.ticks) || c.ticks < 0 || c.ticks > FULL_TRACK) problems.push(`context "${key}": its connection's ticks are a whole number from 0 to ${FULL_TRACK}`);
     }
     if (state.vow != null && (typeof state.vow.name !== "string" || !state.vow.name.trim())) problems.push(`context "${key}": its vow has no name`);
+    if (state.vow?.ticks != null && !(Number.isInteger(state.vow.ticks) && state.vow.ticks >= 0 && state.vow.ticks <= FULL_TRACK)) {
+      problems.push(`context "${key}": its vow's ticks are a whole number from 0 to ${FULL_TRACK}`);
+    }
+    for (const meter of ["health", "spirit", "supply", "integrity"]) {
+      if (state[meter] != null && !(Number.isInteger(state[meter]) && state[meter] >= 0 && state[meter] <= METER_MAX)) {
+        problems.push(`context "${key}": its ${meter} is a whole number from 0 to ${METER_MAX}`);
+      }
+    }
+    if (state.impacts != null && !(Array.isArray(state.impacts) && state.impacts.every(i => IMPACTS.includes(i)))) {
+      problems.push(`context "${key}": its impacts are a list of ${IMPACTS.join(", ")}`);
+    }
+    if (state.battered != null && typeof state.battered !== "boolean") problems.push(`context "${key}": battered is true or false`);
+    // The ship's integrity is the command vehicle's: a world with none has no meter to set.
+    if ((state.integrity != null || state.battered != null) && !file?.world?.ship?.name) {
+      problems.push(`context "${key}": it gives the ship's state, and the world has no command vehicle (world.ship)`);
+    }
     for (const track of state.tracks ?? []) {
       if (!track?.type || !track?.label) problems.push(`context "${key}": a track needs a type and a label`);
       // An open fight changes both readers' rules, and the runner hands the
@@ -191,12 +261,16 @@ export function casesToRun(file, only = []) {
  * A context as the runner applied it, against what its state says of the
  * parts a prompt reads: the first thing that did not land, or null. `applied`
  * is the world read back through the readers' own sources — the recent scene
- * as getRecentSceneForReading gives it, the sheet's live connections and open
- * vows, the open tracks, the current location and the scene frame.
+ * as getRecentSceneForReading gives it, the sheet's meters and impacts, its
+ * live connections and open vows with their progress, the command vehicle,
+ * the open tracks, the current location and the scene frame.
  *
  * @param {{ scene?: string[], state?: Object }} context
  * @param {{ scene: string, location: string|null, frame: Object|null,
- *   connections: Array<{ name: string, ticks: number, bonded: boolean }>, vows: string[],
+ *   sheet: { health: number, spirit: number, supply: number, impacts: Record<string, boolean> },
+ *   vehicle: { integrity: number|null, battered: boolean }|null,
+ *   connections: Array<{ name: string, ticks: number, bonded: boolean }>,
+ *   vows: Array<{ name: string, ticks: number }>,
  *   tracks: Array<{ type: string, label: string }> }} applied
  * @returns {string|null}
  */
@@ -212,8 +286,22 @@ export function contextMismatch(context, applied) {
   const live = c ? connections.find(x => x.name === c.name) : null;
   if (c && !(live && live.ticks === c.ticks && live.bonded === (c.bonded === true))) return `the connection ${c.name} is not on the sheet as the context has it`;
   if (connections.some(x => x.name !== c?.name)) return "a connection is on the sheet that the context does not hold";
+  const sheet = sheetOf(state);
   const vows = applied.vows ?? [];
-  if (state.vow?.name ? !(vows.length === 1 && vows[0] === state.vow.name) : vows.length) return "the sheet's open vows are not the context's";
+  if (state.vow?.name ? !(vows.length === 1 && vows[0].name === state.vow.name) : vows.length) return "the sheet's open vows are not the context's";
+  if (state.vow?.name && vows[0].ticks !== sheet.vowTicks) return `the vow stands at ${vows[0].ticks} ticks, not ${sheet.vowTicks}`;
+  for (const meter of ["health", "spirit", "supply"]) {
+    if (applied.sheet?.[meter] !== sheet[meter]) return `the sheet's ${meter} is ${applied.sheet?.[meter] ?? "unread"}, not ${sheet[meter]}`;
+  }
+  for (const impact of IMPACTS) {
+    if ((applied.sheet?.impacts?.[impact] === true) !== sheet.impacts[impact]) return `the sheet is ${sheet.impacts[impact] ? "not " : ""}marked ${impact}, against the context`;
+  }
+  // The ship's state is checked where the context gives it: a list whose world has no ship gives none (validateCases).
+  if (state.integrity != null || state.battered != null) {
+    if (!applied.vehicle) return "the world has no command vehicle to hold the ship's state";
+    if (applied.vehicle.integrity !== sheet.integrity) return `the command vehicle's integrity is ${applied.vehicle.integrity ?? "unread"}, not ${sheet.integrity}`;
+    if ((applied.vehicle.battered === true) !== sheet.battered) return `the command vehicle is ${sheet.battered ? "not " : ""}battered, against the context`;
+  }
   const wanted = state.tracks ?? [];
   const tracks = applied.tracks ?? [];
   if (wanted.length !== tracks.length || wanted.some(w => !tracks.some(a => a.type === w.type && a.label === w.label))) return "the open tracks are not the context's";
@@ -622,7 +710,7 @@ export function report(summary, meta = {}) {
     "- **The scenes are written by hand**: one or two paragraphs of narration, with a matching scene frame, where a table has up to three cards with the player's own lines among them — and none of the drift a long session leaves in a scene.",
     "- **One character, alone, with one connection and one vow**, at the pacing and mischief dials a new world has"
       + `${meta.dials ? ` (${Object.entries(meta.dials).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""}. No fight is open in any context: the readers' rules for an open fight are not exercised.`,
-    "- **The sheet does not reach the readers.** Neither prompt is told the character's health, spirit, supply or the ship's integrity, nor how far a vow has come; a context says so only in its narration"
+    "- **The sheet is set by hand.** Each context's health, spirit, supply and impacts, its vow's progress and the ship's integrity are written to the world before its lines are read, and both readers are told them (their SITUATION block). A table's sheet moves under play: no line here follows a roll that changed it"
       + `${meta.notSet?.length ? ` (not set in the world: ${[...new Set(meta.notSet.map(n => n.key))].join(", ")})` : ""}.`,
     "- **Each line is read on its own**: the count of recent moves is cleared before every reading, so a line never follows a run of rolls.",
     "- **Only the model changes between arms.** Each arm reads the same prompts, written for the readers' own model"

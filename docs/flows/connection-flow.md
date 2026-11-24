@@ -531,12 +531,18 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 3. Forge the bond
 
-The move interpreter is told the roller's connections and each one's
-relationship track (`interpreter.js rollerConnectionLines`, read from the PC's
-bond Items): a full track says Forge a Bond can be made, a bonded connection is
-marked bonded. Told nothing of it, it read "Tamsin, I ask you to forge a bond
-with me, to Forge a Bond" — her track full — as Make a Connection (the long
-haul's second live run, known-issues NAMED-MOVE-READ-AS-ANOTHER).
+Both readers of a typed line — the pacing classifier and the move interpreter
+— are told the speaker's connections and each one's relationship track, in
+the SITUATION block they share (`moves/situation.js buildSituationBlock`, read
+from the PC's bond Items through `readConnections`): its rank, its progress in
+boxes, "full, no bond forged yet" for a full track, "bonded" for a forged one;
+a severed connection is left out. The interpreter's rule 10 says a full track
+is what Forge a Bond is rolled against and a bonded connection is developed,
+not bonded again. Told nothing of it, the interpreter read "Tamsin, I ask you
+to forge a bond with me, to Forge a Bond" — her track full — as Make a
+Connection (the long haul's second live run, known-issues
+NAMED-MOVE-READ-AS-ANOTHER); the classifier was told the names alone until the
+block.
 
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
@@ -638,11 +644,12 @@ progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The pacing
-classifier reads the same mirror for the speaker alone
-(`classifier.formatConnections` — "Kira's connections: Kael Dros, Sable
-(bonded)") and leans toward a move only for a line that presses or tests one
-of them; it was told every NPC card, and leaned toward a roll whenever a line
-addressed one (issue #354 P2-04). The vendor
+classifier and the move interpreter read the same mirror for the speaker alone
+— the Connections line of their SITUATION block (`moves/situation.js`:
+`- Connections: "Kael Dros" (dangerous, relationship 4 of 10 boxes); "Sable"
+(formidable, bonded).`) — and the classifier leans toward a move only for a
+line that presses or tests one of them; it was told every NPC card, and leaned
+toward a roll whenever a line addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
 writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN),

@@ -865,12 +865,27 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
-speaker line, in the narrator's words), the roller's connections with each
-one's relationship track — a full one says Forge a Bond can be made (the long
-haul's second live run: told nothing of it, the interpreter read "…, to Forge a
-Bond", her track full, as Make a Connection; known-issues
-NAMED-MOVE-READ-AS-ANOTHER) and what the classifier made of the line
+playtest). Both are told the speaker's **situation**, in one block built once
+(`moves/situation.js buildSituationBlock` — the classifier's CHARACTER
+section, `buildContextSummary` for the interpreter): the sheet's health,
+spirit and supply, each beside the impact its recovery move clears (wounded,
+shaken, unprepared — `readCharacterSnapshot`); the command vehicle's
+integrity and whether it is battered (`entities/ship.js getCommandVehicle`:
+the STARSHIP asset's track, the starship's native impact); each open vow
+with its rank, its progress in boxes and the connection it is sworn to
+(`readVows`, its `linkedConnectionName`); each live connection with its rank
+and relationship track — "full, no bond forged yet" or "bonded"
+(`readConnections`). The same words to both, so the two cannot be told
+different things of one sheet; a speaker with no character of their own is
+told as "no character sheet is known". Until the long haul's third live run
+neither was told a meter and the classifier was told no vow: Heal was offered
+and rolled at 5 health of 5, and a step toward a vow said in the fiction was
+narrated with nothing offered (known-issues HEAL-ROLLED-AT-FULL-HEALTH,
+VOW-STEP-SAID-IN-FICTION-NOT-READ). The interpreter is also told who is
+speaking (`buildContextSummary`'s speaker line, in the narrator's words), the
+other characters' open vows by name at a table of several, the open progress
+tracks, the roller's support vehicles and companions, and what the classifier
+made of the line
 (`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
 classifier made, `router.classifierReadingOf`: never for pacing switched off,
 a `!roll`, the classifier's fallback for a failed call or an unreadable reply,
