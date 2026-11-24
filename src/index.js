@@ -5261,6 +5261,108 @@ async function postSetACourseFeedbackCard(destination, resolution, { docked = fa
  */
 export const EXPEDITION_FINISH_READY_BOXES = 4;
 
+/** A track's filled boxes, as its Expedition card counts them. */
+const expeditionBoxes = (track) => Math.floor(Number(track?.ticks ?? 0) / 4);
+
+/**
+ * The Expedition card's 🗺 Finish button for a track's filled boxes. It says
+ * what it rolls with, and is muted while a finish would probably miss (issue
+ * #354 P2-14): at 2/10 it was the card's one prominent button, and a progress
+ * roll of 2 misses four times in five. One renderer, for the card as posted
+ * and as redrawn from its track (redrawExpeditionFinishButtons).
+ *
+ * @param {number} boxes
+ * @returns {string}
+ */
+function expeditionFinishButton(boxes) {
+  const early = boxes < EXPEDITION_FINISH_READY_BOXES;
+  return `<button type="button" class="sf-followup-btn${early ? " sf-followup-btn--early" : ""}" data-action="sf-finish-expedition" ` +
+    `title="Progress roll: your ${boxes} progress against both challenge dice${early ? " — a miss is likely this early" : ""}">` +
+    `🗺 Finish the Expedition (${boxes}/10)</button>`;
+}
+
+/** An Expedition card's 🗺 Finish button in its content, as expeditionFinishButton draws it. */
+const EXPEDITION_FINISH_BUTTON = /<button\b[^>]*\bdata-action="sf-finish-expedition"[^>]*>[\s\S]*?<\/button>/;
+
+/**
+ * Redraw the 🗺 Finish button of every Expedition card still to be pressed
+ * from its track as the track stands (known-issues
+ * EXPEDITION-FINISH-COUNT-STALE). The button was drawn once, when its card
+ * posted, and only a hit on Undertake an Expedition posts one: after Explore
+ * a Waypoint's "Mark expedition progress" the one Finish on the table still
+ * read "(2/10)", muted as early, while the track held 4/10 — and the finish
+ * rolled 4. Run after every change to the tracks, whoever made it — a
+ * waypoint's mark, a later Undertake, the Progress Tracks panel's + and −, a
+ * cleared mark, a recommit, a GM's Retry — and at a GM's load
+ * (registerExpeditionCardSync). A card names its track by id (`trackId`); a
+ * card whose track is over or gone, or whose Finish was pressed, is left as it
+ * is, and so is its line saying what its own mark did. Canonical GM: one
+ * emitter for a shared card. Never throws.
+ *
+ * @returns {Promise<number>} how many cards were redrawn
+ */
+async function redrawExpeditionFinishButtons() {
+  let changed = 0;
+  try {
+    if (!isCanonicalGM()) return 0;
+    const cards = (game.messages?.contents ?? []).filter((m) => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.expeditionProgressCard === true && typeof f.trackId === "string" && !!f.trackId && !f.expeditionFinishAttempted;
+    });
+    if (!cards.length) return 0;
+    const tracks = await listProgressTracks();
+    for (const card of cards) {
+      const trackId = card.flags[MODULE_ID].trackId;
+      const track = tracks.find(t => t.id === trackId && t.type === "expedition" && !t.completed);
+      if (!track) continue;
+      const content = String(card.content ?? "").replace(EXPEDITION_FINISH_BUTTON, () => expeditionFinishButton(expeditionBoxes(track)));
+      if (content === card.content) continue;
+      await card.update({ content });
+      changed += 1;
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | expedition cards: the Finish buttons were not redrawn from their tracks:`, err?.message ?? err);
+  }
+  return changed;
+}
+
+// The redraws, one at a time: each reads the tracks and the cards at its turn.
+let _expeditionFinishRedraw = Promise.resolve(0);
+
+/** Queue a redraw of the Expedition cards' Finish buttons (redrawExpeditionFinishButtons). */
+function queueExpeditionFinishRedraw() {
+  const run = _expeditionFinishRedraw.then(() => redrawExpeditionFinishButtons());
+  _expeditionFinishRedraw = run.catch(() => 0);
+  return run;
+}
+
+/**
+ * updateJournalEntry: the Progress Tracks journal's tracks changed — where
+ * every writer of a track's progress lands (progressTracks.js writeTracks) —
+ * so the Expedition cards' Finish buttons are redrawn from them. The hook
+ * fires on every client; the redraw is the canonical GM's.
+ *
+ * @param {JournalEntry} _journal
+ * @param {Object} change
+ * @returns {Promise<number>|undefined}
+ */
+function redrawExpeditionCardsOnTracksChange(_journal, change) {
+  if (!isCanonicalGM()) return undefined;
+  if (!foundry.utils.hasProperty(change ?? {}, `flags.${MODULE_ID}.tracks`)) return undefined;
+  return queueExpeditionFinishRedraw();
+}
+
+/**
+ * Keep every Expedition card's Finish button on its track's count
+ * (redrawExpeditionFinishButtons): after each change to the tracks, and once
+ * at this GM's load — a card left stale by a write its page missed, or drawn
+ * before the redraw existed, is brought up to date. Called once, at ready.
+ */
+function registerExpeditionCardSync() {
+  Hooks.on("updateJournalEntry", redrawExpeditionCardsOnTracksChange);
+  if (isCanonicalGM()) void queueExpeditionFinishRedraw();
+}
+
 /**
  * Exploration lifecycle feedback — confirm an expedition progress mark and,
  * when the track was just auto-created at the interpreter-inferred rank, tell
@@ -5274,18 +5376,13 @@ export const EXPEDITION_FINISH_READY_BOXES = 4;
 async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
-  const boxes = Math.floor(Number(track?.ticks ?? 0) / 4);
+  const boxes = expeditionBoxes(track);
   const body  = created
     ? `<p>New expedition <strong>${label}</strong> (${rank}) begun — progress marked (${boxes}/10 boxes). If the rank looks off, adjust it in the Progress Tracks panel.</p>`
     : `<p>Progress marked on <strong>${label}</strong> (${rank}) — ${boxes}/10 boxes.</p>`;
-  // The button says what it rolls with, and is muted while a finish would
-  // probably miss (issue #354 P2-14): at 2/10 it was the card's one
-  // prominent button, and a progress roll of 2 misses four times in five.
-  const early = boxes < EXPEDITION_FINISH_READY_BOXES;
-  const finishBtn = `<div class="sf-milestone-suggest-row">` +
-    `<button type="button" class="sf-followup-btn${early ? " sf-followup-btn--early" : ""}" data-action="sf-finish-expedition" ` +
-    `title="Progress roll: your ${boxes} progress against both challenge dice${early ? " — a miss is likely this early" : ""}">` +
-    `🗺 Finish the Expedition (${boxes}/10)</button></div>`;
+  // The button follows the track from here: redrawn whenever the track's
+  // progress changes (redrawExpeditionFinishButtons).
+  const finishBtn = `<div class="sf-milestone-suggest-row">${expeditionFinishButton(boxes)}</div>`;
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
@@ -10479,6 +10576,7 @@ Hooks.once("ready", () => {
   registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
+  registerExpeditionCardSync();            // EXPEDITION-FINISH-COUNT-STALE: an Expedition card's 🗺 Finish follows its track
   registerJournalSplitMerge();             // #347 residual: a split World Journal / Progress Tracks journal — the GMs' Merge card
   registerSceneChallengeOffer();           // #353 Phase 3: a countdown's "Begin the scene challenge" card button
   registerClocksPanelHooks();

@@ -241,6 +241,38 @@ function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** A pattern for a name in a text, whole words only: as written, or in any case (`flags` 'giu'). */
+function wholeWords(s, flags = 'gu') {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(s)}(?![\\p{L}\\p{N}])`, flags);
+}
+
+/**
+ * Where the names as they stand now are written in a text — each one's
+ * spans, whole words, in any case ("Tamsin Okoro", "Tamsin okoro"). Pure.
+ *
+ * @param {string} text
+ * @param {string[]} names
+ * @returns {Array<[number, number]>}
+ */
+function spansOfNames(text, names) {
+  const spans = [];
+  const lower = text.toLowerCase();
+  for (const name of new Set(names.map(clean).filter(Boolean))) {
+    if (!lower.includes(name.toLowerCase())) continue;
+    for (const m of text.matchAll(wholeWords(name, 'giu'))) spans.push([m.index, m.index + m[0].length]);
+  }
+  return spans;
+}
+
+/**
+ * Whether [from, to) of a text is written inside one of those names, longer
+ * than it — so part of that name: "Tamsin" in "Tamsin Okoro", "Vey" in
+ * "Vey's Lantern" (known-issues NEW-NAME-WRITTEN-TWICE).
+ */
+function insideName(spans, from, to) {
+  return spans.some(([a, b]) => a <= from && to <= b && b - a > to - from);
+}
+
 /** The part of an old name its new name does not share ("Tamsin Vey" → "Tamsin Okoro": "Vey"), or ''. */
 function distinctivePart(from, to) {
   const shared = new Set(wordsOf(to).map(w => w.toLowerCase()));
@@ -253,10 +285,20 @@ function distinctivePart(from, to) {
   return part;
 }
 
-/** Whether a text holds a change's old name whole, or the part the new name does not share, as written. */
-function holdsOldName(text, change) {
+/**
+ * Whether a text holds a change's old name whole, or the part the new name
+ * does not share, as written — not inside its new name or another name as it
+ * stands now (`current`): a text that writes "Tamsin Okoro" holds no
+ * "Tamsin" of Tamsin → Tamsin Okoro.
+ */
+function holdsOldName(text, change, current = []) {
   const forms = [clean(change?.from), distinctivePart(change?.from, change?.to)].filter(Boolean);
-  return forms.some(f => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(f)}(?![\\p{L}\\p{N}])`, 'u').test(text));
+  return forms.some((form) => {
+    const hits = [...text.matchAll(wholeWords(form))];
+    if (!hits.length) return false;
+    const standing = spansOfNames(text, [change?.to ?? '', ...current]);
+    return hits.some(m => !insideName(standing, m.index, m.index + m[0].length));
+  });
 }
 
 /**
@@ -293,7 +335,8 @@ const ownWordsOf = (name) => new Set(wordsOf(name).map(w => w.toLowerCase()).fil
  * words): `alone` — as a name by itself, a word before it in its sentence
  * ("the Wake's guns", "calls me Vey", "Captain Vey"), `article` of those after
  * "the"; `other` — beside another capitalised word, so part of another name
- * ("Juro Vey", "Silent Wake", "Wake Station"). A use inside the name it is a
+ * ("Juro Vey", "Silent Wake", "Wake Station"), or written inside a name as it
+ * stands now (`current`: "Vey" in "Vey's Lantern"). A use inside the name it is a
  * word of — written whole, or beside another of its words — and one with
  * nothing before it — its capital may only open the sentence ("Wake up.") —
  * count as neither. Pure.
@@ -301,16 +344,21 @@ const ownWordsOf = (name) => new Set(wordsOf(name).map(w => w.toLowerCase()).fil
  * @param {string[]} texts
  * @param {string} word
  * @param {string} name — the name it is a word of
+ * @param {string[]} [current] — the names as they stand now (the changes' new names)
  * @returns {{ alone: number, other: number, article: number }}
  */
-function usesOfNameWord(texts, word, name) {
+function usesOfNameWord(texts, word, name, current = []) {
   const uses = { alone: 0, other: 0, article: 0 };
   const asWord = (s) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(s)}(?![\\p{L}\\p{N}])`, 'gu');
   const own = ownWordsOf(name);
   for (const text of texts) {
+    const hits = [...text.matchAll(asWord(word))];
+    if (!hits.length) continue;
     const whole = [...text.matchAll(asWord(clean(name)))].map(m => [m.index, m.index + m[0].length]);
-    for (const m of text.matchAll(asWord(word))) {
+    const standing = current.length ? spansOfNames(text, current) : [];
+    for (const m of hits) {
       if (whole.some(([from, to]) => m.index >= from && m.index < to)) continue;                       // the name itself
+      if (insideName(standing, m.index, m.index + m[0].length)) { uses.other += 1; continue; }          // another name, as it stands
       const prev = WORD_BEFORE.exec(text.slice(Math.max(0, m.index - 64), m.index))?.[1] ?? null;
       const next = WORD_AFTER.exec(text.slice(m.index + word.length, m.index + word.length + 64))?.[1] ?? null;
       if ((prev && own.has(prev.toLowerCase())) || (next && own.has(next.toLowerCase()))) continue;   // …or its words, otherwise arranged
@@ -338,9 +386,14 @@ function usesOfNameWord(texts, word, name) {
  * @param {Object} change — normalised
  * @param {string[]} texts — what the call sends
  * @param {Array} [changes] — every stored change, normalised: the other names in play
+ * @param {string[]} [current] — the names as they stand now: a word written
+ *   inside one of them is part of that name ("Vey" in "Vey's Lantern")
+ * @param {string[]} [context] — the rest of the call (a user message's system
+ *   prompt): a form it never makes, but a word it uses inside another name is
+ *   not this name's alone
  * @returns {Array<{ old: string, write: string }>}
  */
-function shortFormsInUse(change, texts, changes = []) {
+function shortFormsInUse(change, texts, changes = [], current = changes.map(o => o.to), context = []) {
   const oldWords = nameWordsOf(change.from);
   if (oldWords.length < 2 || !texts.length) return [];
   const ownOld = ownWordsOf(change.from);
@@ -355,14 +408,15 @@ function shortFormsInUse(change, texts, changes = []) {
   for (const word of new Set(oldWords)) {
     const lower = word.toLowerCase();
     if (ownNew.has(lower) || others.has(lower)) continue;
-    const uses = usesOfNameWord(texts, word, change.from);
+    const uses = usesOfNameWord(texts, word, change.from, current);
     if (!uses.alone || uses.other) continue;
+    if (context.length && usesOfNameWord(context, word, change.from, current).other) continue;
     const twin = newWords.length < 2 ? null
       : word === oldWords.at(-1) ? newWords.at(-1)
         : word === oldWords[0] ? newWords[0]
           : null;
     const twinIsOwn = !!twin && !ownOld.has(twin.toLowerCase()) && !others.has(twin.toLowerCase())
-      && !usesOfNameWord(texts, twin, change.to).other;
+      && !usesOfNameWord([...texts, ...context], twin, change.to, current).other;
     const article = uses.article * 2 >= uses.alone;
     const write = twinIsOwn ? twin : change.to;
     forms.push({
@@ -376,18 +430,23 @@ function shortFormsInUse(change, texts, changes = []) {
 /**
  * Whether a text names a change's old name — whole, by the part the new name
  * does not share, or cut short to one word of it on its own ("the Wake") — as
- * a name: matched as written (a name's capitals), whole words only. Pure.
+ * a name: matched as written (a name's capitals), whole words only. An old
+ * name written inside its new one, or inside another name as it stands now,
+ * is that name: "Tamsin Okoro" names no "Tamsin" (known-issues
+ * NEW-NAME-WRITTEN-TWICE — the change was told wherever its new name was
+ * written). Pure.
  *
  * @param {string} text
  * @param {Object} change
+ * @param {{ current?: string[] }} [opts] — the other names as they stand now (the stored changes' new names)
  * @returns {boolean}
  */
-export function mentionsOldName(text, change) {
+export function mentionsOldName(text, change, { current = [] } = {}) {
   const t = typeof text === 'string' ? text : '';
   if (!t) return false;
-  if (holdsOldName(t, change)) return true;
+  if (holdsOldName(t, change, current)) return true;
   const c = normaliseNameChange(change);
-  return !!c && shortFormsInUse(c, [t], [c]).length > 0;
+  return !!c && shortFormsInUse(c, [t], [c], [c.to, ...current]).length > 0;
 }
 
 /**
@@ -404,6 +463,14 @@ export function mentionsOldName(text, change) {
  *     not part of another name beside it ("Silent Wake", "Wake Station") and
  *     is a word of no other name in play: the new name whole ("the Wake's
  *     registry" → "the Cinder Wren's registry").
+ * None is written where it already stands inside a name as it is now — its
+ * own new name, another change's, another record's (`otherNames`), in any
+ * case: "Tamsin" in "Tamsin Okoro" is the new name, and for Tamsin → Tamsin
+ * Okoro "tied the vow to Tamsin Okoro" read "… Tamsin Okoro Okoro" on the
+ * Session Log pages and in the recap (known-issues NEW-NAME-WRITTEN-TWICE).
+ * Every form is found in the text as stored and each place written once —
+ * the longest form first, so "Tamsin Vey" is written whole before its
+ * "Tamsin" — never in what another change wrote there.
  * Pure.
  *
  * @param {string} text
@@ -413,37 +480,75 @@ export function mentionsOldName(text, change) {
  * @returns {string}
  */
 export function writeNewNames(text, changes, { otherNames = [] } = {}) {
-  let out = typeof text === 'string' ? text : '';
+  const src = typeof text === 'string' ? text : '';
   const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
-  if (!out || !all.length) return out;
-  const asWord = (s) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(s)}(?![\\p{L}\\p{N}])`, 'gu');
+  if (!src || !all.length) return src;
+  const others = Array.isArray(otherNames) ? otherNames : [];
+  const standing = spansOfNames(src, [...all.map(c => c.to), ...others]);
+  const edits = [];
+  const edit = (from, to, write) => {
+    if (!insideName(standing, from, to)) edits.push({ from, to, write, order: edits.length });
+  };
   for (const c of all) {
-    out = out.replace(asWord(c.from), c.to);
+    for (const m of src.matchAll(wholeWords(c.from))) edit(m.index, m.index + m[0].length, c.to);
     const part = distinctivePart(c.from, c.to);
-    if (part) out = out.replace(asWord(part), distinctivePart(c.to, c.from) || c.to);
-    const words = nameWordsOf(c.from);
-    const last = words.length >= 2 ? words.at(-1) : null;
-    if (!last || ownWordsOf(c.to).has(last.toLowerCase())) continue;
-    const lower = last.toLowerCase();
-    const taken = [...otherNames, ...all.filter(o => !same(o.to, c.to)).flatMap(o => [o.from, o.to])]
-      .filter(n => !same(n, c.from) && !same(n, c.to))
-      .some(n => ownWordsOf(n).has(lower));
-    if (taken) continue;
-    const own = ownWordsOf(c.from);
-    const bare = c.to.replace(/^the\s+/i, '');
-    out = out.replace(asWord(last), (match, index, whole) => {
-      const prev = WORD_BEFORE.exec(whole.slice(Math.max(0, index - 64), index))?.[1] ?? null;
-      const rest = whole.slice(index + match.length, index + match.length + 64);
-      const next = WORD_AFTER.exec(rest)?.[1] ?? null;
-      if (!prev) return match;                                                     // opens its sentence
-      if (own.has(prev.toLowerCase()) || (next && own.has(next.toLowerCase()))) return match;
-      if (next && isCapitalised(next) && !/^I(?:['’]|$)/u.test(next)) return match; // part of another name
-      if (isCapitalised(prev) && !LEAD_WORDS.has(prev.toLowerCase())) return match;
-      const article = prev.toLowerCase() === 'the';
-      const possessive = /^['’]s(?![\p{L}\p{N}])/u.test(rest);
-      if (!article && !possessive) return match;
-      return article ? bare : c.to;
-    });
+    if (part) {
+      const write = distinctivePart(c.to, c.from) || c.to;
+      for (const m of src.matchAll(wholeWords(part))) edit(m.index, m.index + m[0].length, write);
+    }
+    for (const s of shortFormEdits(src, c, all, others)) edit(s.from, s.to, s.write);
+  }
+  edits.sort((x, y) => (y.to - y.from) - (x.to - x.from) || x.order - y.order);
+  const kept = [];
+  for (const e of edits) if (!kept.some(k => e.from < k.to && k.from < e.to)) kept.push(e);
+  kept.sort((x, y) => x.from - y.from);
+  let out = '';
+  let at = 0;
+  for (const e of kept) {
+    out += src.slice(at, e.from) + e.write;
+    at = e.to;
+  }
+  return out + src.slice(at);
+}
+
+/**
+ * Where a text cuts a change's old name short, and what is written there
+ * (writeNewNames' third form): the last capitalised word of an old name of
+ * several, after "the" or before "'s", not opening its sentence, not beside
+ * another capitalised word or one of its own name's, and a word of neither
+ * the new name nor another name in play. Pure.
+ *
+ * @param {string} text
+ * @param {Object} c — the change, normalised
+ * @param {Array} all — every change in play, normalised
+ * @param {string[]} otherNames
+ * @returns {Array<{ from: number, to: number, write: string }>}
+ */
+function shortFormEdits(text, c, all, otherNames) {
+  const words = nameWordsOf(c.from);
+  const last = words.length >= 2 ? words.at(-1) : null;
+  if (!last || ownWordsOf(c.to).has(last.toLowerCase())) return [];
+  const lower = last.toLowerCase();
+  const taken = [...otherNames, ...all.filter(o => !same(o.to, c.to)).flatMap(o => [o.from, o.to])]
+    .filter(n => !same(n, c.from) && !same(n, c.to))
+    .some(n => ownWordsOf(n).has(lower));
+  if (taken) return [];
+  const own = ownWordsOf(c.from);
+  const bare = c.to.replace(/^the\s+/i, '');
+  const out = [];
+  for (const m of text.matchAll(wholeWords(last))) {
+    const at = m.index;
+    const prev = WORD_BEFORE.exec(text.slice(Math.max(0, at - 64), at))?.[1] ?? null;
+    const rest = text.slice(at + last.length, at + last.length + 64);
+    const next = WORD_AFTER.exec(rest)?.[1] ?? null;
+    if (!prev) continue;                                                     // opens its sentence
+    if (own.has(prev.toLowerCase()) || (next && own.has(next.toLowerCase()))) continue;
+    if (next && isCapitalised(next) && !/^I(?:['’]|$)/u.test(next)) continue; // part of another name
+    if (isCapitalised(prev) && !LEAD_WORDS.has(prev.toLowerCase())) continue;
+    const article = prev.toLowerCase() === 'the';
+    const possessive = /^['’]s(?![\p{L}\p{N}])/u.test(rest);
+    if (!article && !possessive) continue;
+    out.push({ from: at, to: at + last.length, write: article ? bare : c.to });
   }
   return out;
 }
@@ -463,10 +568,25 @@ function sourcesOf(texts) {
  */
 export function dueNameChanges(changes, { texts = [], sessionId = null } = {}) {
   const sources = sourcesOf(texts);
-  return (Array.isArray(changes) ? changes : [])
-    .map(normaliseNameChange)
-    .filter(Boolean)
-    .filter(c => (sessionId && c.sessionId === sessionId) || sources.some(t => mentionsOldName(t, c)));
+  const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
+  // The names as they stand now: an old name inside one of them is no mention of it.
+  const current = all.map(c => c.to);
+  return all.filter(c => (sessionId && c.sessionId === sessionId) || sources.some(t => mentionsOldName(t, c, { current })));
+}
+
+/** A change's line in a note, up to its short forms: `- "Ashen Wake" is now "Cinder Wren"`. */
+const lineHead = (c) => `- "${c.from}" is now "${c.to}"`;
+
+/**
+ * Whether a note the call already carries (`told`) has a change's line,
+ * naming each short form in `forms` — so the change is told there.
+ */
+function toldIn(told, c, forms) {
+  const at = told.indexOf(lineHead(c));
+  if (at < 0) return false;
+  const end = told.indexOf('\n', at);
+  const line = end < 0 ? told.slice(at) : told.slice(at, end);
+  return forms.every(f => line.includes(`for "${f.old}" write "`));
 }
 
 /**
@@ -475,33 +595,44 @@ export function dueNameChanges(changes, { texts = [], sessionId = null } = {}) {
  * stored change, so a word another name holds anywhere in the call is not
  * listed. '' when no change is due.
  *
+ * `context` is the rest of the call — a user message's system prompt: read
+ * for the names it holds, never for a change it makes due. `told` is a note
+ * the call carries already: a change whose line it holds, naming every short
+ * form this line would name, is left out — a user message is told what its
+ * system prompt's note does not (known-issues NAME-NOTE-MISSES-THE-USER-MESSAGE).
+ *
  * @param {Array} changes — campaignState.nameChanges
- * @param {{ texts?: string[], sessionId?: string|null }} [opts]
+ * @param {{ texts?: string[], sessionId?: string|null, context?: string[], told?: string }} [opts]
  * @returns {string}
  */
 function changeLines(changes, opts = {}) {
   const due = dueNameChanges(changes, opts);
   if (!due.length) return '';
   const sources = sourcesOf(opts.texts ?? []);
+  const around = sourcesOf(opts.context ?? []);
+  const told = typeof opts.told === 'string' ? opts.told : '';
   const all = (Array.isArray(changes) ? changes : []).map(normaliseNameChange).filter(Boolean);
   return due.map((c) => {
     const how = c.kind === 'corrected' ? 'corrected by the table' : 'renamed by the table';
     // The old name as the call's own text cuts it short, and what to write for it.
-    const forms = shortFormsInUse(c, sources, all);
+    const forms = shortFormsInUse(c, sources, all, all.map(o => o.to), around);
+    if (told && toldIn(told, c, forms)) return '';
     const short = forms.length
       ? ` The old name cut short is the old name too: ${forms.map(f => `for "${f.old}" write "${f.write}"`).join('; ')}.`
       : '';
-    return `- "${c.from}" is now "${c.to}"${c.about ? ` (${c.about})` : ''} — ${how}.${short}`;
-  }).join('\n');
+    return `${lineHead(c)}${c.about ? ` (${c.about})` : ''} — ${how}.${short}`;
+  }).filter(Boolean).join('\n');
 }
 
 /**
  * The narrator's note (its context, every mode, and a call's user message
- * when that alone holds an old name): the changes due, each with the short
- * forms of its old name the texts use, or ''.
+ * for what its own text calls for that the system prompt's note does not
+ * tell): the changes due, each with the short forms of its old name the texts
+ * use, or ''.
  *
  * @param {Array} changes
- * @param {{ texts?: string[], sessionId?: string|null }} [opts]
+ * @param {{ texts?: string[], sessionId?: string|null, context?: string[], told?: string }} [opts] —
+ *   `context`, `told`: the rest of the call and the note it carries (changeLines)
  * @returns {string}
  */
 export function formatNameChangesBlock(changes, opts = {}) {

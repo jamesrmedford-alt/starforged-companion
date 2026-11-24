@@ -149,7 +149,12 @@ longer special-cases them).
   docs/flows/session-record-flow.md), as the ledger saves put the set and the
   struck truth there (`truth.set` / `truth.struck`): every view of the record
   — the Session Log page — writes the new name, its short form too, at read
-  (`writeNewNames`); the stored list (capped) still tells the narrator. CORRECTED is
+  (`writeNewNames`), never where the old name already stands inside a name
+  as it is now — its own new one, another change's, another record's, in any
+  case — and each place once, from the text as stored: for "Tamsin" →
+  "Tamsin Okoro" it wrote "tied the vow to Tamsin Okoro Okoro" on the pages
+  and in the recap (known-issues NEW-NAME-WRITTEN-TWICE). The stored list
+  (capped) still tells the narrator. CORRECTED is
   its scene's (and its place's); the change is told past both — NAMES THE TABLE
   CHANGED in the narrator's context, every mode, and in the session summary's
   source — wherever the old name still reaches a prompt. In the long haul's
@@ -159,8 +164,10 @@ longer special-cases them).
   CORRECTED-NAME-SHORT-FORM): a change's line names each short form of its old
   name the call's own text uses on its own, and what to write for it — "The
   old name cut short is the old name too: for "the Wake" write "the Wren"."
-  (`shortFormsInUse`; both renderers, `formatNameChangesBlock` and
-  `formatNameChangesForSource`). A short form is one word of the old name, used
+  (`shortFormsInUse`, in `formatNameChangesBlock`; the session summary's
+  source, which had a renderer of its own, is the session record's read since
+  issue #382 slice 3, and writes every changed name as the new one, its short
+  forms included). A short form is one word of the old name, used
   as a name with a word before it in its sentence ("the Wake's guns", "calls me
   Vey", "Captain Vey" — `usesOfNameWord`); what is written for it is the new
   name's word in the same place (last for last, first for first) when that
@@ -168,15 +175,28 @@ longer special-cases them).
   listed: a word the new name keeps ("Tamsin" of Tamsin Vey → Tamsin Okoro), a
   word of another name the table changed, and a word the text also uses beside
   another capitalised word — part of another name in play ("Juro Vey", "Silent
-  Wake"). A short form on its own also makes an earlier session's change due
+  Wake") — or inside another changed name as it stands ("Vey" in "Vey's
+  Lantern"). An old name written inside its new one, or another changed
+  name, is no mention of it: "Tamsin Okoro" names no "Tamsin", and the
+  change was told to every prompt that wrote the new name
+  (NEW-NAME-WRITTEN-TWICE). A short form on its own also makes an earlier session's change due
   (`mentionsOldName`): for a name the new one shares no word with, only the
   whole old name did, so the third live run's session 3 summary was written
   from "the Wake's registry" with no note. The note gave the old name whole
   until then, and one step after the correction the narrator wrote "The Wake's
-  boarding lock" from a prompt that said "the Wake" six times. Not covered: a
-  short form only the user message holds while the system prompt already
-  carries the note for another reason — `withNameChangesNoted` adds nothing
-  to a call that has the heading.
+  boarding lock" from a prompt that said "the Wake" six times. **The user
+  message is told what its own text calls for** (known-issues
+  NAME-NOTE-MISSES-THE-USER-MESSAGE): every narrator call sends its user
+  message through `callNarratorAPI` → `withNameChangesNoted`, which adds at
+  its end each change due for that text that the system prompt's note does
+  not tell — the change's line, or its line again when the user message cuts
+  the old name short in a way the system's line does not name
+  (`formatNameChangesBlock`'s `told` and `context`: the system prompt is read
+  for the names it holds, never for a change it makes due). It added nothing
+  once the system prompt carried the heading at all, so session 3's opening,
+  which quotes the last session's final narration word for word, carried
+  "Ashen Wake" beside a note that listed only "Tamsin" → "Tamsin Okoro". A user
+  message that already carries the note is not given a second.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)
   posts the same card WITHOUT the retract button — WJ lore's correction
   affordance is the `!journal` command family (reaffirmed 2026-07).

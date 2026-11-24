@@ -257,7 +257,19 @@ finish docks there and charts nothing.
   **"🗺 Finish the Expedition (n/10)"** button — labelled with the progress
   it rolls with, and shown muted (`sf-followup-btn--early`) under
   `EXPEDITION_FINISH_READY_BOXES` (4), where a finish misses more often than
-  not (issue #354 P2-14) — its forced move names the track by
+  not (issue #354 P2-14). The button follows its track: the canonical GM
+  redraws it on every Expedition card still to be pressed, from the track by
+  its id, whenever the Progress Tracks journal's tracks change — a waypoint's
+  mark (§2), a later Undertake, the panel's + and −, a cleared mark, a
+  recommit, a GM's Retry — and at its load (`index.js`
+  `redrawExpeditionFinishButtons` / `registerExpeditionCardSync`, the
+  journal's `updateJournalEntry` hook, gated `isCanonicalGM()`). It was drawn
+  once, at the post, so after a waypoint's mark the one Finish on the table
+  read "(2/10)", muted as early, while the track held 4/10 (known-issues
+  EXPEDITION-FINISH-COUNT-STALE); the card's content changes, so every client
+  and a reload show the count. A card whose track is over or gone, or whose
+  Finish was pressed, is left as it is, and its line about the mark it
+  reported stays as written — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`
   (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the
@@ -328,8 +340,11 @@ finish docks there and charts nothing.
   nothing once it is over or gone, never the sole open one at click time
   (DELAYED-CHOICE-IDENTITY); a card that names none resolve-or-creates at
   click time: with no open expedition it begins a default dangerous one and
-  marks it, WAYPOINT-PROGRESS-NOOP fix; several open → visible warn); weak
-  hit +1 momentum; miss routes Pay the Price
+  marks it, WAYPOINT-PROGRESS-NOOP fix; several open → visible warn). The
+  mark posts no card of its own: the expedition's card's 🗺 Finish is redrawn
+  with the track's new count (§1, EXPEDITION-FINISH-COUNT-STALE) — a track
+  with no card (begun by this mark, or in the panel) has the panel's Roll.
+  Weak hit +1 momentum; miss routes Pay the Price
   (`routePayThePrice` — the card, its suffer route, the tension clocks; it
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the

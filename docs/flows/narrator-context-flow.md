@@ -880,7 +880,9 @@ name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
 each told while it is this session's or while its old name, whole, the part
 the new one does not share, or cut short to one word of it used on its own
 ("the Wake" for the Ashen Wake), is in what the call sends: the cached blocks,
-the context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the
+the context, a recap's Chronicle (`extras.nameChangeTexts`) — never as part
+of a name as it stands now: "Tamsin Okoro" holds no "Tamsin" (known-issues
+NEW-NAME-WRITTEN-TWICE). Every mode, the
 recap's included; per-beat. Its line names each such short form the call's text
 uses and what to write for it — never a word the new name keeps or another
 name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
@@ -888,11 +890,14 @@ name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
 the table's correction, not something that happened in the story (the long
 haul's second run made it a story of a crossed-out name — known-issues
 NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says
-which name is current; the session summary's source carries the same note,
-`formatNameChangesForSource`; and a call whose user message alone names an old
-name — a player's line, the recent scene, a bookend's EARLIER list — has it
-added at that message's end, `narrator.js callNarratorAPI` →
-`withNameChangesNoted`) · [6.5] active-scene ledger
+which name is current; the session summary's source is the session record's read, which writes
+every changed name as the new one (issue #382 slice 3); and every change a call's user message names —
+a player's line, the recent scene, a bookend's EARLIER list, the opening's
+last narration quoted word for word — that this note does not tell, or whose
+short form there its line does not name, is added at that message's end,
+`narrator.js callNarratorAPI` → `withNameChangesNoted` (known-issues
+NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
+there at all)) · [6.5] active-scene ledger
 (SCENE FRAME — with the scene's question, shown while it stands, marked
 when answered (issue #353 R2), released when play has left it unanswered for
 `SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for

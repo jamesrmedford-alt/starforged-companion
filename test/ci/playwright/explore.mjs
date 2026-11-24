@@ -666,6 +666,8 @@ async function main() {
         prices: config.prices.usdPerMillionTokens, spend,
         // The readers' own replies, for what each line of play became.
         exchanges: CALLS ? harness.recordingOut().exchanges : (earlier?.recording?.exchanges ?? []), charter,
+        // The table after each step: the recap's cache and the record's size (lib/review.mjs recapCitesOf, recordSizesOf).
+        marks,
       });
       if (LONG) {
         out.json("beats.json", long.beats);

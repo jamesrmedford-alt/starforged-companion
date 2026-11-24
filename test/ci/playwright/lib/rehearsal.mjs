@@ -80,6 +80,42 @@ export function citedRecapReply(user, { facts = [], holds, forget = false }) {
   return JSON.stringify({ paragraphs: [[...opening, ...told], lasting].filter(p => p.length) });
 }
 
+/** A beat of the session summary's source: `[3] …` (record/summaryView.js summarySource). */
+const SUMMARY_BEAT = /^\[(\d+)\] (.*)$/gm;
+
+/**
+ * The session summary's reply, as the module asks for it since the summary is
+ * a view of the session record (issue #382, slice 3; summaryView.js
+ * SESSION_SUMMARY_SYSTEM_PROMPT): a JSON list of sentences, each citing the
+ * numbers of the beats it tells — a reply that is not that list is asked for
+ * once more and then dropped, a beat marked LASTING that no sentence tells
+ * sends it back once (narrator.js getRollingSessionSummary). The stand-in
+ * opens on the day's business, citing the first beat; states each fact a
+ * beat of THE SESSION holds — its fact line, not its TOLD AS, and never a
+ * question put to the narrator, as the prompt says — citing those beats (none
+ * when it is forgetful: its summary is there, and holds no fact); and tells
+ * every LASTING beat. Pure.
+ *
+ * @param {string} user — the summary's user message
+ * @param {{ facts?: object[], holds: (text: string, fact: object) => boolean, forget?: boolean, pc?: string }} o
+ * @returns {string}
+ */
+export function citedSummaryReply(user, { facts = [], holds, forget = false, pc = "The character" }) {
+  const session = /## THE SESSION[^\n]*\n([\s\S]*?)(?=\n## |$)/.exec(String(user ?? ""))?.[1] ?? "";
+  const beats = [...session.matchAll(SUMMARY_BEAT)].map(m => ({ id: m[1], text: m[2] }));
+  if (!beats.length) return "[]";
+  const told = (forget ? [] : facts).flatMap((fact) => {
+    const because = beats.filter(b => holds(b.text, fact)).map(b => b.id);
+    return because.length ? [{ text: fact.statement, because }] : [];
+  });
+  const cited = new Set(told.flatMap(s => s.because));
+  const lasting = beats.flatMap((b) => {
+    const what = / — LASTING: (.+)$/.exec(b.text)?.[1]?.trim();
+    return what && !cited.has(b.id) ? [{ text: `That stood: ${what}.`, because: [b.id] }] : [];
+  });
+  return JSON.stringify([{ text: `${pc} went about the day's business.`, because: [beats[0].id] }, ...told, ...lasting]);
+}
+
 /**
  * The stand-in's answerer for one charter. Pure but for the player's turn
  * counter: `reply(body)` → the `content` and `stop_reason` of a reply.
@@ -126,7 +162,7 @@ export function createRehearsal({ charter, forget = false }) {
         : { type: "scene", salience: "trivial", text: "A quiet moment." }));
     }
     if (system.includes("continuity scribe")) {
-      return text(knows ? `${pc} went about the day's business. ${fact.statement}` : `${pc} went about the day's business.`);
+      return text(citedSummaryReply(user, { facts: fact ? [fact] : [], holds: (t) => holds(t), forget, pc }));
     }
     if (system.includes("## THIS SUMMARY")) {
       return text(citedRecapReply(user, { facts: fact ? [fact] : [], holds: (t) => holds(t), forget }));
@@ -407,10 +443,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
         ? { type: "discovery", salience: "notable", text: said.join(" ") }
         : { type: "moment", salience: "scene", text: "A quiet moment passed." }));
     }
-    if (system.includes("continuity scribe")) {
-      const said = forget ? [] : facts.filter(f => holds(user, f)).map(f => f.statement);
-      return text(`${pc} went about the day's business. ${said.join(" ")}`.trim());
-    }
+    if (system.includes("continuity scribe")) return text(citedSummaryReply(user, { facts, holds, forget, pc }));
     // The detector's instructions travel in its message, not its system prompt.
     if (`${system}\n${user}`.includes("analysing an Ironsworn: Starforged narration")) {
       // Where the script says so (`detects`), a cast member is reported under
