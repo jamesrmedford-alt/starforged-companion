@@ -8,8 +8,9 @@
  *
  * A short stretch of play is written out as the run records it — the table
  * after each step, the cards that changed in it — in which every check is
- * made and none is violated: a session begun, a strong hit, a weak hit burned
- * to a strong one, a miss paid for, a fight finished and its milestone marked,
+ * made and none is violated: a session begun, a strong hit, an expedition
+ * undertaken, a waypoint explored and the expedition finished, a weak hit
+ * burned to a strong one, a miss paid for, a fight finished and its milestone marked,
  * a wound healed, a relationship developed, a bond forged, a vow fulfilled, a
  * session ended. Then, one at a time, the table is made to do what a defect
  * in the module would have it do — pay momentum twice, mark a milestone
@@ -25,8 +26,8 @@ import { describe, it, expect } from 'vitest';
 import { CHECKS, cardsAt, checkMechanics } from '../../test/ci/playwright/lib/mechanics.mjs';
 import { parsePriceLine, uniformFor } from '../../test/ci/playwright/lib/table.mjs';
 import {
-  BONDED_DEVELOP, FIGHT_MARKS, MOVE_MOMENTUM, burnedOutcome, canBurn, decisiveOutcome, dieCancelled, momentumMaxFor, momentumResetFor,
-  recover, rolledScore, sufferCost, xpForBoxes, boxesFilled,
+  BONDED_DEVELOP, EXPEDITION_MARKS, FIGHT_MARKS, MOVE_MOMENTUM, RANKS, WAYPOINT_CHOICE, burnedOutcome, canBurn, decisiveOutcome, dieCancelled,
+  expeditionFinished, expeditionReward, momentumMaxFor, momentumResetFor, recover, rolledScore, sufferCost, xpForBoxes, boxesFilled,
 } from '../helpers/sequence/rules.js';
 
 // ── a stretch of play, as a run records it ───────────────────────────────────
@@ -68,6 +69,22 @@ function story() {
   step('a1', { action: 'dialog', title: 'Begin a Session', fields: [{ name: 'vignette', value: 'true' }], press: 'Begin' }, () => { table.session.active = true; table.session.id = 's1'; pc.momentum = 3; });
   step('a2', say('I work the docks for who saw the raiders.'), () => { pc.momentum = 5; rolled([2, 5], 4); },
     [moveCard('m2', 'Gather Information', 'Action: 4 + 3 = 7 | Challenge: 2, 5', 'strong_hit'), narrated('n2', 'm2', 'gather_information', 'strong_hit')]);
+  // An expedition: a hit begins its track and marks it once; a waypoint's
+  // strong hit offers a mark or momentum, and the mark is taken; the finish
+  // is scored by its four boxes and pays the discoveries legacy by rank.
+  const journey = { id: 't2', label: 'the source of the distress call', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false, siteId: null };
+  step('a2a', say('I take her off the charted lane, along the call\'s bearing.'), () => { table.tracks.push(journey); rolled([3, 6], 5); },
+    [moveCard('m2a', 'Undertake an Expedition', 'Action: 5 + 3 = 8 | Challenge: 3, 6', 'strong_hit'), narrated('n2a', 'm2a', 'undertake_an_expedition', 'strong_hit'),
+      { id: 'e2a', expedition: { created: true, trackId: 't2', trackLabel: 'the source of the distress call', actorId: 'pc' } }]);
+  step('a2b', say('I go over the place the call is coming from.'), () => { rolled([2, 4], 3); },
+    [moveCard('m2b', 'Explore a Waypoint', 'Action: 3 + 3 = 6 | Challenge: 2, 4', 'strong_hit'), narrated('n2b', 'm2b', 'explore_a_waypoint', 'strong_hit'),
+      { id: 's2b', suffer: { resolved: false, picked: [], moveId: 'explore_a_waypoint', resolutionId: 'm2b', actorId: 'pc', options: [{ label: 'Mark expedition progress' }, { label: '+2 momentum' }] } }]);
+  step('a2c', click('Mark expedition progress'), () => { table.tracks.find(t => t.id === 't2').ticks = 16; },
+    [{ id: 's2b', suffer: { resolved: true, picked: [0], moveId: 'explore_a_waypoint', resolutionId: 'm2b', actorId: 'pc', options: [{ label: 'Mark expedition progress' }, { label: '+2 momentum' }] } },
+      { id: 'e2c', expedition: { created: false, trackId: 't2', trackLabel: 'the source of the distress call', actorId: 'pc' } }]);
+  step('a2d', click('🗺 Finish the Expedition (4/10)'), () => { table.tracks.find(t => t.id === 't2').completed = true; table.legacy.discoveries.ticks = 2; rolled([1, 2]); },
+    [moveCard('m2d', 'Finish an Expedition', 'Progress: 4 | Challenge: 1, 2', 'strong_hit'), narrated('n2d', 'm2d', 'finish_an_expedition', 'strong_hit'),
+      { id: 'f2d', expeditionFinished: { legacyTicks: 2 } }]);
   // A weak hit momentum would improve: held until it is kept or burned.
   const weak = moveCard('m3', 'Strike', 'Action: 1 + 2 = 3 | Challenge: 1, 4', 'weak_hit',
     { combatTrackId: 't1', burn: { canBurn: true, momentum: 5, originalOutcome: 'weak_hit', previewOutcome: 'strong_hit', moveId: 'strike' }, held: { open: true, resolvedBy: null, resolution: { moveId: 'strike', outcome: 'weak_hit' } } });
@@ -137,7 +154,8 @@ describe('the stretch of play, as the module should play it', () => {
 
   it('lists each roll with its own dice', () => {
     expect(result.rolls.map(r => `${r.step} ${r.moveId} ${r.outcome}`)).toEqual([
-      'a2 gather_information strong_hit', 'a3 strike weak_hit', 'a5 strike miss', 'a7 take_decisive_action strong_hit', 'a9 heal strong_hit',
+      'a2 gather_information strong_hit', 'a2a undertake_an_expedition strong_hit', 'a2b explore_a_waypoint strong_hit', 'a2d finish_an_expedition strong_hit',
+      'a3 strike weak_hit', 'a5 strike miss', 'a7 take_decisive_action strong_hit', 'a9 heal strong_hit',
       'a12 forge_a_bond strong_hit', 'a13 fulfill_your_vow strong_hit', 'a13b face_danger miss',
     ]);
     expect(result.rolls[0]).toMatchObject({ dice: 'Action: 4 + 3 = 7 | Challenge: 2, 5', kind: 'action', scripted: false });
@@ -148,6 +166,29 @@ describe('the stretch of play, as the module should play it', () => {
     const i = marks.findIndex(k => k.step === 'a4');
     expect(cardsAt(marks, i - 1).get('m3').move.burn.consumed).toBeUndefined();
     expect(cardsAt(marks, i).get('m3').move.burn.consumed).toBe(true);
+  });
+});
+
+// The first rehearsal with the expedition crashed at a70 (the machine out of
+// memory): its dice were never read from the GM's page, the run kept the
+// empty list the runner then started with, and it was scored with fifteen
+// rolls "not among the dice that fell" — every roll it made. A record never
+// read is no record: explore.mjs keeps the dice null until it reads them, and
+// the check is then not made. A record that is there and lacks a card's dice
+// is still a violation.
+describe('the dice as they fell, where the run kept no record of them', () => {
+  it('is not made with no record — the same story is held to its dice when they were read', () => {
+    const run = story();
+    const rolls = checkMechanics(run).rolls.length;
+    expect(checkMechanics({ ...run, dice: null }).byCheck['dice-as-they-fell']).toEqual({ made: 0, violated: 0 });
+    expect(checkMechanics({ ...run, dice: null }).violations).toEqual([]);
+    expect(checkMechanics(run).byCheck['dice-as-they-fell']).toEqual({ made: rolls, violated: 0 });
+  });
+
+  it('a record that is there and holds none of a card\'s dice is a violation, roll by roll', () => {
+    const result = checkMechanics({ ...story(), dice: [] });
+    expect(result.byCheck['dice-as-they-fell'].violated).toBe(result.byCheck['dice-as-they-fell'].made);
+    expect(result.violations[0]).toMatchObject({ step: 'a2', check: 'dice-as-they-fell', detail: 'gather_information: the card\'s dice (Action: 4 + 3 = 7 | Challenge: 2, 5) are not among the dice that fell' });
   });
 });
 
@@ -164,6 +205,14 @@ describe('each check catches the defect it is for', () => {
     ['meter-bounds', 'momentum past its own maximum', ({ from }) => from('a14', (t) => { t.pcs[0].momentumMax = 3; }), 'its maximum is 3'],
     ['track-bounds', 'a track past its tenth box', ({ from }) => from('a11', (t) => { t.connections[0].ticks = 44; t.pcs[0].bonds[0].ticks = 44; }), '44 ticks'],
     ['progress-per-mark', 'a mark of the wrong size for its rank', ({ from }) => from('a8', (t) => { t.pcs[0].vows[0].ticks = 20; }), 'a mark at that rank is 8'],
+    ['expedition-progress', 'an expedition marked twice for one hit', ({ from }) => from('a2a', (t) => { const e = t.tracks.find(x => x.id === 't2'); if (e.ticks === 8) e.ticks = 16; }), 'marks progress once: the dangerous expedition "the source of the distress call" gained 16 ticks'],
+    ['expedition-progress', 'a hit that began no expedition and marked none', ({ at }) => { at('a2a').table.tracks = at('a2a').table.tracks.filter(x => x.id !== 't2'); }, 'no expedition gained any'],
+    ['expedition-progress', 'a crossing that missed and began a journey all the same', ({ card }) => { card('a2a', 'm2a').move.diceLine = 'Action: 1 + 3 = 4 | Challenge: 9, 6'; card('a2a', 'm2a').move.shown = 'miss'; card('a2a', 'n2a').narration.outcome = 'miss'; }, 'undertake_an_expedition missed, and "the source of the distress call" was begun'],
+    ['expedition-progress', 'a waypoint\'s mark that marked nothing', ({ at }) => { at('a2c').table.tracks.find(x => x.id === 't2').ticks = 8; }, '"Mark expedition progress" marks progress once: no expedition gained any'],
+    ['progress-score', 'an expedition finished on a score that is not its boxes', ({ card }) => { card('a2d', 'm2d').move.diceLine = 'Progress: 6 | Challenge: 1, 2'; }, 'the expedition "the source of the distress call" had 16 ticks (4 boxes)'],
+    ['legacy-reward', 'an expedition finished that paid the discoveries legacy nothing', ({ from }) => from('a2d', (t) => { t.legacy.discoveries.ticks = 0; }), 'the discoveries legacy gained 0 ticks, not 2'],
+    ['legacy-reward', 'an expedition\'s card that says other than the legacy track', ({ card }) => { card('a2d', 'f2d').expeditionFinished.legacyTicks = 4; }, 'the discoveries legacy gained 2 ticks — and its card says 4'],
+    ['legacy-reward', 'a finish that hit and left its expedition open', ({ from }) => from('a2d', (t) => { t.tracks.find(x => x.id === 't2').completed = false; }), '0 expeditions were completed, not one'],
     ['bond-mirror', 'the bond Item left behind the card', ({ at }) => { at('a11').table.pcs[0].bonds[0].ticks = 32; }, 'bond Item for Tamsin Vey says 32 ticks'],
     ['link-mirror', 'a renamed card whose vow still shows the old name', ({ from }) => from('a9', (t) => { t.connections[0].name = 'Tamsin Okoro'; t.pcs[0].bonds[0].name = 'Tamsin Okoro'; }), 'shows the name "Tamsin Vey"'],
     ['legacy-reward', 'a forged bond paid at the wrong rank', ({ from }) => from('a12', (t) => { t.legacy.bonds.ticks = 4; }), 'the bonds legacy gained 4 ticks, not 2'],
@@ -256,6 +305,21 @@ describe('the rules the checks hold the table to (tests/helpers/sequence/rules.j
     expect(sufferCost(1, 3)).toEqual({ after: 0, remainder: 2 });
     expect(sufferCost(-5, 3, -6)).toEqual({ after: -6, remainder: 2 });
     expect([recover(3, 3), recover(1, 3), recover(9, 2, 10)]).toEqual([5, 4, 10]);
+  });
+
+  // The expedition moves, in their own words (the header of rules.js quotes
+  // them): one mark for a hit that undertakes it and none for a miss; a
+  // waypoint's strong hit a choice of one mark or +2 momentum, its weak hit
+  // +1; a finish paid on the discoveries legacy by rank, one rank lower on a
+  // weak hit — and a miss finishes nothing.
+  it('an expedition: a mark for a hit, a waypoint\'s choice, the discoveries legacy by rank', () => {
+    expect(EXPEDITION_MARKS).toEqual({ strong_hit: 1, weak_hit: 1, miss: 0 });
+    expect(WAYPOINT_CHOICE).toEqual({ marks: 1, momentum: 2 });
+    expect(MOVE_MOMENTUM.explore_a_waypoint).toEqual({ weak_hit: 1 });
+    expect(RANKS.map(r => expeditionReward(r, 'strong_hit'))).toEqual([1, 2, 4, 8, 12]);
+    expect(RANKS.map(r => expeditionReward(r, 'weak_hit')), 'one rank lower; none under troublesome').toEqual([0, 1, 2, 4, 8]);
+    expect(RANKS.map(r => expeditionReward(r, 'miss'))).toEqual([0, 0, 0, 0, 0]);
+    expect([expeditionFinished('strong_hit'), expeditionFinished('weak_hit'), expeditionFinished('miss')]).toEqual([true, true, false]);
   });
 
   it('the tables are the play kit\'s: momentum by outcome, marks in a fight, the bonded roll', () => {

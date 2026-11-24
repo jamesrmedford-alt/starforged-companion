@@ -1,0 +1,38 @@
+{
+  "name": "scenarios",
+  "description": "Short, independent scenarios, one flow each, beside the long haul (charters/long-haul.json) — not in place of it: the long haul tests memory over three sessions with every flow loaded at once, and one early fault there costs every beat that depends on it (the third live run lost beats 2, 3, 18, 22 and 23 to one card that was never made). Each scenario here starts from a seeded state of its own, in a world cleared and seeded for it, so each flow is put to the test whatever happens to the others. Run by suite.mjs: `./scripts/cloud.sh explore --suite scenarios --rehearse`.",
+  "ceiling": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "total": {
+    "usd": 9
+  },
+  "scenarios": [
+    "scenario-fight",
+    "scenario-connection",
+    "scenario-vow",
+    "scenario-recovery",
+    "scenario-expedition",
+    "scenario-scene-answer"
+  ],
+  "toAdd": [
+    {
+      "name": "scenario-oracle",
+      "flow": "an oracle's yes/no that the narration must keep",
+      "why": "ORACLE-NO-NARRATED-AS-YES. Needs the oracle's d100 scripted on the player's page (an oracle asked in chat is rolled where it was typed) and a beat check that reads the follow-up narration's prompt for the answer — beat checks read no prompts yet."
+    },
+    {
+      "name": "scenario-scene-question",
+      "flow": "a scene's question that nobody takes up, and lapses",
+      "why": "NARRATOR-REFRAINS (SCENE_QUESTION_BEATS). Needs the stand-in to set the frame's question from a script entry's sceneFrame (as scenario-scene-answer's sidecar does) on a line of play, and a check that the frame holds none three beats on."
+    },
+    {
+      "name": "scenario-correction",
+      "flow": "a corrected name and its short form",
+      "why": "CORRECTED-NAME-SHORT-FORM. The correction is BEAT_CHECKS.corrected; what proves the short form is the next narration's prompt (\"for \\\"the Wake\\\" write \\\"the Wren\\\"\"), which a beat check cannot read yet — or a ledger fact whose refusal is the short form, probed through @scene."
+    }
+  ]
+}

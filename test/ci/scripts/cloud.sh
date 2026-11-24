@@ -69,12 +69,22 @@
 #                                              no key. EXPLORE_CHARTER picks
 #                                              the charter: memory (default),
 #                                              or long-haul (issue #373: three
-#                                              sessions, 26 beats; its
+#                                              sessions, 27 beats; its
 #                                              rehearsal rolls and takes about
 #                                              fifteen minutes). A live run is
 #                                              refused without
 #                                              EXPLORE_QUESTIONS: what it is to
 #                                              answer, one question to a line.
+#   ./scripts/cloud.sh explore --suite <name> [--rehearse | --replay <suite folder>]
+#                                              a suite of short scenarios
+#                                              (playwright/suites/<name>.json:
+#                                              scenarios), each from a seeded
+#                                              state of its own, one after
+#                                              another, with one summary
+#                                              (playwright/suite.mjs) — beside
+#                                              the long haul, not in its place.
+#                                              EXPLORE_SUITE_ONLY=<a,b> runs
+#                                              those scenarios alone.
 #   ./scripts/cloud.sh readers [--live]        plain lines through the pacing and move readers, model against model
 #                                              (dry by default: no key, no spend; --live needs READERS_QUESTIONS)
 #   ./scripts/cloud.sh multiplayer             the second-client suite
@@ -337,26 +347,39 @@ cmd_playthroughs() {
 }
 
 cmd_explore() {
-  local mode=live replay=""
-  case "${1:-}" in
-    "")       ;;
-    --rehearse) mode=rehearsal ;;
-    --replay) mode=replay
-              [[ -n "${2:-}" && -f "${2}/replay.json" ]] || die "--replay needs the folder of the run to replay (playwright/artifacts/explore/<run>, with its replay.json)"
-              replay="$(cd "${2}" && pwd)" ;;
-    *)        die "explore takes --rehearse, --replay <run folder>, or nothing (a live run)" ;;
-  esac
+  local mode=live replay="" suite=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --suite)    [[ -n "${2:-}" ]] || die "--suite needs a suite's name (playwright/suites/<name>.json)"
+                  suite="$2"; shift 2 ;;
+      --rehearse) mode=rehearsal; shift ;;
+      --replay)   mode=replay
+                  [[ -n "${2:-}" && -d "${2}" ]] || die "--replay needs the folder of the run to replay (playwright/artifacts/explore/<run>, with its replay.json — or, with --suite, the suite's folder, with its summary.json)"
+                  replay="$(cd "${2}" && pwd)"; shift 2 ;;
+      *)          die "explore takes --suite <name>, --rehearse, --replay <folder>, or nothing (a live run)" ;;
+    esac
+  done
+  if [[ -n "${suite}" ]]; then
+    [[ -f "${PW_DIR}/suites/${suite}.json" ]] || die "no suite named ${suite} (playwright/suites/${suite}.json)"
+    [[ -z "${replay}" || -f "${replay}/summary.json" ]] || die "--replay with --suite needs a suite run's folder (playwright/artifacts/explore/suite-<name>-<mode>-<time>, with its summary.json)"
+  else
+    [[ -z "${replay}" || -f "${replay}/replay.json" ]] || die "--replay needs the folder of the run to replay (playwright/artifacts/explore/<run>, with its replay.json)"
+  fi
+  local what="the ${EXPLORE_CHARTER:-memory} charter" capped="playwright/explore.config.json and the charter's caps" script=explore.mjs
+  if [[ -n "${suite}" ]]; then
+    what="the ${suite} suite"; capped="each scenario's caps and the suite's total (playwright/suites/${suite}.json)"; script=suite.mjs
+  fi
   if [[ "${mode}" == live ]]; then
     [[ -n "$(claude_key)" ]] || die "a live run calls Claude for real: set ANTHROPIC_API_KEY (or PLAYTEST_ANTHROPIC_API_KEY) first — or rehearse it (--rehearse)"
     [[ -n "${EXPLORE_QUESTIONS:-}" ]] || die "a live run is given its questions first: set EXPLORE_QUESTIONS — what this run is to answer that a rehearsal cannot, one question to a line"
     export ANTHROPIC_API_KEY; ANTHROPIC_API_KEY="$(claude_key)"
-    log "running the ${EXPLORE_CHARTER:-memory} charter LIVE — real models, spend capped by playwright/explore.config.json"
+    log "running ${what} LIVE — real models, spend capped by ${capped}"
   else
     unset ANTHROPIC_API_KEY
-    log "running the ${EXPLORE_CHARTER:-memory} charter (${mode}: no key, no model call)"
+    log "running ${what} (${mode}: no key, no model call)"
   fi
-  EXPLORE_MODE="${mode}" EXPLORE_REPLAY="${replay}" EXPLORE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)" \
-    run_suite explore.mjs
+  EXPLORE_MODE="${mode}" EXPLORE_REPLAY="${replay}" EXPLORE_SUITE="${suite}" EXPLORE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)" \
+    run_suite "${script}"
 }
 
 # Plain lines through the two readers of every line of play, on each model of
@@ -400,6 +423,6 @@ case "${1:-}" in
   quench)       log "running the Quench batches"; run_suite quench.mjs ;;
   status)       cmd_status ;;
   down)         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true; log "container removed (./data is kept)" ;;
-  -h|--help|"") sed -n '2,85p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|"") sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)            die "unknown command: $1 (try --help)" ;;
 esac

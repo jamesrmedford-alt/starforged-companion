@@ -9,8 +9,11 @@
 //   - "Who are you interacting with?" is answered with the charter's named
 //     NPC when the player's line names them and the window offers them, else
 //     "No specific entity" — which is what closing it means;
-//   - a draft whose name is in the charter's cast is confirmed, as the
-//     player character's connection; every other draft is left;
+//   - a draft for someone in the charter's cast is confirmed, as the player
+//     character's connection — under their name or a whole-word part of it,
+//     and of no other cast member's ("Tamsin" for Tamsin Vey: lib/cast.mjs),
+//     once: a cast member who has a card gets no second one; every other
+//     draft is left;
 //   - nothing else is typed. A window on the GM's screen these rules do not
 //     answer ends the run as `not-exercised`, naming it (explore.mjs).
 //
@@ -28,6 +31,7 @@
 import { MODULE_ID, chat, sleep } from "./foundry.mjs";
 import { uniformFor } from "./table.mjs";
 import { waitForQuietWorld } from "./world.mjs";
+import { castMembers, castMemberFor } from "./cast.mjs";
 
 /** The windows the rules answer — a prompt in one of them means the table is still moving. */
 export const GM_ANSWERS = [".move-confirm-dialog", ".sf-clarification-dialog"];
@@ -74,6 +78,38 @@ export function burnableDice(momentum, stat) {
   return { faces, queue: faces.map((f, i) => uniformFor(f, i < 2 ? 10 : 6)) };
 }
 
+/** The kind of draft that is a person: a cast member's card is made from one. */
+const PERSON_DRAFTS = ["connection"];
+
+/**
+ * The pending draft the GM's rules confirm, if any: the first one that is a
+ * cast member's — under their name, or a whole-word part of it that is no
+ * other member's — while that member has no card yet. Pure.
+ *
+ * The third live long haul: the player named "Tamsin Vey" in full, the
+ * narrator wrote "Tamsin", the module proposed "Tamsin" — and the rule, which
+ * wanted the exact name, left it. A second card for someone who has one is
+ * never confirmed: after the rename of beat 19 a draft for "Tamsin" is the
+ * same person again.
+ *
+ * @param {Array<{ messageId: string, index: number, name: string, type?: string|null }>} drafts — pending, oldest first
+ * @param {Array<{ name: string, names: string[] }>} members — castMembers'
+ * @param {string[]} [cardNames] — the names of the entity cards the world holds now
+ * @returns {{ draft: object, member: object, exact: boolean }|null}
+ */
+export function draftToConfirm(drafts, members, cardNames = []) {
+  const carded = new Set((cardNames ?? []).map(n => castMemberFor(n, members)?.name).filter(Boolean));
+  for (const draft of drafts ?? []) {
+    const member = castMemberFor(draft.name, members);
+    if (!member || carded.has(member.name)) continue;
+    const exact = member.names.some(n => n.toLowerCase() === String(draft.name ?? "").replace(/\s+/g, " ").trim().toLowerCase());
+    // A part of a name is a person's only where the draft is of a person.
+    if (!exact && draft.type && !PERSON_DRAFTS.includes(String(draft.type).toLowerCase())) continue;
+    return { draft, member, exact };
+  }
+  return null;
+}
+
 /**
  * Start the rules on the GM's page. `state()` is asked on every pass for what
  * may have changed: `{ armed, lastLine }` — `armed` the rolls to script, the
@@ -87,13 +123,16 @@ export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = conso
   let busy = false;
   let warned = false;
   const names = cast.map(c => c.name).filter(Boolean);
+  const members = castMembers(cast);
+  const pressed = new Set();     // drafts whose Confirm was pressed: not looked at again
+  const confirmed = [];          // the cast members confirmed so far: their card may still be on its way
   const timer = setInterval(async () => {
     if (busy) return;
     busy = true;
     try {
       const { armed = [], lastLine = "" } = state() ?? {};
       const specs = (armed ?? []).map(spec => ({ ...spec, fixed: scriptedDice(spec) }));
-      const answered = await gm.page.evaluate(({ MODULE_ID, names, pcId, specs, lastLine }) => {
+      const found = await gm.page.evaluate(({ MODULE_ID, names, pcId, specs, lastLine }) => {
         const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
         const pressOnce = (button) => { if (!button || button.dataset.sfcAnswered) return false; button.dataset.sfcAnswered = "1"; button.click(); return true; };
 
@@ -146,20 +185,38 @@ export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = conso
           }
         }
 
-        // A draft for someone in the charter's cast: confirmed, as the player
-        // character's connection. Every other draft is left.
+        // The drafts still pending, and the cards the world holds: which of
+        // them is a cast member's is decided outside the page (draftToConfirm).
+        const drafts = [];
         for (const m of game.messages.contents) {
           const f = m.flags?.[MODULE_ID];
           if (!f?.draftEntityCard) continue;
-          for (const d of f.drafts ?? []) {
-            if (d.status !== "pending" || !names.some(n => n.toLowerCase() === clean(d.name).toLowerCase())) continue;
-            const row = `[data-message-id="${m.id}"] [data-action="sf-draft-confirm"][data-index="${d.index}"]`;
-            const button = document.querySelector(`${row}[data-actor-id="${pcId}"]`) ?? document.querySelector(row);
-            if (pressOnce(button)) return { did: `confirmed the draft for ${d.name}${button.dataset.actorId ? ", as the player character's connection" : ""}`, note: d.type ?? null };
-          }
+          for (const d of f.drafts ?? []) if (d.status === "pending") drafts.push({ messageId: m.id, index: d.index, name: clean(d.name), type: d.type ?? null });
         }
-        return null;
+        return drafts.length ? { drafts, cards: game.actors.contents.filter(a => !!a.flags?.[MODULE_ID]?.entityType).map(a => a.name) } : null;
       }, { MODULE_ID, names, pcId, specs, lastLine });
+      // A draft for someone in the charter's cast: confirmed, as the player
+      // character's connection. Every other draft is left.
+      let answered = found?.did ? found : null;
+      const pick = found?.drafts ? draftToConfirm(found.drafts.filter(d => !pressed.has(`${d.messageId}:${d.index}`)), members, [...found.cards, ...confirmed]) : null;
+      if (pick) {
+        answered = await gm.page.evaluate(({ messageId, index, pcId }) => {
+          const row = `[data-message-id="${messageId}"] [data-action="sf-draft-confirm"][data-index="${index}"]`;
+          const button = document.querySelector(`${row}[data-actor-id="${pcId}"]`) ?? document.querySelector(row);
+          if (!button || button.dataset.sfcAnswered) return null;
+          button.dataset.sfcAnswered = "1";
+          button.click();
+          return { asConnection: !!button.dataset.actorId };
+        }, { messageId: pick.draft.messageId, index: pick.draft.index, pcId });
+        if (answered) {
+          pressed.add(`${pick.draft.messageId}:${pick.draft.index}`);
+          confirmed.push(pick.member.name);
+          answered = {
+            did: `confirmed the draft for ${pick.draft.name}${pick.exact ? "" : ` — ${pick.member.name}, under a part of the name`}${answered.asConnection ? ", as the player character's connection" : ""}`,
+            note: pick.draft.type ?? null, cast: { member: pick.member.name, as: pick.draft.name },
+          };
+        }
+      }
       if (answered) onAnswer(answered);
     } catch (err) {
       // The page is navigating (a reload is one of the interruptions) or closing.
@@ -227,13 +284,23 @@ export async function playXCard(player, gm) {
   return { did: "the X-Card was played from the player's client (!x); the GM resumed (!x clear)", result: "the X-Card went up and came down" };
 }
 
-/** The GM renames a connection's card, as on its sheet. */
-export async function renameConnection(gm, from, to) {
-  const renamed = await gm.page.evaluate(async ({ MODULE_ID, from, to }) => {
-    const actor = game.actors.find(a => a.flags?.[MODULE_ID]?.entityType === "connection" && a.name === from);
-    if (!actor) return false;
+/**
+ * The GM renames a connection's card, as on its sheet. The card is the one
+ * the cast member was made as (`id`, where the runner knows it — the card may
+ * have been confirmed under a part of the name), else the one named `from`.
+ */
+export async function renameConnection(gm, from, to, { id = null } = {}) {
+  const renamed = await gm.page.evaluate(async ({ MODULE_ID, from, to, id }) => {
+    const isConnection = (a) => a?.flags?.[MODULE_ID]?.entityType === "connection";
+    const byId = id ? game.actors.get(id) : null;
+    const actor = (isConnection(byId) ? byId : null) ?? game.actors.find(a => isConnection(a) && a.name === from);
+    if (!actor) return null;
+    const was = actor.name;
     await actor.update({ name: to });
-    return true;
-  }, { MODULE_ID, from, to });
-  return { did: `the GM renamed ${from}'s card to ${to}`, result: renamed ? "renamed" : `no connection card is named ${from}` };
+    return was;
+  }, { MODULE_ID, from, to, id });
+  return {
+    did: renamed && renamed !== from ? `the GM renamed ${from}'s card — made as "${renamed}" — to ${to}` : `the GM renamed ${from}'s card to ${to}`,
+    result: renamed ? "renamed" : `no connection card is named ${from}`,
+  };
 }

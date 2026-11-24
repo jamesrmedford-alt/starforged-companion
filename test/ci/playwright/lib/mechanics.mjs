@@ -21,8 +21,8 @@
 
 import {
   METER_MIN, METER_MAX, MOMENTUM_MIN, MOMENTUM_MAX, PROGRESS_TICKS, TRACK_TICKS, TICKS_PER_BOX,
-  BONDED_DEVELOP, MOVE_MOMENTUM, FIGHT_MARKS, SUFFER_METER,
-  rolledScore, boxesFilled, bondReward, burnedOutcome, decisiveOutcome, dieCancelled, fulfilReward, isMatch, outcomeOf, progressScore,
+  BONDED_DEVELOP, MOVE_MOMENTUM, FIGHT_MARKS, SUFFER_METER, EXPEDITION_MARKS, WAYPOINT_CHOICE,
+  rolledScore, boxesFilled, bondReward, burnedOutcome, decisiveOutcome, dieCancelled, expeditionFinished, expeditionReward, fulfilReward, isMatch, outcomeOf, progressScore,
   rankOf, recover, sufferCost, xpForBoxes,
 } from "../../../../tests/helpers/sequence/rules.js";
 import { parseDiceLine, parsePriceLine, faceOf } from "./table.mjs";
@@ -30,7 +30,7 @@ import { parseDiceLine, parsePriceLine, faceOf } from "./table.mjs";
 /** The checks, in the order the scorecard lists them. */
 export const CHECKS = [
   "roll-score", "roll-outcome", "roll-match", "roll-cancelled-die", "roll-narrated-as-rolled", "dice-as-they-fell", "progress-score",
-  "meter-bounds", "track-bounds", "progress-per-mark", "bond-mirror", "link-mirror",
+  "meter-bounds", "track-bounds", "progress-per-mark", "expedition-progress", "bond-mirror", "link-mirror",
   "legacy-reward", "xp-per-box",
   "move-momentum", "milestone-once", "suffer-cost", "recover-amount", "burn",
   "session-momentum", "lock-free", "answered-once",
@@ -49,6 +49,12 @@ export function cardsAt(marks, i) {
 
 const pcOf = (table, id) => table?.pcs?.find(p => p.id === id) ?? (table?.pcs?.length === 1 ? table.pcs[0] : null);
 const openFight = (table, id = null) => (table?.tracks ?? []).find(t => t.type === "combat" && (id ? t.id === id : !t.completed)) ?? null;
+
+const expeditions = (table) => (table?.tracks ?? []).filter(t => t.type === "expedition");
+/** What each expedition's track gained in a step — a track begun in it counts from nothing. */
+const expeditionGains = (before, after) => expeditions(after)
+  .map(t => ({ track: t, gain: t.ticks - (expeditions(before).find(b => b.id === t.id)?.ticks ?? 0), begun: !expeditions(before).some(b => b.id === t.id) }))
+  .filter(g => g.gain !== 0 || g.begun);
 
 /**
  * @param {object} o
@@ -132,6 +138,13 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
           const vow = done.length === 1 ? (before.pcs ?? []).flatMap(p => p.vows).find(b => b.id === done[0].id) : null;
           if (vow) hold("progress-score", step, progressScore(vow.ticks) === roll.score, `fulfill_your_vow: scored ${roll.score}; the vow had ${vow.ticks} ticks (${progressScore(vow.ticks)} boxes)`);
         }
+        if (moveId === "finish_an_expedition") {
+          // The expedition it scores: the one it completed, else the one open one.
+          const ended = expeditions(after).filter(t => t.completed && expeditions(before).find(b => b.id === t.id)?.completed === false);
+          const open = expeditions(before).filter(t => !t.completed);
+          const track = ended.length === 1 ? expeditions(before).find(b => b.id === ended[0].id) : open.length === 1 ? open[0] : null;
+          if (track) hold("progress-score", step, progressScore(track.ticks) === roll.score, `finish_an_expedition: scored ${roll.score}; the expedition "${track.label}" had ${track.ticks} ticks (${progressScore(track.ticks)} boxes)`);
+        }
         if (moveId === "forge_a_bond") {
           const forged = (after.connections ?? []).filter(c => c.bonded && !(before.connections ?? []).find(b => b.hostId === c.hostId)?.bonded);
           const conn = forged.length === 1 ? (before.connections ?? []).find(b => b.hostId === forged[0].hostId) : null;
@@ -191,6 +204,32 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
       }
     }
 
+    // ── an expedition: one mark for a hit that undertakes it, one for a waypoint's ──
+    // Undertake an Expedition marks once on a hit — on the track it begins,
+    // or the open one — and nothing on a miss; Explore a Waypoint's strong
+    // hit marks once when its roller picks the progress. Each by the rank's
+    // own mark (a track filled to its tenth box holds no more).
+    const oneMark = (g) => g.gain === PROGRESS_TICKS[rankOf(g.track.rank)] || (g.gain > 0 && g.track.ticks === TRACK_TICKS);
+    const gains = expeditionGains(before, after);
+    for (const card of fresh.filter(c => c.move && parseDiceLine(c.move.diceLine))) {
+      const narrated = [...cardsAt(marks, i).values()].find(c => c.narration?.resolutionId && c.narration.resolutionId === card.move.resolutionId && !c.narration.upgradeOf) ?? null;
+      const moveId = narrated?.narration?.moveId ?? card.move.burn?.moveId ?? card.move.held?.resolution?.moveId ?? slug(card.move.name);
+      if (moveId !== "undertake_an_expedition") continue;
+      // A result held for a burn has marked nothing yet; one burned in this step is the upgrade's to answer for.
+      if (card.move.held?.open || card.move.burn?.consumed) continue;
+      const outcome = card.move.shown;
+      const marksWanted = EXPEDITION_MARKS[outcome];
+      if (marksWanted == null) continue;
+      hold("expedition-progress", step, marksWanted === 0 ? gains.length === 0 : gains.length === 1 && oneMark(gains[0]),
+        marksWanted === 0
+          ? `undertake_an_expedition missed, and ${gains.map(g => `"${g.track.label}" ${g.begun ? "was begun" : `gained ${g.gain} ticks`}`).join("; ")}`
+          : `undertake_an_expedition (${say(outcome)}) marks progress once: ${gains.length ? gains.map(g => `the ${rankOf(g.track.rank)} expedition "${g.track.label}" gained ${g.gain} ticks`).join("; ") : "no expedition gained any"}`);
+    }
+    if (/^Mark expedition progress\b/i.test(label)) {
+      hold("expedition-progress", step, gains.length === 1 && oneMark(gains[0]),
+        `"${label}" marks progress ${WAYPOINT_CHOICE.marks === 1 ? "once" : `${WAYPOINT_CHOICE.marks} times`}: ${gains.length ? gains.map(g => `the ${rankOf(g.track.rank)} expedition "${g.track.label}" gained ${g.gain} ticks`).join("; ") : "no expedition gained any"}`);
+    }
+
     // ── mirrors: one fact in two stores ───────────────────────────────────────
     for (const pc of after.pcs ?? []) {
       for (const bond of pc.bonds.filter(b => !b.lost)) {
@@ -226,6 +265,24 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
       const want = BONDED_DEVELOP[bondedRoll.outcome]?.bondsTicks ?? 0;
       hold("legacy-reward", step, bondsGain === want, `a bonded Develop Your Relationship came up ${say(bondedRoll.outcome)}: the bonds legacy gained ${bondsGain} ticks, not ${want}`);
     } else if (bondsGain !== 0) hold("legacy-reward", step, false, `the bonds legacy gained ${bondsGain} ticks with no bond forged and no bonded roll in this step`);
+    // An expedition finished: the discoveries legacy by its rank — one rank
+    // lower on a weak hit — and nothing for one a miss left open.
+    const finish = stepRolls.find(r => r.moveId === "finish_an_expedition") ?? null;
+    if (finish && !fresh.find(c => c.move?.resolutionId === finish.resolutionId)?.move?.held?.open) {
+      const ended = expeditions(after).filter(t => t.completed && expeditions(before).find(b => b.id === t.id)?.completed === false);
+      const discoveriesGain = ticksOf(after, "discoveries") - ticksOf(before, "discoveries");
+      if (expeditionFinished(finish.outcome)) {
+        if (ended.length === 1) {
+          const want = expeditionReward(rankOf(ended[0].rank), finish.outcome);
+          // Its card must say what the legacy track shows.
+          const told = fresh.find(c => c.expeditionFinished)?.expeditionFinished.legacyTicks ?? null;
+          const cardWrong = told != null && Number(told) !== discoveriesGain;
+          hold("legacy-reward", step, discoveriesGain === want && !cardWrong,
+            `the ${rankOf(ended[0].rank)} expedition "${ended[0].label}" was finished on ${say(finish.outcome)}: the discoveries legacy gained ${discoveriesGain} ticks`
+            + (discoveriesGain !== want ? `, not ${want}` : "") + (cardWrong ? ` — and its card says ${told}` : ""));
+        } else hold("legacy-reward", step, false, `finish_an_expedition came up ${say(finish.outcome)} and ${ended.length} expeditions were completed, not one`);
+      } else hold("legacy-reward", step, ended.length === 0 && discoveriesGain === 0, `finish_an_expedition missed: ${ended.length} expedition(s) completed and the discoveries legacy gained ${discoveriesGain} ticks`);
+    }
     for (const card of fresh.filter(c => c.legacyXp)) {
       const { track, boxes, xp, cleared } = card.legacyXp;
       const filled = boxesFilled(ticksOf(before, track), ticksOf(after, track));

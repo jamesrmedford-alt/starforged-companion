@@ -30,6 +30,9 @@
 // dropdown options (`choose`) and closes windows, finding each on the screen
 // its prompt shows, and skips what the table never offered.
 
+import { castMembers, castMemberFor, optionFor } from "./cast.mjs";
+import { materialOf } from "./review.mjs";
+
 const API_HOST = "api.anthropic.com";
 
 const textOf = (content) => (typeof content === "string" ? content : (content ?? []).map(c => c?.text ?? "").join(""));
@@ -42,6 +45,40 @@ function parse(body) {
 }
 
 const flexible = (variant) => new RegExp(String(variant).trim().split(/[\s-]+/).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]*"), "i");
+
+/** A line of the recap's source: `[s3-2] …`, `[now-1] …`, `[note-1] …`, `[old-1] …` (record/recapView.js recapSource). */
+const SOURCE_LINE = /^\[((?:s\d+|now|note|old)-\d+)\] (.*)$/gm;
+
+/**
+ * The campaign recap's reply, as the module asks for it since the recap is a
+ * view of the session record (issue #382, slice 2; narratorPrompt.js
+ * buildCampaignRecapUserMessage): JSON paragraphs of sentences, each citing
+ * the ids of the source lines it rests on — a sentence that cites none is
+ * dropped in code, a beat marked LASTING that no sentence cites sends the
+ * reply back once, and a reply that is not the JSON leaves the recap empty
+ * (narrator.js getCampaignRecap). The stand-in states each fact a line of the
+ * source holds, citing those lines — none when it is forgetful — and gives
+ * every LASTING beat a sentence of its own that cites it, so it is sent back
+ * for neither. Pure.
+ *
+ * @param {string} user — the recap's user message
+ * @param {{ facts?: object[], holds: (text: string, fact: object) => boolean, forget?: boolean }} o
+ * @returns {string}
+ */
+export function citedRecapReply(user, { facts = [], holds, forget = false }) {
+  const lines = [...String(user ?? "").matchAll(SOURCE_LINE)].map(m => ({ id: m[1], text: m[2] }));
+  const told = (forget ? [] : facts).flatMap((fact) => {
+    const because = lines.filter(l => holds(l.text, fact)).map(l => l.id);
+    return because.length ? [{ text: fact.statement, because }] : [];
+  });
+  const cited = new Set(told.flatMap(s => s.because));
+  const lasting = lines.flatMap((l) => {
+    const what = / — LASTING: (.+)$/.exec(l.text)?.[1]?.trim();
+    return what && !cited.has(l.id) ? [{ text: `That stood: ${what}.`, because: [l.id] }] : [];
+  });
+  const opening = lines.length ? [{ text: "The story so far, as the record has it.", because: [lines[0].id] }] : [];
+  return JSON.stringify({ paragraphs: [[...opening, ...told], lasting].filter(p => p.length) });
+}
 
 /**
  * The stand-in's answerer for one charter. Pure but for the player's turn
@@ -91,6 +128,9 @@ export function createRehearsal({ charter, forget = false }) {
     if (system.includes("continuity scribe")) {
       return text(knows ? `${pc} went about the day's business. ${fact.statement}` : `${pc} went about the day's business.`);
     }
+    if (system.includes("## THIS SUMMARY")) {
+      return text(citedRecapReply(user, { facts: fact ? [fact] : [], holds: (t) => holds(t), forget }));
+    }
     if (system.includes("NARRATOR ROLE AND VOICE")) {
       const prose = knows ? `You stop for a moment. ${fact.statement}` : "The moment passes. Nothing more comes of it.";
       if (!system.includes("MANDATORY SIDECAR")) return text(prose);
@@ -106,6 +146,25 @@ export function createRehearsal({ charter, forget = false }) {
 // ── a rehearsal that rolls ───────────────────────────────────────────────────
 
 const TITLE = (id) => String(id ?? "").split("_").map(w => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+
+/**
+ * The vow truths a narration's system prompt asks to have told: each plan
+ * its THIS BEAT ENDS A VOW block names (by id), with the Truth line the same
+ * prompt's UNREVEALED block gives it (narratorPrompt.js vowEndingLines,
+ * formatSkeletonEntry). Pure.
+ *
+ * @param {string} system
+ * @returns {Array<{ id: string, truth: string }>}
+ */
+export function vowTruthsToTell(system) {
+  const block = /### THIS BEAT ENDS A VOW\n([\s\S]*?)(?:\n### |\n## |$)/.exec(String(system ?? ""))?.[1] ?? "";
+  const ids = [...new Set([...block.matchAll(/\(id (\S+?)\)/g)].map(m => m[1]))];
+  return ids.map((id) => {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const truth = new RegExp(`### [^\\n]*\\(id ${escaped}\\)\\n(?:[A-Z][^\\n:]*): ([^\\n]+)`).exec(String(system ?? ""))?.[1] ?? "";
+    return { id, truth: truth.replace(/\s*\(already revealed[^)]*\)\s*$/, "").trim() };
+  }).filter(e => e.truth);
+}
 
 /** What the player's prompt shows: its messages' buttons and dropdowns, its windows, its current beat. Pure. */
 export function readScreenText(user) {
@@ -139,14 +198,33 @@ export function readScreenText(user) {
  *             front of the narrator;
  *   bait    — a bait id: corrected if its fact is in front of the narrator;
  *   names   — names the narration of this line uses (so the detector sees them);
+ *   detects — names the detector reports from this line's narration as they
+ *             are written there, where the cast's full name is not: a cast
+ *             member under a part of the name ("Tamsin" for Tamsin Vey — what
+ *             the third live run's detector proposed);
+ *   offer   — on a `say`: the move the classifier offers for the line rather
+ *             than makes (`{ id }`: NARRATIVE_WITH_MOVE_AVAILABLE), so the
+ *             narration carries a "Roll …" button — a step toward a vow said
+ *             in the fiction is offered its milestone so;
+ *   sidecar — a fact block the narrator sends with this line's reply whether
+ *             or not one was asked for: an @scene answer is asked for none,
+ *             and the module drops one that comes anyway;
  *   patience — how many turns to wait for a button or window that is not on
  *             screen before the entry is skipped (default 4; `optional` = 1).
+ *
+ * And, where the charter says so (`rehearsalPlan.tellsVowTruth`), the
+ * stand-in narrator tells a vow's hidden truth where its prompt says the beat
+ * ends that vow (THIS BEAT ENDS A VOW) — states it in the prose and records it
+ * revealed — as a narrator that follows its instructions does, so that a
+ * rehearsal walks the reveal (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED).
+ * It tells nothing a prompt does not ask for.
  */
 export function createRollingRehearsal({ charter, forget = false }) {
   const script = charter.rehearsal ?? [];
   const facts = charter.facts ?? [];
   const pc = charter.seed?.pc?.name ?? "the character";
   const cast = Object.values(charter.cast ?? {}).filter(c => c?.name);
+  const members = castMembers(charter.cast);
   const holds = (text, fact) => {
     const sentences = String(text ?? "").split(/(?<=[.!?])\s+|\n+/);
     const has = (t, words) => words.some(w => flexible(w).test(t));
@@ -200,11 +278,14 @@ export function createRollingRehearsal({ charter, forget = false }) {
         return input;
       }
       case "choose": {
+        // The option that holds the words — else the one they plainly mean
+        // ("Tamsin Vey" where the card, and so the option, is "Tamsin").
         const want = String(entry.option).toLowerCase();
-        const m = screen.messages.filter(x => x.selects.some(sel => sel.options.some(o => o.toLowerCase().includes(want)))).at(-1);
+        const offered = (sel) => sel.options.find(o => o.toLowerCase().includes(want)) ?? optionFor(entry.option, sel.options);
+        const m = screen.messages.filter(x => x.selects.some(sel => offered(sel) != null)).at(-1);
         if (!m) return null;
-        const sel = m.selects.find(x => x.options.some(o => o.toLowerCase().includes(want)));
-        input.message = m.ref; input.button = sel.n; input.option = sel.options.find(o => o.toLowerCase().includes(want));
+        const sel = m.selects.find(x => offered(x) != null);
+        input.message = m.ref; input.button = sel.n; input.option = offered(sel);
         return input;
       }
       default: return input;
@@ -241,7 +322,19 @@ export function createRollingRehearsal({ charter, forget = false }) {
     const sidecar = { newTruths: [], stateChanges: [] };
     let prose;
     if (/vignette/i.test(user) && !entry.plants && !entry.probe) {
+      // A session set-piece — an opening, a closing or a spotlight cutaway
+      // (its user message's first line: OPENING / CLOSING / SPOTLIGHT
+      // VIGNETTE) — is built from the MATERIAL rolled for it (issue #381):
+      // each result in the prose, in its own words, and accounted for in the
+      // fact block (`builtFrom`), as the prompt asks. The forgetful stand-in
+      // does neither, so the review's count of them can be seen to fail.
       prose = `The ship ticks as it cools, and for a moment nothing is asked of anyone. (Scene ${turn}.)`;
+      const material = forget ? [] : materialOf(user);
+      if (material.length) {
+        prose += ` ${material.map(r => `${r.result}.`).join(" ")}`;
+        // "The three to eight words of your prose that are it."
+        sidecar.builtFrom = material.map(r => ({ n: r.n, words: r.result.split(/\s+/).slice(0, 8).join(" ") }));
+      }
     } else if (entry.plants?.length) {
       const said = statementsOf(entry.plants);
       prose = forget ? "The moment passes. Nothing more comes of it." : `You say it plainly, and it stays said. ${said.join(" ")}`;
@@ -258,7 +351,16 @@ export function createRollingRehearsal({ charter, forget = false }) {
       prose = "The moment passes. Nothing more comes of it.";
     }
     for (const name of entry.names ?? []) if (!prose.includes(name)) prose += ` ${name} is there, watching how you take it.`;
+    // A vow this beat ends: its truth, as the plan gives it, told — and
+    // recorded told — where the charter's stand-in is one that does
+    // (`rehearsalPlan.tellsVowTruth`): the long haul's every plan has one
+    // truth, and a vow's told would read as another plan's leaked.
+    const ending = charter.rehearsalPlan?.tellsVowTruth ? vowTruthsToTell(`${system}\n${user}`) : [];
+    if (ending.length) prose += ` ${ending.map(e => e.truth).join(" ")}`;
+    // A fact block sent whether or not one was asked for (`sidecar`).
+    if (entry.sidecar) return `${prose}\n\n\`\`\`json\n${JSON.stringify({ newTruths: [], stateChanges: [], ...entry.sidecar }, null, 2)}\n\`\`\``;
     if (!system.includes("MANDATORY SIDECAR")) return prose;
+    if (ending.length) sidecar.reveals = ending.map(e => ({ id: e.id, revealed: ["truth"], resolved: true }));
     // A plan the narration is asked to decide: decided, and never shown.
     const decide = /### DECIDE NOW([\s\S]*?)(?:\n### |\n## |$)/.exec(system)?.[1] ?? "";
     const ids = [...decide.matchAll(/^- id (\S+):/gm)].map(m => m[1]);
@@ -283,6 +385,9 @@ export function createRollingRehearsal({ charter, forget = false }) {
 
     if (tool === "take_action") return toolUse(playerInput(user));
     if (system.includes("pacing pre-classifier")) {
+      if (entry.offer && entry.action === "say") {
+        return text(JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE", suggestedMove: entry.offer.id, sceneChallenge: null, category: entry.offer.category ?? "progress", confidence: 0.9, reasoning: `rehearsal: the script offers this line ${entry.offer.id}` }));
+      }
       return text(JSON.stringify(entry.move && entry.action === "say"
         ? { decision: "MOVE", suggestedMove: entry.move.id, sceneChallenge: null, category: entry.move.category ?? "action", confidence: 0.95, reasoning: `rehearsal: the script makes this line ${entry.move.id}` }
         : { decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));
@@ -292,7 +397,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
       return text(JSON.stringify({
         moveId: move.id, moveName: TITLE(move.id), statUsed: move.stat ?? null, statValue: 0,
         isProgressMove: move.progress === true, progressTicks: 0, moveTarget: move.target ?? null,
-        expeditionRank: null, combatRank: move.rank ?? null, healSituation: move.heal ?? null,
+        expeditionRank: move.expeditionRank ?? null, combatRank: move.rank ?? null, healSituation: move.heal ?? null,
         rationale: `Rehearsal: the script makes this line ${TITLE(move.id)}.`,
       }));
     }
@@ -308,16 +413,24 @@ export function createRollingRehearsal({ charter, forget = false }) {
     }
     // The detector's instructions travel in its message, not its system prompt.
     if (`${system}\n${user}`.includes("analysing an Ironsworn: Starforged narration")) {
-      const seen = cast.filter(c => user.includes(c.name));
+      // Where the script says so (`detects`), a cast member is reported under
+      // the part of the name the narration used — and only so: the detector
+      // is given the player's line too (its PLAYER'S LINE block, issue #380),
+      // which holds the name in full, and the road the third live run walked
+      // ("Tamsin" proposed for the Tamsin Vey the player named) is the one
+      // the script asks for.
+      const memberOf = (n) => castMemberFor(n, members)?.name ?? null;
+      const scripted = (entry.detects ?? []).filter(n => user.includes(n) && memberOf(n));
+      const covered = new Set(scripted.map(memberOf));
+      const seen = cast.filter(c => user.includes(c.name) && !covered.has(memberOf(c.name)));
+      const parts = scripted.filter((n, i) => scripted.findIndex(m => memberOf(m) === memberOf(n)) === i)
+        .map(n => ({ ...castMemberFor(n, members), name: n }));
       return text(JSON.stringify({
-        entities: seen.map(c => ({ type: "connection", name: c.name, description: c.description ?? "", pronouns: c.pronouns ?? "", role: c.role ?? null, goal: null, confidence: "high" })),
+        entities: [...seen, ...parts].map(c => ({ type: "connection", name: c.name, description: c.description ?? "", pronouns: c.pronouns ?? "", role: c.role ?? null, goal: null, confidence: "high" })),
         renames: [], worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
       }));
     }
-    if (system.includes("## THIS SUMMARY")) {
-      const said = forget ? [] : facts.filter(f => holds(`${system}\n${user}`, f)).map(f => f.statement);
-      return text(`The story so far, as the chronicle has it. ${said.join(" ")}`.trim());
-    }
+    if (system.includes("## THIS SUMMARY")) return text(citedRecapReply(user, { facts, holds, forget }));
     if (system.includes("NARRATOR ROLE AND VOICE") || system.startsWith("You are the narrator for an Ironsworn: Starforged campaign")) return text(narrate(system, user));
     return text("{}");
   }

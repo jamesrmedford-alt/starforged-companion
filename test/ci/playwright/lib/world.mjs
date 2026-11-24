@@ -1,8 +1,9 @@
 // The world a run plays in — shared by the scripted playthroughs
 // (playthrough.mjs) and the AI exploration runs (explore.mjs): the dice hook
 // on the GM's page, the wait for a world that has stopped changing, and the
-// seed (a player with a character, the command vehicle, a sector and its
-// settlements, the settings a run pins) with its restore.
+// seed (a player with a character and the vows they come with, the command
+// vehicle, a sector and its settlements, the settings a run pins) with its
+// restore.
 
 import { MODULE_ID, MODULE_SRC } from "./foundry.mjs";
 import { PAGE_KEY } from "./claude.mjs";
@@ -57,7 +58,9 @@ export function installRefusalTrace() {
  * value rollDie is given — scripted or real — is appended to it. While
  * window.__sfcRandomKept is an object, every other value a file of the
  * module's draws is appended to it under that file's name, and taken from
- * window.__sfcRandomQueue first when it holds values for that file.
+ * window.__sfcRandomQueue first when it holds values for that file — a
+ * session set-piece's under its own stream, "session/sceneSeeds.js", the
+ * roller's draws for it included (issue #381).
  */
 export function installDiceScript() {
   const realRandom = Math.random;
@@ -89,7 +92,21 @@ export function installDiceScript() {
       Error.stackTraceLimit = 4;
       const caller = (new Error().stack || "").split("\n")[2] || "";
       Error.stackTraceLimit = limit;
-      const file = /\/modules\/starforged-companion\/src\/([^?:)\s]+)/.exec(caller)?.[1] ?? null;
+      const fileOf = (line) => /\/modules\/starforged-companion\/src\/([^?:)\s]+)/.exec(line ?? "")?.[1] ?? null;
+      let file = fileOf(caller);
+      // A session set-piece's dice are one stream (issue #381): its own
+      // (`drawDie`, session/sceneSeeds.js) and the roller's for it — a table
+      // row that is a directive ("Action + Theme", a reference, "Roll twice")
+      // makes `rollOracle(id, { roll })` roll again through oracles/roller.js.
+      // Filed under the roller, those draws would take, in a replay, values a
+      // run recorded for its prices and oracles, and every price after them
+      // would come out another.
+      if (file === "oracles/roller.js") {
+        Error.stackTraceLimit = 16;
+        const deeper = (new Error().stack || "").split("\n").slice(3).map(fileOf);
+        Error.stackTraceLimit = limit;
+        if (deeper.some(f => /^session\/(?:sceneSeeds|spotlightVignette|galleyVignette|endSessionVignette)\.js$/.test(f ?? ""))) file = "session/sceneSeeds.js";
+      }
       if (file) {
         const queue = window.__sfcRandomQueue?.[file];
         const value = Array.isArray(queue) && queue.length ? queue.shift() : realRandom();
@@ -102,6 +119,87 @@ export function installDiceScript() {
 }
 
 // ── GM-side world setup ──────────────────────────────────────────────────────
+
+/** The ranks a vow may be seeded at, as the module writes them. */
+const VOW_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
+
+/**
+ * The vows a seed puts on its character's sheet before play (`seed.pc.vows`:
+ * `[{ name, rank }]`), as the module's own vow maker takes them: a name, a
+ * rank it knows (dangerous where the seed names none or another), and an id —
+ * so that the module treats each as a vow it made, and offers no "New vow
+ * recorded" card for it. Pure.
+ *
+ * The first vow on a sheet is the character's background vow to the module
+ * (src/session/openThreads.js `questVows`): a quest sworn in play is counted
+ * as one only when something stands before it. The long haul's character had
+ * none, so Begin a Session said "No character has a vow in play besides a
+ * background vow" with her quest sworn (the third live run, a19 and a50).
+ *
+ * @param {{ pc?: { vows?: Array<{ name?: string, rank?: string }> } }} seed
+ * @returns {Array<{ name: string, rank: string, vowId: string }>}
+ */
+export function seedVows(seed) {
+  return (seed?.pc?.vows ?? [])
+    .map(v => ({ name: String(v?.name ?? "").replace(/\s+/g, " ").trim(), rank: String(v?.rank ?? "").toLowerCase() }))
+    .filter(v => v.name)
+    .map((v, i) => ({ name: v.name, rank: VOW_RANKS.includes(v.rank) ? v.rank : "dangerous", vowId: `seed-vow-${i + 1}` }));
+}
+
+/** The character's meters a seed may set, each with the bounds the sheet holds it to. */
+const SEED_METERS = { health: [0, 5], spirit: [0, 5], supply: [0, 5], momentum: [-6, 10] };
+/** The impacts a seed may mark, as the game system's sheet names them (actorBridge.js IMPACT_KEYS). */
+export const SEED_IMPACTS = ["wounded", "shaken", "unprepared", "permanentlyharmed", "traumatized", "doomed", "tormented", "indebted", "battered", "cursed"];
+const STATS = ["edge", "heart", "iron", "shadow", "wits"];
+
+/**
+ * The state of the character's sheet a seed asks for before play — where a
+ * scenario starts mid-adventure (lib/suite.mjs): its meters (`seed.pc.meters`:
+ * health, spirit, supply, momentum) and its impacts (`seed.pc.impacts`: a
+ * wound, a shaken spirit). What the seed does not give is the sheet as a new
+ * character has it. Pure.
+ *
+ * @param {{ pc?: { meters?: Record<string, number>, impacts?: string[] } }} seed
+ * @returns {{ meters: Record<string, number>, impacts: string[] }}
+ */
+export function seedSheet(seed) {
+  const meters = Object.fromEntries(Object.entries(seed?.pc?.meters ?? {}).filter(([k, v]) => SEED_METERS[k] && Number.isInteger(v)));
+  const impacts = [...new Set((seed?.pc?.impacts ?? []).map(i => String(i).toLowerCase()).filter(i => SEED_IMPACTS.includes(i)))];
+  return { meters, impacts };
+}
+
+/**
+ * Why a seed cannot be made, or null — what seedVows and seedSheet would
+ * otherwise pass over in silence: a vow with no name or a rank the module
+ * does not know, a meter out of the sheet's bounds, an impact the sheet does
+ * not have, a stat out of range, a place the seed puts the ship that it does
+ * not make. Pure.
+ *
+ * @param {object} seed
+ * @returns {string|null}
+ */
+export function seedProblem(seed) {
+  const pc = seed?.pc ?? {};
+  for (const [k, v] of Object.entries(pc.stats ?? {})) {
+    if (!STATS.includes(k)) return `the character has no stat "${k}"`;
+    if (!Number.isInteger(v) || v < 0 || v > 4) return `the character's ${k} (${v}) is not 0 to 4`;
+  }
+  for (const v of pc.vows ?? []) {
+    if (!String(v?.name ?? "").trim()) return "a vow has no name";
+    if (v.rank != null && !VOW_RANKS.includes(String(v.rank).toLowerCase())) return `the vow "${v.name}" has a rank the module does not know (${v.rank})`;
+  }
+  for (const [k, v] of Object.entries(pc.meters ?? {})) {
+    const bounds = SEED_METERS[k];
+    if (!bounds) return `the character has no meter "${k}"`;
+    if (!Number.isInteger(v) || v < bounds[0] || v > bounds[1]) return `the character's ${k} (${v}) is not ${bounds[0]} to ${bounds[1]}`;
+  }
+  for (const i of pc.impacts ?? []) if (!SEED_IMPACTS.includes(String(i).toLowerCase())) return `the sheet has no impact "${i}"`;
+  const places = (seed?.settlements ?? []).map(s => s?.name);
+  if (new Set(places).size !== places.length) return "two settlements share a name";
+  if (seed?.at && !places.includes(seed.at)) return `the ship is put at "${seed.at}", which the seed does not make`;
+  if (seed?.map?.shipAt && !places.includes(seed.map.shipAt)) return `the ship's token is put at "${seed.map.shipAt}", which the seed does not make`;
+  return null;
+}
 
 /**
  * Wait until the GM's world has stopped changing. `game.ready` is where the
@@ -174,7 +272,7 @@ export async function setUpWorld(gm, scenario) {
   // Begin a Session opened no dialog (CI run 45050276295). So the answers
   // land first, and the reset goes on the module's own write chain.
   await waitForQuietWorld(gm, { quietMs: 2000 });
-  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario }) => {
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows, sheetWanted }) => {
     const { serialiseCampaignStateWrite } = await import(`${MODULE_SRC}/multiplayer/campaignStateChain.js`);
     const writeState = (state, label) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState", state), label);
 
@@ -214,6 +312,36 @@ export async function setUpWorld(gm, scenario) {
       ownership: { default: 0, [user.id]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER },
     });
     await user.update({ character: pc.id });
+    // The vows the character comes to the table with — the first of them
+    // their background vow — made as the module makes a vow.
+    if (vows.length) {
+      const { createCharacterVowItem } = await import(`${MODULE_SRC}/character/actorBridge.js`);
+      for (const vow of vows) {
+        const item = await createCharacterVowItem(pc, vow);
+        if (!item) throw new Error(`the seed's vow "${vow.name}" could not be put on ${pc.name}'s sheet`);
+      }
+    }
+    // The sheet as the seed has it — a scenario that starts mid-adventure
+    // (lib/suite.mjs): the impacts first (an impact lowers what a meter and
+    // momentum can hold), then each meter by its difference from what the
+    // sheet holds, through the module's own writers, with the game system's
+    // change notes held back (nothing here is a line of play). Read back, and
+    // failed by name if the sheet does not hold what was asked.
+    if (sheetWanted.impacts.length || Object.keys(sheetWanted.meters).length) {
+      const sheet = await import(`${MODULE_SRC}/character/actorBridge.js`);
+      const held = () => { sheet.invalidateActorCache(pc.id); return sheet.readCharacterSnapshot(pc); };
+      await sheet.withoutSystemNotes(async () => {
+        for (const impact of sheetWanted.impacts) await sheet.setDebility(pc, impact, true);
+        const now = held().meters;
+        const change = Object.fromEntries(Object.entries(sheetWanted.meters).map(([meter, value]) => [meter, value - (now[meter] ?? 0)]));
+        if (Object.values(change).some(Boolean)) await sheet.applyMeterChanges(pc, change);
+      });
+      const after = held();
+      for (const [meter, value] of Object.entries(sheetWanted.meters)) {
+        if (after.meters[meter] !== value) throw new Error(`the seed's ${meter} (${value}) did not take: the sheet holds ${after.meters[meter]}`);
+      }
+      for (const impact of sheetWanted.impacts) if (after.debilities?.[impact] !== true) throw new Error(`the seed's impact "${impact}" did not take`);
+    }
 
     // A PC of the GM's own (`seed.gmPc`): a GM takes part in a Batch Mode
     // round only with an assigned PC. Unassigned again after the run.
@@ -277,7 +405,7 @@ export async function setUpWorld(gm, scenario) {
       }
     }
     return { gmId: game.user.id, playerId: user.id, pcId: pc.id, gmPcId };
-  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario });
+  }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario, vows: seedVows(scenario.seed), sheetWanted: seedSheet(scenario.seed) });
 }
 
 export async function restoreWorld(gm, log = console.log) {

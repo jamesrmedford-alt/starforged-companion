@@ -1,0 +1,336 @@
+{
+  "name": "scenario-fight",
+  "flow": "a fight: Enter the Fray through Take Decisive Action, a miss paid, a burn",
+  "description": "A scenario of the suite (suites/scenarios.json): one fight from its first blow to its last, from a seeded state — a vow about the raider cutters on the sheet beside the background vow, and momentum enough to burn. The long haul's fight beats (b9–b13) without the reload, so that no fault before them can cost them. Three decisive rolls scripted: the miss with its price, the weak hit a burn improves, the finish.",
+  "caps": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play one short scene by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type, use exactly those words.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides.",
+    "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
+    "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line.",
+    "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
+    "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
+    "Mira has her background vow on her sheet, to find the lost colony ship Verity's Hope, which no beat touches, and her vow to drive the raider cutters out of the Cinder Expanse. Wherever a card or a dropdown asks which vow, choose that one, not the old one.",
+    "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "If the narrator has not answered yet, wait rather than repeat yourself."
+  ],
+  "cast": {},
+  "facts": [],
+  "beats": [
+    {
+      "id": "f1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session",
+      "tell": "Type !begin-session. In the window that opens leave vignette unticked and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1
+      }
+    },
+    {
+      "id": "f2",
+      "title": "Enter a fight that serves the vow",
+      "needs": [
+        "f1"
+      ],
+      "tell": "A raider cutter, the Ashen Wake, drops out of the dark off Hollow Spire and comes at the Kobayashi IV. In a line of play, turn and fight her: say what you do as the fight opens. When a card offers the fight (\"A fight looms\"), choose your vow about the raider cutters in its vow dropdown (not the old one about the colony ship) and press \"⚔ Begin the fight\" — the roll alone does not begin the fight.",
+      "check": {
+        "type": "fightBegun"
+      },
+      "playerTitle": "Fight the cutter, for your vow",
+      "lastResort": "say that you enter the fray against the Ashen Wake",
+      "wants": [
+        "enter_the_fray"
+      ],
+      "n": 2,
+      "session": 1
+    },
+    {
+      "id": "f3",
+      "title": "A scripted miss in the fight, paid",
+      "needs": [
+        "f2"
+      ],
+      "tell": "Attack the cutter, in a line of play: press your advantage if you are in control, fight back hard if you are in a bad spot — say what you do. The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
+      "check": {
+        "type": "sufferPaid",
+        "moves": [
+          "strike",
+          "clash"
+        ]
+      },
+      "dice": {
+        "moves": [
+          "strike",
+          "clash",
+          "gain_ground",
+          "react_under_fire"
+        ],
+        "roll": "miss",
+        "price": 78
+      },
+      "playerTitle": "Attack the cutter; pay what the miss costs",
+      "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
+      "wants": [
+        "strike",
+        "clash",
+        "gain_ground",
+        "react_under_fire"
+      ],
+      "n": 3,
+      "session": 1
+    },
+    {
+      "id": "f4",
+      "title": "A scripted weak hit, then Burn Momentum",
+      "needs": [
+        "f2"
+      ],
+      "tell": "Attack again, in a line of play. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "check": {
+        "type": "burned",
+        "moves": [
+          "strike",
+          "clash"
+        ]
+      },
+      "dice": {
+        "moves": [
+          "strike",
+          "clash",
+          "gain_ground",
+          "react_under_fire"
+        ],
+        "roll": "burnable"
+      },
+      "playerTitle": "Attack again; then press what its card offers",
+      "lastResort": "say that you Strike at the cutter — or, in a bad spot, that you Clash with her",
+      "wants": [
+        "strike",
+        "clash",
+        "gain_ground",
+        "react_under_fire"
+      ],
+      "n": 4,
+      "session": 1
+    },
+    {
+      "id": "f5",
+      "title": "Take Decisive Action; mark the milestone",
+      "needs": [
+        "f2"
+      ],
+      "tell": "Finish the fight: press \"⚔ Attempt to Finish the Fight\" on your last attack's card (or say, in a line of play, how you end it for good). When the victory card appears, press its \"⚑ Mark milestone\" button.",
+      "check": {
+        "type": "fightWon"
+      },
+      "dice": {
+        "moves": [
+          "take_decisive_action"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      },
+      "playerTitle": "End the fight; press what its card offers",
+      "lastResort": "say that you take decisive action to end the fight",
+      "wants": [
+        "take_decisive_action"
+      ],
+      "n": 5,
+      "session": 1
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      },
+      "vows": [
+        {
+          "name": "Find the lost colony ship Verity's Hope",
+          "rank": "epic"
+        },
+        {
+          "name": "Drive the raider cutters out of the Cinder Expanse",
+          "rank": "dangerous"
+        }
+      ],
+      "meters": {
+        "momentum": 5
+      }
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes",
+      "mapData": {
+        "settlements": [],
+        "discoveries": []
+      }
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [
+    {
+      "moves": [
+        "enter_the_fray"
+      ],
+      "roll": "strong_hit"
+    }
+  ],
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "false"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "The raider cutter cuts across my bow off Hollow Spire — I bring the Kobayashi IV about and open up with the forward guns.",
+      "move": {
+        "id": "enter_the_fray",
+        "stat": "edge",
+        "target": "Ashen Wake",
+        "rank": "dangerous"
+      }
+    },
+    {
+      "beat": 2,
+      "action": "choose",
+      "option": "Drive the raider cutters out of the Cinder Expanse"
+    },
+    {
+      "beat": 2,
+      "action": "click",
+      "label": "Begin the fight"
+    },
+    {
+      "beat": 3,
+      "action": "say",
+      "text": "I strike at the cutter's drive section with the forward guns.",
+      "move": {
+        "id": "strike",
+        "stat": "edge",
+        "target": "Ashen Wake"
+      }
+    },
+    {
+      "beat": 3,
+      "action": "click",
+      "label": "Keep the result",
+      "optional": true,
+      "patience": 2
+    },
+    {
+      "beat": 3,
+      "action": "click",
+      "label": "Endure Harm",
+      "optional": true
+    },
+    {
+      "beat": 3,
+      "action": "click",
+      "label": "Endure Stress",
+      "optional": true
+    },
+    {
+      "beat": 4,
+      "action": "say",
+      "text": "I come about and rake her flank while her guns are cycling.",
+      "move": {
+        "id": "strike",
+        "stat": "edge",
+        "target": "Ashen Wake"
+      }
+    },
+    {
+      "beat": 4,
+      "action": "click",
+      "label": "Burn Momentum"
+    },
+    {
+      "beat": 5,
+      "action": "click",
+      "label": "Finish the Fight",
+      "move": {
+        "id": "take_decisive_action"
+      }
+    },
+    {
+      "beat": 5,
+      "action": "click",
+      "label": "Mark milestone"
+    }
+  ]
+}
