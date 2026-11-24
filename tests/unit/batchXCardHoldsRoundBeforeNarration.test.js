@@ -84,7 +84,10 @@ const STRONG = [0.25, 0.35, 0.9];
 let table;
 const world = () => table.world.campaignState();
 const round = () => table.world.getSetting('batchMode.round');
-const roundOneNarrations = () => table.cards(f => f.roundNumber === 1 && f.narratorCard === true);
+// Round 1 is the one round each test narrates; its card names it by its id
+// (the card's round number left it with the `!recap session` card's reading
+// of the chat — issue #382 slice 5).
+const roundOneNarrations = () => table.cards(f => !!f.roundId && f.narratorCard === true);
 const roundOnePaused     = () => table.cards(f => f.roundNumber === 1 && f.narrationPaused === true);
 const narrations = () => table.claude.calls.filter(c => c.model === NARRATION_MODEL);
 

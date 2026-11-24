@@ -22,16 +22,18 @@ layers. This file is the never-break list.
    the session-start recap gate or the X-Card's redirect. Since issue #286 D1
    a reflection a player publishes from the
    Private Channel carries it too: published text is canon. So does a Batch
-   Mode round's one card (issue #340): `roundId`, `roundNumber` and
-   `roundEntries` (the players who acted, no one else) beside the family, its
-   own `moveId` / `outcome` / `resolutionId` empty; its fallback card keeps
+   Mode round's one card (issue #340): `roundId` and `roundEntries` (the
+   players who acted, no one else) beside the family, its own `moveId` /
+   `outcome` / `resolutionId` empty; its fallback card keeps
    the family with `narrationFallback`; its `sessionId` is the round's own
    session, whichever pass narrates it — after the next session's mint too
    (driver.js `roundNarrationState`, issue #364
    ROUND-CARD-SESSION-ID-AFTER-MINT). One exception
    (issue #321 U35): the move narration's "narration unavailable" card keeps
-   the family so the session recap counts the move, and every narrator-memory
-   read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
+   the family — kept so the session recap counted the move, which the record
+   now has from the roll (`move.resolved`, issue #382 slice 5) — and every
+   narrator-memory read leaves it out by its `narrationFallback` flag
+   (`sessionNarratorCards`, the record's card hook among them)
    — it was fed back as story and counted as the session's first narration. A
    card the X-Card removed is flagged `xCarded` and left out the same way
    (U07), as is one a Burn Momentum / Improve Result superseded —
@@ -65,8 +67,10 @@ layers. This file is the never-break list.
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
    When adding a new card type or co-marking an existing one,
-   audit every `narratorCard` consumer (ring, rolling summary, session
-   recap, the campaign recap's session-start gate — a published reflection
+   audit every `narratorCard` consumer (ring, rolling summary, the session
+   record's card hook — through which the session summary, the campaign
+   recap, the Chronicle and the `!recap session` card read it — the campaign
+   recap's session-start gate — a published reflection
    is no narration there, issue #345 AA32 — correction hook, audio hook,
    burn-supersede, the X-Card's card pick and redirect hook) in the same
    commit — the consumer list lives in architecture doc §2.
@@ -416,7 +420,8 @@ layers. This file is the never-break list.
    Session Log page, the campaign recap (its source: the record's facts, no
    narration, and how things stand read live; its reply cited sentences) — is
    a cache keyed by the hash of the source it was made from, the session
-   summary (invariant 8) among them. Hidden plans
+   summary (invariant 8) among them; the `!recap session` card keeps nothing,
+   made from the read each time it is asked for. Hidden plans
    (and their clocks), Private Lines, whispers and Private Channel turns are
    never recorded. A new kind is a row with its writer and its reader in the
    same commit, and a new relay row is a recorded `choice` or says why not

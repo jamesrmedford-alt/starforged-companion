@@ -609,8 +609,9 @@ XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring skips
 `xCarded` cards (`sessionNarratorCards`); the session summary reads the
-record, where the removal applies (issue #382); the session recap keeps the move
-but quotes none of its prose, the audio hook shows no Play button and
+record, where the removal applies (issue #382); the `!recap session` card,
+a view of the record too (issue #382 slice 5), keeps the move and shows no
+telling at all, the audio hook shows no Play button and
 stops the card's narration where it is playing or loading (XCARD-AUDIO-PLAYING), the
 CORRECTED block and the summary's STRUCK list never name an X-Card
 retraction (it still blocks re-assertion in the ledger),
@@ -639,8 +640,9 @@ Z46) — the clock's newest live trigger vignette of the session, found by the
 rewind the world refused (`retryUpgradeStep`: the step keeps the upgrade's
 kind and each vow copy's vow id; its vignette stayed live beside a clock no
 longer full, UPGRADE-RETRY-REWIND-NO-SUPERSEDE); `sessionNarratorCards`
-leaves both out of the ring and the recap, and the record's supersede
-(`narration.removed` by `superseded`) leaves them out of the session summary:
+leaves both out of the ring, and the record's supersede
+(`narration.removed` by `superseded`) leaves them out of the session summary
+and the `!recap session` card (the move once, at its upgraded outcome):
 a summary made from the replaced telling is stale and made again with the
 re-narration — STORY SO FAR told the replaced outcome for up to
 round(1.5 × Context Cards) narrations (issue #345 AA24). Their ledger entries are
@@ -1058,9 +1060,10 @@ prose of a vow's fulfilment said "the weight of the vow lifts off you", one pass
 twenty-three, and that session's summary left the fulfilment out (the long
 haul's third live run, a76). Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card
-(`narrationFallback` — it keeps the flag family so the session recap still
-counts the move, but was fed back as story and counted as the session's first
-narration, cancelling the campaign recap; issue #321 U35) and a card the
+(`narrationFallback` — it keeps the flag family, kept so the session recap
+counted the move before that card read the session record, where the move is
+its roll's (issue #382 slice 5); it was fed back as story and counted as the
+session's first narration, cancelling the campaign recap; issue #321 U35) and a card the
 X-Card removed (`xCarded`, U07). Its regen runs after a narrator card posts, on
 the canonical GM (`registerRollingSummaryRefreshHook`, B7) — at a table whose
 GMs hold no Claude key, on the keyed client that wrote the card, which relays

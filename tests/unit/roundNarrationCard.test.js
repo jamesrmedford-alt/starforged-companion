@@ -6,8 +6,9 @@
  * `narratorCard` flag family that a new card shape has to be audited against
  * (rules/narrator-memory.md invariant 1; docs/narrator/narrator-memory-
  * architecture.md §2): the ring and the rolling summary read one PLAYER line
- * per entry; the session recap counts each entry's move; the fallback round
- * card is counted by the recap and left out of the ring; a Burn Momentum's
+ * per entry; the session recap counts each entry's move — from the session
+ * record since issue #382 slice 5, the rolls' own `move.resolved`, not the
+ * card; the fallback round card is left out of the ring; a Burn Momentum's
  * supersede never matches a round card; and the X-Card takes exactly the
  * newest round's card, not the round before — round submissions are not chat
  * messages, so nothing else ends a beat between two rounds.
@@ -26,6 +27,8 @@ import {
   narrateRound,
 } from '../../src/narration/narrator.js';
 import { supersedeOriginalNarration } from '../../src/moves/burnMomentum.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { recordedEvent, seedSessionRecord } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const SESSION = 'sess-1';
@@ -70,12 +73,17 @@ describe('the round card', () => {
     const f = (await postCard()).flags[MODULE_ID];
     expect(f).toMatchObject({
       narratorCard: true, narrationText: expect.stringContaining('Kira slips'), sessionId: SESSION,
-      narrationId: 'n-round-1', roundId: 'round-1', roundNumber: 3,
+      narrationId: 'n-round-1', roundId: 'round-1',
       moveId: null, outcome: null, resolutionId: '',
     });
+    // The `!recap session` card's own flags — the round's number, its match,
+    // each entry's move and match — went with that card's reading of the
+    // chat (issue #382 slice 5): it reads the session record.
+    expect(f).not.toHaveProperty('roundNumber');
+    expect(f).not.toHaveProperty('isMatch');
     expect(f.roundEntries).toEqual([
-      { userId: 'pl-1', actorId: 'pc-kira', playerName: 'Kira', playerText: 'I slip through the vent.', moveId: 'face_danger', outcome: 'weak_hit', isMatch: true, resolutionId: 'res-1' },
-      { userId: 'pl-2', actorId: 'pc-ren', playerName: 'Ren', playerText: 'I keep the corridor covered.', moveId: null, outcome: null, isMatch: false, resolutionId: '' },
+      { userId: 'pl-1', actorId: 'pc-kira', playerName: 'Kira', playerText: 'I slip through the vent.', outcome: 'weak_hit', resolutionId: 'res-1' },
+      { userId: 'pl-2', actorId: 'pc-ren', playerName: 'Ren', playerText: 'I keep the corridor covered.', outcome: null, resolutionId: '' },
     ]);
     const card = await postCard();
     expect(card.content).toContain('◈ Round 3');
@@ -92,17 +100,32 @@ describe('the round card', () => {
       + 'Kira slips through the vent while Ren holds the corridor.');
   });
 
-  it('the session recap counts each entry\'s move, outcome and match', async () => {
-    setMessages([await postCard()]);
-    const recap = await postSessionRecap({ ...CS });
-    expect(recap.content).toContain('1 move resolved.');
-    expect(recap.content).toContain('A match was rolled — Face Danger.');
-    expect(recap.content).toContain('Round 3: Face Danger → Weak Hit');
+  it('the session recap counts each entry\'s move, outcome and match — from the record the round\'s rolls wrote, not the card', async () => {
+    const journals = installJournalMock();
+    try {
+      // The round as the session record has it: Kira's roll (rollMove's
+      // `move.resolved`, its round's id), then the round's one narration.
+      await seedSessionRecord(SESSION, [
+        recordedEvent(SESSION, 'session.begun', { d: { number: 2 } }),
+        recordedEvent(SESSION, 'move.resolved', { who: { actor: 'pc-kira' }, ref: { res: 'res-1', round: 'round-1' },
+          d: { moveId: 'face_danger', outcome: 'weak_hit', isMatch: true, rollKind: 'action' } }),
+        recordedEvent(SESSION, 'narration', { ref: { nar: 'n-round-1', round: 'round-1' }, d: { mode: 'round' },
+          text: 'Kira slips through the vent while Ren holds the corridor.' }),
+      ], { number: 2 });
+      setMessages([]);                                        // nothing in chat: the card reads the record
+      const recap = await postSessionRecap({ ...CS });
+      expect(recap.content).toContain('1 move resolved.');
+      expect(recap.content).toContain('A match was rolled — Face Danger.');
+      expect(recap.content).toContain('Face Danger → Weak Hit');
+      expect(recap.content).not.toContain('slips through the vent');
+    } finally {
+      journals.restore();
+    }
   });
 });
 
 describe('the fallback round card', () => {
-  it('is counted by the recap and left out of the ring', async () => {
+  it('is left out of the ring (its moves are on the session record from their rolls)', async () => {
     game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);   // no key → the fallback
     const res = await narrateRound({
       round: { id: 'round-9', number: 9, acting: ['pl-1'], entries: { 'pl-1': {
@@ -114,10 +137,9 @@ describe('the fallback round card', () => {
     const card = ChatMessage._created.at(-1);
     expect(card.flags[MODULE_ID]).toMatchObject({ narratorCard: true, narrationFallback: true, roundId: 'round-9' });
     expect(card.flags[MODULE_ID].narrationText).toContain('Face Danger: Weak Hit — narration unavailable.');
+    expect(card.flags[MODULE_ID]).not.toHaveProperty('roundNumber');
     setMessages([card]);
     expect(getRecentNarrationContext(SESSION, 3)).toBe('');
-    const recap = await postSessionRecap({ ...CS });
-    expect(recap.content).toContain('1 move resolved.');
   });
 });
 

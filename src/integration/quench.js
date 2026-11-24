@@ -7301,7 +7301,8 @@ function registerSettingsRoundTripTests(quench) {
 // chronicleWriter fallback when characterIds is empty. Neither covers:
 //   - the !recap chat-dispatch router (session vs campaign disambiguation)
 //   - the isRecapCommand predicate matrix
-//   - postSessionRecap's empty-card vs counted-moves branches
+//   - postSessionRecap's empty-card vs counted-moves branches (a view of the
+//     session record since issue #382 slice 5: its moves are the record's)
 //   - postCampaignRecap's silent option (no card, returns text)
 //
 // This batch closes those gaps. To avoid spending Claude credit, the
@@ -7316,6 +7317,7 @@ function registerRecapModesTests(quench) {
       const { describe, it, assert, before, after } = context;
 
       const createdMessageIds = [];
+      const createdPages = [];          // Session Log pages a seeded record made (§6)
       let originalState = null;
 
       before(async function () {
@@ -7334,6 +7336,11 @@ function registerRecapModesTests(quench) {
           if (msg?.delete) await msg.delete().catch(() => {});
         }
         createdMessageIds.length = 0;
+        for (const page of createdPages) {
+          await page.delete?.().catch(err =>
+            console.warn(`${MODULE_ID} | quench recapModes: cleanup — deleting a Session Log page failed:`, err?.message ?? err));
+        }
+        createdPages.length = 0;
       });
 
       async function postChat(content) {
@@ -7460,8 +7467,10 @@ function registerRecapModesTests(quench) {
       });
 
       // ── 5: postSessionRecap — empty path ─────────────────────────────────
-      describe("postSessionRecap — empty when no narrator cards in session", function () {
-        it("posts a card with recapEmpty=true when no narratorCard messages match", async function () {
+      // The card is a view of the session record (issue #382 slice 5): a
+      // session whose record holds no move — here, one with no page — is empty.
+      describe("postSessionRecap — empty when the session record holds no move", function () {
+        it("posts a card with recapEmpty=true when the session's record has no move", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
           const { postSessionRecap } = await import(
@@ -7484,38 +7493,40 @@ function registerRecapModesTests(quench) {
             m?.flags?.[MODULE_ID]?.recapType === "session" &&
             m?.flags?.[MODULE_ID]?.recapEmpty === true);
           assert.isObject(emptyCard,
-            "no narrator cards in session → recapEmpty=true card");
+            "no move on the session's record → recapEmpty=true card");
         });
       });
 
-      // ── 6: postSessionRecap — counts a seeded narrator card ──────────────
-      describe("postSessionRecap — counts seeded narrator cards", function () {
-        it("posts a non-empty session card when a matching narratorCard exists", async function () {
+      // ── 6: postSessionRecap — counts the moves on the session's record ───
+      // Seeded with the record's own writer, as rollMove records a roll once
+      // its card is on the table (issue #382 slice 5), on a session of the
+      // test's own: the world's own record is never written here, and the
+      // page the write makes is deleted after.
+      describe("postSessionRecap — counts the moves on the session's record", function () {
+        it("posts a non-empty session card when the session's record holds a move — no narrator card in chat", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
+          const { isCanonicalGM } = await import(`/modules/${MODULE_ID}/src/multiplayer/gmGate.js`);
+          if (!isCanonicalGM()) { this.skip(); return; }
           const { postSessionRecap } = await import(
             `/modules/${MODULE_ID}/src/narration/narrator.js`);
+          const { recordEvent, recordSettled } = await import(`/modules/${MODULE_ID}/src/record/record.js`);
+          const { sessionLogJournal } = await import(`/modules/${MODULE_ID}/src/world/worldJournal.js`);
 
+          const session = `ssn-quench-counted-${Date.now()}`;
           const seed = JSON.parse(JSON.stringify(originalState ?? {}));
-          seed.currentSessionId = "ssn-quench-counted";
+          seed.currentSessionId = session;
           seed.sessionNumber    = 7;
           await game.settings.set(MODULE_ID, "campaignState", seed);
 
-          // Seed a narrator-card message in this session so the recap finds it.
-          const narratorMsg = await ChatMessage.create({
-            content: `<div class="sf-narration-card"><div class="sf-narration-prose">Quench narration probe.</div></div>`,
-            flags: {
-              [MODULE_ID]: {
-                narratorCard:  true,
-                sessionId:     "ssn-quench-counted",
-                moveId:        "face_danger",
-                outcome:       "strong_hit",
-                narrationText: "Quench narration probe.",
-              },
-            },
+          recordEvent("move.resolved", {
+            session, ref: { res: `quench-res-${Date.now()}` },
+            d: { moveId: "face_danger", moveName: "Face Danger", rollKind: "action", outcome: "strong_hit", isMatch: false },
           });
-          if (narratorMsg?.id) createdMessageIds.push(narratorMsg.id);
-          await flushMicrotasks();
+          await recordSettled();
+          const page = sessionLogJournal()?.pages?.contents?.find(p => p.flags?.[MODULE_ID]?.sessionLogPage?.sessionId === session) ?? null;
+          if (page) createdPages.push(page);
+          assert.isObject(page, "the record's write made the session's page");
 
           const beforeIds = new Set(game.messages.contents.map(m => m.id));
           await postSessionRecap(seed, null);
@@ -7531,9 +7542,10 @@ function registerRecapModesTests(quench) {
           assert.isObject(recapCard,
             "a session recap card should be posted");
           assert.notEqual(recapCard.flags[MODULE_ID].recapEmpty, true,
-            "the card should NOT be recapEmpty when a narrator card exists in the session");
+            "the card should NOT be recapEmpty when the session's record holds a move");
           assert.equal(recapCard.flags[MODULE_ID].sessionNumber, 7,
             "the card should carry the seeded sessionNumber");
+          assert.include(recapCard.content ?? "", "Face Danger → Strong Hit", "the card lists the recorded move");
         });
       });
 
@@ -13301,13 +13313,22 @@ function registerBatchModeTests(quench) {
           const card = roundCards()[0];
           const f = card.flags[MODULE];
           assert.isTrue(!before.has(card.id), "a new card");
-          assert.equal(f.roundNumber, 1);
+          assert.equal(f.roundId, first.id, "the round's card, by the round's id");
+          assert.notProperty(f, "roundNumber", "the round's number was the `!recap session` card's reading of the chat (issue #382 slice 5)");
           assert.equal(f.sessionId, game.settings.get(MODULE, "campaignState")?.currentSessionId, "the session's card");
           assert.isString(f.narrationId);
           assert.include(f.narrationText ?? "", "QUENCH BATCH", "the narration's prose");
           assert.lengthOf(f.roundEntries ?? [], 1, "the card lists the one player who acted, and no one else");
-          assert.deepInclude(f.roundEntries[0], { userId: game.user.id, actorId: world.pc.id, playerText: TEXT, moveId: "face_danger" });
+          assert.deepInclude(f.roundEntries[0], { userId: game.user.id, actorId: world.pc.id, playerText: TEXT });
           assert.include(["strong_hit", "weak_hit", "miss"], f.roundEntries[0].outcome);
+          assert.include(card.content ?? "", "Face Danger", "the card lists the move the entry rolled");
+          // The round's roll is on the session record, where `!recap session` reads it (issue #382 slice 5).
+          const { recordSettled } = await import(`${MODULE_PATH}/record/record.js`);
+          const { readRecord } = await import(`${MODULE_PATH}/record/read.js`);
+          await recordSettled();
+          const rolled = (readRecord({ session: f.sessionId }).sessions[0]?.beats ?? []).filter(b => b.move && b.round === first.id);
+          assert.lengthOf(rolled, 1, "the round's one roll is on the session record");
+          assert.equal(rolled[0].move.moveId, "face_danger", "…its move");
 
           const result = game.messages.contents.find(m => m.flags?.[MODULE]?.moveResolution && m.flags[MODULE].roundId === first.id);
           assert.isOk(result, "the move's result card carries the round");

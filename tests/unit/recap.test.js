@@ -1,14 +1,16 @@
 // tests/unit/recap.test.js
 // Coverage for the Previously On / recap feature:
-//   postSessionRecap()           — src/narration/narrator.js
+//   postSessionRecap()           — src/narration/narrator.js (a view of the session record)
 //   getCampaignRecap()           — src/narration/narrator.js (cache behaviour)
 //   buildCampaignRecapUserMessage() — src/narration/narratorPrompt.js
 //   isRecapCommand()             — src/index.js
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { isRecapCommand } from '../../src/index.js';
-import { postSessionRecap, getCampaignRecap, postNarrationCard, campaignRecapCacheKey } from '../../src/narration/narrator.js';
+import { postSessionRecap, getCampaignRecap, campaignRecapCacheKey } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { recordedEvent, seedSessionRecord } from '../helpers/sessionRecordSeed.js';
 import {
   addChronicleEntry, getChronicleEntries, updateChronicleEntry,
   deleteChronicleEntry, setChronicleEntryPinned, setChronicleEntryType,
@@ -37,25 +39,6 @@ function makeCampaignState(overrides = {}) {
     characterIds: [],
     connectionIds: [],
     ...overrides,
-  };
-}
-
-function makeNarratorCard(overrides = {}) {
-  return {
-    flags: {
-      [MODULE_ID]: {
-        narratorCard:  true,
-        narrationText: overrides.narrationText ?? 'The ship shuddered.',
-        sessionId:     overrides.sessionId     ?? 'test-session',
-        sessionNumber: overrides.sessionNumber ?? 3,
-        moveId:        overrides.moveId        ?? 'face_danger',
-        outcome:       overrides.outcome       ?? 'strong_hit',
-        isMatch:       overrides.isMatch       ?? false,
-        timestamp:     new Date().toISOString(),
-        ...overrides.extraFlags,
-      },
-    },
-    content: overrides.content ?? '',
   };
 }
 
@@ -119,115 +102,94 @@ describe('isRecapCommand()', () => {
 
 
 // ---------------------------------------------------------------------------
-// 3. postSessionRecap() — data assembly
+// 3. postSessionRecap() — the `!recap session` card, a view of the session
+//    record (issue #382 slice 5, record/sessionCardView.js). It read the
+//    session's narrator cards in chat; it reads the moves the record holds —
+//    seeded here on the session's page as rollMove records them
+//    (tests/helpers/sessionRecordSeed.js). The real producer → card hop is
+//    multiplayerComposition.test.js's; tests/unit/sessionCardView.test.js
+//    has the corrections (a burn, an X-Card, a fallback) and `!recap session N`.
 // ---------------------------------------------------------------------------
 
 describe('postSessionRecap()', () => {
+  let journals;
   beforeEach(() => {
     ChatMessage._reset();
-  });
-
-  it('posts an empty recap card when no messages match the session', async () => {
+    journals = installJournalMock();
     global.game.messages = { contents: [] };
+  });
+  afterEach(() => journals.restore());
+
+  /** A session's rolled moves on its page — `[moveId, outcome, isMatch?]` each — and a telling of the first. */
+  const recorded = (sessionId, moves, { number = 3, told = null } = {}) => seedSessionRecord(sessionId, [
+    recordedEvent(sessionId, 'session.begun', { d: { number } }),
+    ...moves.map(([moveId, outcome, isMatch = false], i) => recordedEvent(sessionId, 'move.resolved', {
+      ref: { res: `res-${sessionId}-${i}` }, d: { moveId, outcome, isMatch, rollKind: 'action' } })),
+    ...(told ? [recordedEvent(sessionId, 'narration', { ref: { nar: `nar-${sessionId}`, res: `res-${sessionId}-0` }, d: { mode: 'move' }, text: told })] : []),
+  ], { number });
+
+  it('posts an empty recap card when the session record holds no move', async () => {
     const state = makeCampaignState();
     await postSessionRecap(state);
     expect(ChatMessage._created).toHaveLength(1);
     expect(ChatMessage._created[0].content).toContain('sf-recap-session-card');
-    expect(ChatMessage._created[0].content).toContain('No narrated moves');
+    expect(ChatMessage._created[0].content).toContain('No moves are recorded for this session.');
+    expect(ChatMessage._created[0].flags[MODULE_ID]).toMatchObject({ recapEmpty: true, sessionNumber: 3 });
   });
 
-  it('formats move cards with name and outcome', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ moveId: 'face_danger', outcome: 'strong_hit', narrationText: 'You dodge the blast with ease.' }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+  it('formats each move with its name and outcome', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
-    expect(card.content).toContain('Face Danger');
-    expect(card.content).toContain('Strong Hit');
+    expect(card.content).toContain('• Face Danger → Strong Hit');
   });
 
-  it('extracts the first sentence from narration text', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({
-          narrationText: 'You dodge the blast with ease. The corridor is clear.',
-          outcome: 'strong_hit',
-          moveId: 'face_danger',
-        }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+  it('quotes nothing of a narration — the chat holds the telling', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit']], { told: 'You dodge the blast with ease. The corridor is clear.' });
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
-    expect(card.content).toContain('You dodge the blast with ease');
-    expect(card.content).not.toContain('The corridor is clear');
+    expect(card.content).toContain('• Face Danger → Strong Hit');
+    expect(card.content).not.toContain('You dodge the blast');
   });
 
   it('counts strong hits in the summary', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ outcome: 'strong_hit', moveId: 'face_danger' }),
-        makeNarratorCard({ outcome: 'strong_hit', moveId: 'strike' }),
-        makeNarratorCard({ outcome: 'miss',        moveId: 'clash' }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+    await recorded('test-session', [['face_danger', 'strong_hit'], ['strike', 'strong_hit'], ['clash', 'miss']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
     expect(card.content).toContain('2 strong hits');
     expect(card.content).toContain('3 moves resolved');
   });
 
-  // The match line reads the narrator card's `isMatch` flag. Its old test
-  // hand-set that flag on a fixture card while postNarrationCard never wrote
-  // it, so the line never appeared in play (found by the issue-#282 audit of
-  // hand-set fixture state). The cards here come from the real producer.
-  it('notes a match rolled in the session — from the narrator card the narration posted', async () => {
-    const state = makeCampaignState();
-    await postNarrationCard('You slip past the guards.',
-      { moveId: 'face_danger', outcome: 'strong_hit', isMatch: true, _id: 'r1' }, state);
-    await postNarrationCard('The door holds.',
-      { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
-    global.game.messages = { contents: ChatMessage._created.slice() };
-    ChatMessage._reset();
-
-    await postSessionRecap(state);
+  // The match line read a narrator-card `isMatch` flag that no code wrote
+  // (RECAP-MATCH-DEAD, issue #282). It is the roll's own now: rollMove
+  // records the match on `move.resolved` (multiplayerComposition.test.js runs
+  // the real pipeline to the card).
+  it('notes a match rolled in the session — the roll\'s match, on the record', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit', true], ['clash', 'miss', false]]);
+    await postSessionRecap(makeCampaignState());
     expect(ChatMessage._created[0].content).toContain('A match was rolled — Face Danger.');
   });
 
   it('says nothing about a match when none was rolled', async () => {
-    const state = makeCampaignState();
-    await postNarrationCard('The door holds.', { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
-    global.game.messages = { contents: ChatMessage._created.slice() };
-    ChatMessage._reset();
-
-    await postSessionRecap(state);
+    await recorded('test-session', [['clash', 'miss']]);
+    await postSessionRecap(makeCampaignState());
     expect(ChatMessage._created[0].content).not.toContain('match');
   });
 
   it('filters by sessionId when provided', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ sessionId: 'session-a', moveId: 'face_danger', outcome: 'strong_hit' }),
-        makeNarratorCard({ sessionId: 'session-b', moveId: 'strike',      outcome: 'miss' }),
-      ],
-    };
-    const state = makeCampaignState({ currentSessionId: 'session-a' });
+    await recorded('session-a', [['face_danger', 'strong_hit']], { number: 2 });
+    await recorded('session-b', [['strike', 'miss']], { number: 3 });
+    const state = makeCampaignState({ currentSessionId: 'session-b' });
     await postSessionRecap(state, 'session-a');
     const card = ChatMessage._created[0];
     expect(card.content).toContain('Face Danger');
     expect(card.content).not.toContain('Strike');
+    expect(card.flags[MODULE_ID]).toMatchObject({ sessionId: 'session-a', sessionNumber: 2 });
   });
 
   it('stamps recapCard and recapType flags on the posted card', async () => {
-    global.game.messages = {
-      contents: [makeNarratorCard()],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+    await recorded('test-session', [['face_danger', 'strong_hit']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
     expect(card.flags?.[MODULE_ID]?.recapCard).toBe(true);
     expect(card.flags?.[MODULE_ID]?.recapType).toBe('session');

@@ -28,7 +28,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { lastSessionToTell } from '../session/lifecycle.js';
-import { stripMarkup, proseToHtml } from '../audio/segments.js';
+import { proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -72,9 +72,10 @@ import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { campaignRecapSourceOf, citedRecap, recapText, recapReplyAgain, recapLastingUntold } from '../record/recapView.js';
 import {
-  summaryState, summarySourceThrough, sessionSummaryText, summariesOwed, sessionIdOfNumber,
+  summaryState, summarySourceThrough, sessionSummaryText, summariesOwed,
   SESSION_SUMMARY_SYSTEM_PROMPT, sessionSummaryUserMessage, summaryLastingUntold, summaryReplyAgain,
 } from '../record/summaryView.js';
+import { sessionCardTarget, sessionCardOf, sessionCardMessage } from '../record/sessionCardView.js';
 import { writeRecordView } from '../record/store.js';
 import { recordSettled } from '../record/record.js';
 import { renderSessionLog } from '../record/sessionLogView.js';
@@ -1701,7 +1702,8 @@ export function roundNarrationEntries(round) {
  * paused" notice), one rate-limit retry, the sidecar applied under one
  * `narrationId`, the `!narrator debug` capture, and a fallback card on
  * failure — "Move: outcome — narration unavailable" for each entry, with the
- * flag family and `narrationFallback`, so the session recap counts the moves.
+ * flag family and `narrationFallback` (the moves are on the session record
+ * from their rolls, where the `!recap session` card counts them).
  *
  * Context goes through buildNarratorExtras('round_resolution', …): the
  * entries' text joined for lexical relevance and lore, each move entry's own
@@ -2076,16 +2078,25 @@ function roundEntryHtml(e) {
     + `</li>`;
 }
 
-/** The round card's `roundEntries`: the players who acted, and no one else. */
+/**
+ * The round card's `roundEntries`: the players who acted, and no one else —
+ * whose line it was (the ring, the Round window), and the resolution each
+ * rolled (the X-Card's forget of what the round told). Each entry's move,
+ * outcome and match were the `!recap session` card's; that card reads the
+ * session record now (issue #382 slice 5), and the move and match are
+ * retired with it.
+ */
 function roundEntriesFlag(entries) {
   return entries.map(e => ({
     userId:       e.userId,
     actorId:      e.actorId,
     playerName:   e.actorName,
     playerText:   sanitizePlayerText(e.text ?? ''),
-    moveId:       e.input?.kind === 'move' ? (e.input.moveId ?? null) : null,
+    // UNWIRED: the outcome the round told for the entry — read by the e2e
+    // playthrough's round check (test/ci/playwright playthrough.mjs
+    // roundResolved) and by no module code (known-issues
+    // NARRATOR-CARD-MOVE-FLAGS-RUNNER-ONLY).
     outcome:      e.input?.kind === 'move' ? (e.input.outcome ?? null) : null,
-    isMatch:      e.input?.kind === 'move' ? e.input.isMatch === true : false,
     resolutionId: e.input?.kind === 'move' ? (e.input.resolutionId ?? '') : '',
   }));
 }
@@ -2094,9 +2105,11 @@ function roundEntriesFlag(entries) {
  * The round's one narrator card: each acting player's line and roll, then
  * the prose (issue #340). It carries the flag family — `narratorCard`,
  * `narrationText`, `sessionId`, `narrationId`, `matchedEntityIds` — and
- * `roundId`, `roundNumber` and `roundEntries`; its own `moveId`, `outcome`
- * and `resolutionId` stay empty (a Burn Momentum's supersede never matches
- * it: upgrades are decided before the round is narrated).
+ * `roundId` and `roundEntries`; its own `moveId`, `outcome` and
+ * `resolutionId` stay empty (a Burn Momentum's supersede never matches it:
+ * upgrades are decided before the round is narrated). Its `roundNumber` was
+ * the `!recap session` card's "Round N" and is retired with it (issue #382
+ * slice 5): the card heads itself with the number, and the round is its id.
  *
  * @param {string} narrationText
  * @param {Object} round
@@ -2132,14 +2145,12 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
         sessionNumber:    campaignState?.sessionNumber ?? null,
         moveId:           null,
         outcome:          null,
-        isMatch:          false,
         resolutionId:     '',
         matchedEntityIds,
         playerText:       '',
         playerName:       null,
         narrationId:      typeof options.narrationId === 'string' && options.narrationId ? options.narrationId : null,
         roundId:          round?.id ?? null,
-        roundNumber:      round?.number ?? null,
         roundEntries:     roundEntriesFlag(entries),
         ...beatShapeFlag(options.beatShape),   // the shape the round was written in (beatVariety)
         timestamp:        new Date().toISOString(),
@@ -2150,9 +2161,11 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
 
 /**
  * The round's card when its narration failed: each entry's "Move: outcome —
- * narration unavailable" — the flag family with `narrationFallback`, so the
- * session recap counts the moves and every narrator-memory read leaves it out
- * (rules/narrator-memory.md invariant 1). No narrationId: no sidecar ran.
+ * narration unavailable" — the flag family with `narrationFallback`, which
+ * every narrator-memory read leaves out (rules/narrator-memory.md invariant
+ * 1); the moves are on the session record from their rolls, where the
+ * `!recap session` card counts them (issue #382 slice 5). No narrationId: no
+ * sidecar ran.
  */
 async function postRoundFallbackCard(round, entries, campaignState = null, reason = claudeFailureReason(null)) {
   const lines = entries.map(e => {
@@ -2183,7 +2196,6 @@ async function postRoundFallbackCard(round, entries, campaignState = null, reaso
         resolutionId:      '',
         matchedEntityIds:  [],
         roundId:           round?.id ?? null,
-        roundNumber:       round?.number ?? null,
         roundEntries:      roundEntriesFlag(entries),
         timestamp:         new Date().toISOString(),
       },
@@ -2441,11 +2453,16 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         narrationText:    narrationText,
         sessionId:        campaignState?.currentSessionId ?? null,
         sessionNumber:    campaignState?.sessionNumber     ?? null,
+        // UNWIRED: what the card narrates — read by the playtest runner's
+        // mechanics checks (test/ci/playwright lib/table.mjs: the move a card
+        // tells, roll-narrated-as-rolled) and by no module code since the
+        // `!recap session` card reads the session record, where the move and
+        // its match are the roll's `move.resolved` (issue #382 slice 5;
+        // known-issues NARRATOR-CARD-MOVE-FLAGS-RUNNER-ONLY). Its `isMatch`
+        // had that card's "A match was rolled" line for its one reader, and
+        // is retired with it.
         moveId:           resolution?.moveId               ?? null,
         outcome:          resolution?.outcome              ?? null,
-        // Read by postSessionRecap's "A match was rolled" line, which had no
-        // producer until the 2026-10 test-infrastructure audit (#282).
-        isMatch:          resolution?.isMatch === true,
         resolutionId:     resolution?._id                  ?? '',
         matchedEntityIds,
         // The line the player wrote and who wrote it — read back with the
@@ -2629,13 +2646,10 @@ function ringEntryText(message) {
  * architecture §2) — added with the rolling session summary.
  *
  * @param {string} sessionId
- * @param {{ forRecap?: boolean }} [opts] — `forRecap`: the session recap's
- *   reading, which keeps a fallback card and an X-carded narration (their
- *   moves happened) and leaves out the rest as the narrator's does
  * @returns {Array<Object>} ChatMessage documents
  */
-function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
-  return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId, { forRecap }));
+function sessionNarratorCards(sessionId) {
+  return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId));
 }
 
 /**
@@ -2646,10 +2660,9 @@ function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
  *
  * @param {Object} m — a ChatMessage, or a deleted message's record
  * @param {string|null} sessionId
- * @param {{ forRecap?: boolean }} [opts]
  * @returns {boolean}
  */
-function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
+function inNarratorMemory(m, sessionId) {
   const f = m?.flags?.[MODULE_ID];
   if (!f?.narratorCard) return false;
   if (f.sessionId !== sessionId) return false;
@@ -2666,17 +2679,17 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
   // pre-burn narration kept reaching the narrator.
   if (f.burnSuperseded) return false;
   // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
-  // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
-  // so the session recap still counts the move, but its line must not reach
+  // fiction (rules/narrator-memory.md invariant 1): its line must not reach
   // the ring or the rolling summary, nor count as the session's first
   // narration — that cancelled the session's campaign recap (issue #321 U35).
-  // The session recap (`forRecap`) keeps it: the move happened — the recap
-  // counts it and quotes none of its line (issue #322 V05).
-  if (f.narrationFallback && !forRecap) return false;
+  // Its move happened: the session record has it from the roll
+  // (`move.resolved`), which is where the `!recap session` card counts it
+  // (issue #382 slice 5).
+  if (f.narrationFallback) return false;
   // The X-Card removed this narration (issue #321 U07): the table took it
   // out of the story, so the narrator never reads it again. Its move still
-  // happened: the recap counts it, without its prose.
-  if (f.xCarded && !forRecap) return false;
+  // happened: the session record keeps the move without its telling.
+  if (f.xCarded) return false;
   if (Array.isArray(m.whisper) && m.whisper.length) return false;
   return true;
 }
@@ -3249,155 +3262,29 @@ function clearXCardRedirect() {
 }
 
 /**
- * The session `!recap session N` names: the current one when N is its number,
- * else the session whose narrator cards carry N (`sessionNumber`, stamped on
- * every narrator card), else last session's summary when it is N's. The
- * number was matched and dropped, so every `!recap session N` recapped the
- * current session under its own number (issue #322 V05).
+ * Post the `!recap session` card — `!recap session N`'s with `opts.sessionNumber`
+ * — as a view of the session record (issue #382 slice 5,
+ * record/sessionCardView.js): a line a move (who rolled it, the move, its
+ * outcome), how many moves and strong hits, the match. No Claude call and no
+ * chat read: made from `readRecord`, it is there after a GM clears the chat
+ * log; a burned or improved move is one line at its final outcome; a move
+ * whose telling the X-Card removed, or whose narration failed, still counts;
+ * nothing of any telling is on it. Session N is the one the record numbers N
+ * (`session.begun`), the current one by its own number.
  *
- * @param {Object} campaignState
- * @param {number} sessionNumber
- * @returns {{ sessionId: string|null, sessionNumber: number }} a null id when
- *   no record of session N is left
- */
-function recapSessionFor(campaignState, sessionNumber) {
-  if (Number(campaignState?.sessionNumber) === sessionNumber) {
-    return { sessionId: campaignState?.currentSessionId ?? null, sessionNumber };
-  }
-  const card = (game.messages?.contents ?? []).findLast?.(m => {
-    const f = m.flags?.[MODULE_ID];
-    return f?.narratorCard && Number(f.sessionNumber) === sessionNumber && typeof f.sessionId === 'string' && f.sessionId;
-  });
-  if (card) return { sessionId: card.flags[MODULE_ID].sessionId, sessionNumber };
-  // The session record numbers every session a table began (issue #382).
-  const recorded = sessionIdOfNumber(sessionNumber);
-  if (recorded) return { sessionId: recorded, sessionNumber };
-  return { sessionId: null, sessionNumber };
-}
-
-/**
- * Assemble and post a session recap card from chat history.
- * No Claude API call — reads narrator card flags from game.messages.
- *
- * The cards are the session's narrator cards as the narrator reads them
- * (sessionNarratorCards — a burned move's superseded prose left out), plus
- * its fallback and X-carded cards, whose moves happened: they count, and none
- * of their lines is quoted. "Moves resolved" counts the cards that carry a
- * move — paced prose, an @scene answer or a vignette is part of the story,
- * not a move. The recap read every narrator card itself: a burned Strike
- * showed as "Strike → Miss" beside "Strike → Strong Hit", and every card
- * counted as a move (issue #322 V05).
+ * It read the session's narrator cards in chat (a burned Strike listed twice
+ * and every card counted as a move until issue #322 V05) and found session N
+ * by scanning them for its number.
  *
  * @param {Object} campaignState
  * @param {string|null} sessionId  — null = current session (or the one
  *   `opts.sessionNumber` names)
  * @param {{ sessionNumber?: number|null }} [opts] — `!recap session N`'s N
- * @returns {Promise<void>}
+ * @returns {Promise<ChatMessage>}
  */
 export async function postSessionRecap(campaignState, sessionId = null, { sessionNumber = null } = {}) {
-  const asked   = Number.isInteger(sessionNumber) && sessionNumber > 0 ? sessionNumber : null;
-  const target  = sessionId
-    ? { sessionId, sessionNumber: null }
-    : asked !== null
-      ? recapSessionFor(campaignState, asked)
-      : { sessionId: campaignState?.currentSessionId ?? null, sessionNumber: campaignState?.sessionNumber ?? null };
-  const targetId   = target.sessionId;
-  const sessionNum = target.sessionNumber
-    ?? (targetId && targetId === campaignState?.currentSessionId ? campaignState?.sessionNumber ?? null : null);
-
-  const messages = asked !== null && !targetId ? [] : sessionNarratorCards(targetId, { forRecap: true });
-
-  if (!messages.length) {
-    return ChatMessage.create({
-      content: `
-        <div class="sf-recap-session-card">
-          <div class="sf-recap-label">◈ Session Recap</div>
-          <div class="sf-recap-empty">${asked !== null ? `No narrated moves found for session ${asked}.` : 'No narrated moves found for this session.'}</div>
-        </div>
-      `.trim(),
-      flags: {
-        [MODULE_ID]: {
-          recapCard:    true,
-          recapType:    'session',
-          recapEmpty:   true,
-          ...(sessionNum != null ? { sessionNumber: sessionNum } : {}),
-        },
-      },
-    });
-  }
-
-  const outcomes = { strong_hit: 0, weak_hit: 0, miss: 0 };
-  const moveLines = [];
-  let matchContext = null;
-  let totalMoves = 0;
-
-  for (const msg of messages) {
-    const f = msg.flags[MODULE_ID];
-    // A Batch Mode round's card (issue #340) counts each entry's move,
-    // outcome and match; its prose's first sentence is quoted once.
-    if (Array.isArray(f.roundEntries) && f.roundEntries.length) {
-      const text = stripMarkup((f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? ''));
-      const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
-      const moves = f.roundEntries.filter(e => e?.moveId);
-      for (const e of moves) {
-        totalMoves++;
-        if (e.outcome && outcomes[e.outcome] !== undefined) outcomes[e.outcome]++;
-        if (e.isMatch) matchContext = moveDisplayName(e.moveId);
-      }
-      const rolls = moves.map(e => `${moveDisplayName(e.moveId)}${e.outcome ? ` → ${e.outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}` : ''}`);
-      const label = `Round${f.roundNumber ? ` ${f.roundNumber}` : ''}`;
-      if (rolls.length || firstSentence) {
-        moveLines.push(`• ${label}${rolls.length ? `: ${rolls.join('; ')}` : ''}${firstSentence ? ` — ${escapeHtml(firstSentence)}` : ''}`);
-      }
-      continue;
-    }
-    const moveName = f.moveId ? moveDisplayName(f.moveId) : null;
-    const outcome  = f.outcome ?? null;
-    // A narration the X-Card removed (issue #321 U07) and a fallback card
-    // ("narration unavailable") count their move; no line of theirs is quoted.
-    // The NPC voice markup the audio keeps in `narrationText` is stripped, as
-    // on every fiction card (issue #336 Y29 — the recap showed `&lt;npc&gt;`).
-    const text     = stripMarkup((f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? ''));
-    const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
-
-    if (moveName) totalMoves++;
-    if (moveName && outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
-    if (f.isMatch) matchContext = moveName;
-
-    if (moveName && outcome) {
-      const outcomeLabel = outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      moveLines.push(`• ${moveName} → ${outcomeLabel}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
-    } else if (moveName) {
-      moveLines.push(`• ${moveName}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
-    } else if (firstSentence) {
-      moveLines.push(`• ${escapeHtml(firstSentence)}`);
-    }
-  }
-
-  const summaryParts = [`${totalMoves} move${totalMoves !== 1 ? 's' : ''} resolved.`];
-  if (outcomes.strong_hit > 0) summaryParts.push(`${outcomes.strong_hit} strong hit${outcomes.strong_hit !== 1 ? 's' : ''}.`);
-  if (matchContext) summaryParts.push(`A match was rolled — ${matchContext}.`);
-
-  const sessionLabel = sessionNum ? `Session ${sessionNum}` : 'Current Session';
-
-  return ChatMessage.create({
-    content: `
-      <div class="sf-recap-session-card">
-        <div class="sf-recap-label">◈ Session Recap</div>
-        <div class="sf-recap-session-title">${sessionLabel} — ${new Date().toLocaleDateString()}</div>
-        <div class="sf-recap-moves">${moveLines.join('<br>')}</div>
-        <div class="sf-recap-summary">${summaryParts.join(' ')}</div>
-      </div>
-    `.trim(),
-    flags: {
-      [MODULE_ID]: {
-        recapCard:    true,
-        recapType:    'session',
-        sessionId:    targetId,
-        sessionNumber: sessionNum,
-      },
-    },
-  });
+  const { content, flags } = sessionCardMessage(sessionCardOf(sessionCardTarget(campaignState, { sessionId, sessionNumber })));
+  return ChatMessage.create({ content, flags: { [MODULE_ID]: flags } });
 }
 
 /**
@@ -4829,7 +4716,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
   try {
     // Flag family (NARR-RING-VOWSCENE, narrator-context audit 2026-07): the
     // oath scene is fiction the narrator must remember — without these flags
-    // it never entered the ring, the rolling summary, or the session recap,
+    // it never entered the ring, the rolling summary, or the session record,
     // and the narrator could contradict its own swearing scene next turn.
     // Consumer audit (architecture §2): no audio/correction markup → those
     // hooks no-op; no resolutionId → burn-supersede unaffected.
@@ -5926,9 +5813,9 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
         sceneText:     responseText,
         sceneQuestion: question,
         // Narrator-memory A1 — a scene answer is something the narrator
-        // said: it feeds the recent-narration ring, the rolling summary's
-        // source and the session recap, so a later beat does not contradict
-        // it. Kept when the answer stopped being written back (known-issues
+        // said: it feeds the recent-narration ring and the session record
+        // (a `question` beat, the summary's QUESTIONS), so a later beat does
+        // not contradict it. Kept when the answer stopped being written back (known-issues
         // SCENE-ANSWER-NOT-A-CAMERA); `sceneResponse` is what keeps it from
         // counting as a narration where one is meant (the first-narration
         // recap, the X-Card's redirect). Audited consumers:
@@ -6103,11 +5990,13 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        // Match the success-path narratorCard flag shape so the session
-        // recap still counts the move and the live-Quench narrator-card
-        // assertion can locate the fallback alongside real narrations. The
-        // line is not fiction: `narrationFallback` keeps it out of the ring,
-        // the rolling summary and the first-narration check
+        // Match the success-path narratorCard flag shape so the live-Quench
+        // narrator-card assertion can locate the fallback alongside real
+        // narrations (it kept the shape too so the `!recap session` card
+        // counted the move — that card reads the session record now, where
+        // the move is its roll's, issue #382 slice 5). The line is not
+        // fiction: `narrationFallback` keeps it out of the ring, the rolling
+        // summary, the session record and the first-narration check
         // (sessionNarratorCards — issue #321 U35).
         narratorCard:      true,
         narrationCard:     true,

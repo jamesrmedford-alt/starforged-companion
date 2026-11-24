@@ -12,25 +12,30 @@
  * its superseded outcome ("Strike → Miss") beside the upgraded one, and every
  * card — paced prose, an @scene answer, a vignette — counted as a move.
  *
- * Now N names a session through the cards' `sessionNumber` (else the current
- * session's, else last session's summary), and the recap reads the session's
- * cards as the narrator does (sessionNarratorCards), keeping fallback and
- * X-carded cards (their moves happened, their lines are not quoted) and
- * counting only the cards that carry a move.
+ * Since issue #382 slice 5 the card is a view of the session record
+ * (record/sessionCardView.js): N names the session whose `session.begun` the
+ * record numbers N (the current session by its own number), and the moves are
+ * the record's — a burned move once at its final outcome, a move whose telling
+ * the X-Card removed or whose narration failed still counted, nothing of any
+ * telling quoted. It needs no chat: a cleared chat log leaves it whole.
  */
 
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 
 import { simulateTable, USERS } from "../helpers/multiClient.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
-import { postSessionRecap, postNarrationCard } from "../../src/narration/narrator.js";
-import { makeJournal } from "../helpers/fullStateFixture.js";
+import { postSessionRecap } from "../../src/narration/narrator.js";
+import { installJournalMock, makeJournal } from "../helpers/fullStateFixture.js";
 import { JOURNAL_NAMES } from "../../src/world/worldJournal.js";
-import { supersedeOriginalNarration } from "../../src/moves/burnMomentum.js";
+import { recordedEvent, seedSessionRecord } from "../helpers/sessionRecordSeed.js";
 
 const MODULE_ID = "starforged-companion";
+
+/** A rolled move as rollMove records it (`move.resolved`). */
+const rolled = (sessionId, res, moveId, outcome = "strong_hit") =>
+  recordedEvent(sessionId, "move.resolved", { ref: { res }, d: { moveId, outcome, rollKind: "action" } });
 
 // ─── `!recap session N`, typed on a booted table ─────────────────────────────
 
@@ -47,15 +52,23 @@ describe("!recap session N recaps session N", () => {
     await table.setClaudeKey("gm-1", "sk-ant-gina");
   }
 
-  /** A move narration card as postNarrationCard stamps it, for the given session. */
-  async function card(sessionId, sessionNumber, moveId, text) {
-    await table.client("gm-1").run(() => ChatMessage.create({
-      content: `<div class="sf-narration-card"><div class="sf-narration-prose">${text}</div></div>`,
-      flags: { [MODULE_ID]: {
-        narratorCard: true, narrationCard: true, narrationText: text,
-        sessionId, ...(sessionNumber != null ? { sessionNumber } : {}), moveId, outcome: "strong_hit", isMatch: false,
-      } },
-    }));
+  /** A session's page of the Session Log, its record holding its moves — numbered by its `session.begun` (unless `number` is null). */
+  async function page(sessionId, number, moves) {
+    let log = table.journal.find(j => j.name === JOURNAL_NAMES.sessionLog);
+    if (!log) {
+      log = makeJournal(JOURNAL_NAMES.sessionLog);
+      table.journal._set(log.id, log);
+    }
+    const events = [
+      ...(number != null ? [recordedEvent(sessionId, "session.begun", { d: { number } })] : []),
+      ...moves.map((moveId, i) => rolled(sessionId, `res-${sessionId}-${i}`, moveId)),
+    ];
+    const createdAt = Date.now() - 3_600_000 + (number ?? 0);
+    await log.createEmbeddedDocuments("JournalEntryPage", [{ name: `Session ${number ?? ""}`.trim(), flags: { [MODULE_ID]: {
+      sessionLogPage: { sessionId, sessionNumber: number, pageName: `Session ${number ?? ""}`.trim(), createdAt: new Date(createdAt).toISOString() },
+      sessionRecord: { v: 1, sessionId, createdAt, seq: Math.max(0, ...events.map(e => e.seq)), views: {},
+        events: Object.fromEntries(events.map(e => [e.id, e])) },
+    } } }]);
   }
 
   async function recap(command) {
@@ -66,9 +79,8 @@ describe("!recap session N recaps session N", () => {
 
   it('"!recap session 3" during session 4 recaps session 3 — its moves, under its number', async () => {
     await seed({ currentSessionId: "sess-4", sessionNumber: 4 });
-    await card("sess-3", 3, "face_danger", "The airlock seals behind you.");
-    await card("sess-4", 4, "gather_information", "The logs name the courier.");
-    await table.settle();
+    await page("sess-3", 3, ["face_danger"]);
+    await page("sess-4", 4, ["gather_information"]);
 
     const r = await recap("!recap session 3");
     expect(r.flags[MODULE_ID]).toMatchObject({ sessionNumber: 3, sessionId: "sess-3" });
@@ -77,30 +89,22 @@ describe("!recap session N recaps session N", () => {
     expect(r.content).not.toContain("Gather Information");
   }, 30_000);
 
-  it("a session whose cards carry no number is found through the session record", async () => {
+  it("a session is found by the number its record gives it — no card in chat needed: a cleared chat log leaves it", async () => {
     await seed({ currentSessionId: "sess-2", sessionNumber: 2 });
-    // Session 1's page of the Session Log: its record numbers it (issue #382).
-    const log = makeJournal(JOURNAL_NAMES.sessionLog);
-    table.journal._set(log.id, log);
-    await log.createEmbeddedDocuments("JournalEntryPage", [{ name: "Session 1", flags: { [MODULE_ID]: {
-      sessionLogPage: { sessionId: "sess-1", sessionNumber: 1, pageName: "Session 1", createdAt: new Date(1).toISOString() },
-      sessionRecord: { v: 1, sessionId: "sess-1", createdAt: 1, seq: 1, views: {},
-        events: { e1: { id: "e1", k: "session.begun", at: 1, seq: 1, s: "sess-1", scene: null, who: {}, ref: {}, d: { number: 1 } } } },
-    } } }]);
-    await card("sess-1", null, "face_danger", "The old war ended at Firstlight.");
-    await card("sess-2", null, "face_danger", "The reactor hums tonight.");
-    await table.settle();
+    await page("sess-1", 1, ["face_danger"]);
+    await page("sess-2", 2, ["secure_an_advantage"]);
+    expect(table.cards(f => f.narratorCard)).toHaveLength(0);       // the chat holds no narration at all
 
     const r = await recap("!recap session 1");
-    expect(r.content).toContain("The old war ended");
-    expect(r.content).not.toContain("The reactor hums");
+    expect(r.flags[MODULE_ID]).toMatchObject({ sessionNumber: 1, sessionId: "sess-1" });
+    expect(r.content).toContain("Face Danger → Strong Hit");
+    expect(r.content).not.toContain("Secure an Advantage");
   }, 30_000);
 
   it("the current session's number, and a bare `!recap session`, recap the current session", async () => {
     await seed({ currentSessionId: "sess-4", sessionNumber: 4 });
-    await card("sess-3", 3, "face_danger", "The airlock seals behind you.");
-    await card("sess-4", 4, "gather_information", "The logs name the courier.");
-    await table.settle();
+    await page("sess-3", 3, ["face_danger"]);
+    await page("sess-4", 4, ["gather_information"]);
 
     for (const command of ["!recap session 4", "!recap session"]) {
       const r = await recap(command);
@@ -112,74 +116,71 @@ describe("!recap session N recaps session N", () => {
 
   it("a session with no record left says so, by its number — never another session's moves", async () => {
     await seed({ currentSessionId: "sess-4", sessionNumber: 4 });
-    await card("sess-4", 4, "gather_information", "The logs name the courier.");
-    await table.settle();
+    await page("sess-4", 4, ["gather_information"]);
 
     const r = await recap("!recap session 9");
     expect(r.flags[MODULE_ID]).toMatchObject({ recapEmpty: true, sessionNumber: 9 });
-    expect(r.content).toContain("No narrated moves found for session 9.");
+    expect(r.content).toContain("No moves are recorded for session 9.");
     expect(r.content).not.toContain("Gather Information");
   }, 30_000);
 });
 
-// ─── what the recap counts (the real producers) ──────────────────────────────
+// ─── what the recap counts ───────────────────────────────────────────────────
 
 describe("!recap session reports what happened this session", () => {
   const state = { currentSessionId: "sess-3", sessionNumber: 3 };
+  let journals;
 
   beforeEach(() => {
     ChatMessage._reset();
+    journals = installJournalMock();
     global.game.messages = { contents: [] };
   });
+  afterEach(() => journals.restore());
 
-  async function recapOf(cards) {
-    global.game.messages = { contents: cards };
-    ChatMessage._reset();
+  async function recapOf(events) {
+    await seedSessionRecord("sess-3", [recordedEvent("sess-3", "session.begun", { d: { number: 3 } }), ...events], { number: 3 });
     await postSessionRecap(state);
     return ChatMessage._created.at(-1).content;
   }
 
   it('a burned move counts once, at its upgraded outcome; paced prose is not a "move resolved"', async () => {
-    // Strike misses; the narration posts.
-    await postNarrationCard("Your shot goes wide and the raider closes in.",
-      { moveId: "strike", outcome: "miss", isMatch: false, _id: "res-strike" }, state);
-    global.game.messages = { contents: ChatMessage._created };
-    // The player burns momentum: the original narration is superseded (real producer)…
-    await supersedeOriginalNarration({ resolutionId: "res-strike" });
-    expect(ChatMessage._created[0].flags[MODULE_ID].burnSuperseded).toBe(true);
-    // …and the re-narration of the strong hit posts.
-    await postNarrationCard("You drop the raider with a clean shot.",
-      { moveId: "strike", outcome: "strong_hit", isMatch: false, _id: "res-strike-burn", inputMethod: "burn" }, state);
-    // A paced (no-roll) narration in the same session.
-    ChatMessage._created.push(makeTestMessage({ flags: { [MODULE_ID]: {
-      narratorCard: true, pacedNarrative: true, narrationText: "The corridor smells of ozone.", sessionId: "sess-3",
-    } } }));
-
-    const recap = await recapOf(ChatMessage._created.slice());
+    const recap = await recapOf([
+      // Strike misses; its narration is recorded as its card posts…
+      rolled("sess-3", "res-strike", "strike", "miss"),
+      recordedEvent("sess-3", "narration", { ref: { nar: "nar-miss", res: "res-strike" }, d: { mode: "move" },
+        text: "Your shot goes wide and the raider closes in." }),
+      // …the player burns momentum: the outcome raised, the first telling superseded, the re-narration told.
+      recordedEvent("sess-3", "move.upgraded", { ref: { res: "res-strike" }, d: { how: "burn", from: "miss", to: "strong_hit" } }),
+      recordedEvent("sess-3", "narration.removed", { ref: { res: "res-strike" }, d: { narrationIds: ["nar-miss"], by: "superseded" } }),
+      recordedEvent("sess-3", "narration", { ref: { nar: "nar-burn", res: "res-strike" }, d: { mode: "move", upgradeOf: "res-strike" },
+        text: "You drop the raider with a clean shot." }),
+      // A paced (no-roll) narration in the same session.
+      recordedEvent("sess-3", "line", { who: { actor: "pc-kira" }, d: { via: "typed" }, text: "I sniff the air." }),
+      recordedEvent("sess-3", "narration", { who: { actor: "pc-kira" }, ref: { nar: "nar-paced" }, d: { mode: "paced" },
+        text: "The corridor smells of ozone." }),
+    ]);
 
     expect(recap).not.toContain("Strike → Miss");
-    expect(recap).not.toContain("Your shot goes wide");
-    expect(recap).toContain("Strike → Strong Hit: You drop the raider with a clean shot");
-    expect(recap).toContain("The corridor smells of ozone");     // the story, listed …
-    expect(recap).toContain("1 move resolved.");                   // … not counted
+    expect(recap).toContain("Strike → Strong Hit");
+    expect(recap).not.toMatch(/shot goes wide|clean shot|ozone/);   // no telling is quoted
+    expect(recap).toContain("1 move resolved.");                     // the paced line is no move
   });
 
-  it("a fallback card and an X-carded narration count their moves, and none of their lines is quoted", async () => {
-    const flags = (over) => ({ [MODULE_ID]: { narratorCard: true, sessionId: "sess-3", ...over } });
-    const cards = [
-      makeTestMessage({ flags: flags({ moveId: "face_danger", outcome: "weak_hit",
-        narrationFallback: true, narrationText: "Face Danger: Weak Hit — narration unavailable." }) }),
-      makeTestMessage({ flags: flags({ moveId: "compel", outcome: "strong_hit",
-        xCarded: true, narrationText: "The carded beat the table took out." }) }),
-      makeTestMessage({ flags: flags({ sceneResponse: true, narrationText: "The hold is dark." }) }),   // an @scene answer
-    ];
-
-    const recap = await recapOf(cards);
+  it("a move whose narration failed and one the X-Card removed count, and nothing of their tellings is quoted", async () => {
+    const recap = await recapOf([
+      rolled("sess-3", "res-fd", "face_danger", "weak_hit"),        // "narration unavailable": no narration is recorded
+      rolled("sess-3", "res-compel", "compel", "strong_hit"),
+      recordedEvent("sess-3", "narration", { ref: { nar: "nar-carded", res: "res-compel" }, d: { mode: "move" },
+        text: "The carded beat the table took out." }),
+      recordedEvent("sess-3", "narration.removed", { d: { narrationIds: ["nar-carded"], by: "xcard" } }),
+      recordedEvent("sess-3", "question", { ref: { nar: "nar-q" }, text: "Is the hold dark?" }),
+      recordedEvent("sess-3", "narration", { ref: { nar: "nar-q" }, d: { mode: "scene_answer" }, text: "The hold is dark." }),
+    ]);
 
     expect(recap).toContain("Face Danger → Weak Hit");
     expect(recap).toContain("Compel → Strong Hit");
-    expect(recap).not.toContain("narration unavailable");
-    expect(recap).not.toContain("carded beat");
+    expect(recap).not.toMatch(/narration unavailable|carded beat|hold/);
     expect(recap).toContain("2 moves resolved.");
   });
 });

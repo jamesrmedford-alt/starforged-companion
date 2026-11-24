@@ -27,7 +27,7 @@ skeleton, the one surface that holds what has *not* been stated):
 
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
-| **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
+| **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1) — no longer the session recap, a view of the session record since issue #382 slice 5 | last N cards (`narratorContextCards`, default 20, 1–50) |
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone of that block (system prompt §6.5; issue #374 A1) and the scene's state, read live, under WHERE THINGS STAND in its user message (its truths reach it from the session record — issue #382; never as binding) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response — a session vignette's without its question; never an `@scene` answer's) | every narrator call but the campaign recap's (top of §6.5 — a recap gets the scene's question, answered or not, under WHERE THINGS STAND in its user message, no cast); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
@@ -125,7 +125,7 @@ should remember* must carry all three flags:
 
 | Card | Flags since | Notes |
 |---|---|---|
-| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` / `isMatch` (session recap); `playerText` / `playerName` (ring, #286) |
+| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` (what the card narrates — read by the playtest runner's mechanics checks alone since the session recap reads the session record, issue #382 slice 5, which retired the card's `isMatch` with that reading; `UNWIRED` at the write); `playerText` / `playerName` (ring, #286) |
 | paced narration (`postPacedNarrativeCard`) | always | `playerText` (also the NWMA Roll button's re-post) / `playerName` |
 | @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions; `sceneQuestion` / `playerName` (ring, #286). Since known-issues SCENE-ANSWER-NOT-A-CAMERA the answer is a plain statement of what is established and **the ring (with the summary's source) is all it feeds**: no fact block is asked for or applied, and no capture runs — see below |
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
@@ -134,7 +134,7 @@ should remember* must carry all three flags:
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
 | clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8); its narration runs the tier pass for the recorded entities it names (`narrateClockAdvancement` → `scheduleNarrationCapture`, issue #345 AA33) and the detection pass (CLOCK-VIGNETTE-NO-DETECTION), on the GM whose client narrated it (CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
-| Batch Mode round card (`postRoundNarrationCard`) | 2026-11 (#340) | `roundId`, `roundNumber`, `roundEntries: [{ userId, actorId, playerName, playerText, moveId, outcome, isMatch, resolutionId }]` — the players who acted and no one else; its own `moveId` / `outcome` / `resolutionId` stay empty. The round's result cards carry `roundId` too. Its fallback (`postRoundFallbackCard`) keeps the family with `narrationFallback`; the X-Card's paused notice (`narrationPaused`) is not a narrator card. `sessionId` / `sessionNumber` are the round's own session's (`round.sessionId`), whichever pass narrates it — a round of an over session narrated after the load minted the next is told from, and filed under, its own session (driver.js `roundNarrationState`, issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT), so the minted session's ring, summary, first-narration recap and X-Card pick do not read it |
+| Batch Mode round card (`postRoundNarrationCard`) | 2026-11 (#340) | `roundId`, `roundEntries: [{ userId, actorId, playerName, playerText, outcome, resolutionId }]` — the players who acted and no one else; its own `moveId` / `outcome` / `resolutionId` stay empty. Its `roundNumber`, its `isMatch` and each entry's `moveId` / `isMatch` were the session recap's ("Round N: Move → Outcome"), retired with its reading of the chat (issue #382 slice 5); an entry's `outcome` stays for the e2e playthrough's round check (`UNWIRED` at the write). The round's result cards carry `roundId` too. Its fallback (`postRoundFallbackCard`) keeps the family with `narrationFallback`; the X-Card's paused notice (`narrationPaused`) is not a narrator card. `sessionId` / `sessionNumber` are the round's own session's (`round.sessionId`), whichever pass narrates it — a round of an over session narrated after the load minted the next is told from, and filed under, its own session (driver.js `roundNarrationState`, issue #364 ROUND-CARD-SESSION-ID-AFTER-MINT), so the minted session's ring, summary, first-narration recap and X-Card pick do not read it |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only, posted by the canonical GM once checked against every player's Private Lines (issue #362 D13); `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
 
 Every card above also carries its narration's `narrationId` — the id its
@@ -154,9 +154,11 @@ two beats narrated at the same moment had both read the same last card
 (issue #364 BEAT-SHAPE-SIMULTANEOUS). The claim is no store of the last
 shape: with nothing being written the cards alone decide.
 The move narration's "narration unavailable" card (`postFallbackCard`) keeps
-the family so the session recap counts the move, and is marked
-`narrationFallback`, which every memory read leaves out (issue #321 U35 — it
-was fed back as story and counted as the session's first narration).
+the family — kept so the session recap counted the move, until that card read
+the session record, where the move is its roll's `move.resolved` (issue #382
+slice 5) — and is marked `narrationFallback`, which every memory read leaves
+out (issue #321 U35 — it was fed back as story and counted as the session's
+first narration).
 
 **An `@scene` answer: said, not recorded** (known-issues
 SCENE-ANSWER-NOT-A-CAMERA; the long haul's third live run). A1 put scene
@@ -172,7 +174,7 @@ contradict them — and a wrong answer is bounded by the ring's depth instead of
 becoming a fact. The card's other readings were re-audited for the change of
 meaning: the session summary's source lists it under QUESTIONS (the
 record's `question` — issue #382; nothing happened because one was asked),
-the session recap lists it, the
+the session recap — a line a move since issue #382 slice 5 — does not list it, the
 X-Card can remove it; it is **no narration** for the session-start recap gate
 or the X-Card's redirect (both now leave `sceneResponse` cards out, as they
 do a published reflection), and it never took a beat shape.
@@ -189,19 +191,19 @@ CLAUDE.md "audit consumers" rule):
   triggers the debounced regen after the card posts; at a table whose GMs hold
   no key, the keyed client that wrote the card makes it and relays it to the
   GM to store (`applyRelayedSessionSummary`, SUMMARY-KEYLESS-GM)
-- session recap (`postSessionRecap`) — inclusion intended; reads
-  `sessionNarratorCards(sessionId, { forRecap: true })`: the narrator's
-  excludes (a burned move's superseded prose among them) except that a
-  fallback card and an X-carded card stay — their moves count, their lines are
-  not quoted (issue #321 U07). Its move lines and "A match was rolled" read
-  move narration's `moveId` / `outcome` / `isMatch` (`isMatch` had no writer
-  until RECAP-MATCH-DEAD, issue #282); "moves resolved" counts only the cards
-  with a `moveId`, and `!recap session N` finds session N by the cards'
-  `sessionNumber` (`recapSessionFor`). It filtered the cards itself: a burned
-  Strike listed its superseded miss, every card counted as a move, and N was
-  dropped (issue #322 V05). A round card counts each of its `roundEntries`'
-  moves, outcomes and matches ("Round N: Move → Outcome"), its fallback too
-  (issue #340)
+- session recap (`postSessionRecap`) — **no longer a consumer** (issue #382
+  slice 5): the `!recap session` card is a view of the session record
+  (`record/sessionCardView.js` — a line a move from the rolls'
+  `move.resolved`, the counts, the match; session N the one the record
+  numbers N; docs/flows/session-record-flow.md). It read
+  `sessionNarratorCards(sessionId, { forRecap: true })` — the narrator's
+  excludes but a fallback card and an X-carded card, whose moves counted
+  (issue #321 U07) — took each line and "A match was rolled" from the move
+  narration's `moveId` / `outcome` / `isMatch` and a round card's
+  `roundEntries` ("Round N: Move → Outcome", issue #340), and found session N
+  by the cards' `sessionNumber` (`recapSessionFor`). The reading, `forRecap`
+  and the flags only it read are retired; a cleared chat log no longer empties
+  the card
 - the campaign recap's session-start gate (`sessionStartRecap`, issue #286
   C3) — the recap goes to the session's first narration: no card
   `sessionNarratorCards` keeps yet, save a published reflection — canon, but

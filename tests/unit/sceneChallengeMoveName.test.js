@@ -49,6 +49,8 @@ import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { localizeMove } from "../../src/system/i18n.js";
+import { makeJournal } from "../helpers/fullStateFixture.js";
+import { journalsKeepPages } from "../helpers/sessionRecordSeed.js";
 
 const isClassifier  = (call) => /pacing pre-classifier/.test(call.system ?? "");
 const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
@@ -88,8 +90,14 @@ async function say(text, moveId, dice) {
   return moveCard();
 }
 
-beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);
-afterAll(() => table?.teardown());
+// The session recap is a view of the session record (issue #382 slice 5),
+// kept on the Session Log's pages: the table's journals keep their pages.
+let restoreJournals = () => {};
+beforeAll(async () => {
+  table = await simulateTable({ users: [USERS.GM, USERS.P1] });
+  restoreJournals = journalsKeepPages(table, makeJournal);
+}, 30_000);
+afterAll(() => { restoreJournals(); return table?.teardown(); });
 beforeEach(async () => {
   control.ptp = [12];
   await table.reset({ world: { settings: {
@@ -97,6 +105,8 @@ beforeEach(async () => {
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "mn-s1", sessionNumber: 1,
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: "mn-scene", sceneTruths: [], clocks: [] },
   } } });
+  // A fresh world each test: the GM's record opens its session anew.
+  (await gm().import("../../src/record/record.js"))._resetRecordForTests();
   await table.setClaudeKey("gm-1", "sk-ant-test");
   pc = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, system: { momentum: { value: 9 } } });
   table.journal._set(progressJournal());
@@ -168,10 +178,14 @@ describe("a scene-challenge move has one display name — the confirm dialog's (
 
   it("the session recap names the move as the dialog does", async () => {
     await say("I press our terms across the table.", "face_danger_scene_challenge", MISS);
+    // The roll is on the session record (rollMove's `move.resolved`), where the card reads it.
+    const record = await gm().import("../../src/record/record.js");
+    await gm().run(() => record.recordSettled());
     const narrator = await gm().import("../../src/narration/narrator.js");
     await gm().run(() => narrator.postSessionRecap(table.world.campaignState()));
     await table.settle();
     const recap = table.cards(f => f.recapCard && f.recapType === "session").at(-1);
-    expect(recap.content).toContain(`• ${FD} → Miss`);
+    expect(recap.content).toContain(`• Kira — ${FD} → Miss`);
+    expect(recap.content).not.toMatch(/Face Danger Scene Challenge/);
   }, 30_000);
 });

@@ -59,6 +59,9 @@ export const RECORD_VIEWS = Object.freeze({
   // The campaign recap: its cache is campaignState's `campaignRecapCache`,
   // keyed by its source's hash (narrator.js getCampaignRecap).
   recap: 'src/record/recapView.js',
+  // The `!recap session` card (slice 5): made in code when it is asked for
+  // (narrator.js postSessionRecap), kept nowhere but its chat card.
+  sessionCard: 'src/record/sessionCardView.js',
 });
 
 /**
@@ -95,7 +98,7 @@ const row = (id, slice, fields, refs, readBy, { text = false, blank = [] } = {})
  */
 export const RECORD_EVENTS = Object.freeze([
   // ── The session ───────────────────────────────────────────────────────────
-  row('session.begun', 1, ['number', 'perspective', 'focus', 'pcs', 'vows', 'tracks', 'place', 'resumed'], [], ['log', 'recap']),
+  row('session.begun', 1, ['number', 'perspective', 'focus', 'pcs', 'vows', 'tracks', 'place', 'resumed'], [], ['log', 'recap', 'sessionCard']),
   row('session.ended', 1, ['reason', 'focus', 'pcs', 'vows', 'tracks', 'place'], [], ['log']),
   row('scene.started', 2, ['sceneId', 'reason'], [], ['log', 'recap']),
   row('scene.ended', 2, ['sceneId', 'reason'], [], ['log']),
@@ -107,8 +110,8 @@ export const RECORD_EVENTS = Object.freeze([
   row('move.resolved', 1, [
     'moveId', 'moveName', 'rollKind', 'statUsed', 'statValue', 'adds', 'actionDie', 'actionDieCancelled',
     'challengeDice', 'actionScore', 'progressScore', 'isMatch', 'outcome', 'target', 'held',
-  ], ['res', 'round'], ['log', 'recap']),
-  row('move.upgraded', 1, ['how', 'from', 'to', 'momentum'], ['res'], ['log', 'recap']),
+  ], ['res', 'round'], ['log', 'recap', 'sessionCard']),
+  row('move.upgraded', 1, ['how', 'from', 'to', 'momentum'], ['res'], ['log', 'recap', 'sessionCard']),
   row('move.kept', 1, ['by'], ['res'], ['log']),
   row('sheet.changed', 1, ['actorId', 'itemId', 'name', 'what', 'from', 'to', 'cause'], ['res', 'card'], ['log', 'recap']),
   row('choice', 2, ['action', 'picked'], ['card', 'res'], ['log', 'recap'], { text: true }),
