@@ -64,6 +64,9 @@ async function resetWorld() {
       lastSessionTimestamp: new Date().toISOString(), sessionEndedId: null,
       currentSceneId: null, sceneTruths: [], previousSessionSummary: OLDER, sessionSummary: null,
       xCardActive: false, xCardPlays: 0, clocks: [],
+      // A place for End a Session's closing cutaway to show (issue #381 D6: with
+      // nobody on record and nowhere to show, there is no closing).
+      activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
     },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');

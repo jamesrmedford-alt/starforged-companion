@@ -11337,42 +11337,31 @@ function registerSessionPanelTests(quench) {
         if (stateAtStart) await game.settings.set(MODULE_ID, "campaignState", stateAtStart);
       });
 
-      describe("End Session NPC selection — priority (rule: bonded > active > threat > fallback)", function () {
-        it("selects a bonded connection when one exists", async function () {
-          const { selectEndSessionNPC } = await import(
+      describe("End Session closing — whom it shows (issue #381: the campaign's people by die, else a known settlement, else none)", function () {
+        it("with nobody on record and no active sector, there is no closing", async function () {
+          const { chooseClosingSubject } = await import(
             `${MODULE_PATH}/session/endSessionVignette.js`
           );
-          // Stub listConnections via the campaignState path — the real
-          // module reads via game.journal so we need to inject directly.
-          // Easiest: monkey-patch the module's collaborator with a fake
-          // state that contains a bonded connection journal. The function
-          // tolerates a thrown `listConnections` (returns [] on failure),
-          // so an inline stub is the cleanest test seam.
-          // For this batch, we exercise the public function with a
-          // hand-built state shape; downstream tests should add live
-          // foundry-ironsworn fixtures.
-          const state = { connectionIds: [], sectors: [], activeSectorId: null };
-          const npc = selectEndSessionNPC(state);
-          // With no connections / threats / sector, falls through to fallback.
-          assert.equal(npc.kind, "fallback",
-            "with no live connections or threats, the selector falls back");
-          assert.match(npc.name, /familiar adversary/i,
-            "fallback name should be the documented sentinel");
+          // A hand-built state: no connections, no sector (the World
+          // Journal's threats are the world's own — none in this batch).
+          const state = { connectionIds: [], settlementIds: [], sectors: [], activeSectorId: null };
+          assert.isNull(chooseClosingSubject(state, { messages: [] }),
+            "nobody and nowhere: no closing — the 'familiar adversary' fallback is gone");
         });
 
-        it("uses sector trouble when no connections or threats but a sector is active", async function () {
-          const { selectEndSessionNPC } = await import(
+        it("with nobody on record, a settlement of the active sector", async function () {
+          const { chooseClosingSubject } = await import(
             `${MODULE_PATH}/session/endSessionVignette.js`
           );
           const state = {
-            connectionIds: [],
-            sectors: [{ id: "s1", name: "Glimmer Reach", trouble: "An ancient warning beacon broadcasts." }],
+            connectionIds: [], settlementIds: [],
+            sectors: [{ id: "s1", name: "Glimmer Reach", trouble: "An ancient warning beacon broadcasts.",
+              settlements: [{ id: "st1", name: "Lantern Rest", trouble: "The beacon keeps them awake" }] }],
             activeSectorId: "s1",
           };
-          const npc = selectEndSessionNPC(state);
-          assert.equal(npc.kind, "sector_trouble",
-            "sector trouble should be selected when nothing else exists");
-          assert.match(npc.name, /Glimmer Reach/i, "name should reference the sector");
+          const chosen = chooseClosingSubject(state, { messages: [] });
+          assert.equal(chosen?.option?.kind, "settlement", "a place the table knows");
+          assert.equal(chosen?.option?.name, "Lantern Rest");
         });
       });
 
@@ -12433,21 +12422,41 @@ function registerPromptContractTests(quench) {
         const { narrateSessionVignette } = await narrator();
         const cs = state();
         // As Begin a Session runs it: the PCs at the table are its CHARACTER
-        // blocks (issue #345 AA31).
+        // blocks (issue #345 AA31), and the scene is composed — where the
+        // last session stopped, its rolled material — as the handler composes
+        // it (issue #381).
         const participants = galley.collectGalleyParticipants(cs);
+        const { userMessage, seeds } = await galley.composeOpeningScene(participants, cs);
         await narrateSessionVignette({
-          userMessage: galley.buildGalleyVignetteUserMessage(participants, cs),
+          userMessage,
           campaignState: cs,
           actorIds: participants.active.map(p => p.actor?.id).filter(Boolean),
+          seeds,
         });
       } };
       const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {
         const closing = await import(`${MODULE_PATH}/session/endSessionVignette.js`);
         const { narrateSessionVignette } = await narrator();
         const cs = state();
+        // As End a Session composes it (issue #381): whom it shows — the
+        // table's connection focus names the fixture's NPC, so no die decides
+        // — and its rolled material. A bare world has nobody and nowhere to
+        // show, so End a Session writes no closing there: the mode's prompt
+        // is still checked, from the message alone.
+        const scene = closing.composeClosingScene(cs, { connectionFocus: N.npc })
+          ?? { userMessage: closing.buildEndSessionVignetteUserMessage({ kind: "settlement", name: N.settlement }, cs), seeds: null };
+        await narrateSessionVignette({ userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds });
+      } };
+      const SPOTLIGHT = { name: "Begin Session spotlight vignette", marker: "SPOTLIGHT VIGNETTE", run: async () => {
+        const spotlight = await import(`${MODULE_PATH}/session/spotlightVignette.js`);
+        const { narrateSessionVignette } = await narrator();
+        const cs = state();
+        // As Begin a Session composes it (issue #381 D3): from the Begin
+        // card's d100 — 85, "Peril lies ahead", which needs no record.
+        const scene = spotlight.composeSpotlightScene(cs, { roll: 85 });
         await narrateSessionVignette({
-          userMessage: closing.buildEndSessionVignetteUserMessage(closing.selectEndSessionNPC(cs), cs),
-          campaignState: cs,
+          userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds,
+          narratorClass: scene.narratorClass, detect: true,
         });
       } };
       const CLOCK = { name: "clock vignette", marker: `The clock "${N.clock}"`, run: async () => {
@@ -12790,9 +12799,15 @@ function registerPromptContractTests(quench) {
           assert.include(request.user, `${N.pcB} [he/him]`, "the second PC and his pronouns");
         });
 
+        it("Begin Session spotlight vignette: the Begin card's result, at the interaction latitude (issue #381 D3)", async function () {
+          const request = await capture(SPOTLIGHT);
+          assert.include(request.user, "1. What the vignette shows — Spotlight Vignette (85): Peril lies ahead or lurks just out of view");
+          assert.include(request.system, "NARRATOR PERMISSIONS — INTERACTION MODE");
+        });
+
         it("End Session vignette: the NPC, with his pronouns (PLAYTEST-1712 R)", async function () {
           const request = await capture(CLOSING);
-          assert.include(request.user, `Featured NPC (connection): ${N.npc}`);
+          assert.include(request.user, `Subject (connection): ${N.npc}`);
           assert.include(request.user, "Pronouns: he/him");
         });
 

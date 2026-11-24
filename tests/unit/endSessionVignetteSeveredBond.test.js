@@ -10,7 +10,9 @@
  * `bonded === true` connection with no `active` check — every later priority
  * filters `active !== false` — so after a sever, the closing scene was a
  * tender slice of life of the person the crew had just lost, framed to the
- * narrator as `bonded_connection`.
+ * narrator as `bonded_connection`. Since issue #381 a die chooses among the
+ * campaign's people (chooseClosingSubject), and a severed bond is none of
+ * them.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -22,36 +24,36 @@ vi.mock('../../src/entities/connection.js', async (importOriginal) => ({
 vi.mock('../../src/world/worldJournal.js', () => ({ getActiveThreats: vi.fn(() => []) }));
 
 import { listConnections } from '../../src/entities/connection.js';
-import { selectEndSessionNPC } from '../../src/session/endSessionVignette.js';
+import { chooseClosingSubject } from '../../src/session/endSessionVignette.js';
+
+/** Whom the closing shows — no earlier closing, and a die that would fail if it were asked. */
+const subjectOf = (state) => chooseClosingSubject(state, { messages: [], draw: () => { throw new Error('no choice to make'); } });
 
 const SEVERED = { _id: 'c-old', name: 'Vance', bonded: true, active: false, rank: 'formidable', role: 'Mentor' };
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-describe('selectEndSessionNPC — a severed bond is not the closing vignette\'s NPC', () => {
-  it('skips a severed (inactive) bond and features the live one', () => {
+describe('the closing cutaway — a severed bond is never whom it shows', () => {
+  it('skips a severed (inactive) bond and shows the live one', () => {
     listConnections.mockReturnValue([
       SEVERED,
       { _id: 'c-now', name: 'Ilse', bonded: true, active: true, rank: 'dangerous', role: 'Pilot' },
     ]);
-    const npc = selectEndSessionNPC({ connectionIds: ['c-old', 'c-now'] });
-    expect(npc.kind).toBe('bonded_connection');
-    expect(npc.name).toBe('Ilse');
+    const { option } = subjectOf({ connectionIds: ['c-old', 'c-now'] });
+    expect(option.kind).toBe('bonded_connection');
+    expect(option.name).toBe('Ilse');
   });
 
-  it('with only a severed bond, an active connection is featured instead', () => {
+  it('with only a severed bond, an active connection is shown instead', () => {
     listConnections.mockReturnValue([
       SEVERED,
       { _id: 'c-2', name: 'Doran', bonded: false, rank: 'dangerous', role: 'Broker' },
     ]);
-    const npc = selectEndSessionNPC({ connectionIds: ['c-old', 'c-2'] });
-    expect(npc).toMatchObject({ kind: 'connection', name: 'Doran' });
+    expect(subjectOf({ connectionIds: ['c-old', 'c-2'] }).option).toMatchObject({ kind: 'connection', name: 'Doran' });
   });
 
-  it('with only a severed bond and nothing else, the vignette falls back — never the lost NPC', () => {
+  it('with only a severed bond and nothing else, there is no closing — never the lost NPC', () => {
     listConnections.mockReturnValue([SEVERED]);
-    const npc = selectEndSessionNPC({ connectionIds: ['c-old'] });
-    expect(npc.kind).toBe('fallback');
-    expect(npc.name).not.toBe('Vance');
+    expect(subjectOf({ connectionIds: ['c-old'] })).toBeNull();
   });
 });

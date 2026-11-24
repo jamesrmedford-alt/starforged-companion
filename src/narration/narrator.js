@@ -36,6 +36,7 @@ import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from '.
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
+import { markSeedsUsed } from '../session/sceneSeeds.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
@@ -2510,6 +2511,55 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
   }
 }
 
+/** What heads a cutaway's entry in the ring and the summary's source (ringEntryText, issue #381). */
+const CUTAWAY_LINE = 'CUTAWAY — the table saw this; the characters did not, and know nothing of it:';
+
+/** How many cards the last narration the table read is told in. */
+const LAST_STORY_CARDS = 2;
+/** …and the most of it told, the newest kept. */
+const LAST_STORY_MAX_CHARS = 2400;
+
+/**
+ * The last narration the table read, word for word (issue #381 D2): the
+ * newest story card in the chat, and the one before it of the same session —
+ * each the player's line that prompted it, then the prose, as the ring tells
+ * a card (ringEntryText) and by the ring's own rule for what is in memory
+ * (inNarratorMemory: nothing the X-Card removed, an upgrade struck or a
+ * fallback card stands for). A session set-piece is no part of it — an
+ * opening, a closing cutaway, a spotlight (`sessionVignetteCard`): a cutaway
+ * is its session's newest card and is not where the characters are — nor is a
+ * clock's vignette, which is where a threat stands. Told to a session's
+ * opening scene as where the last session stopped: the session summary is "a
+ * droppable convenience, not a fact store" (invariant 8) — it can be off,
+ * late or wrong — and this is read from the cards, the ring's own source, so
+ * it adds no store. Null with no such card.
+ *
+ * @param {number} [limit]
+ * @returns {{ sessionId: string, text: string }|null}
+ */
+export function getLastStoryNarration(limit = LAST_STORY_CARDS) {
+  try {
+    const story = (m) => {
+      const f = m?.flags?.[MODULE_ID];
+      return !!f?.narratorCard && !f.sessionVignetteCard && !f.clockVignetteCard
+        && typeof f.sessionId === 'string' && !!f.sessionId && inNarratorMemory(m, f.sessionId);
+    };
+    const all = game.messages?.contents ?? [];
+    let newest = null;
+    for (let i = all.length - 1; i >= 0 && !newest; i -= 1) if (story(all[i])) newest = all[i];
+    const sessionId = newest?.flags?.[MODULE_ID]?.sessionId ?? null;
+    if (!sessionId) return null;
+    const whole = sessionNarratorCards(sessionId).filter(story).slice(-Math.max(1, limit))
+      .map(ringEntryText).filter(Boolean).join('\n\n');
+    if (!whole) return null;
+    const text = whole.length <= LAST_STORY_MAX_CHARS ? whole : `…${whole.slice(-LAST_STORY_MAX_CHARS)}`;
+    return { sessionId, text };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: getLastStoryNarration failed:`, err);
+    return null;
+  }
+}
+
 /** How many recent cards the move interpreter and the pacing classifier read. */
 const READING_SCENE_CARDS = 3;
 /** …and the most of them they read, the newest kept. */
@@ -2558,6 +2608,10 @@ function ringEntryText(message) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const prose = typeof f.narrationText === 'string' ? f.narrationText.trim() : '';
   if (!prose) return '';
+  // A spotlight vignette is a cutaway the characters are not in (issue #381
+  // D3): its entry says so, so the beats after it — the ring, the session
+  // summary's source — do not have them know it.
+  if (f.sessionVignetteCard === true && f.vignetteKind === 'spotlight_begin') return `${CUTAWAY_LINE}\n${prose}`;
   // A Batch Mode round's card (issue #340): one line for each player who
   // acted, in the round's order, then the prose.
   if (Array.isArray(f.roundEntries) && f.roundEntries.length) {
@@ -4902,6 +4956,20 @@ async function partyBlocksAtTable(campaignState) {
 }
 
 /**
+ * Whether a session set-piece would be narrated on this client now — the
+ * three gates of narrateSessionVignette (narration switched off, the X-Card
+ * active, no Claude key here), which it asks itself, and which Begin and End a
+ * Session ask first: a scene's dice are rolled only for a scene that will be
+ * attempted (issue #381).
+ *
+ * @param {Object|null} campaignState
+ * @returns {boolean}
+ */
+export function sessionVignetteWillRun(campaignState) {
+  return !!getNarratorSettings().narrationEnabled && !isXCardActive(campaignState) && !!getApiKey();
+}
+
+/**
  * Render a Begin Session opening vignette via the narrator API and return the
  * prose text. The caller is responsible for posting the chat card; see
  * `src/session/galleyVignette.js` for the participant-enumeration + card-post
@@ -4930,16 +4998,21 @@ async function partyBlocksAtTable(campaignState) {
  *                                       generation instructions)
  * @param {Object} args.campaignState
  * @param {string[]|null} [args.actorIds] — the PCs the vignette is about (the galley's present PCs)
+ * @param {Object[]|null} [args.seeds] — the scene's rolled material, as its
+ *   user message gives it (session/sceneSeeds.js): each seed is marked in
+ *   place with the narration's account of it (`builtFrom`, issue #381)
+ * @param {string|null} [args.narratorClass] — the latitude, over the mode's
+ *   (embellishment): the spotlight vignette brings a new danger into play,
+ *   so it runs at interaction — discovery when it introduces someone
+ * @param {boolean} [args.detect] — its capture runs the detection pass too,
+ *   as a clock vignette's does (the spotlight's — detection follows latitude)
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false }) {
+  if (!sessionVignetteWillRun(campaignState)) return null;
   const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
-  if (isXCardActive(campaignState))  return null;
   const xCard = watchXCard(campaignState);
-
   const apiKey = getApiKey();
-  if (!apiKey) return null;
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   await ensureSceneStarted(campaignState, 'session_vignette');
@@ -4950,6 +5023,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     : { character: getActiveCharacter(campaignState), roundCharacters: null };
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
   if (roundCharacters) extras.roundCharacters = roundCharacters;
+  // A spotlight vignette's latitude (issue #381 D3), over the mode's own.
+  if (narratorClass) extras.narratorClass = narratorClass;
+  const capture = detect ? { narrationId, detect: true, source: 'spotlight_vignette' } : { narrationId };
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -4962,9 +5038,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
     if (!text?.trim()) return null;
-    scheduleNarrationCapture(text, campaignState, { narrationId });   // its NPCs' developments → their cards (#286 D4)
+    scheduleNarrationCapture(text, campaignState, capture);   // its NPCs' developments → their cards (#286 D4)
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -4977,9 +5053,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
         if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { narrationId });
+        scheduleNarrationCapture(text, campaignState, capture);
         return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);
@@ -6699,6 +6775,11 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   const parsedBlock = extractSidecar(rawText);
   const { prose, parseError } = parsedBlock;
   recordNarratorFactBlock(rawText, { sidecar: parsedBlock.sidecar, parseError });
+  // A session set-piece's rolled material (issue #381): each seed is marked,
+  // in place, with the fact block's account of it — "builtFrom", checked
+  // against the prose. With no fact block read there is no account, and the
+  // seeds are left as they were. Nothing is retried on it.
+  if (Array.isArray(ctx.seeds)) markSeedsUsed(ctx.seeds, parsedBlock.sidecar ? parsedBlock.sidecar.builtFrom : null, prose);
   // What the narration was made to play — a clock's escalation step, a chosen
   // complication's (issue #353 Phase 3) — is marked whatever its sidecar
   // says: added to the sidecar's own reveals, so it is applied (or relayed)

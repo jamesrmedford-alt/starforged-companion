@@ -6,6 +6,40 @@ rejected.
 
 ---
 
+## Session set-pieces are built from the game's oracles (issue #381 slices 1–3) (2026-11)
+
+**Decision** (the maintainer ordered overhaul 6 built, 2026-11-24; the decisions as taken in the entry below this one): the session's opening, its closing cutaway and the spotlight vignette are each built from MATERIAL: a few results rolled
+on the module's registered oracle tables (src/session/sceneSeeds.js, one draw site, `drawDie`) and facts from the
+campaign's records, which the narrator is told to use, with no business or featured thing of its own. Two separate
+campaigns' openings were one scene — the galley in 7 of 8, a food in 8 of 8, a device sounding in the last sentence in 8
+of 8 — and each piece of stock was an instruction with a slot left open; a list of a campaign's earlier scenes could not
+see another campaign's.
+
+- D1: the opening is set where the last session stopped; a place aboard is rolled only with nothing behind it (the
+  galley is one row of the Living area table).
+- D2: what says where it stopped is the session summary (LAST SESSION, `lastSessionToTell`) and the last narration word
+  for word, from the cards (`getLastStoryNarration` — the ring's own source, no store). Read in one call:
+  `galleyVignette.whereLastSessionStopped`, made once, by `composeOpeningScene`. A kept scene frame across End a Session
+  was not taken (invariant 6).
+- D3: the spotlight vignette is its own short cutaway before the opening (kind `spotlight_begin`), from the Begin card's
+  d100 (the number alone crosses the socket; the canonical GM reads the table). Interaction latitude; discovery when its
+  row introduces someone with nobody on record; detection on capture; its scene ended with its card.
+- D5: every roll is shown to the whole table on the scene's card ("Rolled for this scene", closed by default) and kept
+  in its `builtFrom` flag — the one store of the scene's rolls, re-read at every render, never rolled again. The
+  narration accounts for each in its fact block (`builtFrom`, invariant 2). Not in `recentOracles`.
+- D6: the closing cutaway, with nobody on record, shows a settlement of the active sector other than where the
+  characters are; with none, there is no closing. Its subject is never the one the last closing showed (by the last
+  closing card's `builtFrom` subject `ref`; `vignetteNpc` on older cards) while there is another.
+- D7 (amends issue #377 item 4's entry): a solo character is alone and no crew is invented — that stands; "the ship's
+  noises and habits are the joke" is withdrawn as fixed stock.
+- D8: Begin a Session's "Where and when do we pick up?" line, given to the opening above the last session's ending.
+- D10: nothing is rolled inside a scene for now; decided on the next live run's refrain count.
+- D4 not taken: the "already used" lists (`vignetteHistory.js`, EARLIER OPENINGS / EARLIER CLOSINGS, `vignetteNpc`) stay
+  beside the material until a live run shows the material holds without them (slice 4, conditional).
+- D9 not taken: no paid bench; slice 0's counts, the unit tests and the next live long haul stand in.
+- Canonical stores: a scene's rolls — the card's `builtFrom` flag; who a closing showed — that flag's subject seed (its
+  `ref`); `vignetteNpc` is the EARLIER CLOSINGS title, written once with the card from the same value.
+
 ## The session record and scenes built from oracle rolls: scoped as issues #382 and #381, decisions taken to build (2026-11)
 
 **Decision** (the maintainer, 2026-11-24, of the seven systemic overhauls proposed after the long haul's second and third live runs: "Please implement 3 and 6"):
