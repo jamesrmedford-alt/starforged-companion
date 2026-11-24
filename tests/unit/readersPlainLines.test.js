@@ -126,6 +126,21 @@ describe('the plain lines that ship', () => {
     expect(pilot.unknown).toEqual(['nobody']);
   });
 
+  it('the runner\'s default arms start with the readers\' own model — whichever the module asks for', () => {
+    const root = path.resolve(__dirname, '../..');
+    const modelOf = (file) => /const MODEL\s*=\s*"([^"]+)"/.exec(fs.readFileSync(path.join(root, file), 'utf8'))?.[1];
+    const own = modelOf('src/pacing/classifier.js');
+    expect(own, 'both readers run on one model').toBe(modelOf('src/moves/interpreter.js'));
+    expect(own).toBe(SONNET);
+    const runner = fs.readFileSync(path.join(PLAYWRIGHT, 'readers.mjs'), 'utf8');
+    const arms = JSON.parse(/list\(process\.env\.READERS_ARMS, (\[[^\]]+\])\)/.exec(runner)[1]);
+    expect(arms).toEqual([own, HAIKU]);
+    for (const arm of arms) expect(PRICES[arm], `${arm} is priced: a live run refuses a model nobody priced`).toBeTruthy();
+    // The script's own log line names the same default.
+    const script = fs.readFileSync(path.resolve(PLAYWRIGHT, '../scripts/cloud.sh'), 'utf8');
+    expect(script).toContain(`\${READERS_ARMS:-${arms.join(',')}}`);
+  });
+
   it('says which of a state reaches a prompt, and what the runner leaves unset', () => {
     expect(Object.keys(STATE_READ).sort()).toEqual(['connection', 'frame', 'location', 'tracks', 'vow']);
     const notSet = stateNotSet(LIST.contexts['bleakhold-after-fight'].state).map(n => n.key);
@@ -480,6 +495,7 @@ describe('report', () => {
     notSet: [{ key: 'health', why: '…' }, { key: 'health', why: '…' }, { key: 'vow.ticks', why: '…' }],
     dials: { mischiefDial: 'balanced', downtime: 1 },
     thinking: { [HAIKU]: 'disabled', [SONNET]: 'between_tools' },
+    own: [SONNET],
   };
   const text = report(summary, meta);
 
@@ -534,7 +550,9 @@ describe('report', () => {
     expect(limits).toContain('**One reading of a line is one sample**');
     expect(limits).toContain('(mischiefDial balanced, downtime 1)');
     expect(limits).toContain('(not set in the world: health, vow.ticks)');
-    expect(limits).toContain('**Only the model changes between arms.**');
+    // The prompts are the readers' own model's, wherever that arm stands in the list.
+    expect(limits).toContain('**Only the model changes between arms.** Each arm reads the same prompts, written for the readers\' own model (`claude-sonnet-5-5`);');
+    expect(report(summary, { ...meta, own: undefined })).toContain('written for the readers\' own model; a prompt tuned to another model');
     expect(limits).toContain('**No arm thinks first.** The readers turn thinking off, each model in its own form (`claude-haiku-5-5`: disabled; `claude-sonnet-5-5`: between_tools)');
     expect(text, 'no self-consistency section for one reading a line').not.toContain('## Self-consistency');
   });
@@ -625,9 +643,9 @@ describe('the Claude harness sends a call to the model an arm names', () => {
       await send(PACING, from, JSON.stringify(body));
       return JSON.parse(sent[0].body);
     };
-    // As src/api-proxy.js sends a reader's call: Haiku 5.5 with thinking "disabled", which Sonnet 5.5 answers with a 400.
+    // A call asked of Haiku 5.5 carries thinking "disabled", which Sonnet 5.5 answers with a 400.
     expect(await sentWith(HAIKU, SONNET, { type: 'disabled' })).toMatchObject({ model: SONNET, thinking: { type: 'between_tools' }, max_tokens: 330 });
-    // …and the other way: only Sonnet 5.5 takes "between_tools".
+    // …and the other way, as src/api-proxy.js sends a reader's call now: Sonnet 5.5 with "between_tools", which only it takes.
     expect(await sentWith(SONNET, HAIKU, { type: 'between_tools' })).toMatchObject({ model: HAIKU, thinking: { type: 'disabled' } });
     // A model with no thinking-off form the module knows is sent none.
     expect(await sentWith(HAIKU, 'claude-opus-5-5', { type: 'disabled' })).not.toHaveProperty('thinking');

@@ -4,12 +4,20 @@
  *
  * Decides whether a player input warrants a move (MOVE), should be pure
  * narration (NARRATIVE), or is narration with a move available
- * (NARRATIVE_WITH_MOVE_AVAILABLE). One Haiku call per undecorated chat
+ * (NARRATIVE_WITH_MOVE_AVAILABLE). One model call per undecorated chat
  * input. Output is structured JSON; the router consumes it.
+ *
+ * The model is Sonnet 5.5, as the move interpreter's is (decisions.md → "The
+ * readers run on Sonnet 5.5"): of 90 plain lines that wanted a move it read 77
+ * right to Haiku 5.5's 71, and offered a move nobody wanted for none of 20
+ * controls to Haiku's 5 (test/ci/playwright/readers/runs/
+ * readers-live-20261124-0255/). Its thinking is off — api-proxy.js sends the
+ * model's own form of that (narration/thinking.js) — so the reply is the JSON
+ * object and nothing else, inside the cap below.
  *
  * Transport: all Anthropic calls go through src/api-proxy.js per CLAUDE.md.
  * Prompt caching applies to the system prompt (move catalog summary, decision
- * guidance) so subsequent calls in a session are ~10% of the input cost.
+ * guidance) so subsequent calls in a session are ~5% of the input cost.
  */
 
 import { apiPost } from "../api-proxy.js";
@@ -18,7 +26,7 @@ import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MODEL         = "claude-haiku-5-5";
+const MODEL         = "claude-sonnet-5-5";
 
 export const PACING_DECISION = Object.freeze({
   MOVE:                          "MOVE",
@@ -466,7 +474,9 @@ export async function classifyInput({
 async function callClassifierAPI({ apiKey, systemPrompt, userMessage, model }) {
   const body = {
     model,
-    max_tokens: 330,   // was 250 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
+    // Room for the JSON decision: Sonnet 5.5 and Haiku 5.5 count a text alike,
+    // and the longest of 220 measured decisions was 173 tokens on either.
+    max_tokens: 330,
     system: [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
     ],

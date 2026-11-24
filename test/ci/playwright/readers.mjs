@@ -38,14 +38,16 @@
 //                      live run is refused without it (the spending rule,
 //                      rules/ci-e2e.md).
 //   READERS_ARMS       the models, comma-separated (default
-//                      claude-haiku-5-5,claude-sonnet-5-5). An arm that is the
-//                      readers' own model sends their calls as they are; any
-//                      other has the two readers' calls — and only those —
-//                      sent to it instead, with that model's own form of
-//                      "thinking off" (lib/claude.mjs swapModel). An arm
-//                      needs a price in explore.config.json, and should be a
-//                      model whose thinking can be turned off: the readers'
-//                      reply caps leave no room for it.
+//                      claude-sonnet-5-5,claude-haiku-5-5: the readers' own
+//                      model, then the one they ran on before it). An arm
+//                      that is the readers' own model — whichever the module
+//                      asks for, in any place in the list — sends their calls
+//                      as they are; any other has the two readers' calls —
+//                      and only those — sent to it instead, with that model's
+//                      own form of "thinking off" (lib/claude.mjs swapModel).
+//                      An arm needs a price in explore.config.json, and
+//                      should be a model whose thinking can be turned off:
+//                      the readers' reply caps leave no room for it.
 //   READERS_REPEATS    readings of each line by each arm (default 1).
 //   READERS_CAP_USD    a hard stop (default 2.00): when the budget refuses a
 //                      call the run stops and reports what was done.
@@ -91,7 +93,9 @@ const list = (text, fallback) => {
 const RAW_MODE  = process.env.READERS_MODE || "dry";
 const LIVE      = RAW_MODE === "live";
 const API_KEY   = LIVE ? process.env.ANTHROPIC_API_KEY || null : null;
-const ARMS      = list(process.env.READERS_ARMS, ["claude-haiku-5-5", "claude-sonnet-5-5"]);
+// The readers' own model first (src/pacing/classifier.js, src/moves/interpreter.js
+// MODEL — a unit test holds the first default to it), then the model to set it against.
+const ARMS      = list(process.env.READERS_ARMS, ["claude-sonnet-5-5", "claude-haiku-5-5"]);
 const REPEATS   = Number(process.env.READERS_REPEATS || 1);
 const CAP_USD   = Number(process.env.READERS_CAP_USD || 2);
 const ONLY      = list(process.env.READERS_ONLY, []);
@@ -558,9 +562,11 @@ async function main() {
     const summary = summarise(results, { prices });
     const spend = LIVE ? budget.report() : null;
     const notSet = Object.values(world.contexts).flatMap(c => c.notSet);
+    // The model the readers themselves ask for — the module's, whatever arm took the call.
+    const own = [...new Set(requests.filter(r => readerOf(r.kind)).map(r => r.modelAsked ?? r.model).filter(Boolean))];
     out.text("report.md", report(summary, {
       runId, mode, startedAt: startedAt.toISOString(), commit: process.env.READERS_COMMIT || null, questions: QUESTIONS,
-      repeats: REPEATS, planned, stopped, strays: strays.length, notSet, thinking,
+      repeats: REPEATS, planned, stopped, strays: strays.length, notSet, thinking, own,
       dials: dials ? Object.fromEntries(Object.entries(dials).map(([key, value]) => [key.replace(/^pacing\.(dial\.)?/, ""), value])) : null,
     }));
     if (gm) await gm.page.screenshot({ path: path.join(dir, "end-gm.png") }).catch(() => {});
@@ -573,6 +579,8 @@ async function main() {
       commit: process.env.READERS_COMMIT || null,
       versions,
       arms: ARMS, repeats: REPEATS, only: ONLY.length ? ONLY : undefined,
+      // The model the readers themselves ask for: an arm of that name sent their calls as they were.
+      readersModel: own,
       // The `thinking` form each arm's calls carry to turn thinking off (null: none is sent).
       thinking,
       cases: { inTheList: file.cases.length, chosen: cases.length },

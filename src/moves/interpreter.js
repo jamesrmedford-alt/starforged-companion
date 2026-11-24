@@ -28,9 +28,13 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 // Heal's four situations (vendored Heal): each rolls its own stat.
 const HEAL_SITUATIONS = new Set(["self", "treated", "companion", "ally"]);
-const MODEL         = "claude-haiku-5-5";
-// Room for the JSON reading: Haiku 5.5 counts the same text as about 30% more
-// tokens than Haiku 4.5, whose cap was 1000.
+// Sonnet 5.5, as the pacing classifier's is (decisions.md → "The readers run on
+// Sonnet 5.5"): on plain lines it picked a neighbouring move once where Haiku
+// 5.5 did eight times (test/ci/playwright/readers/runs/readers-live-20261124-0255/).
+// Thinking is off (api-proxy.js sends the model's own form of that).
+const MODEL         = "claude-sonnet-5-5";
+// Room for the JSON reading: Sonnet 5.5 and Haiku 5.5 count a text alike, and
+// the longest of 116 measured readings was 472 tokens.
 const MAX_TOKENS    = 1300;
 
 // Combat moves that are only legal in one position. When the interpreter
@@ -58,7 +62,7 @@ const POSITION_MOVE_REMAP = {
  *
  * Prompt caching: this string is long and changes rarely.
  * It is sent as a cache_control: ephemeral block on every call.
- * After the first call, cache hits cost ~10% of normal input price.
+ * After the first call, cache hits cost ~5% of normal input price.
  */
 function buildSystemPrompt() {
   return `You are the move interpreter for an Ironsworn: Starforged tabletop RPG campaign. Your job is to read a player's narration and identify the single most appropriate Starforged move, along with the best stat to roll.

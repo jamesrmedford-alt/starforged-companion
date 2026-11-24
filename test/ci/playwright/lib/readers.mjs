@@ -503,8 +503,8 @@ function lineBlock(l, arms) {
  * @param {ReturnType<typeof summarise>} summary
  * @param {{ runId?: string, mode?: "dry"|"live", startedAt?: string, commit?: string|null, questions?: string[],
  *   repeats?: number, planned?: number, stopped?: string|null, strays?: number, notSet?: Array<{ key: string, why: string }>,
- *   dials?: Object, thinking?: Record<string, string|null> }} [meta] — `thinking`: the thinking-off form each
- *   arm's calls carried
+ *   dials?: Object, thinking?: Record<string, string|null>, own?: string[] }} [meta] — `thinking`: the
+ *   thinking-off form each arm's calls carried; `own`: the model the readers themselves ask for (the module's)
  * @returns {string}
  */
 export function report(summary, meta = {}) {
@@ -625,7 +625,8 @@ export function report(summary, meta = {}) {
     "- **The sheet does not reach the readers.** Neither prompt is told the character's health, spirit, supply or the ship's integrity, nor how far a vow has come; a context says so only in its narration"
       + `${meta.notSet?.length ? ` (not set in the world: ${[...new Set(meta.notSet.map(n => n.key))].join(", ")})` : ""}.`,
     "- **Each line is read on its own**: the count of recent moves is cleared before every reading, so a line never follows a run of rolls.",
-    "- **Only the model changes between arms.** Each arm reads the same prompts, written for the first; a prompt tuned to another model might read differently.",
+    "- **Only the model changes between arms.** Each arm reads the same prompts, written for the readers' own model"
+      + `${meta.own?.length ? ` (${meta.own.map(m => `\`${m}\``).join(", ")})` : ""}; a prompt tuned to another model might read differently.`,
     "- **No arm thinks first.** The readers turn thinking off, each model in its own form"
       + `${meta.thinking ? ` (${Object.entries(meta.thinking).map(([arm, form]) => `\`${arm}\`: ${form ?? "no form sent"}`).join("; ")})` : ""}`
       + ", and each model answers at its own default effort; a reader allowed to think, or set to another effort, might read differently.",
