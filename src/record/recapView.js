@@ -14,7 +14,11 @@
  *                       words their player typed, the move and its outcome,
  *                       what changed on a sheet, what play did (a vow sworn,
  *                       an arrival…), what was established and stands. Facts
- *                       only: no narration (decision D4).
+ *                       only: no narration (decision D4). A recap told at a
+ *                       session's start (`sessionStart` — narrator.js
+ *                       sessionStartRecap, the world load's "Previously On")
+ *                       leaves the session under way out: what it is told is
+ *                       what came before, the last session in full.
  *   WHERE THINGS STAND  read live from the sheets and the tracks — never added
  *                       up from the record: each PC's meters and impacts, the
  *                       vows and their progress, the connections, the open
@@ -101,14 +105,20 @@ const sessionLabel = (s) => (Number.isFinite(s.number) ? `Session ${s.number}` :
  * @param {Array<{ who: string, text: string, pinned?: boolean, session?: string|null }>} [inputs.notes]
  * @param {Array<{ label: string, text: string }>} [inputs.earlier] — sessions from before the record
  * @param {string|null} [inputs.currentSessionId] — the session under way
+ * @param {boolean} [inputs.sessionStart] — the recap a session's start is told: the session under
+ *   way is left out of THE RECORD, so the last session before it is the latest, in full. Its
+ *   first beats (Begin's vow, a clock, a momentum) are no "previously": counted, they made the
+ *   session just played an earlier session, told by its turning points alone. End a Session's
+ *   and `!recap`'s recaps tell the session under way, in full
  * @returns {{ text: string, ids: string[], lasting: string[], hash: string, empty: boolean, before: boolean, earlierTexts: string[] }}
  *   `empty`: nothing to retell — no line of the record, the notes or the sessions before it;
  *   `before`: a session before the current one is in it — a recorded session that holds a
  *   beat, or one from before the record (what a session's start is told — narrator.js
  *   sessionStartRecap; known-issues RECAP-AT-THE-FIRST-BEGIN)
  */
-export function recapSource({ read, standing = [], notes = [], earlier = [], currentSessionId = null } = {}) {
-  const sessions = (read?.sessions ?? []).filter(s => !s.legacy);
+export function recapSource({ read, standing = [], notes = [], earlier = [], currentSessionId = null, sessionStart = false } = {}) {
+  const sessions = (read?.sessions ?? [])
+    .filter(s => !s.legacy && !(sessionStart && currentSessionId && s.sessionId === currentSessionId));
   const ids = [];
   const lasting = [];
   const blocks = [];
@@ -382,10 +392,11 @@ export async function standingLines(campaignState) {
  * Everything the recap's source is built from, read from the world now.
  *
  * @param {Object} campaignState
- * @param {{ chronicle?: Array<Object> }} [opts] — every PC's Chronicle entries, oldest first (`_actorId` on each)
- * @returns {Promise<{ read: Object, standing: string[], notes: Object[], earlier: Object[], currentSessionId: string|null }>}
+ * @param {{ chronicle?: Array<Object>, sessionStart?: boolean }} [opts] — every PC's Chronicle entries,
+ *   oldest first (`_actorId` on each); `sessionStart`: the recap a session's start is told (recapSource)
+ * @returns {Promise<{ read: Object, standing: string[], notes: Object[], earlier: Object[], currentSessionId: string|null, sessionStart: boolean }>}
  */
-export async function collectRecapInputs(campaignState, { chronicle = [] } = {}) {
+export async function collectRecapInputs(campaignState, { chronicle = [], sessionStart = false } = {}) {
   const read = readRecord({ session: 'campaign' });
   const standing = await standingLines(campaignState);
   const recorded = new Set(read.sessions.filter(s => !s.legacy).map(s => s.sessionId));
@@ -421,14 +432,14 @@ export async function collectRecapInputs(campaignState, { chronicle = [] } = {})
   for (const texts of fromChronicle.values()) {
     for (const text of texts) earlier.push({ label: 'An earlier session, the Chronicle', text });
   }
-  return { read, standing, notes, earlier, currentSessionId: campaignState?.currentSessionId ?? null };
+  return { read, standing, notes, earlier, currentSessionId: campaignState?.currentSessionId ?? null, sessionStart: sessionStart === true };
 }
 
 /**
  * The recap's source as the world stands now.
  *
  * @param {Object} campaignState
- * @param {{ chronicle?: Array<Object> }} [opts]
+ * @param {{ chronicle?: Array<Object>, sessionStart?: boolean }} [opts]
  * @returns {Promise<ReturnType<typeof recapSource> & { names: Array, otherNames: string[] }>}
  */
 export async function campaignRecapSourceOf(campaignState, opts = {}) {

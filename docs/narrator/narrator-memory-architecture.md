@@ -68,7 +68,10 @@ uniform across modes — only two things legitimately vary, because they are not
    turning points and the latest session in full, as facts with ids, and
    WHERE THINGS STAND read live from the sheets and tracks (`standingLines`,
    RECAP-STATES-WHAT-DID-NOT-HAPPEN) — never the campaign's setting, and no
-   summary; its reply is cited sentences.
+   summary; its reply is cited sentences. The recap a session's start is told
+   (its first narration's, the world load's "Previously On" — `sessionStart`)
+   leaves the session under way out, so the last session before it is the
+   one in full; End a Session's and `!recap`'s tell the session under way.
 
 ### Data flow per turn
 

@@ -805,7 +805,9 @@ campaign recap (a session's first narration in any prose mode, from
 B04, #382; only for a session with one before it — the record holds an
 earlier session with a beat, or one from before the record, or the session
 is numbered past the first: a campaign's first session is given no recap of
-its own Begin beats, known-issues RECAP-AT-THE-FIRST-BEGIN) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
+its own Begin beats, known-issues RECAP-AT-THE-FIRST-BEGIN; the session-start
+recap — `sessionStart`: the session under way left out of its source, so the
+last session before it is the one given in full) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
 Battle Stations · **[2.6] THE VOW THIS SCENE SERVES** (issue #353 R3 — the
@@ -1202,7 +1204,18 @@ or what play did — a vow sworn, fulfilled or forsaken, a bond forged, an
 arrival…) and the latest session in full, each beat a line with an id: who
 acted and the words their player wrote, the move and its outcome, what changed
 on a sheet, what play did, what was established and stands, and what the table
-struck. Facts only — no narration (decision D4). Then WHERE THINGS STAND, read
+struck. Facts only — no narration (decision D4). Which session is the latest
+depends on who asks: End a Session's, `!recap`'s and its Refresh's recap tell
+the session under way in full; the recap a session's start is told — the
+session's first narration (`sessionStartRecap`) and the world load's "Previously
+On" with its cache refresh (`getCampaignRecap(…, { sessionStart: true })`) —
+leaves the session under way out, so the session just played is the one in
+full. Its own first beats (Begin's vow, a clock, the spotlight's momentum)
+were "the latest session", and the session just played was cut to its
+turning points: its lines of play, a sister's compass or a promise made at
+the dock among them, reached no session's opening. End's recap, made while
+the session it ends is under way, is the same source, so its cache opens the
+next session when nothing else has changed. Then WHERE THINGS STAND, read
 live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
 the vows and their progress, the connections, the open tracks, the current
 place, the open scene's state and its question, answered or not); THE PLAYERS'

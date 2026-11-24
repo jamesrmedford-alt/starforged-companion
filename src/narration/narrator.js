@@ -1037,6 +1037,16 @@ function previousSessionSummaryFor(campaignState) {
  * ring and the summary, but not a narration — the X-Card redirect hook's
  * rule: published before the session's first narration, it took that
  * narration's recap (issue #345 AA32).
+ *
+ * It is the session-start recap (`sessionStart`, record/recapView.js
+ * recapSource): the session under way is left out of its source, so the last
+ * session before it is given in full. Read with the session under way in it,
+ * that session's own first beats — Begin's vow, a clock, a momentum — were
+ * "the latest session, in full", and the session just played was cut to its
+ * turning points: the lines of play that set up a sister's compass or a
+ * promise made at the dock were told to no session's opening. End a Session's
+ * recap (made while the session it ends is under way) is the same source,
+ * so its cache opens the next session when nothing else has changed.
  */
 async function sessionStartRecap(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
@@ -1051,7 +1061,7 @@ async function sessionStartRecap(campaignState) {
   let stored = null;
   try { stored = game.settings.get(MODULE_ID, 'campaignState')?.campaignRecapCache ?? null; }
   catch { stored = null; }
-  const key = await campaignRecapCacheKey(campaignState);
+  const key = await campaignRecapCacheKey(campaignState, { sessionStart: true });
   // A session's start is told what came before it. A campaign's first session
   // has nothing before it: its own first beats — the vow sworn in Begin — are
   // no "previously" (known-issues RECAP-AT-THE-FIRST-BEGIN: since the recap
@@ -1063,7 +1073,7 @@ async function sessionStartRecap(campaignState) {
     if (isRecapCacheCurrent(cache, key)) return cache.text;
   }
   if (!game.user?.isGM) return '';
-  return getCampaignRecap(campaignState).catch(() => '');
+  return getCampaignRecap(campaignState, { sessionStart: true }).catch(() => '');
 }
 
 /**
@@ -3405,14 +3415,22 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
  * moves the hash. A stale cache is never returned: with no key to make it
  * again, the result is ''. A reply made across a correction is discarded.
  *
+ * End a Session's, `!recap`'s and its Refresh's recap tell the session under
+ * way in full. The recap a session's start is told (`sessionStart` — the
+ * session's first narration, sessionStartRecap, and the world load's
+ * "Previously On") leaves the session under way out, so the last session
+ * before it is the one given in full (recapView.js recapSource).
+ *
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {boolean} [options.forceRefresh]
+ * @param {boolean} [options.sessionStart] — the recap a session's start is told
  * @returns {Promise<string>}
  */
 export async function getCampaignRecap(campaignState, options = {}) {
   const cache  = campaignState?.campaignRecapCache;
-  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
+  const view   = { sessionStart: options.sessionStart === true };
+  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState), ...view });
 
   if (!options.forceRefresh && isRecapCacheCurrent(cache, source)) {
     return cache.text;
@@ -3448,7 +3466,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
     if (!cited.ok || !cited.paragraphs.length) return isRecapCacheCurrent(cache, source) ? cache.text : '';
     const text = recapText(cited.paragraphs, source);
     // A correction landed while the call was out: the reply retells a record that no longer stands.
-    const now = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
+    const now = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState), ...view });
     if (now.hash !== source.hash) return '';
 
     // Written on a copy of the latest store: `get` hands back the cached
@@ -7380,14 +7398,17 @@ async function _collectAllChronicleEntries(campaignState) {
  * sessions from before the record). Any correction moves it (issue #382); it
  * was a hash of the Chronicle's text (issue #301 B04) — and whether a session
  * before the current one is in that source (`before`, recapView.js), which a
- * session's start needs for its recap (sessionStartRecap). Exported for the
- * tests and Quench checks that seed a cache. No API call.
+ * session's start needs for its recap (sessionStartRecap). With
+ * `sessionStart`, the key of the recap a session's start is told — the
+ * session under way left out (getCampaignRecap). Exported for the tests and
+ * Quench checks that seed a cache. No API call.
  *
  * @param {Object} campaignState
+ * @param {{ sessionStart?: boolean }} [opts]
  * @returns {Promise<{ sourceHash: string, before: boolean }>}
  */
-export async function campaignRecapCacheKey(campaignState) {
-  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState) });
+export async function campaignRecapCacheKey(campaignState, { sessionStart = false } = {}) {
+  const source = await campaignRecapSourceOf(campaignState, { chronicle: await _recapChronicle(campaignState), sessionStart });
   return { sourceHash: source.hash, before: source.before };
 }
 

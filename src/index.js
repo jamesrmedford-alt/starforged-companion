@@ -10202,15 +10202,18 @@ Hooks.once("ready", () => {
       // (issue #286 C4) — and a world's first session has none before it. A
       // "Session gap (hours)" setting decided it apart from the boundary, so
       // it could post mid-session or stay silent at a new one (issue #342 D6).
+      // Both are the recap a session's start is told (`sessionStart`): the
+      // session this load started is left out of its source, so a Begin that
+      // lands meanwhile does not make the session just played an earlier one.
       const newSession = (freshState?.currentSessionId ?? null) !== priorSessionId;
       if (newSession && priorSessionId && getAutoRecapEnabled()) {
-        await postCampaignRecap(freshState, { silent: false }).catch(err => {
+        await postCampaignRecap(freshState, { silent: false, sessionStart: true }).catch(err => {
           console.error(`${MODULE_ID} | Auto-recap failed:`, err);
         });
       } else if (newSession) {
         // A new session's first narration carries the campaign recap from
         // its cache (buildNarratorExtras) — refresh it now, off that path.
-        getCampaignRecap(freshState).catch(err =>
+        getCampaignRecap(freshState, { sessionStart: true }).catch(err =>
           console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err));
       }
 

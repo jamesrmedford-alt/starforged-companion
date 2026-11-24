@@ -89,6 +89,10 @@ describe('issue #342 D6 — the "Previously On" recap follows the session the lo
     await openWorld(sessionSeven(1, { sessionEndedId: 'S7', sessionActive: false }));
     expect(world().sessionNumber).toBe(8);
     expect(recapsPosted()).toBe(1);
+    // The recap a session's start is told: the session the load started is left
+    // out of its source, so session 7 is the latest session, in full
+    // (record/recapView.js recapSource `sessionStart`).
+    expect(postCampaignRecap.mock.calls.find(([, opts]) => opts?.silent === false)?.[1]).toMatchObject({ sessionStart: true });
   }, 60_000);
 
   it("a world's first session has nothing before it: no recap card, the recap cache refreshed", async () => {
@@ -104,6 +108,8 @@ describe('issue #342 D6 — the "Previously On" recap follows the session the lo
     expect(world().sessionNumber).toBe(8);
     expect(recapsPosted()).toBe(0);
     expect(getCampaignRecap).toHaveBeenCalled();
+    // …the cache the session's first narration reads: the session-start recap's.
+    expect(getCampaignRecap.mock.calls.at(-1)[1]).toMatchObject({ sessionStart: true });
   }, 60_000);
 
   it('control: a mint the world refused started no session, so no recap posts', async () => {
