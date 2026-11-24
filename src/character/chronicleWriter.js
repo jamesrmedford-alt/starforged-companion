@@ -17,6 +17,13 @@
 // character carries, who someone is to them — reached the Chronicle only if
 // the narrator happened to repeat it.
 //
+// An entry names whose thing a thing is, and genders no one the story did not
+// (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN): the campaign recap is
+// written from these entries, and "first pick of her hauls" — the scribe's,
+// of two women — became "first pick of her hauls", the wrong woman's, in all
+// four recaps of the long haul's third live run; its "he'd", of a voice no
+// narration had gendered, was in three.
+//
 // Three callers in production: narrateResolution (move pipeline),
 // narratePacedInput (paced narration) and narrateRound (a Batch Mode round,
 // issue #340 — one entry per round). All fire-and-forget through
@@ -98,6 +105,8 @@ Constraints:
   - Never mention dice, moves, momentum, debilities, hits, misses, or any module mechanic.
   - Never reference panels, records, journals, or any tooling concern.
   - Use specific nouns from the prose and the player's line when present (names, places, objects).
+  - Say whose a thing is by name when the sentence has two people in it — "first pick of Mira Kestrel's hauls" — never a "her", "his" or "their" that could be either's.
+  - Give no one a "he" or a "she" the prose and the player's line did not: someone they leave unnamed and ungendered stays "the voice", "the captain", "they".
   - Do not invent details that are in neither.`;
 
 

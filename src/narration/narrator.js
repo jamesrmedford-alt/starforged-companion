@@ -83,6 +83,7 @@ import { priceChoiceStatus, withUnansweredCards } from '../moves/resultUpgrade.j
 // What the long haul's third live run turned up (a line of its own, apart from the block above).
 import { formatOracleAnswerRule } from './narratorPrompt.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
+import { settledByMove } from '../character/chronicleKeeps.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
@@ -436,6 +437,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     extras.previousSessionSummary = previousSessionSummaryFor(campaignState);
     extras.campaignRecap          = await sessionStartRecap(campaignState);
   }
+  // A recap retells the Chronicle, and is told how things stand beside it
+  // (WHERE THINGS STAND NOW, RECAP-STATES-WHAT-DID-NOT-HAPPEN): the latest
+  // session's summary, when it covers the whole of that session.
+  if (mode === 'campaign_recap') extras.recapSummary = recapSummaryFor(campaignState);
 
   // Clocks and the session's focus (issue #286 C5) — in no prompt before.
   // Read from the store: a move narrates from a snapshot taken before its own
@@ -1015,6 +1020,54 @@ function previousSessionSummaryFor(campaignState) {
     sessionNumber: number,
     isLast:        number === null || !Number.isFinite(current) || number === current - 1,
   };
+}
+
+/** A session's closing cutaway: an NPC somewhere the characters are not (endSessionVignette.js). */
+const isClosingCutaway = (m) => {
+  const f = m?.flags?.[MODULE_ID];
+  return f?.sessionVignetteCard === true && f.vignetteKind === 'npc_end';
+};
+
+/**
+ * The session summary a campaign recap is told how things stand from
+ * (narratorPrompt.js formatStandsNowBlock; known-issues
+ * RECAP-STATES-WHAT-DID-NOT-HAPPEN), or null. A recap is later than any
+ * Chronicle entry only when the summary is whole, so:
+ *   - this session's, when it covers every narration of the session but a
+ *     closing cutaway posted since — End a Session finalises the summary,
+ *     posts the cutaway, then refreshes the recap. One made at the debounce,
+ *     with narrations after it, is behind the Chronicle and is left out;
+ *   - else, in a session with no narration yet (the recap refreshed as a new
+ *     session is minted), the summary of the session before (LAST SESSION),
+ *     when that is the last one played;
+ *   - else none: the open scene's own facts and state say how things stand.
+ * The summary and the recap of one End a Session were each written from a
+ * source the other never saw, and contradicted each other (the long haul's
+ * third live run, a76: "remains unanswered" against "a question you can now
+ * answer"; the needle "settled on north" against "swinging harder toward the
+ * dark lane"). No API call.
+ *
+ * @param {Object} campaignState
+ * @returns {{ text: string, sessionNumber: number|null, current: boolean }|null}
+ */
+function recapSummaryFor(campaignState) {
+  if (!rollingSummaryEnabled()) return null;
+  const sessionId = campaignState?.currentSessionId ?? null;
+  let cards = [];
+  try { cards = sessionId ? sessionNarratorCards(sessionId) : []; }
+  catch { return null; }
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState')?.sessionSummary ?? null; }
+  catch { stored = null; }
+  for (const summary of [stored, campaignState?.sessionSummary]) {
+    if (!sessionId || summary?.sessionId !== sessionId || typeof summary.text !== 'string' || !summary.text.trim()) continue;
+    if (!cards.slice(Number(summary.coveredCount) || 0).every(isClosingCutaway)) continue;
+    const number = Number(campaignState?.sessionNumber);
+    return { text: summary.text.trim(), sessionNumber: Number.isFinite(number) ? number : null, current: true };
+  }
+  if (!cards.every(isClosingCutaway)) return null;
+  const prev = previousSessionSummaryFor(campaignState);
+  return prev && prev.isLast !== false ? { text: prev.text, sessionNumber: prev.sessionNumber, current: false } : null;
 }
 
 /**
@@ -3572,9 +3625,45 @@ const ROLLING_SUMMARY_SYSTEM_PROMPT =
   `establishes, and keep concrete specifics exact: objects handed over, prices and ` +
   `debts, codes, counts, deals and promises, marks and injuries. ` +
   `Past tense, plain prose, 4-8 sentences, no headings or lists.\n\n` +
+  // Known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN (the long haul's third live
+  // run, the summary at a76): "has pressed her twice" — once; "spending the
+  // last of the sealant and tape" — "half-used … runs short"; and the session's
+  // one change to the sheet, its vow fulfilled, left out — its narration said
+  // so only as "the weight of the vow lifts off you", one line among
+  // twenty-three passages. The source now says what each move settled
+  // (summarySourceEntry), and the summary is told to keep it.
+  `Say only what the passages state. Infer nothing — no cause, motive or link they do ` +
+  `not give — fill nothing in between them, and count nothing they do not count ` +
+  `("twice", "the last of"). Keep whose things are whose: where the prose says "you" ` +
+  `of the player character, write their name, and where two people are in a sentence, ` +
+  `name the one a "her" or "his" belongs to. Give no one a "he" or "she" the passages ` +
+  `do not. Where something changes during the session, say how it stands at the end.\n\n` +
+  `A line "(Settled by this move: …)" under a passage is the table's own record of what ` +
+  `that move decided for good. Every one of them is in the summary, stated plainly — a ` +
+  `vow fulfilled is said to be fulfilled — whatever else is left out.\n\n` +
   `This is narrative memory, not a recap card: do not address the player, do not ` +
   `propose actions, do not mention dice, moves, momentum, or any game mechanic. ` +
   `Summarise only what the session contains — never invent.`;
+
+/**
+ * A session's card as the summary reads it: the ring's entry — the player's
+ * line and the prose — and, under it, what its move settled for good, from
+ * the card's own flags (chronicleKeeps.js settledByMove; a round card's
+ * entries each). The prose alone told a vow's fulfilment as "the weight of
+ * the vow lifts off you", and the summary of that session left it out
+ * (RECAP-STATES-WHAT-DID-NOT-HAPPEN).
+ *
+ * @param {Object} message — a session narrator card
+ * @returns {string}
+ */
+function summarySourceEntry(message) {
+  const text = ringEntryText(message);
+  if (!text) return text;
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const moves = Array.isArray(f.roundEntries) && f.roundEntries.length ? f.roundEntries : [f];
+  const settled = [...new Set(moves.map(settledByMove).filter(Boolean))];
+  return settled.length ? `${text}\n(Settled by this move: ${settled.join('; ')}.)` : text;
+}
 
 /**
  * A reply cut off mid-sentence, back to the end of its last whole sentence —
@@ -3654,7 +3743,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   if (!apiKey) return cachedText;
 
   const sourceProse = cards
-    .map(ringEntryText)
+    .map(summarySourceEntry)
     .filter(Boolean)
     .join('\n\n---\n\n');
   if (!sourceProse.trim()) return cachedText;
