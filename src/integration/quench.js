@@ -12391,12 +12391,16 @@ function registerPromptContractTests(quench) {
         const { narrateSessionVignette } = await narrator();
         const cs = state();
         // As Begin a Session runs it: the PCs at the table are its CHARACTER
-        // blocks (issue #345 AA31).
+        // blocks (issue #345 AA31), and the scene is composed — where the
+        // last session stopped, its rolled material — as the handler composes
+        // it (issue #381).
         const participants = galley.collectGalleyParticipants(cs);
+        const { userMessage, seeds } = await galley.composeOpeningScene(participants, cs);
         await narrateSessionVignette({
-          userMessage: galley.buildGalleyVignetteUserMessage(participants, cs),
+          userMessage,
           campaignState: cs,
           actorIds: participants.active.map(p => p.actor?.id).filter(Boolean),
+          seeds,
         });
       } };
       const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {

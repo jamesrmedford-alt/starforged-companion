@@ -75,8 +75,9 @@ describe('item 4 — a solo character is alone with the ship, and no stat is sen
     expect(msg).not.toMatch(/invent generic absurd crew/);
     expect(msg).not.toMatch(/Absent crewmates/);
     expect(msg).toMatch(/Nobody else is aboard[\s\S]*Do not invent one, present or absent/);
-    expect(msg).toMatch(/the character, the only person aboard, is/);
     expect(msg).not.toMatch(/laundry|escape pod/);
+    // Issue #381 D7: alone, and no crew — but the ship is no longer the joke.
+    expect(msg).not.toMatch(/the ship itself as the absurd company|The humour is the ship's/);
   });
 
   it('no stat line, and a rule against stating one', () => {

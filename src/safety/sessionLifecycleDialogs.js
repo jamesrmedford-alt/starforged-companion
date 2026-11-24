@@ -92,7 +92,11 @@ export async function openBeginSessionDialog() {
       </label>
       <label class="row">
         <input type="checkbox" name="galleyVignette" value="1" checked>
-        Include an opening galley vignette (narrator-written scene)
+        Include an opening scene (narrator-written)
+      </label>
+      <label class="row sf-pick-up">
+        <span>Where and when do we pick up? (optional)</span>
+        <input type="text" name="pickUp" maxlength="${PICK_UP_MAX}" placeholder="Left blank, the opening starts where the last session stopped">
       </label>
     </form>
   `;
@@ -108,7 +112,8 @@ export async function openBeginSessionDialog() {
         const includeGalley = form?.querySelector('input[name="galleyVignette"]')?.checked ?? true;
         const newVow        = String(form?.querySelector('input[name="newVow"]')?.value ?? "").trim().slice(0, VOW_NAME_MAX);
         const newVowRank    = form?.querySelector('select[name="newVowRank"]')?.value ?? "dangerous";
-        await postBeginSessionCard(rollVignette, includeGalley, { ...quest, newVow, newVowRank });
+        const pickUp        = cleanPickUp(form?.querySelector('input[name="pickUp"]')?.value);
+        await postBeginSessionCard(rollVignette, includeGalley, { ...quest, newVow, newVowRank }, pickUp);
       },
     },
   });
@@ -116,6 +121,20 @@ export async function openBeginSessionDialog() {
 
 /** The longest vow the "no vow in play" offer takes (the field's maxlength). */
 const VOW_NAME_MAX = 120;
+
+/**
+ * The longest "Where and when do we pick up?" Begin a Session takes (the
+ * field's maxlength). The move's third step is "Set the scene by envisioning
+ * your character's current situation and intent", and the dialog printed that
+ * sentence with no field under it: once an opening starts where the last
+ * session stopped, this line is how a table skips ahead (issue #381 D8).
+ */
+const PICK_UP_MAX = 200;
+
+/** Relay-payload pick-up line → one trimmed line, capped at the dialog's maxlength. */
+function cleanPickUp(value) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, PICK_UP_MAX) : "";
+}
 
 /**
  * Whether a quest is in play at Begin a Session (issue #353 R3): some
@@ -190,7 +209,7 @@ async function swearSessionVow(actorId, name, rank) {
   return item;
 }
 
-async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }) {
+async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }, pickUp = "") {
   // Read the foci before the GM handler clears them, so the card shows what
   // the table carried over from last session.
   const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -221,12 +240,18 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
     : "";
 
+  // The table's own word on where and when the session picks up (issue #381
+  // D8), said to the table: the opening scene is set there.
+  const pickUpBlock = pickUp
+    ? `<p class="sf-pick-up"><strong>Picking up:</strong> ${escapeHtml(pickUp)}</p>`
+    : "";
+
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${pickUpBlock}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
-  await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false });
+  await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false, pickUp });
 
   // The vow the "no vow in play" offer was given, after the session's start
   // (so its swear roll meets a begun session): on the user's own character.
@@ -300,7 +325,8 @@ async function warmNarratorCacheAfterBegin() {
  * vignette. The start effects run once per session: Begin again on a session
  * already begun posts a note and changes nothing (issue #300 F11).
  *
- * @param {{ vignetteRolled?: boolean, includeGalley?: boolean }} payload
+ * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string }} payload —
+ *   `pickUp`: the table's own word on where and when the session picks up
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
@@ -314,6 +340,9 @@ export function applyBeginSession(payload = {}, _ctx = {}) {
 async function beginSessionOnce(payload) {
   const vignetteRolled = payload.vignetteRolled === true;
   const includeGalley  = payload.includeGalley !== false;
+  // The table's own word on where and when the session picks up (issue #381
+  // D8): cleaned again here — it crossed the socket from the pressing client.
+  const pickUp         = cleanPickUp(payload.pickUp);
 
   // Start a new session when the last one is over — End a Session closed it,
   // or it went idle (issue #286 C4: End → Begin used to keep the same session
@@ -468,15 +497,15 @@ async function beginSessionOnce(payload) {
     console.warn(`${MODULE_ID} | campaign clock session-start roll failed:`, err?.message ?? err);
   }
 
-  // Fire-and-forget galley vignette — narrator-generated 4-6 sentence
-  // opening scene describing the active PCs in the ship's galley
-  // bantering about the absent ones. Silent skip when the Claude key
-  // is unset or narration is disabled. Gated on the dialog's "Include an
-  // opening galley vignette" checkbox (default on) so unchecking it
+  // Fire-and-forget opening scene — narrator-generated, four to six
+  // sentences: the PCs at the table in a quiet moment where the last session
+  // stopped, built from rolled material (issue #381). Silent skip when the
+  // Claude key is unset or narration is disabled. Gated on the dialog's
+  // "Include an opening scene" checkbox (default on) so unchecking it
   // suppresses the scene (playtest finding: it ran regardless). Runs here,
   // on the canonical GM, because that is the client holding the Claude key.
   if (!includeGalley) {
-    console.debug?.(`${MODULE_ID} | Begin a Session: galley vignette unchecked — skipped.`);
+    console.debug?.(`${MODULE_ID} | Begin a Session: opening scene unchecked — skipped.`);
     // With no opening narration to follow — the galley unchecked, no clock
     // vignette — the narrator's cached prefix (its rules and the world
     // snapshot) is written now, so the session's first narration reads it and
@@ -492,25 +521,31 @@ async function beginSessionOnce(payload) {
     // facts (issue #335 Y05). A vignette is a Claude call — the wait is bounded.
     if (clockVignettes) await settledWithin(clockVignettes, OPENING_VIGNETTE_WAIT_MS, "galley vignette");
     try {
-      const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
+      const { collectGalleyParticipants, composeOpeningScene, postGalleyVignetteCard }
         = await import("../session/galleyVignette.js");
-      const { narrateSessionVignette } = await import("../narration/narrator.js");
+      const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
       // A working copy — the narration starts its scene and applies its
       // sidecar on it, and a refused write must leave this client's cache as
       // the world has it (issue #335 Y04, the clock vignette's X09 copy).
       const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+      // The scene's dice are the table's: rolled once, here on the canonical
+      // GM, and only for a scene that will be narrated (issue #381) — with
+      // narration off, no key here or the X-Card up, nothing is rolled.
+      if (!sessionVignetteWillRun(cs)) return;
       const participants = collectGalleyParticipants(cs);
-      const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
+      const { userMessage, seeds } = await composeOpeningScene(participants, cs, { pickUp });
       const narrationId  = newNarrationId();
-      // The PCs in the galley are the vignette's CHARACTER blocks — never a
+      // The PCs in the scene are the vignette's CHARACTER blocks — never a
       // first PC whose player is away (issue #345 AA31).
       const actorIds = participants.active.map(p => p.actor?.id).filter(Boolean);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds, seeds });
       if (text) {
-        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId });
+        // The seeds were marked by the narration's own account of them; the
+        // card keeps them (`builtFrom`) and shows them to the table.
+        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId, seeds });
       }
     } catch (err) {
-      console.warn(`${MODULE_ID} | galley vignette generation failed:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | opening scene generation failed:`, err?.message ?? err);
     }
   }, 0);
 }

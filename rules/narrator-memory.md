@@ -68,7 +68,9 @@ layers. This file is the never-break list.
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame` — and, for the
    narrative skeleton's `plans` / `openQuestions` / `reveals` / `countdown` /
    `newThreats`, `src/world/skeletons.js`'s
-   normalisers ↔ `secrets.js` `applyPlanSideData`, issue #353) is a matched pair.
+   normalisers ↔ `secrets.js` `applyPlanSideData`, issue #353; and a session
+   set-piece's `builtFrom`, the `session_vignette` mode's addendum ↔
+   `normaliseBuiltFrom` ↔ `sceneSeeds.markSeedsUsed`, issue #381) is a matched pair.
    Any key added to the instruction must be normalised in
    `sidecarParser.js` and applied in `narrator.js applyNarratorSidecar` in
    the same commit, with parser tests for garbage shapes. Parsing is

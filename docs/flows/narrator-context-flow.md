@@ -23,7 +23,7 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 **Single seam holds.** Every narrator call builds context through
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
 paced_narrative, scene_interrogation, oracle_followup, session_vignette
-(galley and end-session vignettes), clock_advance (a clock's advance or
+(the session's set-pieces: its opening and its closing cutaway), clock_advance (a clock's advance or
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
@@ -195,7 +195,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   vignette (every post site) and the inciting incident, which no one PC's
   line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
   rule — issue #362 AC75).
-  The galley's user message (`buildGalleyVignetteUserMessage`) sends no stat
+  The opening's user message (`buildGalleyVignetteUserMessage` — the file and
+  the card kind `galley_begin` keep their names; the scene is no longer set in
+  the galley) sends no stat
   line, and with no other PC registered says nobody else is aboard — no crew is
   invented, present or absent (issue #377 item 4: told to "invent generic
   absurd crew", it gave a solo pilot three crewmates, and a helper recorded her
@@ -206,15 +208,41 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   first 700 characters, a fourth opening ended on the first one's own last
   sentence, which the cut had taken out of the list (the long haul's third
   live run, a78 against a2), and both rules now name how a scene ends as used.
-  **The opening is told where the last session stopped** — WHERE THE LAST
-  SESSION STOPPED, the summary of the session before
+  **The opening is set where the last session stopped** (issue #381 D1/D2) —
+  WHERE THE LAST SESSION STOPPED: the summary of the session before
   (`campaignState.previousSessionSummary` as LAST SESSION tells it,
-  `lifecycle.lastSessionToTell`; nothing in a campaign's first session or with
-  the session summary off) — and that it picks the story up there: nothing
-  still going on is over or behind them, and no more time has passed than it
-  allows (the third opening soaked apricots "for the third time this week"
-  beside a raider's open boarding lock; the fourth wrote "since the Wren" of a
-  ship still grappled alongside).
+  `lifecycle.lastSessionToTell`) and the last narration the table read, word
+  for word (`narrator.getLastStoryNarration`: the newest story card's session,
+  its newest two story cards by the ring's own rule — no session or clock
+  vignette — so it adds no store). Both are read in one call,
+  `galleyVignette.whereLastSessionStopped`, made once, by
+  `composeOpeningScene`; nothing is said with neither (a campaign's first
+  session, a world whose chat is gone and whose summary is off). It picks the
+  story up there: the scene is set where that leaves them, aboard or not —
+  nobody is moved "back aboard" — nothing still going on is over or behind
+  them, and no more time has passed than it allows (the third opening soaked
+  apricots "for the third time this week" beside a raider's open boarding
+  lock; the fourth wrote "since the Wren" of a ship still grappled
+  alongside). The table's own word — Begin a Session's "Where and when do we
+  pick up?" (D8: the `pickUp` payload, cleaned on both clients, shown on the
+  Begin card) — is told above it and outranks it. **The opening is built from
+  rolled material** (`session/sceneSeeds.js`, the one draw site, `drawDie`):
+  Action + Theme for what the characters are doing in this lull, Descriptor +
+  Focus for what the scene's eye rests on, each with a second result drawn at
+  once; a place aboard (Derelict Zone (Starship), then that zone's area table —
+  an instruction row drawn again, up to three times) only when nothing says
+  where the scene is set; and each absent crewmate's business (Action + Theme,
+  three at most). The MATERIAL block (`formatMaterial`) numbers them, says
+  each is in the scene and that the scene has no business of its own, and asks
+  for the fact block's `builtFrom` (§2). Rolled on the canonical GM, after the
+  clock vignettes, and only when the scene will be narrated
+  (`sessionVignetteWillRun` — narration on, the X-Card down, a key here); per
+  call, so in the user message, never in a cached block. The role
+  (`ROLE_DESCRIPTIONS.session_vignette`) names no place, food, talking ship or
+  example scene: the fixed stock that made two separate campaigns' openings
+  one scene is deleted (the galley, "pick a specific food or drink", the ship
+  as the joke, "a line of dialogue, a question, or a small interruption",
+  "the calm before / the calm after").
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -1375,6 +1403,25 @@ to play rides apart (`forced`, with its `clockId` or complication scope) and
 stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the
 scene's complication step), so a co-GM's vignette still paces its clock.
+
+**A session set-piece's account of its material** (issue #381): `builtFrom`,
+the one key the `session_vignette` mode adds to the fact block
+(`sidecarModeAddendum`, in the cached mode block — the material itself is
+per call, in the user message). `[{ n, words, second }]`: for each numbered
+MATERIAL result, the words of the prose that are it, and whether the second
+result was taken — normalised by `sidecarParser.normaliseBuiltFrom` (garbage
+is no account; twelve entries at most), and applied by
+`applyNarratorSidecar` with the scene's seeds in `ctx.seeds`
+(`sceneSeeds.markSeedsUsed`): each seed is marked `used` with its words when
+the prose holds them, `false` (with what was `claimed`) when it does not, and
+left `null` when no fact block was read. Nothing is retried on it; the card
+keeps the marked seeds in its `builtFrom` flag — the one store of the
+scene's rolls, which "Rolled for this scene" is rendered from at every
+render (`renderSceneRolls`, the chat render hook, every client) — and shows
+a seed the narration did not account for as "not used". The rolls never
+enter `campaignState.recentOracles`: that ring tells every later narration
+to build on what it holds, which is how one scene's prop becomes the
+session's refrain.
 
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class
