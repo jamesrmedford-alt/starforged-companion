@@ -886,8 +886,8 @@ name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
 the table's correction, not something that happened in the story (the long
 haul's second run made it a story of a crossed-out name — known-issues
 NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says
-which name is current; the session summary's source carries the same note,
-`formatNameChangesForSource`; and every change a call's user message names —
+which name is current; the session summary's source is the session record's read, which writes
+every changed name as the new one (issue #382 slice 3); and every change a call's user message names —
 a player's line, the recent scene, a bookend's EARLIER list, the opening's
 last narration quoted word for word — that this note does not tell, or whose
 short form there its line does not name, is added at that message's end,

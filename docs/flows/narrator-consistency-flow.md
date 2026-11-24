@@ -164,8 +164,10 @@ longer special-cases them).
   CORRECTED-NAME-SHORT-FORM): a change's line names each short form of its old
   name the call's own text uses on its own, and what to write for it — "The
   old name cut short is the old name too: for "the Wake" write "the Wren"."
-  (`shortFormsInUse`; both renderers, `formatNameChangesBlock` and
-  `formatNameChangesForSource`). A short form is one word of the old name, used
+  (`shortFormsInUse`, in `formatNameChangesBlock`; the session summary's
+  source, which had a renderer of its own, is the session record's read since
+  issue #382 slice 3, and writes every changed name as the new one, its short
+  forms included). A short form is one word of the old name, used
   as a name with a word before it in its sentence ("the Wake's guns", "calls me
   Vey", "Captain Vey" — `usesOfNameWord`); what is written for it is the new
   name's word in the same place (last for last, first for first) when that
