@@ -230,6 +230,7 @@ import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import { recordEvent } from "./record/record.js";
+import { recordPlaceArrival } from "./record/tableSnapshot.js";
 import { registerRecordCardHook } from "./record/cards.js";
 import { registerSheetWatch } from "./record/sheetWatch.js";
 import { registerSessionLogView } from "./record/sessionLogView.js";
@@ -2398,6 +2399,7 @@ async function applyOutcomeEffects({
         if (upgrade) {
           try {
             await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+            void recordPlaceArrival(campaignState, { res: resolution._id ?? null, how: "move" });
           } catch (err) {
             console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
             const name = arrivedAt.entity?.name ?? arrivalName ?? null;
@@ -5157,6 +5159,11 @@ async function captureOracleResult(entry) {
     const stored = recordOracleResult(campaignState, entry);
     if (!stored) return;
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    // The ring took it: the answer goes on the session record (issue #382).
+    recordEvent("oracle.asked", {
+      ref: { card: entry.cardId ?? null, res: entry.resolutionId ?? null },
+      d: { name: stored.name ?? "", question: stored.question ?? "", answer: stored.answer ?? "" },
+    });
   } catch (err) {
     console.warn(`${MODULE_ID} | oracle-memory: persist failed:`, err?.message ?? err);
   }
@@ -6006,7 +6013,7 @@ async function postExpeditionFinishCard({ track, legacyTicks }) {
 
 async function postCombatThresholdCard({ label, suggestedRank, vowNames, position = null, actorId = null, resolutionId = null }) {
   try {
-    await ChatMessage.create({
+    const card = await ChatMessage.create({
       content: buildCombatThresholdHtml({ label, suggestedRank, vowNames, position }),
       // position/actorId: Enter the Fray's own outcome position (in control on
       // a strong hit, bad spot on a miss) rides here — the combat track doesn't
@@ -6018,6 +6025,13 @@ async function postCombatThresholdCard({ label, suggestedRank, vowNames, positio
       // the card still waits (stashPositionOnThresholdCard).
       flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null, position, actorId, resolutionId } },
     });
+    // The fight is offered: on the session record (issue #382), by the move it answers.
+    if (card) {
+      recordEvent("fight.offered", {
+        who: { actor: actorId ?? null }, ref: { res: resolutionId ?? null, card: card.id ?? null },
+        d: { label: label ?? "", suggestedRank: suggestedRank ?? null },
+      });
+    }
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatThresholdCard: chat post failed:`, err?.message ?? err);
   }
@@ -9198,6 +9212,11 @@ async function handleAtCommand(message) {
   campaignState.currentLocationId   = match.id;
   campaignState.currentLocationType = match.type;
   await writeCurrentLocation(match.id, match.type);
+  // The arrival is on the session record (issue #382) — `!at`'s.
+  recordEvent("place.arrived", {
+    ref: { place: match.id },
+    d: { type: match.type ?? null, name: match.entity?.name ?? arg, how: "command" },
+  });
 
   // Fact-continuity §20 — when ship positioning is enabled, treat the
   // GM's `!at` as "the party (and their ship) is here": the place just set

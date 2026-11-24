@@ -87,6 +87,37 @@ export async function tableSnapshot(campaignState) {
 }
 
 /**
+ * Record an arrival — the current place set to a place it was not (issue
+ * #382, slice 2): by a move's arrival, saved with its record or after its
+ * upgrade; by the Entities panel's toggle. Called once the write that set it
+ * has landed; the place's name is the record's as it stands then. Never
+ * throws. (`!at` records its own, with the place it matched.)
+ *
+ * @param {Object|null} campaignState — as written
+ * @param {{ res?: string|null, how?: "move"|"panel" }} [opts]
+ * @returns {Promise<void>}
+ */
+export async function recordPlaceArrival(campaignState, { res = null, how = 'move' } = {}) {
+  try {
+    const id = campaignState?.currentLocationId ?? null;
+    if (!id) return;
+    let name = null;
+    try {
+      const { currentLocationName } = await import('../narration/narrator.js');
+      name = currentLocationName(campaignState) ?? null;
+    } catch {
+      name = null;
+    }
+    recordEvent('place.arrived', {
+      ref: { place: id, res },
+      d: { type: campaignState.currentLocationType ?? null, name: name ?? '', how },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | session record: an arrival was not recorded:`, err?.message ?? err);
+  }
+}
+
+/**
  * Record a session's begin or end with the table as it stands — called by the
  * three places a session begins or ends (Begin a Session, End a Session, a
  * session closed by idleness), after the write that begins or ends it has

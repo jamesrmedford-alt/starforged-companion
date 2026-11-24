@@ -142,12 +142,11 @@ layers. This file is the never-break list.
    that leaves a scene open, and do not leave a cutaway's scene open behind
    it. A meta mode (the campaign recap) is sent none of the open scene's
    frame, truths or state as a binding scene — of the ledger block, the
-   ship's position alone. What it is told of how things stand is a section of
-   its own (WHERE THINGS STAND NOW: the whole session summary, the open
-   scene's facts and state), worded as the later word on them and never as
-   where the campaign is set; do not send a recap the ACTIVE SCENE block, and
-   do not send it a summary that does not cover its whole session
-   (`recapSummaryFor` — one made at the debounce is behind the Chronicle). A session is over at End Session or after four
+   ship's position alone. Its source is the session record, in its user
+   message (invariant 9; issue #382): what happened as facts, and WHERE
+   THINGS STAND read live from the sheets, the tracks and the open scene's
+   state — never as where the campaign is set; do not send a recap the
+   ACTIVE SCENE block, a session summary, or the narration. A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as
    `previousSessionSummary` (LAST SESSION) — the one prose surface that
@@ -418,11 +417,14 @@ layers. This file is the never-break list.
    `readRecord` alone, with the corrections applied at read — an X-Carded or
    superseded narration and all it set gone, a strike gone, every changed name
    written as the new one — and nothing stored is rewritten but by the
-   X-Card, which blanks what it removed (decision D3). A view of it (the
-   Session Log page) is a cache keyed by the hash of the read it was made
-   from. Hidden plans, Private Lines, whispers and Private Channel turns are
+   X-Card, which blanks what it removed (decision D3). A view of it — the
+   Session Log page, the campaign recap (its source: the record's facts, no
+   narration, and how things stand read live; its reply cited sentences) — is
+   a cache keyed by the hash of the source it was made from. Hidden plans
+   (and their clocks), Private Lines, whispers and Private Channel turns are
    never recorded. A new kind is a row with its writer and its reader in the
-   same commit (`tests/unit/sessionRecordEvents.test.js`).
+   same commit, and a new relay row is a recorded `choice` or says why not
+   (`tests/unit/sessionRecordEvents.test.js`).
 
 ## Tuning knobs (don't add new ones before using these)
 

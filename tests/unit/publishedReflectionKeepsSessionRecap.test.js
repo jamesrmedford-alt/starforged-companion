@@ -37,8 +37,6 @@ const S2 = 'aa32-recap-s2';
 const RECAP = 'PREVIOUSLY — the crew fled Bleakhold with the Hegemony on their heels.';
 const RECAP_BLOCK = `## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`;
 const REPLY = 'The hangar is cold and quiet; frost rimes the loading arms.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-// An empty chronicle's recap key (narrator.js chronicleRecapKey over []).
-const EMPTY_CHRONICLE_KEY = { chronicleLength: 0, chronicleHash: '811c9dc5' };
 
 let table;
 const narrationCalls = () => table.claude.calls.filter(c => /SIDECAR|NARRATOR ROLE/.test(c.system ?? ''));
@@ -54,11 +52,19 @@ beforeEach(async () => {
       sessionStartedId: S2, sessionActiveStartedAt: new Date().toISOString(),
       lastSessionTimestamp: new Date().toISOString(),
       currentSceneId: 'aa32-sc', sceneTruths: [],
-      campaignRecapCache: { text: RECAP, generatedAt: new Date().toISOString(), ...EMPTY_CHRONICLE_KEY },
     },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
+  // A recap made from the source as it stands — the record, where things
+  // stand — so it is current (narrator.js campaignRecapCacheKey, issue #382).
+  const gm = table.client('gm-1');
+  const { campaignRecapCacheKey } = await gm.import('../../src/narration/narrator.js');
+  const key = await gm.run(() => campaignRecapCacheKey(table.world.campaignState()));
+  table.world.setSetting('campaignState', {
+    ...table.world.campaignState(),
+    campaignRecapCache: { text: RECAP, generatedAt: new Date().toISOString(), ...key },
+  });
   scriptClaude(table, { fallback: () => REPLY });
 });
 

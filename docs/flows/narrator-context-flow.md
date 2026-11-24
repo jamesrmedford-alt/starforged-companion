@@ -29,8 +29,8 @@ trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
 sidecar/latitude, and of the scene ledger [6.5] the ship's position alone —
-issue #374 A1; how things stand reaches it in a section of its own, [6.5m]
-WHERE THINGS STAND NOW, below), round_resolution (a Batch Mode round, issue
+issue #374 A1; its source — the session record, and how things stand read
+live — is its user message, below), round_resolution (a Batch Mode round, issue
 #340 — see below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
@@ -1143,46 +1143,43 @@ Channel aside: it is canon, not a narration, and published first it took the
 narration's recap (issue #345 AA32) — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
 LAST KNOWN, established lore and the campaign premise. The recap cache stores
-the chronicle it was made from (`chronicleLength` + `chronicleHash`, over
-each entry's text, timestamp and session number — `campaignRecapCacheKey`);
-`getCampaignRecap` and the session-opening read use it only while that still
-matches, so a corrected entry is never recapped in its old form, and with no
-key to regenerate there is no recap rather than a stale one (issue #301 B04 —
-the check was the entry count alone, and the session-opening read had none).
-With no Chronicle entry there is no recap at all: what the Chronicle keeps is
-the scribe's rating against the floor, and — whatever the rating — a resolved
-move that changed something lasting (`chronicleKeeps.js`, issue #374 A5; a
-live session of four rolls had kept none and opened the next with no recap).
+the hash of the source it was made from (`sourceHash` — `campaignRecapCacheKey`,
+issue #382; it was the Chronicle's text, issue #301 B04); `getCampaignRecap`
+and the session-opening read use it only while that still matches, so a
+correction anywhere in the record, or a change to where things stand, makes it
+again, and with no key to regenerate there is no recap rather than a stale
+one. With nothing to retell — no beat on the record, no player's note, no
+session from before the record — there is no recap at all.
 
 **What a recap is told** (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN — the
 long haul's third live run's four recaps held fourteen sentences the story
-does not support). It retells the Chronicle (`buildCampaignRecapUserMessage`,
-the entries oldest first), under a role that says a recap says only what its
-sources say: nothing inferred (no cause, link or verdict no entry gives, no
-answer to a question left open), nothing filled in between two entries (one
-may be missing because the table took that moment out), whose things are
-whose (only the character is "you"; a "her" an entry leaves open keeps the
-entry's names — "first pick of her hauls" was the wrong woman's in all four),
-and how a thing stands now is its latest word. Beside it, **[6.5m] WHERE
-THINGS STAND NOW** (`narratorPrompt.formatStandsNowBlock`, meta mode only) —
-later than any entry, and already in other prompts:
-- the latest session's summary, when it covers the whole of its session
-  (`extras.recapSummary`, `narrator.recapSummaryFor`): this session's when
-  every narration since it was made is a closing cutaway — End a Session
-  finalises the summary, posts the cutaway, then refreshes the recap — else,
-  in a session with no narration yet, the last session's (LAST SESSION). A
-  summary made at the debounce, with narrations after it, is behind the
-  Chronicle and is left out;
-- the open scene's facts, corrections and state (every subject — a recap has
-  no player line for relevance to match), with where it is and its "Now" line.
-It is given as the later word on how things stand — where the two differ, the
-recap follows it — never as a binding scene, without the cast or the scene
-question, and with the line that the scene is one moment of the campaign: the
-ACTIVE SCENE block itself is still not sent (issue #374 A1 — told, under
-"binding", the frame of End a Session's closing cutaway, a recap set the whole
-campaign there; that scene now ends before the recap is written). The recap's
-cache is still keyed by the Chronicle alone: a recap is made again when an
-entry changes, not when only the scene or the summary has.
+does not support; issue #382 slice 2 — docs/flows/session-record-flow.md). Its
+source is the session record (`record/recapView.js`, read through
+`readRecord` with the table's corrections), in the user message
+(`buildCampaignRecapUserMessage`): THE RECORD — each session's turning points
+(its lasting beats: a move's lasting change, `chronicleKeeps.lastingChangeOf`,
+or what play did — a vow sworn, fulfilled or forsaken, a bond forged, an
+arrival…) and the latest session in full, each beat a line with an id: who
+acted and the words their player wrote, the move and its outcome, what changed
+on a sheet, what play did, what was established and stands, and what the table
+struck. Facts only — no narration (decision D4). Then WHERE THINGS STAND, read
+live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
+the vows and their progress, the connections, the open tracks, the current
+place, the open scene's state and its question, answered or not); THE PLAYERS'
+OWN NOTES (their Chronicle entries — written, edited or pinned by a player);
+and EARLIER SESSIONS, a session from before the record as its Session Log story
+and Chronicle entries had it, labelled. The role says a recap says only what
+its sources say: nothing inferred, nothing filled in between two lines (a beat
+may be missing because the table took it out), what a player wrote is the
+character's claim, whose things are whose, how a thing stands is WHERE THINGS
+STAND's word, one name for everyone. The reply is cited sentences (decision
+D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
+no sentence cites sends it back once, a reply that is not the JSON is asked
+for once more before the recap that stood stays, and the text kept has every
+changed name written as the new one (`recapText`). Nothing of the open scene
+is in the recap's system prompt — no binding ACTIVE SCENE block (issue #374
+A1), and no section built from the session summary (the WHERE THINGS STAND NOW
+section, `formatStandsNowBlock` / `recapSummaryFor`, is retired).
 
 **Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
 position line alone of this block, never the frame, truths, corrections or

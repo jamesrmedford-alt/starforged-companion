@@ -69,7 +69,9 @@ const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
  * later window, was counted as a second narration and took the next scripted
  * reply (TESTS-FLAKY-UNDER-LOAD).
  */
-const isNarration = (call) => call.model === NARRATION_MODEL && call.system.startsWith('## NARRATOR ROLE AND VOICE');
+// A narration of play — not the campaign recap, which shares the narrator's role (issue #382: its source is the record).
+const isRecapCall = (call) => /Write a campaign recap/.test(call.userText ?? '');
+const isNarration = (call) => call.model === NARRATION_MODEL && call.system.startsWith('## NARRATOR ROLE AND VOICE') && !isRecapCall(call);
 const EMPTY_SIDECAR = { newTruths: [], stateChanges: [] };
 
 let table;
@@ -451,7 +453,11 @@ describe('a session carries into the next one (C3, C4)', () => {
   beforeEach(async () => {
     table.claude.respond((call) => {
       if (call.system?.includes('continuity scribe')) return SUMMARY;
-      if (call.userText?.includes('## CAMPAIGN CHRONICLE')) return RECAP;
+      // The recap answers in cited sentences (issue #382 D11), citing a line it was sent.
+      if (isRecapCall(call)) {
+        const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(call.userText ?? '')?.[1] ?? 'now-1';
+        return JSON.stringify({ paragraphs: [[{ text: RECAP, because: [id] }]] });
+      }
       if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
       return '{}';
     });
@@ -480,6 +486,15 @@ describe('a session carries into the next one (C3, C4)', () => {
       sessionActive: true, sessionNumber: 4, sessionEndedId: null,
       previousSessionSummary: { sessionId: 'sess-1', sessionNumber: 3, text: SUMMARY },
     });
+
+    // The recap is a view of the record and of where things stand (issue
+    // #382): Begin's own start effects moved the sheets, so the recap made
+    // before it is stale — the one this session opens with is made from the
+    // source as it stands now.
+    const gm = table.client('gm-1');
+    const { campaignRecapCacheKey } = await gm.import('../../src/narration/narrator.js');
+    const key = await gm.run(() => campaignRecapCacheKey(world()));
+    table.world.setSetting('campaignState', { ...world(), campaignRecapCache: { text: RECAP, generatedAt: null, ...key } });
 
     // A scene question asked before the new session's first narration carries
     // both; the ring is the new session's own.

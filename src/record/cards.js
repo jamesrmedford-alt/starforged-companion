@@ -97,6 +97,11 @@ export function registerRecordCardHook({ inMemory }) {
       const text = typeof f.narrationText === 'string' ? f.narrationText : '';
       if (!text.trim()) return;
       const actorId = typeof f.actorId === 'string' && f.actorId ? f.actorId : null;
+      // An @scene question asked of the narrator — its answer is this card
+      // (issue #382, slice 2): a beat of its own, not something that happened.
+      if (f.sceneResponse === true && typeof f.sceneQuestion === 'string' && f.sceneQuestion.trim()) {
+        recordEvent('question', { session: f.sessionId, ref: { nar: f.narrationId ?? null, card: message.id ?? null }, text: f.sceneQuestion });
+      }
       recordEvent('narration', {
         session: f.sessionId,
         who: { user: message.author?.id ?? null, actor: actorId },

@@ -348,6 +348,22 @@ export function isPlayerCharacterActor(actor) {
 }
 
 /**
+ * Every Actor's name in the world — player characters, NPC cards, ships —
+ * for the session record's read (record/pages.js recordSource): a word of a
+ * name in play is never taken for a changed name's short form. [] when the
+ * actors cannot be read.
+ *
+ * @returns {string[]}
+ */
+export function actorNames() {
+  try {
+    return Array.from(game.actors ?? []).map(a => a?.name).filter(n => typeof n === 'string' && n);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Get a single Actor. Uses game.user.character by default; pass an explicit
  * actorId to override.
  * @param {string} [actorId]
@@ -470,6 +486,32 @@ export function readAssetTrackFact(item) {
   if (String(item.system?.category ?? '').toLowerCase().includes('companion')) return { what: 'companion-health', value };
   if (String(track.name ?? '').trim().toLowerCase() === 'integrity') return { what: 'integrity', value };
   return null;
+}
+
+/**
+ * A vow Item's facts the session record keeps the changes of — its name,
+ * rank, ticks, whether it is closed (and forsaken), the connection it is tied
+ * to, its stable id across copies — or null for an Item that is no vow
+ * (record/sheetWatch.js). The vow's field paths stay in this file (readVows).
+ *
+ * @param {Item|null} item
+ * @returns {{ name: string, rank: string, ticks: number, completed: boolean, forsaken: boolean,
+ *   shared: boolean, vowId: string|null, linkedConnectionName: string|null, linkedConnectionId: string|null }|null}
+ */
+export function readVowFact(item) {
+  if (item?.type !== 'progress' || item?.system?.subtype !== 'vow') return null;
+  const f = item.flags?.[MODULE_ID] ?? {};
+  return {
+    name:      item.name ?? '',
+    rank:      rankName(item.system?.rank ?? 'dangerous'),
+    ticks:     Number(item.system?.progress ?? item.system?.current ?? 0),
+    completed: item.system?.completed === true,
+    forsaken:  f.forsaken === true,
+    shared:    f.sharedVow === true,
+    vowId:     typeof f.vowId === 'string' && f.vowId ? f.vowId : null,
+    linkedConnectionName: typeof f.linkedConnectionName === 'string' && f.linkedConnectionName ? f.linkedConnectionName : null,
+    linkedConnectionId:   typeof f.linkedConnectionId === 'string' && f.linkedConnectionId ? f.linkedConnectionId : null,
+  };
 }
 
 /**
@@ -1780,6 +1822,11 @@ export async function recordGrantedReward(actor, reward) {
       ...list,
       { description: reward.description, form: reward.form ?? "gear" },
     ]);
+    // On the session record (issue #382), once the sheet took it.
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("reward.granted", {
+      who: { actor: actor.id ?? null }, ref: { vow: reward.vowId ?? null },
+      d: { actorId: actor.id ?? null, reward: String(reward.description) },
+    })).catch(() => {});
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | recordGrantedReward failed:`, err?.message ?? err);

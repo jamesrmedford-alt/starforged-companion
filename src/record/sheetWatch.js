@@ -23,14 +23,22 @@
  *     shared-legacy mirrors' sibling writes, `mirror` (each PC's sheet did
  *     change — a view shows the change once).
  *
- * Every sheet read is actorBridge.js's (`readSheetFacts`, `readAssetTrackFact`).
- * State is never folded from these events: a view's "where things stand" is
- * read live from the sheet.
+ * The same hooks see a PC's vows (issue #382, slice 2) — a progress Item of
+ * subtype vow on a player character's sheet, however it got there (the
+ * pipeline's Swear an Iron Vow, a card, the sheet by hand): `vow.sworn` as it
+ * is created, `progress.marked` as its track moves, `vow.closed` as it is
+ * completed (`forsaken` when Forsake Your Vow flags it so), `vow.linked` as it
+ * is tied to a connection. A shared vow's copies each fire; the read counts
+ * them once by the vow's stable id (`vowId`).
+ *
+ * Every sheet read is actorBridge.js's (`readSheetFacts`, `readAssetTrackFact`,
+ * `readVowFact`). State is never folded from these events: a view's "where
+ * things stand" is read live from the sheet.
  */
 
 import { recordEvent } from './record.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
-import { isPlayerCharacterActor, moduleWriteInFlight, readAssetTrackFact, readSheetFacts } from '../character/actorBridge.js';
+import { isPlayerCharacterActor, moduleWriteInFlight, readAssetTrackFact, readSheetFacts, readVowFact } from '../character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -141,9 +149,25 @@ function trackOwner(item) {
   return isPlayerCharacterActor(owner) || owner.type === 'starship' ? owner : null;
 }
 
+/** A PC's vow Item's facts, or null for any other Item. */
+function pcVow(item) {
+  const owner = item?.parent ?? null;
+  return owner && isPlayerCharacterActor(owner) ? readVowFact(item) : null;
+}
+
+function touchesVow(change) {
+  return touchesSystem(change) || !!change?.flags?.[MODULE_ID];
+}
+
 function onPreUpdateItem(item, change, options) {
   try {
-    if (!options || !touchesSystem(change)) return;
+    if (!options) return;
+    const vow = touchesVow(change) ? pcVow(item) : null;
+    if (vow) {
+      stamp(options, { vow }, item.parent.id);
+      return;
+    }
+    if (!touchesSystem(change)) return;
     const owner = trackOwner(item);
     const track = owner ? readAssetTrackFact(item) : null;
     if (track) stamp(options, { track }, owner.id);
@@ -152,9 +176,38 @@ function onPreUpdateItem(item, change, options) {
   }
 }
 
+/** Record what moved on a PC's vow between two readings of it. */
+function recordVowChanges(item, before, after, options, userId) {
+  const actor = item.parent;
+  const cause = causeOf(options);
+  const base = {
+    who: { user: userId ?? null, actor: actor.id },
+    ref: { vow: after.vowId ?? item.id, res: cause.res ?? null },
+  };
+  if (after.ticks !== before.ticks) {
+    recordEvent('progress.marked', { ...base, d: { label: after.name, rank: after.rank, from: before.ticks, to: after.ticks } });
+  }
+  if (after.completed && !before.completed) {
+    recordEvent('vow.closed', { ...base, d: { name: after.name, how: after.forsaken ? 'forsaken' : 'fulfilled' } });
+  } else if (after.completed && after.forsaken && !before.forsaken) {
+    recordEvent('vow.closed', { ...base, d: { name: after.name, how: 'forsaken' } });
+  }
+  if (after.linkedConnectionName && after.linkedConnectionName !== before.linkedConnectionName) {
+    recordEvent('vow.linked', { ...base, ref: { ...base.ref, conn: after.linkedConnectionId ?? null },
+      d: { name: after.name, connectionName: after.linkedConnectionName } });
+  }
+}
+
 function onUpdateItem(item, change, options, userId) {
   try {
-    if (!isCanonicalGM() || !touchesSystem(change)) return;
+    if (!isCanonicalGM()) return;
+    const vowBefore = options?.[MODULE_ID]?.[BEFORE_OPTION]?.vow ?? null;
+    if (vowBefore) {
+      const after = pcVow(item);
+      if (after) recordVowChanges(item, vowBefore, after, options, userId);
+      return;
+    }
+    if (!touchesSystem(change)) return;
     const owner = trackOwner(item);
     const before = options?.[MODULE_ID]?.[BEFORE_OPTION]?.track ?? null;
     const after = owner ? readAssetTrackFact(item) : null;
@@ -170,6 +223,23 @@ function onUpdateItem(item, change, options, userId) {
   }
 }
 
+/** A vow sworn onto a PC's sheet — however it was created. */
+function onCreateItem(item, options, userId) {
+  try {
+    if (!isCanonicalGM()) return;
+    const vow = pcVow(item);
+    if (!vow) return;
+    const cause = causeOf(options);
+    recordEvent('vow.sworn', {
+      who: { user: userId ?? null, actor: item.parent.id },
+      ref: { vow: vow.vowId ?? item.id, res: cause.res ?? null },
+      d: { itemId: item.id, actorId: item.parent.id, name: vow.name, rank: vow.rank, shared: vow.shared },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | session record: a vow sworn was not recorded:`, err?.message ?? err);
+  }
+}
+
 /**
  * Register the sheet watch: on every client (each stamps a sheet's values
  * before an edit it makes); only the canonical GM records. Once, at `ready`.
@@ -181,4 +251,5 @@ export function registerSheetWatch() {
   Hooks.on('updateActor', onUpdateActor);
   Hooks.on('preUpdateItem', onPreUpdateItem);
   Hooks.on('updateItem', onUpdateItem);
+  Hooks.on('createItem', onCreateItem);
 }

@@ -39,6 +39,7 @@ import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_R
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { recordLedgerChanges } from '../record/ledgerDiff.js';
+import { recordEvent } from '../record/record.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -142,6 +143,14 @@ async function openScene(campaignState, reason) {
   if (replacing && !ended && clearPacingOverride(campaignState)) fields.push('pacing');
 
   await persistCampaignStateFields(campaignState, fields, `startScene (${reason})`);
+  // The start landed: on the session record (issue #382).
+  try {
+    if (game.settings.get(MODULE_ID, 'campaignState')?.currentSceneId === id) {
+      recordEvent('scene.started', { scene: id, d: { sceneId: id, reason } });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: the scene's start was not put on the session record:`, err?.message ?? err);
+  }
   return id;
 }
 
@@ -274,6 +283,8 @@ async function persistEndedScene(campaignState, fields, label, closed, sceneId) 
       target.sessionRetractions = endedSceneRetractions(campaignState, stored ?? target, closed, sceneId);
       await game.settings.set(MODULE_ID, 'campaignState', target);
       campaignState.sessionRetractions = target.sessionRetractions;
+      // The end landed: on the session record (issue #382).
+      if (sceneId && !another) recordEvent('scene.ended', { scene: sceneId, d: { sceneId, reason: label } });
     }, label);
   } catch (err) {
     // Player clients can't write world settings; tolerate.

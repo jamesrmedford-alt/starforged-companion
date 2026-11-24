@@ -43,6 +43,7 @@
 import { RECORD_EVENTS } from './events.js';
 import { recordSource } from './pages.js';
 import { withNameChange, writeNewNames } from '../factContinuity/nameChanges.js';
+import { lastingChangeOf } from '../character/chronicleKeeps.js';
 
 /** `narration.removed`'s two causes. */
 const BY_XCARD = 'xcard';
@@ -52,6 +53,41 @@ const BY_SUPERSEDED = 'superseded';
 const SHEET_EDIT_WINDOW_MS = 10_000;
 
 const KNOWN_KINDS = new Set(RECORD_EVENTS.map(r => r.id));
+
+/**
+ * What a beat that changed something for good changed — the turning points a
+ * recap tells. A move's is chronicleKeeps.js lastingChangeOf (a vow sworn, a
+ * fight decided, an arrival, a miss that paid its price…); with no move, what
+ * play did.
+ */
+const LASTING_DID = Object.freeze({
+  'vow.sworn': () => 'a vow sworn',
+  'vow.closed': (d) => (d.how === 'forsaken' ? 'a vow forsaken' : 'a vow fulfilled'),
+  'vow.linked': () => 'a vow tied to a connection',
+  'connection.made': () => 'a connection made',
+  'connection.bonded': () => 'a bond forged',
+  'connection.lost': () => 'a connection lost',
+  'place.arrived': () => 'an arrival',
+  'track.ended': (d) => (d.completed !== true ? null
+    : d.type === 'combat' ? 'a fight decided' : d.type === 'expedition' ? 'an expedition finished' : 'a track brought to its end'),
+});
+
+function lastingOf(beat) {
+  if (beat.removed && !beat.move) return null;
+  const fromMove = beat.move ? lastingChangeOf({ moveId: beat.move.moveId, outcome: beat.move.outcome }) : null;
+  if (fromMove) return fromMove;
+  for (const d of beat.did) {
+    const label = LASTING_DID[d.kind]?.(d);
+    if (label) return label;
+  }
+  return null;
+}
+
+/** One key for the copies of one change a shared vow's copies each record — counted once. */
+function didKey(e) {
+  if (!e.ref?.vow) return null;
+  return [e.k, e.ref.vow, e.d?.to ?? '', e.d?.how ?? '', e.d?.connectionName ?? ''].join('\u0000');
+}
 
 const byTime = (a, b) => (a.at - b.at) || ((a.seq ?? 0) - (b.seq ?? 0));
 
@@ -169,6 +205,10 @@ function sessionBeats(events, { xcarded, superseded }) {
   let begun = null;
   let ended = null;
   let lastSheetEdit = null;
+  const scenes = [];                   // { sceneId, startedAt, endedAt, reason, where }
+  let where = null;                    // the scene frame as of now
+  const seenDid = new Set();
+  const questionOf = new Map();        // an @scene answer's narration id → its question's beat
 
   // Each rolled move's roller, by its resolution: what a move caused may be
   // recorded before its roll card is (an effect lands, then the card posts).
@@ -179,6 +219,8 @@ function sessionBeats(events, { xcarded, superseded }) {
 
   const open = (kind, e) => {
     const beat = newBeat(kind, e);
+    beat.where = where;
+    beat.scene = e.scene ?? null;
     beats.push(beat);
     return beat;
   };
@@ -223,6 +265,29 @@ function sessionBeats(events, { xcarded, superseded }) {
         struck.push({ at: e.at, truthId: e.ref?.truth ?? null, by: d.by ?? 'gm', replacedBy: d.replacedBy ?? null });
         continue;
 
+      case 'scene.started':
+        scenes.push({ sceneId: d.sceneId ?? e.scene ?? null, startedAt: e.at, endedAt: null, reason: d.reason ?? null, where: null });
+        where = null;
+        continue;
+      case 'scene.ended': {
+        const scene = scenes.findLast(x => x.sceneId === (d.sceneId ?? e.scene ?? null) && !x.endedAt);
+        if (scene) scene.endedAt = e.at;
+        continue;
+      }
+      case 'frame': {
+        if (viaXCard) continue;
+        where = { location: d.location ?? null, present: Array.isArray(d.present) ? d.present : [], situation: d.situation ?? null,
+          question: d.question ?? null, questionAnswered: d.questionAnswered === true };
+        const scene = scenes.findLast(x => x.sceneId === (e.scene ?? null));
+        if (scene) scene.where = where;
+        continue;
+      }
+      case 'question': {
+        beat = open('question', e);
+        beat.line = { text: typeof e.text === 'string' ? e.text : '', via: 'question', repost: false };
+        if (nar) questionOf.set(nar, beat);
+        break;
+      }
       case 'line': {
         // A card's button that posts an earlier line again (a paced card's
         // Roll, a "Not rolled" notice's Narrate it) is that line's beat while
@@ -283,6 +348,8 @@ function sessionBeats(events, { xcarded, superseded }) {
         // A Batch Mode round is told once, for every entry: its card goes on
         // the round's last beat that has no telling yet.
         if (!beat && round) beat = beats.findLast(b => b.round === round && !b.told && !b.removed) ?? null;
+        // An @scene answer is its question's beat: asked of the narrator, not something that happened.
+        if (!beat && d.mode === 'scene_answer' && nar) beat = questionOf.get(nar) ?? null;
         if (!beat && d.mode === 'paced') beat = lineOf(d.actorId ?? e.who?.actor);
         if (!beat) beat = open(d.mode === 'vignette_close' ? 'cutaway' : 'play', e);
         if (res) byRes.set(res, beat);
@@ -317,6 +384,25 @@ function sessionBeats(events, { xcarded, superseded }) {
         break;
       }
 
+      case 'vow.sworn': case 'vow.linked': case 'vow.closed': case 'progress.marked':
+      case 'track.begun': case 'track.ended': case 'position.changed': case 'fight.offered':
+      case 'connection.made': case 'connection.developed': case 'connection.bonded': case 'connection.lost':
+      case 'entity.confirmed': case 'place.arrived': case 'oracle.asked': case 'clock.advanced':
+      case 'reward.granted': case 'choice': {
+        // What a removed or superseded narration did goes with it.
+        if (viaXCard) continue;
+        const key = didKey(e);
+        if (key && seenDid.has(key)) continue;
+        if (key) seenDid.add(key);
+        const res = e.ref?.res ?? null;
+        beat = (res && (byRes.has(res) || rollerOf.has(res)) ? beatOfMove(res, e) : null)
+          || (nar && byNar.get(nar)) || open('table', e);
+        beat.did.push({ kind: e.k, ...d, ...(e.who?.actor && !d.actorId ? { actorId: e.who.actor } : {}) });
+        if (e.k === 'choice') beat.choices.push({ action: d.action ?? null, picked: d.picked ?? null });
+        if (!beat.who.actor) beat.who.actor = e.who?.actor ?? d.actorId ?? null;
+        break;
+      }
+
       default:
         continue;
     }
@@ -336,12 +422,15 @@ function sessionBeats(events, { xcarded, superseded }) {
     }
   }
 
-  for (const b of beats) delete b.claimed;
+  for (const b of beats) {
+    delete b.claimed;
+    b.lasting = lastingOf(b);
+  }
   const removed = beats.filter(b => b.removed === BY_XCARD).length;
   // A beat with nothing left to say — a table beat whose one truth was struck — is no beat.
   const kept = beats.filter(b => b.removed || b.line || b.move || b.told || b.changes.length || b.established.length
     || b.choices.length || b.did.length);
-  return { begun, ended, beats: kept, strikes, renames, removed };
+  return { begun, ended, beats: kept, strikes, renames, removed, scenes };
 }
 
 /** Write a session's names anew: every words, label and prose field, and each actor's current name. */
@@ -352,6 +441,16 @@ function correctNames(session, { names, nameOf, otherNames }) {
   for (const beat of session.beats) {
     beat.who.name = actorName(beat.who.actor);
     if (beat.line) beat.line.text = fix(beat.line.text);
+    for (const d of beat.did) {
+      for (const key of ['name', 'label', 'connectionName', 'question', 'answer', 'reward', 'picked', 'reason']) {
+        if (typeof d[key] === 'string') d[key] = fix(d[key]);
+      }
+      if (d.actorId && d.kind === 'position.changed') d.name = actorName(d.actorId) ?? fix(d.name);
+    }
+    if (beat.where) {
+      beat.where = { ...beat.where, location: fix(beat.where.location), situation: fix(beat.where.situation), question: fix(beat.where.question),
+        present: (beat.where.present ?? []).map(fix) };
+    }
     if (beat.told) beat.told.text = fix(beat.told.text);
     if (beat.move?.target?.name) beat.move.target = { ...beat.move.target, name: fix(beat.move.target.name) };
     for (const c of beat.changes) c.name = actorName(c.actor) ?? fix(c.name);
@@ -420,6 +519,7 @@ export function readRecord(scope = {}, source = recordSource()) {
       // What its Session Log page held before the record (a legacy session's story).
       story: page.story ?? '',
       beats: read.beats,
+      scenes: read.scenes,
       corrections: [
         ...read.renames.map(r => ({ kind: 'name', ...r })),
         ...read.strikes.map(s => ({ kind: 'strike', ...s })),
@@ -432,5 +532,7 @@ export function readRecord(scope = {}, source = recordSource()) {
     session.open.established = session.beats.filter(b => !b.removed).flatMap(b => b.established);
     sessions.push(session);
   }
-  return { sessions, hash: recordHash(sessions) };
+  // The folded names and the names in play go with the read: a view whose own
+  // text a model wrote is corrected by the same rule (recapView.js).
+  return { sessions, hash: recordHash(sessions), names: corrections.names, otherNames: naming.otherNames };
 }

@@ -16,6 +16,14 @@ import {
 
 const MODULE_ID = 'starforged-companion';
 
+/**
+ * A recap reply as the model is asked for it since issue #382 slice 2: cited
+ * sentences. Its one sentence cites the source's first own note — every
+ * Chronicle entry below is a player's (not the automatic scribe's), so the
+ * recap is given it as THE PLAYERS' OWN NOTES, [note-1] first.
+ */
+const cited = (text, because = ['note-1']) => JSON.stringify({ paragraphs: [[{ text, because }]] });
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -266,7 +274,7 @@ describe('getCampaignRecap() — cache', () => {
       campaignRecapCache: {
         text:            'Old cached text',
         generatedAt:     new Date().toISOString(),
-        chronicleLength: 0,
+        ...(await campaignRecapCacheKey(makeCampaignState())),
       },
     });
     const result = await getCampaignRecap(state, { forceRefresh: true });
@@ -274,16 +282,16 @@ describe('getCampaignRecap() — cache', () => {
     expect(result).toBe('');
   });
 
-  it('ignores cache when chronicle has grown (chronicleLength mismatch)', async () => {
+  it('ignores a cache made from another source (its sourceHash does not match)', async () => {
     const state = makeCampaignState({
       campaignRecapCache: {
-        text:            'Stale cache',
-        generatedAt:     new Date().toISOString(),
-        chronicleLength: 5,
+        text:        'Stale cache',
+        generatedAt: new Date().toISOString(),
+        sourceHash:  'feedface',
       },
       characterIds: [],
     });
-    // chronicle length is 0 (no character journal) — different from cached 5
+    // The source as it stands hashes otherwise: the cache is not used.
     const result = await getCampaignRecap(state);
     // No API key → '' (not the stale cache)
     expect(result).toBe('');
@@ -346,31 +354,33 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
     game.actors._reset();
   });
 
-  it('_getChronicleLength returns the entry count when chronicle is populated', async () => {
+  it('a populated Chronicle reaches the source, so a cache made without it is not used', async () => {
     const actor = makeTestActor({ id: 'pc-1', name: 'Kira' });
     game.actors._set('pc-1', actor);
+    // The key of the source as it was before the Chronicle could be read (the
+    // v1.2.3 bug read none: its helper returned 0, and a cache for 0 passed).
+    const unread = await campaignRecapCacheKey(makeCampaignState({ characterIds: ['pc-1'] }));
     const installed = installChronicleJournal('Kira', [
       { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'Set out from the station.' },
       { id: 'e2', timestamp: '2026-01-02T00:00:00Z', text: 'Found the derelict.' },
       { id: 'e3', timestamp: '2026-01-03T00:00:00Z', text: 'Lost the trail.' },
     ]);
 
-    // No API key → getCampaignRecap returns '' even when chronicle is
-    // populated, but the chronicleLength mismatch should bypass the cached
-    // 'Stale cache' string. This shape of test would have caught the bug:
-    // the broken helper returned 0, so the cache was treated as fresh.
+    // No API key → getCampaignRecap returns '' even when the Chronicle is
+    // populated. The entries are read into the source, so its hash moved and
+    // the cache made without them is not used.
     const state = makeCampaignState({
       characterIds: ['pc-1'],
       campaignRecapCache: {
-        text:            'Stale cache',
-        generatedAt:     new Date().toISOString(),
-        chronicleLength: 0,   // pre-fix the helper would return 0 too — match
+        text:        'Stale cache',
+        generatedAt: new Date().toISOString(),
+        ...unread,
       },
     });
+    expect((await campaignRecapCacheKey(state)).sourceHash).not.toBe(unread.sourceHash);
     const result = await getCampaignRecap(state);
-    // With the bug, chronicleLength would equal cache.chronicleLength (both 0)
-    // and the test would receive 'Stale cache' verbatim. With the fix, the
-    // chronicle has 3 entries → mismatch → no API key → '' (not the stale text).
+    // Were the Chronicle unread, the source would hash the same and the test
+    // would receive 'Stale cache' verbatim: mismatch → no API key → ''.
     expect(result).not.toBe('Stale cache');
     expect(result).toBe('');
     installed.restore();
@@ -402,7 +412,7 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }),
         text: async () => '',
       };
     });
@@ -450,7 +460,7 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }),
         text: async () => '',
       };
     });
@@ -514,7 +524,7 @@ describe('getCampaignRecap() — same-named characters (issue #301 B03)', () => 
     global.fetch = vi.fn(async (_url, init) => {
       const body = JSON.parse(init.body);
       captured = body.messages?.[body.messages.length - 1]?.content ?? '';
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }), text: async () => '' };
     });
 
     const result = await getCampaignRecap(makeCampaignState({ characterIds: ['pc-a', 'pc-b'] }));
@@ -560,7 +570,7 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
     global.fetch = vi.fn(async (_url, init) => {
       const body = JSON.parse(init.body);
       requests.push(body.messages?.[body.messages.length - 1]?.content ?? '');
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Fresh recap.' }] }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: cited('Fresh recap.') }] }), text: async () => '' };
     });
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, '');
     game.settings._store.delete(`${MODULE_ID}.campaignState`);
@@ -654,25 +664,24 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
 // ---------------------------------------------------------------------------
 
 describe('buildCampaignRecapUserMessage()', () => {
-  it('includes all chronicle entries in the user message', () => {
-    const entries = [
-      '[Session 1 — Jan 1]\nWe set out from the station.',
-      '[Session 2 — Jan 8]\nWe found the derelict.',
-    ];
-    const msg = buildCampaignRecapUserMessage(entries);
-    expect(msg).toContain('We set out from the station');
-    expect(msg).toContain('We found the derelict');
+  const source = { text: '## THE RECORD\n\n### Session 1 — the latest session, in full\n[s1-1] Kira — the player wrote “We set out from the station.”' };
+
+  it('carries the record\'s source as it was built', () => {
+    expect(buildCampaignRecapUserMessage(source)).toContain('[s1-1] Kira — the player wrote “We set out from the station.”');
   });
 
   it('contains the recap instructions', () => {
-    const msg = buildCampaignRecapUserMessage(['One entry.']);
+    const msg = buildCampaignRecapUserMessage(source);
     expect(msg).toContain('3–5 paragraphs');
     expect(msg).toContain('vows sworn');
     expect(msg).toContain('second person');
+    expect(msg).toContain('Every beat marked LASTING is told');
   });
 
-  it('includes the campaign chronicle header', () => {
-    const msg = buildCampaignRecapUserMessage(['entry']);
-    expect(msg).toContain('CAMPAIGN CHRONICLE');
+  it('asks for cited sentences, and says a sentence that rests on nothing is left out (decision D11)', () => {
+    const msg = buildCampaignRecapUserMessage(source);
+    expect(msg).toMatch(/Reply with JSON only: \{"paragraphs": \[\[\{"text": "<one sentence>", "because": \["<id>", …\]\}/);
+    expect(msg).toMatch(/A sentence that rests on no line given above is left out of the recap/);
+    expect(msg).not.toContain('CAMPAIGN CHRONICLE');
   });
 });

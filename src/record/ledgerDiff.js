@@ -80,6 +80,26 @@ export function ledgerEvents(before, after) {
       });
     }
   }
+  // The scene frame: where, who is present, the situation, the scene's
+  // question — a change of it in the same scene is `frame`.
+  const frameOf = (cs) => (cs?.sceneFrame && typeof cs.sceneFrame === 'object' ? cs.sceneFrame : null);
+  const was = frameOf(before);
+  const now = frameOf(after);
+  const sameScene = (before?.currentSceneId ?? null) === (after?.currentSceneId ?? null);
+  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true] : null);
+  if (now && (!sameScene || shape(was) !== shape(now))) {
+    events.push({
+      kind: 'frame',
+      payload: {
+        session, scene,
+        ref: { nar: now.narrationId ?? null },
+        d: {
+          location: now.location ?? null, present: Array.isArray(now.present) ? now.present : [],
+          situation: now.situation ?? null, question: now.question ?? null, questionAnswered: now.questionAnswered === true,
+        },
+      },
+    });
+  }
   return events;
 }
 

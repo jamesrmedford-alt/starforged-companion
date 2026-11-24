@@ -41,9 +41,32 @@ const SITES = {
   'truth.struck':      ['src/record/ledgerDiff.js'],
   'name.changed':      ['src/factContinuity/nameChanges.js', 'src/factContinuity/chatCommands.js', 'src/factContinuity/correctionDialog.js'],
   'narration.removed': ['src/record/record.js', 'src/context/safety.js', 'src/moves/resultUpgrade.js'],
+  // Slice 2
+  'scene.started':     ['src/factContinuity/sceneLifecycle.js'],
+  'scene.ended':       ['src/factContinuity/sceneLifecycle.js'],
+  'frame':             ['src/record/ledgerDiff.js'],
+  'question':          ['src/record/cards.js'],
+  'choice':            ['src/multiplayer/gmRelay.js'],
+  'track.begun':       ['src/record/trackDiff.js'],
+  'progress.marked':   ['src/record/trackDiff.js', 'src/record/sheetWatch.js'],
+  'position.changed':  ['src/record/trackDiff.js'],
+  'track.ended':       ['src/record/trackDiff.js'],
+  'fight.offered':     ['src/index.js'],
+  'vow.sworn':         ['src/record/sheetWatch.js'],
+  'vow.linked':        ['src/record/sheetWatch.js'],
+  'vow.closed':        ['src/record/sheetWatch.js'],
+  'connection.made':   ['src/entities/connection.js'],
+  'connection.developed': ['src/entities/connection.js'],
+  'connection.bonded': ['src/entities/connection.js'],
+  'connection.lost':   ['src/entities/connection.js'],
+  'entity.confirmed':  ['src/entities/entityExtractor.js'],
+  'place.arrived':     ['src/index.js', 'src/record/tableSnapshot.js', 'src/moves/persistResolution.js', 'src/ui/entityPanel.js'],
+  'oracle.asked':      ['src/index.js'],
+  'clock.advanced':    ['src/clocks/clocks.js'],
+  'reward.granted':    ['src/character/actorBridge.js'],
 };
 
-const HELPER_KIND = { recordNameChanged: 'name.changed', recordNarrationsRemoved: 'narration.removed' };
+const HELPER_KIND = { recordNameChanged: 'name.changed', recordNarrationsRemoved: 'narration.removed', recordPlaceArrival: 'place.arrived' };
 
 const sources = productionSources();
 const KINDS = new Set(RECORD_EVENTS.map(r => r.id));
@@ -52,12 +75,13 @@ const KINDS = new Set(RECORD_EVENTS.map(r => r.id));
 function foundSites() {
   const out = [];
   const named = /\b(?:recordEvent|recordSessionEdge|buildEvent)\s*\(\s*(["'])([\w.]+)\1/g;
-  const keyed = /\bkind:\s*(["'])((?:truth)\.[\w]+)\1/g;
-  const helpers = /\b(recordNameChanged|recordNarrationsRemoved)\s*\(/g;
+  const keyed = /\bkind:\s*(["'])([\w.]+)\1/g;
+  const helpers = /\b(recordNameChanged|recordNarrationsRemoved|recordPlaceArrival)\s*\(/g;
+  const DIFFERS = new Set(['src/record/ledgerDiff.js', 'src/record/trackDiff.js']);
   for (const { file, code } of sources) {
     let m;
     while ((m = named.exec(code))) out.push([m[2], file]);
-    if (file === 'src/record/ledgerDiff.js') while ((m = keyed.exec(code))) out.push([m[2], file]);
+    if (DIFFERS.has(file)) while ((m = keyed.exec(code))) if (KINDS.has(m[2])) out.push([m[2], file]);
     while ((m = helpers.exec(code))) {
       // The helper's own definition is no call of it.
       const before = code.slice(Math.max(0, m.index - 30), m.index);
@@ -141,5 +165,65 @@ describe('a changed name is put on the record by every writer of the stored list
       }
     }
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * The relay's card presses that are choices in play are recorded as `choice`
+ * (a GM_ACTIONS row's `record: true`, gmRelay.js recordChoice); every other row
+ * is named here with why it records none — its effect is another kind's, or it
+ * is never recorded (rules: hidden plans, Private Lines, safety, Private
+ * Channel turns, dismissals). A new row is one or the other, in the same commit.
+ */
+const UNRECORDED = {
+  'xcard.activate':            'safety — the X-Card is recorded as narration.removed at its finish, never as a choice',
+  'safety.setFlag':            'safety — a flag\'s text is never recorded',
+  'session.takeBreak':         'safety — never recorded',
+  'safety.syncPrivateLines':   'Private Lines are never recorded',
+  'session.begin':             'session.begun',
+  'session.end':               'session.ended',
+  'bond.apply':                'the !bond roll is recorded from its card (move.resolved); its effects as sheet.changed',
+  'factContinuity.command':    'truth.set / truth.struck / name.changed at the ledger save',
+  'oracle.narrate':            'its narration card (narration)',
+  'oracle.forgetResult':       'an X-Card\'s take-back of an oracle result',
+  'repair.apply':              'sheet.changed',
+  'payThePrice.advanceClocks': 'clock.advanced',
+  'payThePrice.suffer':        'sheet.changed',
+  'forcedMove.hold':           'a handover of held forced moves between GMs — no play',
+  'record.append':             'the record\'s own relay',
+  'narrator.sidecar':          'truth.set at the ledger save',
+  'narrator.summary':          'a summary relayed to the GM to store — no play',
+  'draft.confirm':             'entity.confirmed',
+  'draft.dismiss':             'a dismissal is never recorded',
+  'draft.newPerson':           'entity.confirmed',
+  'move.burnMomentum':         'move.upgraded',
+  'move.improveResult':        'move.upgraded',
+  'move.keepResult':           'move.kept',
+  'payoff.retry':              'a GM\'s Retry of a refused write: the write\'s own event when it lands',
+  'journal.merge':             'journal housekeeping — no play',
+  'chronicle.edit':            'the players\' own notes are read from the Chronicle',
+  'progressTrack.edit':        'track events at the track save',
+  'entity.edit':               'an edit of a card — no play',
+  'privateChannel.createJournal': 'Private Channel turns are never recorded',
+  'privateChannel.publish':    'a published reflection is a narration card',
+  'batch.submit':              'a round\'s lines are recorded where the round takes them',
+  'batch.withdraw':            'a round\'s entries are recorded where the round takes them',
+  'batch.pass':                'a pass is no beat',
+  'batch.confirm':             'a round\'s entries are recorded where the round takes them',
+  'batch.reread':              'a reading — no play',
+  'batch.keep':                'move.kept',
+  'batch.sendNow':             'a GM\'s nudge of the round — no play',
+  'batch.discard':             'a round discarded — nothing of it happened',
+  'batch.discardThenOff':      'a round discarded — nothing of it happened',
+};
+
+describe('every relay row is a choice on the record, or says why not', () => {
+  it('each GM_ACTIONS row is `record: true` or listed in UNRECORDED, and no row is both', async () => {
+    const { GM_ACTIONS } = await import('../../src/multiplayer/gmRelay.js');
+    const rows = Object.entries(GM_ACTIONS);
+    const neither = rows.filter(([kind, row]) => row.record !== true && !(kind in UNRECORDED)).map(([k]) => k);
+    const both = rows.filter(([kind, row]) => row.record === true && kind in UNRECORDED).map(([k]) => k);
+    const gone = Object.keys(UNRECORDED).filter(kind => !(kind in GM_ACTIONS));
+    expect({ neither, both, gone }).toEqual({ neither: [], both: [], gone: [] });
   });
 });

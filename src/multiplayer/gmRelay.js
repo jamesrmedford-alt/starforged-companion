@@ -213,54 +213,54 @@ export const GM_ACTIONS = Object.freeze({
   "move.keepResult":           { load: () => import("../moves/heldResult.js"),                       fn: "applyKeepResultFromRelay", claude: true },
   // Issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY — the community's need card of a Sojourn miss: "⚔ Swear an Iron Vow"
   // writes the vow on the roller's sheet; "✔ It is done" resolves the Sojourn as a strong hit and narrates it
-  "sojourn.need":              { load: () => import("../moves/sojournNeed.js"),                      fn: "applySojournNeedFromRelay", claude: true },
-  "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
-  "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
-  "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },
-  "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle" },
-  "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick" },
+  "sojourn.need":              { load: () => import("../moves/sojournNeed.js"),                      fn: "applySojournNeedFromRelay", claude: true, record: true },
+  "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick", record: true },
+  "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick", record: true },
+  "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick", record: true },
+  "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle", record: true },
+  "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick", record: true },
   // Issue #329 X06 — the "⚔ A fight looms" card's ⚔ Begin the fight / Find another
   // way, claimed once on the card (the legacy "combat.enterFray" socket, folded in)
-  "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice" },
-  "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion" },
-  "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay" },
-  "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay" },
-  "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone" },
-  "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
+  "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice", record: true },
+  "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion", record: true },
+  "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay", record: true },
+  "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay", record: true },
+  "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone", record: true },
+  "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond", record: true },
   // Claude: a pick that keeps a held result its card answers on a card of its own waits for that result's narration
   // (Sojourn's "Community needs help" — issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS)
-  "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay", claude: true },
+  "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay", claude: true, record: true },
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
   // Issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED — a split journal's Merge, a GM's press claimed once on the card
   "journal.merge":             { load: () => import("../world/journalSplitMerge.js"),                fn: "applyJournalMerge" },
   // Issue #353 Phase 3 — a countdown's "Begin the scene challenge", a GM's press claimed once on the card
-  "sceneChallenge.begin":      { load: () => import("../moves/sceneChallengeOffer.js"),              fn: "applySceneChallengeOffer" },
+  "sceneChallenge.begin":      { load: () => import("../moves/sceneChallengeOffer.js"),              fn: "applySceneChallengeOffer", record: true },
   // Issue #321 group A — one-shot card buttons claimed on the GM-authored card:
   // U02 "Which vow?" (a Fulfill Your Vow that named none of several open vows);
   // U20 a move card's "⚑ Mark Progress on Vow", and an expedition's "🔁 Recommit"
   // (the legacy "expedition.recommit" socket relay, folded in — RELAY-LEGACY-KINDS)
-  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
+  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick", record: true },
   // Issue #331 X63 — "Which legacy track?" (a Continue a Legacy that named none), each track claimed once
-  "legacy.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyLegacyTrackPick" },
-  "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion" },
+  "legacy.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyLegacyTrackPick", record: true },
+  "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion", record: true },
   // Known-issues FULFIL-BUTTON-LOCAL-DISABLE — a move card's and a won-fight card's
   // "🏁 Attempt to Fulfill", claimed once on the card
-  "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow" },
+  "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow", record: true },
   // Issue #338 D1 — a card's forced follow-up, the roller's to press, claimed once on the card:
   // "⚔ Attempt to Finish the Fight", "🗺 Finish the Expedition", a new vow's "⚔ Swear it (roll)"
-  "tda.attempt":               { load: () => import("../moves/cardActions.js"),                      fn: "applyTakeDecisiveActionAttempt" },
-  "expedition.finish":         { load: () => import("../moves/cardActions.js"),                      fn: "applyFinishExpeditionAttempt" },
-  "vow.swearRoll":             { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowSwearFromRelay" },
+  "tda.attempt":               { load: () => import("../moves/cardActions.js"),                      fn: "applyTakeDecisiveActionAttempt", record: true },
+  "expedition.finish":         { load: () => import("../moves/cardActions.js"),                      fn: "applyFinishExpeditionAttempt", record: true },
+  "vow.swearRoll":             { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowSwearFromRelay", record: true },
   // Known-issues PACED-ROLL-OPEN-PRESS — the same shape for a paced card's "Roll <move>"
   // and a "Which fight?" pick (checked against the card's own fights)
-  "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll" },
+  "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll", record: true },
   // Issue #354 P2-01 — a "Not rolled" notice's "Narrate it — no move", claimed once on the notice
-  "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate" },
-  "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick" },
-  "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
+  "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate", record: true },
+  "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick", record: true },
+  "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer", record: true },
   // Issue #330 D1 — a Fulfill Your Vow's / Forge a Bond's miss "🔁 Recommit", claimed once on the card
-  "vow.recommit":              { load: () => import("../moves/cardActions.js"),                      fn: "applyVowRecommitOffer" },
-  "bond.recommit":             { load: () => import("../moves/cardActions.js"),                      fn: "applyBondRecommitOffer" },
+  "vow.recommit":              { load: () => import("../moves/cardActions.js"),                      fn: "applyVowRecommitOffer", record: true },
+  "bond.recommit":             { load: () => import("../moves/cardActions.js"),                      fn: "applyBondRecommitOffer", record: true },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
   // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)
@@ -434,9 +434,42 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
     const result = await handler(payload ?? {}, ctx);
     const refused = _refusedPresses.get(ctx);
     if (refused) await tellRefusedPress(ctx, refused);
+    else if (entry.record === true) recordChoice(kind, payload ?? {}, ctx, result);
     return result;
   };
   return UNQUEUED_ACTIONS.has(kind) ? task() : enqueueGmAction(kind, task);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A choice made on a card is a choice on the session record (issue #382)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The payload keys a card's press names its pick by, the most telling first.
+const PICK_KEYS = ['choice', 'way', 'pick', 'option', 'pickKind', 'sufferId', 'optionIndex', 'label', 'trackId'];
+
+/**
+ * Put a card press its handler took on the session record as a `choice` —
+ * the rows of GM_ACTIONS marked `record` (tests/unit/sessionRecordEvents.test.js
+ * names every other row and why it records none). The pick is the press's
+ * own option id; a refusal — the handler said nothing was applied — records
+ * nothing. The card's resolution, when it has one, ties the choice to its
+ * move's beat. Fire-and-forget; never throws.
+ */
+function recordChoice(kind, payload, ctx, result) {
+  if (result === false || result?.applied === false || result?.posted === false || result?.ok === false) return;
+  const key = PICK_KEYS.find(k => payload[k] !== undefined && payload[k] !== null && payload[k] !== '');
+  const messageId = typeof payload.messageId === 'string' && payload.messageId ? payload.messageId : null;
+  let res = null;
+  try { res = (messageId && globalThis.game?.messages?.get?.(messageId)?.flags?.[MODULE_ID]?.resolutionId) || null; } catch { res = null; }
+  const typed = [payload.objective, payload.text].find(t => typeof t === 'string' && t.trim());
+  import('../record/record.js')
+    .then(({ recordEvent }) => recordEvent('choice', {
+      who: { user: ctx?.requesterId ?? null, actor: typeof payload.actorId === 'string' ? payload.actorId : null },
+      ref: { card: messageId, res },
+      d: { action: kind, picked: key ? String(payload[key]) : null },
+      ...(typed ? { text: typed } : {}),
+    }))
+    .catch(err => console.warn(`${MODULE_ID} | gmRelay: "${kind}" was not put on the session record:`, err?.message ?? err));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

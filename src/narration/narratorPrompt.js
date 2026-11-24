@@ -1160,8 +1160,8 @@ const ORACLE_ANSWER_BINDS =
   `contradicts the answer. A table's result is read with latitude; it is never turned ` +
   `into its reverse.`;
 
-/** The heading of a recap's section on how things stand (formatStandsNowBlock); the recap's rules name it. */
-const STANDS_NOW_HEADING = 'WHERE THINGS STAND NOW';
+/** The heading of a recap's section on how things stand (record/recapView.js); the recap's rules name it. */
+const STANDS_NOW_HEADING = 'WHERE THINGS STAND';
 
 /**
  * A recap says only what its sources say (known-issues
@@ -1179,30 +1179,32 @@ const STANDS_NOW_HEADING = 'WHERE THINGS STAND NOW';
  *     offer was first pick of the character's own, in all four recaps;
  *   - an earlier state carried forward: "The compass still swings toward the
  *     dark lane" — it swung north and stopped; the entry for that step dropped
- *     the needle, and the recap was sent nothing else of how things stood
- *     (formatStandsNowBlock is what it is sent now).
- * The role told it only to "draw only on the chronicle provided".
+ *     the needle, and the recap was sent nothing else of how things stood.
+ * The role told it only to "draw only on the chronicle provided". Since issue
+ * #382 slice 2 its source is the session record (record/recapView.js): facts,
+ * the players' own words, and how things stand read live — each line an id
+ * its sentences cite.
  */
 const RECAP_SOURCES_RULE =
-  `A recap says only what its sources say. The Chronicle in the user message is the record of ` +
-  `what happened; ${STANDS_NOW_HEADING}, in the context when it is there, is the later word on ` +
-  `how things stand.\n` +
-  `- Every sentence restates what an entry or the context states. Infer nothing: no cause, motive ` +
-  `or link between two things that no entry gives ("your first hint that…", "which is how…"), no ` +
-  `verdict on what something meant ("the point of it all"), and no answer to a question an entry ` +
-  `leaves open.\n` +
-  `- Fill nothing in between entries. Where the Chronicle steps from one moment to a later one, ` +
-  `the recap steps with it and says nothing of what lay between: an entry may be missing because ` +
-  `the table took that moment out of the story. A place no entry says was entered was not ` +
-  `entered; a thing no entry says was found was not found.\n` +
-  `- Keep whose things are whose. An entry speaks of the player character by name, in the third ` +
-  `person; the recap may call that character "you" — and no one else. Before a "her", "his" or ` +
-  `"their" becomes "your", be certain whose it is: where an entry leaves it open ("first pick of ` +
-  `her hauls", of two women), keep the entry's own names and words.\n` +
-  `- How a thing stands now is its latest word, not its first. Where a later entry, or ` +
-  `${STANDS_NOW_HEADING}, changes what an earlier entry said — where someone or something is, the ` +
-  `state it is in, which way it points, whether a question is answered — say the later one, and ` +
-  `never carry the earlier forward as still true.`;
+  `A recap says only what its sources say. THE RECORD in the user message is what happened, ` +
+  `session by session, as facts: who acted and the words their player wrote, the move and its ` +
+  `outcome, what changed on a sheet, what play did, what was established and still stands. ` +
+  `${STANDS_NOW_HEADING} is how things stand as play stopped, read from the sheets and tracks.\n` +
+  `- Every sentence restates what a line it cites states. Infer nothing: no cause, motive or link ` +
+  `between two things that no line gives ("your first hint that…", "which is how…"), no verdict on ` +
+  `what something meant ("the point of it all"), and no answer to a question a line leaves open.\n` +
+  `- Fill nothing in between lines. Where the record steps from one beat to a later one, the recap ` +
+  `steps with it and says nothing of what lay between: a beat may be missing because the table took ` +
+  `it out of the story. A place no line says was entered was not entered; a thing no line says was ` +
+  `found was not found.\n` +
+  `- What a player wrote is what their character said or tried. What it claims about the world is ` +
+  `the character's claim, unless an outcome or an established line supports it.\n` +
+  `- Keep whose things are whose. The record names each character; the recap may call the player ` +
+  `character "you" — and no one else. Keep a player's own words as they wrote them ("first pick of ` +
+  `whatever I haul" is the character's own haul).\n` +
+  `- How a thing stands now is ${STANDS_NOW_HEADING}'s word. Say that something still stands only ` +
+  `when ${STANDS_NOW_HEADING} says so; never carry an earlier state forward as still true.\n` +
+  `- Use each name as the record writes it, and write no other name for anyone.`;
 
 /** The oracle's own word for a doubled roll stays out of the prose too (NARRATION-NAMES-THE-OUTCOME). */
 const ORACLE_MATCH_RULE =
@@ -1392,8 +1394,8 @@ const ROLE_DESCRIPTIONS = {
     `between-sessions recap. Your role is to summarise the campaign so far as a ` +
     `concise, vivid retrospective that reminds the players where things stand.\n\n` +
     `This is a meta-summary, not a live scene: do not advance the story, stage new ` +
-    `events, introduce new entities, or propose actions. Draw only on the chronicle ` +
-    `provided and the established campaign context. Keep it tight and respectful of ` +
+    `events, introduce new entities, or propose actions. Draw only on the record ` +
+    `below and the established campaign context. Keep it tight and respectful of ` +
     `what the players have accomplished.\n\n` +
     RECAP_SOURCES_RULE,
 };
@@ -1691,91 +1693,6 @@ function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = 
     askSceneQuestion,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
-}
-
-/**
- * [6.5m] WHERE THINGS STAND NOW — what a campaign recap is sent of how things
- * stand, beside the Chronicle it retells (known-issues
- * RECAP-STATES-WHAT-DID-NOT-HAPPEN). A recap was written from the Chronicle
- * alone, and a Chronicle entry is one sentence of one beat: the entry for the
- * beat in which the compass "swings north and stops" kept the vow's
- * fulfilment and dropped the needle, so two recaps said it "still swings
- * toward the dark lane"; a recap and the summary of one End a Session
- * contradicted each other, each written from a source the other never saw.
- * Two things, both later than any entry and both already in other prompts:
- *   - the latest session's summary, when it covers the whole of its session
- *     (`extras.recapSummary`, narrator.js recapSummaryFor — STORY SO FAR, or
- *     LAST SESSION when the new one has no narration yet);
- *   - the open scene's facts and current state, as the narrations of that
- *     scene are given them.
- * Never as the ACTIVE SCENE block gives them: issue #374 A1 took that block
- * out of a recap because, told under "binding" the frame of End a Session's
- * closing cutaway, a recap set the whole campaign there. The cutaway's scene
- * now ends before the recap is written, and this section says what it is —
- * how things stand, not where the campaign is set, and not events to retell.
- * No scene question (it is the narrator's device). '' with neither.
- *
- * @param {Object} campaignState — with the live scene ledger laid over it
- * @param {Object} settings — the factContinuity* settings
- * @param {{ recapSummary?: { text: string, sessionNumber?: number|null, current?: boolean }|null,
- *   entityNamesById?: Map<string,string>|Object|null }} [opts]
- * @returns {string}
- */
-function formatStandsNowBlock(campaignState, settings = {}, { recapSummary = null, entityNamesById = null } = {}) {
-  const {
-    factContinuityEnabled         = true,
-    factContinuityLedgerInContext = true,
-    factContinuityMaxLedgerTokens = 400,
-    factContinuitySceneFrame      = true,
-  } = settings ?? {};
-  const sections = [];
-
-  const summary = typeof recapSummary?.text === 'string' ? recapSummary.text.trim() : '';
-  if (summary) {
-    const number = Number.isFinite(recapSummary.sessionNumber) ? ` (session ${recapSummary.sessionNumber})` : '';
-    sections.push(`${recapSummary.current === false ? 'THE LAST SESSION PLAYED' : 'THE SESSION JUST PLAYED'}${number}, as its summary has it:\n${summary}`);
-  }
-
-  if (factContinuityEnabled && factContinuityLedgerInContext) {
-    // Every subject the scene holds a fact about: a recap names no one in a
-    // player's line for relevance to match.
-    const ids = new Set();
-    for (const t of Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : []) {
-      if (t?.subject?.kind === 'entity' && t.subject.entityId) ids.add(t.subject.entityId);
-    }
-    for (const key of Object.keys(campaignState?.sceneState?.bySubject ?? {})) {
-      const subject = subjectFromStateKey(key);
-      if (subject?.kind === 'entity' && subject.entityId) ids.add(subject.entityId);
-    }
-    const block = buildLedgerBlock(campaignState, {
-      matchedEntityIds: [...ids], currentLocationId: campaignState?.currentLocationId ?? null,
-      maxTokens: factContinuityMaxLedgerTokens, entityNamesById, sceneFrameEnabled: factContinuitySceneFrame,
-    });
-    const frame = factContinuitySceneFrame && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
-      ? campaignState.sceneFrame : null;
-    const scene = [];
-    if (frame?.location)  scene.push(`  Where: ${String(frame.location).trim()}`);
-    if (frame?.situation) scene.push(`  Now:   ${String(frame.situation).trim()}`);
-    const relabel = (text, label) => (text ? text.replace(/^[^\n]*\n/, `${label}\n`) : '');
-    const parts = [
-      scene.length ? ['THE SCENE IN PLAY (one moment of the campaign — not where the campaign is set):', ...scene].join('\n') : '',
-      relabel(block.truths, 'ESTABLISHED IN THAT SCENE:'),
-      block.corrections,
-      relabel(block.state, 'AS IT STANDS THERE:'),
-    ].filter(Boolean);
-    if (parts.length) sections.push(parts.join('\n\n'));
-  }
-
-  if (!sections.length) return '';
-  return (
-    `## ${STANDS_NOW_HEADING}\n\n` +
-    `Later than any Chronicle entry: how things stand as the story stops. Use it for the recap's ` +
-    `last part, and wherever an entry tells how something stood earlier — where the two differ on ` +
-    `where someone or something is, the state it is in, which way it points or whether a question ` +
-    `is answered, this is the later word and the recap follows it. It is not a list of events to ` +
-    `retell: add no event from it that the Chronicle does not hold.\n\n` +
-    sections.join('\n\n')
-  );
 }
 
 /**
@@ -2416,16 +2333,10 @@ export function buildNarratorSystemBlocks(
   //       the scene's truths, once the rest of the prompt is built (below):
   //       it is told only where an old name still reaches the call.
   const namesAt = parts.length;
-  // [6.5m] A recap's own section on how things stand — the latest session's
-  //        summary and the open scene's facts and state, as the later word on
-  //        them, never as a binding scene (RECAP-STATES-WHAT-DID-NOT-HAPPEN;
-  //        formatStandsNowBlock says why this is not A1's block again).
-  if (isMetaMode) {
-    const standsNow = formatStandsNowBlock(withSceneLedger(campaignState, sceneLedger), {
-      factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
-    }, { recapSummary: extras?.recapSummary ?? null, entityNamesById });
-    if (standsNow) parts.push(standsNow);
-  }
+  // [6.5m] A recap is told how things stand in its own user message, read
+  //        live — WHERE THINGS STAND, beside the session record it retells
+  //        (record/recapView.js, issue #382): never from a summary, and never
+  //        as a binding scene (issue #374 A1).
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
   }, {
@@ -3225,16 +3136,18 @@ export function formatWorldLoreRecapBlock(recap) {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the user message for the campaign recap generation call.
- * This is passed to Claude (Sonnet) to produce a 3–5 paragraph campaign summary.
+ * Build the user message for the campaign recap generation call — the
+ * session record's source (record/recapView.js recapSource: THE RECORD, WHERE
+ * THINGS STAND, the players' own notes, the sessions from before the record),
+ * then what a recap covers and the cited reply it is asked for. Passed to
+ * Claude (Sonnet) for a 3–5 paragraph campaign recap.
  *
- * @param {string[]} chronicleEntries — formatted chronicle entries, oldest first
+ * @param {{ text: string }} source
  * @returns {string}
  */
-export function buildCampaignRecapUserMessage(chronicleEntries) {
-  const entriesText = chronicleEntries.join('\n\n');
+export function buildCampaignRecapUserMessage(source) {
   return [
-    `## CAMPAIGN CHRONICLE\n\n${entriesText}`,
+    String(source?.text ?? ''),
     `Write a campaign recap of 3–5 paragraphs covering:\n` +
     `- How the campaign began and what the inciting situation was\n` +
     `- The key relationships that have developed\n` +
@@ -3242,13 +3155,17 @@ export function buildCampaignRecapUserMessage(chronicleEntries) {
     `- The most significant revelations\n` +
     `- Where things stand now\n\n` +
     // RECAP-STATES-WHAT-DID-NOT-HAPPEN: the last thing it reads is what it may say.
-    `Each of these only as far as the entries above state it — and, for where things stand, ` +
-    `${STANDS_NOW_HEADING} in your instructions when it is there. Nothing inferred, nothing ` +
-    `filled in between two entries, and no "your" for what an entry does not make certainly ` +
-    `the character's own. A point the entries say nothing of is left out.\n\n` +
+    `Each of these only as far as the lines above state it — and, for where things stand, ` +
+    `${STANDS_NOW_HEADING}. Nothing inferred, nothing filled in between two lines, and no "your" for ` +
+    `what a line does not make certainly the character's own. A point the lines say nothing of is ` +
+    `left out. Every beat marked LASTING is told.\n\n` +
     `Write in second person for solo campaigns, third person for multiplayer. ` +
-    `Be wry but respectful of what the player has accomplished.`,
-  ].join('\n\n');
+    `Be wry but respectful of what the player has accomplished.\n\n` +
+    `Reply with JSON only: {"paragraphs": [[{"text": "<one sentence>", "because": ["<id>", …]}, …], …]} — ` +
+    `the recap's paragraphs in order, each a list of its sentences, and with each sentence the ids ` +
+    `(the bracketed [s3-2], [now-1], [note-1], [old-1] above) of every line it rests on. A sentence ` +
+    `that rests on no line given above is left out of the recap.`,
+  ].filter(Boolean).join('\n\n');
 }
 
 /**

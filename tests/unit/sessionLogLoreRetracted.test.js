@@ -74,7 +74,7 @@ describe('the Session Log lists no struck fact as the session\'s (issue #326 W64
     expect(summary).not.toHaveProperty('lore');
     expect(summary).not.toHaveProperty('threats');
     const html = page().text.content;
-    expect(section(html, 'Story')).toContain('waited for dawn');
+    expect(section(html, 'Session summary')).toContain('waited for dawn');
     expect(section(html, 'Established and standing')).toContain('opens at dawn');
   });
 });

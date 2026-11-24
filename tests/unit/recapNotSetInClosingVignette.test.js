@@ -89,7 +89,10 @@ beforeEach(async () => {
     flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The docking clamps take hold.", sessionId: "rv-s1", narrationId: "nar-played" } },
   }));
   await table.settle(); await table.drain();
-  scriptClaude(table, { fallback: (call) => (isRecap(call) ? RECAP : isClosing(call) ? VIGNETTE : "{}") });
+  // The recap answers in cited sentences (issue #382 D11): its one cites the
+  // Chronicle entry above — a player's note to the recap, [note-1].
+  const cited = JSON.stringify({ paragraphs: [[{ text: RECAP, because: ["note-1"] }]] });
+  scriptClaude(table, { fallback: (call) => (isRecap(call) ? cited : isClosing(call) ? VIGNETTE : "{}") });
   silenceConsoleErrors();
 });
 
@@ -162,13 +165,16 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
   // not as the scene the campaign is set in, which is what A1 took out. The
   // closing cutaway's scene has ended by the time End a Session's recap is
   // written (the first describe, above), so nothing of it is in that section.
-  it("what it is told of the open scene is how things stand, not where the campaign is set", () => {
+  // Issue #382 slice 2: how things stand is the recap's user message, read
+  // live (record/recapView.js standingLines) — the scene's facts come from the
+  // record, as beats; the system prompt carries no scene of its own at all.
+  it("what it is told of the open scene is how things stand, not where the campaign is set", async () => {
     const recap = prompt("campaign_recap");
-    expect(recap).toMatch(/## WHERE THINGS STAND NOW/);
-    expect(recap).toMatch(/THE SCENE IN PLAY \(one moment of the campaign — not where the campaign is set\):/);
-    expect(recap).toMatch(/Now: {3}Toffee burning in a skillet/);
-    expect(recap).toMatch(/the skillet — Is cast iron/);
-    expect(recap).toMatch(/It is not a list of events to retell/);
+    expect(recap).not.toMatch(/WHERE THINGS STAND NOW/);
+    expect(recap).not.toMatch(/Toffee burning in a skillet/);
+    const { standingLines } = await import("../../src/record/recapView.js");
+    const state = { ...withScene(), sceneState: { sceneId: "sc-open", bySubject: { "the skillet": [{ attribute: "smell", value: "burnt sugar", subjectText: "the skillet" }] } } };
+    expect(await standingLines(state)).toContain("the skillet — smell: burnt sugar.");
   });
 
   it("control: a narration of that scene still is", () => {

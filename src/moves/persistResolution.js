@@ -43,6 +43,7 @@ import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 import { legacyTracksWithCopyMarks, payDeferredLegacyXp } from './legacyTracks.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { recordLedgerChanges } from '../record/ledgerDiff.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
 import { recordCause } from '../record/sheetWatch.js';
 
 const MODULE_ID  = 'starforged-companion';
@@ -147,8 +148,12 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     try {
       await game.settings.set(MODULE_ID, 'campaignState', merged);
       // The save landed: the truths it carried that the store did not hold
-      // go on the session record (issue #382; sceneLifecycle.js's twin).
+      // go on the session record (issue #382; sceneLifecycle.js's twin), and
+      // the arrival it carried — a current place the store did not have.
       recordLedgerChanges(stored, merged);
+      if (merged.currentLocationId && merged.currentLocationId !== (stored?.currentLocationId ?? null)) {
+        void recordPlaceArrival(merged, { res: resolution._id ?? null, how: 'move' });
+      }
     } catch (err) {
       // The roller's meters (written above) stand, unless they were refused
       // too; what the working copy alone holds — a legacy mark, an arrival, a

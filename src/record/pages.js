@@ -11,6 +11,7 @@
  */
 
 import { sessionLogJournal, FLAG_KEYS } from '../world/worldJournal.js';
+import { actorNames, getActor } from '../character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -85,19 +86,18 @@ export function recordPageOf(sessionId) {
  * @returns {{ pages: Object[], currentSessionId: string|null, nameOf: (id: string) => string|null, otherNames: string[] }}
  */
 export function recordSource() {
-  let actors = [];
-  try { actors = Array.from(globalThis.game?.actors ?? []); } catch { actors = []; }
   return {
     pages: sessionLogPages().map(pageMeta).filter(p => p.sessionId),
     currentSessionId: storedCampaignState()?.currentSessionId ?? null,
+    // Every actor read is the bridge's (CLAUDE.md).
     nameOf: (id) => {
       try {
-        const name = globalThis.game?.actors?.get?.(id)?.name;
+        const name = id ? getActor(id)?.name : null;
         return typeof name === 'string' && name ? name : null;
       } catch {
         return null;
       }
     },
-    otherNames: actors.map(a => a?.name).filter(n => typeof n === 'string' && n),
+    otherNames: actorNames(),
   };
 }

@@ -36,22 +36,15 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 });
 
 import { getCampaignRecap, getRollingSessionSummary } from '../../src/narration/narrator.js';
+import { recapSource, standingLines, campaignRecapSourceOf } from '../../src/record/recapView.js';
 import { buildNarratorSystemPrompt, buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
 import { addChronicleEntry } from '../../src/character/chronicle.js';
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
 import { settledByMove } from '../../src/character/chronicleKeeps.js';
 
 const MODULE_ID = 'starforged-companion';
-const HEADING = '## WHERE THINGS STAND NOW';
+const HEADING = '## WHERE THINGS STAND';
 
-// The Chronicle as run 3's recap at a65 was sent it (five of its entries).
-const CHRONICLE = [
-  'Mira Kestrel bought Tamsin\'s cooperation with a fair cut of salvage leads and first pick of her hauls, and learned the dark beacon\'s haulers carry water and medical stores.',
-  'Tamsin saw the needle of Mira\'s sister Ilse\'s brass star-compass swing away from north toward the dark lane past the Spire, and called it no toy.',
-  'Mira Kestrel brought the Kobayashi IV alongside The Ashen Wake, killed her engines and grappled her hull, then won grudging leave to board.',
-  'Mira Kestrel traced the lading to the broker\'s seal at Hollow Spire, feeling her vow settle closer to done as the compass swung harder toward the dark lane.',
-  'Mira Kestrel set the stamp square on the galley table, and the vow she had sworn was fulfilled: the hand and seal she sought were named at last.',
-];
 // The scene's ledger at a65, as the narrations of that scene were given it.
 const NEEDLE_TRUTH = 'its needle has stopped pointing at the dark lane and now rests on north';
 const SCENE = {
@@ -66,80 +59,72 @@ const SCENE = {
     'ilse\'s brass star-compass': [{ attribute: 'needle', value: 'settled on north, no longer leaning toward the dark lane', subjectText: 'Ilse\'s brass star-compass', updatedAt: 2 }],
   } },
 };
-// Session 3's summary, as written at a76.
-const SUMMARY = 'Mira Kestrel sits in the galley of the Kobayashi IV, which is grappled to the dead flank of the Cinder Wren off Bleakhold Station. '
-  + 'She carries Ilse\'s brass star-compass, its needle now settled on north. '
-  + 'The question of whose name Mira has settled on for the seal remains unanswered.';
 
 const recapPrompt = (state = {}, extras = {}) => buildNarratorSystemPrompt(
   { currentSessionId: 's-3', sessionNumber: 3, ...state }, {}, null, '', { mode: 'campaign_recap', ...extras });
 
+// Issue #382 slice 2: the recap's source is the session record — facts, each
+// line an id — and how things stand is read live (record/recapView.js).
 describe('RECAP-STATES-WHAT-DID-NOT-HAPPEN — what a recap is told it may say', () => {
   it('only what its sources state: nothing inferred', () => {
     const system = recapPrompt();
-    expect(system).toMatch(/A recap says only what its sources say\./);
-    expect(system).toMatch(/Every sentence restates what an entry or the context states\. Infer nothing: no cause, motive or link between two things that no entry gives/);
-    expect(system).toMatch(/no answer to a question an entry leaves open/);
+    expect(system).toMatch(/A recap says only what its sources say\. THE RECORD in the user message is what happened/);
+    expect(system).toMatch(/Every sentence restates what a line it cites states\. Infer nothing: no cause, motive or link between two things that no line gives/);
+    expect(system).toMatch(/no answer to a question a line leaves open/);
+    expect(system).toMatch(/Draw only on the record below/);
+    expect(system).not.toMatch(/Draw only on the chronicle/);
   });
 
-  it('nothing filled in between entries — one may be missing because the table took it out', () => {
+  it('nothing filled in between lines — a beat may be missing because the table took it out', () => {
     const system = recapPrompt();
-    expect(system).toMatch(/Fill nothing in between entries\./);
-    expect(system).toMatch(/an entry may be missing because the table took that moment out of the story/);
-    expect(system).toMatch(/A place no entry says was entered was not entered; a thing no entry says was found was not found/);
+    expect(system).toMatch(/Fill nothing in between lines\./);
+    expect(system).toMatch(/a beat may be missing because the table took it out of the story/);
+    expect(system).toMatch(/A place no line says was entered was not entered; a thing no line says was found was not found/);
   });
 
-  it('whose things are whose: "her hauls" does not become "your" or the wrong woman\'s by guess', () => {
+  it('whose things are whose: a player\'s own words are kept as they wrote them, and a claim is the character\'s', () => {
     const system = recapPrompt();
     expect(system).toMatch(/Keep whose things are whose\./);
-    expect(system).toMatch(/the recap may call that character "you" — and no one else/);
-    expect(system).toMatch(/where an entry leaves it open \("first pick of her hauls", of two women\), keep the entry's own names and words/);
+    expect(system).toMatch(/the recap may call the player character "you" — and no one else/);
+    expect(system).toMatch(/"first pick of whatever I haul" is the character's own haul/);
+    expect(system).toMatch(/What it claims about the world is the character's claim, unless an outcome or an established line supports it/);
   });
 
-  it('how a thing stands now is its latest word', () => {
-    expect(recapPrompt()).toMatch(/How a thing stands now is its latest word, not its first\.[\s\S]*never carry the earlier forward as still true/);
+  it('how a thing stands now is WHERE THINGS STAND\'s word; one name for everyone', () => {
+    expect(recapPrompt()).toMatch(/Say that something still stands only when WHERE THINGS STAND says so; never carry an earlier state forward as still true/);
+    expect(recapPrompt()).toMatch(/Use each name as the record writes it, and write no other name for anyone/);
   });
 
   it('the user message, read last, says the same of its own list', () => {
-    const user = buildCampaignRecapUserMessage(CHRONICLE);
-    expect(user).toContain('first pick of her hauls');                           // the entry as the scribe wrote it
-    expect(user).toMatch(/Each of these only as far as the entries above state it/);
-    expect(user).toMatch(/Nothing inferred, nothing filled in between two entries, and no "your" for what an entry does not make certainly the character's own/);
-    expect(user).toMatch(/A point the entries say nothing of is left out\./);
+    const user = buildCampaignRecapUserMessage({ text: '## THE RECORD\n\n[s3-1] Mira Kestrel — the player wrote “first pick of whatever I haul”' });
+    expect(user).toContain('first pick of whatever I haul');                       // the player's own words
+    expect(user).toMatch(/Each of these only as far as the lines above state it/);
+    expect(user).toMatch(/Nothing inferred, nothing filled in between two lines, and no "your" for what a line does not make certainly the character's own/);
+    expect(user).toMatch(/A point the lines say nothing of is left out\./);
   });
 });
 
-describe('a recap is told how things stand now — the open scene (a `!recap` mid-session, a65)', () => {
-  it('the scene\'s facts and state reach it: the needle rests on north, whatever the Chronicle\'s last word on it', () => {
-    const system = recapPrompt(SCENE);
-    expect(system).toContain(HEADING);
-    expect(system).toContain(`Ilse's brass star-compass — ${NEEDLE_TRUTH}`);
-    expect(system).toContain('Ilse\'s brass star-compass — needle: settled on north, no longer leaning toward the dark lane');
-    expect(system).toMatch(/Later than any Chronicle entry: how things stand as the story stops\./);
-    expect(system).toMatch(/this is the later word and the recap follows it/);
-    expect(system).toMatch(/add no event from it that the Chronicle does not hold/);
+describe('a recap is told how things stand now — read live, in its own user message (a `!recap` mid-session, a65)', () => {
+  beforeEach(() => { game.actors._reset(); });
+  afterEach(() => { game.actors._reset(); });
+
+  it('the open scene\'s state reaches it: the needle rests on north, whatever an earlier beat said of it — and the scene\'s question, unanswered', async () => {
+    const lines = await standingLines({ currentSessionId: 's-3', ...SCENE });
+    expect(lines).toContain('Ilse\'s brass star-compass — needle: settled on north, no longer leaning toward the dark lane.');
+    expect(lines).toContain('The open scene\'s question: “What is the speaker over the hatch about to say?” — not yet answered.');
+    expect(recapSource({ read: { sessions: [] }, standing: lines }).text).toMatch(/## WHERE THINGS STAND — read from the sheets and tracks as play stopped\n\n\[now-1\] Ilse's brass star-compass — needle: settled on north/);
   });
 
-  it('as how things stand, never as the campaign\'s scene (issue #374 A1 holds)', () => {
+  it('a question the scene answered is said answered', async () => {
+    const lines = await standingLines({ currentSessionId: 's-3', ...SCENE, sceneFrame: { ...SCENE.sceneFrame, questionAnswered: true } });
+    expect(lines).toContain('The open scene\'s question: “What is the speaker over the hatch about to say?” — answered.');
+  });
+
+  it('never as the campaign\'s scene (issue #374 A1 holds): the system prompt has no binding scene and no section of its own on how things stand', () => {
     const system = recapPrompt(SCENE);
     expect(system).not.toMatch(/ACTIVE SCENE — BINDING/);
     expect(system).not.toMatch(/SCENE FRAME/);
-    expect(system).not.toMatch(/They are\s+binding/);
-    expect(system).toContain('THE SCENE IN PLAY (one moment of the campaign — not where the campaign is set):');
-    expect(system).toContain('Where: Galley aboard the Kobayashi IV');
-    expect(system).not.toContain('What is the speaker over the hatch about to say?');   // the narrator's device, not a fact
-    expect(system).not.toMatch(/Present:/);
-  });
-
-  it('control: with no scene open and no summary there is no such section', () => {
-    expect(recapPrompt()).not.toContain(HEADING);
-  });
-
-  it('control: with fact continuity off the scene is not read — the summary alone', () => {
-    const system = buildNarratorSystemPrompt({ currentSessionId: 's-3', ...SCENE }, { factContinuityEnabled: false }, null, '',
-      { mode: 'campaign_recap', recapSummary: { text: SUMMARY, sessionNumber: 3, current: true } });
-    expect(system).toContain(HEADING);
-    expect(system).toContain('THE SESSION JUST PLAYED (session 3), as its summary has it:');
+    expect(system).not.toContain('WHERE THINGS STAND NOW');
     expect(system).not.toContain(NEEDLE_TRUTH);
   });
 
@@ -150,92 +135,20 @@ describe('a recap is told how things stand now — the open scene (a `!recap` mi
   });
 });
 
-describe('getCampaignRecap — the summary of the session, when it is whole (End a Session, a76)', () => {
-  let journals, savedJournal, savedCreate, origFetch, requests;
-  const card = (text, extra = {}) => ({ flags: { [MODULE_ID]: { narratorCard: true, narrationText: text, sessionId: 's-3', ...extra } } });
-  const state = (over = {}) => ({ currentSessionId: 's-3', sessionNumber: 3, characterIds: ['pc-mira'],
-    campaignRecapCache: { text: '', generatedAt: null, chronicleLength: 0 }, ...over });
-  const systemOf = () => JSON.stringify(requests.at(-1)?.system ?? '');
+describe('the recap is not told a summary (issue #382: one record, read by the recap, and by the summary in its turn)', () => {
+  const SUMMARY = 'Mira Kestrel sits in the galley of the Kobayashi IV. The question of whose name Mira has settled on remains unanswered.';
+  const withSummary = { currentSessionId: 's-3', sessionNumber: 3, ...SCENE, sessionSummary: { sessionId: 's-3', text: SUMMARY, coveredCount: 0 } };
 
-  beforeEach(async () => {
-    ChatMessage._reset();
-    game.actors._reset();
-    game.actors._set('pc-mira', makeTestActor({ id: 'pc-mira', name: 'Mira Kestrel' }));
-    journals = [];
-    savedJournal = game.journal;
-    savedCreate  = JournalEntry.create;
-    game.journal = {
-      get contents() { return [...journals]; },
-      get: (id) => journals.find(j => j.id === id) ?? null,
-      getName: (n) => journals.find(j => j.name === n) ?? null,
-    };
-    JournalEntry.create = async (data) => {
-      const page = { name: 'Chronicle', flags: { [MODULE_ID]: { chronicle: [] } },
-        setFlag: async (mod, key, val) => { (page.flags[mod] ??= {})[key] = val; } };
-      const journal = { id: `j-${journals.length + 1}`, name: data.name, flags: data.flags ?? {},
-        pages: { contents: [page] }, createEmbeddedDocuments: async () => [] };
-      journals.push(journal);
-      return journal;
-    };
-    origFetch = global.fetch;
-    requests = [];
-    global.fetch = vi.fn(async (_url, init) => {
-      requests.push(JSON.parse(init.body));
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'A recap.' }] }), text: async () => '' };
-    });
-    game.user.isGM = true;
-    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
-    game.settings._store.delete(`${MODULE_ID}.campaignState`);
-    for (const text of CHRONICLE) await addChronicleEntry('pc-mira', { text });
-  });
-  afterEach(() => {
-    game.journal = savedJournal;
-    JournalEntry.create = savedCreate;
-    global.fetch = origFetch;
-    global.game.messages = { contents: [] };
-    game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
-    game.settings._store.delete(`${MODULE_ID}.campaignState`);
-    game.actors._reset();
+  it('a whole session summary on the store is in neither the recap\'s source nor its system prompt — the record and the sheets are', async () => {
+    const source = await campaignRecapSourceOf(withSummary);
+    expect(buildCampaignRecapUserMessage(source)).not.toContain('remains unanswered');
+    expect(source.text).toContain('needle: settled on north');
+    expect(recapPrompt(withSummary)).not.toContain('remains unanswered');
   });
 
-  it('End a Session: the summary covers every narration but the closing cutaway posted since — the recap is told it', async () => {
-    global.game.messages = { contents: [
-      card('The compass needle swings north and stops.'), card('"Whose name did you decide on?"'),
-      card('Somewhere by the Spire, a woman darns a sock.', { sessionVignetteCard: true, vignetteKind: 'npc_end' }),
-    ] };
-    await getCampaignRecap(state({ sessionSummary: { sessionId: 's-3', text: SUMMARY, coveredCount: 2 } }), { forceRefresh: true });
-    expect(requests).toHaveLength(1);
-    expect(systemOf()).toContain('## WHERE THINGS STAND NOW');
-    expect(systemOf()).toContain('THE SESSION JUST PLAYED (session 3), as its summary has it:');
-    expect(systemOf()).toContain('its needle now settled on north');
-    expect(systemOf()).toContain('remains unanswered');
-    // …beside the Chronicle, whose last word on the needle is the older one.
-    expect(String(requests[0].messages[0].content)).toContain('the compass swung harder toward the dark lane');
-  });
-
-  it('a summary made at the debounce, with narrations after it, is behind the Chronicle: left out', async () => {
-    global.game.messages = { contents: [card('Beat one.'), card('Beat two.'), card('The compass needle swings north and stops.')] };
-    await getCampaignRecap(state({ sessionSummary: { sessionId: 's-3', text: 'The needle leans toward the dark lane.', coveredCount: 2 } }), { forceRefresh: true });
-    expect(systemOf()).not.toContain('leans toward the dark lane');
-    expect(systemOf()).not.toContain('## WHERE THINGS STAND NOW');
-  });
-
-  it('a new session with no narration yet: the last session\'s summary says how things stand', async () => {
-    global.game.messages = { contents: [] };
-    await getCampaignRecap(state({ currentSessionId: 's-4', sessionNumber: 4,
-      previousSessionSummary: { sessionId: 's-3', sessionNumber: 3, text: SUMMARY } }), { forceRefresh: true });
-    expect(systemOf()).toContain('THE LAST SESSION PLAYED (session 3), as its summary has it:');
-    expect(systemOf()).toContain('its needle now settled on north');
-  });
-
-  it('control: the session summary switched off — nothing of it is read', async () => {
-    game.settings._store.set(`${MODULE_ID}.narratorSessionSummary`, false);
-    try {
-      await getCampaignRecap(state({ sessionSummary: { sessionId: 's-3', text: SUMMARY, coveredCount: 0 } }), { forceRefresh: true });
-      expect(systemOf()).not.toContain('## WHERE THINGS STAND NOW');
-    } finally {
-      game.settings._store.delete(`${MODULE_ID}.narratorSessionSummary`);
-    }
+  it('with nothing on the record to retell, no recap is asked for', async () => {
+    expect((await campaignRecapSourceOf(withSummary)).empty).toBe(true);
+    expect(await getCampaignRecap(withSummary, { forceRefresh: true })).toBe('');
   });
 });
 

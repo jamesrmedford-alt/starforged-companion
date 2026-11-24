@@ -1080,7 +1080,27 @@ function readState() {
 }
 
 async function writeState(state) {
+  const before = readState();
   await game.settings.set(MODULE_ID, "campaignState", state);
+  // The save landed: each clock it advanced goes on the session record (issue
+  // #382). Every clock writer saves through here; a hidden plan's clock is the
+  // plan's, never the table's, and is never recorded.
+  try {
+    const { recordEvent } = await import("../record/record.js");
+    const was = new Map((before?.clocks ?? []).map(c => [c?._id, c]));
+    for (const clock of state?.clocks ?? []) {
+      if (!clock?._id || clock.planId) continue;
+      const from = Number(was.get(clock._id)?.filled ?? 0);
+      const to   = Number(clock.filled ?? 0);
+      if (!(to > from)) continue;
+      recordEvent("clock.advanced", {
+        ref: { clock: clock._id },
+        d: { name: clock.name ?? "", from, to, segments: clock.segments ?? null, triggered: isFull(clock) },
+      });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | clocks: the advance was not put on the session record:`, err?.message ?? err);
+  }
 }
 
 /**

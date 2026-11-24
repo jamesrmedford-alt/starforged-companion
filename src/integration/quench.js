@@ -5545,7 +5545,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds          = [];
-          state.campaignRecapCache    = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache    = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5568,7 +5568,10 @@ function registerRecapEndToEndTests(quench) {
                 } catch (err) {
                   console.warn(`${MODULE_ID} | quench: recap body capture failed:`, err);
                 }
-                return { content: [{ type: "text", text: "QUENCH recap text." }] };
+                // The recap answers in cited sentences (issue #382 D11): its one
+                // cites the first line it was sent.
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(capturedUserMessage ?? "")?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap text.", because: [id] }]] }) }] };
               },
             ]], async () => {
               return await getCampaignRecap(
@@ -5605,7 +5608,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition + invalidate cache.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds       = [];
-          state.campaignRecapCache = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5624,7 +5627,13 @@ function registerRecapEndToEndTests(quench) {
 
             await withStubbedFetch([[
               "api.anthropic.com",
-              () => ({ content: [{ type: "text", text: "QUENCH recap card text." }] }),
+              // A cited sentence (issue #382 D11), citing the first line it was sent.
+              (_target, init) => {
+                let user = "";
+                try { user = JSON.stringify(JSON.parse(init?.body ?? "{}")?.messages ?? []); } catch { user = ""; }
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(user)?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap card text.", because: [id] }]] }) }] };
+              },
             ]], async () => {
               await postCampaignRecap(
                 game.settings.get(MODULE_ID, "campaignState"),
@@ -12460,7 +12469,7 @@ function registerPromptContractTests(quench) {
           campaignState: state(),
         });
       } };
-      const RECAP = { name: "campaign recap", marker: "## CAMPAIGN CHRONICLE", run: async () => {
+      const RECAP = { name: "campaign recap", marker: "Write a campaign recap", run: async () => {
         const { getCampaignRecap } = await narrator();
         await getCampaignRecap(state(), { forceRefresh: true });
       } };
@@ -12598,12 +12607,15 @@ function registerPromptContractTests(quench) {
           for (const text of sent.slice(1)) assert.equal(text, sent[0], "the standing block differs between two modes");
         });
 
-        it("campaign recap: nothing is sent without a chronicle", async function () {
-          if (fx.otherPcs.length) { this.skip(); return; }   // their chronicles count
+        it("campaign recap: nothing is sent with nothing to retell", async function () {
+          // Its source is the session record (issue #382): a world whose record,
+          // notes and earlier sessions hold nothing gets no recap call.
+          const { campaignRecapSourceOf } = await import(`${MODULE_PATH}/record/recapView.js`);
+          if (!(await campaignRecapSourceOf(state())).empty) { this.skip(); return; }
           const since = stub.requests.length;
           await RECAP.run();
           assert.isFalse(stub.requests.slice(since).some(r => r.user.includes(RECAP.marker)),
-            "with no chronicle entry the recap makes no call");
+            "with nothing on the record the recap makes no call");
         });
 
         it("Private Channel: no shared story", async function () {
@@ -12677,8 +12689,9 @@ function registerPromptContractTests(quench) {
               establishedAt: new Date().toISOString(),
             },
           };
-          // The recap's cache, made from the chronicle as it stands: the
-          // narrator uses one only while it matches (issue #301 B04).
+          // The recap's cache, made from its source as it stands — the
+          // session record, the sheets, the notes: the narrator uses one
+          // only while that source hashes the same (issue #382).
           const { campaignRecapCacheKey } = await import(`${MODULE_PATH}/narration/narrator.js`);
           cs.campaignRecapCache = {
             text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(),
@@ -12794,9 +12807,11 @@ function registerPromptContractTests(quench) {
           ]);
         });
 
-        it("campaign recap: the chronicle and the premise, none of the live-scene sections", async function () {
+        it("campaign recap: the record's sessions and the premise, none of the live-scene sections", async function () {
           const request = await capture(RECAP);
-          carries(request, "CAMPAIGN CHRONICLE", RECAP.name, [N.chronicle]);
+          // The fixture's automatic Chronicle entry is of a session with no
+          // record (issue #382): the recap is given it as an earlier session's.
+          carries(request, "EARLIER SESSIONS, FROM THE CHRONICLE AND THE SESSION LOG", RECAP.name, [N.chronicle]);
           carries(request, "CAMPAIGN PREMISE", RECAP.name, [N.premise]);
           carries(request, "CHARACTER", RECAP.name);
           carries(request, "PARTY", RECAP.name, [N.pcA, N.pcB]);
@@ -12805,17 +12820,16 @@ function registerPromptContractTests(quench) {
           }
         });
 
-        // A recap is told how things stand beside the Chronicle it retells
-        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN): the open scene's
-        // facts, as the later word on them — never as the binding ACTIVE
-        // SCENE block issue #374 A1 took out (lacked, above).
-        it("campaign recap: where things stand now — the open scene's facts, under its own heading", async function () {
+        // A recap is told how things stand beside the record it retells
+        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN), read live from the
+        // sheets and tracks (issue #382) — never as the binding ACTIVE SCENE
+        // block issue #374 A1 took out (lacked, above).
+        it("campaign recap: where things stand — read from the sheets, under its own heading", async function () {
           const request = await capture(RECAP);
-          const section = carries(request, "WHERE THINGS STAND NOW", RECAP.name, [N.truth]);
-          assert.include(section.text, "not where the campaign is set", "the scene is one moment of the campaign");
+          const section = carries(request, "WHERE THINGS STAND", RECAP.name, [N.pcA]);
           assert.notInclude(section.text, "binding", "nothing of it is given as binding");
           assert.include(request.system, "A recap says only what its sources say.", "the recap's sources rule");
-          assert.include(request.user, "Nothing inferred, nothing filled in between two entries", "…said again under the chronicle");
+          assert.include(request.user, "Nothing inferred, nothing filled in between two lines", "…said again under the record");
         });
 
         it("Private Channel: the shared story, and only its player's own Private Lines (#286 D1)", async function () {

@@ -39,6 +39,7 @@ import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 import { plannedSubjects } from '../world/secrets.js';
 import { offerNewPerson } from '../entities/entityExtractor.js';
 import { isRecordWrite } from '../record/events.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
 
 /** The GM's "has a plan" marker (issue #353 Phase 4): a sign, no content. */
 const PLAN_MARKER = '<span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>';
@@ -1128,7 +1129,11 @@ export class EntityPanelApp extends ApplicationV2 {
       // same command-vehicle position update, so the narrator's current
       // location and SHIP POSITION agree (issue #321 U56). Clearing the
       // location moves nothing, like a bare `!at`.
-      if (!isAlreadyCurrent) await moveShipToLocation(journalId, campaignState);
+      if (!isAlreadyCurrent) {
+        // An arrival on the session record (issue #382), once the write landed.
+        void recordPlaceArrival(campaignState, { how: 'panel' });
+        await moveShipToLocation(journalId, campaignState);
+      }
       this.render();
     })();
     // Expose the in-flight promise so integration tests (clickAction) can

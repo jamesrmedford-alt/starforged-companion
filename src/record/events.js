@@ -48,7 +48,10 @@ export const RECORD_REFS = Object.freeze([
  * no key here, and on a module here that does not call `readRecord`.
  */
 export const RECORD_VIEWS = Object.freeze({
-  log: 'src/record/sessionLogView.js',
+  log:   'src/record/sessionLogView.js',
+  // The campaign recap: its cache is campaignState's `campaignRecapCache`,
+  // keyed by its source's hash (narrator.js getCampaignRecap).
+  recap: 'src/record/recapView.js',
 });
 
 /**
@@ -85,23 +88,47 @@ const row = (id, slice, fields, refs, readBy, { text = false, blank = [] } = {})
  */
 export const RECORD_EVENTS = Object.freeze([
   // ── The session ───────────────────────────────────────────────────────────
-  row('session.begun', 1, ['number', 'perspective', 'focus', 'pcs', 'vows', 'tracks', 'place', 'resumed'], [], ['log']),
+  row('session.begun', 1, ['number', 'perspective', 'focus', 'pcs', 'vows', 'tracks', 'place', 'resumed'], [], ['log', 'recap']),
   row('session.ended', 1, ['reason', 'focus', 'pcs', 'vows', 'tracks', 'place'], [], ['log']),
+  row('scene.started', 2, ['sceneId', 'reason'], [], ['log', 'recap']),
+  row('scene.ended', 2, ['sceneId', 'reason'], [], ['log']),
+  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered'], ['nar'], ['log', 'recap'],
+    { blank: ['location', 'present', 'situation', 'question'] }),
   // ── A beat of play ────────────────────────────────────────────────────────
-  row('line', 1, ['via', 'forcedMoveId', 'repost'], ['line', 'round'], ['log'], { text: true }),
+  row('line', 1, ['via', 'forcedMoveId', 'repost'], ['line', 'round'], ['log', 'recap'], { text: true }),
+  row('question', 2, [], ['nar', 'card'], ['log', 'recap'], { text: true }),
   row('move.resolved', 1, [
     'moveId', 'moveName', 'rollKind', 'statUsed', 'statValue', 'adds', 'actionDie', 'actionDieCancelled',
     'challengeDice', 'actionScore', 'progressScore', 'isMatch', 'outcome', 'target', 'held',
-  ], ['res', 'round'], ['log']),
-  row('move.upgraded', 1, ['how', 'from', 'to', 'momentum'], ['res'], ['log']),
+  ], ['res', 'round'], ['log', 'recap']),
+  row('move.upgraded', 1, ['how', 'from', 'to', 'momentum'], ['res'], ['log', 'recap']),
   row('move.kept', 1, ['by'], ['res'], ['log']),
-  row('sheet.changed', 1, ['actorId', 'itemId', 'name', 'what', 'from', 'to', 'cause'], ['res', 'card'], ['log']),
+  row('sheet.changed', 1, ['actorId', 'itemId', 'name', 'what', 'from', 'to', 'cause'], ['res', 'card'], ['log', 'recap']),
+  row('choice', 2, ['action', 'picked'], ['card', 'res'], ['log', 'recap'], { text: true }),
   row('narration', 1, ['mode', 'upgradeOf', 'actorId'], ['nar', 'card', 'res', 'round'], ['log'], { text: true }),
+  // ── What play changes ─────────────────────────────────────────────────────
+  row('track.begun', 2, ['type', 'label', 'rank', 'linkedVowId', 'siteId'], ['track', 'vow'], ['log', 'recap']),
+  row('progress.marked', 2, ['label', 'rank', 'from', 'to'], ['track', 'vow', 'res'], ['log', 'recap']),
+  row('position.changed', 2, ['actorId', 'label', 'to'], ['track'], ['log', 'recap']),
+  row('track.ended', 2, ['type', 'label', 'rank', 'completed'], ['track', 'res'], ['log', 'recap']),
+  row('fight.offered', 2, ['label', 'suggestedRank'], ['res', 'card'], ['log', 'recap']),
+  row('vow.sworn', 2, ['itemId', 'actorId', 'name', 'rank', 'shared'], ['vow', 'res'], ['log', 'recap']),
+  row('vow.linked', 2, ['name', 'connectionName'], ['vow', 'conn', 'res'], ['log', 'recap']),
+  row('vow.closed', 2, ['name', 'how'], ['vow', 'res'], ['log', 'recap']),
+  row('connection.made', 2, ['name', 'rank'], ['conn', 'nar'], ['log', 'recap'], { blank: ['name'] }),
+  row('connection.developed', 2, ['name', 'rank', 'ticks'], ['conn'], ['log', 'recap']),
+  row('connection.bonded', 2, ['name', 'rank'], ['conn'], ['log', 'recap']),
+  row('connection.lost', 2, ['name', 'reason'], ['conn'], ['log', 'recap']),
+  row('entity.confirmed', 2, ['type', 'name'], ['entity', 'nar'], ['log', 'recap'], { blank: ['name'] }),
+  row('place.arrived', 2, ['type', 'name', 'how'], ['place', 'res'], ['log', 'recap']),
+  row('oracle.asked', 2, ['name', 'question', 'answer'], ['card', 'res'], ['log', 'recap']),
+  row('clock.advanced', 2, ['name', 'from', 'to', 'segments', 'triggered'], ['clock'], ['log', 'recap']),
+  row('reward.granted', 2, ['actorId', 'reward'], ['vow'], ['log', 'recap']),
   // ── What the table established, corrected or removed ──────────────────────
-  row('truth.set', 1, ['subject', 'fact', 'by', 'place', 'replaces'], ['truth', 'nar', 'entity'], ['log'], { blank: ['subject', 'fact', 'place'] }),
-  row('truth.struck', 1, ['by', 'replacedBy'], ['truth'], ['log']),
-  row('name.changed', 1, ['from', 'to', 'how', 'about'], ['entity'], ['log']),
-  row('narration.removed', 1, ['narrationIds', 'by'], ['res'], ['log']),
+  row('truth.set', 1, ['subject', 'fact', 'by', 'place', 'replaces'], ['truth', 'nar', 'entity'], ['log', 'recap'], { blank: ['subject', 'fact', 'place'] }),
+  row('truth.struck', 1, ['by', 'replacedBy'], ['truth'], ['log', 'recap']),
+  row('name.changed', 1, ['from', 'to', 'how', 'about'], ['entity'], ['log', 'recap']),
+  row('narration.removed', 1, ['narrationIds', 'by'], ['res'], ['log', 'recap']),
 ]);
 
 const ROW_BY_ID = new Map(RECORD_EVENTS.map(r => [r.id, r]));

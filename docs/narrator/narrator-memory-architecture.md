@@ -28,10 +28,10 @@ skeleton, the one surface that holds what has *not* been stated):
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
 | **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
-| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone of that block (system prompt §6.5; issue #374 A1) and the scene's facts and state in a section of its own, as how things stand (§[6.5m] WHERE THINGS STAND NOW — never as binding) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
-| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response — a session vignette's without its question; never an `@scene` answer's) | every narrator call but the campaign recap's (top of §6.5 — a recap gets its place and "Now" line under WHERE THINGS STAND NOW, no cast, no question); scoping + relevance unions | ~30–60 tokens |
+| **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call but the campaign recap's, which gets the ship's position alone of that block (system prompt §6.5; issue #374 A1) and the scene's state, read live, under WHERE THINGS STAND in its user message (its truths reach it from the session record — issue #382; never as binding) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
+| **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response — a session vignette's without its question; never an `@scene` answer's) | every narrator call but the campaign recap's (top of §6.5 — a recap gets the scene's question, answered or not, under WHERE THINGS STAND in its user message, no cast); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION; the opening vignette's user message (WHERE THE LAST SESSION STOPPED); and the campaign recap, when it covers the whole of its session (WHERE THINGS STAND NOW) | ~≤320 tokens each (Haiku-capped) |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3), and made again from that session's cards when a narration posts into it after the mint — a Batch Mode round narrated late — or an X-Card takes such a narration back (`bringLastSessionUpToDate` / `dropLastSessionTelling` → `catchUpUnsummarisedSession`, issue #364 LATE-ROUND-NOT-IN-LAST-SESSION) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION; the opening vignette's user message (WHERE THE LAST SESSION STOPPED) | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b] — the answer stands over earlier narration; the oracle follow-up's own role and user message say an answer binds and the scene is what is reconciled, ORACLE-NO-NARRATED-AS-YES) + the assembler's RECENT ORACLES section | last 5 lines |
 | **7. Narrative skeleton** (issue #353) — what is true but **not yet revealed** | permanent until resolved or retired — by the narrator's `resolved`, a GM's Retire, or in code as its subject ends: an expedition's track, a vow, a scene's unanswered mystery (issue #362 D4); GM-only World Journal — Secrets journal, one page per plan | the narrator's own sidecar (`plans`, `openQuestions`, `reveals`, `countdown`, `newThreats`) on the canonical GM, from the oracle rolls a trigger made (a price's new enemy, an enemy the prose introduced — `newThreats`, issue #354 P2-29 — a posed question); a plan answered `sameAs` joins the plan its subject already has, which keeps the other name as an alias (issue #354 P2-30); the GM's Secrets panel; stamped per narration for the X-Card | every non-meta narrator call (§[6.6] UNREVEALED — the plans whose subject is in play; DECIDE NOW for the undecided; THIS BEAT ENDS A VOW for the plan of a vow the move fulfils, whose truth is then stated in the prose) and the Private Channel (decided plans only). A truth is revealed by prose that tells it: "truth" comes off a narration's own reveal whose prose told none of it (`withoutUntoldTruths`, VOW-FULFILLED-WITH-NOBODY-NAMED) | at most 4 plans, `UNREVEALED_MAX_TOKENS` (600) |
 
@@ -63,12 +63,12 @@ uniform across modes — only two things legitimately vary, because they are not
    output is consumed verbatim, so a stray sidecar JSON block would leak —
    and none of the open scene's frame, truths or state as a binding scene
    (issue #374 A1: of §6.5 a recap gets the ship's position line alone).
-   What a recap is told of how things stand is its own section, §[6.5m]
-   WHERE THINGS STAND NOW (`formatStandsNowBlock`,
-   RECAP-STATES-WHAT-DID-NOT-HAPPEN): the latest session's summary when it
-   covers the whole of its session (`recapSummaryFor`) and the open scene's
-   facts and state — the later word on how things stand, never the campaign's
-   setting, and no event the Chronicle lacks.
+   A recap's source is the session record, in its user message (issue #382,
+   `record/recapView.js`; docs/flows/session-record-flow.md): each session's
+   turning points and the latest session in full, as facts with ids, and
+   WHERE THINGS STAND read live from the sheets and tracks (`standingLines`,
+   RECAP-STATES-WHAT-DID-NOT-HAPPEN) — never the campaign's setting, and no
+   summary; its reply is cited sentences.
 
 ### Data flow per turn
 
@@ -278,12 +278,12 @@ CLAUDE.md "audit consumers" rule):
   floor — or, whatever its rating, when its move changed something lasting
   (`chronicleKeeps.js` → `lastingChangeOf` / `roundLastingChange`: a progress
   move, a vow sworn or forsaken, a brush with death, an arrival, a connection
-  made, a miss that paid its price — issue #374 A5). The campaign recap
-  retells the Chronicle — this is what a recap can say happened; how things
-  stand now also reaches it from the whole session summary and the open
-  scene's ledger (WHERE THINGS STAND NOW, RECAP-STATES-WHAT-DID-NOT-HAPPEN) —
-  and the scribe names whose thing a thing is and genders no one the story
-  did not, since a recap turns its third person into "you"
+  made, a miss that paid its price — issue #374 A5). The campaign recap no
+  longer retells the Chronicle (issue #382 slice 2): it is a view of the
+  session record — its facts, the players' own words, how things stand read
+  live — and is given a player's own Chronicle entries as their notes, and a
+  session from before the record as its Chronicle entries had it. The scribe
+  still names whose thing a thing is and genders no one the story did not
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last

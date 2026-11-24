@@ -118,6 +118,13 @@ export async function createConnection(data, campaignState, { persist = true } =
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);
+  // On the session record (issue #382): the card is the connection's host.
+  if (actor?.id) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.made", {
+      ref: { conn: actor.id, nar: data?.createdFromNarrationId ?? null },
+      d: { name: connection.name ?? "", rank: connection.rank ?? null },
+    })).catch(() => {});
+  }
   // Not awaited: a creator reads the new card in the turn this returns in
   // (whose portrait it is, with Auto-Seed NPC on), and a wait here let the
   // seed and the creator each make one.
@@ -356,6 +363,12 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
   const updated = await updateConnection(journalEntryId, {
     relationshipTicks: newTicks,
   });
+  // On the session record (issue #382), once the record took it.
+  if (newTicks !== currentTicks) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.developed", {
+      ref: { conn: journalEntryId }, d: { name: connection.name ?? "", rank: connection.rank ?? null, ticks: { from: currentTicks, to: newTicks } },
+    })).catch(() => {});
+  }
 
   // Mirror onto each PC's bond Item so the vendor sheet's Connections tab
   // shows the same progress (BOND-ITEM-MIRROR fix). Best-effort — the entity
@@ -396,6 +409,12 @@ export async function forgeBond(journalEntryId, options = {}) {
 
   const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, updates);
+  // On the session record (issue #382), once the record took it.
+  if (connection?.bonded !== true) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.bonded", {
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", rank: updated?.rank ?? connection?.rank ?? null },
+    })).catch(() => {});
+  }
 
   await addHistoryEntry(
     journalEntryId,
@@ -435,6 +454,12 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
   const updated = await updateConnection(journalEntryId, {
     active:        false,
   });
+  // On the session record (issue #382), once the record took it.
+  if (connection?.active !== false) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.lost", {
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", ...(reason ? { reason } : {}) },
+    })).catch(() => {});
+  }
 
   if (reason) {
     await addHistoryEntry(journalEntryId, `Connection lost: ${reason}`, sessionId);

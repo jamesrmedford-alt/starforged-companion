@@ -6,13 +6,16 @@
  * `readRecord({ session })`, in code — no model:
  *
  *   What happened            a line a beat: who, their words, the move and its
- *                            outcome, what changed on a sheet. No narration is
- *                            reprinted; the chat has it.
+ *                            outcome, what changed on a sheet, what play did
+ *                            (a vow sworn, an arrival, a bond forged…); a new
+ *                            scene where one began; a question asked of the
+ *                            narrator as a question. No narration is reprinted;
+ *                            the chat has it.
  *   Established and standing the session's truths that stand, names corrected.
  *   Corrected by the table   a name changed (the new name; the old one is
  *                            written nowhere), a strike, "removed by the
  *                            table" for an X-Card, with nothing of it.
- *   Story                    the session's story (the one End a Session writes).
+ *   Session summary          the session's story (the one End a Session writes).
  *
  * The page's flag is the record; its body is this rendered mirror, keyed by
  * the hash of the read it was made from (`sessionRecord.views.log`): a
@@ -32,6 +35,7 @@ import { onRecordChain } from './record.js';
 import { onRecordWritten, storedRecordView, writeRecordView } from './store.js';
 import { pageMeta, recordPageOf, sessionLogPages } from './pages.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { OWN_WORDS, changeText, didText, moveText } from './phrasing.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -41,8 +45,6 @@ const RENDER_INTERVAL_MS = 60_000;
 /** The kinds a page is rendered for at once: the session's edges, and every correction. */
 const RENDER_NOW_KINDS = new Set(['session.begun', 'session.ended', 'truth.struck', 'name.changed', 'narration.removed']);
 
-const OUTCOMES = { strong_hit: 'strong hit', weak_hit: 'weak hit', miss: 'miss' };
-const METERS = { health: 'Health', spirit: 'Spirit', supply: 'Supply', momentum: 'Momentum', xp: 'XP', integrity: 'Integrity', 'companion-health': 'Companion health' };
 const TOLD = {
   vignette_open: 'An opening scene was told.',
   vignette_close: 'A closing scene was told, elsewhere.',
@@ -73,20 +75,6 @@ function autoWriteEnabled() {
   }
 }
 
-/** "Momentum 2 → 3", "Wounded marked", "Quests legacy 4 → 6" — one sheet change, in words. */
-function changeText(c) {
-  const what = String(c.what ?? '');
-  if (what.startsWith('impact:')) {
-    const name = what.slice(7);
-    return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${c.to ? 'marked' : 'cleared'}`;
-  }
-  if (what.startsWith('legacy:')) {
-    const name = what.slice(7);
-    return `${name.charAt(0).toUpperCase()}${name.slice(1)} legacy ${c.from ?? '?'} → ${c.to ?? '?'} ticks`;
-  }
-  return `${METERS[what] ?? what} ${c.from ?? '?'} → ${c.to ?? '?'}`;
-}
-
 /** A beat's sheet changes, each named for whose sheet it is when that is not the beat's own character. */
 function changesText(beat) {
   return beat.changes
@@ -95,29 +83,21 @@ function changesText(beat) {
     .join('. ');
 }
 
-function moveText(move) {
-  const outcome = move.upgraded
-    ? `${OUTCOMES[move.upgraded.from] ?? move.upgraded.from ?? '?'}, made a ${OUTCOMES[move.outcome] ?? move.outcome ?? '?'} by ${move.upgraded.how === 'burn' ? 'burning momentum' : 'an asset'}`
-    : (OUTCOMES[move.outcome] ?? move.outcome ?? '');
-  return [move.name ?? move.moveId ?? 'A move', outcome].filter(Boolean).join(', ') + (move.match ? ' (a match)' : '');
-}
-
-/**
- * How a line came to the table, for whether its text is someone's own words:
- * typed in chat, or a Batch Mode round's entry. A card's button posts the
- * module's own wording of the move (or an earlier line again), a ship token's
- * drop a Set a Course for it — the move is what the page lists for those.
- */
-const OWN_WORDS = new Set(['typed', 'round', 'narrate-only']);
-
 /** One beat as one line of the page, or '' for a beat the page does not list. */
 function beatLine(beat) {
+  if (beat.kind === 'question') {
+    return beat.line?.text ? `<li><em>Asked of the narrator:</em> “${escapeHtml(beat.line.text)}”</li>` : '';
+  }
   const who = beat.who.name ? `<strong>${escapeHtml(beat.who.name)}</strong>` : '';
   const parts = [];
   if (beat.line?.text && !beat.line.repost && OWN_WORDS.has(beat.line.via)) parts.push(`“${escapeHtml(beat.line.text)}”`);
   if (beat.move) parts.push(escapeHtml(moveText(beat.move)));
   const changes = changesText(beat);
   if (changes) parts.push(escapeHtml(changes));
+  for (const d of beat.did ?? []) {
+    const text = didText(d);
+    if (text) parts.push(escapeHtml(text));
+  }
   if (beat.removed) parts.push('<em>its telling was removed by the table</em>');
   if (!parts.length) {
     if (beat.kind === 'table' || !beat.told) return '';
@@ -168,7 +148,20 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
   const lines = [`<h2>${escapeHtml(session?.name || 'Session')}</h2>`];
   if (!enabled || !session) return lines.join('');
 
-  const beats = session.beats.map(beatLine).filter(Boolean);
+  // A new scene where one began this session, before its first beat.
+  const begun = new Map((session.scenes ?? []).map(sc => [sc.sceneId, sc]));
+  const beats = [];
+  let scene = undefined;
+  for (const beat of session.beats) {
+    const line = beatLine(beat);
+    if (!line) continue;
+    if (beat.scene !== scene && begun.has(beat.scene)) {
+      const where = begun.get(beat.scene)?.where?.location ?? beat.where?.location ?? null;
+      beats.push(`<li><em>A new scene${where ? ` — ${escapeHtml(where)}` : ''}.</em></li>`);
+    }
+    scene = beat.scene;
+    beats.push(line);
+  }
   lines.push('<h3>What happened</h3>');
   lines.push(beats.length ? `<ul>${beats.join('')}</ul>` : '<p><em>Nothing recorded yet.</em></p>');
 
@@ -180,7 +173,8 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
 
   const told = typeof story === 'string' ? story.trim() : '';
   if (told) {
-    lines.push('<h3>Story</h3>');
+    // The legacy page's heading: the playtest runner's `sessionLog` check reads it.
+    lines.push('<h3>Session summary</h3>');
     for (const p of told.split(/\n\n+/)) lines.push(`<p>${escapeHtml(p.trim())}</p>`);
   }
   return lines.join('');

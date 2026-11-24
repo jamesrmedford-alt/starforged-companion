@@ -226,8 +226,15 @@ function writeTracks(change) {
   const run = settledWithin(_writeTail, WORLD_WRITE_WAIT_MS, 'a Progress Tracks write ahead of this one').then(async () => {
     const journal = await answeredWithin(getOrCreateJournal(), "the Progress Tracks journal's creation");
     const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
+    const before  = foundry.utils.deepClone(tracks);
     const next    = await change(tracks);
-    if (Array.isArray(next)) await answeredWithin(journal.setFlag(MODULE_ID, FLAG_KEY, next), 'a Progress Tracks save');
+    if (Array.isArray(next)) {
+      await answeredWithin(journal.setFlag(MODULE_ID, FLAG_KEY, next), 'a Progress Tracks save');
+      // The save landed: what it began, marked, moved or ended goes on the
+      // session record (issue #382) — every track write comes through here.
+      const { recordTrackChanges } = await import('../record/trackDiff.js');
+      recordTrackChanges(before, next);
+    }
   });
   _writeTail = run.catch(() => {});
   return run;

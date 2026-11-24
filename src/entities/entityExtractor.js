@@ -46,6 +46,7 @@ import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern, namesOneWordName } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
+import { recordEvent }                     from "../record/record.js";
 import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
 import {
@@ -3127,6 +3128,14 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   // The X-Card's finish reopened the row with the card it deleted.
   if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
+  // A new entity on record, on the session record (issue #382): a detector's
+  // draft is a guess, its confirmation a fact of the table's.
+  if (record) {
+    recordEvent("entity.confirmed", {
+      ref: { entity: record.__hostId ?? record.journalId ?? record.actorId ?? record._id ?? null, nar: opts.narrationId ?? null },
+      d: { type: draft.type ?? null, name: record.name ?? draft.name ?? "" },
+    });
+  }
   return record;
 }
 

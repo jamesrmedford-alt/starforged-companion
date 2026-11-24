@@ -16,6 +16,9 @@
  *   `!x` (player)                                    → the page and the stored flag hold nothing it removed (D3)
  *   a progress roll on the system's sheet (player)   → a move on the record (rolled outside the pipeline)
  *   `!bond` (player, rolled on their client)         → a move on the record, a miss too
+ *   a typed line → move → narration (GM)            → the campaign recap's request (slice 2): the
+ *                                                      player's words, the move, the change — no narration;
+ *                                                      a sentence citing nothing is not kept
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -120,7 +123,7 @@ describe('a player\'s line, its move and its telling reach the Session Log page 
 
     expect(body).toContain('Kira');
     expect(body).toContain(LINE);
-    expect(body).toMatch(/Face Danger, strong hit/);
+    expect(body).toMatch(/Face Danger \(\+iron\), strong hit/);
     expect(body).toMatch(/Momentum 2 → 3/);
     expect(body).toContain('opens onto the cargo spine');                 // established and standing
     expect(body).not.toContain('buckles under your shoulder');            // the chat has the narration
@@ -162,7 +165,7 @@ describe('the X-Card reaches the page and the stored record (decision D3)', () =
     expect(flag).not.toContain('buckles under your shoulder');
     expect(flag).not.toContain('cargo spine');
     expect(storedEvents().find(e => e.k === 'narration.removed')?.d).toMatchObject({ by: 'xcard' });
-    expect(body).toMatch(/Face Danger, strong hit/);
+    expect(body).toMatch(/Face Danger \(\+iron\), strong hit/);
     expect(body).toMatch(/Momentum 2 → 3/);
     expect(body).toMatch(/removed by the table/);
     expect(body).not.toContain('cargo spine');
@@ -204,5 +207,31 @@ describe('a move rolled outside the move pipeline is still a move on the record'
     expect(move).toMatchObject({ who: { user: 'pl-1', actor: 'pc-pat' },
       d: { moveId: 'develop_your_relationship', outcome: 'miss', isMatch: true, actionDie: 1, challengeDice: [10, 10] } });
     expect(move.ref.res).toMatch(/^bond-/);
+  });
+});
+
+describe('the campaign recap is a view of the record (slice 2)', () => {
+  it('a move\'s beat reaches the recap\'s request: the player\'s sentence word for word, the move, its outcome and the momentum — and no sentence of the narration; an uncited sentence is not kept', async () => {
+    await table.client('pl-1').chat(LINE, { speaker: { actor: 'pc-pat' } });
+    await renderedPage();
+    const RECAP = { paragraphs: [[
+      { text: 'Kira put a shoulder to the hull and pushed through the breach.', because: ['s3-1'] },
+      { text: 'It was the point of it all.', because: [] },
+    ]] };
+    table.claude.respond((call) => (call.model === NARRATION_MODEL && /## THE RECORD/.test(call.userText ?? '')
+      ? JSON.stringify(RECAP) : undefined));
+    const gm = table.client('gm-1');
+    const narrator = await gm.import('../../src/narration/narrator.js');
+    const recap = await gm.run(() => narrator.getCampaignRecap(world(), { forceRefresh: true }));
+    await table.settle();
+
+    const request = table.claude.calls.filter(c => /## THE RECORD/.test(c.userText ?? '')).at(-1);
+    expect(request?.client).toBe('gm-1');
+    expect(request.userText).toContain(`the player wrote “${LINE}”`);
+    expect(request.userText).toMatch(/Face Danger \(\+iron\), strong hit — Momentum 2 → 3/);
+    expect(request.userText).toMatch(/## WHERE THINGS STAND[\s\S]*Kira — health 5, spirit 5, supply 5, momentum 3/);
+    expect(request.userText).not.toContain('buckles under your shoulder');
+    expect(recap).toBe('Kira put a shoulder to the hull and pushed through the breach.');
+    expect(world().campaignRecapCache).toMatchObject({ text: recap, sourceHash: expect.any(String), cites: [[['s3-1']]] });
   });
 });
