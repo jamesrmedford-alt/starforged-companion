@@ -1928,7 +1928,13 @@ function runRoundNarrationPasses(narration, entries, campaignState, { narrationI
   // Its draft card carries every acting PC — whose connection a figure is,
   // the GM's Confirm asks (issue #342 D3); one acting PC is free-flow's card.
   const actorIds = [...new Set(entries.map(e => e.actorId).filter(id => typeof id === 'string' && id))];
-  const options = { actorId: actorIds.length === 1 ? actorIds[0] : null, actorIds, narrationId };
+  const options = {
+    actorId: actorIds.length === 1 ? actorIds[0] : null, actorIds, narrationId,
+    // Each acting character's line, for the detection pass: a name a line
+    // gives to someone the round's narration shows is theirs (known-issues
+    // PLAYER-NAMED-PERSON-GETS-NO-CARD).
+    playerLines: entries.map(e => ({ name: e.actorName ?? null, text: e.text ?? '' })),
+  };
   if (hits.length) {
     const owner = roundFigureOwner(entries, narration);
     return runDiscoveryDetection(narration, resolution, campaignState, {
@@ -2323,6 +2329,20 @@ export function runPostNarrationPasses(
   return Promise.resolve();
 }
 
+/**
+ * The player's line — or a round's lines, each with its character — as the
+ * detection pass is handed them: markup stripped, empty ones left out.
+ *
+ * @param {string|Array<{ name?: string|null, text?: string }>|null} lines
+ * @returns {Array<{ name: string|null, text: string }>}
+ */
+function detectionPlayerLinesOf(lines) {
+  const list = Array.isArray(lines) ? lines : [{ name: null, text: lines }];
+  return list
+    .map(l => ({ name: typeof l?.name === 'string' && l.name.trim() ? l.name.trim() : null, text: sanitizePlayerText(String(l?.text ?? '')) }))
+    .filter(l => l.text);
+}
+
 async function runDiscoveryDetection(narrationText, resolution, campaignState, options) {
   const narrationId = options.narrationId ?? null;
   // Nothing is captured for a narration the X-Card removed — checked when the
@@ -2335,6 +2355,12 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       resolution.moveId,
       resolution.outcome,
       campaignState,
+      // The line the player wrote beside the narration (known-issues
+      // PLAYER-NAMED-PERSON-GETS-NO-CARD): a name it gives to someone the
+      // narration shows is that person's name. A round hands in each acting
+      // character's (`options.playerLines`); a Burn Momentum / Improve Result
+      // re-narration has none (writtenLine).
+      { playerLines: detectionPlayerLinesOf(options.playerLines ?? writtenLine(resolution)) },
     );
     if (isNarrationXCarded(narrationId)) return;
     await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId });
@@ -5369,7 +5395,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
       const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
       await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
-      schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+      schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
       scheduleChronicleEntry({
         narrationText: text,
@@ -5401,7 +5427,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           if (text?.trim()) {
             const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
             await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
-            schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+            schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
             scheduleChronicleEntry({
               narrationText: text,
@@ -5438,14 +5464,16 @@ export async function narratePacedInput(playerText, campaignState, options = {},
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ actorId?: string|null, narrationId?: string|null }} [options] — the PC
+ * @param {{ actorId?: string|null, narrationId?: string|null, playerText?: string|null }} [options] — the PC
  *   the narration was for (the draft card carries it, so Confirm puts a
- *   connection's bond Item on them), and the narration's id (stamped on what
- *   the pass records, for the X-Card — issue #329 X01)
+ *   connection's bond Item on them), the narration's id (stamped on what
+ *   the pass records, for the X-Card — issue #329 X01), and the line the
+ *   player wrote that it answers (a name it gives to someone the narration
+ *   shows is theirs — known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD)
  */
-export function schedulePacedDetection(narrationText, campaignState, { actorId = null, narrationId = null } = {}) {
+export function schedulePacedDetection(narrationText, campaignState, { actorId = null, narrationId = null, playerText = null } = {}) {
   setTimeout(() => {
-    runPacedDetection(narrationText, campaignState, { actorId, narrationId })
+    runPacedDetection(narrationText, campaignState, { actorId, narrationId, playerText })
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
@@ -5490,9 +5518,11 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ skipLore?: boolean, source?: string, actorId?: string|null, narrationId?: string|null }} [options] —
+ * @param {{ skipLore?: boolean, source?: string, actorId?: string|null, narrationId?: string|null, playerText?: string|null }} [options] —
  *   `source` labels the draft card (default "paced_narrative"); `actorId`, the PC the narration was for,
- *   rides it to Confirm; `narrationId` is stamped on what the pass records (issue #329 X01)
+ *   rides it to Confirm; `narrationId` is stamped on what the pass records (issue #329 X01); `playerText`,
+ *   the line the narration answers, is shown to the detector beside it (none for an oracle follow-up, a
+ *   vignette or the inciting incident: no line of play prompted them)
  * @returns {Promise<void>}
  */
 export async function runPacedDetection(narrationText, campaignState, options = {}) {
@@ -5505,6 +5535,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
       PACED_NARRATIVE_MOVE_ID,
       PACED_NARRATIVE_OUTCOME,
       campaignState,
+      { playerLines: detectionPlayerLinesOf(options.playerText ?? '') },
     );
     if (isNarrationXCarded(options.narrationId)) return;
     // The inciting incident records its own cohesive lore entry (the "Situation"

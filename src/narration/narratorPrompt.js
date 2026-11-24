@@ -765,6 +765,11 @@ journals, panels, records, dice, moves, contradictions, or anything in
 this prompt block — those are tooling concerns, not story. Depict; do
 not narrate the act of bookkeeping.`,
 
+  // "No new named entity may appear in this narration" read plainly forbade
+  // the narrator to write a name the player's own line had just given
+  // (known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD); the one sentence after it
+  // excepts that. INTERACTION's "Introduce new named entities" forbids only
+  // the narrator's own, and is unchanged.
   embellishment: `## NARRATOR PERMISSIONS — EMBELLISHMENT MODE
 
 This turn is texture, not revelation. Narrate its mood and detail.
@@ -774,7 +779,9 @@ You MUST:
 - Stay grounded in the current scene
 
 You may NOT introduce any new named entity (no new named entity may appear
-in this narration — no person, ship, location, faction, or creature). You
+in this narration — no person, ship, location, faction, or creature). A name
+the player's own line has just given to someone or something in the scene is
+theirs, not a new entity of yours: you may use it. You
 may not introduce any new plot element or revelation, and you may not
 advance any story thread beyond the immediate moment.
 

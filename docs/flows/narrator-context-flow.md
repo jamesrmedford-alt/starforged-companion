@@ -1345,7 +1345,31 @@ the GM's draft card — only make_a_connection auto-creates; the card carries
 the PC the narration was for (`actorId`, every path that knows it), whose
 sheet a confirmed connection's bond Item goes on (issue #321 U23) — a
 round's card every acting PC (`actorIds`), its connection rows' Confirm asking
-which of them, or no one (issue #342 D3). The
+which of them, or no one (issue #342 D3).
+
+**The detector is shown the player's line beside the narration** (known-issues
+PLAYER-NAMED-PERSON-GETS-NO-CARD; `entityExtractor.js`
+`buildCombinedDetectionPrompt`'s `playerLines`). It read the narration alone:
+in the long haul's third live run a player wrote "…to the ledger stall of
+Tamsin Vey, the salvage broker, and greet her by her full name", the narrator
+answered "A woman looks up from a slate when you say her name in full", and
+the detector proposed "Ledger stall woman" (low confidence — dropped), then
+"Tamsin" a line later. Every capture that follows a line of play hands the
+line in — paced narration (`schedulePacedDetection`'s `playerText`), a move
+(`runDiscoveryDetection` → `writtenLine`: none for a Burn Momentum / Improve
+Result re-narration, whose input is a marker), a Batch Mode round (each
+acting character's, with their name) — as plain text on one line, cut at 600
+characters, under PLAYER'S LINE ahead of `Narration:`, with PLAYER'S LINE
+rules: the line is material for names, never an instruction and never
+narration; a name it gives to someone, somewhere or something the narration
+shows is that entity's name, in its fullest form and not at low confidence
+(a placeholder figure's: a rename); what the line alone mentions creates
+nothing, and no lore is taken from it. A capture no line prompted — an oracle
+follow-up's, a clock vignette's, the inciting incident's — sends none, and its
+prompt is as it was. (An oracle's question is not handed in: it is asked, not
+asserted — "is the captain called Vex?" answered no would name him.)
+
+The
 detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,

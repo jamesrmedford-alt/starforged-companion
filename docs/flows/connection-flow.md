@@ -62,7 +62,11 @@ recorded under its name promoted to it; its bond is §2's.
   GM that narrated the move — canonical when it claimed the move lock; a
   lower-id keyed GM joining while the narration was written left the hit
   saying "Connection made" with no one made (issue #345 AA34; a round's
-  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
+  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku —
+  shown the player's line beside the narration, so a person the line names
+  and the narration only shows is detected under that name, in full:
+  known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD, `narrator-context-flow.md`
+  §2) →
   `routeEntityDrafts` auto-creates one connection draft — the one the
   player's line names, else the interpreter's target names, else the first
   detected; the hit's figure is chosen before anything is made, the newly

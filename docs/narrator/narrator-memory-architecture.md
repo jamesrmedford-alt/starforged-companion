@@ -523,7 +523,15 @@ fail-open) and biased toward developments over trivia. Unnamed/uncarded figures
 match nothing → no record → stay freely mutable, which the "name sparingly"
 casting nudge (`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`)
 reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
-"Named-NPC continuity". A Batch Mode round's narration is both kinds at once:
+"Named-NPC continuity". The detection pass that makes those records is shown
+the player's line beside the narration (known-issues
+PLAYER-NAMED-PERSON-GETS-NO-CARD): a name the line gives to someone the
+narration shows is that entity's name, in full, so a person the player names
+has their card — and their home for facts — whether or not the narrator
+repeats the name; what the line alone mentions creates nothing
+(`narrator-context-flow.md` §2). The embellishment latitude block excepts a
+name the player's own line has just given from "no new named entity may
+appear". A Batch Mode round's narration is both kinds at once:
 its tier pass takes each entry by its free-flow rule — an unrolled action the
 prompt's matched set (as paced), a rolled interaction-class move its own
 relevance (as the move pass) — whatever the round's widest class

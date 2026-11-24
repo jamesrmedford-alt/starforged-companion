@@ -4973,6 +4973,26 @@ function registerPacingTests(quench) {
           assert.notInclude(prompt, "Move: paced_narrative.");
           assert.notMatch(prompt, /^Outcome:/m);
         });
+
+        // Known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD: the detector read the
+        // narration alone, so a person the player named and the narrator did
+        // not got no card under their name.
+        it("carries the player's line beside the narration, with the naming rule — and neither without a line", async function () {
+          if (skipNotGM(this)) return;
+          const {
+            buildCombinedDetectionPrompt,
+            PACED_NARRATIVE_MOVE_ID,
+            PACED_NARRATIVE_OUTCOME,
+          } = await import(`${MODULE_PATH}/entities/entityExtractor.js`);
+          const cs = game.settings.get(MODULE, "campaignState") ?? {};
+          const line = "I greet Tamsin Vey, the salvage broker, by her full name.";
+          const narration = "A woman looks up from a slate when you say her name in full.";
+          const prompt = buildCombinedDetectionPrompt(narration, PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, cs, { playerLines: line });
+          assert.include(prompt, `PLAYER'S LINE:\n${line}\n\nNarration:\n${narration}`);
+          assert.include(prompt, "is that entity's name");
+          assert.include(prompt, "nothing: do not return it");
+          assert.notInclude(buildCombinedDetectionPrompt(narration, PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, cs), "PLAYER'S LINE");
+        });
       });
 
       // Reference so the linter sees `track` and `createdJournalIds` used —
