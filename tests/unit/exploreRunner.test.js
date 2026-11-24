@@ -602,13 +602,17 @@ describe('a rehearsal\'s stand-in for the model API', () => {
     expect(ask(rehearsal, '', '', ACTION_TOOL).content[0].input.action, 'past its end, the script stops').toBe('stop');
   });
 
+  const SUMMARY_ASK = '## THE SESSION (oldest first)\n\n[1] Mira Kestrel — the player wrote “I turn her star-compass over.”\n\nWrite the summary of this session now, as the JSON list asked for.';
+
   it('remembering: once the fact is in front of it, everything it writes carries it — prose, fact block, chronicle, summary', () => {
     const rehearsal = createRehearsal({ charter: CHARTER });
     const narrated = textOf(ask(rehearsal, NARRATOR, 'I turn the brass star-compass over.'));
     expect(factIn(narrated, fact)).toBe(true);
     expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(narrated)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: fact.statement }]);
     expect(JSON.parse(textOf(ask(rehearsal, 'You are the chronicle scribe', 'the star compass')))).toMatchObject({ salience: 'notable', text: fact.statement });
-    expect(factIn(textOf(ask(rehearsal, 'You are the continuity scribe', 'her star-compass')), fact)).toBe(true);
+    // The session summary is a view of the record (issue #382 slice 3): asked with the session's numbered beats, it
+    // answers a cited JSON list (record/summaryView.js SESSION_SUMMARY_SYSTEM_PROMPT).
+    expect(JSON.parse(textOf(ask(rehearsal, 'You are the continuity scribe', SUMMARY_ASK))).some(x => factIn(x.text, fact) && x.because.includes('1'))).toBe(true);
     expect(factIn(textOf(ask(rehearsal, NARRATOR, 'What do I still carry?')), fact), 'not in front of it: it does not invent it').toBe(false);
     expect(factIn(textOf(ask(rehearsal, `${NARRATOR}\n## LAST SESSION\nThe brass star-compass.`, 'What do I still carry?')), fact), 'sent by the module: it answers with it').toBe(true);
   });
@@ -619,7 +623,7 @@ describe('a rehearsal\'s stand-in for the model API', () => {
     expect(factIn(narrated, fact)).toBe(false);
     expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(narrated)[1]).newTruths).toEqual([]);
     expect(JSON.parse(textOf(ask(rehearsal, 'You are the chronicle scribe', 'the star compass'))).salience).toBe('trivial');
-    expect(factIn(textOf(ask(rehearsal, 'You are the continuity scribe', 'her star-compass')), fact)).toBe(false);
+    expect(JSON.parse(textOf(ask(rehearsal, 'You are the continuity scribe', SUMMARY_ASK))).some(x => factIn(x.text, fact))).toBe(false);
   });
 
   it('answers the module\'s helpers in a shape each can read, and narrates every line without a roll', () => {

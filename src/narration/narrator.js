@@ -3461,9 +3461,8 @@ export async function getCampaignRecap(campaignState, options = {}) {
         const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
         cs.campaignRecapCache = {
           text,
-          // UNWIRED: the playtest runner's recap review (each sentence beside
-          // the beats it cites — issue #382 design 11.4) is its reader; that
-          // runner change is outside this module (known-issues RECAP-CITES-UNREAD).
+          // Read by the playtest runner's recap review: each sentence beside
+          // the lines it cites (issue #382 design 11.4; test/ci/playwright/lib/review.mjs recapCitesOf).
           cites:       cited.paragraphs.map(p => p.map(sentence => sentence.because)),
           generatedAt: new Date().toISOString(),
           sourceHash:  source.hash,       // the record it was made from

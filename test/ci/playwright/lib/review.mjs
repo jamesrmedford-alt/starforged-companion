@@ -534,6 +534,112 @@ function setPiecesResult(p) {
     + (p.spotlights.length ? `; spotlight vignettes rolled: ${p.spotlights.length} — ${s("told")} told, ${s("toEnvision")} left to envision, ${s("theTables")} the table's from the start, ${s("missing")} missing` : "");
 }
 
+// ── the recap, sentence by sentence, and the size of the record ──────────────
+
+/** A line of the recap's source: `[s3-2] …`, `[now-1] …`, `[note-1] …`, `[old-1] …` (src/record/recapView.js recapSource). */
+const RECAP_SOURCE_LINE = /^\[((?:s\d+|now|note|old)-\d+)\] (.*)$/gm;
+/** The recap's request: the narrator's system prompt in the recap's mode (narratorPrompt.js META_NARRATION_HEADING). */
+const isRecapRequest = (r) => String(r?.system ?? "").includes("## THIS SUMMARY");
+/** A recap paragraph's sentences: recapView.js recapText joins a paragraph's with one space. */
+const sentencesIn = (paragraph) => String(paragraph ?? "").split(/(?<=[.!?…]["'”’)]*)\s+(?=[A-Z0-9“"‘'(])/).map(s => s.trim()).filter(Boolean);
+
+/**
+ * Each campaign recap the run's table held, sentence by sentence, beside the
+ * lines of its source each sentence cites (issue #382 design 11.4, check 5;
+ * known-issues RECAP-CITES-UNREAD). The recap's cache keeps, with its text,
+ * each paragraph's sentences' cited ids (`campaignRecapCache.cites`,
+ * narrator.js getCampaignRecap; lib/table.mjs `helpers.recapCache`); its
+ * source is the recorded request it was made from — the last recap request
+ * at or before the step the recap was first seen at. A cited id that is no
+ * line of that source fails. A paragraph whose sentences cannot be told
+ * apart the way it was joined is read whole, beside all its ids. Pure.
+ *
+ * @param {{ marks?: object[], requests?: object[] }} o — the observer's marks and the module's recorded requests
+ * @returns {{ recaps: object[], totals: { recaps: number, sentences: number, cites: number, unknown: number, unpaired: number, readWhole: number } }}
+ */
+export function recapCitesOf({ marks = [], requests = [] } = {}) {
+  const order = new Map(marks.map((m, i) => [m.step, i]));
+  const asked = requests.filter(isRecapRequest);
+  const seen = new Set();
+  const recaps = [];
+  for (const mark of marks) {
+    const cache = mark.table?.helpers?.recapCache ?? null;
+    if (typeof cache?.text !== "string" || !cache.text.trim() || !Array.isArray(cache.cites)) continue;
+    const key = `${cache.madeAt ?? ""}|${cache.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const at = order.get(mark.step) ?? -1;
+    const request = asked.filter(r => (order.get(r.step) ?? Infinity) <= at).at(-1) ?? null;
+    const lines = new Map(request ? [...String(request.user ?? "").matchAll(RECAP_SOURCE_LINE)].map(m => [m[1], m[2].trim()]) : []);
+    const paragraphs = cache.text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+    const sentences = [];
+    let readWhole = 0;
+    cache.cites.forEach((ids, p) => {
+      const each = (Array.isArray(ids) ? ids : []).map(x => (Array.isArray(x) ? x.map(String) : []));
+      const said = sentencesIn(paragraphs[p]);
+      if (said.length === each.length) said.forEach((text, i) => sentences.push({ paragraph: p + 1, text, ids: each[i] }));
+      else {
+        readWhole += 1;
+        sentences.push({ paragraph: p + 1, text: paragraphs[p] ?? "", ids: [...new Set(each.flat())], whole: true });
+      }
+    });
+    for (const s of sentences) s.cites = s.ids.map(id => ({ id, line: lines.get(id) ?? null }));
+    recaps.push({
+      step: mark.step, madeAt: cache.madeAt ?? null, sourceStep: request?.step ?? null, sentences, readWhole,
+      unknown: request ? [...new Set(sentences.flatMap(s => s.cites.filter(c => c.line === null).map(c => c.id)))] : [],
+    });
+  }
+  const all = recaps.flatMap(r => r.sentences);
+  return {
+    recaps,
+    totals: {
+      recaps: recaps.length, sentences: all.length, cites: all.reduce((n, s) => n + s.ids.length, 0),
+      unknown: recaps.reduce((n, r) => n + r.unknown.length, 0), unpaired: recaps.filter(r => r.sourceStep === null).length,
+      readWhole: recaps.reduce((n, r) => n + r.readWhole, 0),
+    },
+  };
+}
+
+/** The scorecard's one line of recapCitesOf. */
+function recapCitesResult(r) {
+  const t = r.totals;
+  return `${t.recaps} recap(s), ${t.sentences} sentence(s), ${t.cites} citation(s): `
+    + (t.unknown ? `**${t.unknown} cited id(s) no line of the recap's source — fails**` : "every cited id a line of its source")
+    + (t.unpaired ? `; ${t.unpaired} with no recorded request to read it against` : "")
+    + (t.readWhole ? `; ${t.readWhole} paragraph(s) read whole` : "");
+}
+
+/**
+ * How large each session's record grows (issue #382 design 11.4's size
+ * check; known-issues RECORD-SIZES-UNMEASURED): after each End a Session —
+ * the mark at which the session closed — each Session Log page's
+ * `sessionRecord` as JSON, in characters (lib/table.mjs `records`), and the
+ * run's last reading. Pure.
+ *
+ * @param {{ marks?: object[] }} o
+ * @returns {{ ends: Array<{ step: string, session: number|null, pages: Array<{ name: string, chars: number }> }>, last: { step: string, pages: object[] }|null }}
+ */
+export function recordSizesOf({ marks = [] } = {}) {
+  const pages = (m) => (m.table?.records ?? []).map(r => ({ name: String(r.name ?? "").replace(/ — \d{4}-\d{2}-\d{2}.*$/, ""), chars: r.chars }));
+  const ends = [];
+  marks.forEach((m, i) => {
+    const was = marks[i - 1]?.table?.session;
+    const now = m.table?.session;
+    if (was?.active === true && now && now.active !== true) ends.push({ step: m.step, session: was.number ?? null, pages: pages(m) });
+  });
+  const last = [...marks].reverse().find(m => Array.isArray(m.table?.records)) ?? null;
+  return { ends, last: last ? { step: last.step, pages: pages(last) } : null };
+}
+
+const kchars = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
+
+/** The scorecard's one line of recordSizesOf. */
+function recordSizesResult(r) {
+  const ends = r.ends.map(e => `after End ${e.session ?? "?"} (${e.step}): ${e.pages.map(p => `${p.name} ${kchars(p.chars)}`).join(", ") || "no page"}`);
+  const largest = Math.max(0, ...(r.last?.pages ?? []).map(p => p.chars), ...r.ends.flatMap(e => e.pages.map(p => p.chars)));
+  return `${ends.join("; ") || "no End a Session"}; the largest ${kchars(largest)} characters`;
+}
+
 // ── agency and friction ──────────────────────────────────────────────────────
 
 /**
@@ -734,7 +840,7 @@ export function frictionOf({ actions = [], beats = [], autopilot = [], messages 
  *   autopilot?: object[], prices: object, spend: object }} run
  * @returns {{ allCalls: object[], data: object }}
  */
-export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions = [], messages = [], beats = [], autopilot = [], prices = {}, spend = null, exchanges = [], charter = null }) {
+export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions = [], messages = [], beats = [], autopilot = [], prices = {}, spend = null, exchanges = [], charter = null, marks = [] }) {
   const allCalls = [
     ...moduleRequests.map(r => ({ step: r.step, kind: r.kind, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
     ...runnerRequests.map(r => ({ step: r.step ?? null, kind: `the AI ${r.role}`, model: r.model, usage: r.usage, ms: r.ms, system: r.system, user: r.user })),
@@ -752,6 +858,8 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       repetition: repetitionOf(messages),
       refrains: refrainsOf(messages),
       setPieces: setPiecesOf({ exchanges, messages }),
+      recapCites: recapCitesOf({ marks, requests: moduleRequests }),
+      recordSizes: recordSizesOf({ marks }),
       friction: frictionOf({ actions, beats, autopilot, messages }),
       agency: spokenFor(messages),
       slips: slipsOf(messages),
@@ -859,7 +967,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, setPieces = null, friction = null, agency = [], slips = null, freeform = null }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, setPieces = null, recapCites = null, recordSizes = null, friction = null, agency = [], slips = null, freeform = null }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -884,6 +992,8 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ...(setPieces?.totals.scenes || setPieces?.spotlights.length ? [["Set-pieces", setPiecesResult(setPieces), "each opening, closing and spotlight call: its MATERIAL's numbered results, and the words its reply's fact block gave for each (`builtFrom`) found in its prose; each Begin card's spotlight roll followed by its cutaway or by the note that it is the table's to envision", "high for the arithmetic; whether a result is in the scene recognisably, and not only in the words given, is for the reading"]] : []),
       ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations, the opening and closing scenes apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
+      ...(recapCites?.totals.recaps ? [["Recap — what it rests on", recapCitesResult(recapCites), "each sentence of each campaign recap the table held, beside the lines of its source it cites: the cache's ids (`campaignRecapCache.cites`) against the recap's recorded request", "high for the ids; whether a sentence says only what its lines say is for the reading"]] : []),
+      ...(recordSizes?.ends.length || recordSizes?.last?.pages.length ? [["Record sizes", recordSizesResult(recordSizes), "each Session Log page's `sessionRecord` as JSON, in characters, at the step each session closed and at the run's end", "high"]] : []),
       ["Speed", speed ? speedResult(speed) : "not recorded", "each call's latency; the time from a line of play, and from a scene question, to the first narration after it", "high"],
       ["Length", length ? Object.entries(length).filter(([, v]) => v.calls >= 3).sort((a, b) => Math.abs(b[1].charsPerAction) - Math.abs(a[1].charsPerAction)).slice(0, 2).map(([k, v]) => `${k}: ${v.charsPerAction >= 0 ? "+" : ""}${v.charsPerAction} chars/action`).join("; ") || "too few calls to fit" : "not recorded", "prompt size against the action number, per call kind", "high"],
       ["Caching", caching ? `${pct(caching.total.readShare)} of prompt tokens read from cache; saved ${usd(caching.total.savedUsd)}; ${caching.writesNeverRead.length} kind(s) write and never read` : "not recorded", "usage per call kind", "high"],
@@ -968,6 +1078,25 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       if (below.length) out.push(`Phrases in fewer: ${below.map(r => `"${r.what}" ${r.in} (${r.steps.join(" ")})`).join("; ")}.`, "");
       out.push(`Endings that leave someone waiting, watching or still: ${x.endings.waiting} of ${x.endings.of}${x.endings.steps.length ? ` — ${x.endings.steps.map(e => `${e.step}: …${cell(e.sentence.slice(-90))}`).join("; ")}` : ""}.`, "");
     }
+  }
+  if (recapCites?.recaps.length) {
+    out.push("## The recap, sentence by sentence — what each rests on", "",
+      "Each campaign recap the table held, each sentence beside the lines of its source it cites (the cache's `cites` against the recap's recorded request): the record's beats (`[s2-5]`), where things stood (`[now-1]`), a player's own note (`[note-1]`), a session from before the record (`[old-1]`). Read each sentence against its lines: what it says beyond them is the narrator's own. A cited id that is no line of the source fails.", "");
+    for (const r of recapCites.recaps) {
+      out.push(`### At ${r.step}${r.sourceStep ? ` — made from the request at ${r.sourceStep}` : " — no recorded request to read it against"}`, "");
+      if (r.unknown.length) out.push(`**Cites no line of its source: ${r.unknown.map(id => `[${id}]`).join(", ")}.**`, "");
+      out.push(table(["¶", "Sentence", "Cites", "What the cited lines say"], r.sentences.map(x => [
+        `${x.paragraph}${x.whole ? " (whole)" : ""}`, x.text, x.ids.map(id => `[${id}]`).join(" "),
+        x.cites.map(c => (c.line === null ? `[${c.id}] — NO SUCH LINE` : `[${c.id}] ${c.line.length > 220 ? `${c.line.slice(0, 220)}…` : c.line}`)).join(" · "),
+      ])), "");
+    }
+  }
+  if (recordSizes?.ends.length || recordSizes?.last?.pages.length) {
+    out.push("## Record sizes", "", "Each Session Log page's session record (`sessionRecord`) as JSON, in characters, at the step each session closed and at the run's end.", "",
+      table(["When", "Page", "Characters"], [
+        ...recordSizes.ends.flatMap(e => e.pages.map(p => [`after End ${e.session ?? "?"} (${e.step})`, p.name, p.chars])),
+        ...(recordSizes.last ? recordSizes.last.pages.map(p => [`at the end (${recordSizes.last.step})`, p.name, p.chars]) : []),
+      ]), "");
   }
   if (agency.length) out.push("## Spoken for the character", "", table(["At", "Scene", "Sentence"], agency.map(a => [a.step, a.scene ?? "", a.sentence])), "");
   const slipRows = slips ? [
