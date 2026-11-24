@@ -306,7 +306,8 @@ offers it.
 
 ## CATEGORY DEFINITIONS
 
-Pick the category from the SITUATION, not the apparatus being used:
+Pick the category from what is happening in the fiction, not the apparatus
+being used:
 
 - combat:        fighting or under direct attack right now — and acting
                  against any other immediate physical danger as it happens

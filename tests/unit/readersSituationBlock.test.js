@@ -241,7 +241,9 @@ describe('each reader\'s rules say what the block is', () => {
     const system = apiPost.mock.calls.at(-1)[2].system[0].text;
     expect(system).toMatch(/10\. THE SITUATION: the user message gives the speaking character's sheet as it stands \(SITUATION\)/);
     expect(system).toContain('Name a vow or a connection in moveTarget as the SITUATION names it.');
-    expect(system).toContain('forge_a_bond is rolled against a relationship track that is full; a connection already bonded is developed (develop_your_relationship), never bonded again.');
+    // A progress move is made at any progress: the rule says what a full track is ready for, not that anything less forbids it.
+    expect(system).toContain('A relationship track that is full is ready for forge_a_bond (a progress move — it may be tried sooner, at worse odds); a connection already bonded is developed (develop_your_relationship), never bonded again.');
+    expect(system).not.toContain('forge_a_bond is rolled against a relationship track that is full');
     expect(system.match(/^## .+$/gm)).toEqual(['## YOUR TASK', '## MOVE REFERENCE', '## STAT GUIDE', '## INTERPRETATION RULES', '## RESPONSE FORMAT']);
   });
 });

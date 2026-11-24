@@ -233,7 +233,7 @@ missing.
 | Burn momentum eligibility & application | ✅ | `src/moves/burnMomentum.js:62-238`; `src/moves/resolver.js:127-157` (correctly blocks progress moves, requires positive momentum, requires outcome improvement) |
 | Progress score = filled boxes only, no burn, assets ignored | ✅ | `src/ui/progressTracks.js:131-146` (`score = floor(ticks / 4)`) |
 | Rank multipliers (troublesome 12 / dangerous 8 / formidable 4 / extreme 2 / epic 1 ticks per mark) | ✅ | `src/ui/progressTracks.js:36-42` and `src/schemas.js:40-46` |
-| Move pattern-matching from natural language | ✅ | `src/moves/interpreter.js` routes all 51 moves via Haiku interpretation, then maps to `MOVES` table at `src/schemas.js:81-155` |
+| Move pattern-matching from natural language | ✅ | `src/moves/interpreter.js` routes all 51 moves via a Claude Sonnet 5.5 interpretation, then maps to `MOVES` table at `src/schemas.js:81-155` |
 
 ### 2.2 Per-move implementation
 
