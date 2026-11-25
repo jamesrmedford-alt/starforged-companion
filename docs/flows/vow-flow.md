@@ -438,7 +438,13 @@ issue #321 U62) and the CAMPAIGN PREMISE block
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
 paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
-records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+records its facts in a scene (`ensureSceneStarted`, issue #321 U34). It is
+built from material — the vow's own words, the Iron truth and the recent
+narration (`buildVowSwearingUserMessage`, `getRecentNarrationContext`), the
+`vow_swearing` role naming no gesture: given the vow's name, "vows are sworn
+upon iron" and "pure sensory fiction", with "the iron they touch" in the
+role, the oath was one image in all four live long hauls (known-issues
+SET-PIECES-SHAPED-BY-THEIR-PROMPT). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
 **What the two readers of a typed line are told.** The pacing classifier and

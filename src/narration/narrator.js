@@ -4591,16 +4591,23 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
 }
 
 /**
- * Build the user message for a vow-swearing scene: the Iron truth (how the
- * Ironsworn bind their oaths in this world) + the vow being sworn. Pure;
- * exported for tests.
+ * Build the user message for a vow-swearing scene: its material — the vow's
+ * own words, the Iron truth (how the Ironsworn bind their oaths in this
+ * world) and the scene the character swears it in (the recent narration) —
+ * and that the oath is built from it. Given the vow's name, "vows are sworn
+ * upon iron" and "Pure sensory fiction; do not restate the vow's text", the
+ * oath was one image in all four live long hauls — a palm pressed flat to a
+ * bulkhead, the words said low (known-issues
+ * SET-PIECES-SHAPED-BY-THEIR-PROMPT). Pure; exported for tests.
  *
  * @param {{ name?: string, rank?: string|null }} vow
  * @param {{ title?: string, description?: string }|null} ironTruth
+ * @param {{ recentScene?: string }} [opts] — the recent narration, as the ring gives it
  * @returns {string}
  */
-export function buildVowSwearingUserMessage(vow, ironTruth) {
-  const subject   = vow?.name ? `"${vow.name}"` : "a vow";
+export function buildVowSwearingUserMessage(vow, ironTruth, { recentScene = "" } = {}) {
+  const name      = typeof vow?.name === "string" ? vow.name.trim() : "";
+  const subject   = name ? `"${name}"` : "a vow";
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
   // A custom Iron truth chosen in the World Truths dialog is its title alone
   // (issue #322 V34).
@@ -4614,14 +4621,21 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
     : ironTruth?.title
       ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
       : `In this world, vows are sworn upon iron.`;
+  const recent = typeof recentScene === "string" ? recentScene.trim() : "";
   return [
     `A character is swearing ${subject}${rank}.`,
     ``,
-    truthLine,
+    `THE OATH'S MATERIAL`,
+    `- The vow's own words: ${name ? `"${name}"` : "none on record — the scene says what is sworn"}.`,
+    `- How oaths are bound: ${truthLine}`,
+    `- The scene: where the character is now, who is there and what has just happened — the active ` +
+      `scene in this prompt${recent ? ", and the recent narration below" : ""}.`,
+    ...(recent ? [``, `RECENT NARRATION (most recent last):`, recent] : []),
     ``,
-    `Write 2-3 sentences depicting the act of swearing this vow, grounded in how the`,
-    `Ironsworn swear their oaths above. Pure sensory fiction; do not restate the vow's`,
-    `text or mention game mechanics.`,
+    `Write 2-3 sentences: this character swearing this vow, there and then, built from that material. ` +
+      `The words sworn are the vow's own, or the character's for them. What is sworn upon is iron at ` +
+      `hand there, as this world binds an oath. The moment comes out of the scene and what the vow is ` +
+      `about — no stock gesture. Do not mention game mechanics.`,
   ].join("\n");
 }
 
@@ -4661,7 +4675,9 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   // What is really behind the vow is decided here (issue #353 Phase 4).
   const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character, planRequests });
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
-  const userMessage  = buildVowSwearingUserMessage(vow, ironTruth);
+  // The scene it is sworn in: the oath is built from it (buildVowSwearingUserMessage).
+  const recentScene  = getRecentNarrationContext(campaignState?.currentSessionId ?? null, getNarratorContextCards());
+  const userMessage  = buildVowSwearingUserMessage(vow, ironTruth, { recentScene });
 
   const call = async () => {
     const raw  = await callNarratorAPI({

@@ -230,12 +230,17 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
     "This one must be different from each: not the same food or drink, objects, noises, jokes or business, and not the beat any of them ends on.",
   );
 
-  // How it ends. Told to "end on … a line of dialogue, a question, or a small
-  // interruption", a character alone had nobody to speak or ask: all eight
-  // openings of two campaigns ended on a device or the ship sounding.
-  const ending = behind
-    ? "Its last sentence returns to what that leaves open, as it stands."
-    : (material ? "It stops with (1) unfinished." : "It stops on something small left unfinished.");
+  // How it ends: where its material takes it, in no shape the prompt gives
+  // (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT). Told to "end on … a
+  // line of dialogue, a question, or a small interruption", a character alone
+  // had nobody to speak or ask: all eight openings of two campaigns ended on
+  // a device or the ship sounding. Told "Its last sentence returns to what
+  // that leaves open … Nothing new happens", the fourth live run's three each
+  // handled a counted object and ended still (a20, a54, a89). Only the plot
+  // is held back: the first move is the players'.
+  const ending = material
+    ? "How it ends is the material's: its last sentence stays with whichever result the scene reaches last."
+    : "How it ends comes from the scene itself.";
 
   return [
     "OPENING VIGNETTE — begin-session.",
@@ -251,7 +256,7 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
     ...(material ? ["", material] : []),
     ...(earlierBlock ? ["", earlierBlock] : []),
     "",
-    `${ending} Nothing new happens in this scene: the first move is the players'.`,
+    `${ending} No turn of the plot happens in it: the first move is the players'.`,
     "Stay anchored to what the bios establish, and never state a game stat or",
     "any number from a character sheet.",
     "",
@@ -344,7 +349,10 @@ function formatLastSessionStopped(lastSession, { outranked = false } = {}) {
         "standing open, a question unanswered, someone waiting — and it has its",
         "place in this scene, if only at its edge. Do not contradict it, do not",
         "write as though it were over or behind them (\"since the …\"), and do not",
-        "let more time pass than it allows (\"for the third time this week\").",
+        // Its example of the time not to let pass — "for the third time this
+        // week" — came back as a count: "a third time", "fifth time", "third
+        // confession" (SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+        "let more time pass than it allows.",
       ]),
   );
   return lines.join("\n");

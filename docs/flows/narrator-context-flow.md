@@ -266,6 +266,18 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and "familiar adversary" tiers, the list of mundane tasks, the list of
   gestures, the role's three example closings, `selectEndSessionNPC`. Kept
   (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **How a set-piece ends is its material's** (known-issues
+  SET-PIECES-SHAPED-BY-THEIR-PROMPT): no shape is given. Told "It stops when
+  the small thing is done, or put down", every closing of the fourth live run
+  ended on a thing put down; told "Its last sentence returns to what that
+  leaves open … Nothing new happens", and given "for the third time this week"
+  as the time not to let pass, every opening handled a counted object and
+  ended still. Both now end where the scene reaches its last result ("How it
+  ends is the material's"); the opening — and the role's OPENING — holds back
+  only the plot ("No turn of the plot happens in it: the first move is the
+  players'"). The MATERIAL says a result's words are the oracle's, never the
+  prose's (a record's name or place is written as it is): told "Never the
+  words themselves", six results were written as their own word.
   **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
   pressed the d100 is rolled for the Begin card as before, and — when a
   narration will follow (`narrationEnabled`, a keyed GM connected, the
