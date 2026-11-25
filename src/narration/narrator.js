@@ -44,7 +44,7 @@ import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
-import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
+import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { readMoveSituation } from '../moves/situation.js';
 import {
   runCombinedDetectionPass,
@@ -1368,9 +1368,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
     campaignState, settings, character, '', extras,
   );
   const touched = await beatSituation(character?.actorId ?? null, campaignState);
+  // Costs chosen after their narration, told by this beat of play (D10) —
+  // not this result's own (its card is [chosen]).
+  const chosenSince = choicesChosenSince({ except: [resolution?._id, resolution?.upgradeOf] });
   // One list for the block and its checks (overhaul 4, slice 4).
   const moveObligations = obligationsFor({ mode: 'move', resolution, situation: touched.situation,
-    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null });
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince });
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1437,6 +1440,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
     sideDataApplied = true;
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
+    await markChosenCostsTold(chosenSince, narrationId);
     reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
     // Its Chronicle entry is written from the session record's beat once the
@@ -1472,6 +1476,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
         if (narration?.trim()) {
           sideDataApplied = true;
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
+          await markChosenCostsTold(chosenSince, narrationId);
           reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
           return narration;
@@ -1857,7 +1862,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, { ...settings, narrationLength: sentenceTarget }, null, '', extras,
   );
+  const roundChosenSince = choicesChosenSince({ except: entries.map(e => e.input?.resolutionId).filter(Boolean) });
   const userMessage = buildRoundUserMessage({
+    chosenSince: roundChosenSince,
     recentContext: getRecentNarrationContext(
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
@@ -1904,6 +1911,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, beatShape: extras.beatShape?.id ?? null,
       });
+      await markChosenCostsTold(roundChosenSince, narrationId);
       for (const e of entries) reportNarratedMove(e.input?.moveId ?? null, e.input?.oracleSeeds ?? null);
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
@@ -4933,7 +4941,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     // which only logged it: the line sat in chat, narrated by nothing and told
     // to nobody, as a failed call's line did before AB21 (issue #347 residual
     // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
-    let suggestedMove, extras, systemPrompt, userMessage, pacedObligations = [];
+    let suggestedMove, extras, systemPrompt, userMessage, pacedObligations = [], pacedChosenSince = [];
     try {
       await ensureSceneStarted(campaignState, 'first_narration_paced');
 
@@ -4958,9 +4966,10 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
       const sentenceTarget = settings.narrationLength ?? 3;
       const touched = await beatSituation(character?.actorId ?? null, campaignState);
+      pacedChosenSince = choicesChosenSince();
       // One list for the block and its checks (overhaul 4, slice 4).
       pacedObligations = obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
-        situation: touched.situation, line: playerText ?? '', cast: touched.cast });
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince });
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
         { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
@@ -5005,6 +5014,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
       const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
       await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+      await markChosenCostsTold(pacedChosenSince, narrationId);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
       // Its Chronicle entry is written from the session record's beat (record/chronicleView.js).
@@ -5030,6 +5040,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           if (text?.trim()) {
             const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
             await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+            await markChosenCostsTold(pacedChosenSince, narrationId);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
             return text;
