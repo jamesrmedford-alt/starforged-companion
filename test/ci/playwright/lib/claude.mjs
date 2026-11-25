@@ -16,7 +16,8 @@
 //
 // Which call is which. The stack names the module function that made the call:
 // the two named frames above apiPost, e.g. `callNarratorAPI>narrateResolution`
-// or `callHaiku>defaultCallDetectionAPI`. That is the call's `kind`. The runner
+// or `callHaiku>defaultCallDetectionAPI`. That is the call's `kind` (a wrapper
+// that makes a call for its caller is looked through: `PASS_THROUGH`). The runner
 // tells the harness which scenario step is running (setStep), and each call is
 // filed under the step during which it started; a recording run stores that
 // step on every exchange. A request is answered, in order of preference, by
@@ -230,11 +231,28 @@ function parseFrame(line) {
   return { name, file: url.split("?")[0].split("/").pop(), module: url.includes("/modules/starforged-companion/") };
 }
 
-/** The call's kind: the first two named module frames above apiPost. */
+// Wrappers that make a call on their caller's behalf, so the caller names the
+// call: the obligations check (overhaul 4, src/moves/contracts/checks.js) asks
+// the narrator for narrateResolution and narratePacedInput — and may judge the
+// reply or ask again. Its frame is looked through, and so is the arrow handed
+// to it, which V8 names after it ("narrateKeepingObligations.apiKey.apiKey"):
+// the narration stays `callNarratorAPI>narrateResolution`, and the judge's call
+// is `judgeNarration>narrateResolution`. And `ask`, the local helper the
+// campaign recap and the session summary make their calls through — the
+// first ask and, when the reply is not a cited list or leaves out a LASTING
+// beat, the ask again (issue #382): they stay `callNarratorAPI>getCampaignRecap`
+// and `callNarratorAPI>getRollingSessionSummary`.
+const PASS_THROUGH = ["narrateKeepingObligations", "ask"];
+
+function passesThrough(name) {
+  return PASS_THROUGH.some(w => name === w || name.startsWith(`${w}.`));
+}
+
+/** The call's kind: the first two named module frames above apiPost, wrappers that pass a call through looked past. */
 export function callerKind(stack) {
   const frames = String(stack ?? "").split("\n").slice(1).map(parseFrame).filter(Boolean);
   const proxy  = frames.findIndex(f => f.file === "api-proxy.js");
-  const above  = (proxy >= 0 ? frames.slice(proxy + 1) : frames).filter(f => f.module && f.name);
+  const above  = (proxy >= 0 ? frames.slice(proxy + 1) : frames).filter(f => f.module && f.name && !passesThrough(f.name));
   return above.slice(0, 2).map(f => f.name).join(">") || "unknown";
 }
 

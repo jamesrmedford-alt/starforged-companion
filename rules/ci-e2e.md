@@ -171,7 +171,14 @@ fact block, detection and draft cards, End and Begin a Session.
   process. The page never reaches the network for Claude (no CORS), and the
   GM holds a placeholder key. A call's **kind** is the two named module
   frames above `apiPost` — `callNarratorAPI>narrateResolution`,
-  `callHaiku>defaultCallDetectionAPI`. Each call is filed under the scenario
+  `callHaiku>defaultCallDetectionAPI`; a wrapper that makes a call for its
+  caller is looked through (`lib/claude.mjs` `PASS_THROUGH`: the obligations
+  check, so a move's narration stays `callNarratorAPI>narrateResolution` and
+  its judge is `judgeNarration>narrateResolution`; and the `ask` helper the
+  recap and the session summary call through — add a new such wrapper
+  there, or every recording of its caller goes MISSING). A heading a call's
+  contract names must be one `src/` still writes as a `## ` heading
+  (`playthroughReplay.test.js` holds both scenarios to it). Each call is filed under the scenario
   step during which it started (the runner waits for 4 s with no call
   before a step's checks, and every background pass starts within 2 s), and
   a recording run stores that step on every exchange. A request gets an
