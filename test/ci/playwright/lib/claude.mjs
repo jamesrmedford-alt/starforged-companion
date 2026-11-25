@@ -235,7 +235,8 @@ function parseFrame(line) {
 // call: the obligations check (overhaul 4, src/moves/contracts/checks.js) asks
 // the narrator for narrateResolution and narratePacedInput — and may judge the
 // reply or ask again. Its frame is looked through, and so is the arrow handed
-// to it, which V8 names after it ("narrateKeepingObligations.apiKey.apiKey"):
+// to it — each call site hands it a local `ask`; an inline arrow V8 names by
+// its guess ("narrateKeepingObligations.apiKey.apiKey", looked through too):
 // the narration stays `callNarratorAPI>narrateResolution`, and the judge's call
 // is `judgeNarration>narrateResolution`. And `ask`, the local helper the
 // campaign recap and the session summary make their calls through — the

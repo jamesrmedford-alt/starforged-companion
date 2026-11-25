@@ -1439,15 +1439,18 @@ export async function narrateResolution(resolution, campaignState, options = {},
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
     // contracts/checks.js): a failure is asked once more, with the draft and
     // the line it broke; only the reply returned has its fact block applied.
+    // Its call a local `ask`, which the playthrough harness looks through
+    // (lib/claude.mjs PASS_THROUGH) — an inline arrow is named by V8's guess.
+    const ask = (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
+      label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
+      apiKey,
+      systemPrompt,
+      userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+    }));
     const kept = await narrateKeepingObligations(
-      (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
-        label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
-        apiKey,
-        systemPrompt,
-        userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
-        model:     settings.narrationModel,
-        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-      })),
+      ask,
       moveObligations,
       { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
@@ -5112,13 +5115,15 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
     try {
       // Checked against its obligations before it posts (overhaul 4, slice 4).
+      // Its call a local `ask`, which the playthrough harness looks through.
+      const ask = (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
+        label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
+        apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      }));
       const kept = await narrateKeepingObligations(
-        (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
-          label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
-          apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-        })),
+        ask,
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
           ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
