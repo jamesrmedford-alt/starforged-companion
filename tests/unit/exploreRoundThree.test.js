@@ -558,7 +558,7 @@ describe('the review counts what a run\'s narrations keep returning to', () => {
     expect(r.sessions[0].refrains.phrases).toMatchObject([{ what: 'over the hatch', in: 3, of: 4, run: 3, steps: ['a3', 'a4', 'a5'] }]);
     expect(r.sessions[0].endings).toMatchObject({ waiting: 1, steps: [{ step: 'a4' }] });
     expect(r.sessions[1].refrains, 'three narrations are no session to count in').toEqual({ words: [], phrases: [] });
-    expect(refrainsOf([])).toEqual({ sessions: [], worst: null });
+    expect(refrainsOf([])).toEqual({ sessions: [], worst: null, worstScene: null });
   });
 
   it('the scorecard has its row and its section: per session, what is in a third or more with its steps, and the endings', () => {

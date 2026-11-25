@@ -6,7 +6,10 @@
 // size its rank gives, each effect landing once on the character who rolled,
 // a session's momentum paid once each way, the move lock free once the table
 // has settled, every line of play answered exactly once — and a result held
-// for Keep or Burn narrated before the line after it, not after.
+// for Keep or Burn narrated before the line after it, not after. And overhaul
+// 2's (issue #386 §14): no scene question set on what play let go, a scene
+// turned when its place or its situation changed, and none of the
+// narration's own colour filed when its scene ended.
 //
 // The expectations come from tests/helpers/sequence/rules.js — transcribed
 // from the play kit and the recorded decisions, importing nothing from src/.
@@ -35,6 +38,7 @@ export const CHECKS = [
   "legacy-reward", "xp-per-box",
   "move-momentum", "milestone-once", "suffer-cost", "recover-amount", "burn",
   "session-momentum", "lock-free", "answered-once", "held-narrated-in-turn",
+  "let-go-stays", "scene-turned", "colour-not-filed",
 ];
 
 const slug = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -49,6 +53,20 @@ export function cardsAt(marks, i) {
 }
 
 const pcOf = (table, id) => table?.pcs?.find(p => p.id === id) ?? (table?.pcs?.length === 1 ? table.pcs[0] : null);
+
+// ── overhaul 2's own words (the design's, not the module's) ──────────────────
+
+/** Words no question is about. */
+const PLAIN = new Set(["that", "this", "there", "their", "them", "they", "what", "when", "where", "which", "while", "with", "will", "would",
+  "could", "should", "from", "into", "about", "have", "has", "been", "were", "does", "your", "still", "just", "else", "here", "then", "than"]);
+/** A text's words, four letters or more, each by its first five letters — "lights" is "light". */
+const stemsOf = (text) => new Set((String(text ?? "").toLowerCase().match(/[a-z][a-z'’-]{3,}/g) ?? [])
+  .map(w => w.replace(/['’]s$/, "")).filter(w => w.length >= 4 && !PLAIN.has(w)).map(w => w.slice(0, 5)));
+/** The names at the table — no evidence of what a question is about (the player characters, the ship, the cards). */
+const namesAt = (table) => stemsOf([...(table?.pcs ?? []).map(p => p.name), table?.ship?.name, ...(table?.entityCards ?? []).map(c => c.name)].filter(Boolean).join(" "));
+/** A line that skips time (overhaul 2 §4.2 — the player's words, or a Sojourn). */
+const SKIPS_TIME = /\b(?:the next (?:morning|day|evening|night|dawn)|the following (?:morning|day|evening|night|week)|overnight|until (?:morning|dawn|the next)|(?:hours|days) later|sleep (?:until|through)|time passes)\b/i;
+const sameFact = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const openFight = (table, id = null) => (table?.tracks ?? []).find(t => t.type === "combat" && (id ? t.id === id : !t.completed)) ?? null;
 
 const expeditions = (table) => (table?.tracks ?? []).filter(t => t.type === "expedition");
@@ -77,6 +95,18 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
 
   const index = new Map(marks.map((k, i) => [k.step, i]));
   const actionAt = (step) => actions.find(a => a.step === step)?.action ?? null;
+  // The steps a beat of play was narrated in — the narrations a scene turns
+  // at (a move's, a paced line's, a round's, an oracle follow-up's): no
+  // set-piece, no clock or vow scene, no fallback card, and no answer to an
+  // @scene question (a camera on the story, never a beat).
+  const sceneAsked = new Set(messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).map(m => m.step));
+  const playIn = new Set(messages.filter((m) => {
+    const card = m.card ?? [];
+    return m.narrator && !m.vignette && !card.includes("sceneResponse") && !card.includes("narrationFallback") && !sceneAsked.has(m.step)
+      && (!!m.moveId || card.includes("pacedNarrative") || card.includes("oracleNarrationCard") || card.includes("roundId"));
+  }).map(m => m.step));
+  // A scene owed a turn (scene-turned): by the first beat of play from `from`.
+  let owed = [];
   const firstSeen = new Map();          // card id → the step it was first seen in
   for (const k of marks) for (const c of k.cards ?? []) if (!firstSeen.has(c.id)) firstSeen.set(c.id, k.step);
   const newIn = (mark) => (mark.cards ?? []).filter(c => firstSeen.get(c.id) === mark.step);
@@ -391,6 +421,68 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
         const want = paid ? Math.min(now.momentumMax ?? MOMENTUM_MAX, pc.momentum + 1) : pc.momentum;
         hold("session-momentum", step, now.momentum === want,
           `${after.session.active ? "Begin" : "End"} a Session ${paid ? "with" : "without"} its +1: ${pc.name}'s momentum went from ${pc.momentum} to ${now.momentum}, not ${want}`);
+      }
+    }
+
+    // ── overhaul 2: what play let go stays let go (§7.3) ──────────────────────
+    // A scene question newly set while play has let one go is the player's
+    // only if the line took the let-go one up: one sharing a word of it that
+    // the step's line does not hold re-sets what play let go.
+    const letGo = after.scene?.letGo ?? [];
+    const question = String(after.scene?.frame?.question ?? "").trim();
+    if (letGo.length && question && question !== String(before.scene?.frame?.question ?? "").trim()) {
+      const names = namesAt(after);
+      const said = stemsOf(action?.action === "say" ? action.text : "");
+      const asked = [...stemsOf(question)].filter(s => !names.has(s));
+      const again = letGo.find(e => asked.some(s => stemsOf(e.text).has(s) && !said.has(s)));
+      hold("let-go-stays", step, !again, () => `the scene's question became "${question}" — on "${again.text}", which play let go, and the line did not take it up`);
+    }
+
+    // ── overhaul 2: a scene turns when its place or its situation changes (§4.2)
+    // Begins before: an arrival, a fight begun or a line that skips time turns
+    // the scene before the narration that tells it — the step's own beat. Ends
+    // after: a fight ended turns it at the next beat of play. One turn may
+    // answer two causes (place, then ship, then fight…): any owed one will do.
+    // Only where the table read records a scene's anchor (a run from before
+    // overhaul 2 has none — its scenes never turned: no check is made).
+    const anchored = !!after.scene && Object.prototype.hasOwnProperty.call(after.scene, "began");
+    const beforeTracks = (before.tracks ?? []).filter(t => t.type === "combat");
+    const afterTracks = (after.tracks ?? []).filter(t => t.type === "combat");
+    if (after.session?.id !== before.session?.id) owed = [];
+    const owe = (why, causes, sceneBefore, now) => { if (anchored) owed.push({ step, why, causes, sceneBefore, from: i + (now ? 0 : 1) }); };
+    if (after.location?.id && after.location.id !== (before.location?.id ?? null)) owe(`the characters arrived at ${after.location.name ?? after.location.id}`, ["place", "ship"], before.scene?.id ?? null, true);
+    for (const t of afterTracks) if (!t.completed && !beforeTracks.some(b => b.id === t.id)) owe(`the fight "${t.label}" began`, ["fight"], before.scene?.id ?? null, true);
+    for (const b of beforeTracks) {
+      const now = afterTracks.find(t => t.id === b.id);
+      if (!b.completed && (!now || now.completed)) owe(`the fight "${b.label}" ended`, ["fight"], after.scene?.id ?? null, false);
+    }
+    if (action?.action === "say" && SKIPS_TIME.test(String(action.text ?? ""))) owe(`the line skipped time ("${action.text}")`, ["time"], before.scene?.id ?? null, true);
+    // A beat of play here: a narration the observer saw — or, where it kept
+    // no messages, a narrator card new in the step that answered no @scene question.
+    const playHere = playIn.has(step) || fresh.some(c => c.narration && !c.narration.sceneResponse && !c.narration.upgradeOf
+      && (c.narration.moveId || c.narration.pacedNarrative || c.narration.oracleNarrationCard)
+      && !messages.find(m => m.id === c.id)?.vignette && !sceneAsked.has(step));
+    if (playHere) {
+      const due = owed.filter(o => o.from <= i);
+      if (due.length) {
+        const causes = [...new Set(due.flatMap(o => o.causes))];
+        const scene = after.scene ?? {};
+        const began = scene.began?.sceneId === scene.id ? scene.began : null;
+        for (const o of due) {
+          hold("scene-turned", o.step, !!scene.id && scene.id !== o.sceneBefore && causes.includes(began?.cause),
+            () => `${o.why}, and the beat of play after it (${step}) was told in ${scene.id === o.sceneBefore ? "the same scene" : `a scene begun for ${began?.cause ?? "no recorded cause"}`}, not one begun for ${o.causes.join(" or ")}`);
+        }
+        owed = owed.filter(o => !due.includes(o));
+      }
+    }
+
+    // ── overhaul 2: the narration's colour is never filed (§5.6) ──────────────
+    // When a scene ends, its colour truths — the narration's own, basis
+    // narrator — leave with it: no Lore entry and no tier detail carries one.
+    if (before.scene?.id && after.scene?.id !== before.scene.id) {
+      for (const t of (before.scene.truths ?? []).filter(x => x.basis === "narrator" && !x.retracted)) {
+        const filedAt = (after.filed ?? []).find(f => sameFact(f.fact) === sameFact(t.fact) && (!t.narrationId || f.narrationId === t.narrationId));
+        hold("colour-not-filed", step, !filedAt, () => `"${t.fact}", the narration's own colour, was filed when its scene ended: ${filedAt.where}`);
       }
     }
 

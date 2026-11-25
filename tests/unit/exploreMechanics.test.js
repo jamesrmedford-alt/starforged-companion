@@ -53,7 +53,10 @@ function story() {
     entityCards: [{ id: 'A1', name: 'Tamsin Vey', entityType: 'connection' }],
     tracks: [{ id: 't1', label: 'Ashen Wake', type: 'combat', rank: 'dangerous', ticks: 0, completed: false, combatState: 'in_control', linkedVowName: 'Find the raiders' }],
     legacy: { quests: { ticks: 2, cleared: false, cycles: 0 }, bonds: { ticks: 0, cleared: false, cycles: 0 }, discoveries: { ticks: 0, cleared: false, cycles: 0 } },
-    scene: { truths: [] }, helpers: {}, plans: [],
+    // Overhaul 2's records (lib/table.mjs): the scene with why it began, what
+    // play let go in it, and what a scene's end filed.
+    scene: { id: 'sc1', truths: [], frame: null, letGo: [], began: { sceneId: 'sc1', cause: 'session', what: 'the session began', place: 'Bleakhold Station', ship: null } },
+    filed: [], helpers: {}, plans: [],
   };
   const pc = table.pcs[0];
   const fight = table.tracks[0];
@@ -67,7 +70,11 @@ function story() {
 
   step('(setup)', null, () => {});
   step('a1', { action: 'dialog', title: 'Begin a Session', fields: [{ name: 'vignette', value: 'true' }], press: 'Begin' }, () => { table.session.active = true; table.session.id = 's1'; pc.momentum = 3; });
-  step('a2', say('I work the docks for who saw the raiders.'), () => { pc.momentum = 5; rolled([2, 5], 4); },
+  step('a2', say('I work the docks for who saw the raiders.'), () => {
+    pc.momentum = 5; rolled([2, 5], 4);
+    // The narration's own colour (basis narrator): it leaves with its scene.
+    table.scene.truths.push({ id: 'tc1', subject: 'scene', fact: 'the dock lamps burn amber', basis: 'narrator', said: ['n-n2'], narrationId: 'n-n2', retracted: false });
+  },
     [moveCard('m2', 'Gather Information', 'Action: 4 + 3 = 7 | Challenge: 2, 5', 'strong_hit'), narrated('n2', 'm2', 'gather_information', 'strong_hit')]);
   // An expedition: a hit begins its track and marks it once; a waypoint's
   // strong hit offers a mark or momentum, and the mark is taken; the finish
@@ -102,12 +109,18 @@ function story() {
       { id: 'v7', victory: { vowName: 'Find the raiders', vowId: 'v1', marks: 1, actorId: 'pc', resolvedActions: {} } }]);
   step('a8', click('⚑ Mark milestone (×1)'), () => { vow.ticks = 24; },
     [{ id: 'v7', victory: { vowName: 'Find the raiders', vowId: 'v1', marks: 1, actorId: 'pc', resolvedActions: { markMilestone: true } } }]);
-  step('a9', say('I treat the gash in my arm.'), () => { rolled([2, 3], 5); },
+  // The fight ended at a7: the beat of play after it is told in a new scene,
+  // begun for the fight — and what play let go goes on into it.
+  step('a9', say('I treat the gash in my arm.'), () => {
+    rolled([2, 3], 5);
+    table.scene = { id: 'sc2', truths: [], frame: null, letGo: [{ text: 'What is the amber light above the stall?', stems: ['amber', 'light', 'stall'] }],
+      began: { sceneId: 'sc2', cause: 'fight', what: 'the fight with the Ashen Wake ended', place: 'Bleakhold Station', ship: null } };
+  },
     [moveCard('m9', 'Heal', 'Action: 5 + 1 = 6 | Challenge: 2, 3', 'strong_hit'), narrated('n9', 'm9', 'heal', 'strong_hit'),
       { id: 's9', suffer: { resolved: false, picked: [], moveId: 'heal', resolutionId: 'm9', actorId: 'pc', options: [{ label: 'Take/give +3 health' }] } }]);
   step('a10', click('Take/give +3 health'), () => { pc.health = 5; },
     [{ id: 's9', suffer: { resolved: true, picked: [0], moveId: 'heal', resolutionId: 'm9', actorId: 'pc', options: [{ label: 'Take/give +3 health' }] } }]);
-  step('a11', say('I trade news with Tamsin.'), () => { conn.ticks = 40; bond.ticks = 40; },
+  step('a11', say('I trade news with Tamsin.'), () => { conn.ticks = 40; bond.ticks = 40; table.scene.frame = { question: 'Will Tamsin trust Mira with the ledger?' }; },
     [moveCard('m11', 'Develop Your Relationship', '', null), narrated('n11', 'm11', 'develop_your_relationship', 'strong_hit')]);
   step('a12', say('I ask Tamsin to forge a bond.'), () => { conn.bonded = true; bond.completed = true; table.legacy.bonds.ticks = 2; rolled([3, 4]); },
     [moveCard('m12', 'Forge a Bond', 'Progress: 10 | Challenge: 3, 4', 'strong_hit'), narrated('n12', 'm12', 'forge_a_bond', 'strong_hit')]);
@@ -242,6 +255,15 @@ describe('each check catches the defect it is for', () => {
     ['lock-free', 'the move lock held after the table settled', ({ at }) => { at('a9').table.session.pendingMove = true; }, 'the move lock was held'],
     ['answered-once', 'a line narrated twice', ({ at }) => { at('a2').cards.push(narrated('n2b', 'other', 'gather_information', 'strong_hit')); }, 'narrated 2 times'],
     ['answered-once', 'a line nobody answered', ({ at }) => { at('a11').cards.length = 0; }, 'no narration and no card that asks for a choice'],
+    // Overhaul 2 (issue #386 §14).
+    ['let-go-stays', 'a scene question set on what play let go', ({ at }) => { at('a11').table.scene.frame = { question: 'What does the amber light above the stall mean?' }; },
+      'on "What is the amber light above the stall?", which play let go, and the line did not take it up'],
+    ['scene-turned', 'a fight ended, and the next beat told in the same scene', ({ from }) => from('a9', (t) => {
+      t.scene = { ...t.scene, id: 'sc1', began: { ...t.scene.began, sceneId: 'sc1', cause: 'session' } };
+    }), 'the fight "Ashen Wake" ended, and the beat of play after it (a9) was told in the same scene, not one begun for fight'],
+    ['colour-not-filed', 'the narration\'s colour filed when its scene ended', ({ from }) => from('a9', (t) => {
+      t.filed = [{ where: 'Lore: scene: the dock lamps burn amber', fact: 'the dock lamps burn amber', narrationId: 'n-n2' }];
+    }), '"the dock lamps burn amber", the narration\'s own colour, was filed when its scene ended: Lore: scene: the dock lamps burn amber'],
     ['held-narrated-in-turn', 'a held result kept by the next line, and narrated after it', ({ run, at }) => {
       run.actions.find(a => a.step === 'a13d').action = say('I take the name and go.');
       at('a13d').cards.push(narrated('n13e', 'own-13d', 'face_danger', 'strong_hit'));

@@ -507,7 +507,7 @@ describe('the recovery beat is aimed at what the sheet holds spent (the fourth l
       journal: { contents: [] }, scenes: { contents: [] },
     };
     const table = await withPage({ game }, () => readTable({ page: { evaluate: async (fn, arg) => fn(arg) } }));
-    expect(table.ship).toEqual({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 4, integrityMax: 5, battered: false });
+    expect(table.ship).toEqual({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 4, integrityMax: 5, battered: false, position: null });
     expect(sheetSpent(table).spent).toEqual(['spirit', 'integrity']);
   });
 });

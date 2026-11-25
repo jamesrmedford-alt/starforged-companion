@@ -1219,10 +1219,15 @@ describe('the long-haul charter', () => {
   });
 
   it('its facts are the issue\'s — a possession, a name, a handover, a promise, the ship, a correction, a rename — each with what refuses it', () => {
-    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
+    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8']);
     for (const f of CHARTER.facts) {
       expect(f.refusals?.length, `${f.id} has a refusal`).toBeGreaterThan(0);
-      expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
+      // F8, overhaul 2's (issue #386 §14 — the fourth live run's a6/a7): a thing
+      // given and then left. It is read through its refusals, the colour told as
+      // fact and the openings, never by a probe: one would change what a probe
+      // set's beat asks of the kept runs.
+      if (f.id === 'F8') expect(f.probes, 'F8 is not probed').toEqual([]);
+      else expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
       expect(f.from === 'world' ? CHARTER.beats.some(b => b.id === f.plantedBy) : true, `${f.id} is planted by a beat that exists`).toBe(true);
     }
     expect(CHARTER.baits).toHaveLength(2);

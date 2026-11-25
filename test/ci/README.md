@@ -289,8 +289,10 @@ mechanics together:
   narrator as under way while she flies to Bleakhold. Its check
   (`BEAT_CHECKS.expedition`): a track begun while the beat was current,
   progress marked on it, a waypoint explored, the track complete.
-- **A ledger of seven facts** — a possession, a name and its pronouns, an
-  item handed over, a promise, where the ship is, a correction, a rename —
+- **A ledger of eight facts** — a possession, a name and its pronouns, an
+  item handed over, a promise, where the ship is, a correction, a rename, and
+  an item given and then left (beat 5's dock-fee slip, read by its refusals
+  alone: it has no probe, so the kept runs' beat checks stand) —
   each asked about in every later session, scored stored / in the prompt / in
   the answer, with the words that would contradict it; read against the
   narrator's answers **and** against every summary, Chronicle entry and recap
@@ -299,7 +301,13 @@ mechanics together:
   recomputed from the dice on its card, meters and tracks in bounds, progress
   and rewards by rank — an expedition's mark, and its finish on the
   discoveries legacy, among them — an effect landing once, the lock free,
-  every line answered once.
+  every line answered once. And overhaul 2's three (issue #386 §14):
+  `let-go-stays` (no scene question set on what play let go, unless the line
+  took it up), `scene-turned` (an arrival, a fight begun or ended, a line that
+  skips time — the next beat of play told in a scene begun for it) and
+  `colour-not-filed` (none of the narration's own colour filed when its scene
+  ended). The last two are made only where the table records why a scene
+  began, so a run kept from before overhaul 2 is not held to them.
 - **Seven decisive rolls scripted, the rest real, all recorded** — the
   issue's six and the expedition's finish; the GM is fixed rules.
 - **Four interruptions** made by the runner: the GM's page reloads mid-fight,
@@ -324,8 +332,30 @@ with nothing on the sheet to recover — and whether it named a move (`rules/ci-
 Its **Refrains** row and section count what each session's narrations of
 play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
 longest run in a row, and the narrations that end on someone waiting,
-watching or still — and **Speed** gives a line of play's wait apart from a
-scene question's.
+watching or still — now scene by scene as well, with the worst scene named
+— and **Speed** gives a line of play's wait apart from a scene question's.
+
+**Overhaul 2's counts** (issue #386, design §14) are read off every run's
+review, from the table read after every step (`lib/table.mjs`: each truth's
+basis and the narrations that said it, why the scene began, what play let
+go, the ship's position line, and what a scene's end filed) and from the
+recorded replies. The scorecard's rows and sections: **Scenes** (each
+session's scenes, and why each began), **One place** (a narration or an
+`@scene` answer that has the ship docked when her record has her away, or
+away when docked, and a frame that names another place than the record's —
+and every `@scene` asked where she is, with its answer), **Reconciling in
+prose** (the sentences that explain a difference in the prose: "no longer
+at…", "though the scene frame…"), **Colour told as fact** (the narration's
+own colour, basis narrator, that a recap, a summary or the Chronicle tells),
+**What binds** (each session's truths by basis, and the tags the module
+refused: a `from: "line"` the line does not bear out) and **Openings** (each
+session's opening, beside the record it was told from, for the cold read). A
+section, *Overhaul 2's counts, against run 4*, sets each beside the fourth
+live run's. `review-data.json` carries them as `scenes`, `places`,
+`reconciliations`, `colour`, `provenance` and `openings`. The long haul plays
+what they need: beat 5's slip given and then left, the `@scene` question
+after the fight of where the Kobayashi IV is (beat 17), and beat 22's line
+that lets the night pass.
 
 **The third live run of the long haul** (2026-11-24, $1.71) is kept at
 `playwright/explorations/long-haul-live-20261124-0321/`: the first with a player

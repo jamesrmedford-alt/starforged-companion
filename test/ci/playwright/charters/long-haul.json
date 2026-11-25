@@ -322,6 +322,37 @@
           "ask": "What is my bonded friend's full name now?"
         }
       ]
+    },
+    {
+      "id": "F8",
+      "kind": "an item given and then left",
+      "required": true,
+      "statement": "Mira left the dock-fee slip Tamsin gave her on Tamsin's counter.",
+      "variants": [
+        "counter"
+      ],
+      "anchor": [
+        "slip"
+      ],
+      "refusals": [
+        {
+          "id": "she still has it",
+          "subject": [
+            "slip"
+          ],
+          "near": [
+            "in your hand",
+            "in your hands",
+            "on your knee",
+            "in your pocket",
+            "in your jacket",
+            "you still have",
+            "tucked in your",
+            "you kept the"
+          ]
+        }
+      ],
+      "probes": []
     }
   ],
   "baits": [
@@ -446,7 +477,7 @@
       "n": 5,
       "session": 1,
       "title": "Plant facts F1–F4",
-      "tell": "Say each of these as its own line of play, in these words or very near them: (1) \"I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.\" (2) \"I leave the cargo manifest with Tamsin for safekeeping.\" (3) \"I promise Tamsin I'll be back before the next tide of cargo.\" Put each in your notebook once it is said.",
+      "tell": "Say each of these as its own line of play, in these words or very near them: (1) \"Tamsin slides a dock-fee slip across to me; I read it and leave it on her counter.\" (2) \"I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.\" (3) \"I leave the cargo manifest with Tamsin for safekeeping.\" (4) \"I promise Tamsin I'll be back before the next tide of cargo.\" Put each in your notebook once it is said.",
       "check": {
         "type": "factsPlanted",
         "facts": [
@@ -673,7 +704,7 @@
       "n": 17,
       "session": 2,
       "title": "Correct an earlier fact",
-      "tell": "The cutter's name was wrong. Type !truth list and find the entry that names the Ashen Wake; type !truth strike followed by that entry's id as the list shows it; then type exactly: !truth set \"raider cutter\" is named the Cinder Wren",
+      "tell": "First, as its own line, ask the narrator exactly: \"@scene Where is the Kobayashi IV?\" Then: The cutter's name was wrong. Type !truth list and find the entry that names the Ashen Wake; type !truth strike followed by that entry's id as the list shows it; then type exactly: !truth set \"raider cutter\" is named the Cinder Wren",
       "check": {
         "type": "corrected",
         "fact": "F6"
@@ -736,7 +767,7 @@
       "n": 22,
       "session": 3,
       "title": "Recover",
-      "tell": "Recover what the fight cost you — and only what it cost. The observer's note below names what of your sheet is spent: health, spirit, supply, the ship's integrity. In a line of play, mend one of those: tend a wound you have taken (health), take time to steady yourself — a quiet hour, a meal in company (spirit), restock at Bleakhold's market (supply), or see to the hull and the systems the fight damaged (the ship). Never tend a wound you do not have, or restock what is full: the observer's note says what is spent, and only that has anything to mend. If the narrator answers without a roll and a card offers one, press it. When its card offers what you regain, take it; after a hit on the ship's repairs, type !repair and spend its points in the window that opens.",
+      "tell": "Begin with a line that lets the night pass, in exactly these words: \"I rest aboard until the next morning.\" Then: Recover what the fight cost you — and only what it cost. The observer's note below names what of your sheet is spent: health, spirit, supply, the ship's integrity. In a line of play, mend one of those: tend a wound you have taken (health), take time to steady yourself — a quiet hour, a meal in company (spirit), restock at Bleakhold's market (supply), or see to the hull and the systems the fight damaged (the ship). Never tend a wound you do not have, or restock what is full: the observer's note says what is spent, and only that has anything to mend. If the narrator answers without a roll and a card offers one, press it. When its card offers what you regain, take it; after a hit on the ship's repairs, type !repair and spend its points in the window that opens.",
       "check": {
         "type": "recovered",
         "moves": [
@@ -1047,6 +1078,17 @@
     {
       "beat": 5,
       "action": "say",
+      "text": "Tamsin slides a dock-fee slip across to me; I read it and leave it on her counter.",
+      "plants": [
+        "F8"
+      ],
+      "names": [
+        "Tamsin"
+      ]
+    },
+    {
+      "beat": 5,
+      "action": "say",
       "text": "I turn my sister Ilse's brass star-compass over in my palm — the one thing of hers I still carry.",
       "plants": [
         "F1"
@@ -1267,6 +1309,11 @@
     {
       "beat": 17,
       "action": "say",
+      "text": "@scene Where is the Kobayashi IV?"
+    },
+    {
+      "beat": 17,
+      "action": "say",
       "text": "!truth list"
     },
     {
@@ -1356,6 +1403,11 @@
       "action": "say",
       "text": "@scene What surname does my broker friend go by these days?",
       "probe": "F7"
+    },
+    {
+      "beat": 22,
+      "action": "say",
+      "text": "I rest aboard until the next morning."
     },
     {
       "beat": 22,
