@@ -967,7 +967,7 @@ describe('a rehearsal that rolls', () => {
     r.reply(turn('CHAT: empty', 5));
     const planted = textOf(r.reply(module(narrator, 'The player says it.')));
     expect(planted).toContain(CHARTER.facts[0].statement);
-    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(planted)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: CHARTER.facts[0].statement }]);
+    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(planted)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: CHARTER.facts[0].statement, from: 'line' }]);   // the player's own words: they bind (overhaul 2, D5)
     r.reply(turn('CHAT: empty', 7));
     expect(textOf(r.reply(module(`${narrator}## WORLD SNAPSHOT\nher brass star-compass`, 'What do I still carry that belonged to my sister?')))).toContain('It comes back to you at once');
     expect(textOf(r.reply(module(narrator, 'What do I still carry that belonged to my sister?'))), 'nothing carried it').toContain('nothing comes');

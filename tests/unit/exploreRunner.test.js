@@ -608,7 +608,7 @@ describe('a rehearsal\'s stand-in for the model API', () => {
     const rehearsal = createRehearsal({ charter: CHARTER });
     const narrated = textOf(ask(rehearsal, NARRATOR, 'I turn the brass star-compass over.'));
     expect(factIn(narrated, fact)).toBe(true);
-    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(narrated)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: fact.statement }]);
+    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(narrated)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: fact.statement, from: 'line' }]);   // tagged the player's, so it binds (overhaul 2, D5)
     expect(JSON.parse(textOf(ask(rehearsal, 'You are the chronicle scribe', 'the star compass')))).toMatchObject({ salience: 'notable', text: fact.statement });
     // The session summary is a view of the record (issue #382 slice 3): asked with the session's numbered beats, it
     // answers a cited JSON list (record/summaryView.js SESSION_SUMMARY_SYSTEM_PROMPT).
