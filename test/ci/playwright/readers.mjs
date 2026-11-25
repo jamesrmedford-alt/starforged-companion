@@ -13,13 +13,20 @@
 // counts: how often is a plain line read right, and how much of the failure
 // is the model?
 //
+// The one reader that is to replace them (src/moves/reader.js readLine,
+// routed by src/pacing/readAndRoute.js — issue #384, slice 1) is measured beside them: an arm is a design and a
+// model (READERS_ARMS below), and the one reader's arm calls readAndRoute,
+// the composition decidePacing takes at the switch — not a copy of it here.
+//
 // One GM client. For each line: the world is put in the line's context — the
 // recent scene as narrator cards in chat, and what of its state a reader's
-// prompt reads (lib/readers.mjs STATE_READ) — and then the two readers are
-// called in the page as the chat pipeline calls them (src/index.js, readMove
-// in src/moves/movePipeline.js). The line is never posted to chat: nothing is
-// rolled or narrated, and nothing but the two readers' calls reaches a model —
-// in a live run the harness's gate refuses any other call. Lines are read a
+// prompt reads (lib/readers.mjs STATE_READ), a fight with the character's
+// position in it among them — and the count of recent moves set (cleared, or
+// filled with a case's `recentMoves`); then the readers are called in the page
+// as the chat pipeline calls them (src/index.js, readMove in
+// src/moves/movePipeline.js). The line is never posted to chat: nothing is
+// rolled or narrated, and nothing but the readers' calls reaches a model — in
+// a live run the harness's gate refuses any other call. Lines are read a
 // context at a time, and each line by every arm in turn before the next: a
 // run a cap stops has every arm's reading of the same lines.
 //
@@ -37,17 +44,22 @@
 //   READERS_QUESTIONS  what the run is to answer, one question to a line. A
 //                      live run is refused without it (the spending rule,
 //                      rules/ci-e2e.md).
-//   READERS_ARMS       the models, comma-separated (default
+//   READERS_ARMS       the arms, comma-separated, each `design:model` — `two:`
+//                      today's two readers (decidePacing, then interpretMove
+//                      on a MOVE), `one:` the one reader (readAndRoute); a
+//                      bare model is `two:` (default
 //                      claude-sonnet-5-5,claude-haiku-5-5: the readers' own
-//                      model, then the one they ran on before it). An arm
-//                      that is the readers' own model — whichever the module
-//                      asks for, in any place in the list — sends their calls
-//                      as they are; any other has the two readers' calls —
+//                      model, then the one they ran on before it). The
+//                      one-reader measure is
+//                      two:claude-sonnet-5-5,one:claude-sonnet-5-5,one:claude-haiku-5-5.
+//                      An arm whose model is the readers' own — whichever the
+//                      module asks for, in any place in the list — sends their
+//                      calls as they are; any other has the readers' calls —
 //                      and only those — sent to it instead, with that model's
 //                      own form of "thinking off" (lib/claude.mjs swapModel).
-//                      An arm needs a price in explore.config.json, and
-//                      should be a model whose thinking can be turned off:
-//                      the readers' reply caps leave no room for it.
+//                      An arm's model needs a price in explore.config.json,
+//                      and should be one whose thinking can be turned off: the
+//                      readers' reply caps leave no room for it.
 //   READERS_REPEATS    readings of each line by each arm (default 1).
 //   READERS_CAP_USD    a hard stop (default 2.00): when the budget refuses a
 //                      call the run stops and reports what was done.
@@ -82,7 +94,7 @@ import { createBudget } from "./lib/budget.mjs";
 import { questionsOf } from "./lib/review.mjs";
 import { thinkingOffFor } from "../../../src/narration/thinking.js";
 import {
-  OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
+  OUTCOME, STATE_READ, armsOf, casesToRun, compareDesigns, contextMismatch, fightOf, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
 } from "./lib/readers.mjs";
 
 const list = (text, fallback) => {
@@ -95,7 +107,8 @@ const LIVE      = RAW_MODE === "live";
 const API_KEY   = LIVE ? process.env.ANTHROPIC_API_KEY || null : null;
 // The readers' own model first (src/pacing/classifier.js, src/moves/interpreter.js
 // MODEL — a unit test holds the first default to it), then the model to set it against.
-const ARMS      = list(process.env.READERS_ARMS, ["claude-sonnet-5-5", "claude-haiku-5-5"]);
+const ARM_SPECS = list(process.env.READERS_ARMS, ["claude-sonnet-5-5", "claude-haiku-5-5"]);
+const { arms: ARMS, problems: ARM_PROBLEMS } = armsOf(ARM_SPECS);
 const REPEATS   = Number(process.env.READERS_REPEATS || 1);
 const CAP_USD   = Number(process.env.READERS_CAP_USD || 2);
 const ONLY      = list(process.env.READERS_ONLY, []);
@@ -105,8 +118,9 @@ const CAP_MINUTES = 90;
 // A model call that fails this many readings in a row ends the run.
 const FAILED_IN_A_ROW = 3;
 
-/** The two readers' calls, by the module function that makes them (lib/claude.mjs callerKind). */
-const readerOf = (kind) => (/classifyInput/.test(kind ?? "") ? "pacing" : /interpretMove/.test(kind ?? "") ? "move" : null);
+/** The readers' calls, by the module function that makes them (lib/claude.mjs callerKind). */
+const readerOf = (kind) => (/classifyInput/.test(kind ?? "") ? "pacing" : /interpretMove/.test(kind ?? "") ? "move"
+  : /readLine/.test(kind ?? "") ? "line" : null);
 
 // The table's dials, pinned to what a new world has: the readers are told
 // them, and an earlier suite may have left others. And three settings off, so
@@ -176,7 +190,8 @@ function versionsInPage(MODULE_ID) {
  *     them are not posted: nothing here is a line of play).
  *   - the ship: the command vehicle's integrity and whether it is battered,
  *     through its record's writer (which writes the starship's own impact).
- *   - the open tracks: the Progress Tracks journal.
+ *   - the open tracks: the Progress Tracks journal — each with its progress,
+ *     a fight with the character's own position in it (setCombatTrackPosition).
  *   - where the character is, the scene frame and the session: campaignState,
  *     written at its turn on the client's write chain.
  *
@@ -193,6 +208,7 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
   const { applySceneFrame } = await import(`${MODULE_SRC}/factContinuity/ledgers.js`);
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
   const { buildSituationBlock } = await import(`${MODULE_SRC}/moves/situation.js`);
+  const { readLineSituation, buildReaderSituationBlock } = await import(`${MODULE_SRC}/moves/readerSituation.js`);
   const stored = () => game.settings.get(MODULE_ID, "campaignState") ?? {};
   const state = context.state ?? {};
   const pc = game.actors.get(pcId);
@@ -299,6 +315,16 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
   const same = (a, b) => a.type === b.type && a.label === b.label;
   for (const track of open) if (!wanted.some(w => same(w, track))) await progress.completeProgressTrack(track.id);
   for (const w of wanted) if (!open.some(t => same(w, t))) await progress.addProgressTrack({ label: w.label, type: w.type, rank: w.rank ?? "dangerous" });
+  // Each track's progress, and a fight's position for the character — through
+  // the store's own writer (setCombatTrackPosition), as the position toggle and
+  // the combat moves write it.
+  const openNow = (await progress.listProgressTracks()).filter(t => !t.completed);
+  for (const w of wanted) {
+    const track = openNow.find(t => same(w, t));
+    if (!track) continue;
+    if (Number.isInteger(w.ticks) && track.ticks !== w.ticks) await progress.updateTrackFields(track.id, { ticks: w.ticks });
+    if (w.type === "combat") await progress.setCombatTrackPosition(track.id, w.position ?? null, pcId);
+  }
 
   // Read back, from what the readers' prompts are built from — and the block
   // itself, as both prompts will carry it for this context's lines.
@@ -318,31 +344,83 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
     vehicle:     ship ? { name: ship.name, integrity: Number.isFinite(Number(ship.integrity)) ? Number(ship.integrity) : null, battered: ship.battered === true } : null,
     connections: sheet.readConnections(pc).filter(c => !c.lost).map(c => ({ name: c.name, rank: c.rank, ticks: c.ticks, bonded: c.completed })),
     vows:        sheet.readVows(pc).filter(v => !v.completed).map(v => ({ name: v.name, rank: v.rank, ticks: v.ticks })),
-    tracks:      (await progress.listProgressTracks()).filter(t => !t.completed).map(t => ({ type: t.type, label: t.label })),
+    tracks:      (await progress.listProgressTracks()).filter(t => !t.completed).map(t => ({
+      type: t.type, label: t.label, ticks: t.ticks,
+      ...(t.type === "combat" ? { position: t.positions?.[pcId] ?? t.combatState ?? null } : {}),
+    })),
+    // The block both readers are told today, and the one reader's whole situation.
     situation:   buildSituationBlock(pc, { campaignState: cs }),
+    lineSituation: buildReaderSituationBlock(readLineSituation(pc, { campaignState: cs })),
   };
 }
 
 /**
- * Read one line with the two readers, as the chat pipeline does (src/index.js
- * onMessage; readMove in src/moves/movePipeline.js) — and nothing else of it:
- * the line is not posted, no lock is claimed, nothing is rolled or narrated.
+ * Read one line, as the chat pipeline does — with today's two readers
+ * (`two`: src/index.js onMessage's decidePacing, then readMove's
+ * interpretMove in src/moves/movePipeline.js) or with the one reader (`one`:
+ * readAndRoute, src/pacing/readAndRoute.js — what decidePacing calls at the
+ * switch) — and nothing else of it: the line is not posted, no lock is
+ * claimed, nothing is rolled or narrated.
  */
-async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line }) {
-  const { decidePacing, classifierReadingOf, resetRecentDensity } = await import(`${MODULE_SRC}/pacing/router.js`);
+async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, design, recentMoves = 0 }) {
+  const router = await import(`${MODULE_SRC}/pacing/router.js`);
+  const { decidePacing, classifierReadingOf, resetRecentDensity, recordRecentDecision, readPacingConfig, getRecentMoveDensity } = router;
   const { interpretMove } = await import(`${MODULE_SRC}/moves/interpreter.js`);
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
   const { getMischiefDial } = await import(`${MODULE_SRC}/ui/settingsPanel.js`);
+  const { getActiveCombatPosition } = await import(`${MODULE_SRC}/ui/progressTracks.js`);
   const pick = (from, keys) => Object.fromEntries(keys.filter(k => from?.[k] !== undefined).map(k => [k, from[k]]));
 
-  // Each line is read on its own: no earlier line's decision counts toward "recent moves".
+  // Each line is read on its own: no earlier line's decision counts toward
+  // "recent moves" — save the run of moves its case says it follows.
   resetRecentDensity();
+  const before = game.settings.get(MODULE_ID, "campaignState");
+  const pacingConfig = readPacingConfig(before);
+  for (let i = 0; i < recentMoves; i += 1) {
+    recordRecentDecision({ decision: "MOVE", sceneTag: before?.currentSessionId ?? "global", window: pacingConfig.densityWindow });
+  }
 
   const apiKey = game.settings.get(MODULE_ID, "claudeApiKey");
   const actor  = game.actors.get(pcId) ?? null;
   // The speaker, as index.js getActiveCharacterForPacing gives it for the line's author.
   const character = actor ? { name: actor.name ?? null, actorId: actor.id ?? null } : null;
+  const sceneChars = () => getRecentSceneForReading(game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null).length;
 
+  if (design === "one") {
+    const { readAndRoute } = await import(`${MODULE_SRC}/pacing/readAndRoute.js`);
+    let decided = null;
+    let lineError = null;
+    const started = performance.now();
+    try {
+      decided = await readAndRoute({
+        playerText: line, campaignState: before, character, apiKey, pacingConfig,
+        recentMoveDensity: getRecentMoveDensity(pacingConfig.densityWindow), mischiefLevel: getMischiefDial(),
+      });
+    } catch (err) {
+      lineError = String(err?.message ?? err);
+    }
+    const reading = decided?.reading ?? null;
+    return {
+      design: "one",
+      line: decided ? {
+        ...pick(decided, ["runMove", "decision", "suggestedMove", "suggestedTargetId", "category", "confidence", "reasoning", "moveId", "fallback", "unmade"]),
+        route: decided.route ? pick(decided.route, ["route", "why", "moveId", "offeredMove", "dial", "remapped"]) : null,
+        reading: reading ? {
+          ...pick(reading, ["mode", "moveId", "asked", "risk", "category", "confidence", "reason", "plainMove", "sceneChallenge", "failed"]),
+          interpretation: reading.interpretation
+            ? pick(reading.interpretation, ["moveId", "statUsed", "moveTarget", "healSituation", "expeditionRank", "combatRank", "stakes", "mischiefApplied", "keptInKind", "positionConstraintApplied", "rationale"])
+            : null,
+        } : null,
+      } : null,
+      lineError,
+      ms: { line: Math.round(performance.now() - started) },
+      density: getRecentMoveDensity(pacingConfig.densityWindow),
+      sceneChars: sceneChars(),
+    };
+  }
+
+  // The density the pacing reader is told, as it reads it.
+  const density = getRecentMoveDensity(pacingConfig.densityWindow);
   let started = performance.now();
   const pacing = await decidePacing({
     playerText: line, campaignState: game.settings.get(MODULE_ID, "campaignState"), character, apiKey,
@@ -361,7 +439,8 @@ async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line }) {
         campaignState,
         mischiefLevel:  getMischiefDial(),
         apiKey,
-        combatPosition: null,              // no fight is open in any context
+        // The roller's position, as readMove reads it (null with no fight open).
+        combatPosition: await getActiveCombatPosition(actor?.id ?? null),
         roller:         actor,
         recentScene:    getRecentSceneForReading(campaignState?.currentSessionId ?? null),
         classifier,
@@ -374,16 +453,18 @@ async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line }) {
   }
 
   return {
+    design: "two",
     pacing: pick(pacing, ["runMove", "decision", "suggestedMove", "nominatedMove", "category", "confidence", "reasoning", "classifierRead", "forced", "pacingDisabled"]),
     classifier,
     interpretation: interpretation
       ? pick(interpretation, ["moveId", "moveName", "noMove", "statUsed", "confidence", "mischiefApplied", "keptInKind", "rationale", "fallback",
-        "moveTarget", "healSituation", "expeditionRank", "combatRank"])
+        "moveTarget", "healSituation", "expeditionRank", "combatRank", "positionConstraintApplied"])
       : null,
     interpretError,
     ms: { pacing: pacingMs, move: moveMs },
+    density,
     // How much recent scene the readers were given: the runner checks it is the context's.
-    sceneChars: getRecentSceneForReading(game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null).length,
+    sceneChars: sceneChars(),
   };
 }
 
@@ -401,11 +482,13 @@ async function main() {
   const { cases, unknown } = casesToRun(file, ONLY);
   assert(!unknown.length, `READERS_ONLY names case(s) the list does not have: ${unknown.join(", ")}`);
   assert(cases.length, "no case to read");
+  assert(!ARM_PROBLEMS.length, `READERS_ARMS can't run:\n  ${ARM_PROBLEMS.join("\n  ")}`);
+  assert(ARMS.length, "READERS_ARMS names no arm");
   if (LIVE) {
     assert(API_KEY, "a live run needs ANTHROPIC_API_KEY (READERS_MODE=dry runs without one)");
     // A live run is paid for: it is given its questions in writing before it runs.
     assert(QUESTIONS.length, "a live run needs its questions in writing: READERS_QUESTIONS, one to a line — what this run is to answer that a dry run cannot");
-    const unpriced = ARMS.filter(arm => !prices[arm]);
+    const unpriced = ARMS.filter(arm => !prices[arm.model]).map(arm => arm.model);
     assert(!unpriced.length, `no price is configured for ${unpriced.join(", ")} (explore.config.json) — a model nobody priced is a model nobody budgeted`);
   }
 
@@ -437,7 +520,7 @@ async function main() {
   }, (CAP_MINUTES + 10) * 60_000);
   hardStop.unref();
 
-  log(`${cases.length} line(s) × ${REPEATS} reading(s) × ${ARMS.join(", ")} — ${mode} — evidence in ${path.relative(process.cwd(), dir)}`);
+  log(`${cases.length} line(s) × ${REPEATS} reading(s) × ${ARMS.map(a => a.id).join(", ")} — ${mode} — evidence in ${path.relative(process.cwd(), dir)}`);
   if (LIVE) log(`cap: $${CAP_USD.toFixed(2)}, ${caps.calls} model calls`);
   else log("a dry run: no model is called — every reading is the harness's stub");
   // The readers turn thinking off, and the form that does it is per model
@@ -445,9 +528,9 @@ async function main() {
   // swapModel). A model the module knows no form for is sent none — right for
   // one that does not think unasked, and a waste on one that always thinks:
   // its thinking comes out of the readers' small reply caps.
-  const thinking = Object.fromEntries(ARMS.map(arm => [arm, thinkingOffFor(arm).thinking?.type ?? null]));
-  for (const arm of ARMS.filter(a => !thinking[a])) {
-    log(`NOTE  ${arm}: the module has no thinking-off form for it, so its calls carry no \`thinking\` field — if it thinks by default, its readings will be cut short by the readers' reply caps`);
+  const thinking = Object.fromEntries(ARMS.map(arm => [arm.id, thinkingOffFor(arm.model).thinking?.type ?? null]));
+  for (const arm of ARMS.filter(a => !thinking[a.id])) {
+    log(`NOTE  ${arm.id}: the module has no thinking-off form for ${arm.model}, so its calls carry no \`thinking\` field — if it thinks by default, its readings will be cut short by the readers' reply caps`);
   }
 
   const persist = () => out.json("results.json", results);
@@ -460,14 +543,14 @@ async function main() {
       // A dry run's readers are answered by the stub, as meant: not worth a line each.
       log:    (line) => { if (!LIVE && /^UNRECORDED /.test(String(line)) && readerOf(String(line))) return; log(line); },
       gate: LIVE ? {
-        // Nothing but the two readers' calls reaches a model.
+        // Nothing but the readers' calls reaches a model.
         before: (call) => (readerOf(call.kind)
-          ? budget.reserve({ ...call, role: `${armNow ?? "setup"} ${readerOf(call.kind)}` })
-          : { ok: false, reason: "not one of the two readers' calls, and this run sends a model nothing else" }),
+          ? budget.reserve({ ...call, role: `${armNow?.id ?? "setup"} ${readerOf(call.kind)}` })
+          : { ok: false, reason: "not one of the readers' calls, and this run sends a model nothing else" }),
         after: (id, { usage }) => budget.settle(id, { usage }),
       } : null,
       // The arm: a model other than the one the reader asked for takes its call.
-      model: (kind, asked) => (armNow && armNow !== asked && readerOf(kind) ? armNow : null),
+      model: (kind, asked) => (armNow && armNow.model !== asked && readerOf(kind) ? armNow.model : null),
     });
     gm = await openClient(browser, "gm", { prepare: (page) => harness.attach(page, "gm") });
     await join(gm, GM_NAME, log);
@@ -515,10 +598,12 @@ async function main() {
             break reading;
           }
           armNow = arm;
-          stepNow = `${arm} · ${c.id} · ${repeat}`;
+          stepNow = `${arm.id} · ${c.id} · ${repeat}`;
           harness.setStep(stepNow);
           const before = harness.requests.length;
-          const raw = await gm.page.evaluate(readLineInPage, { MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line });
+          const raw = await gm.page.evaluate(readLineInPage, {
+            MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line, design: arm.design, recentMoves: c.recentMoves ?? 0,
+          });
           const made = harness.requests.slice(before);
           // A line read against another scene than its context's — a session
           // minted under the run, a card gone — would be a reading of nothing.
@@ -541,15 +626,22 @@ async function main() {
           if (failedCall) reading.failed = `the ${failedCall.reader} reader's call failed (HTTP ${failedCall.status})`;
           const outcome = scoreCase(c.want, reading);
           results.push({
-            arm, id: c.id, family: c.family, context: c.context, line: c.line, want: c.want,
+            arm: arm.id, design: arm.design, model: arm.model,
+            id: c.id, family: c.family, ...(c.kind ? { kind: c.kind } : {}), context: c.context, line: c.line, want: c.want,
             ...(c.source ? { source: c.source } : {}), ...(c.note ? { note: c.note } : {}),
+            // The fight the line is read in (the character's position in it), and the run of moves it follows.
+            fight: fightOf(file.contexts[c.context].state)?.position ?? null,
+            ...(c.recentMoves ? { recentMoves: c.recentMoves } : {}), ...(c.named ? { named: c.named } : {}),
             repeat, outcome, reading,
-            pacing: raw.pacing, classifier: raw.classifier, interpretation: raw.interpretation,
-            ...(raw.interpretError ? { interpretError: raw.interpretError } : {}),
-            ms: raw.ms, calls,
+            ...(arm.design === "one"
+              ? { lineReading: raw.line, ...(raw.lineError ? { lineError: raw.lineError } : {}) }
+              : { pacing: raw.pacing, classifier: raw.classifier, interpretation: raw.interpretation, ...(raw.interpretError ? { interpretError: raw.interpretError } : {}) }),
+            density: raw.density, ms: raw.ms, calls,
           });
-          log(`${String(results.length).padStart(3)}/${planned}  ${c.id.padEnd(20)} ${arm.padEnd(18)} ${outcome}`
-            + `${reading.failed ? "" : ` — ${reading.decision}${reading.suggested ? ` ${reading.suggested}` : ""}${reading.move ? ` → ${reading.move}` : reading.noMove ? " → no move" : ""}`}`);
+          const said = arm.design === "one"
+            ? ` — ${reading.route ?? "no route"}${reading.move ? ` ${reading.move}` : reading.offered ? ` ${reading.offered}` : ""}${reading.risk ? ` (risk ${reading.risk}${reading.asked ? ", asked" : ""})` : ""}`
+            : ` — ${reading.decision}${reading.suggested ? ` ${reading.suggested}` : ""}${reading.move ? ` → ${reading.move}` : reading.noMove ? " → no move" : ""}`;
+          log(`${String(results.length).padStart(3)}/${planned}  ${c.id.padEnd(20)} ${arm.id.padEnd(22)} ${outcome}${reading.failed ? "" : said}`);
 
           failedInARow = failedCall ? failedInARow + 1 : 0;
           if (failedInARow >= FAILED_IN_A_ROW) {
@@ -637,7 +729,10 @@ async function main() {
       spend,
       calls: {
         total: requests.length,
-        byArm: Object.fromEntries(summary.arms.map(arm => [arm, { pacing: summary.byArm[arm].spend.pacingCalls, move: summary.byArm[arm].spend.moveCalls, usd: Number(summary.byArm[arm].spend.usd.toFixed(4)) }])),
+        byArm: Object.fromEntries(summary.arms.map(arm => [arm, {
+          pacing: summary.byArm[arm].spend.pacingCalls, move: summary.byArm[arm].spend.moveCalls, line: summary.byArm[arm].spend.lineCalls,
+          usd: Number(summary.byArm[arm].spend.usd.toFixed(4)),
+        }])),
         notAReaders: strays,
         failed: failedCalls.map(r => ({ n: r.n, step: r.step, kind: r.kind, model: r.model, status: r.status })),
       },
@@ -646,9 +741,12 @@ async function main() {
       world: { session: sessionId, stateRead: STATE_READ, contexts: world.contexts },
       summary: Object.fromEntries(summary.arms.map((arm) => {
         const t = summary.byArm[arm];
-        return [arm, { wanting: t.wanting, read: t.read, readRate: t.readRate, rolled: t.rolled, offered: t.offered, anotherMove: t.wrong, nothing: t.nothing,
-          controls: t.controls, controlsRight: t.controlsRight, failed: t.failed }];
+        return [arm, { design: t.design, model: t.model, wanting: t.wanting, read: t.read, readRate: t.readRate, rolled: t.rolled, offered: t.offered,
+          offeredNotRolled: t.offeredNotRolled, anotherMove: t.wrong, nothing: t.nothing, controls: t.controls, controlsRight: t.controlsRight, failed: t.failed,
+          rolledShare: t.rolledShare, byKind: t.byKind, fights: t.fights }];
       })),
+      // The one reader against the two on each model both read (the scope's section 8.2).
+      switch: compareDesigns(summary),
     });
 
     for (const arm of summary.arms) {
@@ -656,6 +754,7 @@ async function main() {
       log(`${arm}: read ${t.read} of ${t.wanting} wanting a move (${t.rolled} rolled, ${t.offered} offered); ${t.wrong} another move, ${t.nothing} nothing; `
         + `controls ${t.controlsRight} of ${t.controls} right; ${t.failed} ${OUTCOME.FAILED}`);
     }
+    for (const p of compareDesigns(summary)) log(`${p.one} against ${p.two}: ${p.verdict} — ${p.criteria.map(c => `${c.n} ${c.pass === null ? "–" : c.pass ? "yes" : "NO"}`).join(", ")}`);
     if (LIVE) log(`spent $${spend.usd.toFixed(4)} of $${CAP_USD.toFixed(2)} — ${spend.calls} model call(s), ${spend.minutes} minutes`);
     if (infrastructure) { log(`RESULT infrastructure-error — ${infrastructure}`); if (gm) logConsoleErrors([gm], log); }
     else if (budgetRefused) log(`RESULT stopped-by-budget — ${stopped}`);

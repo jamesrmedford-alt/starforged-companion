@@ -1305,6 +1305,18 @@ moved to Sonnet 5.5 (decisions.md → "The readers run on Sonnet 5.5"). Run it
 after a change to either reader's prompt, before a live run is bought to see
 the same thing.
 
+It also measures **the one reader** that is to replace the two (issue #384,
+slice 1: `src/moves/reader.js`, routed by `src/pacing/readAndRoute.js` — what
+`decidePacing` calls at the switch). An arm of `READERS_ARMS` is a design and a
+model — `two:<model>` the two readers, `one:<model>` the one reader; a bare
+model is `two:` — and a run with both on one model compares them in its report
+by the switch's criteria (`lib/readers.mjs` `compareDesigns`): the measure is
+`READERS_ARMS=two:claude-sonnet-5-5,one:claude-sonnet-5-5,one:claude-haiku-5-5
+READERS_REPEATS=2`. Its list holds fights (a combat track with the character's
+`position` in it, written with `setCombatTrackPosition`), lines that follow a
+run of moves (`recentMoves`), the two named-move lines (`named`, read right
+only when rolled — `want.rolled`) and issue #383's kinds (`kind`).
+
 ## Quench batch coupling — shared defaults and hooks
 
 Settings defaults and module hooks are **shared state across all Quench

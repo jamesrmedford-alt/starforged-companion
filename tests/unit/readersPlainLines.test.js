@@ -25,9 +25,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  DECISION, OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
+  DECISION, OUTCOME, STATE_READ, armsOf, casesToRun, compareDesigns, contextMismatch, fightOf, positionLegal, readingOf, report, routeOf, scoreCase,
+  sheetOf, stateNotSet, summarise, validateCases,
 } from '../../test/ci/playwright/lib/readers.mjs';
-import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
+import { movesNamedIn, moveLabel } from '../../test/ci/playwright/lib/moveNames.mjs';
 import { createClaudeHarness } from '../../test/ci/playwright/lib/claude.mjs';
 import { createBudget } from '../../test/ci/playwright/lib/budget.mjs';
 import { MOVES } from '../../src/schemas.js';
@@ -49,17 +50,20 @@ describe('the plain lines that ship', () => {
     expect(validateCases(LIST)).toEqual([]);
   });
 
-  it('no line names a move or uses a rules word', () => {
-    const named = LIST.cases.map(c => ({ id: c.id, named: movesNamedIn(c.line) })).filter(c => c.named.length);
+  it('no line names a move or uses a rules word — save the named-move lines, which say the move they name', () => {
+    const named = LIST.cases.filter(c => c.named === undefined).map(c => ({ id: c.id, named: movesNamedIn(c.line) })).filter(c => c.named.length);
     expect(named).toEqual([]);
+    const naming = LIST.cases.filter(c => c.named !== undefined);
+    expect(naming.map(c => c.id)).toEqual(['named-after-moves', 'named-after-moves-2']);
+    for (const c of naming) expect(movesNamedIn(c.line), c.id).toEqual([moveLabel(c.named)]);
   });
 
-  it('is about fifty lines in five to seven contexts, each a scene in the second person', () => {
-    expect(LIST.cases.length).toBeGreaterThanOrEqual(45);
-    expect(LIST.cases.length).toBeLessThanOrEqual(60);
+  it('is about seventy-five lines in five to ten contexts, each a scene in the second person', () => {
+    expect(LIST.cases.length).toBeGreaterThanOrEqual(70);
+    expect(LIST.cases.length).toBeLessThanOrEqual(85);
     const contexts = Object.entries(LIST.contexts);
     expect(contexts.length).toBeGreaterThanOrEqual(5);
-    expect(contexts.length).toBeLessThanOrEqual(7);
+    expect(contexts.length).toBeLessThanOrEqual(10);
     for (const [key, context] of contexts) {
       expect(context.scene.join(' '), `${key}: narration as the narrator writes it`).toMatch(/\b[Yy]ou(r)?\b/);
       expect(LIST.cases.some(c => c.context === key), `${key}: a context no case uses`).toBe(true);
@@ -75,6 +79,8 @@ describe('the plain lines that ship', () => {
       'travel':      ['set_a_course', 'undertake_an_expedition', 'explore_a_waypoint'],
       'action':      ['gather_information', 'face_danger', 'secure_an_advantage', 'compel', 'check_your_gear'],
       'fight entry': ['enter_the_fray'],
+      'fight':       ['strike', 'gain_ground', 'clash', 'react_under_fire', 'face_danger'],
+      'named move':  ['set_a_course', 'face_danger'],
     };
     for (const [family, moves] of Object.entries(families)) {
       for (const move of moves) expect(wantedIn(family).has(move), `${family}: no line wants ${move}`).toBe(true);
@@ -116,8 +122,8 @@ describe('the plain lines that ship', () => {
 
   it('something done for a connection wants Develop Your Relationship; news traded with her is its control', () => {
     const deeds = LIST.cases.filter(c => (c.want.moves ?? []).includes('develop_your_relationship'));
-    // A favour that costs her time, a gift of value, bringing her what she needs.
-    expect(deeds.map(c => c.id)).toEqual(['develop-2', 'develop-3', 'develop-4']);
+    // A favour that costs her time, a gift of value, bringing her what she needs, a gift of value again.
+    expect(deeds.map(c => c.id)).toEqual(['develop-2', 'develop-3', 'develop-4', 'develop-5']);
     for (const c of deeds) {
       expect(c.family, c.id).toBe('connection');
       expect(LIST.contexts[c.context].state.connection, `${c.id}: a connection to do it for`).toMatchObject({ name: 'Tamsin Okoro', bonded: false });
@@ -152,7 +158,7 @@ describe('the plain lines that ship', () => {
 
   it('a step toward a vow is asked for with no fight open — one of them with none behind it either — and a thought about the quest is a control', () => {
     const steps = LIST.cases.filter(c => (c.want.moves ?? []).includes('reach_a_milestone'));
-    expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4']);
+    expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4', 'claim-supported']);
     for (const c of steps) {
       const state = LIST.contexts[c.context].state;
       expect(state.vow?.name, `${c.id}: a vow to step toward`).toBeTruthy();
@@ -207,11 +213,12 @@ describe('the plain lines that ship', () => {
       expect(STATE_READ[key], key).toMatch(/^both readers' SITUATION block/);
     }
     expect(stateNotSet(LIST.contexts['bleakhold-after-fight'].state)).toEqual([]);
-    expect(stateNotSet(LIST.contexts['ashfall-drift'].state).map(n => n.key)).toEqual(['tracks[].ticks']);
+    // A track's progress is set too now: the one reader is told it.
+    expect(stateNotSet(LIST.contexts['ashfall-drift'].state)).toEqual([]);
     expect(stateNotSet({ weather: 'ion storm', vow: { name: 'V', swornTo: 'Tamsin Okoro' } }).map(n => n.key)).toEqual(['weather', 'vow.swornTo']);
     // Every context's state is set whole: nothing of the list is left to its narration alone.
     for (const [key, context] of Object.entries(LIST.contexts)) {
-      expect(stateNotSet(context.state).map(n => n.key).filter(k => k !== 'tracks[].ticks'), key).toEqual([]);
+      expect(stateNotSet(context.state).map(n => n.key), key).toEqual([]);
     }
   });
 
@@ -298,7 +305,7 @@ describe('validateCases', () => {
       'context "empty": its scene is one or two paragraphs of narration',
       'context "long": its scene is one or two paragraphs of narration',
       'context "adrift": its location "Nowhere Deep" is not one of the world\'s settlements',
-      'context "brawl": an open fight is not a context of this test',
+      'context "brawl": an open fight gives the character\'s position in it (in_control or bad_spot)',
       'context "nobody": its connection has no name',
       'context "nobody": its connection\'s rank "mighty" is not a rank',
       'context "nobody": its connection\'s ticks are a whole number from 0 to 40',
@@ -729,7 +736,7 @@ describe('report', () => {
     expect(limits).toContain('(not set in the world: tracks[].ticks, vow.swornTo)');
     expect(limits).not.toContain('The sheet does not reach the readers');
     // The prompts are the readers' own model's, wherever that arm stands in the list.
-    expect(limits).toContain('**Only the model changes between arms.** Each arm reads the same prompts, written for the readers\' own model (`claude-sonnet-5-5`);');
+    expect(limits).toContain('**Only the model changes between arms of one design.** Each arm reads the same prompts as the others of its design, written for the readers\' own model (`claude-sonnet-5-5`);');
     expect(report(summary, { ...meta, own: undefined })).toContain('written for the readers\' own model; a prompt tuned to another model');
     expect(limits).toContain('**No arm thinks first.** The readers turn thinking off, each model in its own form (`claude-haiku-5-5`: disabled; `claude-sonnet-5-5`: between_tools)');
     expect(text, 'no self-consistency section for one reading a line').not.toContain('## Self-consistency');

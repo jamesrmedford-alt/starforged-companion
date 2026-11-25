@@ -11,15 +11,48 @@
 // for, and on others — to answer how often a plain line is read right, and
 // how much of the failure is the model.
 //
+// The one reader that is to replace them (src/moves/reader.js readLine, routed
+// by src/pacing/readAndRoute.js — issue #384, slice 1) is measured beside them: an arm is a design and a
+// model — `two:<model>` today's two readers, `one:<model>` the one reader —
+// and a bare model is `two:` (armsOf).
+//
 // This file is the part of that test that needs no browser: the list's own
-// checks, what a pair of replies comes to at the table, its score against the
-// reading the line should get, the run's numbers and its report.
+// checks, the arms, what a reading's replies come to at the table, its score
+// against the reading the line should get, the run's numbers and its report.
 //
 // Pure: no Foundry, no network, no clock, no file.
 
 import { MOVES } from "../../../../src/schemas.js";
 import { movesNamedIn, moveLabel } from "./moveNames.mjs";
 import { costOf } from "./budget.mjs";
+
+/** The two designs an arm reads a line with: today's two readers, or the one. */
+export const DESIGNS = Object.freeze(["two", "one"]);
+
+/**
+ * The arms of a run from READERS_ARMS: each `design:model`, a bare model
+ * meaning `two:` (so a run named as before reads as it did). Each arm's id is
+ * its spec as written; an arm named twice is one arm.
+ *
+ * @param {string[]} specs
+ * @returns {{ arms: Array<{ id: string, design: "two"|"one", model: string }>, problems: string[] }}
+ */
+export function armsOf(specs) {
+  const arms = [];
+  const problems = [];
+  for (const raw of Array.isArray(specs) ? specs : []) {
+    const spec = String(raw ?? "").trim();
+    if (!spec) continue;
+    const at = spec.indexOf(":");
+    const design = at > 0 ? spec.slice(0, at) : "two";
+    const model = at > 0 ? spec.slice(at + 1).trim() : spec;
+    if (!DESIGNS.includes(design)) { problems.push(`arm "${spec}": its design is two or one, not "${design}"`); continue; }
+    if (!model) { problems.push(`arm "${spec}" names no model`); continue; }
+    const id = at > 0 ? `${design}:${model}` : model;
+    if (!arms.some(a => a.id === id)) arms.push({ id, design, model });
+  }
+  return { arms, problems };
+}
 
 /** The pacing reader's three decisions (src/pacing/classifier.js PACING_DECISION). */
 export const DECISION = Object.freeze({
@@ -38,6 +71,9 @@ export const DECISION = Object.freeze({
 export const OUTCOME = Object.freeze({
   ROLLED:          "rolled",
   OFFERED:         "offered",
+  // A line that asks to be rolled (`want.rolled` — a move named after a run of
+  // moves, issue #383 finding 17): its move offered is not read.
+  OFFERED_NOT_ROLLED: "offered, not rolled",
   ANOTHER_ROLLED:  "another move rolled",
   ANOTHER_OFFERED: "another move offered",
   NOTHING:         "nothing",
@@ -65,7 +101,7 @@ export const STATE_READ = Object.freeze({
   frame:      "the pacing reader's CURRENT SCENE — \"Scene frame\", from campaignState.sceneFrame",
   connection: `${SITUATION}, from the bond Item on the character's sheet: its name, rank and relationship track, or that it is bonded`,
   vow:        `${SITUATION}, from the vow Item on the character's sheet: its name, rank and progress`,
-  tracks:     "the move reader's \"Open progress tracks\", by type and label; an open fight or scene challenge would reach the pacing reader too",
+  tracks:     "the move reader's \"Open progress tracks\", by type and label, and its combat position directive; an open fight (\"COMBAT STATUS: ACTIVE\") or scene challenge reaches the pacing reader too; the one reader's SITUATION gives each with its rank and progress, a fight with the character's position in it",
   health:     `${SITUATION}, from the sheet's health meter`,
   spirit:     `${SITUATION}, from the sheet's spirit meter`,
   supply:     `${SITUATION}, from the sheet's supply meter`,
@@ -116,7 +152,6 @@ export function stateNotSet(state) {
     if (!STATE_READ[key]) out.push({ key, why: "neither reader's prompt reads it" });
   }
   if (state?.vow?.swornTo != null) out.push({ key: "vow.swornTo", why: "the runner links no vow to a connection; the block would name the link, were one made" });
-  if ((state?.tracks ?? []).some(t => t?.ticks != null)) out.push({ key: "tracks[].ticks", why: "the move reader is told a track's type and label, not its progress" });
   return out;
 }
 
@@ -137,10 +172,28 @@ const RECOVERS = {
   repair:   (sheet) => sheet.integrity < METER_MAX || sheet.battered,
 };
 
+/** The fight a context opens, or null: this test opens one at most. */
+export const fightOf = (state) => (Array.isArray(state?.tracks) ? state.tracks.find(t => t?.type === "combat") ?? null : null);
+
+/** The moves a combat position allows of the two pairs (interpreter.js POSITION_MOVE_REMAP's other side). */
+const POSITION_MOVES = Object.freeze({ in_control: ["strike", "gain_ground"], bad_spot: ["clash", "react_under_fire"] });
+const FIGHT_POSITIONS = Object.keys(POSITION_MOVES);
+
+/** Whether a move rolled in a fight is one the character's position allows: false for the other position's pair. */
+export function positionLegal(moveId, position) {
+  if (!FIGHT_POSITIONS.includes(position)) return true;
+  const other = FIGHT_POSITIONS.find(p => p !== position);
+  return !POSITION_MOVES[other].includes(moveId);
+}
+
 /** What a wanted move needs its context to hold, or null. */
 function contextProblem(moveId, state) {
   const connection = state?.connection ?? null;
   const tracks = Array.isArray(state?.tracks) ? state.tracks : [];
+  const fight = fightOf(state);
+  for (const [position, moves] of Object.entries(POSITION_MOVES)) {
+    if (moves.includes(moveId) && fight?.position !== position) return `${moveId} is wanted only in a fight where the character is ${position === "in_control" ? "in control" : "in a bad spot"}`;
+  }
   if (RECOVERS[moveId] && !RECOVERS[moveId](sheetOf(state))) {
     return `${moveId} is wanted only where the context's sheet has something for it to recover`;
   }
@@ -160,11 +213,16 @@ function contextProblem(moveId, state) {
  * that is no scene, a sheet that is no sheet (a meter off its scale, an
  * impact the block does not name), a ship's state with no ship in the world,
  * a case in a context the list does not have, a move id the module does not
- * know, a line that names a move or uses a rules word, a case that wants
- * neither a move nor none, an id used twice, a wanted move its context cannot
- * hold — a recovery move with nothing on the sheet to recover among them —
- * and a control that says its line is a recovery with nothing to recover
- * (`nothingToRecover: "heal"`) in a context whose sheet has something.
+ * know, a line that names a move or uses a rules word (unless the case says
+ * it does: `named`, true or the move's id — the named-move-after-a-run lines
+ * of issue #383), a case that wants neither a move nor none, an id used
+ * twice, a wanted move its context cannot hold — a recovery move with
+ * nothing on the sheet to recover among them, a position's move in a fight
+ * where the character is in the other — a control that says its line is a
+ * recovery with nothing to recover (`nothingToRecover: "heal"`) in a context
+ * whose sheet has something, a fight that does not give the character's
+ * position, a `recentMoves` that is no count, and a `want.rolled` on a
+ * control.
  *
  * @param {{ world?: Object, contexts?: Object, cases?: Object[] }} file
  * @returns {string[]}
@@ -210,10 +268,18 @@ export function validateCases(file) {
     }
     for (const track of state.tracks ?? []) {
       if (!track?.type || !track?.label) problems.push(`context "${key}": a track needs a type and a label`);
-      // An open fight changes both readers' rules, and the runner hands the
-      // move reader no combat position: a fight is not a context of this test.
-      if (track?.type === "combat") problems.push(`context "${key}": an open fight is not a context of this test`);
+      if (track?.ticks != null && !(Number.isInteger(track.ticks) && track.ticks >= 0 && track.ticks <= FULL_TRACK)) {
+        problems.push(`context "${key}": a track's ticks are a whole number from 0 to ${FULL_TRACK}`);
+      }
+      // An open fight is read against the character's position in it, which
+      // the runner writes (setCombatTrackPosition) and both designs are told:
+      // a fight in this test says it.
+      if (track?.type === "combat" && !FIGHT_POSITIONS.includes(track.position)) {
+        problems.push(`context "${key}": an open fight gives the character's position in it (in_control or bad_spot)`);
+      }
+      if (track?.type !== "combat" && track?.position != null) problems.push(`context "${key}": only a fight has a position`);
     }
+    if ((state.tracks ?? []).filter(t => t?.type === "combat").length > 1) problems.push(`context "${key}": one fight at most`);
   }
 
   const seen = new Set();
@@ -226,12 +292,21 @@ export function validateCases(file) {
     const context = contexts[c?.context];
     if (!context) problems.push(`${at}: unknown context "${c?.context}"`);
     if (typeof c?.line !== "string" || !c.line.trim()) problems.push(`${at}: it has no line`);
-    else {
+    else if (c.named === undefined) {
       const named = movesNamedIn(c.line);
       if (named.length) problems.push(`${at}: its line names ${named.join(", ")} — a plain line names no move and uses no rules word`);
+    } else if (c.named !== true && !(typeof c.named === "string" && Object.hasOwn(MOVES, c.named))) {
+      problems.push(`${at}: named is true, or the id of the move its line names`);
+    } else if (typeof c.named === "string" && !movesNamedIn(c.line).includes(moveLabel(c.named))) {
+      problems.push(`${at}: its line does not name ${moveLabel(c.named)}`);
     }
+    if (c?.recentMoves !== undefined && !(Number.isInteger(c.recentMoves) && c.recentMoves >= 0 && c.recentMoves <= 10)) {
+      problems.push(`${at}: recentMoves is how many of the last decisions were moves — a whole number from 0 to 10`);
+    }
+    if (c?.kind !== undefined && !(typeof c.kind === "string" && c.kind.trim())) problems.push(`${at}: its kind is a name`);
     const none = c?.want?.none === true;
     const moves = c?.want?.moves;
+    if (c?.want?.rolled !== undefined && (c.want.rolled !== true || none)) problems.push(`${at}: want.rolled is true, and only for a line that wants a move`);
     if (none && moves !== undefined) problems.push(`${at}: it wants both a move and none`);
     else if (!none && !(Array.isArray(moves) && moves.length)) problems.push(`${at}: it wants neither a move (want.moves) nor none (want.none)`);
     else if (c.nothingToRecover !== undefined) {
@@ -282,7 +357,8 @@ export function casesToRun(file, only = []) {
  *   vehicle: { integrity: number|null, battered: boolean }|null,
  *   connections: Array<{ name: string, ticks: number, bonded: boolean }>,
  *   vows: Array<{ name: string, ticks: number }>,
- *   tracks: Array<{ type: string, label: string }> }} applied
+ *   tracks: Array<{ type: string, label: string, ticks?: number, position?: string|null }> }} applied — a
+ *   fight's `position` is the character's own in it
  * @returns {string|null}
  */
 export function contextMismatch(context, applied) {
@@ -316,6 +392,11 @@ export function contextMismatch(context, applied) {
   const wanted = state.tracks ?? [];
   const tracks = applied.tracks ?? [];
   if (wanted.length !== tracks.length || wanted.some(w => !tracks.some(a => a.type === w.type && a.label === w.label))) return "the open tracks are not the context's";
+  for (const w of wanted) {
+    const a = tracks.find(t => t.type === w.type && t.label === w.label);
+    if (w.ticks != null && a.ticks !== undefined && a.ticks !== w.ticks) return `the track "${w.label}" stands at ${a.ticks} ticks, not ${w.ticks}`;
+    if (w.position != null && a.position !== w.position) return `the character is ${a.position ?? "in no position"} in the fight "${w.label}", not ${w.position}`;
+  }
   return null;
 }
 
@@ -342,13 +423,23 @@ const known = (id) => (id && Object.hasOwn(MOVES, id) ? id : null);
  * read (it sends the line on as a move), the move reader's the same, or no
  * reply. Such a reading says nothing of either reader and is not scored.
  *
- * @param {{ pacing?: Object|null, interpretation?: Object|null, interpretError?: string|null }} replies —
- *   decidePacing's decision and interpretMove's reading, as the page returns them
+ * An arm of the `one` design (`design: "one"`) is read by readingOfLine: the
+ * one reader's route is what the line comes to.
+ *
+ * @param {{ design?: "two"|"one", pacing?: Object|null, interpretation?: Object|null, interpretError?: string|null,
+ *   line?: Object|null, lineError?: string|null }} replies — `two`: decidePacing's decision and
+ *   interpretMove's reading, as the page returns them; `one`: readAndRoute's decision (`line`)
  * @returns {{ decision: string|null, suggested: string|null, move: string|null, noMove: boolean, offered: string|null,
  *   unsure: boolean, mischief: boolean, failed: string|null, category: string|null, confidence: number|null,
  *   reasons: { pacing: string, move: string } }}
  */
-export function readingOf({ pacing = null, interpretation = null, interpretError = null } = {}) {
+export function readingOf(replies = {}) {
+  if (replies?.design === "one") return readingOfLine(replies);
+  return readingOfTwo(replies);
+}
+
+/** The two readers' reading (readingOf's, for an arm of the `two` design). */
+function readingOfTwo({ pacing = null, interpretation = null, interpretError = null } = {}) {
   const decision = Object.values(DECISION).includes(pacing?.decision) ? pacing.decision : null;
   const reading = {
     decision,
@@ -397,6 +488,52 @@ export function readingOf({ pacing = null, interpretation = null, interpretError
 }
 
 /**
+ * What the one reader's reading comes to at the table, as readAndRoute
+ * routes it (src/pacing/readAndRoute.js): roll → its move rolled; offer → its
+ * move on the narration's button; narrate → nothing. A reading the reader
+ * failed on (readAndRoute's fallback: the call failed, the reply could not be
+ * read) is no reading of the line and is not scored. Its `asked` and `risk`
+ * ride with it, and what the gate refused (`unmade`).
+ *
+ * @param {{ line?: Object|null, lineError?: string|null }} replies
+ * @returns {Object} readingOf's shape, with `design: "one"`, `route`, `asked`, `risk`, `unmade`
+ */
+function readingOfLine({ line = null, lineError = null } = {}) {
+  const r = line?.reading ?? null;
+  const route = line?.route?.route ?? null;
+  const reading = {
+    design:     "one",
+    decision:   Object.values(DECISION).includes(line?.decision) ? line.decision : null,
+    route,
+    suggested:  null,
+    move:       null,
+    noMove:     false,
+    offered:    null,
+    unsure:     false,
+    mischief:   r?.interpretation?.mischiefApplied === true,
+    failed:     null,
+    category:   typeof r?.category === "string" ? r.category : null,
+    confidence: Number.isFinite(line?.confidence) ? line.confidence : null,
+    asked:      r?.asked === true,
+    risk:       r?.risk ?? null,
+    unmade:     line?.unmade ?? null,
+    reasons:    { line: String(r?.reason ?? "").trim(), route: String(line?.route?.why ?? "").trim() },
+  };
+  if (!line) { reading.failed = `the line reader gave no reading${lineError ? ` (${lineError})` : ""}`; return reading; }
+  if (line.fallback === true || r?.failed) { reading.failed = `the line reader did not read the line (${r?.failed ?? line.reasoning ?? "no reason given"})`; return reading; }
+  if (route === "roll") {
+    reading.move = known(ordinary(line.moveId));
+    if (!reading.move) reading.failed = `the line reader routed a roll of no move the module knows (${line.moveId ?? "none"})`;
+  } else if (route === "offer") {
+    reading.offered = known(ordinary(line.suggestedMove));
+    reading.suggested = reading.offered;
+  } else if (route !== "narrate") {
+    reading.failed = `the line reader's reading was given no route (${route ?? "none"})`;
+  }
+  return reading;
+}
+
+/**
  * A reading against the reading its line should get.
  *
  * @param {{ moves?: string[], none?: boolean }} want
@@ -408,7 +545,11 @@ export function scoreCase(want, reading) {
   const control = want?.none === true;
   const wanted = new Set(control ? [] : want?.moves ?? []);
   if (reading.move) return control ? OUTCOME.MOVE_ROLLED : wanted.has(reading.move) ? OUTCOME.ROLLED : OUTCOME.ANOTHER_ROLLED;
-  if (reading.offered) return control ? OUTCOME.MOVE_OFFERED : wanted.has(reading.offered) ? OUTCOME.OFFERED : OUTCOME.ANOTHER_OFFERED;
+  if (reading.offered) {
+    if (control) return OUTCOME.MOVE_OFFERED;
+    if (!wanted.has(reading.offered)) return OUTCOME.ANOTHER_OFFERED;
+    return want?.rolled === true ? OUTCOME.OFFERED_NOT_ROLLED : OUTCOME.OFFERED;
+  }
   return control ? OUTCOME.NARRATED : OUTCOME.NOTHING;
 }
 
@@ -434,6 +575,12 @@ function tally(list) {
   const anotherRolled = count(wanting, r => r.outcome === OUTCOME.ANOTHER_ROLLED);
   const anotherOffered = count(wanting, r => r.outcome === OUTCOME.ANOTHER_OFFERED);
   const right = count(controls, r => r.outcome === OUTCOME.NARRATED);
+  // The dials' share (the switch's criterion 8): of the lines read right
+  // whose move makes an action roll — a stat; the no-roll moves are offered
+  // by rule — how many were rolled.
+  const action = (r) => READ.has(r.outcome) && Array.isArray(MOVES[r.reading?.move ?? r.reading?.offered]?.stat) && MOVES[r.reading?.move ?? r.reading?.offered].stat.length > 0;
+  const actionRead = count(wanting, action);
+  const actionRolled = count(wanting, r => action(r) && r.outcome === OUTCOME.ROLLED);
   return {
     readings: list.length,
     failed:   list.length - scored.length,
@@ -441,6 +588,8 @@ function tally(list) {
     read:     rolled + offered,
     readRate: rate(rolled + offered, wanting.length),
     rolled, offered,
+    offeredNotRolled: count(wanting, r => r.outcome === OUTCOME.OFFERED_NOT_ROLLED),
+    actionRead, actionRolled, rolledShare: rate(actionRolled, actionRead),
     wrong:    anotherRolled + anotherOffered,
     anotherRolled, anotherOffered,
     // Of the other moves rolled, those the move reader says it chose on purpose (Balanced Mischief).
@@ -455,17 +604,33 @@ function tally(list) {
 }
 
 /** One arm's calls: how many, their tokens, their dollars at `prices`, how long each reader took. */
+/**
+ * Where a reading's line ended at the table: rolled, offered on a button, or
+ * narrated with nothing — null for a reading the reader failed on.
+ */
+export function routeOf(reading) {
+  if (!reading || reading.failed) return null;
+  return reading.move ? "rolled" : reading.offered ? "offered" : "narrated";
+}
+
 function spendOf(list, prices) {
   const calls = list.flatMap(r => r.calls ?? []);
   const priced = calls.filter(c => c.usage && prices?.[c.model]);
   const sum = (key) => calls.reduce((n, c) => n + (Number(c.usage?.[key]) || 0), 0);
   const msOf = (reader) => calls.filter(c => c.reader === reader).map(c => c.ms).filter(Number.isFinite);
-  const perLine = list.map(r => (r.calls ?? []).reduce((n, c) => n + (Number(c.ms) || 0), 0)).filter(n => n > 0);
+  const lineMs = (r) => (r.calls ?? []).reduce((n, c) => n + (Number(c.ms) || 0), 0);
+  const perLine = list.map(lineMs).filter(n => n > 0);
   const time = (values) => ({ n: values.length, medianMs: percentile(values, 0.5), p90Ms: percentile(values, 0.9), maxMs: values.length ? Math.max(...values) : null });
+  // A line's reading time by where it ended (the switch's criterion 6), and what a line costs (criterion 7).
+  const byRoute = (route) => time(list.filter(r => routeOf(r.reading) === route).map(lineMs).filter(n => n > 0));
+  const lineUsd = list.map(r => (r.calls ?? []).filter(c => c.usage && prices?.[c.model]).reduce((n, c) => n + costOf(prices[c.model], c.usage), 0))
+    .filter(n => n > 0);
   return {
     calls:       calls.length,
     pacingCalls: count(calls, c => c.reader === "pacing"),
     moveCalls:   count(calls, c => c.reader === "move"),
+    lineCalls:   count(calls, c => c.reader === "line"),
+    callsPerLine: rate(calls.length, list.length),
     usd:         priced.reduce((n, c) => n + costOf(prices[c.model], c.usage), 0),
     // Calls the table has no price for, or that came back with no usage (a dry run's stubs): not in `usd`.
     unpriced:    calls.length - priced.length,
@@ -473,7 +638,32 @@ function spendOf(list, prices) {
     models:      [...new Set(calls.map(c => c.model).filter(Boolean))],
     pacing:      time(msOf("pacing")),
     move:        time(msOf("move")),
+    lineReader:  time(msOf("line")),
     line:        time(perLine),
+    routes:      { narrated: byRoute("narrated"), offered: byRoute("offered"), rolled: byRoute("rolled") },
+    // The median line (the switch's criterion 7, as worded) and the mean: today's median line is often
+    // the pacing reader's one call, so the mean is the whole mix's cost a line, beside it.
+    lineUsd:     { n: lineUsd.length, median: percentile(lineUsd, 0.5), mean: lineUsd.length ? lineUsd.reduce((n, x) => n + x, 0) / lineUsd.length : null },
+  };
+}
+
+/**
+ * An arm's fight lines (the switch's criterion 5): those read in a context
+ * with a fight open — how many wanting a move were read, how many readings
+ * rolled a move the character's position does not allow, and how many
+ * controls had a move rolled.
+ */
+function fightsOf(list) {
+  const fights = list.filter(r => r.fight && r.outcome !== OUTCOME.FAILED);
+  const wanting = fights.filter(r => !isControl(r));
+  const controls = fights.filter(isControl);
+  return {
+    readings: fights.length,
+    wanting:  wanting.length,
+    read:     count(wanting, r => READ.has(r.outcome)),
+    illegal:  count(fights, r => r.reading?.move && !positionLegal(r.reading.move, r.fight)),
+    controls: controls.length,
+    controlsRolled: count(controls, r => r.outcome === OUTCOME.MOVE_ROLLED),
   };
 }
 
@@ -503,6 +693,7 @@ function verdictOf(outcomes) {
 export function summarise(results, { prices = {} } = {}) {
   const arms = [...new Set(results.map(r => r.arm))];
   const families = [...new Set(results.map(r => r.family))];
+  const kinds = [...new Set(results.map(r => r.kind).filter(Boolean))];
   const ids = [...new Set(results.map(r => r.id))];
   const byArm = {};
   for (const arm of arms) {
@@ -510,9 +701,19 @@ export function summarise(results, { prices = {} } = {}) {
     // Self-consistency: of the lines read more than once, those whose repeats all came to the same thing.
     const repeated = ids.map(id => ({ id, outcomes: mine.filter(r => r.id === id).map(r => r.outcome) })).filter(x => x.outcomes.length > 1);
     const disagreeing = repeated.filter(x => new Set(x.outcomes).size > 1);
+    const first = mine[0] ?? {};
     byArm[arm] = {
+      design: first.design ?? "two",
+      model:  first.model ?? arm,
       ...tally(mine),
       byFamily: Object.fromEntries(families.map(f => [f, tally(mine.filter(r => r.family === f))])),
+      // A kind is a probe the list names across families (issue #383's): how
+      // many of its readings came out as its lines want.
+      byKind: Object.fromEntries(kinds.map((k) => {
+        const of = mine.filter(r => r.kind === k && r.outcome !== OUTCOME.FAILED);
+        return [k, { readings: of.length, wanted: count(of, r => (isControl(r) ? r.outcome === OUTCOME.NARRATED : READ.has(r.outcome))) }];
+      })),
+      fights: fightsOf(mine),
       consistency: { repeated: repeated.length, same: repeated.length - disagreeing.length, rate: rate(repeated.length - disagreeing.length, repeated.length), disagreeing },
       spend: spendOf(mine, prices),
     };
@@ -536,7 +737,7 @@ export function summarise(results, { prices = {} } = {}) {
   const wanting = lines.filter(l => l.want?.none !== true && scoredByAll(l));
 
   return {
-    arms, families,
+    arms, families, kinds,
     lines: ids.length,
     readings: results.length,
     byArm,
@@ -557,6 +758,74 @@ export function summarise(results, { prices = {} } = {}) {
   };
 }
 
+// ── the switch ───────────────────────────────────────────────────────────────
+
+/**
+ * The one reader against the two, model by model, on the criteria the
+ * design switches on (issue #384 — decisions.md → "Overhauls 1 and 4";
+ * the scope's section 8.2) — for every model a `two:` and a `one:` arm both
+ * read. Counts are the runs' own: a run a cap stopped compares the readings
+ * each arm made. A criterion with nothing to measure (no fight line, no
+ * kind) is said to have none, and does not pass or fail.
+ *
+ * @param {ReturnType<typeof summarise>} summary
+ * @returns {Array<{ model: string, two: string, one: string, verdict: "switch"|"do not switch"|"not measured in full",
+ *   criteria: Array<{ n: number, name: string, pass: boolean|null, detail: string }> }>}
+ */
+export function compareDesigns(summary) {
+  const { byArm = {}, arms = [] } = summary ?? {};
+  const pairs = [];
+  for (const one of arms.filter(a => byArm[a].design === "one")) {
+    const model = byArm[one].model;
+    const two = arms.find(a => byArm[a].design === "two" && byArm[a].model === model);
+    if (two) pairs.push({ model, two, one });
+  }
+  const secs = (ms) => (ms == null ? "–" : `${(ms / 1000).toFixed(2)} s`);
+  const usd = (n) => (n == null ? "–" : `$${n.toFixed(4)}`);
+  return pairs.map(({ model, two, one }) => {
+    const a = byArm[two];
+    const b = byArm[one];
+    const criteria = [];
+    const add = (n, name, pass, detail) => criteria.push({ n, name, pass, detail });
+
+    const fell = Object.keys(b.byFamily ?? {})
+      .map(f => ({ f, drop: (a.byFamily?.[f]?.read ?? 0) - (b.byFamily?.[f]?.read ?? 0), wanting: a.byFamily?.[f]?.wanting ?? 0 }))
+      .filter(x => x.wanting > 0 && x.drop > 2);
+    add(1, "lines wanting a move", b.read >= a.read - 2 && !fell.length,
+      `read ${b.read} of ${b.wanting} against ${a.read} of ${a.wanting}${fell.length ? `; fell by more than two: ${fell.map(x => `${x.f} (−${x.drop})`).join(", ")}` : "; no family fell by more than two"}`);
+    const misread = (t) => t.controlsOffered + t.controlsRolled;
+    add(2, "controls offered or rolled a move", misread(b) <= misread(a) + 1, `${misread(b)} of ${b.controls} against ${misread(a)} of ${a.controls}`);
+    add(3, "another move rolled or offered", b.wrong <= a.wrong, `${b.wrong} against ${a.wrong}`);
+    const kinds = Object.entries(b.byKind ?? {}).filter(([, k]) => k.readings > 0);
+    const shortKinds = kinds.filter(([, k]) => k.wanted < Math.ceil(0.75 * k.readings));
+    add(4, "issue #383's kinds, each as wanted in three readings of four", kinds.length ? !shortKinds.length : null,
+      kinds.length ? kinds.map(([name, k]) => `${name} ${k.wanted} of ${k.readings}`).join("; ") : "no kind was read");
+    add(5, "fights", b.fights.readings ? b.fights.read >= a.fights.read && b.fights.illegal === 0 && b.fights.controlsRolled === 0 : null,
+      b.fights.readings
+        ? `read ${b.fights.read} of ${b.fights.wanting} against ${a.fights.read} of ${a.fights.wanting}; ${b.fights.illegal} not legal for the position; ${b.fights.controlsRolled} control(s) rolled`
+        : "no fight line was read");
+    const rolled = [b.spend.routes.rolled.medianMs, a.spend.routes.rolled.medianMs];
+    const narrated = [b.spend.routes.narrated.medianMs, a.spend.routes.narrated.medianMs];
+    const timed = rolled.every(Number.isFinite) && narrated.every(Number.isFinite);
+    add(6, "time: a rolled line 1 s faster, a narrated one no more than 0.3 s slower",
+      timed ? rolled[0] <= rolled[1] - 1000 && narrated[0] <= narrated[1] + 300 : null,
+      `rolled ${secs(rolled[0])} against ${secs(rolled[1])}; narrated ${secs(narrated[0])} against ${secs(narrated[1])}`);
+    const cost = [b.spend.lineUsd.median, a.spend.lineUsd.median];
+    const mean = [b.spend.lineUsd.mean, a.spend.lineUsd.mean];
+    add(7, "cost: the median line no dearer", cost.every(Number.isFinite) ? cost[0] <= cost[1] : null,
+      `${usd(cost[0])} against ${usd(cost[1])}; the mean line ${usd(mean[0])} against ${usd(mean[1])}`);
+    const share = [b.rolledShare, a.rolledShare];
+    add(8, "the dials hold: the rolled share within 10 points", share.every(x => x != null) ? Math.abs(share[0] - share[1]) <= 0.10 : null,
+      `${share[0] == null ? "–" : `${Math.round(share[0] * 100)}%`} (${b.actionRolled} of ${b.actionRead}) against ${share[1] == null ? "–" : `${Math.round(share[1] * 100)}%`} (${a.actionRolled} of ${a.actionRead})`);
+    add(9, "no more than one unreadable reply in a hundred", b.readings ? b.failed / b.readings <= 0.01 : null, `${b.failed} of ${b.readings}`);
+
+    // Every criterion must hold: one that fails is no switch; one the run did not measure leaves it open.
+    const verdict = criteria.some(c => c.pass === false) ? "do not switch"
+      : criteria.some(c => c.pass === null) ? "not measured in full" : "switch";
+    return { model, two, one, verdict, criteria };
+  });
+}
+
 // ── the report ───────────────────────────────────────────────────────────────
 
 const pct = (x) => (x == null ? "–" : `${Math.round(x * 100)}%`);
@@ -570,6 +839,7 @@ const wants = (want) => (want?.none === true ? "no move" : (want?.moves ?? []).m
 function readingLine(reading) {
   if (!reading) return "no reading";
   if (reading.failed) return `not read: ${reading.failed}`;
+  if (reading.design === "one") return lineReadingLine(reading);
   const kind = [reading.category, reading.confidence != null ? reading.confidence.toFixed(2) : null].filter(Boolean).join(", ");
   const said = (what) => `the pacing reader ${what}${kind ? ` (${kind})` : ""}${quote(reading.reasons?.pacing)}`;
   if (reading.decision === DECISION.NARRATIVE) return said("narrates it, with no move offered");
@@ -578,6 +848,16 @@ function readingLine(reading) {
   if (reading.move) return `${pacing}; the move reader makes it ${label(reading.move)}${reading.mischief ? " (a misread on purpose, it says)" : ""}${quote(reading.reasons?.move)}`;
   const then = reading.offered ? `so it is narrated with ${label(reading.offered)} offered` : "so it is narrated with nothing offered";
   return `${pacing}; the move reader ${reading.unsure ? "is unsure of its reading" : "reads no move in it"}, ${then}${quote(reading.reasons?.move)}`;
+}
+
+/** The one reader's reading in words: where it went, what it read, asked and risk, and why. */
+function lineReadingLine(reading) {
+  const kind = [reading.category, reading.asked ? "asked" : null, reading.risk ? `risk ${reading.risk}` : null].filter(Boolean).join(", ");
+  const where = reading.move ? `rolls ${label(reading.move)}`
+    : reading.offered ? `narrates it and offers ${label(reading.offered)}`
+    : reading.unmade ? `narrates it: not now, ${label(reading.unmade.moveId)} — ${reading.unmade.why}`
+    : "narrates it, with no move offered";
+  return `the line reader ${where}${kind ? ` (${kind})` : ""}${quote(reading.reasons?.line)}${reading.reasons?.route ? ` [${reading.reasons.route}]` : ""}`;
 }
 
 function lineBlock(l, arms) {
@@ -591,6 +871,70 @@ function lineBlock(l, arms) {
     out.push(`- \`${arm}\` — **${a.verdict}**${spread}: ${readingLine(a.reading)}`);
   }
   out.push("");
+  return out;
+}
+
+/**
+ * The report's sections for a run that measures the one reader beside the
+ * two (or any run with fight lines or kinds): calls and time by where a line
+ * ended, the dials' share, each kind, the fights — and, for a model both
+ * designs read, the switch's criteria (compareDesigns).
+ *
+ * @param {ReturnType<typeof summarise>} summary
+ * @returns {string[]}
+ */
+function designSections(summary) {
+  const { arms, byArm } = summary;
+  const out = [];
+  const route = (t) => (t.n ? `${secs(t.medianMs)} (${t.n})` : "–");
+  out.push("## Calls and time by where a line ended", "",
+    "A line's reading time is its calls' together (the pacing reader's and the move reader's, or the line reader's one); a line ended rolled, offered on a button, or narrated with nothing.", "",
+    "| Arm | Calls a line | Narrated: median (lines) | Offered: median (lines) | Rolled: median (lines) | A line's cost: median | A line's cost: mean |",
+    "|---|---|---|---|---|---|---|");
+  const dollars = (n) => (n == null ? "–" : `$${n.toFixed(4)}`);
+  for (const arm of arms) {
+    const s = byArm[arm].spend;
+    out.push(`| \`${arm}\` | ${s.callsPerLine == null ? "–" : s.callsPerLine.toFixed(2)} | ${route(s.routes.narrated)} | ${route(s.routes.offered)} | ${route(s.routes.rolled)} `
+      + `| ${dollars(s.lineUsd.median)} | ${dollars(s.lineUsd.mean)} |`);
+  }
+  out.push("");
+
+  out.push("## The dials' share", "",
+    "Of the lines read right whose move makes an action roll (a stat — a move with no roll is offered by rule), how many were rolled rather than offered: the dials at work.", "");
+  for (const arm of arms) {
+    const t = byArm[arm];
+    out.push(`- \`${arm}\`: ${outOf(t.actionRolled, t.actionRead)} rolled${t.offeredNotRolled ? `; ${t.offeredNotRolled} line(s) that asked to be rolled were offered` : ""}.`);
+  }
+  out.push("");
+
+  if (summary.kinds?.length) {
+    out.push("## By kind", "", "A kind is a probe across families (issue #383's): its controls want narration, its other lines their move read.", "",
+      `| Kind | ${arms.map(a => `\`${a}\``).join(" | ")} |`, `|---|${arms.map(() => "---").join("|")}|`);
+    for (const kind of summary.kinds) {
+      out.push(`| ${kind} | ${arms.map((arm) => { const k = byArm[arm].byKind[kind]; return k?.readings ? `${k.wanted} of ${k.readings}` : "–"; }).join(" | ")} |`);
+    }
+    out.push("");
+  }
+
+  if (arms.some(arm => byArm[arm].fights.readings)) {
+    out.push("## Fights", "", "The lines read with a fight open, the character's position in it set: read, a move the position does not allow, a control rolled.", "");
+    for (const arm of arms) {
+      const f = byArm[arm].fights;
+      out.push(`- \`${arm}\`: ${outOf(f.read, f.wanting)} read; ${f.illegal} reading(s) not legal for the position; ${f.controlsRolled} of ${f.controls} control(s) rolled.`);
+    }
+    out.push("");
+  }
+
+  const pairs = compareDesigns(summary);
+  if (pairs.length) {
+    out.push("## Against the switch criteria", "",
+      "The one reader against the two on the same model, by the scope's section 8.2 (computed from the tables above; a criterion with nothing measured is open). A one-line difference is not a finding.", "");
+    for (const p of pairs) {
+      out.push(`### \`${p.one}\` against \`${p.two}\` — ${p.verdict}`, "", "| # | Criterion | Holds | Measured |", "|---|---|---|---|");
+      for (const c of p.criteria) out.push(`| ${c.n} | ${c.name} | ${c.pass === null ? "not measured" : c.pass ? "yes" : "**no**"} | ${c.detail} |`);
+      out.push("");
+    }
+  }
   return out;
 }
 
@@ -640,6 +984,9 @@ export function report(summary, meta = {}) {
     `- A control: **${OUTCOME.NARRATED}** (right), **${OUTCOME.MOVE_OFFERED}**, **${OUTCOME.MOVE_ROLLED}**.`,
     `- **${OUTCOME.FAILED}** — a reader's call failed or its reply could not be read; not scored, and not in any rate.`, "",
     "**Rolled and offered both count as read**: either way the player gets the right move without naming it. Offered costs them a click, and the line is narrated first.", "");
+  if (arms.some(arm => byArm[arm].design === "one")) {
+    out.push(`An arm \`one:<model>\` reads each line with the one reader instead (src/moves/reader.js, routed by src/pacing/readAndRoute.js): one call, and its route is what the line comes to — roll, offer on a button, or narrate. A line that asks to be rolled (a move named after a run of moves) is read only when it is: offered, it is **${OUTCOME.OFFERED_NOT_ROLLED}**.`, "");
+  }
 
   out.push("## Headline", "",
     "| Arm | Lines wanting a move | Read | rolled | offered | Another move | Nothing | Controls right | Reader failed |",
@@ -703,28 +1050,35 @@ export function report(summary, meta = {}) {
   }
 
   out.push("## Cost and time", "",
-    "| Arm | Calls (pacing + move) | Input | Cache read | Cache write | Output | Cost | Pacing reader, median | Move reader, median | A line, median / p90 |",
+    "| Arm | Calls (pacing + move, or the line reader's) | Input | Cache read | Cache write | Output | Cost | Pacing reader, median | Move reader, median | A line, median / p90 |",
     "|---|---|---|---|---|---|---|---|---|---|");
   for (const arm of arms) {
     const s = byArm[arm].spend;
-    out.push(`| \`${arm}\` | ${s.calls} (${s.pacingCalls} + ${s.moveCalls}) | ${s.tokens.input} | ${s.tokens.cacheRead} | ${s.tokens.cacheWrite} | ${s.tokens.output} `
-      + `| $${s.usd.toFixed(4)}${s.unpriced ? ` (${s.unpriced} call(s) not priced)` : ""} | ${secs(s.pacing.medianMs)} | ${secs(s.move.medianMs)} | ${secs(s.line.medianMs)} / ${secs(s.line.p90Ms)} |`);
+    const calls = byArm[arm].design === "one" ? `${s.calls} (the line reader)` : `${s.calls} (${s.pacingCalls} + ${s.moveCalls})`;
+    const readers = byArm[arm].design === "one" ? `${secs(s.lineReader.medianMs)} (the line reader) | –` : `${secs(s.pacing.medianMs)} | ${secs(s.move.medianMs)}`;
+    out.push(`| \`${arm}\` | ${calls} | ${s.tokens.input} | ${s.tokens.cacheRead} | ${s.tokens.cacheWrite} | ${s.tokens.output} `
+      + `| $${s.usd.toFixed(4)}${s.unpriced ? ` (${s.unpriced} call(s) not priced)` : ""} | ${readers} | ${secs(s.line.medianMs)} / ${secs(s.line.p90Ms)} |`);
   }
   out.push("", `Total: $${summary.usd.toFixed(4)}${dry ? " — a dry run spends nothing" : ", by the price table in explore.config.json (computed from each reply's usage, not billed from it)"}.`
     + `${meta.strays ? ` **${meta.strays} call(s) that were not a reader's were made, and reached no model** — see run.json.` : ""}`, "");
+
+  if (scored) out.push(...designSections(summary));
 
   out.push("## What this test does not show", "",
     "- **Nothing is rolled or narrated.** A line counted as rolled is one whose roll dialog would open on the right move; the stat, the stakes, the dice and the narration are not looked at.",
     "- **The wanted readings are one reader's reading of the rules.** Where the rules allow two moves the list accepts both; a line whose reading is arguable was left out, and a note on a line says where it is close.",
     `- **${(meta.repeats ?? 1) > 1 ? "A few readings of a line are a small sample" : "One reading of a line is one sample"}** of a reader that does not always answer alike: a line read right four times in five shows here as right or as wrong. READERS_REPEATS measures it.`,
-    "- **About fifty lines, a handful to a move.** A family's rate rests on three to ten lines; a difference of one line between arms is not a finding.",
+    `- **${summary.lines} line(s), a handful to a move.** A family's rate rests on three to ten lines, a kind's on two; a difference of one line between arms is not a finding.`,
     "- **The scenes are written by hand**: one or two paragraphs of narration, with a matching scene frame, where a table has up to three cards with the player's own lines among them — and none of the drift a long session leaves in a scene.",
     "- **One character, alone, with one connection and one vow**, at the pacing and mischief dials a new world has"
-      + `${meta.dials ? ` (${Object.entries(meta.dials).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""}. No fight is open in any context: the readers' rules for an open fight are not exercised.`,
+      + `${meta.dials ? ` (${Object.entries(meta.dials).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""}.`
+      + (arms.some(arm => byArm[arm].fights.readings)
+        ? " A fight is one track with the character's position in it set by hand, never one a roll began or moved."
+        : " No fight is open in any context read: the readers' rules for an open fight are not exercised."),
     "- **The sheet is set by hand.** Each context's health, spirit, supply and impacts, its vow's progress and the ship's integrity are written to the world before its lines are read, and both readers are told them (their SITUATION block). A table's sheet moves under play: no line here follows a roll that changed it"
       + `${meta.notSet?.length ? ` (not set in the world: ${[...new Set(meta.notSet.map(n => n.key))].join(", ")})` : ""}.`,
-    "- **Each line is read on its own**: the count of recent moves is cleared before every reading, so a line never follows a run of rolls.",
-    "- **Only the model changes between arms.** Each arm reads the same prompts, written for the readers' own model"
+    "- **Each line is read on its own**: the count of recent moves is set before every reading — cleared, or filled with the moves a line's case says it follows (`recentMoves`) — so a line follows a run of rolls only where its case says so.",
+    "- **Only the model changes between arms of one design.** Each arm reads the same prompts as the others of its design, written for the readers' own model"
       + `${meta.own?.length ? ` (${meta.own.map(m => `\`${m}\``).join(", ")})` : ""}; a prompt tuned to another model might read differently.`,
     "- **No arm thinks first.** The readers turn thinking off, each model in its own form"
       + `${meta.thinking ? ` (${Object.entries(meta.thinking).map(([arm, form]) => `\`${arm}\`: ${form ?? "no form sent"}`).join("; ")})` : ""}`
