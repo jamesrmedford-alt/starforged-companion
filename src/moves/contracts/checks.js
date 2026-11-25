@@ -12,13 +12,19 @@
  *             matched) — a failure is re-asked once
  *   floor     a lexical minimum: [vow] (the prose shares a word with the
  *             vow's name, or says what is still not known — re-asked once);
- *             [chosen] (a word of the cost's meter — logged)
+ *             [chosen] (a word of the cost's meter — logged); [letgo] (a stem
+ *             of the let-go question in the prose's last two sentences that
+ *             the beat's player words do not hold — logged; overhaul 2 §10.3)
  *   judge     a NOT YET / NOT SO line whose tripwire words appear in the prose
  *             ([premise], [cost], [price], [fight], [offer], [oracle],
- *             [state]): one small model call (Haiku, through api-proxy.js,
- *             label `obligationJudge`) asks whether the prose tells any
- *             tripped line as true — a violation is re-asked once
- *   logged    everything else, left to the post-narration audit
+ *             [state], and overhaul 2's [place]: "docked", "berth", "clamps"
+ *             on the beat that opens a fight's scene while the ship's record
+ *             has her docked): one small model call (Haiku, through
+ *             api-proxy.js, label `obligationJudge`) asks whether the prose
+ *             tells any tripped line as true — it reads a line's `judge` words
+ *             where it has them — and a violation is re-asked once
+ *   logged    everything else ([scene] among them), left to the
+ *             post-narration audit
  *
  * narrateKeepingObligations wraps the narrator call: the reply's prose is
  * read (sidecarParser.extractSidecar — pure, before any fact block is
@@ -32,6 +38,8 @@
 
 import { apiPost } from "../../api-proxy.js";
 import { extractSidecar } from "../../factContinuity/sidecarParser.js";
+import { touchesLetGo } from "../../factContinuity/provenance.js";
+import { tellingStems } from "../../world/tellingWords.js";
 import { MOVES } from "../../schemas.js";
 import { moveDisplayName } from "../../system/i18n.js";
 
@@ -106,15 +114,21 @@ const METER_WORDS = Object.freeze({
   supply:   ["stores", "rations", "fuel", "spent", "short", "supplies", "used"],
 });
 
+/** The last `n` sentences of a narration's body (its closing offer line left out). */
+function lastSentences(prose, n) {
+  const sentences = bodyOf(prose).split(/(?<=[.!?…]["”’)]?)\s+/).map(s => s.trim()).filter(Boolean);
+  return sentences.slice(-n).join(" ");
+}
+
 /**
- * The floor checks: [vow] (re-asked) and [chosen] (logged).
+ * The floor checks: [vow] (re-asked), [chosen] and [letgo] (logged).
  *
  * @param {string} prose
  * @param {Array<Object>} obligations
- * @param {{ vowName?: string|null }} [ctx]
+ * @param {{ vowName?: string|null, line?: string }} [ctx] — `line`: the beat's player words ([letgo])
  * @returns {{ reask: Array<{ tag: string, quote: string }>, logged: Array<{ tag: string, quote: string }> }}
  */
-export function floorViolations(prose, obligations, { vowName = null } = {}) {
+export function floorViolations(prose, obligations, { vowName = null, line = "" } = {}) {
   const text = String(prose ?? "").toLowerCase();
   const reask = [];
   const logged = [];
@@ -131,6 +145,17 @@ export function floorViolations(prose, obligations, { vowName = null } = {}) {
       const meters = Object.keys(METER_WORDS).filter(m => new RegExp(`\\b${m}\\b|${m === "supply" ? "resources" : m === "health" ? "harm" : m === "spirit" ? "stress" : "momentum"}`, "i").test(o.text));
       const words = meters.flatMap(m => METER_WORDS[m]);
       if (words.length && !words.some(w => text.includes(w))) logged.push({ tag: "chosen", quote: "" });
+    } else if (o?.kind === "letgo" && o.letGo) {
+      // Ended on what play let go (overhaul 2 §7.3, §10.3): a stem of its
+      // question in the last two sentences. A player's line that names the
+      // question — any of its stems — takes it up, and the narration may end
+      // on it ("I look up at the amber light": the second amber light above
+      // the stall may blink); provenance.js touchesLetGo stays per stem for
+      // the frame's own lines.
+      const said = tellingStems(line);
+      const takenUp = (o.letGo.stems ?? []).some(st => said.has(st));
+      const ending = lastSentences(prose, 2);
+      if (!takenUp && touchesLetGo(ending, line, [o.letGo])) logged.push({ tag: "letgo", quote: ending.slice(0, 200) });
     }
   }
   return { reask, logged };
@@ -141,6 +166,8 @@ export function floorViolations(prose, obligations, { vowName = null } = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FIGHT_WORDS = ["fire", "fires", "fired", "shot", "shoots", "salvo", "strike", "strikes", "struck", "blow", "lance", "rake", "slash", "lands", "hit", "hits"];
+/** A ship told as still docked (overhaul 2 §6.2's [place]). */
+const DOCKED_WORDS = ["docked", "berth", "berthed", "clamps", "clamped", "moored"];
 const HEAL_WORDS  = ["cut", "cuts", "gash", "wound", "wounds", "blood", "bandage", "dressing", "stitch", "antiseptic", "medkit", "sealant", "binding"];
 const PREMISE_WORDS = Object.freeze({
   "recoverable-health": HEAL_WORDS,
@@ -171,6 +198,7 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
     case "price":   return contentWords(o.text.replace(/^THE PRICE[^.]*\.\s*/, "")).slice(0, 12);
     case "oracle":  return o.list === "NOT SO" ? contentWords(question) : null;
     case "state":   return person && /not a bond/.test(o.text) ? ["bond", "bonded"] : (/No fight/.test(o.text) ? FIGHT_WORDS : null);
+    case "place":   return DOCKED_WORDS;
     default:        return null;
   }
 }
@@ -207,7 +235,7 @@ export function trippedLines(prose, obligations, ctx = {}) {
  */
 export async function judgeNarration(prose, tripped, { apiKey } = {}) {
   if (!apiKey || !tripped?.length) return { violations: [], judged: false };
-  const lines = tripped.map(o => `- [${o.kind}] (${o.list}) ${o.text}`).join("\n");
+  const lines = tripped.map(o => `- [${o.kind}] (${o.list}) ${o.judge ?? o.text}`).join("\n");
   const system = "You check a short piece of game narration against lines it must keep. A NOT YET line names something the "
     + "table has not decided; telling it as done breaks it. A NOT SO line names something that is not true; telling it as "
     + "true breaks it. Read only what the narration says happens — a thing about to happen, feared, offered or merely "

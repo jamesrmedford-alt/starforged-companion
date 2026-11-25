@@ -182,7 +182,9 @@ describe('overhaul 2 §4.5, §10.3 — what the scene obliges the narration to t
     const lines = sceneObligations(state({ sceneFrame: { location: 'the docks', sceneId: 'sc-2', narrationId: 'n1',
       letGo: [{ text: 'Who is hailing the ship?', stems: ['hail', 'ship'] }] } }));
     expect(lines).toEqual([{ kind: 'letgo', list: 'NOT SO',
-      text: 'Play let this go: "Who is hailing the ship?". Do not end on it or bring it back unless the player\'s line takes it up.' }]);
+      text: 'Play let this go: "Who is hailing the ship?". Do not end on it or bring it back unless the player\'s line takes it up.',
+      // The entry itself, for checks.js's [letgo] floor (its stems).
+      letGo: { text: 'Who is hailing the ship?', stems: ['hail', 'ship'] } }]);
     // Another scene's frame lets nothing go here.
     expect(sceneObligations(state({ sceneFrame: { sceneId: 'sc-1', narrationId: 'n1', letGo: [{ text: 'x', stems: [] }] } }))).toEqual([]);
   });

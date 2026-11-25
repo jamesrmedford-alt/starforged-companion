@@ -1453,7 +1453,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
     const kept = await narrateKeepingObligations(
       ask,
       moveObligations,
-      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
+      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
     );
     const raw = kept.raw;
@@ -1506,7 +1506,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
         }));
         const raw = (await narrateKeepingObligations(ask,
           moveObligations,
-          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
+          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
             onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
         )).raw;
         if (xCard.interrupted('narrateResolution')) {
@@ -4345,7 +4345,7 @@ export async function narrateOracleFollowup({
   // Checked against its obligations before it posts — the answer told, its
   // opposite not (overhaul 4: checks.js narrateKeepingObligations).
   const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
-  const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? '') },
+  const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? ''), line: question ?? '' },
     onVerdict: (v) => logObligationVerdict('oracle', v, campaignState, narrationId) };
   // A local `ask`, so the playthrough harness files the call as this
   // function's (lib/claude.mjs PASS_THROUGH looks through it and the check).
@@ -5208,7 +5208,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         ask,
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
-          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
+          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
           onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
       );
       const raw = kept.raw;
@@ -5252,7 +5252,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           const raw = (await narrateKeepingObligations(ask,
             pacedObligations,
             { apiKey, judge: obligationJudgeOn(),
-              ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
+              ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
               onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
           )).raw;
           if (xCard.interrupted('narratePacedInput')) {
@@ -6459,12 +6459,17 @@ function roundObligationsFor(entries, chosenSince) {
   return out;
 }
 
-/** The round's check's context: the vow a fulfilment in it names, the code of a move it could not make. */
+/**
+ * The round's check's context: the vow a fulfilment in it names, the code of a
+ * move it could not make, the round's player words (its [letgo] floor —
+ * overhaul 2 §10.3).
+ */
 function roundCheckContext(entries) {
   const inputs = (entries ?? []).map(e => e?.input ?? {});
   const fulfil = inputs.find(i => i.kind === 'move' && i.moveId === 'fulfill_your_vow');
   const refused = inputs.find(i => i.kind !== 'move' && i.refusal?.code);
-  return { vowName: fulfil?.moveTarget ?? null, refusalCode: refused?.refusal?.code ?? null };
+  return { vowName: fulfil?.moveTarget ?? null, refusalCode: refused?.refusal?.code ?? null,
+    line: groundOf({ lines: (entries ?? []).map(e => e?.text) }).line };
 }
 
 /**
