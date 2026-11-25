@@ -1042,15 +1042,16 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
       recentMoveDensity: { count: 0, window: 5 },
       pacingConfig:      { dials: {} },
     });
-    expect(userMessage).toContain("Scene frame — where: Lyra's orbital graveyard");
-    expect(userMessage).toContain('Scene frame — present: Venri Quint, Vance');
-    expect(userMessage).toContain('Scene frame — now: Racing a failing life-support clock');
+    // Overhaul 2 §10.1: the scene as the narrator is told it, one renderer.
+    expect(userMessage).toContain("Scene — where: Lyra's orbital graveyard; present: Venri Quint, Vance; now: Racing a failing life-support clock");
   });
 
   it('resolves the current location from an actor-hosted entity (post-migration)', () => {
     const actor = {
       id: 'act-lyra', name: 'Lyra',
       flags: { 'starforged-companion': { settlement: { name: 'Lyra' } } },
+      // Read through the registry now (overhaul 2 §10.1), as a Foundry Actor reads its flags.
+      getFlag(scope, key) { return this.flags?.[scope]?.[key]; },
     };
     global.game.actors._set('act-lyra', actor);
     try {
@@ -1061,7 +1062,8 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
         recentMoveDensity: { count: 0, window: 5 },
         pacingConfig:      { dials: {} },
       });
-      expect(userMessage).toContain('Current location: Lyra (settlement)');
+      // The place by the table's record, as THE SCENE's Place line has it.
+      expect(userMessage).toContain('- Place: Lyra.');
     } finally {
       global.game.actors._reset?.();
     }
@@ -1075,7 +1077,8 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
       recentMoveDensity: { count: 0, window: 5 },
       pacingConfig:      { dials: {} },
     });
-    expect(userMessage).not.toContain('Scene frame —');
+    expect(userMessage).not.toContain('Scene —');
+    expect(userMessage).toContain('(no scene context available)');
   });
 });
 

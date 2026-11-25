@@ -10,7 +10,8 @@ import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { normaliseLetGo, touchesLetGo, binds, entryBasis, inColourWindow } from '../factContinuity/provenance.js';
-import { formatNameChangesBlock } from '../factContinuity/nameChanges.js';
+import { formatNameChangesBlock, writeNewNames } from '../factContinuity/nameChanges.js';
+import { actorNames } from '../character/actorBridge.js';
 import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
@@ -200,13 +201,19 @@ export function appendSidecarInstruction(options = {}) {
     '  turn.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
-    '- REQUIRED: when your prose moves the player\'s command vehicle —',
-    '  departure, transit, or arrival — emit the exact shape',
-    '  { "subject": "ship", "attribute": "position", "value": "<destination',
-    '  name>" }. The "ship" subject is reserved for the command vehicle;',
-    '  the value is matched against known settlements, planets, and',
-    '  locations, so prefer an established place name over an invented',
-    '  phrase. Do not emit it when the ship has not moved.',
+    // Overhaul 2 §6.2 (SHIP-POSITION-AND-FRAME-DISAGREE): it read "when your
+    // prose moves" the ship — the fourth live run's a38 moved it in the
+    // player's line ("drops out of the dark off Bleakhold's ring. I spin the
+    // Kobayashi IV to face her"), nothing recorded it, and the frame said
+    // "open space" while the ship's record said docked.
+    '- REQUIRED: when the player\'s line or your prose puts the player\'s',
+    '  command vehicle somewhere its position does not say — departure,',
+    '  transit, arrival, undocked, under way, in a fight off the station —',
+    '  emit the exact shape { "subject": "ship", "attribute": "position",',
+    '  "value": "<where she is now>" }. The "ship" subject is reserved for the',
+    '  command vehicle; the value is matched against known settlements,',
+    '  planets, and locations, so prefer an established place name over an',
+    '  invented phrase. Do not emit it when the ship has not moved.',
     '- Do not declare a truth that diverges from WHAT BINDS. What the narration',
     '  has described may change when the player\'s line changes it.',
     '- Do not re-emit a newTruth that restates a fact already shown in the',
@@ -216,11 +223,20 @@ export function appendSidecarInstruction(options = {}) {
 
   if (sceneFrameEnabled) {
     lines.push(
-      '- "sceneFrame" is a full snapshot of the scene as it stands AFTER',
-      '  your narration: where the scene is set, every named character',
-      '  present or directly engaged (include characters on comms), and the',
-      '  situation in one sentence. Include it on EVERY response — it',
-      '  replaces the previous snapshot. Keep names exactly as established.',
+      // Overhaul 2 §6.1, §7.1 (FRAME-REASONING-IN-PROSE): the frame sat
+      // under "binding", and the narration argued its own Where against the
+      // player's line ("You are no longer at Tamsin's stall, so…"). The
+      // place is the stores'; the frame is the narration's own.
+      '- "sceneFrame" describes the scene as your narration leaves it; the',
+      '  player\'s line moves it. "location": where the characters are, in a',
+      '  few words — a room, a street, a deck, a stall — never where the ship',
+      '  is in space: the ship\'s position says that, and a move of the ship is',
+      '  a ship/position change. "present": every named character present or',
+      '  directly engaged (include characters on comms); "situation": the',
+      '  situation in one sentence. Include it on EVERY response — it replaces',
+      '  the previous snapshot. Keep names exactly as established. When the',
+      '  player\'s line has moved the scene, write it where the line put it, and',
+      '  never explain a difference in the prose.',
       // Known-issues NARRATOR-REFRAINS: the rule read "Set it on the scene's
       // first beat; afterwards copy it unchanged … it is kept for the scene",
       // and nothing ends a scene but the table — a session's opening hook was
@@ -398,6 +414,8 @@ const BASIS_LABELS = Object.freeze({ player: 'the player', dice: 'the dice', gm:
  *   (null: the scene's cards are unstamped — all its colour stands)
  * @param {number|null} [options.sceneBeats] — how many narrations the scene has had
  * @param {string} [options.playerLine] — the beat's player words (a let-go hook it takes up stands)
+ * @param {Array|null} [options.nameChanges] — the names the table changed, from the store: written new
+ *   in the frame's words as THE SCENE renders them (sceneForReading)
  * @returns {{ header: string, scene: string, place: string, binds: string, corrections: string,
  *   standing: string, described: string, letGo: string, shipPosition: string, combined: string,
  *   tokenEstimates: Object }}
@@ -426,9 +444,6 @@ export function buildLedgerBlock(campaignState, options = {}) {
     && typeof campaignState.sceneFrame === 'object'
     ? campaignState.sceneFrame
     : null;
-  const presentNames = Array.isArray(frame?.present)
-    ? frame.present.filter(p => typeof p === 'string' && p.trim())
-    : [];
   const letGoList = frame ? normaliseLetGo(frame.letGo) : [];
 
   // ── Truths: what binds, and what the narration described ────────────────
@@ -494,34 +509,36 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // Three stores, three facts (overhaul 2 §6.1): the characters' recorded
   // place, the ship's position, and where in that place the frame says they
   // are — the narration's own. The scene's anchor says why it began.
-  const began = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
-    && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
-    ? campaignState.sceneBegan : null;
-  const what = typeof began?.what === 'string' ? began.what.trim() : '';
-  const beats = Number.isInteger(options?.sceneBeats) && options.sceneBeats >= 0 ? options.sceneBeats : null;
+  // One read of the scene (sceneForReading), which the reader is told too
+  // (formatSceneForReading — overhaul 2 §10.1): the narrator and the reader
+  // are told the scene by one renderer, from one read.
+  const read = sceneForReading(campaignState, {
+    sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
+  });
+  const what = read.began?.what ?? '';
+  const beats = read.began?.beats ?? null;
   const sceneHead = what
     ? (beats === null ? `THE SCENE — began when ${what}.`
       : beats === 0 ? `THE SCENE — begins with this beat: ${what}.`
       : `THE SCENE — began ${beats} beat${beats === 1 ? '' : 's'} ago, when ${what}.`)
     : 'THE SCENE';
   const vehicle = commandVehicleLines(campaignState);
-  const placeName = currentPlaceName(campaignState);
   const placeLines = [];
-  if (placeName) placeLines.push(`  Place:    ${placeName} — where the characters are, by the table's record`);
-  if (vehicle.position) placeLines.push(`  Ship:     ${vehicle.position.replace(/^SHIP POSITION:\s*/, '')}`);
+  if (read.place?.name) placeLines.push(`  Place:    ${read.place.name} — where the characters are, by the table's record`);
+  if (read.ship) placeLines.push(`  Ship:     ${read.ship}`);
   const frameLines = [];
   if (frame) {
-    if (frame.location)      frameLines.push(`  Where:    ${frame.location} — as the narration has it`);
-    if (presentNames.length) frameLines.push(`  Present:  ${presentNames.join(', ')}`);
-    if (frame.situation)     frameLines.push(`  Now:      ${frame.situation} — as the narration has it`);
+    if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
+    if (read.present.length) frameLines.push(`  Present:  ${read.present.join(', ')}`);
+    if (read.now)            frameLines.push(`  Now:      ${read.now} — as the narration has it`);
     // What the scene is deciding (issue #353 R2) — the player's (overhaul 2
     // §7.2). With none standing, a narration that can set one is asked for
     // it, in its caller's words (`askSceneQuestion`; NARRATOR-REFRAINS).
     const ask = typeof options?.askSceneQuestion === 'string' ? options.askSceneQuestion.trim() : '';
-    if (typeof frame.question === 'string' && frame.question.trim()) {
+    if (read.question) {
       frameLines.push(frame.questionAnswered === true
-        ? `  Turns on (answered): ${frame.question.trim()} — the scene has moved past it; set what it turns on now.`
-        : `  Turns on: ${frame.question.trim()} — from the player's line`);
+        ? `  Turns on (answered): ${read.question} — the scene has moved past it; set what it turns on now.`
+        : `  Turns on: ${read.question} — from the player's line`);
     } else if (ask && frameLines.length) {
       frameLines.push(`  Turns on: ${ask}`);
     }
@@ -634,6 +651,87 @@ export function buildLedgerBlock(campaignState, options = {}) {
     combined,
     tokenEstimates,
   };
+}
+
+/**
+ * The scene, as one read (overhaul 2 §6.1, §10.1): three stores, three facts
+ * — the characters' recorded place (`currentLocationId`), where the ship is
+ * (its position record's line), and where in that place the frame says they
+ * are, who is present, what is happening and what the scene turns on (the
+ * narration's; the question the player's) — and why it began (its anchor).
+ * Names the table changed are written new in the frame's words as they are
+ * read (nameChanges.js writeNewNames, the record's rule — the fourth live
+ * run's a50 copied "Ashen Wake pilot" a step after the cutter was renamed).
+ * Read by the ACTIVE SCENE block's THE SCENE and by the reader
+ * (formatSceneForReading → pacing/classifier.js). It writes nothing and turns
+ * nothing. Never throws.
+ *
+ * @param {Object} campaignState
+ * @param {{ sceneBeats?: number|null, sceneFrameEnabled?: boolean, nameChanges?: Array|null }} [opts] —
+ *   `nameChanges` the table's changes from the store (narrator extras), else campaignState's
+ * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
+ *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
+ */
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null } = {}) {
+  const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
+    && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
+    ? campaignState.sceneBegan : null;
+  const beats = Number.isInteger(sceneBeats) && sceneBeats >= 0 ? sceneBeats : null;
+  const began = anchor ? { cause: anchor.cause ?? 'first', what: typeof anchor.what === 'string' ? anchor.what.trim() : '', beats } : null;
+  const placeName = currentPlaceName(campaignState);
+  const place = placeName ? { id: campaignState.currentLocationId, name: placeName } : null;
+  const ship = commandVehicleLines(campaignState).position.replace(/^SHIP POSITION:\s*/, '');
+  const frame = sceneFrameEnabled !== false && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
+    ? campaignState.sceneFrame : null;
+  const changes = Array.isArray(nameChanges) ? nameChanges
+    : Array.isArray(campaignState?.nameChanges) ? campaignState.nameChanges : [];
+  const others = changes.length ? actorNames() : [];
+  const fresh = (text) => {
+    const t = typeof text === 'string' ? text.trim() : '';
+    return t && changes.length ? writeNewNames(t, changes, { otherNames: others }) : t;
+  };
+  const question = typeof frame?.question === 'string' ? frame.question.trim() : '';
+  return {
+    began,
+    place,
+    ship,
+    where: fresh(frame?.location),
+    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    now: fresh(frame?.situation),
+    question: fresh(question),
+    letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
+  };
+}
+
+/**
+ * The scene as the reader is told it (overhaul 2 §10.1) — the same read the
+ * narrator's THE SCENE renders, in two lines:
+ *   "- Place: Bleakhold Station. Ship: Kobayashi IV docked at Bleakhold Station.
+ *      Scene — began when the characters arrived (3 beats ago); where: …; present: …; now: …; turns on: …."
+ * '' with nothing to say.
+ *
+ * @param {ReturnType<typeof sceneForReading>} scene
+ * @returns {string}
+ */
+export function formatSceneForReading(scene) {
+  if (!scene || typeof scene !== 'object') return '';
+  const ship = /^not yet established\b/i.test(scene.ship ?? '') ? 'not yet established' : (scene.ship ?? '');
+  const head = [scene.place?.name ? `Place: ${scene.place.name}.` : '', ship ? `Ship: ${ship}.` : '']
+    .filter(Boolean).join(' ');
+  const bits = [];
+  if (scene.began?.what) {
+    const ago = Number.isInteger(scene.began.beats) ? ` (${scene.began.beats} beat${scene.began.beats === 1 ? '' : 's'} ago)` : '';
+    bits.push(`began when ${scene.began.what}${ago}`);
+  }
+  if (scene.where) bits.push(`where: ${scene.where}`);
+  if (Array.isArray(scene.present) && scene.present.length) bits.push(`present: ${scene.present.join(', ')}`);
+  if (scene.now) bits.push(`now: ${scene.now}`);
+  if (scene.question) bits.push(`turns on: ${scene.question}`);
+  if (Array.isArray(scene.letGo) && scene.letGo.length) bits.push(`play let go: ${scene.letGo.map(t => `"${t}"`).join(', ')}`);
+  const lines = [];
+  if (head) lines.push(`- ${head}`);
+  if (bits.length) lines.push(`${head ? '  ' : '- '}Scene — ${bits.join('; ')}.`);
+  return lines.join('\n');
 }
 
 /**
@@ -1845,6 +1943,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
+  nameChanges = null,
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -1865,6 +1964,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     colourWindow: sceneNarrations?.window instanceof Set ? sceneNarrations.window : null,
     sceneBeats:   Number.isInteger(sceneNarrations?.beats) ? sceneNarrations.beats : null,
     playerLine,
+    nameChanges,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2523,6 +2623,7 @@ export function buildNarratorSystemBlocks(
     // block may set it (never a vignette's, an `@scene` answer's or a recap's).
     askSceneQuestion: sidecarEnabled && factContinuitySceneFrame ? (SCENE_QUESTION_ASK[resolvedMode] ?? '') : '',
     sceneNarrations, playerLine,
+    nameChanges: extras?.nameChanges ?? null,
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 

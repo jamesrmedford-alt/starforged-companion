@@ -641,6 +641,31 @@ Two side effects beyond display:
    match text, so present entities keep their ENTITIES IN SCENE card every
    turn.
 
+**One place** (overhaul 2 slice 4 — §6, D9, D17;
+SHIP-POSITION-AND-FRAME-DISAGREE). In the fourth live run's session 3 the
+frame said "open space off the lock" while the ship's record said docked at
+Bleakhold, the narration argued its own Where against the player's line
+("You are no longer at Tamsin's stall, so…"), and a50 copied "the Ashen Wake's
+pilot" after the cutter was renamed. Three stores, three facts: the
+characters' recorded place (`currentLocationId`), where the ship is (its
+position record), and where in that place the narration has them (the
+frame's Where — colour). THE SCENE composes them, each line saying whose it
+is, from one read (`sceneForReading`), which the pacing classifier is told
+by the same renderer (`formatSceneForReading` — its `formatScene`'s own
+current-location read and frame lines are gone). The frame rule asks for a
+room, a street, a deck — never where the ship is in space, which is a
+ship/position change — and for the scene where the player's line put it,
+with no difference explained in the prose. The ship rule asks for a
+ship/position when the player's line or the prose puts the ship somewhere
+its position does not say. Only a beat of play moves the ship (a bookend's,
+a clock vignette's and the oath scene's ship/position are dropped; the
+inciting incident's starting position stands). A fight begun while docked
+tells its opening beat NOT SO [place]. A line that walks the characters to a
+recorded place the frame names moves the current location with the frame
+(`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`), and the
+next beat turns the scene; the ship stays. Names the table changed are
+written new in the frame's words as they are read (`writeNewNames`).
+
 **Knob:** `factContinuity.sceneFrame` (world Boolean, default on; Fact
 Continuity pane). Disabling removes the sidecar key, the block, and both
 side effects in one switch.

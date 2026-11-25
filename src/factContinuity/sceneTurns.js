@@ -52,6 +52,9 @@ const ARRIVAL_MOVES = new Set(['set_a_course', 'finish_an_expedition']);
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
+/** A ship's line that reads "docked at": its name, and where (its scope in brackets left off). */
+const DOCKED_AT = /^(.+?)\s+docked at\s+(.+?)(?:\s+\([^()]*\))?$/;
+
 /** The most of a line a time skip's words quote (a line, not a paragraph). */
 const LINE_WORDS_MAX = 160;
 
@@ -299,22 +302,39 @@ export function sceneOpeningOf(state) {
  *
  *   TELL [scene]    the beat that opens a scene: why it began, and to open it
  *                   there and describe the place fresh (D12)
+ *   NOT SO [place]  the beat that opens a fight's scene while the ship's line
+ *                   reads "docked at" (§6.2): if the fight is the ship's, she
+ *                   is no longer docked — say where she is (ship/position); on
+ *                   foot she stays docked. No code infers undocking (D9): a
+ *                   crew may fight on the dock.
  *   NOT SO [letgo]  each question play let go (§7.3): not to end on it or bring
  *                   it back unless the player's line takes it up
  *
- * Checks (overhaul 4 slice 4's classes): [scene] is logged; [letgo] a floor —
- * a let-go stem in the prose's last two sentences the line does not hold.
+ * Told, not checked: overhaul 4's checks (moves/contracts/checks.js) trip
+ * only their own kinds, and this overhaul does not edit them. The design's
+ * checks for these — [scene] and [place] logged, [place] a tripwire for the
+ * judge ("docked", "berth", "clamps" in the prose of a ship's fight), [letgo]
+ * a floor (a let-go stem in the prose's last two sentences that the line does
+ * not hold) — are checks.js's to make (known-issues SCENE-OBLIGATIONS-TOLD-ONLY).
  *
  * @param {Object} state — the scene ledger as the store has it
+ * @param {{ ship?: string }} [opts] — the ship's line as the scene's read has
+ *   it (narratorPrompt.js sceneForReading: "Kobayashi IV docked at Bleakhold Station")
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
-export function sceneObligations(state) {
+export function sceneObligations(state, { ship = '' } = {}) {
   const out = [];
   const opening = sceneOpeningOf(state);
   if (opening) {
     out.push({ kind: 'scene', list: 'TELL', text: `This beat opens a new scene: ${opening}. Open it there — where the characters `
       + 'are now, who is here. What still binds is under ACTIVE SCENE; the last scene\'s description is not carried: describe '
       + 'this place fresh.' });
+  }
+  const docked = opening && state.sceneBegan?.cause === 'fight' ? DOCKED_AT.exec(clean(ship)) : null;
+  if (docked) {
+    out.push({ kind: 'place', list: 'NOT SO', text: `${docked[1]} is docked at ${docked[2]} by the ship's record. If this fight `
+      + 'is the ship\'s, she is no longer docked: say where she is in your fact block (ship/position). If it is fought on foot, '
+      + 'she stays docked.' });
   }
   const frame = state?.sceneFrame;
   const own = frame && typeof frame === 'object' && (frame.sceneId ?? null) === (state.currentSceneId ?? null);

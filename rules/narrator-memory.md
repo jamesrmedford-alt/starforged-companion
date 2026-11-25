@@ -186,10 +186,12 @@ layers. This file is the never-break list.
    (`playersFrame`, `provenance.js`). The let-go list is code-kept, carried
    by `applySceneFrame` in the frame's `previous` chain (an X-Card on the beat
    that let a question go puts it back). The scene's unanswered hidden
-   mysteries, with their clocks, are retired at every scene end (issue #362 D4).
-   Anything that must
+   mysteries, with their clocks, are retired at every scene end but a turn
+   (issue #362 D4, as D16 above amends it). Anything else that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
-   migration, not in a lifecycle exemption. Since issue #286 that migration
+   migration, not in a lifecycle exemption: D16's two (the unanswered
+   mysteries, the `!pace` override) are the session's, not the scene's. Since
+   issue #286 that migration
    also files scene-subject truths on the recorded place each was asserted
    at (the truth's `sceneLocation` stamp, issue #326 D2 — a scene spans
    travel; an unstamped truth falls back to `resolveScenePlace`, the place
@@ -341,6 +343,38 @@ layers. This file is the never-break list.
    session, posted since the current one was minted; issue #364
    XCARD-MISSES-LATE-ROUND-CARD) — and the Chronicle entries the scribe wrote from a
    removed narration go too (XCARD-CHRONICLE).
+
+6c. **One place: three stores, three facts** (overhaul 2 §6,
+   SHIP-POSITION-AND-FRAME-DISAGREE). The characters' recorded place is
+   `currentLocationId` / `currentLocationType` (an arrival, `!at`, the
+   Entities panel, a line that walked them there); where the ship is, its
+   position record (an arrival, `!at`, the panel, the token, a beat of play's
+   ship/position, the X-Card's restore); `sceneFrame.location`, where in that
+   place the narration has them — the narration's own, no store's fact (the
+   scene end's filing still reads it to say where a truth was asserted, issue
+   #326 D2). No store restates another's: THE SCENE composes them, and the
+   reader is told the same read by the same renderer (`narratorPrompt.js
+   sceneForReading` / `formatSceneForReading` — the pacing classifier's
+   `formatScene`; the line reader, unwired, still reads its own place and
+   frame — `moves/readerSituation.js`, issue #384 — until it is pointed
+   here). **Only a beat of play moves the
+   ship** — a move's, a paced line's, a round's, an oracle follow-up's
+   narration, and the inciting incident's starting position (the premise's);
+   a bookend's, a clock vignette's and the oath scene's ship/position are
+   dropped and logged. A fight begun while the ship's line reads "docked at"
+   tells the beat that opens its scene NOT SO [place]; no code infers
+   undocking (D9 — a crew may fight on the dock). A line walks the
+   characters to another recorded place only when the beat's frame names
+   exactly one and the beat's player words name it too — its name, or a
+   telling word of it no other recorded place in the active sector has
+   (`sceneLifecycle.js placeWalkedTo`): the current location moves in the
+   frame's persist and `place.arrived` is recorded `how: "line"`; the ship
+   stays where its record says (D17), and the next beat turns the scene. A
+   frame naming a place no line named moves nothing, and a Set a Course's
+   beat walks nowhere: its arrival is the move's own (the outcome decides it,
+   the auto-move or the GM's drag applies it with the ship). The names the table
+   changed are written new in the frame's words as THE SCENE renders them;
+   the stored frame is not rewritten.
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so

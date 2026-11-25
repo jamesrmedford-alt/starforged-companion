@@ -1626,7 +1626,10 @@ through in its own shape — `entityId` is the host document id; entity state
 keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
 the active sector's, as `!at` resolves it: the older sector's "Derelict
 Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
-`position` stateChanges routed to the §20 ship record, `applySceneFrame`
+`position` stateChanges routed to the §20 ship record — a beat of play's only
+(overhaul 2 §6.3: a move's, a paced line's, a round's, an oracle follow-up's,
+and the inciting incident's starting position; a bookend's, a clock
+vignette's and the oath scene's are dropped and logged) — `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
 play — it sets no question and changes none); every beat's frame is first
@@ -1637,7 +1640,14 @@ question the frame does not already hold stands only when the mode may set
 one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
 and the command vehicle's names are no evidence — `namesNoEvidence`) and it
 is no let-go question again (`playersQuestion`); a Now line that carries a
-let-go question is stored empty (`touchesLetGo`). Every beat is then counted
+let-go question is stored empty (`touchesLetGo`). A beat of play whose frame
+names exactly one recorded place that is not the current location, and whose
+player words name it too, walks the characters there: the current location
+moves in the frame's persist (`persistSceneLedgerFields`' `onto`, while the
+store is on the scene it was read in) and on the caller's copy, the arrival is
+recorded (`place.arrived`, `how: "line"`), and the next beat turns the scene
+(`sceneLifecycle.js placeWalkedTo` — overhaul 2 §6.4; the ship stays, D17).
+Every beat is then counted
 against the question the frame keeps (`countSceneQuestionBeat` →
 `sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
 onto the frame's code-kept `letGo` list — its text and telling stems — and

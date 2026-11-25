@@ -474,6 +474,14 @@ finish docks there and charts nothing.
   as the site ladder does (U48): generated site names repeat across sectors,
   and the older sector's derelict became the current location, the ship's
   position and its token's place on that sector's map (issue #342 Z15).
+  Since overhaul 2 (§6.4) a narration of play is a current-location writer
+  too, the current location alone: a beat whose frame names exactly one
+  recorded settlement, planet or location and whose player words name it
+  ("I take the lift down to Hollow Spire") moves it there with the frame
+  (`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`) — the
+  ship stays where its record says (D17). A Set a Course's beat walks
+  nowhere: its arrival is the move's own (above). And only a beat of play's
+  ship/position moves the ship (§6.3).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
   `SHIP POSITION` lines — every arrival recorder writes only after arrival,
   so those sources read as stationary ("docked at" / "in orbit of";

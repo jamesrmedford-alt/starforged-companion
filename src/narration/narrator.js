@@ -18,6 +18,7 @@ import {
   splitNarratorSystemPrompt,
   sanitizePlayerText,
   SCENE_LEDGER_FIELDS,
+  sceneForReading,
   resolveNarrationPerspective,
   sessionPerspectiveOf,
 } from './narratorPrompt.js';
@@ -41,7 +42,8 @@ import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
+import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, placeWalkedTo } from '../factContinuity/sceneLifecycle.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, COLOUR_BEATS } from '../factContinuity/provenance.js';
@@ -117,6 +119,20 @@ const MODULE_ID      = 'starforged-companion';
 
 /** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
 const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
+
+/**
+ * What the scene obliges a beat of play's narration (sceneTurns.js
+ * sceneObligations), with the ship's line as the scene's one read has it
+ * (sceneForReading — overhaul 2 §6.2's [place]). The ledger is the store's
+ * scene (`extras.sceneLedger`), else the caller's; the ship is the record's.
+ *
+ * @param {Object|null} ledger
+ * @param {Object} campaignState
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+function sceneObligationsOf(ledger, campaignState) {
+  return sceneObligations(ledger ?? campaignState, { ship: sceneForReading(campaignState).ship });
+}
 
 /**
  * True when the X-Card is active. Checks the caller's campaignState AND the
@@ -1390,7 +1406,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // (overhaul 2 §10.3; kinds checks.js trips on nothing — they are told only).
   const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince }),
-    ...sceneObligations(extras.sceneLedger ?? campaignState)];
+    ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1900,7 +1916,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     entries,
     sentenceTarget,
     audio: extras.audioMarkupEnabled === true,
-    sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState),
+    sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
   // Asked after the call's long wait: is this narration still the round's?
@@ -4207,7 +4223,7 @@ export async function narrateOracleFollowup({
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
     kind, oracleName, question, rolledLine, recentContext, seedLines,
-    sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState),
+    sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
@@ -5057,7 +5073,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
         situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince }),
-        ...sceneObligations(extras.sceneLedger ?? campaignState)];
+        ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
         { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
@@ -6866,6 +6882,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // new position from the Ship Actor on the next turn.
   const shipPositionChanges = [];
   const otherChanges = [];
+  let walked = null;
   for (const c of sidecar.stateChanges ?? []) {
     const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
     const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
@@ -6969,6 +6986,18 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       });
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
         campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
+        // A line that walks them to another recorded place (overhaul 2 §6.4):
+        // the frame names it and so do the player's words — the current
+        // location moves with the frame, on this copy and in its persist
+        // (a later write of this copy keeps it), and the next beat turns.
+        // Never a Set a Course's: its arrival is the move's own — the outcome
+        // decides it, and the auto-move or the GM's drag applies it with the
+        // ship (a miss's frame "en route to Hollow Spire" arrives nowhere).
+        walked = line && ctx.moveId !== 'set_a_course' ? placeWalkedTo(campaignState.sceneFrame, line, campaignState) : null;
+        if (walked) {
+          campaignState.currentLocationId   = walked.id;
+          campaignState.currentLocationType = walked.type;
+        }
       }
     }
 
@@ -6979,14 +7008,38 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // ledgers whole dropped a mid-narration `!truth` correction or oracle
     // truth and resurrected a scene End a Session had just closed — so the
     // ledgers are unioned by id, and skipped when the scene changed.
-    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
+    // A walk is written onto the store's state in the same persist, while the
+    // scene it was read in is still the store's; once landed, recorded.
+    const walkedIn = campaignState.currentSceneId ?? null;
+    let arrived = false;
+    const onto = walked ? (target) => {
+      if ((target.currentSceneId ?? null) !== walkedIn) return;
+      target.currentLocationId   = walked.id;
+      target.currentLocationType = walked.type;
+      arrived = true;
+    } : null;
+    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar', { onto }).then(written => {
+      if (walked && arrived && written) void recordPlaceArrival(campaignState, { how: 'line' });
+      return written;
+    }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
     );
   } catch (err) {
     console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
   }
 
-  if (shipPositionChanges.length) {
+  // Who may move the ship (overhaul 2 §6.3): a beat of play — a move's, a
+  // paced line's, a round's, an oracle follow-up's narration (a relayed one
+  // carries its mode) — and the inciting incident's REQUIRED starting
+  // position, the premise's. A bookend (the opening, the closing, the
+  // spotlight), a clock vignette and the oath scene never move it: the
+  // fourth live run's frames and the ship's record disagreed after narrations
+  // that were no beat of play (SHIP-POSITION-AND-FRAME-DISAGREE).
+  const movesTheShip = ctx.bookend !== true && (QUESTION_MODES.has(ctx.mode) || ctx.mode === 'inciting_incident');
+  if (shipPositionChanges.length && !movesTheShip) {
+    console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) of a `
+      + `${ctx.mode ?? 'non-play'} narration dropped — only a beat of play moves the ship.`);
+  } else if (shipPositionChanges.length) {
     applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );
