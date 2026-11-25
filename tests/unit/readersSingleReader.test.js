@@ -24,7 +24,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  OUTCOME, armsOf, compareDesigns, fightOf, positionLegal, readingOf, report, routeOf, scoreCase, summarise, validateCases,
+  OUTCOME, armsOf, baselineOf, compareDesigns, fightOf, positionLegal, readingOf, report, routeOf, scoreCase, summarise, validateCases,
 } from '../../test/ci/playwright/lib/readers.mjs';
 import { createClaudeHarness } from '../../test/ci/playwright/lib/claude.mjs';
 
@@ -339,6 +339,49 @@ describe('compareDesigns — the switch\'s criteria, model by model', () => {
   it('the dials\' share strays: an arm that offers what the other rolls', () => {
     const [pair] = compareDesigns(summarise(madeUpRun({ oneGathers: 'offer' }), { prices: PRICES }));
     expect(pair.criteria.find(c => c.n === 8)).toMatchObject({ pass: false, detail: '50% (1 of 2) against 100% (2 of 2)' });
+  });
+});
+
+describe('baselineOf — a kept run\'s arm, judged beside this run\'s (READERS_BASELINE)', () => {
+  const cases = [{ id: 'a', line: 'L1', want: { moves: ['face_danger'] } }, { id: 'b', line: 'L2', want: { none: true } }];
+  const rows = [
+    { arm: 'two:s', id: 'a', line: 'L1', want: { moves: ['face_danger'] }, outcome: 'rolled' },
+    { arm: 'two:s', id: 'b', line: 'L2, since reworded', want: { none: true }, outcome: 'narrated' },
+    { arm: 'two:s', id: 'c', line: 'L3', want: { none: true }, outcome: 'narrated' },
+    { arm: 'one:s', id: 'a', line: 'L1', want: { moves: ['face_danger'] }, outcome: 'nothing' },
+  ];
+
+  it('brings in the arms this run does not read, for the cases it reads, and leaves out a case changed since', () => {
+    const b = baselineOf(rows, { cases, runArms: ['one:s'] });
+    expect(b).toMatchObject({ arms: ['two:s'], readings: 1, dropped: ['b'], problems: [] });
+    expect(b.results).toEqual([{ ...rows[0], baseline: true }]);
+  });
+
+  it('refuses what cannot be judged: no readings, an arm it lacks, an arm this run reads too', () => {
+    expect(baselineOf([], { cases }).problems[0]).toMatch(/holds no readings/);
+    expect(baselineOf(rows, { cases, arms: ['two:h'] }).problems).toContain('the baseline has no arm "two:h" (it has two:s, one:s)');
+    expect(baselineOf(rows, { cases, arms: ['one:s'], runArms: ['one:s'] }).problems).toContain('"one:s" is read in this run, and cannot be its baseline too');
+    expect(baselineOf(rows, { cases, runArms: ['two:s', 'one:s'] }).problems).toContain('the baseline has no arm this run does not read');
+  });
+
+  it('the one reader re-measured alone is judged against the two readers\' kept readings, and the report says where they came from', () => {
+    const run = madeUpRun();
+    const cases_ = [...new Map(run.map(r => [r.id, { id: r.id, line: r.line, want: r.want }])).values()];
+    const base = baselineOf(run.filter(r => r.design === 'two'), { cases: cases_, runArms: ['one:claude-sonnet-5-5'] });
+    const summary = summarise([...run.filter(r => r.design === 'one'), ...base.results], { prices: PRICES });
+    const [pair] = compareDesigns(summary);
+    expect(pair).toMatchObject({ two: 'two:claude-sonnet-5-5', one: 'one:claude-sonnet-5-5' });
+    expect(pair.criteria.map(c => c.pass)).toEqual(compareDesigns(summarise(run, { prices: PRICES }))[0].criteria.map(c => c.pass));
+    const text = report(summary, { mode: 'live', repeats: 1, planned: run.length, questions: ['q'],
+      baseline: { arms: base.arms, readings: base.readings, dropped: [], from: 'readers-live-20261125-060517', commit: '8b7bf4792de02238' } });
+    expect(text).toContain('**A baseline, not read in this run:** `two:claude-sonnet-5-5` — 5 reading(s) from `readers-live-20261125-060517`, read at commit `8b7bf4792de0`.');
+  });
+
+  it('the runner reads it before it spends, and summarises this run\'s readings with it', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../test/ci/playwright/readers.mjs'), 'utf8');
+    expect(source).toContain('baselineOf(readJson(path.resolve(BASELINE)), { cases, arms: BASELINE_ARMS, runArms: ARMS.map(a => a.id) })');
+    expect(source.indexOf('baselineOf(readJson')).toBeLessThan(source.indexOf('if (LIVE) {\n    assert(API_KEY'));
+    expect(source).toContain('summarise([...results, ...(baseline?.results ?? [])], { prices })');
   });
 });
 

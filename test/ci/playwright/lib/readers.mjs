@@ -845,6 +845,38 @@ export function compareDesigns(summary) {
   });
 }
 
+/**
+ * Another run's readings, brought in as a baseline arm (READERS_BASELINE):
+ * the readings of `arms` from a kept run's results.json, for the cases this
+ * run reads — a case whose line or wanted reading has changed since is left
+ * out, and said so. Each reading keeps its arm and is marked `baseline`; the
+ * summary, the report and compareDesigns read it beside this run's own, so
+ * a re-measure of one arm is judged against the arm it is to replace without
+ * paying to read that arm again. The baseline's tree is the kept run's (its
+ * run.json `commit`), not this one's: the report says so.
+ *
+ * @param {Array<Object>} rows — the kept run's results.json
+ * @param {{ cases: Array<{ id: string, line: string, want: Object }>, arms?: string[], runArms?: string[] }} opts —
+ *   `arms`: the baseline's arms to bring in (default: every arm it has that this run does not read); `runArms`: this run's
+ * @returns {{ results: Object[], arms: string[], readings: number, dropped: string[], problems: string[] }}
+ */
+export function baselineOf(rows, { cases = [], arms = [], runArms = [] } = {}) {
+  const problems = [];
+  const list = Array.isArray(rows) ? rows.filter(r => r && typeof r.arm === "string" && typeof r.id === "string") : [];
+  if (!list.length) problems.push("the baseline holds no readings (a results.json is a list of readings, each with its arm and case id)");
+  const has = [...new Set(list.map(r => r.arm))];
+  const chosen = arms.length ? arms : has.filter(a => !runArms.includes(a));
+  for (const a of chosen) if (!has.includes(a)) problems.push(`the baseline has no arm "${a}" (it has ${has.join(", ") || "none"})`);
+  for (const a of chosen) if (runArms.includes(a)) problems.push(`"${a}" is read in this run, and cannot be its baseline too`);
+  if (!chosen.length && list.length) problems.push("the baseline has no arm this run does not read");
+  const byId = new Map(cases.map(c => [c.id, c]));
+  const same = (r, c) => r.line === c.line && JSON.stringify(r.want ?? null) === JSON.stringify(c.want ?? null);
+  const kept = list.filter(r => chosen.includes(r.arm) && byId.has(r.id));
+  const dropped = [...new Set(kept.filter(r => !same(r, byId.get(r.id))).map(r => r.id))];
+  const results = kept.filter(r => same(r, byId.get(r.id))).map(r => ({ ...r, baseline: true }));
+  return { results, arms: chosen.filter(a => has.includes(a)), readings: results.length, dropped, problems };
+}
+
 // ── the report ───────────────────────────────────────────────────────────────
 
 const pct = (x) => (x == null ? "–" : `${Math.round(x * 100)}%`);
@@ -981,6 +1013,12 @@ export function report(summary, meta = {}) {
       + "so every line comes out as \"reader failed\". It shows that the flow runs and what prompts it builds (requests.json) — nothing about how a line is read.", "");
   }
   if (meta.stopped) out.push(`**Stopped early:** ${meta.stopped}. What follows is what was read before that.`, "");
+  if (meta.baseline?.arms?.length) {
+    out.push(`**A baseline, not read in this run:** ${meta.baseline.arms.map(a => `\`${a}\``).join(", ")} — ${meta.baseline.readings} reading(s) from `
+      + `${meta.baseline.from ? `\`${meta.baseline.from}\`` : "a kept run"}${meta.baseline.commit ? `, read at commit \`${String(meta.baseline.commit).slice(0, 12)}\`` : ""}`
+      + `${meta.baseline.dropped?.length ? `; left out, their line or wanted reading changed since: ${meta.baseline.dropped.join(", ")}` : ""}. `
+      + "Its tree is that run's, not this one's: a change between the two to the code it calls is not in its readings.", "");
+  }
 
   out.push("## What this run was to answer", "");
   if (meta.questions?.length) {

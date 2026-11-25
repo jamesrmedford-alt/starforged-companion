@@ -14,7 +14,10 @@
  * citing its source:
  *
  *   - heal / hearten / resupply / repair with nothing to recover, per target:
- *     `nothingToRecover` below. TOLD for all four; REFUSED only where
+ *     the rule situation.js nothingToRecover held until overhaul 4's gate
+ *     took it over (contracts/predicates.js RECOVERABLE, SOMETHING_DAMAGED),
+ *     kept here as the stand-in's own (nothingToRecover below) until slice 4
+ *     builds this file's answers on the contracts. TOLD for all four; REFUSED only where
  *     today's code refuses — Hearten, and Heal with nobody else to treat, by
  *     the sheet alone (`sheetAlone`); a Resupply may be after one particular
  *     item and a Repair for another vehicle, a module, a companion or a
@@ -84,6 +87,46 @@ const meterText = (label, value, marked, impact, max = 5) => {
   return [`${label} ${value} of ${max}`, ...notes].join(", ");
 };
 const nameOf = (situation) => situation?.speaker?.name ?? situation?.sheet?.name ?? "The character";
+
+const METER_MAX = 5;
+const isFull = (value, max = METER_MAX) => Number.isFinite(value) && value >= max;
+
+/**
+ * Whether a recovery move has nothing to recover — Heal with health full and
+ * no wound, Hearten with spirit full and not shaken, Resupply with supply
+ * full and not unprepared, Repair with the command vehicle's integrity full
+ * and it not battered — read from the whole line situation. Anything unknown
+ * is not "nothing". `sheetAlone`: only the sheet speaks for it — then only
+ * Hearten, and Heal with nobody else the care could be for (the situation's
+ * party and the speaker's companions; where either could not be read,
+ * someone might be), are answered; a Resupply may be after one item and a
+ * Repair for another vehicle or a device. The rule situation.js held until
+ * overhaul 4's gate took it over (d068851e, contracts/predicates.js
+ * RECOVERABLE); the stand-in keeps it until slice 4 asks the contracts.
+ *
+ * @param {string} moveId
+ * @param {ReturnType<import("./readerSituation.js").readLineSituation>|null} s
+ * @param {{ sheetAlone?: boolean }} [opts]
+ * @returns {boolean}
+ */
+function nothingToRecover(moveId, s, { sheetAlone = false } = {}) {
+  const sheet = s?.sheet;
+  if (!sheet) return false;
+  const { meters = {}, impacts = {}, vehicle = null } = sheet;
+  switch (moveId) {
+    case "heal": {
+      if (!(isFull(meters.health) && impacts.wounded === false)) return false;
+      if (!sheetAlone) return true;
+      const unread = new Set(s.unread ?? []);
+      if (unread.has("the party") || unread.has("the vehicles and companions")) return false;
+      return (Array.isArray(s.party) ? s.party.length : 0) + (Array.isArray(s.companions) ? s.companions.length : 0) === 0;
+    }
+    case "hearten":  return isFull(meters.spirit) && impacts.shaken === false;
+    case "resupply": return !sheetAlone && isFull(meters.supply) && impacts.unprepared === false;
+    case "repair":   return !sheetAlone && !!vehicle && isFull(vehicle.integrity, vehicle.max) && vehicle.battered === false;
+    default:         return false;
+  }
+}
 const named = (t) => `${t.name}${t.why ? ` (${t.why})` : ""}`;
 
 /**
@@ -196,48 +239,6 @@ export function availableMoves(situation, { mode = OPEN } = {}) {
   const list = CATALOGUE_MOVE_IDS.filter(id => out.has(id)).map(id => out.get(id));
   // A roll was asked for (or the move is chosen): only a remap is a "cannot".
   return mode === OPEN ? list : list.map(e => (e.can || e.instead ? e : { ...e, can: true }));
-}
-
-const isFull = (value, max = 5) => Number.isFinite(value) && value >= max;
-
-/**
- * Whether `moveId` is a recovery move the sheet shows nothing for — the rule
- * situation.js kept as `nothingToRecover` until the move contracts' gate took
- * its place there (overhaul 4, slice 1: contracts/predicates.js RECOVERABLE).
- * The stand-in keeps its own copy until slice 4 deletes this file. Heal with
- * health full and not wounded, Hearten with spirit full and not shaken,
- * Resupply with supply full and not unprepared, Repair with the command
- * vehicle's integrity full and it not battered (HEAL-ROLLED-AT-FULL-HEALTH).
- * Anything unknown is not "nothing". `sheetAlone`: only the sheet speaks for
- * it — Hearten, and Heal when nobody else could be treated (no other player
- * character, no companion: `s.party`, `s.companions`, both read).
- *
- * @param {string} moveId
- * @param {ReturnType<import("./readerSituation.js").readLineSituation>} s
- * @param {{ sheetAlone?: boolean }} [opts]
- * @returns {boolean}
- */
-function nothingToRecover(moveId, s, { sheetAlone = false } = {}) {
-  const sheet = s?.sheet;
-  if (!sheet) return false;
-  const { meters, impacts, vehicle } = sheet;
-  switch (moveId) {
-    case "heal": {
-      if (!(isFull(meters.health) && impacts.wounded === false)) return false;
-      if (!sheetAlone) return true;
-      const unread = Array.isArray(s.unread) ? s.unread : [];
-      if (unread.includes("the party") || unread.includes("the vehicles and companions")) return false;
-      return (s.party?.length ?? 0) + (s.companions?.length ?? 0) === 0;
-    }
-    case "hearten":
-      return isFull(meters.spirit) && impacts.shaken === false;
-    case "resupply":
-      return !sheetAlone && isFull(meters.supply) && impacts.unprepared === false;
-    case "repair":
-      return !sheetAlone && !!vehicle && isFull(vehicle.integrity, vehicle.max) && vehicle.battered === false;
-    default:
-      return false;
-  }
 }
 
 /** Heal, Hearten, Resupply and Repair on the speaker's sheet (nothingToRecover). */

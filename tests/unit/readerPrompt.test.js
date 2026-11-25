@@ -112,9 +112,16 @@ describe('the system prompt: the same bytes for every call', () => {
     for (const mode of ['READ THE LINE', 'A ROLL WAS ASKED FOR', 'THE MOVE IS CHOSEN']) expect(text).toContain(`- ${mode}:`);
     // The twelve rules.
     for (let n = 1; n <= 12; n += 1) expect(text, `rule ${n}`).toMatch(new RegExp(`^${n}\\. `, 'm'));
-    // Asking for trust is named as talk; headway must be in the story.
-    expect(text).toContain('asking someone to trust you, to be your friend or your contact');
-    expect(text).toContain('reach_a_milestone is for headway the RECENT SCENE already shows');
+    // Asking for trust is named as talk; a deed for a connection needs nothing at risk; headway the scene bears out;
+    // a line that names its move asks for it, everyday English included (issue #384, the first measure's mend).
+    expect(text).toContain('asking for the relationship itself: to be trusted, to be friends, to count on each other, to be someone\'s contact');
+    expect(text).toContain('A move with no roll needs nothing at risk — its trigger is the deed.');
+    expect(text).toContain('reach_a_milestone is for headway the RECENT SCENE bears out');
+    expect(text).toContain('A claim the scene contradicts, or that nothing in the scene supports');
+    expect(text).toContain('it is fulfill_your_vow, not a milestone, whether or not the player says it is done');
+    expect(text).toContain('even where the name is everyday English');
+    // The reply leaves out what does not apply.
+    expect(text).toContain('Leave out a key whose value would be null or false; always give move (null when the line sets about none), category, confidence and reason');
   });
 });
 
@@ -137,6 +144,35 @@ describe('the call', () => {
     const a = worldMira();
     await readLine({ text: LINE, speakerActorId: a.actorId, campaignState: { ...a.campaignState, api: { promptCachingEnabled: false } }, apiKey: 'k' });
     expect(sent()[2].system).toEqual([{ type: 'text', text: buildReaderSystemPrompt() }]);
+  });
+
+  it('the Balanced note is the system\'s second block, cached with the rules; Chaotic\'s rides with the line; a chosen move has none', async () => {
+    const a = worldMira();
+    await readLine({ text: LINE, speakerActorId: a.actorId, campaignState: a.campaignState, apiKey: 'k', mischiefLevel: 'balanced' });
+    const balanced = sent()[2];
+    expect(balanced.system).toHaveLength(2);
+    expect(balanced.system[0]).toEqual({ type: 'text', text: buildReaderSystemPrompt(), cache_control: { type: 'ephemeral', ttl: '1h' } });
+    expect(balanced.system[1].text).toMatch(/^## THE TABLE'S MISCHIEF — for every line read here\n\nINTERPRETATION NOTE: /);
+    expect(balanced.system[1].text).toMatch(/It is about which move and stat; it never makes a move of a line that makes none\.$/);
+    expect(balanced.system[1].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(balanced.messages[0].content).not.toContain('INTERPRETATION NOTE');
+    // Another line, the same note: the block is the same bytes, so the cache holds it.
+    await readLine({ text: 'I lean on the clerk.', speakerActorId: a.actorId, campaignState: a.campaignState, apiKey: 'k', mischiefLevel: 'balanced' });
+    expect(sent()[2].system[1].text).toBe(balanced.system[1].text);
+
+    // Chaotic's heuristics are built from the line: they ride with it, uncached.
+    await readLine({ text: 'I fix the panel quietly.', speakerActorId: a.actorId, campaignState: a.campaignState, apiKey: 'k', mischiefLevel: 'chaotic' });
+    const chaotic = sent()[2];
+    expect(chaotic.system).toHaveLength(1);
+    expect(chaotic.messages[0].content).toContain('INTERPRETATION NOTE: You are playing the Trickster.');
+
+    await readLine({ mode: READING_MODES.CHOSEN, chosen: { moveId: 'face_danger' }, text: LINE, speakerActorId: a.actorId, campaignState: a.campaignState, apiKey: 'k', mischiefLevel: 'balanced' });
+    const chosen = sent()[2];
+    expect(chosen.system).toHaveLength(1);
+    expect(chosen.messages[0].content).not.toContain('INTERPRETATION NOTE');
+
+    await readLine({ text: LINE, speakerActorId: a.actorId, campaignState: { ...a.campaignState, api: { promptCachingEnabled: false } }, apiKey: 'k', mischiefLevel: 'balanced' });
+    expect(sent()[2].system.map(b => b.cache_control)).toEqual([undefined, undefined]);
   });
 
   it('a rate limit is tried once more, five seconds later; another failure is not — each a failed reading, never a throw', async () => {
@@ -210,6 +246,15 @@ describe('the user message', () => {
     expect(not).toContain('no scene challenge is open (face_danger, secure_an_advantage instead)');
     expect(not).not.toContain('hearten');
     expect(not).not.toContain('no fight is open');
+  });
+
+  it('POSSIBLE NOW lists only what it has something to say of: every other move of THE MOVES goes without saying', () => {
+    const text = message();
+    expect(text).toContain('POSSIBLE NOW — every move of THE MOVES but those named after this list, and these as told:');
+    expect(text).not.toContain('Any time');
+    const possible = text.slice(text.indexOf('POSSIBLE NOW'), text.indexOf('\nNOT NOW'));
+    for (const id of ['face_danger', 'gather_information', 'set_a_course', 'pay_the_price']) expect(possible, id).not.toContain(id);
+    expect(possible).toContain('- develop_your_relationship, test_your_relationship — "Tamsin Okoro"');
   });
 
   it('a chosen move: its id, its name and its own text, and no availability', () => {

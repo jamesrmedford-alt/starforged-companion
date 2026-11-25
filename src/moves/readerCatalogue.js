@@ -82,9 +82,11 @@ export const READER_CATALOGUE = Object.freeze([
     entry("reach_a_milestone", "Reach a Milestone", "When you make headway in your quest by doing any of the following...", {
       list: ["overcoming a critical obstacle", "gaining meaningful insight", "completing a perilous expedition",
         "acquiring a crucial item or resource", "earning vital support", "defeating a notable foe"],
-      ruling: "It marks the vow's progress with no roll. The headway is in the story already — the RECENT SCENE shows it (rule 6).",
+      ruling: "It marks the vow's progress with no roll. The RECENT SCENE bears the headway out (rule 6).",
     }),
-    entry("fulfill_your_vow", "Fulfill Your Vow", "When you reach the end of your quest, roll the challenge dice and compare to your progress"),
+    entry("fulfill_your_vow", "Fulfill Your Vow", "When you reach the end of your quest, roll the challenge dice and compare to your progress", {
+      ruling: "When the line claims what the vow swore — its goal reached — as the scene bears out: this, not a milestone (rule 6).",
+    }),
     entry("forsake_your_vow", "Forsake Your Vow", "When you renounce your quest, betray your promise, or the goal is lost to you, clear the vow"),
   ]),
   group("CONNECTION", [
@@ -96,7 +98,7 @@ export const READER_CATALOGUE = Object.freeze([
       list: ["swearing a vow to undertake a perilous quest in their service", "completing a quest to their benefit",
         "leveraging their help in desperate circumstances", "giving them something of worth", "sharing a profound moment",
         "standing with them against hardship", "overcoming a test of your relationship"],
-      ruling: "No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
+      ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
     }),
     entry("test_your_relationship", "Test Your Relationship", "When your relationship with a connection is tested through conflict, betrayal, or circumstance, roll +heart"),
     entry("forge_a_bond", "Forge a Bond", "When your relationship with a connection is ready to evolve, roll the challenge dice and compare to your progress", {

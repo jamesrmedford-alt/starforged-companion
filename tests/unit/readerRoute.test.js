@@ -84,7 +84,8 @@ describe('row 7: the bands', () => {
     [10, 'roll', 'roll', 'roll'], [9, 'roll', 'roll', 'roll'],
     [8, 'roll', 'roll', 'offer'], [7, 'roll', 'roll', 'offer'], [6, 'roll', 'roll', 'offer'],
     [5, 'roll', 'offer', 'offer'], [4, 'roll', 'offer', 'offer'], [3, 'roll', 'offer', 'offer'],
-    [2, 'roll', 'narrate', 'narrate'], [1, 'roll', 'narrate', 'narrate'], [0, 'roll', 'narrate', 'narrate'],
+    // At 0–2 a move the reader is sure of is offered on a button, never rolled (the low dial holds in code).
+    [2, 'roll', 'offer', 'offer'], [1, 'roll', 'offer', 'offer'], [0, 'roll', 'offer', 'offer'],
   ];
   for (const [d, high, plain, slight] of BANDS) {
     it(`dial ${d}: high ${high}, plain ${plain}, slight ${slight}`, () => {
@@ -97,15 +98,27 @@ describe('row 7: the bands', () => {
 
   it('at 0–2 a recovery move is offered, not narrated: only a move changes the sheet', () => {
     for (const moveId of ['heal', 'hearten', 'resupply', 'repair', 'sojourn']) {
-      expect(route(read({ moveId, risk: 'slight', category: 'downtime' }), { pacingConfig: dials(1) }), moveId).toMatchObject({ route: 'offer', offeredMove: moveId });
+      expect(route(read({ moveId, risk: 'slight', category: 'downtime', confidence: 'medium' }), { pacingConfig: dials(1) }), moveId).toMatchObject({ route: 'offer', offeredMove: moveId });
     }
+  });
+
+  it('at 0–2 any other move is offered only when the reader is sure of it; unsure, the line is narrated', () => {
+    // The first measure's Check Your Gear at downtime 1: read surely, slight risk — the pacing reader offered it.
+    expect(route(read({ moveId: 'check_your_gear', risk: 'slight', category: 'downtime' }), { pacingConfig: dials(1) })).toMatchObject({ route: 'offer', offeredMove: 'check_your_gear', dial: 1 });
+    for (const confidence of ['medium', 'low']) {
+      for (const risk of ['plain', 'slight']) {
+        expect(route(read({ risk, confidence }), { pacingConfig: dials(2) }).route, `${confidence} ${risk}`).toBe('narrate');
+      }
+    }
+    // Above the low band the confidence word does not narrate a move.
+    expect(route(read({ risk: 'slight', confidence: 'medium' }), { pacingConfig: dials(3) }).route).toBe('offer');
   });
 
   it('the dial is the category\'s, with the scene override', () => {
     const config = { dials: { combat: 9, investigation: 6, exploration: 6, social: 1, downtime: 1 }, sceneOverride: null };
-    expect(route(read({ category: 'social', risk: 'plain' }), { pacingConfig: config }).route).toBe('narrate');
+    expect(route(read({ category: 'social', risk: 'plain', confidence: 'medium' }), { pacingConfig: config }).route).toBe('narrate');
     expect(route(read({ category: 'investigation', risk: 'plain' }), { pacingConfig: config }).route).toBe('roll');
-    expect(route(read({ category: 'social', risk: 'plain' }), { pacingConfig: { ...config, sceneOverride: { modifier: 3, label: 'hot' } } }).route).toBe('offer');
+    expect(route(read({ category: 'social', risk: 'plain', confidence: 'medium' }), { pacingConfig: { ...config, sceneOverride: { modifier: 3, label: 'hot' } } }).route).toBe('offer');
   });
 });
 
@@ -124,7 +137,7 @@ describe('row 8: a roll from the dial demoted — never a narration promoted', (
     expect(DENSE_SHARE).toBeCloseTo(0.6, 6);
     expect(route(read({ risk: 'high' }), { pacingConfig: dials(10), density: { count: 3, window: 5 } })).toMatchObject({ route: 'offer', offeredMove: 'face_danger' });
     expect(route(read({ risk: 'high' }), { pacingConfig: dials(10), density: { count: 2, window: 5 } }).route).toBe('roll');
-    expect(route(read({ risk: 'plain' }), { pacingConfig: dials(1), density: { count: 5, window: 5 } }).route, 'a narration stays one').toBe('narrate');
+    expect(route(read({ risk: 'plain', confidence: 'medium' }), { pacingConfig: dials(1), density: { count: 5, window: 5 } }).route, 'a narration stays one').toBe('narrate');
     expect(route(read({ risk: 'high' }), { pacingConfig: dials(10), density: null }).route, 'a round has no window').toBe('roll');
   });
 

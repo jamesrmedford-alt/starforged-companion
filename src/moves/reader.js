@@ -90,6 +90,40 @@ const METER_STATS = new Set(["supply", "integrity", "health", "spirit", "compani
 export const isRolledMove = (moveId) => !!MOVES[moveId] && (MOVES[moveId].progressMove === true || (Array.isArray(MOVES[moveId].stat) && MOVES[moveId].stat.length > 0));
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A line that names its move asks for it
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The pacing reader's rule (classifier.js "A LINE THAT NAMES ITS MOVE ASKS FOR
+// IT"), held in code: a move's name of two words or more, as a player types
+// it — its verb in any tense, "your" as any possessive, "a" or "an" — asks
+// for that move, even where the name is everyday English. "I set a course for
+// Bleakhold Station." was offered for the density in the fourth live run
+// (issue #383 finding 17), and the one reader's own `asked` missed it in its
+// first measure. A one-word name (Heal, Strike, Compel) is an everyday verb,
+// and is left to the reader.
+const NAME_VERBS = Object.freeze({
+  make: "ma(?:ke|kes|de|king)", take: "t(?:ake|akes|ook|aking|aken)", undertake: "undert(?:ake|akes|ook|aking|aken)",
+  swear: "sw(?:ear|ears|ore|orn|earing)", set: "set(?:s|ting)?", lose: "los(?:e|es|t|ing)", pay: "pa(?:y|ys|id|ying)",
+  withstand: "withst(?:and|ands|ood|anding)", overcome: "overc(?:ome|omes|ame|oming)", fulfill: "fulfil+(?:s|ed|ing)?",
+  forsake: "fors(?:ake|akes|ook|aking|aken)", companion: "companion",
+});
+const POSSESSIVE = "(?:your|my|our|her|his|their|the|this|that)";
+const NAME_PATTERNS = new Map();
+
+/** Whether the line names the move: two words or more of its name, as a player would type them. */
+function lineNamesMove(text, moveId) {
+  const id = String(moveId ?? "").replace(/_scene_challenge$/, "");
+  if (!id.includes("_") || !MOVES[id]) return false;
+  if (!NAME_PATTERNS.has(id)) {
+    const [first, ...rest] = id.split("_");
+    const verb = NAME_VERBS[first] ?? `${first.replace(/e$/, "")}(?:e|es|ed|ing)?`;
+    const tail = rest.map(w => (w === "your" ? POSSESSIVE : w === "a" || w === "an" ? "an?" : w));
+    NAME_PATTERNS.set(id, new RegExp(`\\b${verb}\\s+${tail.join("\\s+")}\\b`, "i"));
+  }
+  return NAME_PATTERNS.get(id).test(String(text ?? ""));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The system prompt — the same bytes for every call
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -99,13 +133,13 @@ const RULES = `## HOW TO READ A LINE
 
 1. Intent over words. Read what the character does in the fiction, not the verbs used. The player's words are what the character attempts; what happens is the dice's and the narrator's.
 2. The line in its place. Read it against the SITUATION and the RECENT SCENE: who is there, what has happened, what a short line refers to ("let's go" after a destination was set; "do it" after someone asked for something). What you read is the PLAYER LINE; the rest is context.
-3. Only what can be made now. POSSIBLE NOW lists the moves the situation allows; NOT NOW says why the others cannot be made. Read the line as a move that can be made — the same intent's move where NOT NOW names one ("clash instead") — or as no move. Within an open scene challenge, a Face Danger or Secure an Advantage made as part of it is its scene-challenge move: name the challenge.
-4. Talk is narration, to anyone, a connection included: asking, answering, agreeing, refusing, choosing between options offered, saying a name, telling what happened — and asking someone to trust you, to be your friend or your contact. Talk is a move only when it does what a trigger names: it presses someone to do or give what they are reluctant to (compel), puts a relationship to the test by conflict or betrayal (test_your_relationship), is one of develop_your_relationship's deeds, or seeks company or peace for its own sake while the SITUATION shows something to recover (hearten). A threat, implied menace included, is compel or face_danger.
-5. Nothing at risk is no move: answering a hail, opening a channel, walking to a station, picking something up. Working a ship's systems is a move only when the fiction puts something at risk.
-6. Headway is in the story. reach_a_milestone is for headway the RECENT SCENE already shows — the obstacle overcome, the insight gained, the foe beaten — which the line names. A claim the scene does not show, a plan, a hope, a question or a passing remark is no move: the story has not made it yet. A line that attempts something with stakes is that attempt's move (the milestone is what it may earn). A line that says the quest is done, where the scene shows it done, is fulfill_your_vow.
+3. Only what can be made now. POSSIBLE NOW says what the situation allows, and for whom; NOT NOW names what cannot be made, and why. Read the line as a move that can be made — the same intent's move where NOT NOW names one ("clash instead") — or as no move. Within an open scene challenge, a Face Danger or Secure an Advantage made as part of it is its scene-challenge move: name the challenge.
+4. Talk is narration, to anyone, a connection included: asking, answering, agreeing, refusing, choosing between options offered, saying a name, telling what happened — and asking for the relationship itself: to be trusted, to be friends, to count on each other, to be someone's contact. A plea for a tie is none of develop_your_relationship's deeds, however warmly it is put. Talk is a move only when it does what a trigger names: it presses someone to do or give what they are reluctant to (compel), puts a relationship to the test by conflict or betrayal (test_your_relationship), offers or does one of develop_your_relationship's deeds (rule 5), or seeks company or peace for its own sake while the SITUATION shows something to recover (hearten). A threat, implied menace included, is compel or face_danger.
+5. Nothing at risk is no rolled move: answering a hail, opening a channel, walking to a station, picking something up. Working a ship's systems is a move only when the fiction puts something at risk. A move with no roll needs nothing at risk — its trigger is the deed. Something done for one of the speaker's connections — a gift of worth, a favour that costs the giver time or standing, a risk taken for them, bringing them what they lack — is one of develop_your_relationship's deeds (THE MOVES), and offering to do it is doing it (rule 1). Small talk, news traded, a plain question and a courtesy that costs nothing are not.
+6. Headway is in the story. reach_a_milestone is for headway the RECENT SCENE bears out — an obstacle overcome, an insight gained, a foe beaten, support earned, as the scene shows it — that the line claims or builds on, in its own words, however broadly it sums it up. A claim the scene contradicts, or that nothing in the scene supports — a plan, a hope, a question, a passing remark — is no move: the story has not made it. A line that attempts something with stakes is that attempt's move (the milestone is what it may earn). When what the line claims is what the vow swore — its goal reached, its quest at an end, as the scene bears out — it is fulfill_your_vow, not a milestone, whether or not the player says it is done.
 7. In a fight (an open fight in the SITUATION) any action the character takes is a move — the fight puts it at risk — and a result the player states against a foe ("I gun them down") is the attempt, never the outcome. Only observation, inner thought and a question to the narrator are no move. Use the fight's moves for the speaker's position; an action against a danger that is no foe is face_danger.
 8. Travel. A known route to one of the charted places is set_a_course; a journey anywhere else — coordinates someone gave, an unnamed or rumoured place, beyond the charts — is undertake_an_expedition, even when the player says "set a course". A time skip across a journey not yet made ("wake me when we get there") is that journey (category exploration, never downtime). Examining a notable place during an expedition is explore_a_waypoint.
-9. Asked. When the player names the move, or says they try, attempt or roll, set asked and read the move they named — unless it cannot be made now (rule 3).
+9. Asked. When the player names the move — its name in their own words, in any tense or person, even where the name is everyday English ("I set a course for…", "I gather information on…", "I check my gear") — or says they try, attempt or roll, set asked and read the move they named, unless it cannot be made now (rule 3).
 10. Two moves fit: prefer the one whose outcome matters more to the story; a reaction to an imminent threat is face_danger (react_under_fire in a bad spot) before gather_information.
 11. Rare moves: suffer moves only when the line describes taking harm, stress or loss; legacy and fate moves only when the line is plainly about them; ask_the_oracle is never a way to say nothing is rolled.
 12. The speaker. The move, its stat and the reason are the SPEAKER's, never another character's whom the scene is about. A social move at another player character is roleplay: no move. category is the line's, whatever move an INTERPRETATION NOTE leads you to.`;
@@ -129,12 +163,14 @@ Pick the category from what is happening in the fiction, not the apparatus being
 
 const REPLY = `## THE REPLY
 
-Return ONLY one JSON object — no preamble, no markdown, nothing outside it — with every key below, in this order, null where it does not apply:
+Return ONLY one JSON object — no preamble, no markdown, nothing outside it — with the keys below in this order. Leave out a key whose value would be null or false; always give move (null when the line sets about none), category, confidence and reason:
 
-{"move": "face_danger", "asked": false, "risk": "high", "category": "exploration", "confidence": "high", "reason": "Crossing the gantry before it collapses is attempting something risky.", "target": null, "sceneChallenge": null, "stat": "edge", "healSituation": null, "expeditionRank": null, "combatRank": null, "stakes": {"hit": "You reach the far hatch before the gantry gives way.", "miss": "The gantry buckles under you and you fall hard.", "missSuffer": {"move": "endure_harm", "amount": 1, "target": null}}, "mischiefApplied": false, "plainMove": null}
+{"move": "face_danger", "risk": "high", "category": "exploration", "confidence": "high", "reason": "Crossing the gantry before it collapses is attempting something risky.", "stat": "edge", "stakes": {"hit": "You reach the far hatch before the gantry gives way.", "miss": "The gantry buckles under you and you fall hard.", "missSuffer": {"move": "endure_harm", "amount": 1}}}
+
+{"move": null, "category": "social", "confidence": "high", "reason": "Asking the dockhand the time is talk; it meets no trigger."}
 
 - move: a move id from THE MOVES, or null when the line sets about no move. Never null where THE MODES say so.
-- asked: true when the player asks for the move in their own words — names it, or says they try, attempt or roll. Nothing tells a player to: a line that does not is read just as well.
+- asked: true when the player asks for the move in their own words — names it (rule 9), or says they try, attempt or roll. Nothing tells a player to: a line that does not is read just as well.
 - risk: "high", "plain" or "slight" for a move that is rolled; null for a move with no roll (WHAT HANGS ON IT).
 - category: "combat", "investigation", "exploration", "social" or "downtime" (THE DIAL CATEGORIES).
 - confidence: "high", "medium" or "low" — how sure you are of the reading; "low" when the line may well be no move at all.
@@ -146,7 +182,7 @@ Return ONLY one JSON object — no preamble, no markdown, nothing outside it —
 - expeditionRank: for undertake_an_expedition only, when the line implies the journey's scope — "troublesome" (a short, easy hop), "dangerous" (the default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking).
 - combatRank: for enter_the_fray only, when the line implies the foe's danger — "troublesome", "dangerous" (the default), "formidable", "extreme" or "epic".
 - stakes: for any move rolled with a stat — whether the table rolls it now or offers it — what the roll is for, shown to the player before it: {"hit": "…", "miss": "…", "missSuffer": …}. One line each, at most 14 words, in the second person, drawn from the RECENT SCENE and the line: "hit" what the attempt gets the character; "miss" its most obvious negative outcome — concrete, and about what was attempted — or null when no outcome follows obviously from the attempt (the Pay the Price table is rolled then). Never state what the move's own rules decide (progress marked, a combat position). null for a progress roll or a move with no roll.
-- missSuffer: inside stakes, when the miss plainly costs the character one of these, name it and its amount (1, or 2 for a serious blow): "endure_harm" (an injury), "endure_stress" (fear, shock or despair), "lose_momentum" (a delay, a lost edge), "sacrifice_resources" (supplies spent or lost), "withstand_damage" (their vehicle is damaged), "companion_takes_a_hit" (their companion is harmed) — {"move": "…", "amount": 1, "target": null}; "target" only for withstand_damage and companion_takes_a_hit: the support vehicle or companion by its name as the SITUATION lists it, null for the command starship. null when the miss costs something else — a position, an opportunity, someone's trust.
+- missSuffer: inside stakes, when the miss plainly costs the character one of these, name it and its amount (1, or 2 for a serious blow): "endure_harm" (an injury), "endure_stress" (fear, shock or despair), "lose_momentum" (a delay, a lost edge), "sacrifice_resources" (supplies spent or lost), "withstand_damage" (their vehicle is damaged), "companion_takes_a_hit" (their companion is harmed) — {"move": "…", "amount": 1}, with "target" only for withstand_damage and companion_takes_a_hit: the support vehicle or companion by its name as the SITUATION lists it, left out for the command starship. null when the miss costs something else — a position, an opportunity, someone's trust.
 - mischiefApplied: true when an INTERPRETATION NOTE led you to a less obvious move or stat than the plain reading.
 - plainMove: only when mischiefApplied is true — the move the line is read as without the misread. null otherwise.`;
 
@@ -183,17 +219,24 @@ export function buildReaderSystemPrompt() {
 
 const oneLine = (text) => String(text ?? "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 
+/** The heading of the system's second block: the table's Mischief note, for every line it reads. */
+const MISCHIEF_HEADING = "## THE TABLE'S MISCHIEF — for every line read here";
+/** The Mischief note (mischief.js buildMischiefFraming), held to which move and stat. */
+const mischiefNote = (framing) => `${String(framing).trim()} It is about which move and stat; it never makes a move of a line that makes none.`;
+
 /**
  * POSSIBLE NOW / NOT NOW: the availability, grouped. Moves that share a
- * reason share a line; a move with no reason is "Any time"; a "cannot" that
- * is made as another says which.
+ * reason share a line; a "cannot" that is made as another says which. A move
+ * with nothing to say of it is not listed: POSSIBLE NOW says that every move
+ * the not-now list does not name can be made (the catalogue lists them all),
+ * and the two dozen ids it saves were near a tenth of the reader's uncached
+ * input (the first measure, issue #384).
  *
  * @param {ReturnType<typeof availableMoves>} available
  * @returns {string}
  */
 export function renderAvailability(available) {
   const list = Array.isArray(available) ? available : [];
-  const anyTime = list.filter(e => e.can && !e.why).map(e => e.moveId);
   const groups = new Map();
   for (const e of list) {
     if (e.can && !e.why) continue;
@@ -207,8 +250,7 @@ export function renderAvailability(available) {
   const can = [...groups.values()].filter(g => g.can);
   const not = [...groups.values()].filter(g => !g.can);
   return [
-    "POSSIBLE NOW",
-    ...(anyTime.length ? [`- Any time: ${anyTime.join(", ")}`] : []),
+    `POSSIBLE NOW — every move of THE MOVES but those named after this list${can.length ? ", and these as told:" : "."}`,
     ...can.map(line),
     "NOT NOW",
     ...(not.length ? not.map(line) : ["- nothing"]),
@@ -264,7 +306,7 @@ export function buildReaderUserMessage({
   }
 
   if (mode !== READING_MODES.CHOSEN && typeof mischiefFraming === "string" && mischiefFraming.trim()) {
-    parts.push(`${mischiefFraming.trim()} It is about which move and stat; it never makes a move of a line that makes none.`);
+    parts.push(mischiefNote(mischiefFraming));
   }
 
   if (typeof recentScene === "string" && recentScene.trim()) {
@@ -333,9 +375,14 @@ export async function readLine({
     s = readLineSituation(actor, { campaignState });
   }
   const systemPrompt = buildReaderSystemPrompt();
+  // The Mischief note (never for a chosen move). Balanced's is the same for
+  // every line, so it is the system's second block, cached with the first;
+  // Chaotic's heuristics are built from the line, so it rides with the line.
+  const framing = readingMode === READING_MODES.CHOSEN ? null : buildMischiefFraming(mischiefLevel, text);
+  const standingNote = framing && mischiefLevel === "balanced" ? `${MISCHIEF_HEADING}\n\n${mischiefNote(framing)}` : null;
   const userMessage = buildReaderUserMessage({
     mode: readingMode, text, situation: s, available, chosen: chosenMove, canonicalBlock, round, recentScene,
-    mischiefFraming: readingMode === READING_MODES.CHOSEN ? null : buildMischiefFraming(mischiefLevel, text),
+    mischiefFraming: standingNote ? null : framing,
   });
 
   // One call, and one retry after a rate limit (narrator.js's rule). The
@@ -345,7 +392,7 @@ export async function readLine({
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-      const reply = await callReaderAPI({ apiKey, systemPrompt, userMessage, promptCachingEnabled: campaignState?.api?.promptCachingEnabled ?? true });
+      const reply = await callReaderAPI({ apiKey, systemPrompt, standingNote, userMessage, promptCachingEnabled: campaignState?.api?.promptCachingEnabled ?? true });
       return parseReading(reply.text, {
         mode: readingMode, chosen: chosenMove, mischiefLevel, combatPosition: s?.position ?? null, narration: text, cutShort: reply.cutShort,
       });
@@ -370,13 +417,16 @@ function isRateLimit(err) {
  *
  * @returns {Promise<{ text: string, cutShort: boolean }>}
  */
-async function callReaderAPI({ apiKey, systemPrompt, userMessage, promptCachingEnabled = true }) {
+async function callReaderAPI({ apiKey, systemPrompt, standingNote = null, userMessage, promptCachingEnabled = true }) {
+  const block = (text) => (promptCachingEnabled
+    ? { type: "text", text, cache_control: { type: "ephemeral", ttl: CACHE_TTL } }
+    : { type: "text", text });
   const body = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: [promptCachingEnabled
-      ? { type: "text", text: systemPrompt, cache_control: { type: "ephemeral", ttl: CACHE_TTL } }
-      : { type: "text", text: systemPrompt }],
+    // The rules — the same bytes for every call and world — then the table's
+    // standing Mischief note where it has one (the same for every line).
+    system: [block(systemPrompt), ...(standingNote ? [block(standingNote)] : [])],
     messages: [{ role: "user", content: userMessage }],
   };
   const headers = { "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
@@ -474,6 +524,8 @@ export function parseReading(rawText, { mode = READING_MODES.OPEN, chosen = null
   if (!chosenId) moveId = constrainMoveToPosition(moveId, combatPosition);
   const remapped = moveId !== named;
   const move = MOVES[moveId];
+  // A line that names the move it is read as asks for it, whatever the reply said.
+  const askedByName = !chosenId && (lineNamesMove(narration, named) || lineNamesMove(narration, moveId));
 
   // The stat: one the move lists (Chaotic keeps an unlisted one; a chosen move never).
   const listed = Array.isArray(move.stat) ? move.stat : [];
@@ -521,6 +573,7 @@ export function parseReading(rawText, { mode = READING_MODES.OPEN, chosen = null
 
   return {
     ...base,
+    asked: base.asked || askedByName,
     moveId: interpretation.moveId,
     risk: isRolledMove(interpretation.moveId) ? riskWord : null,
     plainMove,
