@@ -63,6 +63,12 @@ describe('recovery with nothing to recover (situation.js nothingToRecover)', () 
     expect(checkMove('heal', crew).ok).toBe(true);
     const hurtCrew = situation({ party: [{ actorId: 'pc-k', name: 'Karthik', health: 2, wounded: true }] }, { othersToTreat: 1 });
     expect(entry(hurtCrew, 'heal').why).toBe('not Mira (health 5 of 5, full, not wounded); Karthik (health 2 of 5, wounded)');
+
+    // Whoever else there is comes from the situation's own party and companions (situation.js keeps no count of
+    // them since overhaul 4's gate took the rule over): where either could not be read, nobody is ruled out.
+    expect(checkMove('heal', situation({ unread: ['the party'] })).ok).toBe(true);
+    expect(checkMove('heal', situation({ unread: ['the vehicles and companions'] })).ok).toBe(true);
+    expect(checkMove('heal', situation({}, { othersToTreat: 3 })).ok, 'the sheet\'s old count is not read').toBe(false);
   });
 
   it('Hearten: told and refused when spirit is full and she is not shaken — in a fight too', () => {

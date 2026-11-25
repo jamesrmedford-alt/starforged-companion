@@ -90,8 +90,13 @@ export function isDense(density) {
  *      so it is offered too; asked, or in a fight, it is made.
  *   7. By the effective dial d of the reading's category: 9–10 roll; 6–8
  *      roll when the risk is high or plain, else offer; 3–5 roll when high,
- *      else offer; 0–2 roll when high, else offer a recovery move, else
- *      narrate.
+ *      else offer; 0–2 roll when high, else offer a recovery move or a move
+ *      the reader is sure of (confidence high), else narrate — the low
+ *      dial's band is "narrate unless asked or the stakes are plain", and a
+ *      move a line plainly sets about is offered on a button, never rolled
+ *      (decisions.md → "A low pacing dial holds in code"; the pacing reader
+ *      offered Check Your Gear at downtime 1 where this band narrated it —
+ *      the one reader's first measure, issue #384).
  *   8. A roll from row 7 — never one from rows 4–5 — is an offer when the
  *      reading is unsure (confidence low), when it is medium at d 0–2 (the
  *      low dial's floor), or when the density window is dense. Row 8 only
@@ -143,7 +148,7 @@ export function routeReading(reading, ctx = {}) {
   if (d >= 9) route = "roll";
   else if (d >= 6) route = risk === "high" || risk === "plain" ? "roll" : "offer";
   else if (d >= 3) route = risk === "high" ? "roll" : "offer";
-  else route = risk === "high" ? "roll" : isRecovery(moveId) ? "offer" : "narrate";
+  else route = risk === "high" ? "roll" : isRecovery(moveId) || reading.confidence === "high" ? "offer" : "narrate";
   let why = `dial ${d} (${reading.category}), risk ${risk}`;
 
   // 8. Demotions of a roll.

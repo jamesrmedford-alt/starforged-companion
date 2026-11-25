@@ -14,7 +14,10 @@
  * citing its source:
  *
  *   - heal / hearten / resupply / repair with nothing to recover, per target:
- *     situation.js nothingToRecover. TOLD for all four; REFUSED only where
+ *     the rule situation.js nothingToRecover held until overhaul 4's gate
+ *     took it over (contracts/predicates.js RECOVERABLE, SOMETHING_DAMAGED),
+ *     kept here as the stand-in's own (nothingToRecover below) until slice 4
+ *     builds this file's answers on the contracts. TOLD for all four; REFUSED only where
  *     today's code refuses — Hearten, and Heal with nobody else to treat, by
  *     the sheet alone (`sheetAlone`); a Resupply may be after one particular
  *     item and a Repair for another vehicle, a module, a companion or a
@@ -56,7 +59,6 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { nothingToRecover } from "./situation.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
 import { CATALOGUE_MOVE_IDS } from "./readerCatalogue.js";
 import { progressText } from "./readerSituation.js";
@@ -85,6 +87,46 @@ const meterText = (label, value, marked, impact, max = 5) => {
   return [`${label} ${value} of ${max}`, ...notes].join(", ");
 };
 const nameOf = (situation) => situation?.speaker?.name ?? situation?.sheet?.name ?? "The character";
+
+const METER_MAX = 5;
+const isFull = (value, max = METER_MAX) => Number.isFinite(value) && value >= max;
+
+/**
+ * Whether a recovery move has nothing to recover — Heal with health full and
+ * no wound, Hearten with spirit full and not shaken, Resupply with supply
+ * full and not unprepared, Repair with the command vehicle's integrity full
+ * and it not battered — read from the whole line situation. Anything unknown
+ * is not "nothing". `sheetAlone`: only the sheet speaks for it — then only
+ * Hearten, and Heal with nobody else the care could be for (the situation's
+ * party and the speaker's companions; where either could not be read,
+ * someone might be), are answered; a Resupply may be after one item and a
+ * Repair for another vehicle or a device. The rule situation.js held until
+ * overhaul 4's gate took it over (d068851e, contracts/predicates.js
+ * RECOVERABLE); the stand-in keeps it until slice 4 asks the contracts.
+ *
+ * @param {string} moveId
+ * @param {ReturnType<import("./readerSituation.js").readLineSituation>|null} s
+ * @param {{ sheetAlone?: boolean }} [opts]
+ * @returns {boolean}
+ */
+function nothingToRecover(moveId, s, { sheetAlone = false } = {}) {
+  const sheet = s?.sheet;
+  if (!sheet) return false;
+  const { meters = {}, impacts = {}, vehicle = null } = sheet;
+  switch (moveId) {
+    case "heal": {
+      if (!(isFull(meters.health) && impacts.wounded === false)) return false;
+      if (!sheetAlone) return true;
+      const unread = new Set(s.unread ?? []);
+      if (unread.has("the party") || unread.has("the vehicles and companions")) return false;
+      return (Array.isArray(s.party) ? s.party.length : 0) + (Array.isArray(s.companions) ? s.companions.length : 0) === 0;
+    }
+    case "hearten":  return isFull(meters.spirit) && impacts.shaken === false;
+    case "resupply": return !sheetAlone && isFull(meters.supply) && impacts.unprepared === false;
+    case "repair":   return !sheetAlone && !!vehicle && isFull(vehicle.integrity, vehicle.max) && vehicle.battered === false;
+    default:         return false;
+  }
+}
 const named = (t) => `${t.name}${t.why ? ` (${t.why})` : ""}`;
 
 /**
@@ -206,7 +248,7 @@ function recovery(set, s, { who, party, companions }) {
 
   // Heal: the speaker, and whoever else the care could be for.
   const health = meterText("health", meters.health, impacts.wounded, "wounded");
-  const selfWhole = nothingToRecover("heal", sheet);
+  const selfWhole = nothingToRecover("heal", s);
   const elsewhere = [
     ...party.map(p => {
       const known = Number.isFinite(p.health);
@@ -223,17 +265,17 @@ function recovery(set, s, { who, party, companions }) {
 
   // Hearten: the speaker's own spirit.
   const spirit = meterText("spirit", meters.spirit, impacts.shaken, "shaken");
-  set("hearten", nothingToRecover("hearten", sheet) ? { can: false, why: `${spirit}: nothing to recover` } : { can: true, why: spirit });
+  set("hearten", nothingToRecover("hearten", s) ? { can: false, why: `${spirit}: nothing to recover` } : { can: true, why: spirit });
 
   // Resupply and Repair: told, never refused by the sheet (an item, a device).
   const supply = meterText("supply", meters.supply, impacts.unprepared, "unprepared");
-  set("resupply", nothingToRecover("resupply", sheet)
+  set("resupply", nothingToRecover("resupply", s)
     ? { can: false, why: `${supply}: nothing to restock, unless the line is after one particular item` }
     : { can: true, why: supply });
   if (vehicle) {
     const integrity = meterText("integrity", vehicle.integrity, vehicle.battered, "battered", vehicle.max);
     const ship = vehicle.name ? quoted(vehicle.name) : "the command vehicle";
-    set("repair", nothingToRecover("repair", sheet)
+    set("repair", nothingToRecover("repair", s)
       ? { can: false, why: `${ship} is at ${integrity}: nothing to mend on her, unless the line is about another vehicle, a module, a companion or a device` }
       : { can: true, why: `${ship} (${integrity})` });
   }
@@ -270,10 +312,10 @@ export function checkMove(moveId, situation, { mode = OPEN, targetId = null } = 
 
   if (mode !== OPEN || !s.sheet) return ok;
   const { meters, impacts } = s.sheet;
-  if (moveId === "hearten" && nothingToRecover("hearten", s.sheet)) {
+  if (moveId === "hearten" && nothingToRecover("hearten", s)) {
     return { ok: false, why: `${meterText("spirit", meters.spirit, impacts.shaken, "shaken")}: nothing to recover`, instead: null };
   }
-  if (moveId === "heal" && nothingToRecover("heal", s.sheet, { sheetAlone: true })) {
+  if (moveId === "heal" && nothingToRecover("heal", s, { sheetAlone: true })) {
     return { ok: false, why: `${meterText("health", meters.health, impacts.wounded, "wounded")}, and nobody else to treat: nothing to heal`, instead: null };
   }
   return ok;
