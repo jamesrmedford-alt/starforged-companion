@@ -22,11 +22,18 @@
  *      (CLAIMED-PROOF-OFFERED-A-MILESTONE, #3 c);
  *   4. the fight is fought where the ship lies, in her berth at Bleakhold's
  *      ring (SHIP-POSITION-AND-FRAME-DISAGREE, #8);
+ *   5. a held result kept by the next line and narrated after it is told
+ *      apart from a line answered twice — and is a finding of its own
+ *      (HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE, #9; exploreMechanics.test.js);
  *   6. the observer tells the last resort once, and the line that names the
  *      move spends it; it sees a move made with no roll as a move; and it
  *      names the cards that wait on the player — a held result's "Keep the
  *      result", the milestone's "Which vow advances?" (EXPLORE-ROUND-4-RUNNER,
- *      #16 a–c; the Keep half of HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE).
+ *      #16 a–c; the Keep half of HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE);
+ *   7. the review counts a move's own word ("the waypoint"), checked against
+ *      the module's moves; a session's refrains in its narrations of play,
+ *      the @scene answers apart; and a right nothing-to-recover reading as
+ *      right (#16 d and e).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -40,7 +47,9 @@ import { charterProblem } from '../../test/ci/playwright/lib/charter.mjs';
 import { createRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import { playerTurnPrompt } from '../../test/ci/playwright/lib/player.mjs';
 import { readCards, readTable } from '../../test/ci/playwright/lib/table.mjs';
-import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
+import { MOVE_WORDS, moveLabel, movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
+import { freeformOf, nothingToRecoverOf, pacingReadOf, refrainsOf, scorecard } from '../../test/ci/playwright/lib/review.mjs';
+import { MOVES } from '../../src/schemas.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PLAYWRIGHT = path.join(ROOT, 'test/ci/playwright');
@@ -548,5 +557,125 @@ describe('the fight is fought where the ship lies — in her berth at Bleakhold\
     // What the round before held of the fight's tell still holds.
     expect(b9.tell).toContain('choose your vow about the raids');
     expect(b9.tell).toContain('!truth set "raider cutter" is named the Ashen Wake');
+  });
+});
+
+// ── 7. the review's counts ───────────────────────────────────────────────────
+
+describe('the move-name count knows a move by its name\'s own word, checked against the module\'s moves (the fourth live run, a29)', () => {
+  it('a29 named Explore a Waypoint by its own word, the last resort not yet open; "the oracle" is Ask the Oracle\'s; a plea that says "connection" names nothing', () => {
+    expect(RUN_4.actions[28]).toMatchObject({ action: 'say', reason: 'retry look-over' });
+    expect(movesNamedIn(RUN_4.actions[28].text)).toEqual(['waypoint']);
+    expect(movesNamedIn('I explore the waypoint I have reached.')).toEqual(['waypoint']);
+    expect(movesNamedIn('I consult the oracle on it.')).toEqual(['oracle']);
+    expect(movesNamedIn(RUN_4.actions[6].text), 'a7: "Will you be my connection here?"').toEqual([]);
+    expect(movesNamedIn('I go over the place the call is coming from, looking for whoever sent it.')).toEqual([]);
+    expect(movesNamedIn('!oracle yes likely Is anyone left alive aboard the wreck?'), 'a command names nothing').toEqual([]);
+  });
+
+  it('every move in src/schemas.js MOVES is counted by its name, and every word of a name is a move\'s own word or plain English', () => {
+    const ids = Object.keys(MOVES).filter(id => !id.endsWith('_scene_challenge'));
+    for (const id of ids) {
+      const label = moveLabel(id);
+      expect(movesNamedIn(`So I ${label} here.`), label).toContain(label);
+      if (id.includes('_')) expect(movesNamedIn(`So I ${label.toLowerCase()} here.`), label.toLowerCase()).toContain(label);
+    }
+    // Each move word is a word of the move it names.
+    for (const [word, id] of Object.entries(MOVE_WORDS)) {
+      expect(ids, word).toContain(id);
+      expect(id.split('_'), word).toContain(word);
+      expect(movesNamedIn(`It is the ${word}, I tell her.`), word).toEqual([word]);
+    }
+    // The rest are plain English, counted only inside a move's name — or the rules' own word, counted already.
+    const PLAIN = new Set(['session', 'flag', 'fate', 'break', 'danger', 'advantage', 'information', 'ally', 'gear', 'iron', 'vow', 'connection', 'relationship',
+      'bond', 'expedition', 'course', 'discovery', 'chaos', 'scene', 'fray', 'ground', 'under', 'fire', 'decisive', 'action', 'defeat', 'momentum', 'harm',
+      'stress', 'damage', 'hit', 'resources', 'death', 'desolation', 'destruction', 'experience', 'legacy', 'price']);
+    const FILLER = new Set(['a', 'an', 'the', 'your', 'of', 'takes']);
+    const RULES = new Set(['milestone']);
+    const unclassified = ids.flatMap(id => id.split('_').slice(1).filter(w => !FILLER.has(w) && !MOVE_WORDS[w] && !PLAIN.has(w) && !RULES.has(w)).map(w => `${id}: ${w}`));
+    expect(unclassified, 'a word of a new move\'s name: a move word (MOVE_WORDS) or plain English (here)').toEqual([]);
+    for (const w of PLAIN) expect(movesNamedIn(`It is the ${w}, I tell her.`), w).toEqual([]);
+    expect(movesNamedIn('It is the milestone, I tell her.')).toEqual(['milestone']);
+  });
+});
+
+/**
+ * A kept run's messages as the observer holds them, read from its transcript:
+ * each narration and each line the player typed, with its step and phase —
+ * and a narration in a Begin a Session's step marked as the session's
+ * opening, which is apart from its narrations.
+ */
+function transcriptOf(folder, run) {
+  const opens = new Set(run.actions.map((a, i) => (a.action === 'dialog' && a.title === 'Begin a Session' ? `a${i + 1}` : null)).filter(Boolean));
+  const out = [];
+  for (const block of fs.readFileSync(path.join(folder, 'transcript.md'), 'utf8').split(/\n---\n/)) {
+    const head = /\*([a-z(][\w()]*) · ([\w-]+)\*/.exec(block);
+    if (!head) continue;
+    for (const m of block.matchAll(/\*\*(NARRATOR|PLAYER) — [^*]+\*\*\n\n([\s\S]+?)(?=\n\n\*\*|\s*$)/g)) {
+      out.push(m[1] === 'NARRATOR'
+        ? { step: head[1], phase: head[2], narrator: true, vignette: opens.has(head[1]) ? 'galley_begin' : null, text: m[2].trim() }
+        : { step: head[1], phase: head[2], fromPlayer: true, text: m[2].trim() });
+    }
+  }
+  return out;
+}
+
+describe('the refrains are counted in narrations of play, the @scene answers apart (the fourth live run, session 3)', () => {
+  const messages = transcriptOf(RUN_4_FOLDER, RUN_4);
+  const s3 = refrainsOf(messages).sessions.find(x => x.phase === 'session-3');
+
+  it('"light" was in 15 of session 3\'s 30 narrations — 15 of its 17 narrations of play, and none of its 13 answers', () => {
+    const card = fs.readFileSync(path.join(RUN_4_FOLDER, 'scorecard.md'), 'utf8');
+    expect(card, 'the run\'s own count').toContain('### session-3 — 30 narrations');
+    expect(card).toContain('| word | light | 15 of 30 (50%) | 12 |');
+    expect(s3).toMatchObject({ narrations: 17, sceneAnswers: 13, counted: true });
+    expect(s3.refrains.words.find(w => w.what === 'light')).toMatchObject({ in: 15, of: 17, inAnswers: 0 });
+    expect(s3.refrains.words.find(w => w.what === 'second')).toMatchObject({ of: 17, inAnswers: 0 });
+  });
+
+  it('an answer is one by its card (`sceneResponse`), or by the scene question its step put', () => {
+    const say = (step, text, extra = {}) => ({ step, phase: 'session-1', narrator: true, vignette: null, text, ...extra });
+    const r = refrainsOf([
+      say('a1', 'The amber light blinks over the hatch.'), say('a2', 'The amber light holds.'), say('a3', 'The amber light dims.'), say('a4', 'Tamsin shrugs.'),
+      say('a5', 'It is the amber light on the panel.', { card: ['narratorCard', 'sceneResponse'] }),
+      { step: 'a6', phase: 'session-1', fromPlayer: true, text: '@scene What is blinking over the hatch?' }, say('a6', 'The amber light, still.'),
+    ]).sessions[0];
+    expect(r).toMatchObject({ narrations: 4, sceneAnswers: 2 });
+    expect(r.refrains.phrases.find(p => p.what === 'amber light')).toMatchObject({ in: 3, of: 4, inAnswers: 2 });
+  });
+
+  it('the scorecard says so: the row, the section\'s heading and each row\'s answers', () => {
+    const text = scorecard({ charter: CHARTER, run: { id: 'r', mode: 'live' }, refrains: refrainsOf(messages) });
+    expect(text).toContain('### session-3 — 17 narrations of play, and 13 @scene answers counted apart');
+    expect(text).toMatch(/\| word \| light \| 15 of 17 \(88%\); 0 of 13 answers \| \d+ \|/);
+    expect(text).toContain('the opening and closing scenes and the @scene answers apart');
+  });
+});
+
+describe('"Plain lines" counts a right nothing-to-recover reading as right (the fourth live run, beat 22: a62–a69)', () => {
+  const STEPS = ['a62', 'a63', 'a64', 'a65', 'a66', 'a67', 'a68', 'a69'];
+  const exchange = (step) => RUN_4.recording.exchanges.find(x => x.step === step && /classifyInput$/.test(x.kind));
+
+  it('each of the eight readings said there was nothing to recover, and the sheet the reader was shown bears it out', () => {
+    const read = Object.fromEntries(STEPS.map(step => [step, nothingToRecoverOf(pacingReadOf(exchange(step)).reasoning, exchange(step).user)]));
+    expect(read).toEqual({ a62: ['health'], a63: ['health'], a64: ['health'], a65: ['supply'], a66: ['supply'], a67: ['supply'], a68: ['supply'], a69: ['health'] });
+    // The sheet that would have made a heal: no such reading.
+    const wounded = exchange('a62').user.replace('Health 5 of 5 (full, not wounded)', 'Health 3 of 5 (wounded)');
+    expect(nothingToRecoverOf(pacingReadOf(exchange('a62')).reasoning, wounded)).toBeNull();
+    expect(nothingToRecoverOf(pacingReadOf(exchange('a62')).reasoning, exchange('a62').user.replace('(full, not wounded)', '(full, wounded)')), 'full, and the impact marked').toBeNull();
+    expect(nothingToRecoverOf('An everyday recovery action, narrated.', exchange('a62').user), 'a reading that does not say so').toBeNull();
+    expect(nothingToRecoverOf(pacingReadOf(exchange('a62')).reasoning, 'no sheet here'), 'no sheet shown').toBeNull();
+  });
+
+  it('what each line became: rightly narrated, nothing to recover — not "narrated with nothing offered"', () => {
+    const messages = STEPS.map(step => ({ step, text: RUN_4.actions[Number(step.slice(1)) - 1].text, fromPlayer: true }));
+    const exchanges = RUN_4.recording.exchanges.filter(x => STEPS.includes(x.step));
+    const beats = [{ id: 'b21', n: 22, steps: STEPS, status: 'not-exercised' }];
+    const f = freeformOf({ messages, exchanges, beats, charter: CHARTER });
+    expect(f.lines.map(l => [l.step, l.became, l.right, l.nothingToRecover])).toEqual(STEPS.map(step => [step, 'narrated', true, ['a65', 'a66', 'a67', 'a68'].includes(step) ? ['supply'] : ['health']]));
+    expect(f.wanted).toMatchObject({ lines: 8, rolled: 0, offered: 0, anotherMove: 0, narrated: 0, nothingToRecover: 8 });
+    const text = scorecard({ charter: CHARTER, run: { id: 'r', mode: 'live' }, beats, freeform: f });
+    expect(text).toContain('| Plain lines | 8 line(s) where a move was wanted: 0 rolled, 0 offered it, 0 read as another move, 0 narrated with nothing offered, 8 rightly narrated with nothing to recover;');
+    expect(text).toContain(`| a62 | 22 | ${RUN_4.actions[61].text} |  | narrated — right: nothing to recover (health full) |`);
   });
 });

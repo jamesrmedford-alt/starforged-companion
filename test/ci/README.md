@@ -319,10 +319,10 @@ beat twice, and waited six turns each time. A card that waits on the player —
 a held result's "Keep the result", the milestone's "Which vow advances?" — is
 named on a line of its own as well ("WAITING ON YOU"). The
 scorecard's **Plain lines** row says what each line of play became —
-rolled, offered a move, or narrated with nothing offered — and whether it
-named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
-Its **Refrains** row and section count what each session's narrations keep
-returning to — the words and phrases in a third or more of them, with the
+rolled, offered a move, narrated with nothing offered, or rightly narrated
+with nothing on the sheet to recover — and whether it named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+Its **Refrains** row and section count what each session's narrations of
+play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
 longest run in a row, and the narrations that end on someone waiting,
 watching or still — and **Speed** gives a line of play's wait apart from a
 scene question's.

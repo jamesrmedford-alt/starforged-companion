@@ -382,8 +382,10 @@ describe('the fourth live run of the long haul, kept as a replay (explorations/l
   it('its player named a move only once a beat\'s last resort was open, and asked its questions as the charter says', () => {
     const typed = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` })).filter(a => a.action === 'say' && a.text);
     const named = typed.filter(a => movesNamedIn(a.text).length);
-    expect(named.map(a => a.step)).toEqual(['a8', 'a33', 'a64', 'a66', 'a68', 'a73']);
-    for (const a of named) expect(`${a.reason} ${a.note}`).toMatch(/last resort|naming/i);
+    expect(named.map(a => a.step)).toEqual(['a8', 'a29', 'a33', 'a64', 'a66', 'a68', 'a73']);
+    // a29 named Explore a Waypoint by its own word ("toward the waypoint"), with no last resort open: the count missed it until issue #383 (#16 d).
+    expect(movesNamedIn(RUN.actions[28].text)).toEqual(['waypoint']);
+    for (const a of named.filter(x => x.step !== 'a29')) expect(`${a.reason} ${a.note}`).toMatch(/last resort|naming/i);
     expect(typed.filter(a => isSceneQuestion(a.text))).toHaveLength(16);
   });
 

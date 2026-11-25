@@ -607,7 +607,7 @@ describe('the expedition beat (b7a): off the charted lane, a waypoint looked ove
     expect(quoted(beat.tell)).toEqual(['Mark expedition progress', '🗺 Finish the Expedition']);
     for (const words of quoted(beat.tell)) expect(movesNamedIn(words), words).toEqual([]);
     expect(movesNamedIn(beat.tell).filter(m => m !== 'roll'), 'it speaks of a roll, and names no move').toEqual([]);
-    expect(movesNamedIn(beat.lastResort)).toEqual(['Undertake an Expedition']);
+    expect(movesNamedIn(beat.lastResort)).toEqual(['Undertake an Expedition', 'waypoint']);
     const scripted = CHARTER.rehearsal.filter(e => e.beat === beat.n);
     expect(scripted.map(e => e.move?.id ?? e.label)).toEqual(['undertake_an_expedition', 'explore_a_waypoint', 'Mark expedition progress', 'finish_an_expedition']);
     for (const e of scripted.filter(x => x.action === 'say')) expect(movesNamedIn(e.text), e.text).toEqual([]);

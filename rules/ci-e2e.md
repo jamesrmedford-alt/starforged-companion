@@ -799,7 +799,13 @@ and the rules that go with each:
   rank and by box, the two mirrors (bond Item ↔ card, vow link ↔ card's name),
   an effect landing once on the roller (a move's momentum, a milestone, a
   suffer cost, a recovery, a burn), a session's momentum once each way, the
-  lock free once settled, every line answered once — and an expedition's
+  lock free once settled, every line answered once — a result held for Keep
+  or Burn and kept by the roller's next line is narrated after that line, and
+  that is a finding of its own (`held-narrated-in-turn`), not a second answer
+  to the line: the fourth live run's a41 was failed `answered-once` for a38's
+  Enter the Fray told after it (known-issues
+  HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE; its kept replay still records
+  `answered-once`, as its own checks found) — and an expedition's
   (`expedition-progress`: one mark of its rank for a hit that undertakes it,
   none and no track for a miss, one for a waypoint's "Mark expedition
   progress"; its finish scored by its boxes, `progress-score`, and paid on
@@ -1181,8 +1187,10 @@ Five rules for the reading that follows, each from that review:
   one device carrying a third of the session. The scorecard's "Refrains" row
   and section (`refrainsOf`, `lib/review.mjs`) count the part of it that is
   said in the same words: per session, the content words and the phrases in
-  a third or more of its narrations with the longest run of narrations in a
-  row that hold each ("over the hatch": 17 of the third run's session 3's
+  a third or more of its narrations of play — the `@scene` answers apart,
+  with how many of them hold each (the fourth live run's session 3 had
+  "light" in 15 of 30 narrations: 15 of its 17 of play, none of its 13
+  answers) — with the longest run of narrations in a row that hold each ("over the hatch": 17 of the third run's session 3's
   23, eleven running), names apart, and the narrations that end on someone
   waiting, watching or still. A device said in new words each time is still
   for the reading.
@@ -1288,7 +1296,15 @@ line goes unread.
   (`lib/review.mjs` → `freeformOf`) are the measure: for every line of play,
   the pacing reader's decision and the move chosen — from the readers' own
   replies in the run's recording — the move its beat wanted, and whether the
-  line named a move (`lib/moveNames.mjs`: a count to start reading from).
+  line named a move (`lib/moveNames.mjs`: a count to start reading from — a
+  move's name as the rules write it, the rules' own words, and a move's own
+  word said alone, `MOVE_WORDS`: the fourth live run's "toward the waypoint"
+  at a29 was not counted; a test holds every word of every name in
+  `src/schemas.js` `MOVES` to that list or to plain English). A line whose
+  beat wants a recovery, narrated because the sheet had nothing for the one
+  it set about, is read right — by the reader's own reasoning, borne out by
+  the SITUATION block in the request it read (`nothingToRecoverOf`): the
+  fourth live run's eight such readings were counted as misses.
   `rescore.mjs` applies it to a kept run by what its beats want now.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;
