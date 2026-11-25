@@ -1178,6 +1178,9 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
         // A scene-challenge Roll's challenge, as the Finish an Expedition
         // button forwards its track (PACED-VARIANT-NO-TARGET).
         ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+        // The offer's reading, from the GM's card (issue #384, slice 3): the
+        // Roll is made as read, with no second call. Only for the card's move.
+        ...(f.offerReading && typeof f.offerReading === "object" && f.offerReading.moveId === moveId ? { forcedReading: f.offerReading } : {}),
       } };
     },
   });

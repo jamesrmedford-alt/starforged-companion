@@ -276,6 +276,25 @@ async function travelDestinationUnread(moveId) {
 }
 
 /**
+ * An offer's reading on a forced move's interpretation (issue #384, slice 3):
+ * a stat the move lists, the target unless the button named one, Heal's
+ * situation, the ranks, the stakes. The move is the button's.
+ *
+ * @param {Object} interpretation — buildForcedInterpretation's
+ * @param {{ statUsed?: string|null, moveTarget?: string|null, healSituation?: string|null,
+ *   expeditionRank?: string|null, combatRank?: string|null, stakes?: Object|null }} reading
+ */
+function applyOfferReading(interpretation, reading) {
+  const listed = Array.isArray(MOVES[interpretation.moveId]?.stat) ? MOVES[interpretation.moveId].stat : [];
+  if (reading.statUsed && listed.includes(reading.statUsed)) interpretation.statUsed = reading.statUsed;
+  if (!interpretation.moveTarget && !interpretation.moveTargetId && reading.moveTarget) interpretation.moveTarget = reading.moveTarget;
+  for (const key of ["healSituation", "expeditionRank", "combatRank", "stakes"]) {
+    if (reading[key] !== undefined && reading[key] !== null) interpretation[key] = reading[key];
+  }
+  interpretation.offerRead = true;
+}
+
+/**
  * Read a line as a move — what free-flow does once it holds the move lock,
  * and what a round's reading does on Submit (readAction). The interpretation
  * (the forced move's, or interpretMove's), its stat, the scene-challenge
@@ -429,11 +448,16 @@ export async function readMove({
   // "Expedition", for no place, and nothing charted or arrived anywhere
   // (issue #348 PT05, PT07). An Undertake an Expedition with one open
   // continues it, as it always has.
-  const readsDestination = !!(forcedMoveId && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
+  // An offer's Roll carries the reading that offered it (issue #384, slice
+  // 3): its stat, target and stakes are the line's, read once — no second
+  // call. The gate below still asks: a target gone since is refused there.
+  const offered = forcedMoveId && forced?.reading?.moveId === forcedMoveId ? forced.reading : null;
+  if (offered) applyOfferReading(interpretation, offered);
+  const readsDestination = !!(forcedMoveId && !offered && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
     && await travelDestinationUnread(interpretation.moveId));
   if (readsDestination) {
     await readForcedTravelDestination(interpretation, { interpret: readStat });
-  } else if (forcedMoveId) {
+  } else if (forcedMoveId && !offered) {
     await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
 

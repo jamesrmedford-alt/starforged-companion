@@ -1198,7 +1198,12 @@ export function registerChatHook() {
           // A GM's "Roll anyway" on a soft refusal's notice: the GM's word over
           // the sheet's (D2). Only a GM's post is trusted — a flag any client
           // could write.
-          gateOverride: message.flags?.[MODULE_ID]?.gateOverride === true && message.author?.isGM === true } : null,
+          gateOverride: message.flags?.[MODULE_ID]?.gateOverride === true && message.author?.isGM === true,
+          // The offer's reading, carried from its card by the GM's relay
+          // (issue #384, slice 3): only a GM's post is trusted, and only for
+          // the move it was read as.
+          reading: message.author?.isGM === true && message.flags?.[MODULE_ID]?.forcedReading?.moveId === forcedMoveId
+            ? message.flags[MODULE_ID].forcedReading : null } : null,
         swearToConnection,
         // The line reader's reading, carried (issue #384, slice 2): a line
         // it routed to a roll is not read again — the gate is asked once more

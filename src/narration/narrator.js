@@ -5118,7 +5118,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       }
 
       const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
-      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null,
+        offerReadingFor(options?.offerReading, buttonMove));
       await markChosenCostsTold(pacedChosenSince, narrationId);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
@@ -5145,7 +5146,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           });
           if (text?.trim()) {
             const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
-            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null,
+        offerReadingFor(options?.offerReading, buttonMove));
             await markChosenCostsTold(pacedChosenSince, narrationId);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
@@ -5354,7 +5356,23 @@ function pacedButtonMove(text, suggestedMove, { playerText, speakerName, refusal
   return refusal?.moveId && move === refusal.moveId ? (suggestedMove === refusal.moveId ? null : suggestedMove) : move;
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null, refusal = null) {
+/**
+ * The offer's reading, for the card whose Roll is that move (issue #384,
+ * slice 3): the press reads nothing again. Null when the button is another
+ * move — the narrator's hint re-pointed it (reconcileSuggestedMove), and that
+ * move is read at the press — or when there is no reading.
+ *
+ * @param {Object|null} reading — `{ moveId, statUsed, moveTarget, … }`, the line reader's interpretation
+ * @param {string|null} buttonMove — the card's Roll
+ * @returns {Object|null}
+ */
+function offerReadingFor(reading, buttonMove) {
+  if (!reading || typeof reading !== 'object' || !buttonMove || reading.moveId !== buttonMove) return null;
+  const keep = ['moveId', 'statUsed', 'moveTarget', 'healSituation', 'expeditionRank', 'combatRank', 'stakes'];
+  return Object.fromEntries(keep.filter(k => reading[k] !== undefined).map(k => [k, reading[k]]));
+}
+
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null, refusal = null, offerReading = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
@@ -5394,6 +5412,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         // whoever presses it (issue #325 W09 — it rolled as the clicker).
         actorId:          typeof actorId === 'string' && actorId ? actorId : null,
         suggestedMove:    suggestedMove ?? null,
+        // The offer's reading — its stat, target and stakes — for the Roll to
+        // make with no second reading (issue #384, slice 3).
+        ...(offerReading ? { offerReading } : {}),
         // The scene challenge a scene-challenge Roll is part of (the router's
         // resolution of the classifier's pick): its Roll's target. None for
         // any other move — a hint may have made the button one

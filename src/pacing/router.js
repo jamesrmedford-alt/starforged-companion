@@ -404,7 +404,10 @@ export async function routePacedInput({
   const { suggestedMove, suggestedTargetId, refused = null } = pacing;
   try {
     const working = foundry.utils.deepClone(campaignState);
-    await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}), ...(refused ? { refusal: refused } : {}) });
+    // The offer's reading rides on its card (issue #384, slice 3): its Roll reads nothing again.
+    const offerReading = suggestedMove && pacing.reading?.interpretation?.moveId === suggestedMove ? pacing.reading.interpretation : null;
+    await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}), ...(refused ? { refusal: refused } : {}),
+      ...(offerReading ? { offerReading } : {}) });
   } catch (err) {
     console.error(`${MODULE_ID} | the paced narration could not be started:`, err);
     await tellPacedLineNotNarrated(campaignState, err);
