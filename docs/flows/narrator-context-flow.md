@@ -1233,7 +1233,14 @@ and Chronicle entries had it, labelled. The role says a recap says only what
 its sources say: nothing inferred, nothing filled in between two lines (a beat
 may be missing because the table took it out), what a player wrote is the
 character's claim, whose things are whose, how a thing stands is WHERE THINGS
-STAND's word, one name for everyone. The reply is cited sentences (decision
+STAND's word, one name for everyone — and what happened is told, never the
+dice or the numbers: "strong hit", "weak hit", "miss" and "match" never as
+such, no number from a sheet or a track, a rank as how hard a vow, a tie or a
+fight is, never a word for someone (`RECAP_SOURCES_RULE`, the move
+narration's outcome-word rule worded for a recap; its user message ends on
+it — known-issues RECAP-TELLS-THE-DICE: 13 of the fourth live run's 64 recap
+sentences named an outcome; the record's lines keep theirs, which the
+sentences cite). The reply is cited sentences (decision
 D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
 no sentence cites sends it back once, a reply that is not the JSON is asked
 for once more before the recap that stood stays, and the text kept has every
