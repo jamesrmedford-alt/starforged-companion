@@ -40,6 +40,7 @@ import {
   classifyRun, costsOwedText, excerptOf, factIn, healthOf, scoreMemory, sectionsHolding, variantPattern,
 } from '../../test/ci/playwright/lib/observer.mjs';
 import { createRehearsal, installRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
+import { parseReading } from '../../src/moves/reader.js';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
 const CONFIG  = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explore.config.json'), 'utf8'));
@@ -628,7 +629,16 @@ describe('a rehearsal\'s stand-in for the model API', () => {
 
   it('answers the module\'s helpers in a shape each can read, and narrates every line without a roll', () => {
     const rehearsal = createRehearsal({ charter: CHARTER });
-    expect(JSON.parse(textOf(ask(rehearsal, 'You are the pacing pre-classifier', 'a line')))).toMatchObject({ decision: 'NARRATIVE', confidence: 0.9 });
+    // The line reader (src/moves/reader.js), in its three modes: a line is no move; a roll asked for is
+    // Face Danger; a card's move is the card's. Read as the module reads the reply (parseReading).
+    const line = (mode) => `MODE — ${mode}\n\nPLAYER LINE\n"a line"`;
+    expect(JSON.parse(textOf(ask(rehearsal, 'You are the line reader for a Starforged table.', line('READ THE LINE: say which move it sets about, if any.')))))
+      .toEqual({ move: null, category: 'social', confidence: 'high', reason: 'Rehearsal: narrated, no roll.' });
+    expect(parseReading(textOf(ask(rehearsal, 'You are the line reader …', line('A ROLL WAS ASKED FOR: choose the move that fits it best; never no move.'))), { mode: 'roll', narration: 'a line' }))
+      .toMatchObject({ moveId: 'face_danger', failed: null, interpretation: { statUsed: 'wits' } });
+    expect(parseReading(textOf(ask(rehearsal, 'You are the line reader …', line('THE MOVE IS CHOSEN: gather_information (Gather Information), by a card the table pressed.'))), { mode: 'chosen', chosen: { moveId: 'gather_information' }, narration: 'a line' }))
+      .toMatchObject({ moveId: 'gather_information', failed: null });
+    expect(textOf(ask(rehearsal, 'You are the pacing pre-classifier', 'a line')), 'the two readers are gone: nothing answers their prompts').toBe('{}');
     expect(textOf(ask(rehearsal, 'Return only the JSON object — no prose.', 'detect'))).toBe('{}');
     expect(textOf(ask(rehearsal, '## NARRATOR ROLE AND VOICE', 'a recap, no fact block')), 'no fact block where none is asked for').not.toContain('```json');
   });

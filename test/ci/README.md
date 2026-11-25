@@ -361,9 +361,12 @@ READERS_QUESTIONS="$(cat questions.txt)" READERS_REPEATS=2 ./scripts/cloud.sh re
 `report.md`, `results.json` and `run.json` under `playwright/readers/runs/`.
 The first (2026-11-24, $0.71) is there.
 
-Its rehearsal rolls: the stand-in's classifier calls a move where the script
-makes the line one, so the move path — confirmation, held result, price,
-victory card — is walked with no key. A long run also writes `beats.json`,
+Its rehearsal rolls: the stand-in line reader reads the script's move in a
+line the script makes one — asked for, with the script's stat and target, so
+the module rolls it at any dial and after any run of rolls, as the two
+readers' stand-in rolled it (the lines themselves name no move) — and the move
+path — confirmation, held result, price, victory card — is walked with no
+key. A line the script offers a move for is read unasked, and offered. A long run also writes `beats.json`,
 `mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
 model calls, 60 minutes, $15.
 

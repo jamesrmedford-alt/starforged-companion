@@ -29,6 +29,8 @@ import { charterProblem } from '../../test/ci/playwright/lib/charter.mjs';
 import { BEAT_CHECKS, createPointer } from '../../test/ci/playwright/lib/beats.mjs';
 import { SEED_IMPACTS, seedProblem, seedSheet, seedVows } from '../../test/ci/playwright/lib/world.mjs';
 import { createRehearsal, vowTruthsToTell } from '../../test/ci/playwright/lib/rehearsal.mjs';
+import { buildReaderSystemPrompt, buildReaderUserMessage, parseReading } from '../../src/moves/reader.js';
+import { routeReading } from '../../src/pacing/readAndRoute.js';
 import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
@@ -387,7 +389,8 @@ describe('a vow fulfilled with its truth told (vowFulfilled, told)', () => {
 // ── what the rehearsal's stand-in does for the scenarios ─────────────────────
 
 describe('the stand-in: an offered move, a fact block sent unasked, a vow\'s truth told when the prompt asks', () => {
-  const classifier = { system: 'You are the pacing pre-classifier for a narrator.', messages: [{ role: 'user', content: 'Line: I smooth out the torn ledger page.' }] };
+  const LINE = 'I smooth out the torn ledger page.';
+  const lineReader = { system: buildReaderSystemPrompt(), messages: [{ role: 'user', content: buildReaderUserMessage({ mode: 'open', text: LINE, situation: {} }) }] };
   // The beat the entry is for is the current one: the scripted player waits for a later beat's entry (lib/rehearsal.mjs).
   const playerTurn = (screen, beat = 2) => ({ system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: `CURRENT BEAT: ${beat} of 3 [session 1] — x\n\nYOUR SCREEN NOW:\n${screen}` }] });
   const reply = (r, body) => r.reply(body).content[0];
@@ -396,7 +399,10 @@ describe('the stand-in: an offered move, a fact block sent unasked, a vow\'s tru
     const vow = CHARTERS['scenario-vow'];
     const r = createRehearsal({ charter: { ...vow, rehearsal: [vow.rehearsal.find(e => e.offer)] } });
     reply(r, playerTurn('[m1] Gamemaster: hello'));
-    expect(JSON.parse(reply(r, classifier).text)).toMatchObject({ decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'reach_a_milestone' });
+    const reading = parseReading(reply(r, lineReader).text, { narration: LINE });
+    expect(reading).toMatchObject({ moveId: 'reach_a_milestone', asked: false, failed: null });
+    // A move with no roll, unasked: offered on the card, at any dial (pacing/readAndRoute.js routeReading, row 6).
+    expect(routeReading(reading, { pacingConfig: { dials: { exploration: 9 } }, density: null })).toMatchObject({ route: 'offer', offeredMove: 'reach_a_milestone' });
   });
 
   it('a fact block the script sends is sent whether or not the prompt asked for one', () => {
