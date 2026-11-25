@@ -81,6 +81,13 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // section.
   const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
 
+  // What the narration was told it must tell and must not (overhaul 4, D9's
+  // logged class): the lines its own check does not hold it to — an
+  // outcome, the stakes, the sheet — are audited here, kind `obligation`.
+  // They ride an audit the ledger already calls for; they make no call of
+  // their own (an empty ledger is still not audited).
+  const obligations = formatAuditObligations(options.obligations);
+
   // Nothing to audit against — an empty ledger means nothing can be
   // contradicted. Broadened (narrator-context audit 2026-07) beyond
   // truths+state to everything the ledger block holds: the scene frame,
@@ -97,6 +104,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     shipPosition: ledger.shipPosition,
     corrections:  ledger.corrections,
     identities,
+    obligations,
   });
   const startedAt    = Date.now();
 
@@ -182,7 +190,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
  * @param {string} stateBlock
  * @param {string} narration
  * @param {{ frame?: string, shipPosition?: string, corrections?: string,
- *           identities?: string }} [extra]
+ *           identities?: string, obligations?: string }} [extra]
  */
 export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {}) {
   return [
@@ -210,6 +218,12 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     'SHIP POSITION:',
     extra.shipPosition?.trim() || '(none)',
     '',
+    'WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (a TELL line left',
+    'untold, a NOT YET line told as done or a NOT SO line told as true IS a',
+    'contradiction — kind "obligation", "subject" the line\'s tag as written,',
+    'e.g. "[outcome]", "violated" the line):',
+    extra.obligations?.trim() || '(none)',
+    '',
     'NARRATION:',
     narration.trim(),
     '',
@@ -217,7 +231,7 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '{',
     '  "contradictions": [',
     '    { "subject": string, "violated": string, "evidence": string,',
-    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction" | "identity",',
+    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction" | "identity" | "obligation",',
     '      "confidence": "high" | "medium" | "low" }',
     '  ]',
     '}',
@@ -415,7 +429,22 @@ function normaliseConfidence(v) {
 
 function normaliseKind(v) {
   const s = String(v ?? '').toLowerCase();
-  return ['state', 'frame', 'ship', 'retraction', 'identity'].includes(s) ? s : 'truth';
+  return ['state', 'frame', 'ship', 'retraction', 'identity', 'obligation'].includes(s) ? s : 'truth';
+}
+
+/**
+ * A narration's obligation lines for the audit's prompt (overhaul 4): one a
+ * line, its list and tag first — "TELL [outcome] …". Empty for none.
+ *
+ * @param {Array<{ list?: string, kind?: string, text?: string }>|undefined} obligations
+ * @returns {string}
+ */
+function formatAuditObligations(obligations) {
+  if (!Array.isArray(obligations)) return '';
+  return obligations
+    .filter(o => o && typeof o.text === 'string' && o.text.trim())
+    .map(o => `${o.list ?? 'TELL'} [${o.kind ?? '?'}] ${o.text.trim()}`)
+    .join('\n');
 }
 
 // Review cards already posted, keyed by scene + subject + violated fact.

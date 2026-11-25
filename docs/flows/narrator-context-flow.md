@@ -1196,8 +1196,21 @@ again, a player's own key cannot stamp, an X-Carded card is not carried.
 
 **The narration is checked against its block before it posts** (overhaul 4,
 slice 4 — `moves/contracts/checks.js`, D9): `narrateKeepingObligations`
-wraps the move's (`narrateResolution` — so a held result's and an upgrade's
-re-narration too) and the paced line's (`narratePacedInput`) narrator call.
+wraps every beat's narrator call — the move's (`narrateResolution` — so a
+held result's and an upgrade's re-narration too), the paced line's
+(`narratePacedInput`), the round's (`narrateRound` — every entry's block and
+the round's own, `roundObligationsFor`) and the oracle follow-up's
+(`narrateOracleFollowup` — its answer's TELL / NOT SO [oracle],
+`oracleObligationsFor`), each rate-limit retry too. For the scripted
+playthroughs' strict replay (a call's kind is the two named module frames
+above apiPost) the harness looks through the check and a local `ask`
+(`lib/claude.mjs` `PASS_THROUGH`), so the narration and its re-ask keep the
+narrator function's kind (`callNarratorAPI>narrateRound`, …) and the judge is
+`judgeNarration>` the narration it judges; the round's and the oracle's call
+is a named `ask` (an inline arrow takes a name V8 infers from the statement
+around it). `first-session.json` / `batch-round.json` declare each narrating
+step's own kind optional, for a re-ask. A re-ask that throws keeps the first
+draft.
 The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
 block is applied) and held to its lines by class: **certain** —
 [apparatus] (an outcome's name, a sheet number, a two-word move's name
@@ -1210,11 +1223,15 @@ a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
 consistency check on). A failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
-`narrateResolution:reask` / `narratePacedInput:reask`); the second reply is
+`narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
+`narrateOracleFollowup:reask`); the second reply is
 held to the certain checks only and posted whatever it says. At most one
 judge call and one re-ask a narration. Each verdict is a row on the
-Consistency Check telemetry page (`kind: "obligation"`). The round's and the
-oracle follow-up's narrations carry the block but are not yet checked.
+Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
+`paced` / `round` / `oracle`). The lines the check does not hold a narration
+to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
+(`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
+`obligation`).
 
 **The refusal is told** — in the user message, never the system prompt
 (`rules/narrator-memory.md` invariant 7b): the paced message ends with a

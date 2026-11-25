@@ -54,6 +54,7 @@
         { "kind": "callHaiku>defaultCallDetectionAPI" },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: gather_information" } }
       ],
+      "optionalCalls": ["callNarratorAPI>narrateResolution"],
       "then": [
         { "check": "moveLockReleased" },
         { "check": "ledgerTruth", "about": "Vance Oduya" },
@@ -78,6 +79,7 @@
         { "kind": "callHaiku>defaultCallTierAPI" },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Context: paced narration" } }
       ],
+      "optionalCalls": ["callNarratorAPI>narratePacedInput"],
       "then": [
         { "check": "npcCard", "name": "Vance Oduya", "details": 1 },
         { "check": "journalPage", "journal": ["World Journal — Threats", "World Journal — Factions"], "pageMatches": "Ascendancy" }
@@ -96,6 +98,7 @@
         { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Bleakhold Station"] },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
       ],
+      "optionalCalls": ["callNarratorAPI>narrateResolution"],
       "then": [
         { "check": "shipPosition", "at": "Bleakhold Station" },
         { "check": "shipToken", "at": "Bleakhold Station" },
@@ -110,6 +113,7 @@
         { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
       ],
+      "optionalCalls": ["callNarratorAPI>narrateResolution"],
       "then": [
         { "check": "shipToken", "at": "Hollow Spire" },
         { "check": "shipPosition", "at": "Hollow Spire" },

@@ -133,6 +133,14 @@ describe("narrateKeepingObligations", () => {
     expect(kept.stillBroken.map(v => v.tag)).toEqual(["apparatus"]);
   });
 
+  it("a re-ask that throws keeps the first draft — the beat is still told", async () => {
+    const BAD = "It is a strong hit, and the lock gives." + sidecar;
+    const call = vi.fn(async (addendum) => { if (addendum) throw new Error("overloaded"); return BAD; });
+    const kept = await narrateKeepingObligations(call, obligationsFor({ mode: "move", resolution: { moveId: "face_danger", outcome: "strong_hit" } }), { apiKey: "sk-test" });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(kept).toMatchObject({ raw: BAD, reasked: true });
+  });
+
   it("no judge when it is switched off — the certain checks still run", async () => {
     const call = vi.fn(async () => DRAFT);
     const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", judge: false, ctx: { refusalCode: "recoverable-health" } });

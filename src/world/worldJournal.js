@@ -2940,6 +2940,8 @@ async function postContradictionNotification(transition) {
     ship:       "Ship position lives on the ship record — correct it with <code>!at &lt;place&gt;</code> or by moving the command-vehicle token.",
     identity:   "Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).",
     retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
+    // Overhaul 4: the narration broke a line of what its result obliged it to tell.
+    obligation: "The narration told what its result did not allow (the line above): nothing on a sheet changed — say the correction at the table.",
   };
   const dialogApplies = isFactContinuity && !(kind in REMEDY_HINTS);
 
