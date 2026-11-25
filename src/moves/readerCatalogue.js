@@ -35,9 +35,10 @@
  * the reader's cached system prompt, so nothing here varies per call.
  */
 
+import { moveTriggers } from "./contracts/available.js";
 import { MOVES } from "../schemas.js";
 
-const entry = (id, name, when, more = {}) => Object.freeze({ id, name, when, ...more });
+const entry = (id, name, more = {}) => Object.freeze({ id, name, ...more });
 const group = (title, moves, note = null) => Object.freeze({ title, note, moves: Object.freeze(moves) });
 
 const FACE_DANGER_APPROACHES = Object.freeze([
@@ -65,147 +66,138 @@ const SECURE_APPROACHES = Object.freeze([
  */
 export const READER_CATALOGUE = Object.freeze([
   group("ADVENTURE", [
-    entry("face_danger", "Face Danger", "When you attempt something risky or react to an imminent threat", { list: FACE_DANGER_APPROACHES }),
-    entry("secure_an_advantage", "Secure an Advantage", "When you assess a situation, make preparations, or attempt to gain leverage", { list: SECURE_APPROACHES }),
-    entry("gather_information", "Gather Information", "When you search for clues, conduct an investigation, analyze evidence, or do research, roll +wits"),
-    entry("compel", "Compel", "When you try to persuade someone or make them an offer", {
+    entry("face_danger", "Face Danger", { list: FACE_DANGER_APPROACHES }),
+    entry("secure_an_advantage", "Secure an Advantage", { list: SECURE_APPROACHES }),
+    entry("gather_information", "Gather Information"),
+    entry("compel", "Compel", {
       list: ["Charm, pacify, encourage, or barter: Roll +heart", "Threaten or incite: Roll +iron", "Lie or swindle: Roll +shadow"],
     }),
-    entry("aid_your_ally", "Aid Your Ally",
-      "When you act in direct support of an ally, envision how you aid them. Then, Secure an Advantage or Gain Ground to take action. If you score a hit, they (instead of you) take the benefits of the move", {
+    entry("aid_your_ally", "Aid Your Ally", {
         ruling: "An ally is another player character. It is rolled: its stat is the approach's — edge, heart, iron, shadow or wits.",
       }),
-    entry("check_your_gear", "Check Your Gear", "When you check to see if you have a specific helpful item or resource, roll +supply"),
+    entry("check_your_gear", "Check Your Gear"),
   ]),
   group("QUEST", [
-    entry("swear_an_iron_vow", "Swear an Iron Vow", "When you swear upon iron to complete a quest, write your vow and give it a rank. Then, roll +heart", {
+    entry("swear_an_iron_vow", "Swear an Iron Vow", {
       ruling: "A vow sworn in a connection's service is this, never Develop Your Relationship's deed in its place (that follows from the vow).",
     }),
-    entry("reach_a_milestone", "Reach a Milestone", "When you make headway in your quest by doing any of the following...", {
+    entry("reach_a_milestone", "Reach a Milestone", {
       list: ["overcoming a critical obstacle", "gaining meaningful insight", "completing a perilous expedition",
         "acquiring a crucial item or resource", "earning vital support", "defeating a notable foe"],
       ruling: "It marks the vow's progress with no roll. The RECENT SCENE bears the headway out (rule 6).",
     }),
-    entry("fulfill_your_vow", "Fulfill Your Vow", "When you reach the end of your quest, roll the challenge dice and compare to your progress", {
+    entry("fulfill_your_vow", "Fulfill Your Vow", {
       ruling: "When the line claims what the vow swore — its goal reached — as the scene bears out: this, not a milestone (rule 6).",
     }),
-    entry("forsake_your_vow", "Forsake Your Vow", "When you renounce your quest, betray your promise, or the goal is lost to you, clear the vow"),
+    entry("forsake_your_vow", "Forsake Your Vow"),
   ]),
   group("CONNECTION", [
-    entry("make_a_connection", "Make a Connection",
-      "When you search out a new relationship or give focus to an existing relationship (not an ally or companion), roll +heart", {
+    entry("make_a_connection", "Make a Connection", {
         ruling: "Not for someone who is already the character's connection: the SITUATION lists them.",
       }),
-    entry("develop_your_relationship", "Develop Your Relationship", "When you reinforce your relationship with a connection by doing any of the following...", {
+    entry("develop_your_relationship", "Develop Your Relationship", {
       list: ["swearing a vow to undertake a perilous quest in their service", "completing a quest to their benefit",
         "leveraging their help in desperate circumstances", "giving them something of worth", "sharing a profound moment",
         "standing with them against hardship", "overcoming a test of your relationship"],
       ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4). A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
     }),
-    entry("test_your_relationship", "Test Your Relationship", "When your relationship with a connection is tested through conflict, betrayal, or circumstance, roll +heart"),
-    entry("forge_a_bond", "Forge a Bond", "When your relationship with a connection is ready to evolve, roll the challenge dice and compare to your progress", {
+    entry("test_your_relationship", "Test Your Relationship"),
+    entry("forge_a_bond", "Forge a Bond", {
       ruling: "A full relationship track is ready for it; less does not forbid it, at worse odds. Never for a connection already bonded. Asking to make the tie lasting — for good, whatever comes — with the track ready is this, not talk (rule 4).",
     }),
   ]),
   group("EXPLORATION", [
-    entry("undertake_an_expedition", "Undertake an Expedition",
-      "When you trailblaze a route through perilous space, journey over hazardous terrain, or survey a mysterious site", {
+    entry("undertake_an_expedition", "Undertake an Expedition", {
         list: ["Move at speed: Roll +edge", "Keep under the radar: Roll +shadow", "Stay vigilant: Roll +wits"],
         ruling: "Any journey toward a destination that is not a charted place, even when the player says \"set a course\".",
       }),
-    entry("explore_a_waypoint", "Explore a Waypoint", "When you divert from an expedition to examine a notable location, roll +wits", {
+    entry("explore_a_waypoint", "Explore a Waypoint", {
       ruling: "During an expedition, or exploring inside a site (a vault, a derelict).",
     }),
-    entry("finish_an_expedition", "Finish an Expedition", "When your expedition comes to an end, roll the challenge dice and compare to your progress"),
-    entry("set_a_course", "Set a Course",
-      "When you follow a known route through perilous space, across hazardous terrain, or within a mysterious site, roll +supply", {
+    entry("finish_an_expedition", "Finish an Expedition"),
+    entry("set_a_course", "Set a Course", {
         ruling: "A known route to one of the SITUATION's charted places, or back to a familiar one.",
       }),
-    entry("make_a_discovery", "Make a Discovery", "When your exploration of a waypoint uncovers something wondrous", {
+    entry("make_a_discovery", "Make a Discovery", {
       ruling: "Made by an Explore a Waypoint roll's match, not by a line.",
     }),
-    entry("confront_chaos", "Confront Chaos", "When your exploration of a waypoint uncovers something dreadful", {
+    entry("confront_chaos", "Confront Chaos", {
       ruling: "Made by an Explore a Waypoint roll's match, not by a line.",
     }),
   ]),
   group("SCENE CHALLENGE", [
-    entry("face_danger_scene_challenge", "Face Danger (Scene Challenge)",
-      "When you attempt something risky or react to an imminent threat within a scene challenge", { ruling: "Its approaches and stats are Face Danger's." }),
-    entry("secure_an_advantage_scene_challenge", "Secure an Advantage (Scene Challenge)",
-      "When you assess a situation, make preparations, or attempt to gain leverage within a scene challenge", { ruling: "Its approaches and stats are Secure an Advantage's." }),
-    entry("finish_the_scene", "Finish the Scene",
-      "When the scene challenge tension clock or progress track is filled, or when events lead to the scene’s conclusion, roll the challenge dice and compare to your progress"),
+    entry("face_danger_scene_challenge", "Face Danger (Scene Challenge)", { ruling: "Its approaches and stats are Face Danger's." }),
+    entry("secure_an_advantage_scene_challenge", "Secure an Advantage (Scene Challenge)", { ruling: "Its approaches and stats are Secure an Advantage's." }),
+    entry("finish_the_scene", "Finish the Scene"),
   ], "Only while the SITUATION shows a scene challenge open: name it in sceneChallenge and in target."),
   group("COMBAT", [
-    entry("enter_the_fray", "Enter the Fray", "When you initiate combat or are forced into a fight", {
+    entry("enter_the_fray", "Enter the Fray", {
       list: ["On the move: Roll +edge", "Facing off against your foe: Roll +heart", "In the thick of it at close quarters: Roll +iron",
         "Preparing to act against an unaware foe: Roll +shadow", "Caught in a trap or sizing up the situation: Roll +wits"],
     }),
-    entry("gain_ground", "Gain Ground", "When you are in control and take action in a fight to reinforce your position or move toward an objective", {
+    entry("gain_ground", "Gain Ground", {
       list: ["In pursuit, fleeing, or maneuvering: Roll +edge",
         "Charging boldly into action, coming to the aid of others, negotiating, or commanding: Roll +heart",
         "Gaining leverage with force, powering through, or making a threat: Roll +iron",
         "Hiding, preparing an ambush, or misdirecting: Roll +shadow",
         "Coordinating a plan, studying a situation, or cleverly gaining leverage: Roll +wits"],
     }),
-    entry("strike", "Strike", "When you are in control and assault a foe at close quarters, roll +iron; when you attack at a distance, roll +edge"),
-    entry("clash", "Clash", "When you are in a bad spot and fight back against a foe at close quarters, roll +iron; when you exchange fire at a distance, roll +edge"),
-    entry("react_under_fire", "React Under Fire", "When you are in a bad spot and take action in a fight to avoid danger or overcome an obstacle", {
+    entry("strike", "Strike"),
+    entry("clash", "Clash"),
+    entry("react_under_fire", "React Under Fire", {
       list: ["In pursuit, fleeing, dodging, getting back into position, or taking cover: Roll +edge",
         "Remaining stalwart against fear or temptation: Roll +heart", "Blocking or diverting with force, or taking the hit: Roll +iron",
         "Moving into hiding or creating a distraction: Roll +shadow",
         "Changing the plan, finding a way out, or cleverly bypassing an obstacle: Roll +wits"],
     }),
-    entry("take_decisive_action", "Take Decisive Action", "When you seize an objective in a fight, envision how you take decisive action. Then, roll the challenge dice and compare to your progress"),
-    entry("face_defeat", "Face Defeat", "When you abandon or are deprived of an objective"),
-    entry("battle", "Battle", "When you fight a battle and it happens in a blur", {
+    entry("take_decisive_action", "Take Decisive Action"),
+    entry("face_defeat", "Face Defeat"),
+    entry("battle", "Battle", {
       list: ["Fight at range, or using your speed and the environment to your advantage: Roll +edge",
         "Fight depending on your courage, leadership, or companions: Roll +heart", "Fight in close to overpower your foe: Roll +iron",
         "Fight using trickery to befuddle your foe: Roll +shadow", "Fight using careful tactics to outsmart your foe: Roll +wits"],
     }),
   ], "The speaker's position in each open fight is in the SITUATION; POSSIBLE NOW says which of these it allows."),
   group("SUFFER", [
-    entry("lose_momentum", "Lose Momentum", "When you are delayed or disadvantaged"),
-    entry("endure_harm", "Endure Harm", "When you face physical injury, fatigue, or illness"),
-    entry("endure_stress", "Endure Stress", "When you face mental strain, shock, or despair"),
-    entry("withstand_damage", "Withstand Damage", "When your vehicle faces a damaging situation or environment"),
-    entry("companion_takes_a_hit", "Companion Takes a Hit", "When your companion faces physical hardship"),
-    entry("sacrifice_resources", "Sacrifice Resources", "When you lose or consume resources"),
+    entry("lose_momentum", "Lose Momentum"),
+    entry("endure_harm", "Endure Harm"),
+    entry("endure_stress", "Endure Stress"),
+    entry("withstand_damage", "Withstand Damage"),
+    entry("companion_takes_a_hit", "Companion Takes a Hit"),
+    entry("sacrifice_resources", "Sacrifice Resources"),
   ], "Only when the line describes taking the harm, stress, damage or loss — never trying to avoid it."),
   group("RECOVER", [
-    entry("sojourn", "Sojourn", "When you spend time recovering within a community, roll +heart"),
-    entry("heal", "Heal", "When you receive medical care or provide treatment", {
+    entry("sojourn", "Sojourn"),
+    entry("heal", "Heal", {
       list: ["Receive treatment from someone (not an ally): Roll +iron", "Mend your own wounds: Roll +iron or +wits, whichever is lower",
         "Obtain treatment for a companion: Roll +heart", "Provide care: Roll +wits"],
       ruling: "Name which of the four it is in healSituation.",
     }),
-    entry("hearten", "Hearten", "When you socialize, share intimacy, or find a moment of peace, roll +heart"),
-    entry("resupply", "Resupply", "When you attempt to bolster your readiness", {
+    entry("hearten", "Hearten"),
+    entry("resupply", "Resupply", {
       list: ["Barter or make an appeal: Roll +heart", "Threaten or seize: Roll +iron", "Steal or swindle: Roll +shadow", "Scavenge or craft: Roll +wits"],
     }),
-    entry("repair", "Repair", "When you make repairs to your vehicles, modules, mechanical companions, or other devices", {
+    entry("repair", "Repair", {
       list: ["Make your own repairs, or direct a companion to make repairs: Roll +wits", "Obtain repairs from someone (not an ally): Roll +supply"],
     }),
   ]),
   group("THRESHOLD", [
-    entry("face_death", "Face Death",
-      "When you encounter a situation where death is an immediate and unavoidable outcome, you are dead. When you are instead brought to the brink of death with a chance for recovery or redemption, roll +heart"),
-    entry("face_desolation", "Face Desolation", "When you are brought to the brink of desolation, roll +heart"),
-    entry("overcome_destruction", "Overcome Destruction", "When your command vehicle is destroyed or irrevocably lost"),
+    entry("face_death", "Face Death"),
+    entry("face_desolation", "Face Desolation"),
+    entry("overcome_destruction", "Overcome Destruction"),
   ]),
   group("LEGACY", [
-    entry("earn_experience", "Earn Experience", "When you fill a box (four ticks) on any legacy track"),
-    entry("advance", "Advance", "When you develop your abilities, improve your resources, gain a reward, or boost your influence"),
-    entry("continue_a_legacy", "Continue a Legacy", "When you retire from your life as Ironsworn, or succumb to death or desolation", {
+    entry("earn_experience", "Earn Experience"),
+    entry("advance", "Advance"),
+    entry("continue_a_legacy", "Continue a Legacy", {
       ruling: "One roll per legacy track: name the track rolled in target — quests, bonds or discoveries.",
     }),
   ], "Only when the line is plainly about it."),
   group("FATE", [
-    entry("ask_the_oracle", "Ask the Oracle",
-      "When you seek to resolve questions, reveal details, discover locations, determine how other characters respond, or trigger encounters or events", {
+    entry("ask_the_oracle", "Ask the Oracle", {
         ruling: "Never a way to say nothing is rolled: a line that makes no move is no move.",
       }),
-    entry("pay_the_price", "Pay the Price", "When you suffer the outcome of an action"),
+    entry("pay_the_price", "Pay the Price"),
   ], "Only when the line is plainly about it."),
 ]);
 
@@ -218,6 +210,9 @@ function rollKind(id) {
   if (move?.progressMove === true) return "progress roll";
   return Array.isArray(move?.stat) && move.stat.length ? null : "no roll";
 }
+
+/** Each catalogue move's trigger words, from the move contracts' table (read once). */
+const TRIGGERS = moveTriggers(CATALOGUE_MOVE_IDS);
 
 /**
  * The catalogue as THE MOVES section of the reader's system prompt: a group
@@ -233,8 +228,12 @@ export function renderReaderCatalogue() {
     out.push(`${g.title}${g.note ? ` [${g.note}]` : ""}`);
     for (const m of g.moves) {
       const kind = rollKind(m.id);
-      const list = m.list?.length ? ` — ${m.list.join("; ")}.` : ".";
-      out.push(`- ${m.id} (${m.name}${kind ? `; ${kind}` : ""}): "${m.when}"${list}${m.ruling ? ` [${m.ruling}]` : ""}`);
+      // The trigger as the move contracts hold it (the one store — contracts/available.js moveTriggers),
+      // its own list where the trigger does not already say it (an approach's stat).
+      const trigger = String(TRIGGERS[m.id] ?? "").trim().replace(/[.:]$/, "");
+      const listed = (m.list ?? []).filter(item => !trigger.includes(item));
+      const list = listed.length ? ` — ${listed.join("; ")}.` : ".";
+      out.push(`- ${m.id} (${m.name}${kind ? `; ${kind}` : ""}): "${trigger}"${list}${m.ruling ? ` [${m.ruling}]` : ""}`);
     }
     out.push("");
   }

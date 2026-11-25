@@ -4,7 +4,7 @@
  *
  * The one reader, composed (rules/reachability.md §3): the real situation
  * (src/moves/readerSituation.js) → the real availability
- * (src/moves/availability.js) → the real prompt (src/moves/reader.js) → the
+ * (src/moves/contracts/available.js) → the real prompt (src/moves/reader.js) → the
  * call, answered by the table's Claude → the parse → the route
  * (src/pacing/readAndRoute.js) — on a booted GM / player table with live
  * documents, every fact from its real producer: the vow and the bond by the
@@ -96,7 +96,8 @@ describe('one line, read once, against the whole situation', () => {
     expect(asked.model).toBe('claude-sonnet-5-5');
     expect(asked.userText).toContain('- Open fights: "Ashen Wake" (dangerous, 0 of 10 boxes, Mira Kestrel is in a bad spot).');
     expect(asked.userText).toContain('- gain_ground, strike — Mira Kestrel is in a bad spot (react_under_fire, clash instead)');
-    expect(asked.userText).toContain('- clash, react_under_fire, take_decisive_action, face_defeat — in the fight "Ashen Wake" (Mira Kestrel is in a bad spot)');
+    // The move contracts' availability (slice 4): the fight's moves for her position, made for the fight.
+    expect(asked.userText).toContain('- enter_the_fray, clash, react_under_fire, take_decisive_action, face_defeat, battle — "Ashen Wake"');
     expect(asked.userText).toContain(`- Open vows: "${VOW}" (dangerous, 0 of 10 boxes).`);
     expect(asked.userText).toContain('- Connections: "Tamsin Okoro" (dangerous, relationship 0 of 10 boxes).');
     expect(asked.userText).toMatch(/- Place: Bleakhold Station\./);
@@ -107,22 +108,22 @@ describe('one line, read once, against the whole situation', () => {
     expect(decision.route).toMatchObject({ route: 'roll', why: 'a fight is open: a fight never hedges' });
   }, 30_000);
 
-  it('a Heal at full health in a fight: the gate refuses it, the line is narrated, and what was refused is said', async () => {
+  it('a Heal at full health: out of a fight the contracts refuse it and the line is narrated, told why; in a fight the dice decide', async () => {
+    scriptClaude(table).when(isLineReader, reply({ move: 'heal', risk: 'plain', category: 'downtime', stat: 'iron', healSituation: 'self' }), { times: 2 });
+    const calm = await readMira('I slap a field dressing on my arm.');
+    expect(table.claude.calls.at(-1).userText).toMatch(/- heal — nothing to heal: /);
+    expect(calm).toMatchObject({ runMove: false, decision: 'NARRATIVE', suggestedMove: null, unmade: { moveId: 'heal', why: expect.stringMatching(/^nothing to heal: /) } });
+    // In a fight a sheet-settled refusal is not applied (overhaul 4's gate): the fight never hedges.
     await openFight();
-    scriptClaude(table).when(isLineReader, reply({ move: 'heal', risk: 'plain', category: 'combat', stat: 'iron', healSituation: 'self' }));
-    const decision = await readMira('I slap a field dressing on my arm between volleys.');
-    expect(table.claude.calls.at(-1).userText).toContain('- heal — health 5 of 5, full, not wounded, and nobody else to treat: nothing to heal');
-    expect(decision).toMatchObject({
-      runMove: false, decision: 'NARRATIVE', suggestedMove: null,
-      unmade: { moveId: 'heal', why: 'health 5 of 5, full, not wounded, and nobody else to treat: nothing to heal' },
-    });
+    const fighting = await readMira('I slap a field dressing on my arm between volleys.');
+    expect(fighting).toMatchObject({ runMove: true, decision: 'MOVE', moveId: 'heal', route: { why: 'a fight is open: a fight never hedges' } });
   }, 30_000);
 
   it('no fight: something of worth given to her connection is offered — a move with no roll is claimed, not rolled', async () => {
     scriptClaude(table).when(isLineReader, reply({ move: 'develop_your_relationship', category: 'social', target: 'Tamsin Okoro' }));
     const decision = await readMira('I set the salvaged navigation core on Tamsin\'s counter. It is hers, no cut to me.');
     expect(decision).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'develop_your_relationship', moveId: 'develop_your_relationship' });
-    expect(table.claude.calls.at(-1).userText).toContain('- gain_ground, strike, clash, react_under_fire, take_decisive_action, face_defeat — no fight is open: enter_the_fray begins one');
+    expect(table.claude.calls.at(-1).userText).toMatch(/- [a-z_, ]*\bstrike\b[a-z_, ]* — [^\n]*fight[^\n]*\(enter_the_fray instead\)/);
   }, 30_000);
 
   it('a reply nobody can read: the line goes on as a move with no reading, as a failed pacing call does today', async () => {

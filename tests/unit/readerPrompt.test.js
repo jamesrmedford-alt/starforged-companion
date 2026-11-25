@@ -25,7 +25,9 @@ vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));
 import { apiPost } from '../../src/api-proxy.js';
 import { readLine, buildReaderSystemPrompt, buildReaderUserMessage, READING_MODES } from '../../src/moves/reader.js';
 import { readLineSituation } from '../../src/moves/readerSituation.js';
-import { availableMoves } from '../../src/moves/availability.js';
+import { availableMoves } from '../../src/moves/contracts/available.js';
+import { readMoveSituation } from '../../src/moves/situation.js';
+import { CATALOGUE_MOVE_IDS } from '../../src/moves/readerCatalogue.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 import { READER_CATALOGUE } from '../../src/moves/readerCatalogue.js';
 
@@ -211,14 +213,17 @@ describe('the call', () => {
 });
 
 describe('the user message', () => {
-  const message = (args) => {
+  // The availability the move contracts give (contracts/available.js), as readAndRoute hands it.
+  const message = async (args) => {
     const a = worldMira();
-    const situation = readLineSituation(game.actors.get(a.actorId), { campaignState: a.campaignState });
-    return buildReaderUserMessage({ text: LINE, situation, available: availableMoves(situation, { mode: args?.mode ?? 'open' }), recentScene: 'Tamsin looks up from the ledger.', ...args });
+    const pc = game.actors.get(a.actorId);
+    const situation = readLineSituation(pc, { campaignState: a.campaignState });
+    const available = availableMoves(await readMoveSituation(pc, { campaignState: a.campaignState }), CATALOGUE_MOVE_IDS, { mode: args?.mode === 'roll' ? 'roll' : 'open' });
+    return buildReaderUserMessage({ text: LINE, situation, available, recentScene: 'Tamsin looks up from the ledger.', ...args });
   };
 
-  it('holds the mode, the speaker and the party, the SITUATION, POSSIBLE NOW / NOT NOW, the recent scene and the line — in that order', () => {
-    const text = message();
+  it('holds the mode, the speaker and the party, the SITUATION, POSSIBLE NOW / NOT NOW, the recent scene and the line — in that order', async () => {
+    const text = await message();
     const order = ['MODE — READ THE LINE: say which move it sets about, if any.', 'SPEAKER — The character speaking and acting this turn is Mira Kestrel.',
       "SITUATION — Mira Kestrel's sheet as it stands:", 'POSSIBLE NOW', 'NOT NOW', 'RECENT SCENE (what the line follows', 'PLAYER LINE'];
     const at = order.map(h => text.indexOf(h));
@@ -227,53 +232,54 @@ describe('the user message', () => {
     expect(text).toContain('Other player characters: none.');
     expect(text).toContain('- Meters: Health 3 of 5 (wounded); Spirit 5 of 5 (full, not shaken); Supply 5 of 5 (full, not unprepared).');
     expect(text).toContain('- Scene — where: Tamsin Okoro\'s stall; present: Mira Kestrel, Tamsin Okoro; now: the ledger is open.');
-    expect(text).toContain('- develop_your_relationship, test_your_relationship — "Tamsin Okoro"');
-    expect(text).toContain('- hearten — spirit 5 of 5, full, not shaken: nothing to recover');
+    expect(text).toContain('- develop_your_relationship, test_your_relationship, forge_a_bond — "Tamsin Okoro"');
+    expect(text).toMatch(/- hearten — nothing to ease: Mira Kestrel's spirit is 5 of 5/);
     expect(text).toContain('Tamsin looks up from the ledger.');
     expect(text.endsWith(`PLAYER LINE\n"${LINE}"`)).toBe(true);
     // Code applies the dials and the density: the reader is told neither.
     expect(text).not.toMatch(/PACING DIALS|RECENT MOVE DENSITY|\d+\/10/);
   });
 
-  it('the Mischief framing, in the open and roll modes, says it never makes a move of a line that makes none', () => {
+  it('the Mischief framing, in the open and roll modes, says it never makes a move of a line that makes none', async () => {
     const framing = 'INTERPRETATION NOTE: You are allowed to occasionally interpret this narration in a slightly unexpected way.';
-    expect(message({ mischiefFraming: framing })).toContain(`${framing} It is about which move and stat; it never makes a move of a line that makes none.`);
-    expect(message({ mischiefFraming: framing, mode: 'chosen', chosen: { moveId: 'face_danger' } })).not.toContain('INTERPRETATION NOTE');
-    expect(message({ mischiefFraming: null })).not.toContain('INTERPRETATION NOTE');
+    expect(await message({ mischiefFraming: framing })).toContain(`${framing} It is about which move and stat; it never makes a move of a line that makes none.`);
+    expect(await message({ mischiefFraming: framing, mode: 'chosen', chosen: { moveId: 'face_danger' } })).not.toContain('INTERPRETATION NOTE');
+    expect(await message({ mischiefFraming: null })).not.toContain('INTERPRETATION NOTE');
   });
 
-  it('a roll asked for: its mode line, and NOT NOW names only what cannot be rolled at all', () => {
-    const text = message({ mode: 'roll' });
+  it('a roll asked for: its mode line, and NOT NOW names only what cannot be rolled at all', async () => {
+    const text = await message({ mode: 'roll' });
     expect(text.startsWith('MODE — A ROLL WAS ASKED FOR: choose the move that fits it best; never no move.')).toBe(true);
     const not = text.slice(text.indexOf('NOT NOW'), text.indexOf('RECENT SCENE'));
-    expect(not).toContain('no scene challenge is open (face_danger, secure_an_advantage instead)');
+    expect(not).toContain('no scene challenge is under way (face_danger, secure_an_advantage instead)');
+    // A refusal the sheet settles is no "cannot" for a roll asked for; one with nothing to act on still is.
     expect(not).not.toContain('hearten');
-    expect(not).not.toContain('no fight is open');
+    expect(not).toMatch(/strike[^\n]* — [^\n]*fight/);
   });
 
-  it('POSSIBLE NOW lists only what it has something to say of: every other move of THE MOVES goes without saying', () => {
-    const text = message();
+  it('POSSIBLE NOW lists only what it has something to say of: every other move of THE MOVES goes without saying', async () => {
+    const text = await message();
     expect(text).toContain('POSSIBLE NOW — every move of THE MOVES but those named after this list, and these as told:');
     expect(text).not.toContain('Any time');
     const possible = text.slice(text.indexOf('POSSIBLE NOW'), text.indexOf('\nNOT NOW'));
     for (const id of ['face_danger', 'gather_information', 'set_a_course', 'pay_the_price']) expect(possible, id).not.toContain(id);
-    expect(possible).toContain('- develop_your_relationship, test_your_relationship — "Tamsin Okoro"');
+    expect(possible).toContain('- develop_your_relationship, test_your_relationship, forge_a_bond — "Tamsin Okoro"');
   });
 
-  it('a chosen move: its id, its name and its own text, and no availability', () => {
-    const text = message({ mode: 'chosen', chosen: { moveId: 'face_danger' }, canonicalBlock: '<canonical_move>\nWhen you attempt something risky…\n</canonical_move>' });
+  it('a chosen move: its id, its name and its own text, and no availability', async () => {
+    const text = await message({ mode: 'chosen', chosen: { moveId: 'face_danger' }, canonicalBlock: '<canonical_move>\nWhen you attempt something risky…\n</canonical_move>' });
     expect(text.startsWith('MODE — THE MOVE IS CHOSEN: face_danger (Face Danger), by a card the table pressed. Read its stat, target and stakes from the line; never another move.\n<canonical_move>')).toBe(true);
     expect(text).not.toContain('POSSIBLE NOW');
   });
 
-  it('a Batch Mode round: the other actions already submitted, for context', () => {
-    const text = message({ round: [{ name: 'Karthik Rao', text: 'I cover the "hatch" while she works.' }, { name: '', text: 'nobody' }] });
+  it('a Batch Mode round: the other actions already submitted, for context', async () => {
+    const text = await message({ round: [{ name: 'Karthik Rao', text: 'I cover the "hatch" while she works.' }, { name: '', text: 'nobody' }] });
     expect(text).toContain('ROUND — Other actions already submitted this round (context only; read this player\'s action):\n- Karthik Rao: "I cover the \'hatch\' while she works."');
     expect(text).not.toContain('nobody');
-    expect(message()).not.toContain('ROUND —');
+    expect(await message()).not.toContain('ROUND —');
   });
 
-  it('no player character behind the line: said, not guessed', () => {
+  it('no player character behind the line: said, not guessed', async () => {
     const situation = readLineSituation(null, { campaignState: {} });
     const text = buildReaderUserMessage({ text: 'The hatch groans.', situation });
     expect(text).toContain('SPEAKER — no player character is known behind this line.');

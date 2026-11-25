@@ -2773,7 +2773,7 @@ function registerSystemAssetTests(quench) {
           assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
         });
 
-        it("the line reader's catalogue quotes each move's trigger as the installed system's move text has it", async function () {
+        it("the line reader's catalogue quotes each move's lists as the installed system's move text has them", async function () {
           // The drift check for a system update (issue #384, D3): src/moves/readerCatalogue.js quotes
           // the triggers in the module, so a reworded move would leave the
           // reader told words the game no longer has.
@@ -2799,7 +2799,8 @@ function registerSystemAssetTests(quench) {
             const doc = entry ? await pack.getDocument(entry._id ?? entry.id) : null;
             if (!doc) { stale.push(`${move.id}: no move named "${move.name}" in the pack`); continue; }
             const text = reduceMoveText(doc.system?.Text ?? "");
-            for (const quote of [move.when, ...(move.list ?? [])]) {
+            // The trigger is the move contracts' (held to the pack by moveContracts.test.js); the lists are the catalogue's own.
+            for (const quote of move.list ?? []) {
               if (!text.includes(reduceMoveText(quote))) stale.push(`${move.id}: "${quote}"`);
             }
           }

@@ -2,45 +2,45 @@
  * STARFORGED COMPANION
  * src/moves/readerSituation.js — the whole situation a typed line is read against
  *
- * Two model calls read every typed line today, and neither is told what the
- * other is: the pacing reader gets the dials, the scene frame, the charted
- * places, the fight's bare "COMBAT STATUS: ACTIVE" and the SITUATION block
- * (the pacing classifier, retired at the switch); the move reader gets the SITUATION block, the
- * other characters' vows, the open tracks, the speaker's vehicles and
- * companions and a combat-position directive (src/moves/interpreter.js). The
- * line reader (src/moves/reader.js) is one call, told the whole of it, read
- * once a line and handed to the availability (src/moves/availability.js), the
- * prompt and the gate alike — so the reader is never told a sheet the gate
- * did not check (issue #384 — decisions.md → "Overhauls 1 and 4").
+ * Two model calls read every typed line before the switch, and neither was
+ * told what the other was: the pacing classifier the dials, the scene frame,
+ * the charted places and a fight's bare "COMBAT STATUS: ACTIVE"; the move
+ * interpreter the sheet, the other characters' vows, the open tracks, the
+ * vehicles and companions and a combat-position directive. The line reader
+ * (src/moves/reader.js) is one call, told the whole of it (issue #384 —
+ * decisions.md → "Overhauls 1 and 4"). This module is what it is told of the
+ * situation, read once a line; what can be made in it is the move contracts'
+ * to say (src/moves/contracts/available.js, over the gate's own read,
+ * moves/situation.js readMoveSituation), so the reader is never told a move
+ * can be made that the gate would refuse.
  *
- *   - the speaker's sheet: src/moves/situation.js readSituation, as both
- *     readers read it today (meters and impacts, the command vehicle, the
- *     open vows, the connections) — null for no player character;
- *   - the party (the other player characters, with their health for a Heal
- *     given to one), their open vows, the speaker's support vehicles and
- *     companions;
+ *   - the speaker's sheet: src/moves/situation.js readSituation (meters and
+ *     impacts, the command vehicle, the open vows, the connections) — null
+ *     for no player character;
+ *   - the party (the other player characters), their open vows, the
+ *     speaker's support vehicles and companions;
  *   - the open fights with the speaker's own position in each, the scene
  *     challenges and the expeditions (src/ui/progressTracks.js
  *     listOpenProgressTracks — synchronous, read-only, any client);
- *   - the place: the current location, the ship's position line (the
- *     narrator's own, factContinuity/shipPosition.js), the scene frame, the
+ *   - the scene as the narrator holds it (narration/narratorPrompt.js
+ *     sceneForReading: the place, the ship's position, the scene frame, with
+ *     the table's new names) — else the current location, the ship's position
+ *     line (factContinuity/shipPosition.js) and the frame read here — the
  *     current site, the X-Card;
  *   - the charted places Set a Course is for.
  *
- * Why its own module, beside situation.js: the reader is measured beside the
- * two readers before it replaces them (issue #384, slice 1), so situation.js's block stays exactly what they are
- * told; and situation.js is where the move contracts' own situation is being
- * built. At the switch (slice 2) the readers' block goes and this one is the
- * only one. The place and the charted places repeat the retired pacing classifier's reads
- * (formatScene, formatChartedPlaces) for that one slice: they are deleted
- * there with the pacing reader.
+ * Why its own module, beside situation.js: situation.js is the move
+ * contracts' own situation (readMoveSituation, the gate's); this is the
+ * reader's telling. The current location and the charted places are read as
+ * the retired pacing classifier read them (formatScene, formatChartedPlaces);
+ * the reader is their one reader now.
  *
  * Reads only, live, and it never throws: a part that cannot be read is told
  * as unknown, and an unknown is never "nothing to recover" (situation.js).
  */
 
 import {
-  isPlayerCharacterActor, getPlayerActors, readMeters, readDebilities, readVows, listSupportVehicleAssets,
+  isPlayerCharacterActor, getPlayerActors, readVows, listSupportVehicleAssets,
   listCompanionAssets, companionGivenName,
 } from "../character/actorBridge.js";
 import { readSituation } from "./situation.js";
@@ -75,7 +75,7 @@ const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0))
  * @returns {{
  *   speaker: { actorId: string, name: string }|null,
  *   sheet: ReturnType<typeof readSituation>,
- *   party: Array<{ actorId: string, name: string, health: number|null, wounded: boolean|null }>,
+ *   party: Array<{ actorId: string, name: string }>,
  *   othersVows: Array<{ name: string, owner: string }>,
  *   vehicles: string[],
  *   companions: Array<{ name: string, given: string|null }>,
@@ -93,8 +93,10 @@ const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0))
  * }} `position`: the speaker's one position across the open fights, as
  *   getActiveCombatPosition reads it — their own where every fight that
  *   records one agrees, else the only fight's — null out of a fight or when
- *   it cannot be told which applies; the position remap and the gate read it.
- *   `unread`: the parts that could not be read (told as unknown).
+ *   it cannot be told which applies; the reader's position remap reads it
+ *   (reader.js; the gate reads its own, readMoveSituation's
+ *   tracks.rollerPosition). `unread`: the parts that could not be read (told
+ *   as unknown).
  */
 export function readLineSituation(actor, { campaignState = null } = {}) {
   let isPc = false;
@@ -119,15 +121,7 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
     const own = new Set(isPc ? readVows(actor).filter(v => !v.completed && v.vowId).map(v => v.vowId) : []);
     for (const pc of getPlayerActors()) {
       if (isPc && pc?.id === actor.id) continue;
-      let health = null;
-      let wounded = null;
-      try {
-        health = whole(readMeters(pc)?.health);
-        wounded = readDebilities(pc)?.wounded === true;
-      } catch (err) {
-        console.warn(`${MODULE_ID} | line situation: ${clean(pc.name)}'s health could not be read — told as unknown:`, err?.message ?? err);
-      }
-      situation.party.push({ actorId: pc.id, name: clean(pc.name), health, wounded });
+      situation.party.push({ actorId: pc.id, name: clean(pc.name) });
       for (const vow of readVows(pc)) {
         // A copy of a shared vow the speaker holds too is theirs already.
         if (vow.completed || !clean(vow.name) || (vow.vowId && own.has(vow.vowId))) continue;

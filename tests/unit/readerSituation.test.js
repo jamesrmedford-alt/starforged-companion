@@ -181,17 +181,16 @@ describe('the place', () => {
 });
 
 describe('the party, the vehicles and the companions', () => {
-  it('the other player characters with their health, and their open vows — not a shared copy she holds too', () => {
+  it('the other player characters, and their open vows — not a shared copy she holds too', () => {
     const shared = { vowId: 'vid-shared' };
     const pc = installPc('pc-mira', 'Mira Kestrel', { items: [progressItem('vow', 'v1', 'The shared oath', { flags: shared })] });
     installPc('pc-karthik', 'Karthik Rao', {
-      system: { health: { value: 2 }, debility: { wounded: true } },
       items: [progressItem('vow', 'v2', 'The shared oath', { flags: shared }), progressItem('vow', 'v3', 'Bring Joss home')],
     });
     const npc = makeTestActor({ id: 'npc-1', name: 'Tamsin Okoro', type: 'character', flags: { [MODULE_ID]: { entityType: 'connection' } } });
     game.actors._set(npc.id, npc);
     const s = readLineSituation(pc, { campaignState: {} });
-    expect(s.party).toEqual([{ actorId: 'pc-karthik', name: 'Karthik Rao', health: 2, wounded: true }]);
+    expect(s.party).toEqual([{ actorId: 'pc-karthik', name: 'Karthik Rao' }]);
     expect(s.othersVows).toEqual([{ name: 'Bring Joss home', owner: 'Karthik Rao' }]);
     expect(buildReaderSituationBlock(s)).toContain('- Other characters\' open vows: "Bring Joss home" (Karthik Rao).');
   });

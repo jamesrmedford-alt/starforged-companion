@@ -39,7 +39,7 @@
 import { PACING_DECISION, PACING_CATEGORIES } from "./dials.js";
 import { readAndRoute } from "./readAndRoute.js";
 import { readMoveSituation } from "../moves/situation.js";
-import { checkMove, refusalOf } from "../moves/contracts/gate.js";
+import { refusalOf } from "../moves/contracts/gate.js";
 import { narratePacedInput, tellPacedLineNotNarrated } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
@@ -238,14 +238,11 @@ export async function decidePacing({
   // (NOTHING-TO-RECOVER-UNTOLD); a move the refusal offers instead is the
   // card's Roll. readMove and the roll check again. A `!roll` never comes here.
   const moveSituation = await readSituationForGate(character, campaignState);
-  const gate = moveSituation
-    ? (moveId) => checkMove(moveId, moveSituation, { line: playerText ?? "" }, { stage: "offer" })
-    : null;
 
   // One call reads the line, told the whole situation; code routes the
   // reading by the table's dials (issue #384, D1 — pacing/readAndRoute.js).
   const result = await readAndRoute({
-    playerText, campaignState, character, apiKey, pacingConfig, recentMoveDensity, mischiefLevel: level, round, gate,
+    playerText, campaignState, character, apiKey, pacingConfig, recentMoveDensity, mischiefLevel: level, round, moveSituation,
   });
 
   let refused = null;

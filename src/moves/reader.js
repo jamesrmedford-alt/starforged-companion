@@ -24,7 +24,7 @@
  * (src/moves/readerSituation.js — the sheet, the fights with the speaker's
  * position, the scene challenges and expeditions, the place, the charted
  * places, the party's vows, the vehicles and companions); POSSIBLE NOW / NOT
- * NOW (src/moves/availability.js, the contracts' stand-in); a Batch Mode
+ * NOW (src/moves/contracts/available.js, the move contracts'); a Batch Mode
  * round's other submitted actions; the Mischief framing; the recent scene;
  * the line. Not told: the dials or the density (code applies them), and
  * nothing hidden — no plan, no unrevealed truth, no Private Line, no world
@@ -63,7 +63,9 @@ import { moveDisplayName } from "../system/i18n.js";
 import { PACING_CATEGORIES } from "../pacing/dials.js";
 import { renderReaderCatalogue } from "./readerCatalogue.js";
 import { readLineSituation, buildReaderSituationBlock } from "./readerSituation.js";
-import { availableMoves } from "./availability.js";
+import { availableMoves, formatAvailableMoves } from "./contracts/available.js";
+import { readMoveSituation } from "./situation.js";
+import { CATALOGUE_MOVE_IDS } from "./readerCatalogue.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 // The readers' model (decisions.md → "The readers run on Sonnet 5.5").
@@ -226,39 +228,6 @@ const MISCHIEF_HEADING = "## THE TABLE'S MISCHIEF — for every line read here";
 const mischiefNote = (framing) => `${String(framing).trim()} It is about which move and stat; it never makes a move of a line that makes none.`;
 
 /**
- * POSSIBLE NOW / NOT NOW: the availability, grouped. Moves that share a
- * reason share a line; a "cannot" that is made as another says which. A move
- * with nothing to say of it is not listed: POSSIBLE NOW says that every move
- * the not-now list does not name can be made (the catalogue lists them all),
- * and the two dozen ids it saves were near a tenth of the reader's uncached
- * input (the first measure, issue #384).
- *
- * @param {ReturnType<typeof availableMoves>} available
- * @returns {string}
- */
-export function renderAvailability(available) {
-  const list = Array.isArray(available) ? available : [];
-  const groups = new Map();
-  for (const e of list) {
-    if (e.can && !e.why) continue;
-    const key = `${e.can ? "can" : "not"}\u0000${e.why}`;
-    if (!groups.has(key)) groups.set(key, { can: e.can, why: e.why, ids: [], instead: [] });
-    const g = groups.get(key);
-    g.ids.push(e.moveId);
-    if (e.instead && !g.instead.includes(e.instead)) g.instead.push(e.instead);
-  }
-  const line = (g) => `- ${g.ids.join(", ")} — ${g.why}${g.instead.length ? ` (${g.instead.join(", ")} instead)` : ""}`;
-  const can = [...groups.values()].filter(g => g.can);
-  const not = [...groups.values()].filter(g => !g.can);
-  return [
-    `POSSIBLE NOW — every move of THE MOVES but those named after this list${can.length ? ", and these as told:" : "."}`,
-    ...can.map(line),
-    "NOT NOW",
-    ...(not.length ? not.map(line) : ["- nothing"]),
-  ].join("\n");
-}
-
-/**
  * The reader's user message, in order: the mode, the speaker and the other
  * player characters, the SITUATION, POSSIBLE NOW / NOT NOW (not for a chosen
  * move), a Batch Mode round's other actions, the Mischief framing (the open
@@ -268,7 +237,7 @@ export function renderAvailability(available) {
  * @param {"open"|"roll"|"chosen"} args.mode
  * @param {string} args.text — the player's line
  * @param {ReturnType<typeof readLineSituation>} args.situation
- * @param {ReturnType<typeof availableMoves>} [args.available]
+ * @param {ReturnType<typeof availableMoves>|null} [args.available] — contracts/available.js's; none, no block
  * @param {{ moveId: string }|null} [args.chosen] — the chosen move (`chosen` mode)
  * @param {string} [args.canonicalBlock] — the chosen move's own text (interpreter.js buildCanonicalMoveBlock)
  * @param {Array<{ name: string, text: string }>|null} [args.round] — the round's other submitted actions
@@ -297,7 +266,7 @@ export function buildReaderUserMessage({
     : `SPEAKER — no player character is known behind this line.\nPlayer characters at the table: ${party.length ? party.join(", ") : "none"}.`);
 
   parts.push(buildReaderSituationBlock(s));
-  if (mode !== READING_MODES.CHOSEN) parts.push(renderAvailability(available ?? availableMoves(s, { mode })));
+  if (mode !== READING_MODES.CHOSEN && Array.isArray(available)) parts.push(formatAvailableMoves(available));
 
   const others = (Array.isArray(round) ? round : [])
     .map(r => ({ name: oneLine(r?.name), text: oneLine(r?.text).replace(/"/g, "'") }))
@@ -375,6 +344,16 @@ export async function readLine({
     try { actor = speakerActorId ? (globalThis.game?.actors?.get?.(speakerActorId) ?? null) : null; } catch { actor = null; }
     s = readLineSituation(actor, { campaignState });
   }
+  // What can be made now, from the move contracts, for a reading not handed it
+  // (interpretMove's roll and open modes): a roll that was asked for is
+  // refused only what nothing could act on (a hard refusal) or what is made
+  // as another move — the GM may roll a soft one at their word.
+  let told = available;
+  if (!Array.isArray(told) && readingMode !== READING_MODES.CHOSEN) {
+    let contracts = null;
+    try { contracts = await readMoveSituation(speakerActorId ?? null, { campaignState }); } catch { contracts = null; }
+    told = availableMoves(contracts, CATALOGUE_MOVE_IDS, { mode: readingMode });
+  }
   const systemPrompt = buildReaderSystemPrompt();
   // The Mischief note (never for a chosen move). Balanced's is the same for
   // every line, so it is the system's second block, cached with the first;
@@ -382,7 +361,7 @@ export async function readLine({
   const framing = readingMode === READING_MODES.CHOSEN ? null : buildMischiefFraming(mischiefLevel, text);
   const standingNote = framing && mischiefLevel === "balanced" ? `${MISCHIEF_HEADING}\n\n${mischiefNote(framing)}` : null;
   const userMessage = buildReaderUserMessage({
-    mode: readingMode, text, situation: s, available, chosen: chosenMove, canonicalBlock, round, recentScene,
+    mode: readingMode, text, situation: s, available: told, chosen: chosenMove, canonicalBlock, round, recentScene,
     mischiefFraming: standingNote ? null : framing,
   });
 

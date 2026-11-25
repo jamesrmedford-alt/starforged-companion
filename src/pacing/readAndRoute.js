@@ -16,7 +16,7 @@
  *
  * readAndRoute is the composition decidePacing takes at the switch: the
  * situation read once (src/moves/readerSituation.js), what can be made now
- * (src/moves/availability.js — the contracts' stand-in), the open reading,
+ * (src/moves/contracts/available.js — the move contracts'), the open reading,
  * the route — returned in decidePacing's shape, plus the reading and what the
  * gate refused (`unmade`, told to the narration at the switch, D15). The
  * pacing config and the density window are its caller's (decidePacing reads
@@ -33,7 +33,10 @@ import { MOVES } from "../schemas.js";
 import { effectiveDial, PACING_DECISION } from "./dials.js";
 import { selectSceneChallengeTrack, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { readLineSituation } from "../moves/readerSituation.js";
-import { availableMoves, checkMove } from "../moves/availability.js";
+import { availableMoves } from "../moves/contracts/available.js";
+import { checkMove } from "../moves/contracts/gate.js";
+import { readMoveSituation } from "../moves/situation.js";
+import { CATALOGUE_MOVE_IDS } from "../moves/readerCatalogue.js";
 import { readLine, isRolledMove, READING_MODES } from "../moves/reader.js";
 import { getRecentSceneForReading, lineIsToAFellowPlayerCharacter } from "../narration/narrator.js";
 import { moveDisplayName } from "../system/i18n.js";
@@ -180,9 +183,9 @@ export function routeReading(reading, ctx = {}) {
  *   getRecentMoveDensity's; null in a Batch Mode round (D12: a round is its own pacing)
  * @param {string} [args.mischiefLevel] — the Mischief dial
  * @param {Array<{ name: string, text: string }>|null} [args.round] — a round's other submitted actions
- * @param {((moveId: string) => Object|null)|null} [args.gate] — the move contracts' verdict for a move
- *   (contracts/gate.js checkMove, on the speaker's situation read once — decidePacing's): routeReading's
- *   row 2. Without one the stand-in's (moves/availability.js checkMove) is asked.
+ * @param {Object|null} [args.moveSituation] — the speaker's situation as the move contracts read it
+ *   (moves/situation.js readMoveSituation); read here when not given. It is what the reader is told can
+ *   be made now (contracts/available.js) and routeReading's row 2 (contracts/gate.js checkMove).
  * @returns {Promise<{ runMove: boolean, decision: string, suggestedMove: string|null, suggestedTargetId: string|null,
  *   category: string, confidence: number, reasoning: string, moveId: string|null,
  *   reading: import("../moves/reader.js").Reading, route: Object|null,
@@ -190,13 +193,17 @@ export function routeReading(reading, ctx = {}) {
  */
 export async function readAndRoute({
   playerText, campaignState, character = null, apiKey, pacingConfig, recentMoveDensity = null, mischiefLevel = "serious", round = null,
-  gate = null,
+  moveSituation = undefined,
 }) {
   let actor = null;
   try { actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null; } catch { actor = null; }
   const situation = readLineSituation(actor, { campaignState });
-  const available = availableMoves(situation, { mode: READING_MODES.OPEN });
-  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null);
+  // What the move contracts say can be made now: told to the reader, and its gate (one authority).
+  const contracts = moveSituation !== undefined ? moveSituation : await readContractSituation(character?.actorId ?? null, campaignState);
+  const available = availableMoves(contracts, CATALOGUE_MOVE_IDS);
+  const gate = contracts ? (moveId) => checkMove(moveId, contracts, { line: playerText ?? "" }, { stage: "offer" }) : null;
+  // The current scene's part of the ring (overhaul 2, slice 5), as the move pipeline reads it.
+  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null, campaignState);
 
   let reading = await readLine({
     mode: READING_MODES.OPEN, text: playerText, speakerActorId: character?.actorId ?? null, campaignState, apiKey,
@@ -215,7 +222,7 @@ export async function readAndRoute({
     pacingConfig,
     density: recentMoveDensity,
     fightOpen: situation.fights.length > 0,
-    check: typeof gate === "function" ? gateCheck(gate) : (moveId) => checkMove(moveId, situation, { mode: READING_MODES.OPEN }),
+    check: gateCheck(gate),
     toFellowPc: (moveId) => lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState }),
   });
   if (route.remapped && route.moveId) reading = readAs(reading, route.moveId, route.remapped.why);
@@ -246,6 +253,23 @@ export async function readAndRoute({
 }
 
 /**
+ * The speaker's situation as the move contracts read it, or null when it
+ * cannot be read — then nothing is refused (an unknown is never a refusal).
+ *
+ * @param {string|null} actorId
+ * @param {Object|null} campaignState
+ * @returns {Promise<Object|null>}
+ */
+async function readContractSituation(actorId, campaignState) {
+  try {
+    return await readMoveSituation(actorId, { campaignState });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | line reader: the move contracts' situation could not be read — nothing is refused:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * The move contracts' verdict (contracts/gate.js checkMove) as routeReading's
  * check: a reroute (`ok` with `instead` — the position's own move, a
  * variant's ordinary one) is a remap; a refusal carries its verdict for the
@@ -257,6 +281,7 @@ export async function readAndRoute({
 function gateCheck(gate) {
   return (moveId) => {
     let verdict = null;
+    if (typeof gate !== "function") return { ok: true, why: "", instead: null };
     try { verdict = gate(moveId); } catch (err) {
       console.warn(`${MODULE_ID} | line reader: the move gate could not be asked — nothing is refused:`, err?.message ?? err);
     }

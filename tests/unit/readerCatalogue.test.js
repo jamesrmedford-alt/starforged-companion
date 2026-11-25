@@ -16,10 +16,13 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { READER_CATALOGUE, CATALOGUE_MOVE_IDS, renderReaderCatalogue } from '../../src/moves/readerCatalogue.js';
+import { moveTriggers } from '../../src/moves/contracts/available.js';
 import { MOVES } from '../../src/schemas.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 const entryOf = (id) => READER_CATALOGUE.flatMap(g => g.moves).find(m => m.id === id);
+// The triggers the catalogue quotes: the move contracts' table's (slice 4 — one store, held to the pack by moveContracts.test.js).
+const TRIG = moveTriggers(CATALOGUE_MOVE_IDS);
 
 describe('the line reader\'s catalogue', () => {
   it('names every move but the session moves — none added, none dropped (the move reader\'s list, retired at the switch)', () => {
@@ -30,28 +33,29 @@ describe('the line reader\'s catalogue', () => {
   });
 
   it('quotes the game where its words decide: the seven deeds, the six kinds of headway, a new relationship or an existing one given focus', () => {
+    expect(TRIG.develop_your_relationship).toMatch(/^When you reinforce your relationship with a connection by doing any of the following/);
     expect(entryOf('develop_your_relationship')).toMatchObject({
-      when: 'When you reinforce your relationship with a connection by doing any of the following...',
       list: ['swearing a vow to undertake a perilous quest in their service', 'completing a quest to their benefit',
         'leveraging their help in desperate circumstances', 'giving them something of worth', 'sharing a profound moment',
         'standing with them against hardship', 'overcoming a test of your relationship'],
     });
-    expect(entryOf('reach_a_milestone').when).toBe('When you make headway in your quest by doing any of the following...');
+    expect(TRIG.reach_a_milestone).toMatch(/^When you make headway in your quest by doing any of the following/);
     expect(entryOf('reach_a_milestone').list).toHaveLength(6);
-    expect(entryOf('make_a_connection').when).toBe('When you search out a new relationship or give focus to an existing relationship (not an ally or companion), roll +heart');
-    expect(entryOf('hearten').when).toBe('When you socialize, share intimacy, or find a moment of peace, roll +heart');
+    expect(TRIG.make_a_connection).toMatch(/^When you search out a new relationship or give focus to an existing relationship \(not an ally or companion\), roll \+heart/);
+    expect(TRIG.hearten).toMatch(/^When you socialize, share intimacy, or find a moment of peace, roll \+heart/);
     // The approaches decide the stat: Heal's four situations, each with its own.
     expect(entryOf('heal').list).toEqual(['Receive treatment from someone (not an ally): Roll +iron', 'Mend your own wounds: Roll +iron or +wits, whichever is lower',
       'Obtain treatment for a companion: Roll +heart', 'Provide care: Roll +wits']);
     // The combat moves' triggers carry their positions.
-    expect(entryOf('strike').when).toMatch(/^When you are in control and assault a foe/);
-    expect(entryOf('clash').when).toMatch(/^When you are in a bad spot and fight back/);
+    expect(TRIG.strike).toMatch(/^When you are in control and assault a foe/);
+    expect(TRIG.clash).toMatch(/^When you are in a bad spot and fight back/);
   });
 
   it('every quote is the game\'s trigger, never a paraphrase of the old readers\'', () => {
     for (const m of READER_CATALOGUE.flatMap(g => g.moves)) {
-      expect(m.when, m.id).toMatch(/^When (?:you|your|the) /);
+      expect(TRIG[m.id], m.id).toMatch(/^When (?:you|your|the) /);
       expect(MOVES[m.id], m.id).toBeTruthy();
+      expect(m, `${m.id} keeps no trigger of its own: the table's is the one`).not.toHaveProperty('when');
     }
     const text = renderReaderCatalogue();
     expect(text).not.toMatch(/deepen a connection|costs the character|meets a real need|a real step toward/i);
@@ -78,9 +82,10 @@ describe('the line reader\'s catalogue', () => {
   it('renders each move by its id, its name and how it is made, its trigger in quotes and its list after it', () => {
     const text = renderReaderCatalogue();
     expect(text).toContain('- gather_information (Gather Information): "When you search for clues, conduct an investigation, analyze evidence, or do research, roll +wits".');
-    expect(text).toContain('- develop_your_relationship (Develop Your Relationship; no roll): "When you reinforce your relationship with a connection by doing any of the following..." — swearing a vow');
+    // A trigger that says its own list is quoted whole, with no list after it.
+    expect(text).toMatch(/- develop_your_relationship \(Develop Your Relationship; no roll\): "When you reinforce your relationship with a connection by doing any of the following: swearing a vow[^"]*"\./);
     expect(text).toContain('- fulfill_your_vow (Fulfill Your Vow; progress roll): "When you reach the end of your quest, roll the challenge dice and compare to your progress".');
-    expect(text).toContain('- face_danger (Face Danger): "When you attempt something risky or react to an imminent threat" — With speed, mobility, or agility: Roll +edge; ');
+    expect(text).toContain('- face_danger (Face Danger): "When you attempt something risky or react to an imminent threat, envision your action and roll" — With speed, mobility, or agility: Roll +edge; ');
     // The same bytes every call: it is part of the cached system prompt.
     expect(renderReaderCatalogue()).toBe(text);
     for (const id of CATALOGUE_MOVE_IDS) expect(text, id).toContain(`- ${id} (`);
@@ -88,7 +93,7 @@ describe('the line reader\'s catalogue', () => {
 
   it('every quote is one span of text — no emphasis marker, no line break, no move link — so the drift check can find it whole', () => {
     for (const m of READER_CATALOGUE.flatMap(g => g.moves)) {
-      for (const quote of [m.when, ...(m.list ?? [])]) {
+      for (const quote of [TRIG[m.id], ...(m.list ?? [])]) {
         expect(quote, m.id).not.toMatch(/__|[\r\n]|@\w+\[|<[^>]+>/);
         expect(quote.trim(), m.id).toBe(quote);
       }
