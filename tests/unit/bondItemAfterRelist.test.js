@@ -73,7 +73,10 @@ async function worldLoadListsTheCard() {
 }
 
 describe('a refused Confirm whose card the world load listed before the GM pressed Confirm again', () => {
-  it("the second Confirm puts the bond Item on the narration's PC — one Vex, one bond", async () => {
+  // Overhaul 4, D4: a Confirm records the person and bonds no one — the
+  // relisted card is marked and nothing is made twice; the bond is Make a
+  // Connection's (the row's 🤝), not the Confirm's.
+  it("the second Confirm marks the row on the relisted card — one Vex, and no bond Item (D4)", async () => {
     expectConsoleError(/registering connectionIds failed/);
     expectConsoleError(/draft confirm: createXxx failed/);
     const gm = table.client('gm-1');
@@ -97,29 +100,28 @@ describe('a refused Confirm whose card the world load listed before the GM press
 
     expect(rows(card)).toEqual([['Vex', 'confirmed']]);
     expect(named('Vex')).toHaveLength(1);
-    // The "exists" path marked the row and made no bond Item.
-    expect(bondItems('pc-ren', recordId)).toHaveLength(1);
-    expect(bondItems('pc-ren', recordId)[0].name).toBe('Vex');
-    expect(bondItems('pc-kira', recordId)).toHaveLength(0);  // the narration's PC's, not the GM's fallback
+    // The "exists" path marked the row and made no bond Item — on anyone.
+    expect(bondItems('pc-ren', recordId)).toHaveLength(0);
+    expect(bondItems('pc-kira', recordId)).toHaveLength(0);
   }, 30_000);
 
   it("control: a Confirm whose card write was lost (U25's case) — the second Confirm makes no second bond Item", async () => {
     expectConsoleError(/updateDraftCard failed/);
     const gm = table.client('gm-1');
     const card = await vexDraftCard();
-    // The first Confirm creates Vex and the bond; its card write is refused.
+    // The first Confirm creates Vex (no bond — D4); its card write is refused.
     failWrites(table, (w) => w.kind === 'message.update' && w.id === card._id && w.client === 'gm-1', { times: 1 });
 
     gm.click(card._id, '[data-action="sf-draft-confirm"]');
     await table.drain();
     expect(rows(card)).toEqual([['Vex', 'pending']]);
     const recordId = named('Vex')[0].flags[MODULE_ID].connection._id;
-    expect(bondItems('pc-ren', recordId)).toHaveLength(1);
+    expect(bondItems('pc-ren', recordId)).toHaveLength(0);
 
     gm.click(card._id, '[data-action="sf-draft-confirm"]');
     await table.drain();
     expect(rows(card)).toEqual([['Vex', 'confirmed']]);
     expect(named('Vex')).toHaveLength(1);
-    expect(bondItems('pc-ren', recordId)).toHaveLength(1);
+    expect(bondItems('pc-ren', recordId)).toHaveLength(0);
   }, 30_000);
 });

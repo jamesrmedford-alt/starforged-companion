@@ -155,90 +155,63 @@ describe("D3 — a round's capture hands its draft card every acting PC (BATCH-D
   });
 });
 
-describe("D3 — a round card's connection row asks whose connection the NPC is", () => {
+// Overhaul 4, D4 amends D3 and issue #354 P2-16: a connection row's Confirm
+// records the person — no bond on any sheet ("No one" is what it does now) —
+// and the row offers 🤝 Make a Connection to each acting PC, which rolls the
+// move as them (entityExtractor.js applyDraftMakeConnectionFromRelay).
+describe("D3, amended by overhaul 4 (D4) — a round card's connection row records the person and offers each acting PC the move", () => {
   const postRoundCard = () => routeEntityDrafts([DOSS, CHOIR], stored(), { actorIds: ['pc-kira', 'pc-ren'], narrationId: 'nar-round' })
     .then(syncChat);
 
-  it('the connection row offers each acting PC and No one; another type keeps its one Confirm', async () => {
+  it('the connection row has one Confirm and a 🤝 Make a Connection for each acting PC — no "No one"; another type keeps its one Confirm', async () => {
     await postRoundCard();
     const root = parseHTML(draftCard().content);
     const rows = root.querySelectorAll('.sf-draft-row');
-    const dossButtons = [...rows[0].querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => [b.dataset.actorId, b.textContent]);
-    expect(dossButtons).toEqual([['pc-kira', 'Kira'], ['pc-ren', 'Ren'], ['', 'No one']]);
-    expect(rows[0].textContent).toContain('Confirm — whose connection?');
-    const choirButtons = [...rows[1].querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => b.textContent);
-    expect(choirButtons).toEqual(['Confirm']);
+    expect([...rows[0].querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => b.textContent)).toEqual(['Confirm']);
+    expect([...rows[0].querySelectorAll('[data-action="sf-draft-make-connection"]')].map(b => b.dataset.actorId)).toEqual(['pc-kira', 'pc-ren']);
+    expect(rows[0].textContent).not.toContain('No one');
+    expect([...rows[1].querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => b.textContent)).toEqual(['Confirm']);
+    expect(rows[1].querySelectorAll('[data-action="sf-draft-make-connection"]')).toHaveLength(0);
   });
 
-  it("the GM picks Ren: Doss is Ren's connection, not the first entry's", async () => {
+  it('Confirm: Doss is recorded — with no bond on any sheet', async () => {
     await postRoundCard();
-    await press('[data-action="sf-draft-confirm"][data-index="0"][data-actor-id="pc-ren"]');
-    expect(connectionActors('Doss')).toHaveLength(1);
-    expect(bondsOf('pc-ren')).toEqual(['Doss']);
-    expect(bondsOf('pc-kira')).toEqual([]);
-    expect(rowStatus('Doss')).toBe('confirmed');
-    // The card re-renders still asking for the row that is left (here: none — a faction row has one Confirm).
-    expect(game.messages.get(draftCard().id).content).not.toMatch(/data-index="0"/);
-  });
-
-  it('No one: Doss is made with no bond on any sheet', async () => {
-    await postRoundCard();
-    await press('[data-action="sf-draft-confirm"][data-index="0"][data-actor-id=""]');
+    await press('[data-action="sf-draft-confirm"][data-index="0"]');
     expect(connectionActors('Doss')).toHaveLength(1);
     expect(bondsOf('pc-ren')).toEqual([]);
     expect(bondsOf('pc-kira')).toEqual([]);
     expect(rowStatus('Doss')).toBe('confirmed');
+    // Confirmed, the row still offers the move to both.
+    expect(game.messages.get(draftCard().id).content).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-ren"/);
   });
 
-  it('a press naming no PC the card offers creates nothing, and says why', async () => {
-    await postRoundCard();
-    const card = game.messages.get(draftCard().id);
-    card.content = card.content.replace('data-actor-id="pc-ren"', 'data-actor-id="pc-stranger"');
-    await press('[data-action="sf-draft-confirm"][data-index="0"][data-actor-id="pc-stranger"]');
-    expect(connectionActors('Doss')).toEqual([]);
-    expect(rowStatus('Doss')).toBe('pending');
-    expect(global.ui.notifications.warn).toHaveBeenCalled();
-  });
-
-  it('a Doss made meanwhile (another GM, or a refused Confirm the world load listed): the pick still puts the bond on the PC picked', async () => {
+  it('a Doss made meanwhile (another GM, or a refused Confirm the world load listed): the row is marked, nothing made twice, no bond', async () => {
     await postRoundCard();
     await createConnection({ name: 'Doss', description: 'An old mechanic.' }, stored());
-    await press('[data-action="sf-draft-confirm"][data-index="0"][data-actor-id="pc-kira"]');
+    await press('[data-action="sf-draft-confirm"][data-index="0"]');
     expect(connectionActors('Doss')).toHaveLength(1);
-    expect(bondsOf('pc-kira')).toEqual(['Doss']);
+    expect(bondsOf('pc-kira')).toEqual([]);
     expect(bondsOf('pc-ren')).toEqual([]);
+    expect(rowStatus('Doss')).toBe('confirmed');
   });
 
-  it("re-rendered after another row's Confirm, the connection row still asks", async () => {
+  it("re-rendered after another row's Confirm, the connection row still offers the move", async () => {
     await postRoundCard();
     await press('[data-action="sf-draft-confirm"][data-index="1"]');   // the faction row
     expect(rowStatus('The Iron Choir')).toBe('confirmed');
-    const content = game.messages.get(draftCard().id).content;
-    expect(content).toContain('Confirm — whose connection?');
-    expect(content).toMatch(/data-index="0" data-actor-id="pc-ren">Ren</);
+    expect(game.messages.get(draftCard().id).content).toMatch(/data-action="sf-draft-make-connection" data-index="0" data-actor-id="pc-ren"/);
   });
 
-  // Issue #354 P2-16 amends D3's "free-flow cards keep their one Confirm": a
-  // free-flow card's person row offers its narration's PC by name, and "No
-  // one" — a Confirm that always bonded put a hostile stranger on a PC's sheet.
-  it("a free-flow card carries its narration's PC: its row offers that PC, whose button bonds them, and No one", async () => {
+  it("a free-flow card carries its narration's PC: its row offers that PC the move, and Confirm bonds no one", async () => {
     await routeEntityDrafts([DOSS], stored(), { actorId: 'pc-ren', narrationId: 'nar-move' }).then(syncChat);
     expect(draftCard().flags[MODULE_ID]).toMatchObject({ actorId: 'pc-ren' });
     expect(draftCard().flags[MODULE_ID].actorIds).toBeUndefined();
     const content = draftCard().content;
-    expect(content).toContain('Confirm — whose connection?');
-    expect(content).toMatch(/data-index="0" data-actor-id="pc-ren">Ren</);
-    expect(content).toMatch(/data-actor-id=""[^>]*>No one</);
+    expect(content).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-ren"/);
     expect(content).not.toMatch(/data-actor-id="pc-kira"/);
+    expect(content).not.toContain('No one');
     await press('[data-action="sf-draft-confirm"][data-index="0"]');
-    expect(bondsOf('pc-ren')).toEqual(['Doss']);
-  });
-
-  it('No one on a free-flow card: the person is made with no bond on any sheet', async () => {
-    await routeEntityDrafts([DOSS], stored(), { actorId: 'pc-ren', narrationId: 'nar-move' }).then(syncChat);
-    await press('.sf-draft-no-bond');
     expect(rowStatus('Doss')).toBe('confirmed');
     expect(bondsOf('pc-ren')).toEqual([]);
-    expect(bondsOf('pc-kira')).toEqual([]);
   });
 });

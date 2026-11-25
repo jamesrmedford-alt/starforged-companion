@@ -59,6 +59,7 @@ import { narrateAndPostVowSwearing, suppressPcDirectedSocialMove, getRecentScene
 import {
   getPlayerActors,
   readVows,
+  readConnections,
   readMomentumState,
   completeVowItem,
   setSharedVowReward,
@@ -1215,8 +1216,11 @@ async function rollAndApply({
   // Aid Your Ally: the ally whose benefits a hit is (issue #325 W17).
   resolveAidedAlly(interpretation, rollerActor, { players: getPlayerActors() });
   // A bonded Test Your Relationship adds +1; a vow sworn to a connection
-  // +1, to a bonded one +2 (issue #325 W18).
-  const bondAdd = await enrichBondAdds(interpretation, { listConnections }).catch(err => {
+  // +1, to a bonded one +2 (issue #325 W18) — the roller's own connection,
+  // their bond Item (overhaul 4).
+  let rollerConnections = null;
+  try { rollerConnections = rollerActor ? readConnections(rollerActor) : null; } catch { rollerConnections = null; }
+  const bondAdd = await enrichBondAdds(interpretation, { listConnections, rollerConnections }).catch(err => {
     console.warn(`${MODULE_ID} | bond add enrichment failed:`, err?.message ?? err);
     return 0;
   });

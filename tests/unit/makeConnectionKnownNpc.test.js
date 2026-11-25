@@ -136,6 +136,14 @@ describe('issue #345 AA19 — Make a Connection with an NPC who already has a ca
   it("Ren's strong hit with Kira's connection Vance makes Vance Ren's connection too — a bond on Ren, no second card", async () => {
     await kirasDraft(VANCE, 'confirm');
     expect(cardsNamed('Vance Oduya'), 'Vance has a card (setup)').toHaveLength(1);
+    // A Confirm records the person (overhaul 4, D4): Kira's connection is her
+    // Make a Connection's — its hit's writer, here.
+    {
+      const host = table.actors.find(a => a?.name === 'Vance Oduya' && a.flags?.[MODULE_ID]?.entityType === 'connection');
+      const { registerConnectionOnActiveCharacter } = await table.client('gm-1').import('../../src/entities/entityExtractor.js');
+      await table.client('gm-1').run(() => registerConnectionOnActiveCharacter(host.flags[MODULE_ID].connection, { actorId: 'pc-pat', by: { move: 'make_a_connection' } }));
+      await table.settle();
+    }
     expect(bondNames('pc-pat'), "Vance is Kira's connection (setup)").toEqual(['Vance Oduya']);
 
     narration = 'Vance Oduya studies Ren a long moment, then nods: he will keep a berth open for him.';

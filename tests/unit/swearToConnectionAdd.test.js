@@ -64,8 +64,20 @@ beforeEach(() => {
   registerChatHook();
 });
 
-function world(connections) {
-  const kira = makeTestActor({ id: 'pc-kira', name: 'Kira', type: 'character', system: { heart: 2 } });
+/**
+ * A connection is the bond Item on the roller's sheet (overhaul 4 — the add
+ * is the roller's own connection's, enrichBondAdds): Kira holds one for each
+ * of `connections` unless `held` is false — then they are people she knows of.
+ */
+function world(connections, { held = true } = {}) {
+  const bondItem = (c) => {
+    const rec = c.flags[MODULE_ID].connection;
+    return { id: `bond-${c.id}`, name: rec.name, type: 'progress',
+      system: { subtype: 'bond', rank: 2, progress: 0, completed: rec.bonded === true },
+      flags: { [MODULE_ID]: { connectionId: rec._id } } };
+  };
+  const kira = makeTestActor({ id: 'pc-kira', name: 'Kira', type: 'character', system: { heart: 2 },
+    items: { contents: held ? connections.map(bondItem) : [] } });
   game.actors._setAll([kira, ...connections]);
   game.settings._store.set(`${MODULE_ID}.campaignState`, {
     ...CampaignStateSchema, sessionActive: true, pendingMove: false,
@@ -86,6 +98,13 @@ describe('Swear an Iron Vow to a connection', () => {
     const interp = await swearFrom(incitingCard('Dani Okoro'));
     expect(interp?.moveId).toBe('swear_an_iron_vow');
     expect(interp.adds ?? 0).toBe(1);
+  });
+
+  it('control: a vow sworn to a person Kira holds no connection with adds nothing (overhaul 4 — D5: the inciting target is a person)', async () => {
+    world([connectionCard('npc-dani', 'Dani Okoro', false)], { held: false });
+    const interp = await swearFrom(incitingCard('Dani Okoro'));
+    expect(interp?.moveId).toBe('swear_an_iron_vow');
+    expect(interp.adds ?? 0).toBe(0);
   });
 
   it('a vow sworn to a bonded connection adds +2', async () => {

@@ -118,13 +118,10 @@ export async function createConnection(data, campaignState, { persist = true } =
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);
-  // On the session record (issue #382): the card is the connection's host.
-  if (actor?.id) {
-    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.made", {
-      ref: { conn: actor.id, nar: data?.createdFromNarrationId ?? null },
-      d: { name: connection.name ?? "", rank: connection.rank ?? null },
-    })).catch(() => {});
-  }
+  // No `connection.made` here: the card is a person (FOLDER-002). The record
+  // tells a connection made where its bond Item is made
+  // (actorBridge.createCharacterBondItem, with what made it — overhaul 4,
+  // D12); a person recorded is `entity.confirmed` (entityExtractor.js).
   // Not awaited: a creator reads the new card in the turn this returns in
   // (whose portrait it is, with Auto-Seed NPC on), and a wait here let the
   // seed and the creator each make one.
