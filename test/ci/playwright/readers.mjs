@@ -64,6 +64,16 @@
 //   READERS_CAP_USD    a hard stop (default 2.00): when the budget refuses a
 //                      call the run stops and reports what was done.
 //   READERS_ONLY       case ids, comma-separated, for a pilot.
+//   READERS_BASELINE   a kept run's results.json: its readings of the arms
+//                      this run does not read are brought in as they were,
+//                      for the cases this run reads (one whose line or wanted
+//                      reading changed since is left out), and judged beside
+//                      this run's — a re-measure of the one reader set against
+//                      the two readers' last reading without paying for it
+//                      again (lib/readers.mjs baselineOf). Its tree is that
+//                      run's: the report says which commit.
+//   READERS_BASELINE_ARMS  the baseline's arms to bring in, comma-separated
+//                      (default: every arm of it this run does not read).
 //   READERS_COMMIT     the commit the run is recorded at (cloud.sh sets it).
 //   BASE_URL           the Foundry server (lib/foundry.mjs).
 //
@@ -94,7 +104,7 @@ import { createBudget } from "./lib/budget.mjs";
 import { questionsOf } from "./lib/review.mjs";
 import { thinkingOffFor } from "../../../src/narration/thinking.js";
 import {
-  OUTCOME, STATE_READ, armsOf, casesToRun, compareDesigns, contextMismatch, fightOf, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
+  OUTCOME, STATE_READ, armsOf, baselineOf, casesToRun, compareDesigns, contextMismatch, fightOf, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
 } from "./lib/readers.mjs";
 
 const list = (text, fallback) => {
@@ -112,6 +122,8 @@ const { arms: ARMS, problems: ARM_PROBLEMS } = armsOf(ARM_SPECS);
 const REPEATS   = Number(process.env.READERS_REPEATS || 1);
 const CAP_USD   = Number(process.env.READERS_CAP_USD || 2);
 const ONLY      = list(process.env.READERS_ONLY, []);
+const BASELINE  = process.env.READERS_BASELINE || null;
+const BASELINE_ARMS = list(process.env.READERS_BASELINE_ARMS, []);
 const QUESTIONS = questionsOf(process.env.READERS_QUESTIONS);
 // The dollar cap is the run's cap; this stops a run that is stuck.
 const CAP_MINUTES = 90;
@@ -489,6 +501,17 @@ async function main() {
   assert(cases.length, "no case to read");
   assert(!ARM_PROBLEMS.length, `READERS_ARMS can't run:\n  ${ARM_PROBLEMS.join("\n  ")}`);
   assert(ARMS.length, "READERS_ARMS names no arm");
+  // A baseline is read before the run: a run that cannot be judged as asked is not paid for.
+  const baseline = BASELINE ? baselineOf(readJson(path.resolve(BASELINE)), { cases, arms: BASELINE_ARMS, runArms: ARMS.map(a => a.id) }) : null;
+  assert(!baseline?.problems.length, `READERS_BASELINE can't be used:\n  ${baseline?.problems.join("\n  ")}`);
+  let baselineRun = null;
+  if (BASELINE) {
+    try { baselineRun = readJson(path.join(path.dirname(path.resolve(BASELINE)), "run.json")); } catch { baselineRun = null; }
+  }
+  const baselineMeta = baseline ? {
+    arms: baseline.arms, readings: baseline.readings, dropped: baseline.dropped,
+    from: baselineRun?.id ?? BASELINE, commit: baselineRun?.commit ?? null,
+  } : null;
   if (LIVE) {
     assert(API_KEY, "a live run needs ANTHROPIC_API_KEY (READERS_MODE=dry runs without one)");
     // A live run is paid for: it is given its questions in writing before it runs.
@@ -700,14 +723,15 @@ async function main() {
     });
     out.json("results.json", results);
 
-    const summary = summarise(results, { prices });
+    // This run's readings, and a baseline's beside them (READERS_BASELINE): results.json keeps this run's own.
+    const summary = summarise([...results, ...(baseline?.results ?? [])], { prices });
     const spend = LIVE ? budget.report() : null;
     const notSet = Object.values(world.contexts).flatMap(c => c.notSet);
     // The model the readers themselves ask for — the module's, whatever arm took the call.
     const own = [...new Set(requests.filter(r => readerOf(r.kind)).map(r => r.modelAsked ?? r.model).filter(Boolean))];
     out.text("report.md", report(summary, {
       runId, mode, startedAt: startedAt.toISOString(), commit: process.env.READERS_COMMIT || null, questions: QUESTIONS,
-      repeats: REPEATS, planned, stopped, strays: strays.length, notSet, thinking, own,
+      repeats: REPEATS, planned: planned + (baseline?.readings ?? 0), stopped, strays: strays.length, notSet, thinking, own, baseline: baselineMeta,
       dials: dials ? Object.fromEntries(Object.entries(dials).map(([key, value]) => [key.replace(/^pacing\.(dial\.)?/, ""), value])) : null,
     }));
     if (gm) await gm.page.screenshot({ path: path.join(dir, "end-gm.png") }).catch(() => {});
@@ -720,6 +744,8 @@ async function main() {
       commit: process.env.READERS_COMMIT || null,
       versions,
       arms: ARMS, repeats: REPEATS, only: ONLY.length ? ONLY : undefined,
+      // Readings brought in from a kept run, not read in this one (READERS_BASELINE).
+      baseline: baselineMeta ?? undefined,
       // The model the readers themselves ask for: an arm of that name sent their calls as they were.
       readersModel: own,
       // The `thinking` form each arm's calls carry to turn thinking off (null: none is sent).

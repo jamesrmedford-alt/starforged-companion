@@ -1362,7 +1362,11 @@ run of moves (`recentMoves`), the two named-move lines (`named`, read right
 only when rolled — `want.rolled`) and issue #383's kinds (`kind`), two lines
 each. Its cost criterion is the whole spend a line (the mean), with the median
 told beside it: the median sets the pacing reader's one call against a whole
-reading.
+reading. `READERS_BASELINE=<a kept run's results.json>` brings that run's
+readings of the arms this run does not read in beside this run's (a case
+changed since is left out; the report names the run and its commit), so the
+one reader re-measured alone is judged against the two readers' last reading
+without paying to read them again.
 
 ## Quench batch coupling — shared defaults and hooks
 
