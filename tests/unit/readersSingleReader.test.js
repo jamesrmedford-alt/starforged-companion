@@ -140,21 +140,27 @@ describe('validateCases — fights, named lines, a run of moves, a line only a r
   it('a named line says the move it names; a plain one still names none; recentMoves is a count; only a line wanting a move is held to a roll', () => {
     const ctx = { ahead: fight('in_control') };
     const c = (over) => ({ ...good, ...over });
+    // A named line in a fight: named by the move's id, wanting it alone, rolled.
     expect(validateCases(file([c({ id: 'n1', line: 'I Strike at her drive.', named: 'strike', recentMoves: 3, want: { moves: ['strike'], rolled: true } })], ctx))).toEqual([]);
-    expect(validateCases(file([c({ id: 'n2', line: 'I Strike at her drive.', named: true })], ctx))).toEqual([]);
     expect(validateCases(file([
       c({ id: 'p1', line: 'I Strike at her drive.' }),
-      c({ id: 'n3', line: 'I open up on her drive.', named: 'strike' }),
+      c({ id: 'n2', line: 'I Strike at her drive.', named: true }),
+      c({ id: 'n3', line: 'I open up on her drive.', named: 'strike', want: { moves: ['strike'], rolled: true } }),
       c({ id: 'n4', line: 'I Strike at her drive.', named: 'smite' }),
+      c({ id: 'n5', line: 'I Strike at her drive.', named: 'strike' }),
       c({ id: 'r1', recentMoves: 2.5 }),
+      c({ id: 'r2', recentMoves: 6 }),
       c({ id: 'w1', want: { none: true, rolled: true } }),
       c({ id: 'k1', kind: '' }),
     ], ctx))).toEqual([
       expect.stringMatching(/^case "p1": its line names Strike/),
-      'case "n3": its line does not name Strike',
-      'case "n4": named is true, or the id of the move its line names',
-      'case "r1": recentMoves is how many of the last decisions were moves — a whole number from 0 to 10',
-      'case "w1": want.rolled is true, and only for a line that wants a move',
+      'case "n2": named "true" is no move the module knows',
+      'case "n3": it is named for Strike, and its line does not name it',
+      'case "n4": named "smite" is no move the module knows',
+      'case "n5": a line that names Strike wants it alone, rolled (want: { moves: ["strike"], rolled: true })',
+      'case "r1": its recentMoves is a whole number from 0 to 5 (the moves of the last 5 lines)',
+      'case "r2": its recentMoves is a whole number from 0 to 5 (the moves of the last 5 lines)',
+      'case "w1": want.rolled is true, and for a wanted move',
       'case "k1": its kind is a name',
     ]);
   });
@@ -345,7 +351,7 @@ describe('report — the one reader\'s sections', () => {
     expect(text).toContain('| `one:claude-sonnet-5-5` | 5 (the line reader) |');
     // The limits say the fights are set by hand, and the density by the case.
     expect(text).toContain('A fight is one track with the character\'s position in it set by hand');
-    expect(text).toContain('filled with the moves a line\'s case says it follows (`recentMoves`)');
+    expect(text).toContain('and set, before a line whose case says it follows a run of moves (`recentMoves`), to that many moves of the last five');
   });
 });
 

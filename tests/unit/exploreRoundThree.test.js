@@ -274,13 +274,18 @@ describe('a player that has rolled is told when the roll was not the beat\'s (th
     a.act('a4', { action: 'say', text: 'I greet Tamsin Vey.' });
     expect(a.act('a5', { action: 'say', text: 'I ask her to be someone I can come back to.' }, right)).toMatchObject({ alert: '' });
     // Beat 24's road in the run: a step toward the vow read as Gather
-    // Information (a61–a62), then the milestone marked from its card (a63).
-    const b24 = CHARTER.beats.find(b => b.id === 'b24');
+    // Information (a61–a62), then the milestone marked from its card (a63) —
+    // walked on the beat as the run had it. Since the fourth live run the beat
+    // has the player find the proof out first, and wants the search (issue
+    // #383 #3): the same roll on it now raises nothing.
+    const b24 = { ...CHARTER.beats.find(b => b.id === 'b24'), wants: ['reach_a_milestone', 'fulfill_your_vow'] };
     const vow = { id: 'v1', vowId: 'v1', name: 'Find who is raiding the Cinder Expanse lanes', rank: 'dangerous', ticks: 8, completed: false };
     const b = walk(b24, tableOf({ pc: { vows: [vow] } }));
     const gathered = [moveCard('g1', 'Gather Information', 'Action: 4 + 3 = 7 | Challenge: 2, 9', 'weak_hit'), narratedAs('ng', 'g1', 'gather_information', 'weak_hit')];
     expect(b.act('a62', { action: 'click', label: 'Roll Gather Information' }, gathered, tableOf({ pc: { vows: [vow] } })).alert).toContain('Gather Information, a weak hit');
     expect(b.act('a63', { action: 'click', label: '⚑ Mark Progress on Vow' }, [], tableOf({ pc: { vows: [{ ...vow, ticks: 16 }] } })).alert, 'the vow moved: the stray roll is behind it').toBe('');
+    const now = walk(CHARTER.beats.find(x => x.id === 'b24'), tableOf({ pc: { vows: [vow] } }));
+    expect(now.act('a62', { action: 'click', label: 'Roll Gather Information' }, gathered, tableOf({ pc: { vows: [vow] } })).alert, 'the beat wants the search now').toBe('');
   });
 
   it(`after ${WAITS_BEFORE_TOLD} waits running on a beat that has not moved, it is told that too — and the last resort is unlocked`, () => {
@@ -602,7 +607,7 @@ describe('the expedition beat (b7a): off the charted lane, a waypoint looked ove
     expect(quoted(beat.tell)).toEqual(['Mark expedition progress', '🗺 Finish the Expedition']);
     for (const words of quoted(beat.tell)) expect(movesNamedIn(words), words).toEqual([]);
     expect(movesNamedIn(beat.tell).filter(m => m !== 'roll'), 'it speaks of a roll, and names no move').toEqual([]);
-    expect(movesNamedIn(beat.lastResort)).toEqual(['Undertake an Expedition']);
+    expect(movesNamedIn(beat.lastResort)).toEqual(['Undertake an Expedition', 'waypoint']);
     const scripted = CHARTER.rehearsal.filter(e => e.beat === beat.n);
     expect(scripted.map(e => e.move?.id ?? e.label)).toEqual(['undertake_an_expedition', 'explore_a_waypoint', 'Mark expedition progress', 'finish_an_expedition']);
     for (const e of scripted.filter(x => x.action === 'say')) expect(movesNamedIn(e.text), e.text).toEqual([]);

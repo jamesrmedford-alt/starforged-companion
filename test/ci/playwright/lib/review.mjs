@@ -297,8 +297,11 @@ const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; 
  * the hatch, eleven narrations running — and in the second "Tamsin's chair
  * creaks" closed seven of the last thirteen.
  *
- * For each session's narrations (the opening and closing scenes apart —
- * `repetitionOf` compares those):
+ * For each session's narrations of play (the opening and closing scenes apart —
+ * `repetitionOf` compares those — and the answers to `@scene` questions apart:
+ * an answer is a camera on what the story holds, and the fourth live run's
+ * session 3 had "light" in 15 of its 30 narrations — 15 of its 17 narrations
+ * of play, and none of its 13 answers):
  *
  *   words    the content words (four letters or more, no common word), by
  *            how many narrations hold each and the longest run of narrations
@@ -311,7 +314,10 @@ const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; 
  *            watching or still.
  *
  * `refrains` are the words and phrases in a third or more of the session's
- * narrations (REFRAIN_SHARE), and at least three; `worst` is the one in the
+ * narrations of play (REFRAIN_SHARE), and at least three — each with how many
+ * of the session's `@scene` answers hold it (`inAnswers`, of `sceneAnswers`:
+ * an answer is one by its card, `sceneResponse`, or by the scene question its
+ * step put); `worst` is the one in the
  * largest share of a session's, names apart (`name`: a word the session
  * never writes without its capital). A count to start reading from: it finds
  * what is said in the same words, not a device said in new ones each time.
@@ -321,13 +327,19 @@ const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; 
  */
 export function refrainsOf(messages = []) {
   const byPhase = new Map();
+  const answersOf = new Map();
+  const asked = new Set(messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).map(m => m.step));
+  const isAnswer = (m) => (m.card ?? []).includes("sceneResponse") || asked.has(m.step);
   for (const m of messages) {
     if (!m.narrator || m.vignette || !/^session-/.test(String(m.phase ?? ""))) continue;
+    const into = isAnswer(m) ? answersOf : byPhase;
+    if (!into.has(m.phase)) into.set(m.phase, []);
+    into.get(m.phase).push(m);
     if (!byPhase.has(m.phase)) byPhase.set(m.phase, []);
-    byPhase.get(m.phase).push(m);
   }
   const sessions = [];
   for (const [phase, narrations] of byPhase) {
+    const answers = answersOf.get(phase) ?? [];
     const n = narrations.length;
     const words = new Map();
     const grams = new Map();
@@ -357,10 +369,16 @@ export function refrainsOf(messages = []) {
         }
       }
     });
+    // The answers to `@scene` questions, apart: how many of them hold each word or phrase.
+    const answerHolds = (what) => answers.filter((m) => sentencesOf(m.text).some((sentence) => {
+      const toks = refrainTokens(sentence);
+      return what.includes(" ") ? ` ${toks.join(" ")} `.includes(` ${what} `) : toks.some(tk => tk.replace(/['’]s$/, "") === what);
+    })).length;
     const floor = Math.max(3, Math.ceil(n * REFRAIN_SHARE - 1e-9));
     const row = (what, hits) => ({
       what, in: hits.size, of: n, share: Number((hits.size / n).toFixed(3)), run: longestRun(hits, n),
       steps: [...new Set([...hits].sort((a, b) => a - b).map(i => narrations[i].step))], ...(isName(what) ? { name: true } : {}),
+      ...(answers.length ? { inAnswers: answerHolds(what) } : {}),
     });
     const byCount = (a, b) => b.in - a.in || b.run - a.run || a.what.localeCompare(b.what);
     const wordRows = [...words].filter(([, hits]) => hits.size >= 3).map(([w, hits]) => row(w, hits)).sort(byCount);
@@ -377,7 +395,7 @@ export function refrainsOf(messages = []) {
     });
     const counted = n >= REFRAIN_MIN_NARRATIONS;
     sessions.push({
-      phase, narrations: n, counted,
+      phase, narrations: n, counted, sceneAnswers: answers.length,
       words: wordRows.slice(0, 20), phrases: phraseRows.slice(0, 20),
       refrains: counted ? { words: wordRows.filter(r => r.in >= floor), phrases: phraseRows.filter(r => r.in >= floor) } : { words: [], phrases: [] },
       endings: { waiting: endings.filter(e => e.waiting).length, of: n, steps: endings.filter(e => e.waiting).map(e => ({ step: e.step, sentence: e.sentence })) },
@@ -394,9 +412,12 @@ function refrainsResult(r) {
   const own = (x) => [...x.refrains.words, ...x.refrains.phrases].filter(r => !r.name).length;
   const total = counted.reduce((n, x) => n + own(x), 0);
   const waiting = counted.reduce((n, x) => n + x.endings.waiting, 0);
-  const of = counted.reduce((n, x) => n + x.narrations, 0);
   const w = r.worst;
-  return `${w ? `"${w.what}" in ${w.in} of ${w.phase}'s ${w.of} narrations (${w.run} in a row)` : "nothing in a third of any session's narrations"}; `
+  const asked = (x) => (x?.sceneAnswers ? ` of play` : "");
+  const answers = (x, row) => (x?.sceneAnswers ? `; in ${row.inAnswers ?? 0} of its ${x.sceneAnswers} @scene answers, counted apart` : "");
+  const of = counted.reduce((n, x) => n + x.narrations, 0);
+  const worstSession = w ? counted.find(x => x.phase === w.phase) : null;
+  return `${w ? `"${w.what}" in ${w.in} of ${w.phase}'s ${w.of} narrations${asked(worstSession)} (${w.run} in a row${answers(worstSession, w)})` : "nothing in a third of any session's narrations"}; `
     + `${total} word(s) and phrase(s), names apart, in a third or more of a session's narrations (${counted.map(x => `${x.phase}: ${own(x)}`).join(", ")}); `
     + `${waiting} of ${of} narrations end on someone waiting, watching or still`;
 }
@@ -703,11 +724,55 @@ export function slipsOf(messages = []) {
 // ── what each line of play became ────────────────────────────────────────────
 
 const replyText = (exchange) => (exchange?.response?.content ?? []).map(c => c?.text ?? "").join("");
+/** The game's recover moves (the play kit: Sojourn, Heal, Hearten, Resupply, Repair). */
+const RECOVER_MOVE_IDS = ["sojourn", "heal", "hearten", "resupply", "repair"];
 const replyJson = (exchange) => {
   const found = replyText(exchange).match(/\{[\s\S]*\}/);
   if (!found) return null;
   try { return JSON.parse(found[0]); } catch { return null; }
 };
+/** A reader's account that it narrated a recovery because there was nothing to recover — its own, or the module's (router.js nothingToRecover: "[nothing to recover: …]"). */
+const NOTHING_TO_RECOVER = /\[nothing to recover\b|\bnothing (?:(?:for \w+ )?to (?:recover|heal|restock|restore|mend|treat|repair|resupply|hearten)|left to (?:recover|heal|restock|restore|mend))\b/i;
+/** The meter a reading speaks of, by the words it uses for it, and the impact that marks it spent. */
+const RECOVERY_METERS = [
+  { meter: "health", impact: "wounded", said: /\b(?:heal(?:s|ed|ing)?|health|wounds?|wounded|injur(?:y|ies|ed))\b/i, line: /\bHealth (\d+) of (\d+)(?: \(([^)]*)\))?/ },
+  { meter: "spirit", impact: "shaken", said: /\b(?:hearten|spirit|shaken)\b/i, line: /\bSpirit (\d+) of (\d+)(?: \(([^)]*)\))?/ },
+  { meter: "supply", impact: "unprepared", said: /\b(?:resuppl(?:y|ies|ied|ying)|supply|supplies|restock(?:s|ed|ing)?|unprepared)\b/i, line: /\bSupply (\d+) of (\d+)(?: \(([^)]*)\))?/ },
+  { meter: "integrity", impact: "battered", said: /\b(?:repair(?:s|ed|ing)?|integrity|hull|battered)\b/i, line: /\bintegrity (\d+) of (\d+)(?: \(([^)]*)\))?/ },
+];
+/**
+ * Whether a line the pacing reader narrated was rightly narrated because the
+ * recovery it set about had nothing to recover: the reading says so, of the
+ * meters it names, and the sheet the reader was shown — its SITUATION block
+ * (src/moves/situation.js renderSituation), in the request it read — holds
+ * each of those full and its impact clear. The meters, or null: a reading
+ * that names none, or one the sheet does not bear out, is no such thing. The
+ * fourth live run's beat 22 came with health and supply full, and its eight
+ * lines read so were counted as misses. Pure.
+ *
+ * @param {string|null} reasoning — the pacing reader's
+ * @param {string} request — the text it read (its user message)
+ * @returns {string[]|null}
+ */
+export function nothingToRecoverOf(reasoning, request) {
+  if (!NOTHING_TO_RECOVER.test(String(reasoning ?? ""))) return null;
+  const named = RECOVERY_METERS.filter(m => m.said.test(reasoning));
+  if (!named.length) return null;
+  const text = String(request ?? "");
+  const at = text.indexOf("SITUATION — ");
+  if (at < 0) return null;
+  const rest = text.slice(at);
+  const end = rest.search(/\n\n|\n## /);
+  const sheet = end < 0 ? rest : rest.slice(0, end);
+  for (const m of named) {
+    const read = m.line.exec(sheet);
+    if (!read) return null;
+    const marked = String(read[3] ?? "").split(",").map(s => s.trim().toLowerCase()).includes(m.impact);
+    if (Number(read[1]) < Number(read[2]) || marked) return null;
+  }
+  return named.map(m => m.meter);
+}
+
 /** The pacing reader's reply to a line: whether it is a move, one offered, or narration. */
 export function pacingReadOf(exchange) {
   const j = replyJson(exchange);
@@ -735,6 +800,10 @@ export function moveReadOf(exchange) {
  *   rolled    the line was made a move        offered   a move was offered on a button
  *   narrated  narrated, and nothing offered   unknown   no reading was recorded for it
  *
+ * A line whose beat wants a recovery, narrated because the sheet had nothing
+ * for the recovery it set about (`nothingToRecover`: the meters, as the
+ * reader said and its sheet bore out — nothingToRecoverOf), is read right.
+ *
  * A count to start reading from: whether a line *should* have been a move is
  * the charter's say for its move beats and the reader's everywhere else.
  *
@@ -754,7 +823,8 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     const question = asks.some(p => isProbeLine(m.text, p)) && (beat ? beat.check?.type === "probesAsked" : /\?\s*$/.test(m.text));
     const wanted = !beat || question || nth <= (beat.setupLines ?? 0) ? []
       : [...new Set([...(beat.wants ?? []), ...(beat.check?.moves ?? []), ...(beat.check?.move ? [beat.check.move] : [])])];
-    const pacing = pacingReadOf(call(m.step, /classifyInput$/));
+    const pacingCall = call(m.step, /classifyInput$/);
+    const pacing = pacingReadOf(pacingCall);
     const read = moveReadOf(call(m.step, /interpretMove$/));
     let became = "unknown";
     if (pacing?.decision === "MOVE") became = read?.noMove ? (pacing.suggested ? "offered" : "narrated") : "rolled";
@@ -762,9 +832,11 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     else if (pacing) became = "narrated";
     else if (read?.moveId) became = "rolled";
     const move = became === "rolled" ? (read?.moveId ?? pacing?.suggested ?? null) : became === "offered" ? (pacing?.suggested ?? null) : null;
+    const recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id)) ? nothingToRecoverOf(pacing?.reasoning, pacingCall?.user) : null;
     return {
       step: m.step, beat: state?.n ?? null, text: m.text, question, named: movesNamedIn(m.text), became, move, wanted,
-      right: wanted.length ? (!!move && wanted.includes(move)) : null, reasoning: pacing?.reasoning ?? null,
+      right: wanted.length ? (!!move && wanted.includes(move)) || !!recovery : null, reasoning: pacing?.reasoning ?? null,
+      ...(recovery ? { nothingToRecover: recovery } : {}),
     };
   });
   const wanting = lines.filter(l => l.wanted.length);
@@ -774,7 +846,8 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     rolled: list.filter(l => l.became === "rolled" && l.right).length,
     offered: list.filter(l => l.became === "offered" && l.right).length,
     anotherMove: list.filter(l => (l.became === "rolled" || l.became === "offered") && !l.right).length,
-    narrated: list.filter(l => l.became === "narrated").length,
+    narrated: list.filter(l => l.became === "narrated" && !l.nothingToRecover).length,
+    nothingToRecover: list.filter(l => l.nothingToRecover).length,
     unknown: list.filter(l => l.became === "unknown").length,
   });
   const unasked = lines.filter(l => !l.wanted.length && !l.question);
@@ -802,8 +875,8 @@ function speedResult(speed) {
 function plainLinesResult(f) {
   const w = f.wanted;
   const parts = [
-    `${w.lines} line(s) where a move was wanted: ${w.rolled} rolled, ${w.offered} offered it, ${w.anotherMove} read as another move, ${w.narrated} narrated with nothing offered${w.unknown ? `, ${w.unknown} with no reading recorded` : ""}`,
-    `${f.named.length} line(s) named a move${f.named.length ? ` (plain lines alone: ${f.plain.rolled + f.plain.offered} of ${f.plain.lines} read)` : ""}`,
+    `${w.lines} line(s) where a move was wanted: ${w.rolled} rolled, ${w.offered} offered it, ${w.anotherMove} read as another move, ${w.narrated} narrated with nothing offered${w.nothingToRecover ? `, ${w.nothingToRecover} rightly narrated with nothing to recover` : ""}${w.unknown ? `, ${w.unknown} with no reading recorded` : ""}`,
+    `${f.named.length} line(s) named a move${f.named.length ? ` (plain lines alone: ${f.plain.rolled + f.plain.offered + (f.plain.nothingToRecover ?? 0)} of ${f.plain.lines} read)` : ""}`,
     `${f.lastResort.length} beat(s) at last resort`,
     `${f.questionsAsPlay.lines} memory question(s) asked as play, ${f.sceneQuestions} as @scene`,
   ];
@@ -991,7 +1064,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ...(setPieces?.totals.scenes || setPieces?.spotlights.length ? [["Set-pieces", setPiecesResult(setPieces), "each opening, closing and spotlight call: its MATERIAL's numbered results, and the words its reply's fact block gave for each (`builtFrom`) found in its prose; each Begin card's spotlight roll followed by its cutaway or by the note that it is the table's to envision", "high for the arithmetic; whether a result is in the scene recognisably, and not only in the words given, is for the reading"]] : []),
-      ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations, the opening and closing scenes apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
+      ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations of play, the opening and closing scenes and the @scene answers apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
       ...(recapCites?.totals.recaps ? [["Recap — what it rests on", recapCitesResult(recapCites), "each sentence of each campaign recap the table held, beside the lines of its source it cites: the cache's ids (`campaignRecapCache.cites`) against the recap's recorded request", "high for the ids; whether a sentence says only what its lines say is for the reading"]] : []),
       ...(recordSizes?.ends.length || recordSizes?.last?.pages.length ? [["Record sizes", recordSizesResult(recordSizes), "each Session Log page's `sessionRecord` as JSON, in characters, at the step each session closed and at the run's end", "high"]] : []),
       ["Speed", speed ? speedResult(speed) : "not recorded", "each call's latency; the time from a line of play, and from a scene question, to the first narration after it", "high"],
@@ -1068,11 +1141,11 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
   }
   if (refrains?.sessions.some(x => x.counted)) {
     out.push("## Refrains — what each session's narrations keep returning to", "",
-      "The words and the phrases that are in a third or more of a session's narrations (and at least three), with the longest run of narrations in a row that hold each — and how the narrations end. A name (a word the session never writes without its capital) is listed as one: who a session is about is no refrain. The opening and closing scenes are apart (above). A count to start reading from: what is said in the same words.", "");
+      "The words and the phrases that are in a third or more of a session's narrations of play (and at least three), with the longest run of narrations in a row that hold each — and how the narrations end. A name (a word the session never writes without its capital) is listed as one: who a session is about is no refrain. The opening and closing scenes are apart (above), and so are the answers to `@scene` questions — an answer is a camera on what the story holds; how many of them hold each is said beside it. A count to start reading from: what is said in the same words.", "");
     for (const x of refrains.sessions.filter(y => y.counted)) {
       const rows = [...x.refrains.words.map(r => ["word", r]), ...x.refrains.phrases.map(r => ["phrase", r])];
-      out.push(`### ${x.phase} — ${x.narrations} narrations`, "");
-      if (rows.length) out.push(table(["", "What", "In", "Longest run", "At"], rows.map(([kind, r]) => [r.name ? "name" : kind, r.what, `${r.in} of ${r.of} (${pct(r.share)})`, r.run, r.steps.join(" ")])), "");
+      out.push(`### ${x.phase} — ${x.narrations} narrations${x.sceneAnswers ? ` of play, and ${x.sceneAnswers} @scene answers counted apart` : ""}`, "");
+      if (rows.length) out.push(table(["", "What", "In", "Longest run", "At"], rows.map(([kind, r]) => [r.name ? "name" : kind, r.what, `${r.in} of ${r.of} (${pct(r.share)})${x.sceneAnswers ? `; ${r.inAnswers ?? 0} of ${x.sceneAnswers} answers` : ""}`, r.run, r.steps.join(" ")])), "");
       else out.push("Nothing is in a third of them.", "");
       const below = x.phrases.filter(r => !x.refrains.phrases.includes(r)).slice(0, 6);
       if (below.length) out.push(`Phrases in fewer: ${below.map(r => `"${r.what}" ${r.in} (${r.steps.join(" ")})`).join("; ")}.`, "");
@@ -1110,7 +1183,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       "A player is never made to name a move: a plain line that sets about one should be rolled, or offered it on a button. Each line the player typed that was not a command or a scene question — how it was read, and whether its beat wanted a move.", "",
       table(["At", "Beat", "Line", "Named", "Became", "Move", "Wanted"], freeform.lines.map(l => [
         l.step, l.beat ?? "", cell(l.text.slice(0, 140)), l.named.join(", "),
-        `${l.became}${l.question ? " (a memory question asked as play)" : ""}${l.right === false ? " — **not what was wanted**" : ""}`,
+        `${l.became}${l.question ? " (a memory question asked as play)" : ""}${l.nothingToRecover ? ` — right: nothing to recover (${l.nothingToRecover.join(", ")} full)` : ""}${l.right === false ? " — **not what was wanted**" : ""}`,
         l.move ?? "", l.wanted.join(" / "),
       ])), "");
     if (freeform.lastResort.length) out.push(`Beats that came to their last resort (the move named, after plain lines brought nothing): ${freeform.lastResort.join(", ")}.`, "");

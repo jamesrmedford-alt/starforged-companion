@@ -64,9 +64,12 @@ export const DECISION = Object.freeze({
 /**
  * What a reading comes to, against the reading its line should get. A line
  * that wants a move: the move rolled, the move offered on a button, another
- * move rolled, another move offered, or nothing. A control — a line that
- * makes no move: narrated, a move offered, or a move rolled. A reading a
- * reader's call failed on is none of these and is counted apart.
+ * move rolled, another move offered, or nothing — and a line that wants its
+ * move rolled (`want.rolled`: one that names it — the pacing reader's own
+ * rule, A LINE THAT NAMES ITS MOVE ASKS FOR IT) is not read when the move is
+ * only offered. A control — a line that makes no move: narrated, a move
+ * offered, or a move rolled. A reading a reader's call failed on is none of
+ * these and is counted apart.
  */
 export const OUTCOME = Object.freeze({
   ROLLED:          "rolled",
@@ -185,6 +188,10 @@ export function positionLegal(moveId, position) {
   const other = FIGHT_POSITIONS.find(p => p !== position);
   return !POSITION_MOVES[other].includes(moveId);
 }
+/** The density window a new world's pacing reads (the `pacing.densityWindow` setting's default): a case's recent moves are a count within it. */
+const DENSITY_WINDOW = 5;
+/** The vow moves a control may say its line claims the step of, where its scene refutes the claim (`refutes`). */
+const STEP_MOVES = ["reach_a_milestone", "fulfill_your_vow"];
 
 /** What a wanted move needs its context to hold, or null. */
 function contextProblem(moveId, state) {
@@ -213,16 +220,21 @@ function contextProblem(moveId, state) {
  * that is no scene, a sheet that is no sheet (a meter off its scale, an
  * impact the block does not name), a ship's state with no ship in the world,
  * a case in a context the list does not have, a move id the module does not
- * know, a line that names a move or uses a rules word (unless the case says
- * it does: `named`, true or the move's id — the named-move-after-a-run lines
- * of issue #383), a case that wants neither a move nor none, an id used
- * twice, a wanted move its context cannot hold — a recovery move with
- * nothing on the sheet to recover among them, a position's move in a fight
- * where the character is in the other — a control that says its line is a
- * recovery with nothing to recover (`nothingToRecover: "heal"`) in a context
- * whose sheet has something, a fight that does not give the character's
- * position, a `recentMoves` that is no count, and a `want.rolled` on a
- * control.
+ * know, a line that names a move or uses a rules word, a case that wants
+ * neither a move nor none, an id used twice, a wanted move its context cannot
+ * hold — a recovery move with nothing on the sheet to recover among them, a
+ * position's move in a fight where the character is in the other — a
+ * control that says its line is a recovery with nothing to recover
+ * (`nothingToRecover: "heal"`) in a context whose sheet has something, and a
+ * fight that does not give the character's position. And, for the cases that
+ * measure what a plain line is not: a line may name its move only where the
+ * case says so (`named`: the move's id — a move named at the last resort),
+ * and then names that move, wants it alone, and wants it rolled
+ * (`want.rolled`); `want.rolled` is for a wanted move only; a case read after
+ * a run of moves (`recentMoves`) gives a whole number within the density
+ * window; a control that says its line claims a vow's step its scene refutes
+ * (`refutes: "reach_a_milestone"`) has a vow in its context; and a case's
+ * `kind` (the issue #383 kind it measures) is a name.
  *
  * @param {{ world?: Object, contexts?: Object, cases?: Object[] }} file
  * @returns {string[]}
@@ -291,22 +303,29 @@ export function validateCases(file) {
     if (typeof c?.family !== "string" || !c.family) problems.push(`${at}: it has no family`);
     const context = contexts[c?.context];
     if (!context) problems.push(`${at}: unknown context "${c?.context}"`);
-    if (typeof c?.line !== "string" || !c.line.trim()) problems.push(`${at}: it has no line`);
-    else if (c.named === undefined) {
-      const named = movesNamedIn(c.line);
-      if (named.length) problems.push(`${at}: its line names ${named.join(", ")} — a plain line names no move and uses no rules word`);
-    } else if (c.named !== true && !(typeof c.named === "string" && Object.hasOwn(MOVES, c.named))) {
-      problems.push(`${at}: named is true, or the id of the move its line names`);
-    } else if (typeof c.named === "string" && !movesNamedIn(c.line).includes(moveLabel(c.named))) {
-      problems.push(`${at}: its line does not name ${moveLabel(c.named)}`);
-    }
-    if (c?.recentMoves !== undefined && !(Number.isInteger(c.recentMoves) && c.recentMoves >= 0 && c.recentMoves <= 10)) {
-      problems.push(`${at}: recentMoves is how many of the last decisions were moves — a whole number from 0 to 10`);
-    }
-    if (c?.kind !== undefined && !(typeof c.kind === "string" && c.kind.trim())) problems.push(`${at}: its kind is a name`);
     const none = c?.want?.none === true;
     const moves = c?.want?.moves;
-    if (c?.want?.rolled !== undefined && (c.want.rolled !== true || none)) problems.push(`${at}: want.rolled is true, and only for a line that wants a move`);
+    if (typeof c?.line !== "string" || !c.line.trim()) problems.push(`${at}: it has no line`);
+    else if (c.named !== undefined) {
+      // A line that names its move on purpose: the move it names, wanted alone, and rolled.
+      const label = Object.hasOwn(MOVES, c.named) ? moveLabel(c.named) : null;
+      if (!label) problems.push(`${at}: named "${c.named}" is no move the module knows`);
+      else if (!movesNamedIn(c.line).includes(label)) problems.push(`${at}: it is named for ${label}, and its line does not name it`);
+      else if (!(Array.isArray(moves) && moves.length === 1 && moves[0] === c.named && c.want?.rolled === true)) problems.push(`${at}: a line that names ${label} wants it alone, rolled (want: { moves: ["${c.named}"], rolled: true })`);
+    } else {
+      const named = movesNamedIn(c.line);
+      if (named.length) problems.push(`${at}: its line names ${named.join(", ")} — a plain line names no move and uses no rules word`);
+    }
+    if (c?.want?.rolled !== undefined && !(c.want.rolled === true && Array.isArray(moves) && moves.length)) problems.push(`${at}: want.rolled is true, and for a wanted move`);
+    if (c?.recentMoves !== undefined && !(Number.isInteger(c.recentMoves) && c.recentMoves >= 0 && c.recentMoves <= DENSITY_WINDOW)) {
+      problems.push(`${at}: its recentMoves is a whole number from 0 to ${DENSITY_WINDOW} (the moves of the last ${DENSITY_WINDOW} lines)`);
+    }
+    if (c?.refutes !== undefined) {
+      if (!none) problems.push(`${at}: refutes is for a control (want.none)`);
+      else if (!STEP_MOVES.includes(c.refutes)) problems.push(`${at}: refutes names one of ${STEP_MOVES.join(", ")} — not "${c.refutes}"`);
+      else if (context?.state && !context.state.vow?.name) problems.push(`${at}: it claims a step of ${c.refutes} and its context holds no vow`);
+    }
+    if (c?.kind !== undefined && !(typeof c.kind === "string" && c.kind.trim())) problems.push(`${at}: its kind is a name`);
     if (none && moves !== undefined) problems.push(`${at}: it wants both a move and none`);
     else if (!none && !(Array.isArray(moves) && moves.length)) problems.push(`${at}: it wants neither a move (want.moves) nor none (want.none)`);
     else if (c.nothingToRecover !== undefined) {
@@ -536,7 +555,7 @@ function readingOfLine({ line = null, lineError = null } = {}) {
 /**
  * A reading against the reading its line should get.
  *
- * @param {{ moves?: string[], none?: boolean }} want
+ * @param {{ moves?: string[], none?: boolean, rolled?: boolean }} want
  * @param {ReturnType<typeof readingOf>} reading
  * @returns {string} an OUTCOME
  */
@@ -545,11 +564,9 @@ export function scoreCase(want, reading) {
   const control = want?.none === true;
   const wanted = new Set(control ? [] : want?.moves ?? []);
   if (reading.move) return control ? OUTCOME.MOVE_ROLLED : wanted.has(reading.move) ? OUTCOME.ROLLED : OUTCOME.ANOTHER_ROLLED;
-  if (reading.offered) {
-    if (control) return OUTCOME.MOVE_OFFERED;
-    if (!wanted.has(reading.offered)) return OUTCOME.ANOTHER_OFFERED;
-    return want?.rolled === true ? OUTCOME.OFFERED_NOT_ROLLED : OUTCOME.OFFERED;
-  }
+  // A line that names its move asks for the roll: offered, it is left to ask again.
+  if (reading.offered && want?.rolled === true && wanted.has(reading.offered)) return OUTCOME.OFFERED_NOT_ROLLED;
+  if (reading.offered) return control ? OUTCOME.MOVE_OFFERED : wanted.has(reading.offered) ? OUTCOME.OFFERED : OUTCOME.ANOTHER_OFFERED;
   return control ? OUTCOME.NARRATED : OUTCOME.NOTHING;
 }
 
@@ -574,6 +591,7 @@ function tally(list) {
   const offered = count(wanting, r => r.outcome === OUTCOME.OFFERED);
   const anotherRolled = count(wanting, r => r.outcome === OUTCOME.ANOTHER_ROLLED);
   const anotherOffered = count(wanting, r => r.outcome === OUTCOME.ANOTHER_OFFERED);
+  const offeredNotRolled = count(wanting, r => r.outcome === OUTCOME.OFFERED_NOT_ROLLED);
   const right = count(controls, r => r.outcome === OUTCOME.NARRATED);
   // The dials' share (the switch's criterion 8): of the lines read right
   // whose move makes an action roll — a stat; the no-roll moves are offered
@@ -587,8 +605,7 @@ function tally(list) {
     wanting:  wanting.length,
     read:     rolled + offered,
     readRate: rate(rolled + offered, wanting.length),
-    rolled, offered,
-    offeredNotRolled: count(wanting, r => r.outcome === OUTCOME.OFFERED_NOT_ROLLED),
+    rolled, offered, offeredNotRolled,
     actionRead, actionRolled, rolledShare: rate(actionRolled, actionRead),
     wrong:    anotherRolled + anotherOffered,
     anotherRolled, anotherOffered,
@@ -667,7 +684,7 @@ function fightsOf(list) {
   };
 }
 
-const SEVERITY = [OUTCOME.ROLLED, OUTCOME.OFFERED, OUTCOME.NARRATED, OUTCOME.ANOTHER_OFFERED, OUTCOME.ANOTHER_ROLLED,
+const SEVERITY = [OUTCOME.ROLLED, OUTCOME.OFFERED, OUTCOME.OFFERED_NOT_ROLLED, OUTCOME.NARRATED, OUTCOME.ANOTHER_OFFERED, OUTCOME.ANOTHER_ROLLED,
   OUTCOME.MOVE_OFFERED, OUTCOME.MOVE_ROLLED, OUTCOME.NOTHING, OUTCOME.FAILED];
 
 /** The outcome most of a line's repeats came to (a tie: the worse one). */
@@ -833,7 +850,7 @@ const outOf = (n, total) => (total ? `${n} of ${total} (${pct(n / total)})` : "�
 const secs = (ms) => (ms == null ? "–" : `${(ms / 1000).toFixed(1)} s`);
 const label = (id) => (id ? moveLabel(id) : "no move");
 const quote = (text) => (text ? ` — “${String(text).replace(/\s+/g, " ").trim()}”` : "");
-const wants = (want) => (want?.none === true ? "no move" : (want?.moves ?? []).map(label).join(" or "));
+const wants = (want) => (want?.none === true ? "no move" : `${(want?.moves ?? []).map(label).join(" or ")}${want?.rolled === true ? ", rolled" : ""}`);
 
 /** One reading in words: what each reader said, and why. */
 function readingLine(reading) {
@@ -981,6 +998,7 @@ export function report(summary, meta = {}) {
     `- **${OUTCOME.OFFERED}** — the line is narrated with a wanted move on the card's button: the pacing reader offered it, or it called a move, the move reader read none (or was unsure), and the move it had named is offered.`,
     `- **${OUTCOME.ANOTHER_ROLLED}** / **${OUTCOME.ANOTHER_OFFERED}** — a move that is not one the line wants.`,
     `- **${OUTCOME.NOTHING}** — narrated with no move offered: the player is left to ask for one.`,
+    `- **${OUTCOME.OFFERED_NOT_ROLLED}** — a line that names its move wants it rolled (the pacing reader's own rule: a line that names its move asks for it, at any dial); offered on a button instead, it is not read.`,
     `- A control: **${OUTCOME.NARRATED}** (right), **${OUTCOME.MOVE_OFFERED}**, **${OUTCOME.MOVE_ROLLED}**.`,
     `- **${OUTCOME.FAILED}** — a reader's call failed or its reply could not be read; not scored, and not in any rate.`, "",
     "**Rolled and offered both count as read**: either way the player gets the right move without naming it. Offered costs them a click, and the line is narrated first.", "");
@@ -994,7 +1012,7 @@ export function report(summary, meta = {}) {
   for (const arm of arms) {
     const t = byArm[arm];
     const another = t.wrong ? `${t.wrong} (${t.anotherRolled} rolled${t.mischief ? `, ${t.mischief} of them on purpose` : ""}; ${t.anotherOffered} offered)` : "0";
-    out.push(`| \`${arm}\` | ${t.wanting} | **${outOf(t.read, t.wanting)}** | ${t.rolled} | ${t.offered} | ${another} | ${t.nothing} | ${outOf(t.controlsRight, t.controls)} | ${t.failed} |`);
+    out.push(`| \`${arm}\` | ${t.wanting} | **${outOf(t.read, t.wanting)}** | ${t.rolled} | ${t.offered}${t.offeredNotRolled ? ` (and ${t.offeredNotRolled} named, offered, not rolled)` : ""} | ${another} | ${t.nothing} | ${outOf(t.controlsRight, t.controls)} | ${t.failed} |`);
   }
   out.push("");
   if (arms.length > 1 && summary.agreement.lines) {
@@ -1077,7 +1095,7 @@ export function report(summary, meta = {}) {
         : " No fight is open in any context read: the readers' rules for an open fight are not exercised."),
     "- **The sheet is set by hand.** Each context's health, spirit, supply and impacts, its vow's progress and the ship's integrity are written to the world before its lines are read, and both readers are told them (their SITUATION block). A table's sheet moves under play: no line here follows a roll that changed it"
       + `${meta.notSet?.length ? ` (not set in the world: ${[...new Set(meta.notSet.map(n => n.key))].join(", ")})` : ""}.`,
-    "- **Each line is read on its own**: the count of recent moves is set before every reading — cleared, or filled with the moves a line's case says it follows (`recentMoves`) — so a line follows a run of rolls only where its case says so.",
+    "- **Each line is read on its own**: the count of recent moves is cleared before every reading — and set, before a line whose case says it follows a run of moves (`recentMoves`), to that many moves of the last five. Nothing else of a run of rolls is set: no move card is in the recent scene.",
     "- **Only the model changes between arms of one design.** Each arm reads the same prompts as the others of its design, written for the readers' own model"
       + `${meta.own?.length ? ` (${meta.own.map(m => `\`${m}\``).join(", ")})` : ""}; a prompt tuned to another model might read differently.`,
     "- **No arm thinks first.** The readers turn thinking off, each model in its own form"

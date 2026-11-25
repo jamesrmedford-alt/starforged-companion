@@ -737,7 +737,22 @@ and the rules that go with each:
   all along. Beats 3, 19 and 23 now require `{ "type": "connectionMade",
   "name": "Tamsin Vey" }` (she is the character's connection, whichever road
   made her one); beat 24 still needs beat 23's bond. The re-score asks it the
-  same way (`lib/longrun.mjs` `recheckBeats`). What happened in the step
+  same way (`lib/longrun.mjs` `recheckBeats`).
+- **A beat is written for the world the beats before it leave**, and its
+  player is told nothing that world does not bear out. The fourth live run's
+  recovery beat asked for the medkit or the market with health and supply
+  full (spirit and the hull were what the fight had spent): its lines tended
+  wounds the sheet did not hold, and the narrator wrote them in. The beat now
+  names no wound: the observer's note says what of the sheet is spent
+  (`sheetSpent` — the meters, their impacts and the command vehicle's
+  integrity, which the table read now keeps), every recover move is among its
+  `wants` (Repair was not, and `recovered` adds the beat's recover moves to its
+  check's), and a player note says to claim no hurt the sheet does not show.
+  Its proof beat had the player claim a proof nothing in the story had found
+  (a70, refuted by the narration it produced): it now asks for the finding
+  first, and for nothing claimed beyond what the narrator has told. Its fight
+  was told off Bleakhold's ring one step after the ship had docked: it is
+  fought at the ring now, the ship in her berth. What happened in the step
   that finished a beat belongs to that beat: the next one's window opens after
   it.
 - **Seven decisive rolls are scripted, the rest are real, all are recorded**
@@ -784,7 +799,13 @@ and the rules that go with each:
   rank and by box, the two mirrors (bond Item ↔ card, vow link ↔ card's name),
   an effect landing once on the roller (a move's momentum, a milestone, a
   suffer cost, a recovery, a burn), a session's momentum once each way, the
-  lock free once settled, every line answered once — and an expedition's
+  lock free once settled, every line answered once — a result held for Keep
+  or Burn and kept by the roller's next line is narrated after that line, and
+  that is a finding of its own (`held-narrated-in-turn`), not a second answer
+  to the line: the fourth live run's a41 was failed `answered-once` for a38's
+  Enter the Fray told after it (known-issues
+  HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE; its kept replay still records
+  `answered-once`, as its own checks found) — and an expedition's
   (`expedition-progress`: one mark of its rank for a hit that undertakes it,
   none and no track for a miss, one for a waypoint's "Mark expedition
   progress"; its finish scored by its boxes, `progress-score`, and paid on
@@ -1166,8 +1187,10 @@ Five rules for the reading that follows, each from that review:
   one device carrying a third of the session. The scorecard's "Refrains" row
   and section (`refrainsOf`, `lib/review.mjs`) count the part of it that is
   said in the same words: per session, the content words and the phrases in
-  a third or more of its narrations with the longest run of narrations in a
-  row that hold each ("over the hatch": 17 of the third run's session 3's
+  a third or more of its narrations of play — the `@scene` answers apart,
+  with how many of them hold each (the fourth live run's session 3 had
+  "light" in 15 of 30 narrations: 15 of its 17 of play, none of its 13
+  answers) — with the longest run of narrations in a row that hold each ("over the hatch": 17 of the third run's session 3's
   23, eleven running), names apart, and the narrations that end on someone
   waiting, watching or still. A device said in new words each time is still
   for the reading.
@@ -1273,14 +1296,22 @@ line goes unread.
   (`lib/review.mjs` → `freeformOf`) are the measure: for every line of play,
   the pacing reader's decision and the move chosen — from the readers' own
   replies in the run's recording — the move its beat wanted, and whether the
-  line named a move (`lib/moveNames.mjs`: a count to start reading from).
+  line named a move (`lib/moveNames.mjs`: a count to start reading from — a
+  move's name as the rules write it, the rules' own words, and a move's own
+  word said alone, `MOVE_WORDS`: the fourth live run's "toward the waypoint"
+  at a29 was not counted; a test holds every word of every name in
+  `src/schemas.js` `MOVES` to that list or to plain English). A line whose
+  beat wants a recovery, narrated because the sheet had nothing for the one
+  it set about, is read right — by the reader's own reasoning, borne out by
+  the SITUATION block in the request it read (`nothingToRecoverOf`): the
+  fourth live run's eight such readings were counted as misses.
   `rescore.mjs` applies it to a kept run by what its beats want now.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;
 `playwright/readers.mjs`, `readers/plain-lines.json`, `lib/readers.mjs`) asks
-the same question without a table: about fifty plain lines of play, none
-naming a move (a unit test holds the list to that), each with the reading it
-should get — a move, one of two, or none — put through the pacing reader
+the same question without a table: about seventy-five lines of play, none
+naming a move (a unit test holds the list to that) save the two marked `named`,
+each with the reading it should get — a move, one of two, or none — put through the pacing reader
 (`decidePacing`) and, where that calls a move, the move reader
 (`interpretMove`, as `readMove` calls it), in the live world with each line's
 context set (the scene's last narration, the scene frame, the place, and the
@@ -1303,7 +1334,19 @@ right and Sonnet 5.5 77, and a step toward a vow said in the fiction was read
 by neither (known-issues PLAIN-LINE-GOES-UNREAD). On that run the readers were
 moved to Sonnet 5.5 (decisions.md → "The readers run on Sonnet 5.5"). Run it
 after a change to either reader's prompt, before a live run is bought to see
-the same thing.
+the same thing. **The lines the fourth live run asked for** (issue #383) are
+the measure for the readers' overhaul, and have not been read live: asking a
+connection the sheet holds for a tie (`trust-1`, `trust-2`: talk) beside
+giving her something of worth (`develop-5`: Develop Your Relationship); a
+proof claimed in the run's own shape where the scene bears it out
+(`claim-supported`: the milestone) and where the scene denies it
+(`claim-refuted`, in a context of its own, `bleakhold-brig`; `refutes`: no
+move); and the run's named Set a Course read after four moves of the last
+five (`named-after-moves`: `named` lets the line name its move, which it then
+wants alone and rolled, `want.rolled` — offered, it is `offered, not rolled`,
+and not read; `recentMoves` sets the readers' count of recent moves before
+the line, which is otherwise cleared). The list's own checks
+(`validateCases`) hold each of those to what it is.
 
 It also measures **the one reader** that is to replace the two (issue #384,
 slice 1: `src/moves/reader.js`, routed by `src/pacing/readAndRoute.js` — what

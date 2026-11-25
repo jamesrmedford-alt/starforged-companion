@@ -372,12 +372,17 @@ async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, design, recen
   const pick = (from, keys) => Object.fromEntries(keys.filter(k => from?.[k] !== undefined).map(k => [k, from[k]]));
 
   // Each line is read on its own: no earlier line's decision counts toward
-  // "recent moves" — save the run of moves its case says it follows.
-  resetRecentDensity();
+  // "recent moves" — save the run of moves a case says its line follows
+  // (`recentMoves`): the fourth live run's named Set a Course came after four
+  // moves of the last five, and was offered for the density (a33).
   const before = game.settings.get(MODULE_ID, "campaignState");
   const pacingConfig = readPacingConfig(before);
-  for (let i = 0; i < recentMoves; i += 1) {
-    recordRecentDecision({ decision: "MOVE", sceneTag: before?.currentSessionId ?? "global", window: pacingConfig.densityWindow });
+  resetRecentDensity();
+  if (recentMoves > 0) {
+    // The window and the scene tag decidePacing records under (router.js).
+    const window = pacingConfig.densityWindow;
+    const sceneTag = before?.currentSessionId ?? "global";
+    for (let k = 0; k < recentMoves; k++) recordRecentDecision({ decision: "MOVE", sceneTag, window });
   }
 
   const apiKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -602,7 +607,7 @@ async function main() {
           harness.setStep(stepNow);
           const before = harness.requests.length;
           const raw = await gm.page.evaluate(readLineInPage, {
-            MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line, design: arm.design, recentMoves: c.recentMoves ?? 0,
+            MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line, recentMoves: c.recentMoves ?? 0, design: arm.design,
           });
           const made = harness.requests.slice(before);
           // A line read against another scene than its context's — a session

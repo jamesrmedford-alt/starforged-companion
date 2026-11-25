@@ -319,10 +319,10 @@ beat twice, and waited six turns each time. A card that waits on the player —
 a held result's "Keep the result", the milestone's "Which vow advances?" — is
 named on a line of its own as well ("WAITING ON YOU"). The
 scorecard's **Plain lines** row says what each line of play became —
-rolled, offered a move, or narrated with nothing offered — and whether it
-named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
-Its **Refrains** row and section count what each session's narrations keep
-returning to — the words and phrases in a third or more of them, with the
+rolled, offered a move, narrated with nothing offered, or rightly narrated
+with nothing on the sheet to recover — and whether it named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+Its **Refrains** row and section count what each session's narrations of
+play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
 longest run in a row, and the narrations that end on someone waiting,
 watching or still — and **Speed** gives a line of play's wait apart from a
 scene question's.
@@ -344,8 +344,9 @@ changed what the module does.
 
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
-fifty plain in-fiction lines that name no move, each with the reading it
-should get, with nothing rolled or narrated. Dry by default (no key: the
+sixty-five in-fiction lines that name no move (but one that names its move on
+purpose, read after a run of moves, which wants it rolled), each with the
+reading it should get, with nothing rolled or narrated. Dry by default (no key: the
 prompts are built, the readings are stubs); `--live` reads them on Sonnet 5.5
 — the readers' own model — and on Haiku 5.5, which they ran on before, and
 needs `READERS_QUESTIONS`, as a live exploration needs its own:

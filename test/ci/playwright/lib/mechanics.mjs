@@ -5,7 +5,8 @@
 // its bounds, each mark of progress the size its rank gives, each reward the
 // size its rank gives, each effect landing once on the character who rolled,
 // a session's momentum paid once each way, the move lock free once the table
-// has settled, and every line of play answered exactly once.
+// has settled, every line of play answered exactly once — and a result held
+// for Keep or Burn narrated before the line after it, not after.
 //
 // The expectations come from tests/helpers/sequence/rules.js — transcribed
 // from the play kit and the recorded decisions, importing nothing from src/.
@@ -33,7 +34,7 @@ export const CHECKS = [
   "meter-bounds", "track-bounds", "progress-per-mark", "expedition-progress", "bond-mirror", "link-mirror",
   "legacy-reward", "xp-per-box",
   "move-momentum", "milestone-once", "suffer-cost", "recover-amount", "burn",
-  "session-momentum", "lock-free", "answered-once",
+  "session-momentum", "lock-free", "answered-once", "held-narrated-in-turn",
 ];
 
 const slug = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -397,10 +398,32 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
     if (mark.settled !== false && !mark.waitingOnGm) {
       hold("lock-free", step, after.session.pendingMove !== true, "the move lock was held after the table had settled");
     }
+    // A held result's narration comes when it is kept or burned — with its
+    // own move card's resolutionId, rolled in an earlier step. Pressed "Keep
+    // the result", it is narrated in the press's step, before any other line;
+    // kept by the roller's next line (src/moves/heldResult.js "later"), it is
+    // narrated after that line — the player reads a result of an earlier line
+    // as if it answered this one. The fourth live run's a38 Enter the Fray
+    // miss, kept by a41's attack, was told after it: "You are a half-beat
+    // late…", then the Clash's own "The turn is too tight and too late…".
+    // That is no second answer to the line (`answered-once`); it is a
+    // finding of its own (known-issues HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE).
+    const narrations = fresh.filter(c => c.narration && !c.narration.upgradeOf && !c.narration.oracleNarrationCard
+      && !messages.find(m => m.id === c.id)?.vignette);
+    const heldCard = (c) => {
+      const card = c.narration.resolutionId ? [...cardsAt(marks, i).values()].find(k => k.move?.resolutionId === c.narration.resolutionId) : null;
+      return card?.move?.held && firstSeen.get(card.id) !== step ? card : null;
+    };
+    const kept = narrations.map(c => ({ narration: c, card: heldCard(c) })).filter(x => x.card);
     const isLine = action?.action === "say" && !String(action.text ?? "").startsWith("!");
+    for (const { card } of kept) {
+      const moveId = card.move.held.resolution?.moveId ?? slug(card.move.name);
+      const outcome = card.move.held.resolution?.outcome ?? card.move.shown;
+      hold("held-narrated-in-turn", step, !isLine,
+        `${moveId} (${say(outcome)}), rolled at ${firstSeen.get(card.id)} and held for Keep or Burn, was kept by the next line and narrated after the next line (${step}): the player read it as this line's answer`);
+    }
     if (isLine && before.session.active && after.session.active && mark.settled !== false && !mark.waitingOnGm) {
-      const answers = fresh.filter(c => c.narration && !c.narration.upgradeOf && !c.narration.oracleNarrationCard
-        && !messages.find(m => m.id === c.id)?.vignette);
+      const answers = narrations.filter(c => !kept.some(x => x.narration.id === c.id));
       // A card that asks for a choice answers the line too: a fight offered, a
       // cost to pick, a result held until it is kept or burned.
       const asks = fresh.filter(c => c.threshold || c.picker || c.suffer || c.price || c.move?.held?.open);
