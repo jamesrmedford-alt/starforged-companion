@@ -246,7 +246,7 @@ describe('what each line of play became — from the readers\' own replies', () 
     const text = scorecard({ charter: CHARTER, run: { id: 'r', mode: 'live' }, beats, freeform: freeformOf({ messages, exchanges, beats, charter: CHARTER }) });
     expect(text).toContain('| Plain lines | 2 line(s) where a move was wanted: 1 rolled, 0 offered it, 0 read as another move, 1 narrated with nothing offered; 1 line(s) named a move (plain lines alone: 0 of 1 read); 1 beat(s) at last resort; 0 memory question(s) asked as play, 0 as @scene |');
     expect(text).toContain('## What each line of play became');
-    expect(text).toContain('| a1 | 21 | I treat my wounds with the ship\'s medkit. |  | narrated — **not what was wanted** |  | heal / resupply / sojourn / hearten |');
+    expect(text).toContain('| a1 | 21 | I treat my wounds with the ship\'s medkit. |  | narrated — **not what was wanted** |  | heal / resupply / sojourn / hearten / repair |');
     expect(text).toContain('Beats that came to their last resort (the move named, after plain lines brought nothing): 21.');
   });
 });
@@ -382,8 +382,10 @@ describe('the fourth live run of the long haul, kept as a replay (explorations/l
   it('its player named a move only once a beat\'s last resort was open, and asked its questions as the charter says', () => {
     const typed = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` })).filter(a => a.action === 'say' && a.text);
     const named = typed.filter(a => movesNamedIn(a.text).length);
-    expect(named.map(a => a.step)).toEqual(['a8', 'a33', 'a64', 'a66', 'a68', 'a73']);
-    for (const a of named) expect(`${a.reason} ${a.note}`).toMatch(/last resort|naming/i);
+    expect(named.map(a => a.step)).toEqual(['a8', 'a29', 'a33', 'a64', 'a66', 'a68', 'a73']);
+    // a29 named Explore a Waypoint by its own word ("toward the waypoint"), with no last resort open: the count missed it until issue #383 (#16 d).
+    expect(movesNamedIn(RUN.actions[28].text)).toEqual(['waypoint']);
+    for (const a of named.filter(x => x.step !== 'a29')) expect(`${a.reason} ${a.note}`).toMatch(/last resort|naming/i);
     expect(typed.filter(a => isSceneQuestion(a.text))).toHaveLength(16);
   });
 

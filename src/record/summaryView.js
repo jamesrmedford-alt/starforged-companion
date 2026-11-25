@@ -15,8 +15,9 @@
  *                         what was established and stands — and under it,
  *                         TOLD AS, the narrator's prose (decision D4: the
  *                         summary is given the telling; the recap is not).
- *   ## QUESTIONS          what was asked of the narrator (nothing happened
- *                         because a question was asked).
+ *   ## QUESTIONS          what was asked of the narrator, and ANSWERED, unnumbered
+ *                         (nothing happened because a question was asked, and
+ *                         none is a beat to cite).
  *   ## STRUCK BY THE TABLE — did not happen
  *   ## LET GO             the questions play let go (the scenes' frames,
  *                         overhaul 2 §7.4): never told, as an event or as
@@ -94,18 +95,28 @@ export function summarySource(session) {
   let n = 0;
   for (const beat of session.beats ?? []) {
     if (beat.kind === 'cutaway') continue;
-    const facts = beat.kind === 'question' ? questionFacts(beat) : beatFacts(beat);
+    // A question asked of the narrator is listed for what it is, with no
+    // number: no beat, and no id a sentence may cite. Numbered among the
+    // beats, a87's summary cited three ("Asked the narrator…") for what
+    // happened (known-issues RECORD-VIEW-SMALLER).
+    if (beat.kind === 'question') {
+      const facts = questionFacts(beat);
+      const answer = toldAs(beat);
+      if (facts) asked.push(`- ${facts}${answer ? `\n  ANSWERED: ${quote(answer)}` : ''}`);
+      continue;
+    }
+    const facts = beatFacts(beat);
     if (!facts) continue;
     n += 1;
     const id = String(n);
     ids.push(id);
     if (beat.lasting) lasting.push(id);
     const telling = toldAs(beat);
-    const entry = `[${id}] ${facts}${telling ? `\nTOLD AS: ${quote(telling)}` : ''}`;
-    (beat.kind === 'question' ? asked : told).push(entry);
+    told.push(`[${id}] ${facts}${telling ? `\nTOLD AS: ${quote(telling)}` : ''}`);
   }
+  // A strike as struck, a name changed since beside it (read.js).
   const struck = (session.corrections ?? []).filter(c => c.kind === 'strike')
-    .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : ''}`);
+    .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : (c.now?.length ? ` (now: ${c.now.join(', ')})` : '')}`);
   const out = [];
   const earlier = session.resumed && clean(session.story) ? clean(session.story) : '';
   if (earlier) out.push(`## EARLIER THIS SESSION (written before the record)\n\n${earlier}`);
@@ -359,7 +370,9 @@ export const SESSION_SUMMARY_SYSTEM_PROMPT =
   `- What a player's line claims about the world is their character's claim, unless an outcome or ` +
   `an established line supports it.\n` +
   `- Every beat marked LASTING is told.\n` +
-  `- A question asked of the narrator is not an event: nothing happened because one was asked.\n` +
+  `- A question asked of the narrator is not an event: nothing happened because one was asked. ` +
+  `QUESTIONS are no beats: never cite one, and never tell what an answer said as something that ` +
+  `happened.\n` +
   `- What is STRUCK BY THE TABLE did not happen: never tell it.\n` +
   `- TOLD AS is the narrator's telling and holds its own colour — the look of a place, a prop, ` +
   `the hook a beat ends on. None of it is an event, and nothing under LET GO is told at all, as ` +

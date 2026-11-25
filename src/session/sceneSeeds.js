@@ -347,13 +347,18 @@ export function formatMaterial(seeds, { account = true, spotlight = false } = {}
       "- Each numbered result is in the scene, recognisably. Read it as a Starforged",
       "  oracle is read: for what the words mean here. (1) is what the vignette shows",
       "  happening; the others are what it is about, what happens in it and what it",
-      "  looks like. Never the words themselves.",
+      "  looks like.",
     ] : [
       "- Each numbered result is in the scene, recognisably. Read it as a Starforged",
       "  oracle is read: for what the words mean here, at the size of a quiet moment",
-      "  (a chore, a habit, an object, a small trouble). Never the words themselves,",
-      "  and never a turn of the plot.",
+      "  (a chore, a habit, an object, a small trouble), and never a turn of the plot.",
     ]),
+    // Told "Never the words themselves", the fourth live run wrote six results
+    // as their own word — an apparition, a memory, a makeshift lair, a
+    // protection (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+    "- A result's words are the oracle's, never the prose's: no word of a result is",
+    "  written as it was rolled. Write what it means here, in words of your own. A",
+    "  name or a place from the campaign's records is written as the records have it.",
     "- A result that cannot be true here, or that the table's safety settings rule",
     "  out, gives way to the one in brackets under it — once, and only then.",
     "- The scene has no business and no featured thing of its own. Nothing is",

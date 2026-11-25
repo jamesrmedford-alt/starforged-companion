@@ -88,7 +88,7 @@ describe('the summary\'s source is the session read with its corrections', () =>
       ev('truth.struck', { s: S1, ref: { truth: 't2' }, d: { by: 'gm' } }),
     ];
     const src = summarySource(readRecord({ session: S1 }, source([page(S1, events)])).sessions[0]);
-    expect(src.text).toMatch(/## QUESTIONS — asked of the narrator; nothing happened because one was asked\n\n\[\d\] Mira Kestrel asked the narrator “Who owns the yard\?”/);
+    expect(src.text).toMatch(/## QUESTIONS — asked of the narrator; nothing happened because one was asked\n\n- Mira Kestrel asked the narrator “Who owns the yard\?”/);
     expect(src.text).toMatch(/## STRUCK BY THE TABLE — did not happen\n\n- the hatch — was sealed by the Guild/);
     expect(src.text).toMatch(/swear an iron vow \(\+heart\), strong hit — LASTING: a vow sworn/);
     expect(src.lasting).toHaveLength(1);

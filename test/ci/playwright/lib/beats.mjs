@@ -8,8 +8,9 @@
 // asking a model for the result.
 //
 // A beat that is not reached is `not-exercised` and the run goes on: eight
-// actions on a beat that makes no progress (`STALL_ACTIONS`), or a beat that
-// needs one that was never done. A beat with several parts (four facts to
+// actions on a beat that makes no progress (`STALL_ACTIONS`), a beat that
+// needs one that was never done, or one that requires of the world what it
+// does not hold when it comes (`requires`). A beat with several parts (four facts to
 // plant, a track to fill) reports its progress, and the eight actions are
 // counted from the last time it moved. Nothing here calls a beat that was
 // never reached a pass.
@@ -25,7 +26,8 @@ import { factHeld, isProbeLine } from "./ledger.mjs";
 import { cardsAt } from "./mechanics.mjs";
 import { parseDiceLine, parsePriceLine } from "./table.mjs";
 import { castMembers, castMemberFor } from "./cast.mjs";
-import { TICKS_PER_BOX, rankOf } from "../../../../tests/helpers/sequence/rules.js";
+import { movesNamedIn } from "./moveNames.mjs";
+import { METER_MAX, TICKS_PER_BOX, rankOf } from "../../../../tests/helpers/sequence/rules.js";
 
 /** Actions on a beat with no progress before it is given up as not exercised. */
 export const STALL_ACTIONS = 8;
@@ -66,9 +68,10 @@ export function castCardId(marks, cast, name) {
 
 /**
  * What a check sees: the marks from the step the beat became current at
- * (`from`) to now, and the run so far.
+ * (`from`) to now, and the run so far — and, where it is given, the beat
+ * itself (`wants`: the moves it wants, wantsOf).
  */
-export function beatView({ marks, messages, actions, charter, from }) {
+export function beatView({ marks, messages, actions, charter, from, beat = null }) {
   // `from` is the step the beat became current at: the world as that step
   // left it is where the beat starts (`entered`), and what happened in that
   // step belongs to the beat before — a roll that finished one beat is not
@@ -103,7 +106,8 @@ export function beatView({ marks, messages, actions, charter, from }) {
   const seeded = new Set((charter.seed?.pc?.vows ?? []).map(x => String(x?.name ?? "").trim().toLowerCase()).filter(Boolean));
   const questVows = () => (pc?.vows ?? []).filter(x => !seeded.has(String(x.name ?? "").trim().toLowerCase()));
   return {
-    marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions,
+    marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions, from,
+    wants: beat ? wantsOf(beat) : [],
     lines, linesInWindow: lines.filter(m => steps.has(m.step)),
     messagesInWindow: messages.filter(m => steps.has(m.step)),
     cast: charter.cast ?? {},
@@ -149,6 +153,122 @@ const attacks = (moves) => (moves.some(m => m === "strike" || m === "clash") ? [
 
 /** The moves a beat wants rolled: its `wants`, and the moves its check names. */
 export const wantsOf = (beat) => attacks([...new Set([...(beat?.wants ?? []), ...(beat?.check?.moves ?? []), ...(beat?.check?.move ? [beat.check.move] : [])])]);
+
+/** The game's recover moves (the play kit: Sojourn, Heal, Hearten, Resupply, Repair). */
+export const RECOVER_MOVES = ["sojourn", "heal", "hearten", "resupply", "repair"];
+/** The impact each meter's recovery clears. */
+const IMPACT_OF = { health: "wounded", spirit: "shaken", supply: "unprepared" };
+
+/**
+ * The sheet as a recovery beat's player is told it: each meter with the
+ * impact its recovery clears, the command vehicle's integrity — and what of
+ * it is spent, which is all a recover move has to mend. The fourth live run's
+ * beat 22 asked for the medkit or the market with spirit at 1 of 5 and the
+ * hull at 4 of 5 and nothing else spent: eight lines tended wounds the sheet
+ * did not hold, and the narrator wrote the wounds in (known-issues
+ * NOTHING-TO-RECOVER-UNTOLD). Pure.
+ *
+ * @param {object|null} table — a mark's table (lib/table.mjs readTable)
+ * @returns {{ text: string, spent: string[] }} `spent`: "health", "spirit",
+ *   "supply", "integrity" — each below its maximum or its impact marked
+ */
+export function sheetSpent(table) {
+  const pc = table?.pcs?.[0] ?? null;
+  if (!pc) return { text: "", spent: [] };
+  const marked = new Set(pc.debilities ?? []);
+  const spent = [];
+  const meters = ["health", "spirit", "supply"].map((m) => {
+    if (!Number.isFinite(pc[m])) return `${m} unknown`;
+    if (pc[m] < METER_MAX || marked.has(IMPACT_OF[m])) spent.push(m);
+    return `${m} ${pc[m]} of ${METER_MAX}${marked.has(IMPACT_OF[m]) ? ` (${IMPACT_OF[m]})` : ""}`;
+  });
+  const ship = table?.ship ?? {};
+  let hull = "";
+  if (Number.isFinite(ship.integrity)) {
+    const max = Number.isFinite(ship.integrityMax) ? ship.integrityMax : METER_MAX;
+    if (ship.integrity < max || ship.battered === true) spent.push("integrity");
+    hull = `; ${ship.name ? `the ${ship.name}'s` : "the ship's"} integrity ${ship.integrity} of ${max}${ship.battered === true ? " (battered)" : ""}`;
+  }
+  const said = { health: "health", spirit: "spirit", supply: "supply", integrity: "the ship's integrity" };
+  return {
+    spent,
+    text: `${pc.name}'s ${meters.join(", ")}${hull} — ${spent.length ? `spent: ${spent.map(s => said[s]).join(", ")}` : "nothing on the sheet is spent"}`,
+  };
+}
+
+/**
+ * What of the world a beat needs that is not another beat — `requires`: the
+ * checks of BEAT_CHECKS that must hold when it comes (`{ "type":
+ * "connectionMade", "name": "Tamsin Vey" }`: she is the character's
+ * connection, whichever road made her one). The fourth live run lost beats 3,
+ * 19, 23 and 24 to `needs: ["b2"]`: the GM's rule had made Tamsin a connection
+ * from her draft card, so beat 2's roll never came — while the vow's Link and
+ * a full track were on the table all along (known-issues
+ * CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). One road's miss does not cost the
+ * beats that need only what either road makes. Pure.
+ *
+ * @param {object} beat
+ * @param {ReturnType<typeof beatView>} view — the world as the beat comes
+ * @returns {string[]} each requirement the world does not hold, with what its check sees
+ */
+export function unmetRequirements(beat, view) {
+  const out = [];
+  for (const req of beat?.requires ?? []) {
+    const check = BEAT_CHECKS[req?.type];
+    const result = check ? check(view, req) : { done: false, detail: `no check the observer knows (${req?.type})` };
+    if (!result.done || result.failed) out.push(`${requirementOf(req, view)}, which the world does not hold (${result.detail})`);
+  }
+  return out;
+}
+/** A requirement in words. */
+function requirementOf(req, view) {
+  if (req?.type === "connectionMade") return `${req.name ?? view.cast.connection?.name ?? "the cast's connection"} to be ${view.pc?.name ?? "the character"}'s connection`;
+  return `the world to hold what a ${req?.type} check sees`;
+}
+
+/**
+ * The cards on the table that wait on the player — what it is to press before
+ * it types anything else: a result held for Keep or Burn (wherever it was
+ * rolled: the roller's next line keeps it), and, posted since the beat came,
+ * the milestone's vow picker ("⚑ Reach a Milestone — Which vow advances?",
+ * `milestonePicker`), a connection picker ("Which connection?", `picker`),
+ * a cost or a recovery to choose (`suffer`). The fourth live run's player
+ * skipped Keep (a38) and typed past "Which vow advances?" (a71): the held miss
+ * was then narrated after its next line, and the milestone was never marked
+ * from its own offer. ("Which vow?" of a move is asked in the GM's confirm
+ * window, not on a card: the GM's rules answer it.) Pure.
+ *
+ * @param {ReturnType<typeof beatView>} view
+ * @returns {Array<{ kind: "held"|"milestone"|"connection"|"cost", id: string, step: string, move?: string, outcome?: string|null }>}
+ */
+export function cardsWaiting(view) {
+  // Posted since the beat came: in its window, or in the step that brought it
+  // (what finished the beat before — a roll's cost card among them).
+  const since = (card) => view.inWindow(card) || view.firstSeen.get(card.id) === view.from;
+  const out = [];
+  for (const c of view.allCards) {
+    const step = view.firstSeen.get(c.id);
+    if (c.move?.held?.open) out.push({ kind: "held", id: c.id, step, move: c.move.name || moveTitle(c.move.held.resolution?.moveId), outcome: c.move.held.resolution?.outcome ?? c.move.shown ?? null });
+    else if (!since(c)) continue;
+    else if (c.milestonePicker && !c.milestonePicker.resolved) out.push({ kind: "milestone", id: c.id, step });
+    else if (c.picker && !c.picker.resolved) out.push({ kind: "connection", id: c.id, step });
+    else if (c.suffer && !c.suffer.resolved && c.suffer.options?.length) out.push({ kind: "cost", id: c.id, step });
+  }
+  return out;
+}
+/** What the player is told of the cards waiting on it, in one line; "" for none. */
+function waitingText(cards) {
+  if (!cards?.length) return "";
+  const said = cards.map((c) => {
+    switch (c.kind) {
+      case "held": return `the result of ${c.move}${c.outcome ? ` (${OUTCOME[c.outcome] ?? c.outcome})` : ""} is held on its card, and nothing comes of it until you choose: press "Keep the result" on it — or "🔥 Burn Momentum", where this beat tells you to burn`;
+      case "milestone": return `"⚑ Reach a Milestone — Which vow advances?" asks which of your vows: press the one this beat is about`;
+      case "connection": return `a card asks which connection: press the one this beat is about`;
+      default: return `a card asks you to choose what you pay or what you take: press one of its buttons`;
+    }
+  });
+  return `${said.join("; ")}. Answer ${cards.length === 1 ? "it" : "them"} before you type anything else.`;
+}
 
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
 const notYet = (detail, progress = 0) => ({ done: false, detail, progress });
@@ -397,13 +517,21 @@ export const BEAT_CHECKS = {
     return done(`the oracle answered ${cards[0].oracle.answer ?? "?"}`);
   },
 
-  /** A recover move was made and what it offers was taken. */
+  /**
+   * A recover move was made and what it offers was taken. The moves are the
+   * check's and any recover move the beat's `wants` adds: the fourth live
+   * run's beat 22 came with spirit and the hull spent, and its list had no
+   * Repair. Until one is made the player is told what the sheet holds spent
+   * — the only things a recover move can mend.
+   */
   recovered(v, c) {
+    const moves = [...new Set([...(c.moves ?? ["heal", "resupply", "sojourn", "hearten"]), ...(v.wants ?? []).filter(m => RECOVER_MOVES.includes(m))])];
     // Any recover move's hit, not the first roll's: the second live run's Heal
     // missed and its Resupply came up a strong hit, and the beat was read off
     // the miss alone (issue #377 round 2).
-    const rolls = v.rolls.filter(r => (c.moves ?? ["heal", "resupply", "sojourn", "hearten"]).includes(r.moveId) && r.rolled);
-    if (!rolls.length) return notYet("no recover move yet");
+    const rolls = v.rolls.filter(r => moves.includes(r.moveId) && r.rolled);
+    const sheet = sheetSpent(v.now).text;
+    if (!rolls.length) return notYet(`no recover move yet${sheet ? ` — ${sheet}` : ""}`);
     const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
     const offered = v.allCards.filter(k => k.suffer && v.inWindow(k) && k.suffer.moveId === roll.moveId);
@@ -629,17 +757,23 @@ export const BEAT_CHECKS = {
  * The pointer over a charter's beats.
  *
  * @param {Array<{ id: string, n: number, session: number, title: string, tell?: string, check: object,
- *   needs?: string[], stall?: number, interruption?: string }>} beats
+ *   needs?: string[], requires?: object[], stall?: number, interruption?: string }>} beats
  */
 export function createPointer(beats) {
   // `lines` / `linesAtProgress`: the lines of play typed on the beat, and how
   // many of them had been typed when it last moved — the difference is the
   // plain lines that brought nothing about (`lastResort`, below).
   // `waits`: the waits in a row on a beat that has not moved since; `rolled`:
-  // the rolls made while the beat was current, and `rolledAtProgress` how
-  // many of them there were when it last moved — what `brief` tells the
-  // player a roll was, when it was not the beat's and nothing has moved since.
-  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false, waits: 0, rolled: [], rolledAtProgress: 0 }));
+  // the moves made while the beat was current — a no-roll move among them
+  // (`noRoll`: Develop Your Relationship before a bond, Reach a Milestone) —
+  // and `rolledAtProgress` how many of them there were when it last moved:
+  // what `brief` tells the player a move was, when it was not the beat's and
+  // nothing has moved since. `named`: the lines that named a move, by their
+  // place among the beat's lines (lib/moveNames.mjs); `lastResortGivenAt`:
+  // how many lines had been typed when the last resort was last told, and
+  // `lastResortSpent` the steps of the named lines that spent it. `waiting`:
+  // the cards on the table that wait on the player (cardsWaiting).
+  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false, lastResortGivenAt: null, lastResortSpent: [], named: [], waits: 0, rolled: [], rolledAtProgress: 0, waiting: [] }));
   let at = 0;
   const byId = (id) => state.find(s => s.id === id);
 
@@ -681,16 +815,27 @@ export function createPointer(beats) {
             at += 1;
             continue;
           }
+          // What it needs of the world, whichever beat brought it about.
+          const unmet = unmetRequirements(beat, beatView({ ...run, from: step, beat }));
+          if (unmet.length) {
+            Object.assign(cur, { status: "not-exercised", doneAt: step, detail: `it needs ${unmet.join("; and ")}` });
+            changes.push({ ...cur });
+            at += 1;
+            continue;
+          }
         }
         // An interruption is the runner's to make before it can be checked.
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const view = beatView({ ...run, from: cur.enteredAt });
+        const view = beatView({ ...run, from: cur.enteredAt, beat });
         const result = check(view, beat.check);
         cur.detail = result.detail;
-        cur.lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text)).length;
-        cur.rolled = view.rolls.filter(r => r.rolled).map(r => ({ step: r.step, moveId: r.moveId, outcome: r.outcome }));
+        const lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text));
+        cur.lines = lines.length;
+        cur.named = lines.flatMap((m, i) => (movesNamedIn(m.text).length ? [{ at: i + 1, step: m.step }] : []));
+        cur.rolled = view.rolls.map(r => ({ step: r.step, moveId: r.moveId, outcome: r.outcome, ...(r.rolled ? {} : { noRoll: true }) }));
+        cur.waiting = beat.interruption ? [] : cardsWaiting(view);
         if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; cur.linesAtProgress = cur.lines; cur.waits = 0; cur.rolledAtProgress = cur.rolled.length; }
         if (result.done) {
           Object.assign(cur, { status: result.failed ? "failed" : "done", doneAt: step });
@@ -743,6 +888,22 @@ export function createPointer(beats) {
      * not finish it — and the last resort is unlocked then too, not only
      * after `lastResortAfter` plain lines (two unless the beat says). Not on
      * a beat that is the table's (an interruption): there waiting is right.
+     *
+     * A move with no roll is a move all the same (Develop Your Relationship
+     * before a bond, Reach a Milestone): the fourth live run's Develop at
+     * a5–a7, on a beat that wanted a connection made, raised no alert — the
+     * check saw only rolls with dice.
+     *
+     * The last resort is told once and is spent by the line that names the
+     * move: it is not told again until the beat has moved — the next time the
+     * beat needs a roll, the player starts from a plain line again. The
+     * fourth live run told it every turn once it was unlocked, and its player
+     * named three moves in beat 22 alone (a64, a66, a68).
+     *
+     * And a card that waits on the player — a result held for Keep or Burn,
+     * a vow or connection to pick, a cost to choose — is said on a line of
+     * its own (`waiting`): the fourth live run's player skipped Keep (a38)
+     * and typed past "Which vow advances?" (a71).
      */
     brief() {
       const cur = this.current();
@@ -751,23 +912,30 @@ export function createPointer(beats) {
       const unread = st.lines - st.linesAtProgress;
       const tables = !!beat.interruption;
       const wanted = wantsOf(beat);
-      // The last roll, where the beat has not moved since it was made.
+      // The last move, where the beat has not moved since it was made.
       const last = st.rolled.length > st.rolledAtProgress ? st.rolled.at(-1) : null;
       const stray = !tables && wanted.length && last && !wanted.includes(last.moveId) ? last : null;
       const idle = !tables && st.waits >= WAITS_BEFORE_TOLD;
       const unreadLines = unread >= (beat.lastResortAfter ?? LAST_RESORT_AFTER);
-      const resort = !!beat.lastResort && (unreadLines || !!stray || idle);
-      if (resort) st.lastResort = true;
+      // Spent: a line named a move after the last resort was told, and the beat has not moved since.
+      const spentBy = st.lastResortGivenAt != null && st.linesAtProgress <= st.lastResortGivenAt
+        ? (st.named ?? []).find(x => x.at > st.lastResortGivenAt) ?? null : null;
+      if (spentBy && !st.lastResortSpent.includes(spentBy.step)) st.lastResortSpent.push(spentBy.step);
+      const resort = !!beat.lastResort && !spentBy && (unreadLines || !!stray || idle);
+      if (resort) { st.lastResort = true; st.lastResortGivenAt = st.lines; }
+      const strayWhat = stray ? (stray.noRoll ? `A MOVE WAS MADE — ${moveTitle(stray.moveId)}, with no roll —` : `A ROLL WAS MADE — ${moveTitle(stray.moveId)}, ${OUTCOME[stray.outcome] ?? stray.outcome} —`) : "";
       const alert = [
-        stray ? `A ROLL WAS MADE — ${moveTitle(stray.moveId)}, ${OUTCOME[stray.outcome] ?? stray.outcome} — AND IT IS NOT WHAT THIS BEAT NEEDS. The beat is NOT done, and waiting will not finish it: do what the beat asks again, in other words.` : "",
+        stray ? `${strayWhat} AND IT IS NOT WHAT THIS BEAT NEEDS. The beat is NOT done, and waiting will not finish it: do what the beat asks again, in other words.` : "",
         idle ? `YOU HAVE WAITED ${st.waits} TIMES RUNNING AND NOTHING HAS CHANGED. The beat is NOT done, and waiting will not finish it: act.` : "",
       ].filter(Boolean).join(" ");
-      const why = unreadLines ? `${unread} plain lines have brought nothing about` : stray ? "a roll came that is not this beat's" : "waiting has brought nothing about";
+      const why = unreadLines ? `${unread} plain lines have brought nothing about` : stray ? `a ${stray.noRoll ? "move" : "roll"} came that is not this beat's` : "waiting has brought nothing about";
       const note = [
         st.detail ? `the observer sees: ${st.detail}` : "",
         resort ? `LAST RESORT — ${why}: this once you may name the move — ${beat.lastResort}` : "",
+        spentBy && beat.lastResort ? `the last resort was spent on your line at ${spentBy.step}: say what you do in plain lines again` : "",
       ].filter(Boolean).join("; ");
-      return { n: beat.n, of: beats.length, session: beat.session, title: beat.playerTitle ?? beat.title, tell: beat.tell ?? "", actions: st.actions, note, alert };
+      const waiting = tables ? "" : waitingText(st.waiting ?? []);
+      return { n: beat.n, of: beats.length, session: beat.session, title: beat.playerTitle ?? beat.title, tell: beat.tell ?? "", actions: st.actions, note, alert, waiting };
     },
 
     summary() {

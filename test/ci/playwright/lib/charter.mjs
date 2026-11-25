@@ -15,8 +15,9 @@ import { seedProblem } from "./world.mjs";
  * needs a fact that decides it; a charter with beats is scored by its beats
  * and needs none (a scenario about a fight asks nothing of the narrator's
  * memory), though every fact it has must be well formed. Each beat is named,
- * numbered and checked by something the observer knows, and needs only beats
- * the charter has.
+ * numbered and checked by something the observer knows, needs only beats
+ * the charter has, and requires of the world (`requires`) only what a check
+ * the observer knows can see.
  *
  * @param {object} charter
  * @returns {string|null}
@@ -36,5 +37,7 @@ export function charterProblem(charter) {
   if (bad) return `beat ${bad.n ?? bad.id ?? "?"} needs an id, a number, a title and a check the observer knows (${bad.check?.type ?? "none"})`;
   const unknown = beats.flatMap(b => (b.needs ?? []).filter(id => !beats.some(x => x.id === id)).map(id => `${b.id} needs ${id}`));
   if (unknown.length) return `a beat needs one that is not in the charter (${unknown[0]})`;
+  const unseen = beats.flatMap(b => (b.requires ?? []).filter(r => !BEAT_CHECKS[r?.type]).map(r => `${b.id} requires what a "${r?.type ?? "?"}" check would see`));
+  if (unseen.length) return `a beat requires of the world what no check the observer knows can see (${unseen[0]})`;
   return null;
 }

@@ -238,11 +238,13 @@ describe('the stand-in answers the session summary the module asks for now: a ci
   const source = summarySource(readOf([page('sess-5', 5, events)], 'sess-5').sessions[0]);
   const request = { system: SESSION_SUMMARY_SYSTEM_PROMPT, messages: [{ role: 'user', content: sessionSummaryUserMessage(source) }] };
   const lineBeat = source.text.match(/^\[(\d+)\] .*star-compass/m)?.[1];
+  // A question is listed unnumbered: no beat a summary may cite (known-issues RECORD-VIEW-SMALLER).
   const questionBeat = source.text.match(/^\[(\d+)\] .*asked the narrator/m)?.[1];
 
-  it('control: the source holds the compass line, a LASTING beat and a question beat, and the prompt is the summary\'s', () => {
+  it('control: the source holds the compass line, a LASTING beat and the question — unnumbered — and the prompt is the summary\'s', () => {
     expect(lineBeat).toBeTruthy();
-    expect(questionBeat).toBeTruthy();
+    expect(questionBeat).toBeUndefined();
+    expect(source.text).toMatch(/^- Mira Kestrel asked the narrator/m);
     expect(source.lasting.length).toBe(1);
     expect(request.system).toContain('continuity scribe');
     expect(source.text).toContain(`asked the narrator “${QUESTION}”`);

@@ -233,7 +233,11 @@ real pipeline, and fixed rules — no model — answer what the module asks of
 the GM (the move's confirmation; "Who are you interacting with?"; a draft for
 someone in the charter's cast — under their name, or a whole-word part of it
 that is nobody else's: the third live run's card for Tamsin Vey was proposed
-as "Tamsin"). An **observer** reads the
+as "Tamsin" — confirmed as a person recorded with no bond, "No one" where the
+card offers it, else its Confirm, never a character's button, so that it is
+the player's Make a Connection that makes her the character's connection; a
+rehearsal may ask for the character's button instead, `EXPLORE_DRAFT_HOLDER=pc`,
+the road the fourth live run's GM took). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model. The run is then **reviewed by whoever made it** — the full
 transcript annotated, a scorecard, the action items as an issue, what it cost
@@ -248,6 +252,7 @@ code or rewrites a recording: it writes evidence.
 ./scripts/cloud.sh explore                 # LIVE: real models, real money, up to the caps
 ./scripts/cloud.sh explore --replay playwright/artifacts/explore/<run>   # an earlier run again, no key
 EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse           # the long haul, rehearsed (about 15 minutes)
+EXPLORE_DRAFT_HOLDER=pc EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse   # the fourth live run's road: the draft card makes the connection
 ./scripts/cloud.sh explore --suite scenarios --rehearse   # the short scenarios, one flow each, rehearsed — see below
 ```
 
@@ -271,7 +276,9 @@ mechanics together:
 - **27 beats**, each with a result the observer checks in the world. The
   player is told the beats and which is current; the observer marks a beat
   done and moves on, and a beat not reached in eight actions is
-  `not-exercised`. A beat's `id` is its name for good and `n` where it stands
+  `not-exercised` — as is one that needs of the world what it does not hold
+  when it comes (`requires`: beats 3, 19 and 23 need Tamsin Vey to be the
+  character's connection, whichever road made her one, not beat 2's roll). A beat's `id` is its name for good and `n` where it stands
   now: the expedition, added after the third live run, is `b7a` and stands
   eighth.
 - **An expedition** (beat 8, `b7a`): the character leaves the charted lane
@@ -304,15 +311,18 @@ question about what is established is asked with `@scene` (one of each set
 is kept as a line of play, to compare), and a beat's move is named only as a
 last resort the observer unlocks after two plain lines bring nothing — or
 once a roll has come that is not the beat's, or the player has waited twice
-running on a beat that has not moved. Then the observer also says, on a line
-of its own, that the beat is NOT done and that waiting will not finish it:
-the third live run's player took a roll for the end of a beat twice, and
-waited six turns each time. The
+running on a beat that has not moved — told once, and spent by the line that
+names the move. Then the observer also says, on a line of its own, that the
+beat is NOT done and that waiting will not finish it (a move made with no
+roll counts as one): the third live run's player took a roll for the end of a
+beat twice, and waited six turns each time. A card that waits on the player —
+a held result's "Keep the result", the milestone's "Which vow advances?" — is
+named on a line of its own as well ("WAITING ON YOU"). The
 scorecard's **Plain lines** row says what each line of play became —
-rolled, offered a move, or narrated with nothing offered — and whether it
-named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
-Its **Refrains** row and section count what each session's narrations keep
-returning to — the words and phrases in a third or more of them, with the
+rolled, offered a move, narrated with nothing offered, or rightly narrated
+with nothing on the sheet to recover — and whether it named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+Its **Refrains** row and section count what each session's narrations of
+play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
 longest run in a row, and the narrations that end on someone waiting,
 watching or still — and **Speed** gives a line of play's wait apart from a
 scene question's.
@@ -334,8 +344,9 @@ changed what the module does.
 
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
-fifty plain in-fiction lines that name no move, each with the reading it
-should get, with nothing rolled or narrated. Dry by default (no key: the
+sixty-five in-fiction lines that name no move (but one that names its move on
+purpose, read after a run of moves, which wants it rolled), each with the
+reading it should get, with nothing rolled or narrated. Dry by default (no key: the
 prompts are built, the readings are stubs); `--live` reads them on Sonnet 5.5
 — the readers' own model — and on Haiku 5.5, which they ran on before, and
 needs `READERS_QUESTIONS`, as a live exploration needs its own:

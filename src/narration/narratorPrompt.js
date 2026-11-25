@@ -1332,7 +1332,21 @@ const RECAP_SOURCES_RULE =
   `whatever I haul" is the character's own haul).\n` +
   `- How a thing stands now is ${STANDS_NOW_HEADING}'s word. Say that something still stands only ` +
   `when ${STANDS_NOW_HEADING} says so; never carry an earlier state forward as still true.\n` +
-  `- Use each name as the record writes it, and write no other name for anyone.`;
+  `- Use each name as the record writes it, and write no other name for anyone.\n` +
+  // Known-issues RECAP-TELLS-THE-DICE (the fourth live run): 13 of the 64
+  // recap sentences named an outcome — "it landed as a weak hit", "Your search
+  // near the wreck missed" — and about a dozen read a sheet's numbers aloud.
+  // The record's lines carry them; this rule had no word against telling them
+  // as the dice do, where the move narration's role has one (OUTCOME_WORDS_RULE).
+  `- Tell what happened, not the dice or the numbers. "strong hit", "weak hit", "miss" and "match" ` +
+  `are the table's words, never the recap's: not as the roll's name ("it landed as a weak hit", ` +
+  `"on a miss"), not as a remark on the dice, and not as an image made out of the word. Nor is a ` +
+  `number from a sheet or a track — a meter, momentum, XP, ticks, boxes, "4 of 10". Say what came ` +
+  `of a line instead, as the lines state it: what the character did, found, gained, lost or failed ` +
+  `at, and how far a vow or a tie has come, in words. A rank — troublesome, dangerous, formidable, ` +
+  `extreme, epic — is how hard a vow, a tie or a fight is to see through: never a word for the ` +
+  `person or thing it is about. Nor are the record's own words for itself ("the record", "at the ` +
+  `table") the recap's.`;
 
 /** The oracle's own word for a doubled roll stays out of the prose too (NARRATION-NAMES-THE-OUTCOME). */
 const ORACLE_MATCH_RULE =
@@ -1411,14 +1425,20 @@ const ROLE_DESCRIPTIONS = {
     `UNREVEALED — the characters do not know. Never state it; asked about it, say it ` +
     `is not yet known.`,
 
+  // Told "the iron they touch, the words, the weight of commitment … pure
+  // sensory fiction", and given no scene, the oath was one image in all four
+  // live long hauls — a palm pressed flat to a bulkhead, the words said low
+  // (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT). It is built from what
+  // the user message gives.
   vow_swearing:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
-    `the moment a character swears a vow — the binding ritual itself — as a brief, ` +
-    `evocative scene.\n\n` +
-    `Ground it in how the Ironsworn swear their oaths in THIS world (the Iron truth given ` +
-    `in the user message): the iron they touch, the words, the weight of commitment. ` +
-    `Write 2-3 sentences of pure sensory fiction — no game mechanics, no summary of the ` +
-    `vow's text, no "you vow to…" restatement. Just the act of swearing made vivid.`,
+    `the moment a character swears a vow as a brief scene, built from what the user ` +
+    `message gives: the vow's own words, how oaths are bound in THIS world (the Iron ` +
+    `truth), and the scene the character swears it in.\n\n` +
+    `Write 2-3 sentences, no game mechanics. The words sworn are the vow's own, or the ` +
+    `character's for them; the iron is what is at hand in this scene, as this world ` +
+    `binds an oath; the moment comes out of the scene and what the vow is about — no ` +
+    `stock gesture.`,
 
   oracle_followup:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1444,8 +1464,10 @@ const ROLE_DESCRIPTIONS = {
     `message says which it is, who is in it and where, and gives its MATERIAL: results ` +
     `rolled for this scene on the game's oracles, and what the campaign's records hold. ` +
     `Build the scene from the material.\n\n` +
+    // "Nothing new happens in it" was a shape too: the fourth live run's
+    // openings each ended still (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT).
     `OPENING — the player characters whose players are at the table, in a quiet moment ` +
-    `inside the situation the last session left. Nothing new happens in it. With ` +
+    `inside the situation the last session left. No turn of the plot happens in it. With ` +
     `crewmates registered but away, the characters speak of what those crewmates are up ` +
     `to; with none, no crew is invented, present or absent. TONE OVERRIDE for OPENING: ` +
     `WRY AND ABSURD — fond, observed, played straight. Not cynical, not sneering.\n\n` +
@@ -3275,7 +3297,8 @@ export function buildCampaignRecapUserMessage(source) {
     `Each of these only as far as the lines above state it — and, for where things stand, ` +
     `${STANDS_NOW_HEADING}. Nothing inferred, nothing filled in between two lines, and no "your" for ` +
     `what a line does not make certainly the character's own. A point the lines say nothing of is ` +
-    `left out. Every beat marked LASTING is told.\n\n` +
+    `left out. Every beat marked LASTING is told. Tell what came of each line — never its outcome's ` +
+    `word or a number from a sheet.\n\n` +
     `Write in second person for solo campaigns, third person for multiplayer. ` +
     `Be wry but respectful of what the player has accomplished.\n\n` +
     `Reply with JSON only: {"paragraphs": [[{"text": "<one sentence>", "because": ["<id>", …]}, …], …]} — ` +
@@ -3439,12 +3462,11 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   // What the narration must tell and must not, last before the instruction:
   // the offer not yet made, the sheet unchanged, no apparatus — a refused
   // move's premise told as not so, and what the sheet says of a person or a
-  // fight the line touches (overhaul 4) — and what the scene obliges: TELL
-  // [scene], NOT SO [letgo] (overhaul 2 §10.3).
-  const block = formatObligationsBlock([...obligationsFor({
+  // fight the line touches (overhaul 4).
+  const block = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
-    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [],
-  }), ...sceneLines(opts?.sceneObligations)]);
+    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [], chosenSince: opts?.chosenSince ?? [],
+  }));
   if (block) parts.push(block);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
@@ -3523,12 +3545,11 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // word ([overridden]); what the sheet says of a person or a fight the
   // beat touches ([state], TRACK-TOLD-AS-A-BOND); the sheet and the
   // apparatus. The STAKES, PRICE, FIGHT, COST and VOW blocks it replaces
-  // kept their words in it. What the scene obliges — TELL [scene], NOT SO
-  // [letgo] (overhaul 2 §10.3) — is in the same block.
-  const obligations = formatObligationsBlock([...obligationsFor({
+  // kept their words in it.
+  const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
-    cast: opts?.cast ?? [], speaker,
-  }), ...sceneLines(opts?.sceneObligations)]);
+    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [],
+  }));
   if (obligations) parts.push(obligations);
 
   // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
@@ -3605,7 +3626,8 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @param {boolean} [args.audio] — the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false, sceneObligations = [] }) {
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false,
+  sceneObligations = [], chosenSince = [] }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -3652,10 +3674,11 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
     `## THIS ROUND — ${n} character${n !== 1 ? 's' : ''} acted at once, in this order\n\n` +
     blocks.join('\n\n'),
   );
+
   // The round's own obligations — the sheet, the apparatus (overhaul 4) — and
   // what the scene obliges its narration to tell: TELL [scene], NOT SO
   // [letgo] (overhaul 2 §10.3). One block for the round.
-  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round' }), ...sceneLines(sceneObligations)]);
+  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round', chosenSince }), ...sceneLines(sceneObligations)]);
   if (roundBlock) parts.push(roundBlock);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);

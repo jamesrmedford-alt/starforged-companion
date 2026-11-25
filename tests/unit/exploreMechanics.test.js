@@ -12,7 +12,7 @@
  * undertaken, a waypoint explored and the expedition finished, a weak hit
  * burned to a strong one, a miss paid for, a fight finished and its milestone marked,
  * a wound healed, a relationship developed, a bond forged, a vow fulfilled, a
- * session ended. Then, one at a time, the table is made to do what a defect
+ * weak hit held and kept with "Keep the result", a session ended. Then, one at a time, the table is made to do what a defect
  * in the module would have it do — pay momentum twice, mark a milestone
  * twice, keep the first outcome's marks under a burn, lag a mirror — and the
  * check that should catch it is shown to catch it, and to be the only kind
@@ -119,6 +119,14 @@ function story() {
     [moveCard('m13b', 'Face Danger', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss'), narrated('n13b', 'm13b', 'face_danger', 'miss'),
       { id: 'p13b', price: { text: 'Pay the Price Face Danger d100 = 78 · You are harmed Routes to Endure Harm (-1).', actorId: 'pc' } },
       { id: 't13b', sufferTaken: { move: 'endure_harm', amount: 1, before: 5, after: 4, actorId: 'pc' } }]);
+  // A weak hit momentum would improve, held — and kept with its button: its
+  // narration comes with the press, before any other line.
+  const heldGather = { open: true, resolvedBy: null, resolution: { moveId: 'gather_information', outcome: 'weak_hit' } };
+  const lean = moveCard('m13c', 'Gather Information', 'Action: 3 + 3 = 6 | Challenge: 1, 8', 'weak_hit',
+    { burn: { canBurn: true, momentum: 3, originalOutcome: 'weak_hit', previewOutcome: 'strong_hit', moveId: 'gather_information' }, held: heldGather });
+  step('a13c', say('I lean on the clerk for the name.'), () => { rolled([1, 8], 3); }, [lean]);
+  step('a13d', click('Keep the result'), () => {},
+    [{ ...lean, move: { ...lean.move, held: { ...heldGather, open: false, resolvedBy: 'keep' } } }, narrated('n13d', 'm13c', 'gather_information', 'weak_hit')]);
   step('a14', { action: 'dialog', title: 'End a Session', fields: [{ name: 'questFocus', value: 'What the paymaster does next' }], press: 'End Session' },
     () => { table.session.active = false; table.session.questFocus = 'What the paymaster does next'; pc.momentum = 4; });
 
@@ -156,7 +164,7 @@ describe('the stretch of play, as the module should play it', () => {
     expect(result.rolls.map(r => `${r.step} ${r.moveId} ${r.outcome}`)).toEqual([
       'a2 gather_information strong_hit', 'a2a undertake_an_expedition strong_hit', 'a2b explore_a_waypoint strong_hit', 'a2d finish_an_expedition strong_hit',
       'a3 strike weak_hit', 'a5 strike miss', 'a7 take_decisive_action strong_hit', 'a9 heal strong_hit',
-      'a12 forge_a_bond strong_hit', 'a13 fulfill_your_vow strong_hit', 'a13b face_danger miss',
+      'a12 forge_a_bond strong_hit', 'a13 fulfill_your_vow strong_hit', 'a13b face_danger miss', 'a13c gather_information weak_hit',
     ]);
     expect(result.rolls[0]).toMatchObject({ dice: 'Action: 4 + 3 = 7 | Challenge: 2, 5', kind: 'action', scripted: false });
   });
@@ -234,10 +242,52 @@ describe('each check catches the defect it is for', () => {
     ['lock-free', 'the move lock held after the table settled', ({ at }) => { at('a9').table.session.pendingMove = true; }, 'the move lock was held'],
     ['answered-once', 'a line narrated twice', ({ at }) => { at('a2').cards.push(narrated('n2b', 'other', 'gather_information', 'strong_hit')); }, 'narrated 2 times'],
     ['answered-once', 'a line nobody answered', ({ at }) => { at('a11').cards.length = 0; }, 'no narration and no card that asks for a choice'],
+    ['held-narrated-in-turn', 'a held result kept by the next line, and narrated after it', ({ run, at }) => {
+      run.actions.find(a => a.step === 'a13d').action = say('I take the name and go.');
+      at('a13d').cards.push(narrated('n13e', 'own-13d', 'face_danger', 'strong_hit'));
+    }, 'gather_information (a weak hit), rolled at a13c and held for Keep or Burn, was kept by the next line and narrated after the next line (a13d)'],
   ])('%s — %s', (check, _what, change, says) => {
     const result = withDefect(change);
     expect(violated(result), JSON.stringify(result.violations)).toContain(check);
     expect(result.violations.find(v => v.check === check).detail).toContain(says);
+  });
+
+  // The fourth live run's a38–a41 (explorations/long-haul-live-20261124-213912):
+  // Enter the Fray missed and was held; "⚔ Begin the fight" kept nothing; the
+  // attack at a41 kept it, so a38's narration came after a41's line — and then
+  // the Clash's own. The run's own check counted that as a line narrated twice.
+  it('held-narrated-in-turn — the fourth live run\'s a38–a41: one answer to the line, and the held result told after it', () => {
+    const t = (over = {}) => ({ session: { active: true, id: 's2', pendingMove: false }, pcs: [{ id: 'pc', name: 'Mira', health: 5, spirit: 1, supply: 5, momentum: 9, momentumMax: 10, momentumReset: 2, debilities: [], vows: [], bonds: [], legacies: {} }], connections: [], tracks: [], legacy: {}, ...over });
+    const held = { open: true, resolvedBy: null, resolution: { moveId: 'enter_the_fray', outcome: 'miss' } };
+    const fray = moveCard('m38', 'Enter the Fray', 'Action: 3 + 1 = 4 | Challenge: 6, 7', 'miss', { held, burn: { canBurn: true, momentum: 9, originalOutcome: 'miss', previewOutcome: 'strong_hit', moveId: 'enter_the_fray' } });
+    const fight = { id: 'f1', label: 'The Ashen Wake', type: 'combat', rank: 'dangerous', ticks: 0, completed: false, combatState: 'bad_spot' };
+    const marks = [
+      { step: 'a37', table: t(), cards: [], settled: true },
+      { step: 'a38', table: t(), cards: [fray, { id: 'th38', threshold: { label: 'The Ashen Wake', position: 'bad_spot' } }], settled: true },
+      { step: 'a40', table: t({ tracks: [fight] }), cards: [{ id: 'tc40', trackCard: { created: true, trackId: 'f1' } }], settled: true },
+      { step: 'a41', table: t({ tracks: [fight] }), settled: true, cards: [
+        { ...fray, move: { ...fray.move, held: { ...held, open: false, resolvedBy: 'later' } } },
+        narrated('n41a', 'm38', 'enter_the_fray', 'miss'),
+        moveCard('m41', 'Clash', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss', { combatTrackId: 'f1' }),
+        narrated('n41b', 'm41', 'clash', 'miss'),
+      ] },
+    ];
+    const actions = [
+      { step: 'a38', action: say('The Ashen Wake drops out of the dark off Bleakhold\'s ring. I spin the Kobayashi IV to face her and bring the guns to bear.') },
+      { step: 'a40', action: click('⚔ Begin the fight') },
+      { step: 'a41', action: say('I\'m in a bad spot, so I fight back hard, throwing the Kobayashi IV into a tight turn and hammering the Ashen Wake\'s flank with everything the guns have.') },
+    ];
+    const result = checkMechanics({ marks, actions, messages: [] });
+    expect(result.byCheck['answered-once'], 'a38 held its result on a card; a41 had one answer of its own').toEqual({ made: 2, violated: 0 });
+    expect(result.byCheck['held-narrated-in-turn']).toEqual({ made: 1, violated: 1 });
+    expect(result.violations).toEqual([{ step: 'a41', check: 'held-narrated-in-turn', detail: 'enter_the_fray (a miss), rolled at a38 and held for Keep or Burn, was kept by the next line and narrated after the next line (a41): the player read it as this line\'s answer' }]);
+    // Kept with its own button instead, at a39: told in turn, before the attack.
+    const pressed = [...marks.slice(0, 2),
+      { step: 'a39', table: t(), settled: true, cards: [{ ...fray, move: { ...fray.move, held: { ...held, open: false, resolvedBy: 'keep' } } }, narrated('n39', 'm38', 'enter_the_fray', 'miss')] },
+      { ...marks[2] }, { ...marks[3], cards: marks[3].cards.slice(2) }];
+    const inTurn = checkMechanics({ marks: pressed, actions: [actions[0], { step: 'a39', action: click('Keep the result') }, ...actions.slice(1)], messages: [] });
+    expect(inTurn.byCheck['held-narrated-in-turn']).toEqual({ made: 1, violated: 0 });
+    expect(inTurn.violations).toEqual([]);
   });
 
   it('dice-as-they-fell — a card whose dice are not the dice that fell', () => {

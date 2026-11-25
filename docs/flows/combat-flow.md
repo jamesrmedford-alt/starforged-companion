@@ -319,6 +319,18 @@ press it (`cardRollerPc`; the clicker's PC only on a card that names none).
 It spoke as the clicker's PC, so a GM's press rolled the first PC's Face
 Danger for a fight another PC had entered (issue #335 Y11).
 
+**⚔ Begin the fight keeps a held Enter the Fray first** (overhaul 4, slice 5;
+D11, amending issue #362 D5 — who goes on keeps it): an Enter the Fray held
+for Burn / Improve / Keep was not kept by the press, and the player's next
+attack line kept it — the roll was narrated after that line
+(HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE, a38–a41). `cardActions.js`
+`applyCombatThresholdChoice` claims the card, then keeps the held result
+(`keepHeldRollOf` → `heldResult.keepHeldResultForChoice` — its narration
+told the fight begun, the claim read by `fightOfferOf`), then makes the
+fight; 🚪 Find another way keeps it before the way-out card. The move card's
+own suggestion buttons (⚑ Mark progress, 🏁 Attempt to Fulfill, 🤝 the
+connection suggestion) keep their held roll the same way.
+
 **The roll's narration stops before the first blow while the fight is only
 offered** (known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — the long haul's
 third live run, a27: under the card above, the Enter the Fray's narration

@@ -7,8 +7,10 @@
  * browser, checked without one.
  *
  *   - the list that ships (test/ci/playwright/readers/plain-lines.json): it
- *     can run, no line of it names a move or uses a rules word, and every
- *     family and every line kept from the live run is in it;
+ *     can run, no line of it names a move or uses a rules word — save the
+ *     one marked `named`, a move named at the last resort, which wants it
+ *     rolled — and every family and every line kept from the live runs is in
+ *     it, with the lines the fourth live run asked for (issue #383);
  *   - what the list's own checks catch;
  *   - what a pair of replies comes to at the table, as the chat pipeline acts
  *     on them, and its score against the reading the line should get;
@@ -25,9 +27,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  DECISION, OUTCOME, STATE_READ, casesToRun, contextMismatch, readingOf, report, scoreCase, sheetOf, stateNotSet, summarise, validateCases,
+  DECISION, OUTCOME, STATE_READ, armsOf, casesToRun, compareDesigns, contextMismatch, fightOf, positionLegal, readingOf, report, routeOf, scoreCase,
+  sheetOf, stateNotSet, summarise, validateCases,
 } from '../../test/ci/playwright/lib/readers.mjs';
-import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
+import { movesNamedIn, moveLabel } from '../../test/ci/playwright/lib/moveNames.mjs';
 import { createClaudeHarness } from '../../test/ci/playwright/lib/claude.mjs';
 import { createBudget } from '../../test/ci/playwright/lib/budget.mjs';
 import { MOVES } from '../../src/schemas.js';
@@ -49,17 +52,20 @@ describe('the plain lines that ship', () => {
     expect(validateCases(LIST)).toEqual([]);
   });
 
-  it('no line names a move or uses a rules word', () => {
-    const named = LIST.cases.map(c => ({ id: c.id, named: movesNamedIn(c.line) })).filter(c => c.named.length);
+  it('no line names a move or uses a rules word — save the named-move lines, which say the move they name', () => {
+    const named = LIST.cases.filter(c => c.named === undefined).map(c => ({ id: c.id, named: movesNamedIn(c.line) })).filter(c => c.named.length);
     expect(named).toEqual([]);
+    const naming = LIST.cases.filter(c => c.named !== undefined);
+    expect(naming.map(c => c.id)).toEqual(['named-after-moves', 'named-after-moves-2']);
+    for (const c of naming) expect(movesNamedIn(c.line), c.id).toEqual([moveLabel(c.named)]);
   });
 
-  it('is about fifty lines in five to seven contexts, each a scene in the second person', () => {
-    expect(LIST.cases.length).toBeGreaterThanOrEqual(45);
-    expect(LIST.cases.length).toBeLessThanOrEqual(60);
+  it('is about seventy-five lines in five to ten contexts, each a scene in the second person', () => {
+    expect(LIST.cases.length).toBeGreaterThanOrEqual(70);
+    expect(LIST.cases.length).toBeLessThanOrEqual(85);
     const contexts = Object.entries(LIST.contexts);
     expect(contexts.length).toBeGreaterThanOrEqual(5);
-    expect(contexts.length).toBeLessThanOrEqual(7);
+    expect(contexts.length).toBeLessThanOrEqual(10);
     for (const [key, context] of contexts) {
       expect(context.scene.join(' '), `${key}: narration as the narrator writes it`).toMatch(/\b[Yy]ou(r)?\b/);
       expect(LIST.cases.some(c => c.context === key), `${key}: a context no case uses`).toBe(true);
@@ -75,6 +81,8 @@ describe('the plain lines that ship', () => {
       'travel':      ['set_a_course', 'undertake_an_expedition', 'explore_a_waypoint'],
       'action':      ['gather_information', 'face_danger', 'secure_an_advantage', 'compel', 'check_your_gear'],
       'fight entry': ['enter_the_fray'],
+      'fight':       ['strike', 'gain_ground', 'clash', 'react_under_fire', 'face_danger'],
+      'named move':  ['set_a_course', 'face_danger'],
     };
     for (const [family, moves] of Object.entries(families)) {
       for (const move of moves) expect(wantedIn(family).has(move), `${family}: no line wants ${move}`).toBe(true);
@@ -116,8 +124,8 @@ describe('the plain lines that ship', () => {
 
   it('something done for a connection wants Develop Your Relationship; news traded with her is its control', () => {
     const deeds = LIST.cases.filter(c => (c.want.moves ?? []).includes('develop_your_relationship'));
-    // A favour that costs her time, a gift of value, bringing her what she needs.
-    expect(deeds.map(c => c.id)).toEqual(['develop-2', 'develop-3', 'develop-4']);
+    // A favour that costs her time, a gift of value, bringing her what she needs, something of worth given.
+    expect(deeds.map(c => c.id)).toEqual(['develop-2', 'develop-3', 'develop-4', 'develop-5']);
     for (const c of deeds) {
       expect(c.family, c.id).toBe('connection');
       expect(LIST.contexts[c.context].state.connection, `${c.id}: a connection to do it for`).toMatchObject({ name: 'Tamsin Okoro', bonded: false });
@@ -152,7 +160,8 @@ describe('the plain lines that ship', () => {
 
   it('a step toward a vow is asked for with no fight open — one of them with none behind it either — and a thought about the quest is a control', () => {
     const steps = LIST.cases.filter(c => (c.want.moves ?? []).includes('reach_a_milestone'));
-    expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4']);
+    // claim-supported is the fourth live run's claim, where the scene bears it out (issue #383 #3).
+    expect(steps.map(c => c.id)).toEqual(['progress-1', 'progress-2', 'progress-3', 'progress-4', 'claim-supported']);
     for (const c of steps) {
       const state = LIST.contexts[c.context].state;
       expect(state.vow?.name, `${c.id}: a vow to step toward`).toBeTruthy();
@@ -207,11 +216,12 @@ describe('the plain lines that ship', () => {
       expect(STATE_READ[key], key).toMatch(/^both readers' SITUATION block/);
     }
     expect(stateNotSet(LIST.contexts['bleakhold-after-fight'].state)).toEqual([]);
-    expect(stateNotSet(LIST.contexts['ashfall-drift'].state).map(n => n.key)).toEqual(['tracks[].ticks']);
+    // A track's progress is set too now: the one reader is told it.
+    expect(stateNotSet(LIST.contexts['ashfall-drift'].state)).toEqual([]);
     expect(stateNotSet({ weather: 'ion storm', vow: { name: 'V', swornTo: 'Tamsin Okoro' } }).map(n => n.key)).toEqual(['weather', 'vow.swornTo']);
     // Every context's state is set whole: nothing of the list is left to its narration alone.
     for (const [key, context] of Object.entries(LIST.contexts)) {
-      expect(stateNotSet(context.state).map(n => n.key).filter(k => k !== 'tracks[].ticks'), key).toEqual([]);
+      expect(stateNotSet(context.state).map(n => n.key), key).toEqual([]);
     }
   });
 
@@ -298,7 +308,7 @@ describe('validateCases', () => {
       'context "empty": its scene is one or two paragraphs of narration',
       'context "long": its scene is one or two paragraphs of narration',
       'context "adrift": its location "Nowhere Deep" is not one of the world\'s settlements',
-      'context "brawl": an open fight is not a context of this test',
+      'context "brawl": an open fight gives the character\'s position in it (in_control or bad_spot)',
       'context "nobody": its connection has no name',
       'context "nobody": its connection\'s rank "mighty" is not a rank',
       'context "nobody": its connection\'s ticks are a whole number from 0 to 40',
@@ -729,7 +739,7 @@ describe('report', () => {
     expect(limits).toContain('(not set in the world: tracks[].ticks, vow.swornTo)');
     expect(limits).not.toContain('The sheet does not reach the readers');
     // The prompts are the readers' own model's, wherever that arm stands in the list.
-    expect(limits).toContain('**Only the model changes between arms.** Each arm reads the same prompts, written for the readers\' own model (`claude-sonnet-5-5`);');
+    expect(limits).toContain('**Only the model changes between arms of one design.** Each arm reads the same prompts as the others of its design, written for the readers\' own model (`claude-sonnet-5-5`);');
     expect(report(summary, { ...meta, own: undefined })).toContain('written for the readers\' own model; a prompt tuned to another model');
     expect(limits).toContain('**No arm thinks first.** The readers turn thinking off, each model in its own form (`claude-haiku-5-5`: disabled; `claude-sonnet-5-5`: between_tools)');
     expect(text, 'no self-consistency section for one reading a line').not.toContain('## Self-consistency');
@@ -884,5 +894,84 @@ describe('the Claude harness sends a call to the model an arm names', () => {
     expect(JSON.parse(res.body).content[0].text, 'the neutral stub for a JSON helper').toBe('{}');
     expect(model).not.toHaveBeenCalled();
     expect(harness.requests[0]).toMatchObject({ model: HAIKU, source: 'stub' });
+  });
+});
+
+// ── the lines that measure overhaul 1 (issue #383 #1 c, #3, #17) ────────────
+
+describe('the lines the fourth live run asked for: trust asked of a connection, a gift, a proof supported and refuted, a move named after a run of moves', () => {
+  const byId = (id) => LIST.cases.find(c => c.id === id);
+  const RUN_4 = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261124-213912/replay.json'), 'utf8'));
+  const typed = (step) => RUN_4.actions[Number(step.slice(1)) - 1].text;
+
+  it('asking a known connection for a tie is talk; giving her something of worth is Develop Your Relationship', () => {
+    for (const id of ['trust-1', 'trust-2']) {
+      expect(byId(id), id).toMatchObject({ family: 'control', context: 'spire-stall', want: { none: true } });
+      expect(LIST.contexts[byId(id).context].state.connection, `${id}: she is a connection already`).toMatchObject({ name: 'Tamsin Okoro', bonded: false });
+    }
+    expect(byId('trust-1')).toMatchObject({ line: typed('a5'), source: 'run 4 a5' });
+    expect(typed('a7')).toContain(byId('trust-2').line);
+    expect(byId('develop-5')).toMatchObject({ family: 'connection', context: 'spire-stall', want: { moves: ['develop_your_relationship'] } });
+    expect(byId('develop-5').line).toMatch(/Tamsin/);
+  });
+
+  it('a proof claimed in the same shape: where the scene bears it out, the milestone; where the scene denies it, no move', () => {
+    expect(byId('claim-supported')).toMatchObject({ family: 'vow', context: 'bleakhold-clerk', want: { moves: ['reach_a_milestone'] } });
+    expect(byId('claim-refuted')).toMatchObject({ family: 'control', context: 'bleakhold-brig', want: { none: true }, refutes: 'reach_a_milestone', source: 'run 4 a70', line: typed('a70') });
+    for (const id of ['claim-supported', 'claim-refuted']) expect(byId(id).line, id).toContain('the proof I came for');
+    // The scene the refuted claim is read in says what refutes it — as the fourth run's narration did (a70).
+    const brig = LIST.contexts['bleakhold-brig'];
+    expect(brig.scene.join(' ')).toContain('Tamsin Okoro sold nothing');
+    expect(brig.scene.join(' ')).toContain('I never asked who wrote them');
+    expect(brig.state.vow).toMatchObject({ name: 'Find who is raiding the Cinder Expanse lanes' });
+  });
+
+  it('a move named at the last resort, after four moves of the last five, wants it rolled — not offered for the density', () => {
+    expect(byId('named-after-moves')).toMatchObject({ family: 'named move', context: 'aboard-at-spire', line: typed('a33'), named: 'set_a_course', recentMoves: 4, want: { moves: ['set_a_course'], rolled: true }, source: 'run 4 a33' });
+    // What the fourth run's pacing reader was told, and did.
+    const a33 = RUN_4.recording.exchanges.find(x => x.step === 'a33' && /classifyInput$/.test(x.kind));
+    expect(a33.user).toContain('Last 5 inputs in current scene: 4 were moves.');
+    expect(JSON.parse(a33.response.content[0].text)).toMatchObject({ decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'set_a_course' });
+    // Offered, as the run had it: not read. Rolled: read.
+    expect(scoreCase(byId('named-after-moves').want, readingOf({ pacing: { decision: DECISION.OFFER, suggestedMove: 'set_a_course' } }))).toBe(OUTCOME.OFFERED_NOT_ROLLED);
+    expect(scoreCase(byId('named-after-moves').want, readingOf({ pacing: { decision: DECISION.MOVE, nominatedMove: 'set_a_course', classifierRead: true }, interpretation: { moveId: 'set_a_course' } }))).toBe(OUTCOME.ROLLED);
+    // The runner sets the run of moves before the line, and only for a case that says so.
+    const source = fs.readFileSync(path.join(PLAYWRIGHT, 'readers.mjs'), 'utf8');
+    expect(source).toContain('line: c.line, recentMoves: c.recentMoves ?? 0');
+    expect(source).toMatch(/resetRecentDensity\(\);\n\s+if \(recentMoves > 0\) \{[\s\S]{0,300}recordRecentDecision\(\{ decision: "MOVE", sceneTag, window \}\)/);
+  });
+
+  it('the list\'s own checks hold the new kinds of case to what they are', () => {
+    const base = { world: LIST.world, contexts: LIST.contexts };
+    const one = (c) => validateCases({ ...base, cases: [c] });
+    const named = byId('named-after-moves');
+    expect(one(named)).toEqual([]);
+    expect(one({ ...named, named: undefined })).toEqual(['case "named-after-moves": its line names Set a Course — a plain line names no move and uses no rules word']);
+    expect(one({ ...named, named: 'face_danger' })).toEqual(['case "named-after-moves": it is named for Face Danger, and its line does not name it']);
+    expect(one({ ...named, want: { moves: ['set_a_course'] } })).toEqual(['case "named-after-moves": a line that names Set a Course wants it alone, rolled (want: { moves: ["set_a_course"], rolled: true })']);
+    expect(one({ ...named, named: 'sail_away' })).toEqual(['case "named-after-moves": named "sail_away" is no move the module knows']);
+    expect(one({ ...named, recentMoves: 6 })).toEqual(['case "named-after-moves": its recentMoves is a whole number from 0 to 5 (the moves of the last 5 lines)']);
+    const refuted = byId('claim-refuted');
+    expect(one(refuted)).toEqual([]);
+    expect(one({ ...refuted, want: { moves: ['compel'] } })).toContain('case "claim-refuted": refutes is for a control (want.none)');
+    expect(one({ ...refuted, refutes: 'heal' })).toEqual(['case "claim-refuted": refutes names one of reach_a_milestone, fulfill_your_vow — not "heal"']);
+    expect(one({ ...refuted, context: 'lane-ambush', id: 'x' })).toEqual([]);
+    const noVow = { ...base, contexts: { ...LIST.contexts, bare: { ...LIST.contexts['bleakhold-brig'], state: { ...LIST.contexts['bleakhold-brig'].state, vow: undefined } } } };
+    expect(validateCases({ ...noVow, cases: [{ ...refuted, context: 'bare' }] })).toEqual(['case "claim-refuted": it claims a step of reach_a_milestone and its context holds no vow']);
+    expect(one({ ...byId('trust-1'), want: { none: true, rolled: true } })).toContain('case "trust-1": want.rolled is true, and for a wanted move');
+  });
+
+  it('a reading of a line that wants its move rolled is counted apart when only offered, and the report says how such a line is scored', () => {
+    const want = { moves: ['set_a_course'], rolled: true };
+    const results = [
+      { arm: SONNET, id: 'named-after-moves', family: 'named move', line: 'x', want, outcome: OUTCOME.OFFERED_NOT_ROLLED, reading: readingOf({ pacing: { decision: DECISION.OFFER, suggestedMove: 'set_a_course' } }) },
+    ];
+    const summary = summarise(results, { prices: PRICES });
+    expect(summary.byArm[SONNET]).toMatchObject({ wanting: 1, read: 0, offered: 0, offeredNotRolled: 1 });
+    expect(summary.unreadByAll.map(l => l.id)).toEqual(['named-after-moves']);
+    const text = report(summary, { mode: 'live' });
+    expect(text).toContain('**offered, not rolled** — a line that names its move wants it rolled');
+    expect(text).toContain('| 0 (and 1 named, offered, not rolled) |');
+    expect(text).toContain('wants Set a Course, rolled');
   });
 });

@@ -2772,6 +2772,39 @@ function registerSystemAssetTests(quench) {
           assert.match(block, /something risky/i, "the block should hold Face Danger's own text");
           assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
         });
+
+        it("the line reader's catalogue quotes each move's trigger as the installed system's move text has it", async function () {
+          // The drift check for a system update (issue #384, D3): src/moves/readerCatalogue.js quotes
+          // the triggers in the module, so a reworded move would leave the
+          // reader told words the game no longer has.
+          this.timeout(30000);
+          const pack = game.packs?.get?.("foundry-ironsworn.starforgedmoves");
+          if (!pack) { this.skip(); return; }
+          const { READER_CATALOGUE } = await import(`${MODULE_PATH}/moves/readerCatalogue.js`);
+          // A move's text as the catalogue quotes it: links to their labels and
+          // tags dropped (as buildCanonicalMoveBlock reduces it), the `__`
+          // emphasis and the list bullets out, every run of whitespace one space.
+          const reduceMoveText = (text) => String(text ?? "")
+            .replace(/@\w+\[[^\]]*\]\{([^}]*)\}/g, "$1")
+            .replace(/<[^>]*>/g, "")
+            .replace(/__/g, "")
+            .replace(/(^|\n)\s*\*\s+/g, "$1")
+            .replace(/\s+/g, " ")
+            .trim();
+          const index = await pack.getIndex();
+          const entries = Array.from(index ?? []);
+          const stale = [];
+          for (const move of READER_CATALOGUE.flatMap(g => g.moves)) {
+            const entry = entries.find(e => e?.name === move.name);
+            const doc = entry ? await pack.getDocument(entry._id ?? entry.id) : null;
+            if (!doc) { stale.push(`${move.id}: no move named "${move.name}" in the pack`); continue; }
+            const text = reduceMoveText(doc.system?.Text ?? "");
+            for (const quote of [move.when, ...(move.list ?? [])]) {
+              if (!text.includes(reduceMoveText(quote))) stale.push(`${move.id}: "${quote}"`);
+            }
+          }
+          assert.deepEqual(stale, [], `the catalogue quotes what the system's move text does not say:\n${stale.join("\n")}`);
+        });
       });
 
       describe("encounterSpawn — chat command parser", function () {

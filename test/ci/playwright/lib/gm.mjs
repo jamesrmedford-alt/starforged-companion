@@ -9,11 +9,14 @@
 //   - "Who are you interacting with?" is answered with the charter's named
 //     NPC when the player's line names them and the window offers them, else
 //     "No specific entity" — which is what closing it means;
-//   - a draft for someone in the charter's cast is confirmed, as the player
-//     character's connection — under their name or a whole-word part of it,
-//     and of no other cast member's ("Tamsin" for Tamsin Vey: lib/cast.mjs),
-//     once: a cast member who has a card gets no second one; every other
-//     draft is left;
+//   - a draft for someone in the charter's cast is confirmed — under their
+//     name or a whole-word part of it, and of no other cast member's
+//     ("Tamsin" for Tamsin Vey: lib/cast.mjs), once: a cast member who has a
+//     card gets no second one; every other draft is left. It is confirmed as a
+//     person recorded with no bond on anybody's sheet — "No one" where the row
+//     offers it, else the row's own Confirm, never a character's "whose
+//     connection?" button — and it is the player's Make a Connection that
+//     makes them the character's connection (`draftHolder`, below);
 //   - nothing else is typed. A window on the GM's screen these rules do not
 //     answer ends the run as `not-exercised`, naming it (explore.mjs).
 //
@@ -111,15 +114,78 @@ export function draftToConfirm(drafts, members, cardNames = []) {
 }
 
 /**
+ * Whose connection the GM's rules make a cast member's draft — which of its
+ * row's Confirm buttons they press:
+ *
+ *   "none" — the rule: the person recorded with no bond on anybody's sheet,
+ *            so that the player's Make a Connection is what makes them the
+ *            character's connection. The fourth live run's GM pressed the
+ *            character's button instead: a bond Item with no Make a
+ *            Connection, so beat 2's roll could never come and every plea for
+ *            a tie was read as Develop Your Relationship (known-issues
+ *            CONNECTION-MADE-BY-CONFIRMING-A-DRAFT).
+ *   "pc"   — the rule the kept runs were made under: the player character's
+ *            button, else the row's first Confirm. A replay of one of them
+ *            presses what its run pressed, and a rehearsal may ask for it
+ *            (EXPLORE_DRAFT_HOLDER=pc) to walk the road the fourth live run
+ *            walked, for nothing — while today's card still offers that
+ *            button. A live run never takes it.
+ */
+export const DRAFT_HOLDERS = Object.freeze(["none", "pc"]);
+
+/**
+ * The rule a run's GM confirms a cast member's draft by (DRAFT_HOLDERS). A
+ * replay plays under its own run's (`gm.draftHolder` in its replay.json),
+ * and a run kept from before the rule was written down pressed the
+ * character's button; a rehearsal takes EXPLORE_DRAFT_HOLDER, "none" unless
+ * it says; a live run takes "none", and is refused another. Pure.
+ *
+ * @param {{ mode: string, env?: Record<string, string|undefined>, earlier?: object|null }} o
+ * @returns {"none"|"pc"}
+ */
+export function draftHolderFor({ mode, env = {}, earlier = null }) {
+  if (mode === "replay") return earlier?.gm?.draftHolder ?? "pc";
+  const asked = String(env.EXPLORE_DRAFT_HOLDER ?? "").trim().toLowerCase() || "none";
+  if (!DRAFT_HOLDERS.includes(asked)) throw new Error(`EXPLORE_DRAFT_HOLDER is one of ${DRAFT_HOLDERS.join(", ")}, not "${env.EXPLORE_DRAFT_HOLDER}"`);
+  if (asked !== "none" && mode !== "rehearsal") throw new Error(`EXPLORE_DRAFT_HOLDER=${asked} is for a rehearsal: a ${mode} run's GM records a cast member with no bond`);
+  return asked;
+}
+
+/**
+ * The buttons of a draft row to press for a confirmation, in the order they
+ * are tried, as selectors to add to the row's own (`[data-action=
+ * "sf-draft-confirm"][data-index=…]`). The rule ("none") records the person
+ * with no bond: "No one" (`data-actor-id=""`) where the row offers it, else
+ * the row's own Confirm (no `data-actor-id`) — never a character's "whose
+ * connection?" button (`data-actor-id` an actor's id). Today's card offers a
+ * person's row "No one" beside a button per character who may hold them, or
+ * beside a plain Confirm that bonds the confirming user's own character
+ * (src/entities/entityExtractor.js renderDraftCardHtml, issue #354 P2-16);
+ * any other row has its one Confirm. The card the moves-as-contracts overhaul
+ * makes (decision D4) has no "No one": its Confirm records the person, and a
+ * Make a Connection button beside it rolls the move. A row that offers
+ * neither is pressed for nothing. "pc" is the rule the kept runs were made
+ * under, exactly. Pure.
+ *
+ * @param {{ pcId: string, holder?: "none"|"pc" }} o
+ * @returns {string[]}
+ */
+export function draftConfirmSelectors({ pcId, holder = "none" }) {
+  if (holder === "pc") return [`[data-actor-id="${pcId}"]`, ""];
+  return ['[data-actor-id=""]', ":not([data-actor-id])"];
+}
+
+/**
  * Start the rules on the GM's page. `state()` is asked on every pass for what
  * may have changed: `{ armed, lastLine }` — `armed` the rolls to script, the
  * current beat's first (`[{ moves, roll, kind, beat? }]`; the first one that
  * names the proposed move is used), `lastLine` the player's last line of
- * play.
+ * play. `draftHolder`: whose connection a cast member's draft is made
+ * (DRAFT_HOLDERS; draftHolderFor).
  *
  * @returns {() => void} stop
  */
-export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = console.log }) {
+export function startGmRules(gm, { cast = [], pcId, state, onAnswer, draftHolder = "none", log = console.log }) {
   let busy = false;
   let warned = false;
   const names = cast.map(c => c.name).filter(Boolean);
@@ -195,25 +261,32 @@ export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = conso
         }
         return drafts.length ? { drafts, cards: game.actors.contents.filter(a => !!a.flags?.[MODULE_ID]?.entityType).map(a => a.name) } : null;
       }, { MODULE_ID, names, pcId, specs, lastLine });
-      // A draft for someone in the charter's cast: confirmed, as the player
-      // character's connection. Every other draft is left.
+      // A draft for someone in the charter's cast: confirmed, recorded with no
+      // bond (draftConfirmSelectors). Every other draft is left.
       let answered = found?.did ? found : null;
       const pick = found?.drafts ? draftToConfirm(found.drafts.filter(d => !pressed.has(`${d.messageId}:${d.index}`)), members, [...found.cards, ...confirmed]) : null;
       if (pick) {
-        answered = await gm.page.evaluate(({ messageId, index, pcId }) => {
+        const tried = draftConfirmSelectors({ pcId, holder: draftHolder });
+        const pressedHere = await gm.page.evaluate(({ messageId, index, tried }) => {
           const row = `[data-message-id="${messageId}"] [data-action="sf-draft-confirm"][data-index="${index}"]`;
-          const button = document.querySelector(`${row}[data-actor-id="${pcId}"]`) ?? document.querySelector(row);
-          if (!button || button.dataset.sfcAnswered) return null;
+          if (!document.querySelector(row)) return null;          // not rendered yet: the next pass
+          const button = tried.map(s => document.querySelector(`${row}${s}`)).find(Boolean) ?? null;
+          if (!button) return { missing: true };
+          if (button.dataset.sfcAnswered) return null;
           button.dataset.sfcAnswered = "1";
           button.click();
-          return { asConnection: !!button.dataset.actorId };
-        }, { messageId: pick.draft.messageId, index: pick.draft.index, pcId });
-        if (answered) {
-          pressed.add(`${pick.draft.messageId}:${pick.draft.index}`);
+          return { holder: button.hasAttribute("data-actor-id") ? button.dataset.actorId : null, label: String(button.textContent ?? "").replace(/\s+/g, " ").trim() };
+        }, { messageId: pick.draft.messageId, index: pick.draft.index, tried });
+        if (pressedHere) pressed.add(`${pick.draft.messageId}:${pick.draft.index}`);
+        if (pressedHere?.missing) {
+          log(`  (GM) the draft for ${pick.draft.name} offers neither "No one" nor a Confirm of its own — only a character's button, which the rules never press: left pending`);
+        } else if (pressedHere) {
           confirmed.push(pick.member.name);
+          const whose = pressedHere.holder === "" ? `, with "${pressedHere.label || "No one"}" — recorded with no bond on anybody's sheet`
+            : pressedHere.holder ? ", as the player character's connection" : `, with its ${pressedHere.label ? `"${pressedHere.label}"` : "Confirm"}`;
           answered = {
-            did: `confirmed the draft for ${pick.draft.name}${pick.exact ? "" : ` — ${pick.member.name}, under a part of the name`}${answered.asConnection ? ", as the player character's connection" : ""}`,
-            note: pick.draft.type ?? null, cast: { member: pick.member.name, as: pick.draft.name },
+            did: `confirmed the draft for ${pick.draft.name}${pick.exact ? "" : ` — ${pick.member.name}, under a part of the name`}${whose}`,
+            note: pick.draft.type ?? null, cast: { member: pick.member.name, as: pick.draft.name, holder: draftHolder },
           };
         }
       }

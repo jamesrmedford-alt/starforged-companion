@@ -82,12 +82,14 @@ describe('the opening\'s message — the fixed stock is gone', () => {
     expect(msg.indexOf('MATERIAL —')).toBeLessThan(msg.indexOf('EARLIER OPENINGS'));
   });
 
-  it('ends by returning to what the last session left open — nothing new happens', () => {
-    expect(messages[0]).toMatch(/Its last sentence returns to what that leaves open, as it stands\. Nothing new happens in this scene: the first move is the players'\./);
+  it('ends where its material takes it — no turn of the plot; no return, no stillness given as its shape (SET-PIECES-SHAPED-BY-THEIR-PROMPT)', () => {
+    expect(messages[0]).toMatch(/How it ends is the material's: its last sentence stays with whichever result the scene reaches last\. No turn of the plot happens in it: the first move is the players'\./);
+    expect(messages[0]).not.toMatch(/returns to what that leaves open|Nothing new happens/);
   });
 
-  it('with nothing behind it, it stops with the first result unfinished', () => {
-    expect(messages[1]).toMatch(/It stops with \(1\) unfinished\. Nothing new happens in this scene/);
+  it('with nothing behind it, it ends where its material takes it too', () => {
+    expect(messages[1]).toMatch(/How it ends is the material's: its last sentence stays with whichever result the scene reaches last\. No turn of the plot happens in it/);
+    expect(messages[1]).not.toMatch(/unfinished/);
     expect(messages[1]).toMatch(/No earlier session is on record\./);
     expect(messages[1]).not.toMatch(/WHERE THE LAST SESSION STOPPED/);
   });
@@ -229,7 +231,7 @@ describe('the role — a set-piece is built from its material', () => {
   it('says the user message gives the material, and to build the scene from it', () => {
     expect(role).toMatch(/gives its MATERIAL: results rolled for this scene on the game's oracles/);
     expect(role).toMatch(/Build the scene from the material\./);
-    expect(role).toMatch(/OPENING — the player characters whose players are at the table, in a quiet moment inside the situation the last session left\. Nothing new happens in it\./);
+    expect(role).toMatch(/OPENING — the player characters whose players are at the table, in a quiet moment inside the situation the last session left\. No turn of the plot happens in it\./);
   });
 
   it('the opening\'s stock is gone from it: no galley, no food, no talking ship, no "calm before"', () => {

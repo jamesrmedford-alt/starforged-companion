@@ -204,7 +204,7 @@ describe('the session summary keeps what its moves settled (a76: the vow\'s fulf
     const source = String(requests[0].messages[0].content);
     expect(source).toMatch(/Mira Kestrel — Fulfill Your Vow, strong hit — LASTING: a vow brought to its end\nTOLD AS: “[^”]*the weight of the vow lifts off you/);
     expect(source.match(/LASTING:/g)).toHaveLength(1);
-    expect(source).toMatch(/## QUESTIONS[^\n]*\n\n\[\d\] Mira Kestrel asked the narrator “What of my sister's do I have with me\?”/);
+    expect(source).toMatch(/## QUESTIONS[^\n]*\n\n- Mira Kestrel asked the narrator “What of my sister's do I have with me\?”/);
   });
 
   it('and the summary is told to tell every such beat, and to say only what the facts state', async () => {

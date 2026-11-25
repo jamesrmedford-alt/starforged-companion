@@ -388,7 +388,8 @@ describe('a vow fulfilled with its truth told (vowFulfilled, told)', () => {
 
 describe('the stand-in: an offered move, a fact block sent unasked, a vow\'s truth told when the prompt asks', () => {
   const classifier = { system: 'You are the pacing pre-classifier for a narrator.', messages: [{ role: 'user', content: 'Line: I smooth out the torn ledger page.' }] };
-  const playerTurn = (screen) => ({ system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: `CURRENT BEAT: 2 of 3 [session 1] — x\n\nYOUR SCREEN NOW:\n${screen}` }] });
+  // The beat the entry is for is the current one: the scripted player waits for a later beat's entry (lib/rehearsal.mjs).
+  const playerTurn = (screen, beat = 2) => ({ system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: `CURRENT BEAT: ${beat} of 3 [session 1] — x\n\nYOUR SCREEN NOW:\n${screen}` }] });
   const reply = (r, body) => r.reply(body).content[0];
 
   it('a line the script offers a move for is read as a move available, not one made', () => {
@@ -402,7 +403,7 @@ describe('the stand-in: an offered move, a fact block sent unasked, a vow\'s tru
     const scene = CHARTERS['scenario-scene-answer'];
     const entry = scene.rehearsal.find(e => e.sidecar && e.probe);
     const r = createRehearsal({ charter: { ...scene, rehearsal: [entry] } });
-    reply(r, playerTurn('[m1] Gamemaster: hello'));
+    reply(r, playerTurn('[m1] Gamemaster: hello', entry.beat));
     const answer = reply(r, { system: 'NARRATOR ROLE AND VOICE — an answer, not narration.', messages: [{ role: 'user', content: `QUESTION: ${entry.text}\nMira Kestrel carries her sister Ilse's brass star-compass.` }] }).text;
     expect(answer).toContain('```json');
     expect(JSON.parse(answer.split('```json')[1].split('```')[0])).toMatchObject({ newTruths: [{ fact: 'The star-compass sits in Mira\'s left coat pocket, wrapped in oilcloth.' }], sceneFrame: { question: 'Where did Ilse get the compass?' } });
@@ -428,13 +429,13 @@ describe('the stand-in: an offered move, a fact block sent unasked, a vow\'s tru
     expect(vow.rehearsalPlan.tellsVowTruth).toBe(true);
     const entry = vow.rehearsal.find(e => e.move?.id === 'fulfill_your_vow');
     const r = createRehearsal({ charter: { ...vow, rehearsal: [entry] } });
-    reply(r, playerTurn('[m1] Gamemaster: hello'));
+    reply(r, playerTurn('[m1] Gamemaster: hello', entry.beat));
     const text = reply(r, { system: SYSTEM, messages: [{ role: 'user', content: entry.text }] }).text;
     expect(text.split('```json')[0]).toContain(TRUTH);
     expect(JSON.parse(text.split('```json')[1].split('```')[0]).reveals).toEqual([{ id: 'sk-vow1', revealed: ['truth'], resolved: true }]);
     expect(LONG_HAUL.rehearsalPlan.tellsVowTruth).toBeUndefined();
     const haul = createRehearsal({ charter: { ...LONG_HAUL, rehearsal: [{ beat: 25, action: 'say', text: 'My word is kept.', move: { id: 'fulfill_your_vow', progress: true } }] } });
-    reply(haul, playerTurn('[m1] Gamemaster: hello'));
+    reply(haul, playerTurn('[m1] Gamemaster: hello', 25));
     expect(reply(haul, { system: SYSTEM, messages: [{ role: 'user', content: 'My word is kept.' }] }).text.split('```json')[0]).not.toContain(TRUTH);
   });
 });

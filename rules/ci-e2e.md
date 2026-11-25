@@ -467,9 +467,25 @@ hold still, and could not be replayed. The rules: a proposed move's
 confirmation is accepted as proposed; "Who are you interacting with?" is
 answered with the charter's named NPC when the player's line names them and
 the window offers them, else "No specific entity", which is what closing it
-means; a draft for someone in the charter's `cast` is confirmed, as the
-player character's connection, and every other draft is left. Nothing else is
-answered.
+means; a draft for someone in the charter's `cast` is confirmed **as a person
+recorded with no bond on anybody's sheet** — "No one" where the row offers it,
+else the row's own Confirm, never a character's "whose connection?" button —
+so that it is the player's Make a Connection that makes them the character's
+connection; every other draft is left. Nothing else is answered. The fourth
+live run's GM pressed the character's button on the draft instead: a bond
+with no Make a Connection, so beat 2's roll could never come, and every plea
+for a tie was read as Develop Your Relationship (known-issues
+CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). The rule reads both cards: today's,
+whose person's row asks whose connection with a button per character and
+"No one" (`data-actor-id=""`), and the one the moves-as-contracts overhaul
+makes (decision D4), whose Confirm records the person and whose Make a
+Connection button rolls the move (`lib/gm.mjs` `draftConfirmSelectors`). The
+rule the kept runs were made under — the character's button — is kept for
+their replays (`gm.draftHolder` in a run's `replay.json` and `run.json`; a run
+kept from before the rule was written down has none, and replays as it
+pressed), and for a rehearsal that asks for it (`EXPLORE_DRAFT_HOLDER=pc`,
+`draftHolderFor`) to walk the fourth live run's road for nothing while
+today's card still offers it; a live run is refused it.
 
 **A cast member's draft is theirs under a part of the name** (`lib/cast.mjs`,
 `draftToConfirm` in `lib/gm.mjs`). The third live long haul's player named
@@ -700,14 +716,45 @@ and the rules that go with each:
   (`wantsOf`) and the beat has not moved since, or the player has waited
   twice running on a beat that has not moved, `brief()` says so on a line of
   its own (`alert`; "THE OBSERVER: …" in the turn prompt): what was rolled,
-  that the beat is NOT done, that waiting will not finish it. Not on a beat
-  that is the table's (an interruption): there waiting is right. A
+  that the beat is NOT done, that waiting will not finish it. A move made with
+  no roll is a move for this — Develop Your Relationship before a bond, Reach
+  a Milestone: the fourth live run's Develop at a5–a7, on the beat that wanted
+  a connection made, raised no alert. And a card on the table that waits on
+  the player — a result held for Keep or Burn, the milestone's "Which vow
+  advances?", a connection to pick, a cost to choose — is named on a line of
+  its own too (`waiting`, `cardsWaiting`; "WAITING ON YOU: …"): the fourth live
+  run's player skipped Keep at a38 and typed past the vow picker at a71. Not on
+  a beat that is the table's (an interruption): there waiting is right. A
   beat that makes no progress in eight actions (`STALL_ACTIONS`; a beat with
   parts — four facts to plant, a track to fill — counts from the last time it
-  moved), or that `needs` a beat never done, is `not-exercised` and the run
-  goes on. Never call an unreached beat a pass. What happened in the step
+  moved), that `needs` a beat never done, or that `requires` of the world what
+  it does not hold when it comes (`unmetRequirements`: checks of `BEAT_CHECKS`
+  that must hold then), is `not-exercised` and the run goes on. Never call an
+  unreached beat a pass. **Gate a beat on what it needs, not on the road that
+  usually makes it**: the fourth live run lost beats 3, 19, 23 and 24 to
+  `needs: ["b2"]` — the connection had been made from the draft card, so beat
+  2's roll never came, while the vow's Link and a full track were on the table
+  all along. Beats 3, 19 and 23 now require `{ "type": "connectionMade",
+  "name": "Tamsin Vey" }` (she is the character's connection, whichever road
+  made her one); beat 24 still needs beat 23's bond. The re-score asks it the
+  same way (`lib/longrun.mjs` `recheckBeats`). What happened in the step
   that finished a beat belongs to that beat: the next one's window opens after
   it.
+- **A beat is written for the world the beats before it leave**, and its
+  player is told nothing that world does not bear out. The fourth live run's
+  recovery beat asked for the medkit or the market with health and supply
+  full (spirit and the hull were what the fight had spent): its lines tended
+  wounds the sheet did not hold, and the narrator wrote them in. The beat now
+  names no wound: the observer's note says what of the sheet is spent
+  (`sheetSpent` — the meters, their impacts and the command vehicle's
+  integrity, which the table read now keeps), every recover move is among its
+  `wants` (Repair was not, and `recovered` adds the beat's recover moves to its
+  check's), and a player note says to claim no hurt the sheet does not show.
+  Its proof beat had the player claim a proof nothing in the story had found
+  (a70, refuted by the narration it produced): it now asks for the finding
+  first, and for nothing claimed beyond what the narrator has told. Its fight
+  was told off Bleakhold's ring one step after the ship had docked: it is
+  fought at the ring now, the ship in her berth.
 - **Seven decisive rolls are scripted, the rest are real, all are recorded**
   (decision 3's six, and the expedition's finish; a beat's `dice`). They are
   armed at the GM's confirmation, by the move it names — never by whichever
@@ -752,7 +799,13 @@ and the rules that go with each:
   rank and by box, the two mirrors (bond Item ↔ card, vow link ↔ card's name),
   an effect landing once on the roller (a move's momentum, a milestone, a
   suffer cost, a recovery, a burn), a session's momentum once each way, the
-  lock free once settled, every line answered once — and an expedition's
+  lock free once settled, every line answered once — a result held for Keep
+  or Burn and kept by the roller's next line is narrated after that line, and
+  that is a finding of its own (`held-narrated-in-turn`), not a second answer
+  to the line: the fourth live run's a41 was failed `answered-once` for a38's
+  Enter the Fray told after it (known-issues
+  HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE; its kept replay still records
+  `answered-once`, as its own checks found) — and an expedition's
   (`expedition-progress`: one mark of its rank for a hit that undertakes it,
   none and no track for a miss, one for a waypoint's "Mark expedition
   progress"; its finish scored by its boxes, `progress-score`, and paid on
@@ -982,7 +1035,15 @@ the suffer card, the victory card and every prompt on the way are reached with
 no key. Its scripted player finds a button by its label, a dropdown by its
 option and a window by its title on the screen its prompt shows; waits a few
 turns for one that is not there yet; skips what the table never offered; and
-drops an entry whose `beat` the pointer has passed. `rehearsalDice` scripts
+drops an entry whose `beat` the pointer has passed — and waits on one whose
+`beat` the pointer has not come to, which played early would land in the
+window of the beat before. Its readers make the script's move save one: a
+Make a Connection for someone the SITUATION block already lists among the
+character's connections is narrated, as the live readers read it (the fourth
+live run, a5–a8); before, the stand-in rolled it all the same, so no rehearsal
+could show a connection made by its draft card. `EXPLORE_DRAFT_HOLDER=pc`
+rehearses that road: beat 2 is not exercised, and beats 3, 19, 23 and 24 are
+walked on the connection the draft made. `rehearsalDice` scripts
 the rolls the six do not, so that a rehearsal walks the same road every time.
 Both stand-ins answer the campaign recap as the module asks for it since its
 source is the session record (issue #382; `citedRecapReply`): JSON
@@ -1014,9 +1075,10 @@ settled before its relay had landed, and a destination that became no place
 for want of map data in the seed's sector. **A charter's rehearsal walks the
 road the last live run walked**: the long haul's stand-in detector proposes
 the cast's connection as "Tamsin" (a script entry's `detects`), so the draft
-confirmed under a part of the name, the vow's Link, the rename and the bond
-are all rehearsed on that card — the exact-name road is the first two kept
-runs' replays. Since the detector is given the player's line (its PLAYER'S
+confirmed under a part of the name (with "No one", and made the character's
+connection by the rehearsal's Make a Connection), the vow's Link, the rename
+and the bond are all rehearsed on that card — the exact-name road is the
+first two kept runs' replays. Since the detector is given the player's line (its PLAYER'S
 LINE block, issue #380), which holds the name in full, `detects` is what the
 stand-in reports for the member it names, and the cast's full name is not
 reported beside it: before that, the first rehearsal on the new module read
@@ -1126,8 +1188,10 @@ Five rules for the reading that follows, each from that review:
   one device carrying a third of the session. The scorecard's "Refrains" row
   and section (`refrainsOf`, `lib/review.mjs`) count the part of it that is
   said in the same words: per session, the content words and the phrases in
-  a third or more of its narrations with the longest run of narrations in a
-  row that hold each ("over the hatch": 17 of the third run's session 3's
+  a third or more of its narrations of play — the `@scene` answers apart,
+  with how many of them hold each (the fourth live run's session 3 had
+  "light" in 15 of 30 narrations: 15 of its 17 of play, none of its 13
+  answers) — with the longest run of narrations in a row that hold each ("over the hatch": 17 of the third run's session 3's
   23, eleven running), names apart, and the narrations that end on someone
   waiting, watching or still. A device said in new words each time is still
   for the reading.
@@ -1180,9 +1244,10 @@ actions for a rehearsal). A charter without `beats` is scored as the memory
 goal (`scoreMemory`). A charter with `beats` is a long run: `caps`, `cast`
 (the NPCs the GM's rules know), `facts` with `refusals` and `probes`, `baits`,
 `beats` (`id`, `n`, `session`, `title`, `tell` — what the player is told —
-`check`, and where they apply `needs`, `dice`, `interruption`, `after`,
-`playerTitle`, `wants`, `setupLines`, `lastResort`, `lastResortAfter`), and
-`rehearsalDice`. **A beat's `id` is its name for good and `n` is where it
+`check`, and where they apply `needs`, `requires`, `dice`, `interruption`,
+`after`, `playerTitle`, `wants`, `setupLines`, `lastResort`,
+`lastResortAfter`), and `rehearsalDice`. `requires` names checks the observer
+knows (`charterProblem` refuses any other). **A beat's `id` is its name for good and `n` is where it
 stands now**: a kept run's beats, a fact's `plantedBy` and a beat's `needs`
 are told by the id, so a beat added in the middle takes a new id (`b7a`, the
 expedition, eighth) and the rest are renumbered, not renamed. The tests that
@@ -1216,7 +1281,11 @@ line goes unread.
   have brought nothing about — or once a roll has come that is not one of the
   beat's, or the player has waited twice running on a beat that has not
   moved — so the beats that depend on this one are still reached; the beat
-  keeps that it came to it (`lastResort: true` in `beats.json`).
+  keeps that it came to it (`lastResort: true` in `beats.json`). It is told
+  once: the line that names the move spends it, and it is not told again
+  until the beat has moved (`lastResortSpent`, the steps that spent it; the
+  note says so). The fourth live run told it every turn once it was unlocked,
+  and its player named three moves in beat 22 alone (a64, a66, a68).
 - **A memory question is asked with `@scene`**, the module's own way to ask
   about what is established: it skips the pacing reader and is answered as
   "a camera, not a writer". Typed as a line of play it is continued as
@@ -1228,14 +1297,22 @@ line goes unread.
   (`lib/review.mjs` → `freeformOf`) are the measure: for every line of play,
   the pacing reader's decision and the move chosen — from the readers' own
   replies in the run's recording — the move its beat wanted, and whether the
-  line named a move (`lib/moveNames.mjs`: a count to start reading from).
+  line named a move (`lib/moveNames.mjs`: a count to start reading from — a
+  move's name as the rules write it, the rules' own words, and a move's own
+  word said alone, `MOVE_WORDS`: the fourth live run's "toward the waypoint"
+  at a29 was not counted; a test holds every word of every name in
+  `src/schemas.js` `MOVES` to that list or to plain English). A line whose
+  beat wants a recovery, narrated because the sheet had nothing for the one
+  it set about, is read right — by the reader's own reasoning, borne out by
+  the SITUATION block in the request it read (`nothingToRecoverOf`): the
+  fourth live run's eight such readings were counted as misses.
   `rescore.mjs` applies it to a kept run by what its beats want now.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;
 `playwright/readers.mjs`, `readers/plain-lines.json`, `lib/readers.mjs`) asks
-the same question without a table: about fifty plain lines of play, none
-naming a move (a unit test holds the list to that), each with the reading it
-should get — a move, one of two, or none — put through the pacing reader
+the same question without a table: about seventy-five lines of play, none
+naming a move (a unit test holds the list to that) save the two marked `named`,
+each with the reading it should get — a move, one of two, or none — put through the pacing reader
 (`decidePacing`) and, where that calls a move, the move reader
 (`interpretMove`, as `readMove` calls it), in the live world with each line's
 context set (the scene's last narration, the scene frame, the place, and the
@@ -1258,7 +1335,34 @@ right and Sonnet 5.5 77, and a step toward a vow said in the fiction was read
 by neither (known-issues PLAIN-LINE-GOES-UNREAD). On that run the readers were
 moved to Sonnet 5.5 (decisions.md → "The readers run on Sonnet 5.5"). Run it
 after a change to either reader's prompt, before a live run is bought to see
-the same thing.
+the same thing. **The lines the fourth live run asked for** (issue #383) are
+the measure for the readers' overhaul, and have not been read live: asking a
+connection the sheet holds for a tie (`trust-1`, `trust-2`: talk) beside
+giving her something of worth (`develop-5`: Develop Your Relationship); a
+proof claimed in the run's own shape where the scene bears it out
+(`claim-supported`: the milestone) and where the scene denies it
+(`claim-refuted`, in a context of its own, `bleakhold-brig`; `refutes`: no
+move); and the run's named Set a Course read after four moves of the last
+five (`named-after-moves`: `named` lets the line name its move, which it then
+wants alone and rolled, `want.rolled` — offered, it is `offered, not rolled`,
+and not read; `recentMoves` sets the readers' count of recent moves before
+the line, which is otherwise cleared). The list's own checks
+(`validateCases`) hold each of those to what it is.
+
+It also measures **the one reader** that is to replace the two (issue #384,
+slice 1: `src/moves/reader.js`, routed by `src/pacing/readAndRoute.js` — what
+`decidePacing` calls at the switch). An arm of `READERS_ARMS` is a design and a
+model — `two:<model>` the two readers, `one:<model>` the one reader; a bare
+model is `two:` — and a run with both on one model compares them in its report
+by the switch's criteria (`lib/readers.mjs` `compareDesigns`): the measure is
+`READERS_ARMS=two:claude-sonnet-5-5,one:claude-sonnet-5-5,one:claude-haiku-5-5
+READERS_REPEATS=2`. Its list holds fights (a combat track with the character's
+`position` in it, written with `setCombatTrackPosition`), lines that follow a
+run of moves (`recentMoves`), the two named-move lines (`named`, read right
+only when rolled — `want.rolled`) and issue #383's kinds (`kind`), two lines
+each. Its cost criterion is the whole spend a line (the mean), with the median
+told beside it: the median sets the pacing reader's one call against a whole
+reading.
 
 ## Quench batch coupling — shared defaults and hooks
 
