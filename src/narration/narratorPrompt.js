@@ -5,7 +5,6 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock, formatPriceChoiceBlock, formatOpenChoiceBlock, formatFightOfferBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -17,6 +16,7 @@ import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
+import { connectionStanding } from '../moves/situation.js';
 
 /**
  * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
@@ -1204,7 +1204,8 @@ const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'r
  * said. RECENT ORACLE RESULTS already asked it not to contradict the dice;
  * nothing said which gives way when the scene and the answer disagree. The
  * scene does. In the mode's role (the same for every follow-up); the user
- * message says it of the one answer (formatOracleAnswerRule).
+ * message says it of the one answer (its obligations block's TELL [oracle] /
+ * NOT SO [oracle] lines — moves/contracts/obligations.js).
  */
 const ORACLE_ANSWER_BINDS =
   `The oracle's answer is the table's, not yours, and it binds the story from here. A yes ` +
@@ -2898,35 +2899,6 @@ export function formatOracleSeedsBlock(seeds) {
 }
 
 /**
- * The rule an oracle follow-up's user message carries about the one answer it
- * narrates (known-issues ORACLE-NO-NARRATED-AS-YES; ORACLE_ANSWER_BINDS is the
- * mode's standing rule). A yes/no answer is read from the result line the raw
- * card carries ("d100 = 97 → NO", index.js) and said back in plain words with
- * the question, so the answer is the last thing read before the instruction
- * to render it: the narration is of a scene in which it is true. '' for a
- * table roll, a price or a complication — they answer no yes/no question —
- * and for a line that holds no answer.
- *
- * @param {{ kind?: string, question?: string, rolledLine?: string }} oracle
- * @returns {string}
- */
-export function formatOracleAnswerRule({ kind = '', question = '', rolledLine = '' } = {}) {
-  if (kind !== 'oracle_yes_no') return '';
-  const answer = /→\s*(yes|no)\b/i.exec(String(rolledLine ?? ''))?.[1]?.toUpperCase() ?? null;
-  if (!answer) return '';
-  const asked = sanitizePlayerText(question);
-  const opposite = answer === 'NO' ? 'yes' : 'no';
-  return (
-    `The answer is ${answer}${asked ? `: to "${asked}", the oracle says ${answer.toLowerCase()}` : ''}. ` +
-    `It is the table's answer and it is not yours to change: narrate a scene in which it is ` +
-    `true. Nothing in the prose may say, show or imply ${opposite}, or leave it open. Where ` +
-    `RECENT NARRATION said otherwise, bring the scene into line with the answer here — what ` +
-    `was seen or heard was a recording, a relay, an echo or a mistake, or it has stopped — ` +
-    `and say so in the story.`
-  );
-}
-
-/**
  * Format the RECENT ORACLE RESULTS block ([3b]) from the entries
  * `readRecentOracleResults` returns (src/oracles/oracleMemory.js). Returns ''
  * when there is nothing to render. Exported for unit testing.
@@ -3384,10 +3356,13 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   }
 
   // What the narration must tell and must not, last before the instruction:
-  // the offer not yet made, the sheet unchanged, no apparatus — and a refused
-  // move's premise told as not so (overhaul 4).
+  // the offer not yet made, the sheet unchanged, no apparatus — a refused
+  // move's premise told as not so, and what the sheet says of a person or a
+  // fight the line touches (overhaul 4) — and what the scene obliges: TELL
+  // [scene], NOT SO [letgo] (overhaul 2 §10.3).
   const block = formatObligationsBlock([...obligationsFor({
     mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
+    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [],
   }), ...sceneLines(opts?.sceneObligations)]);
   if (block) parts.push(block);
 
@@ -3441,33 +3416,6 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
-  // What the player was shown before the roll, and which of it this outcome
-  // delivers (issue #353 R1). A miss's price that is still the player's
-  // choice, or was declined for the move that replaces it (Explore a
-  // Waypoint's match), is told as it stands (issue #364
-  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
-  const priceChoice = resolution?.priceChoice ?? null;
-  // A cost that is its player's choice and not chosen yet (`openChoice` —
-  // narrator.js reads the table's cards, resultUpgrade.js withUnansweredCards):
-  // the narration stops short of it (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
-  const openChoice = resolution?.openChoice ?? null;
-  // An Enter the Fray whose fight no one has begun yet (`fightOffer`, read
-  // from its card the same way): the narration stops before the first blow
-  // (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN).
-  const fightOffer = resolution?.fightOffer ?? null;
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice, openChoice, fightOffer });
-  if (stakes) parts.push(stakes);
-  const priceBlock = formatPriceChoiceBlock(priceChoice);
-  if (priceBlock) parts.push(priceBlock);
-  const fightBlock = formatFightOfferBlock(fightOffer);
-  if (fightBlock) parts.push(fightBlock);
-  const choiceBlock = formatOpenChoiceBlock(openChoice);
-  if (choiceBlock) parts.push(choiceBlock);
-  // A vow fulfilled says what it asked for, or that it is not yet known
-  // (VOW-FULFILLED-WITH-NOBODY-NAMED).
-  const vowBlock = formatVowFulfilledBlock(resolution?.moveId ?? null, resolution?.outcome ?? null);
-  if (vowBlock) parts.push(vowBlock);
-
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
     : null;
@@ -3479,11 +3427,27 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     );
   }
 
-  // What the narration must tell and must not, last before the instruction
-  // (overhaul 4): a move the sheet said would change nothing, rolled at the
-  // GM's word, is told as the GM ruled it (TELL [overridden]).
-  const obligations = formatObligationsBlock([...obligationsFor({ mode: 'move', note: resolution?.gateNote ?? null }),
-    ...sceneLines(opts?.sceneObligations)]);
+  // What the narration must tell and must not — one block, last before the
+  // instruction (overhaul 4, moves/contracts/obligations.js): what the result
+  // is ([outcome]); the stakes the player saw and which of them it delivers
+  // ([stakes], issue #353 R1); a miss's price still the player's choice, or
+  // declined for what replaces it ([price], EXPLORE-WAYPOINT-MATCH-MISS-
+  // ADVISORY — narrator.js settles it); a cost still the player's to choose
+  // ([cost], COST-NARRATED-BEFORE-IT-IS-CHOSEN) or chosen before this
+  // narration ([chosen]); an Enter the Fray's fight not begun ([fight],
+  // FIGHT-NARRATED-BEFORE-IT-IS-BEGUN) — narrator.js reads the table's cards
+  // (unansweredCardsFor); a vow fulfilled says what it asked for ([vow],
+  // VOW-FULFILLED-WITH-NOBODY-NAMED); a match's twist ([match]); a
+  // recommit the player's ([recommit]); a soft refusal rolled at the GM's
+  // word ([overridden]); what the sheet says of a person or a fight the
+  // beat touches ([state], TRACK-TOLD-AS-A-BOND); the sheet and the
+  // apparatus. The STAKES, PRICE, FIGHT, COST and VOW blocks it replaces
+  // kept their words in it. What the scene obliges — TELL [scene], NOT SO
+  // [letgo] (overhaul 2 §10.3) — is in the same block.
+  const obligations = formatObligationsBlock([...obligationsFor({
+    mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
+    cast: opts?.cast ?? [], speaker,
+  }), ...sceneLines(opts?.sceneObligations)]);
   if (obligations) parts.push(obligations);
 
   // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
@@ -3492,51 +3456,12 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     `Narrate the consequence in ${lengthPhrase(sentenceTarget, lengthOpts)}. ` +
     `${sentenceRule(sentenceTarget, lengthOpts)} ` +
     `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
-    (resolution?.isMatch === true ? ` ${MATCH_TOLD_AS_TWIST}` : '') +
+    (obligations ? ` Keep to the block above: what it says is not yet decided stays undecided, and what it says is not so is never told as so.` : '') +
     (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
 }
-
-/**
- * The move user message's block for a vow fulfilled (known-issues
- * VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live run, a64):
- * "Find who is raiding the Cinder Expanse lanes" was fulfilled with "The
- * thing you swore to find has a hand and a seal, and both are named now" —
- * no name is anywhere in the story; the recap repeated "have a name", and
- * four steps on an NPC asked "Whose name did you decide on?". A fulfilment
- * says what the vow asked for as far as the story holds it, or says it is
- * not yet known; it never claims an answer it does not state. Whether a
- * hidden plan's truth is told is UNREVEALED's to say (formatUnrevealedBlock,
- * THIS BEAT ENDS A VOW) — with no plan in play, this block alone applies.
- * '' for any other move, and for a miss: the vow is not fulfilled.
- *
- * @param {string|null} moveId
- * @param {string|null} outcome
- * @returns {string}
- */
-function formatVowFulfilledBlock(moveId, outcome) {
-  if (moveId !== 'fulfill_your_vow' || (outcome !== 'strong_hit' && outcome !== 'weak_hit')) return '';
-  return (
-    `## THE VOW IS FULFILLED\n\n` +
-    `This move fulfils a vow. Say what the vow set out to find, do or learn, and only as far as the ` +
-    `story holds it: what the recent scene and your instructions state — a hidden plan's truth only ` +
-    `where your instructions say this beat ends that vow. Never write that an answer is known, named, ` +
-    `found or proved without stating it in this narration. Where the story holds no answer — no name, ` +
-    `no face, no place — the vow ends on what was done, and the narration says plainly what is still ` +
-    `not known.`
-  );
-}
-
-/**
- * Said again where a roll came with a match (NARRATION-NAMES-THE-OUTCOME): the
- * outcome block just above the narrator's ask reads "[MATCH]", and the word
- * went into the prose ("The match flares bright on the scope").
- */
-const MATCH_TOLD_AS_TWIST =
-  `This roll came with a match: tell its twist as something that happens in the scene, ` +
-  `and never write the word "match".`;
 
 /** A round's narration grows this many sentences for each acting entry past the first. */
 export const ROUND_EXTRA_SENTENCES_PER_ENTRY = 2;
@@ -3615,25 +3540,13 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
-      // The stakes shown before this entry's roll (issue #353 R1), and where
-      // a price that is its player's choice stands (issue #364).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null,
-        { priceChoice: input.priceChoice ?? null, openChoice: input.openChoice ?? null, fightOffer: input.fightOffer ?? null });
-      if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
-      const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
-      if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
-      // A fight its Enter the Fray offered and no one has begun (FIGHT-NARRATED-BEFORE-IT-IS-BEGUN)…
-      const fightBlock = formatFightOfferBlock(input.fightOffer ?? null);
-      if (fightBlock) lines.push(fightBlock.replace(/^## /gm, '#### '));
-      // …and a cost still its player's to choose (COST-NARRATED-BEFORE-IT-IS-CHOSEN).
-      const choiceBlock = formatOpenChoiceBlock(input.openChoice ?? null);
-      if (choiceBlock) lines.push(choiceBlock.replace(/^## /gm, '#### '));
-      // …and a vow fulfilled says what it asked for (VOW-FULFILLED-WITH-NOBODY-NAMED).
-      const vowBlock = formatVowFulfilledBlock(input.moveId ?? null, input.outcome ?? null);
-      if (vowBlock) lines.push(vowBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
-      if (input.isMatch === true) lines.push(MATCH_TOLD_AS_TWIST);
+      // What this entry's result obliges its telling to — the move's own
+      // block, under the entry (overhaul 4: the STAKES, PRICE, FIGHT, COST,
+      // VOW and match lines it replaces kept their words in it).
+      const block = formatObligationsBlock(obligationsFor({ mode: 'round-entry', resolution: input, speaker: name }), { heading: '####' });
+      if (block) lines.push(block);
     } else if (input.kind === 'refused') {
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}: not rolled`);
       lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);
@@ -3658,10 +3571,11 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
     `## THIS ROUND — ${n} character${n !== 1 ? 's' : ''} acted at once, in this order\n\n` +
     blocks.join('\n\n'),
   );
-  // What the scene obliges the round's narration to tell (overhaul 2 §10.3):
-  // one block for the round, overhaul 4's.
-  const owed = formatObligationsBlock(sceneLines(sceneObligations));
-  if (owed) parts.push(owed);
+  // The round's own obligations — the sheet, the apparatus (overhaul 4) — and
+  // what the scene obliges its narration to tell: TELL [scene], NOT SO
+  // [letgo] (overhaul 2 §10.3). One block for the round.
+  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round' }), ...sceneLines(sceneObligations)]);
+  if (roundBlock) parts.push(roundBlock);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
   const lengthOpts = { audio: audio === true };
@@ -3881,11 +3795,14 @@ function buildCharacterBlock(character, pinnedEntries = []) {
   const lost = connections.filter(c => c?.lost === true);
   // A bond Item marked complete is a forged bond (setBondItemForged — the
   // vendor sheet's own reading), not a fulfilled quest (issue #342 Z57).
+  // The words are the situation's (moves/situation.js connectionStanding) —
+  // one wording for the readers, the narrator and the recap: a full track is
+  // "full, no bond forged yet", never a bond (TRACK-TOLD-AS-A-BOND, overhaul 4).
   if (held.length) {
-    lines.push(`Connections: ${held.map(c => `${c.name} (${formatTrackDetail(c, 'bonded')})`).join('; ')}`);
+    lines.push(`Connections: ${held.map(c => `${c.name} (${[c.rank, connectionStanding(c)].filter(Boolean).join(', ')})`).join('; ')}`);
   }
   if (lost.length) {
-    lines.push(`Connections lost (severed — no longer a bond): ${lost.map(c => c.name).join('; ')}`);
+    lines.push(`Connections lost — no longer a connection: ${lost.map(c => c.name).join('; ')}`);
   }
 
   // Rewards the character was granted — gear, contacts, knowledge (#241;

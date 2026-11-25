@@ -119,15 +119,16 @@ describe('every fulfilment is told never to claim an answer it does not state (t
   it('a64\'s Fulfill Your Vow, a strong hit', () => {
     const user = buildNarratorUserMessage(fulfil(), 'Attempt to fulfill your vow.', 3, 'Mira Kestrel');
     expect(user).toContain(A64_OUTCOME);
-    expect(user).toContain('## THE VOW IS FULFILLED');
+    expect(user).toContain('[vow] THE VOW IS FULFILLED.');
     expect(user).toMatch(/Say what the vow set out to find, do or learn, and only as far as the story holds it/);
     expect(user).toMatch(/Never write that an answer is known, named, found or proved without stating it in this narration/);
     expect(user).toMatch(/Where the story holds no answer — no name, no face, no place — the vow ends on what was done, and the narration says plainly what is still not known/);
-    expect(user.indexOf('## THE VOW IS FULFILLED')).toBeLessThan(user.indexOf('## PLAYER NARRATION'));
+    // The one block comes after the player's line, before the instruction (overhaul 4).
+    expect(user.indexOf('[vow] THE VOW IS FULFILLED.')).toBeGreaterThan(user.indexOf('## PLAYER NARRATION'));
   });
 
   it('a weak hit fulfils it too; a miss does not, and no other move is told this', () => {
-    expect(buildNarratorUserMessage(fulfil({ outcome: 'weak_hit' }), 'Attempt to fulfill your vow.', 3, 'Mira Kestrel')).toContain('## THE VOW IS FULFILLED');
+    expect(buildNarratorUserMessage(fulfil({ outcome: 'weak_hit' }), 'Attempt to fulfill your vow.', 3, 'Mira Kestrel')).toContain('[vow] THE VOW IS FULFILLED.');
     expect(buildNarratorUserMessage(fulfil({ outcome: 'miss' }), 'Attempt to fulfill your vow.', 3, 'Mira Kestrel')).not.toContain('THE VOW IS FULFILLED');
     expect(buildNarratorUserMessage(fulfil({ moveId: 'reach_a_milestone' }), 'Mark progress on your vow.', 3, 'Mira Kestrel')).not.toContain('THE VOW IS FULFILLED');
   });
@@ -135,7 +136,7 @@ describe('every fulfilment is told never to claim an answer it does not state (t
   it('a Batch Mode round\'s fulfilment is told under its own entry', () => {
     const user = buildRoundUserMessage({ entries: [{ actorName: 'Mira Kestrel', text: 'Attempt to fulfill your vow.',
       input: { kind: 'move', moveId: 'fulfill_your_vow', moveName: 'Fulfill Your Vow', outcome: 'strong_hit', outcomeLabel: 'Strong Hit', loremasterContext: A64_OUTCOME } }], sentenceTarget: 3 });
-    expect(user).toContain('#### THE VOW IS FULFILLED');
+    expect(user).toContain('[vow] THE VOW IS FULFILLED.');
   });
 });
 
@@ -176,7 +177,7 @@ describe('VOW-FULFILLED-WITH-NOBODY-NAMED — a plan is not marked revealed by a
     // What the narration was told.
     expect(lastCall().system).toContain('### THIS BEAT ENDS A VOW');
     expect(lastCall().system).toContain(`(id ${plan.id})`);
-    expect(lastCall().userText).toContain('## THE VOW IS FULFILLED');
+    expect(lastCall().userText).toContain('[vow] THE VOW IS FULFILLED.');
     // What its fact block was allowed to record.
     expect(planOf(plan.id).truthRevealed, 'the truth is not revealed by a narration that did not tell it').toBe(false);
     expect(planOf(plan.id).rollsShown, 'the oracle rolls behind it stay hidden').not.toBe(true);

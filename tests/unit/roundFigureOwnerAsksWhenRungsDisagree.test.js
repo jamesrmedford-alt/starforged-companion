@@ -142,7 +142,7 @@ describe("issue #345 D2 — a round's figure whose description and narration nam
     expect(createdNames()).toEqual(['Dace Mirren']);
   });
 
-  it('she is offered on the New Entities card, whose Confirm has a button per acting PC and No one', async () => {
+  it('she is offered on the New Entities card: one Confirm, and 🤝 Make a Connection for each acting PC (overhaul 4, D4)', async () => {
     script(NARRATION, detection('A net-mender by the airlock who once crewed with Ren.'));
     await narrate();
     const cards = draftCards();
@@ -151,8 +151,9 @@ describe("issue #345 D2 — a round's figure whose description and narration nam
     expect(f.drafts.map(d => [d.name, d.status])).toEqual([['Orla Teague', 'pending']]);
     expect(f.actorIds).toEqual(['pc-kira', 'pc-ren']);
     const row = parseHTML(cards[0].content).querySelectorAll('.sf-draft-row')[0];
-    const buttons = [...row.querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => [b.dataset.actorId, b.textContent]);
-    expect(buttons).toEqual([['pc-kira', 'Kira'], ['pc-ren', 'Ren'], ['', 'No one']]);
+    expect([...row.querySelectorAll('[data-action="sf-draft-confirm"]')].map(b => b.textContent)).toEqual(['Confirm']);
+    const offers = [...row.querySelectorAll('[data-action="sf-draft-make-connection"]')].map(b => [b.dataset.actorId, b.textContent]);
+    expect(offers).toEqual([['pc-kira', '🤝 Make a Connection (Kira)'], ['pc-ren', '🤝 Make a Connection (Ren)']]);
   });
 
   it('control: a description that names the PC the narration gives her agrees — she is that PC\'s', async () => {

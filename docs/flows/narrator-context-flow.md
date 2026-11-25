@@ -43,11 +43,17 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
   `src/multiplayer/gmGate.js`). Its user message (`buildNarratorUserMessage`)
-  is RECENT SCENE, MOVE OUTCOME, then STAKES STATED BEFORE THE ROLL — the
-  interpreter's hit and miss lines the Confirm dialog showed
-  (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
-  this outcome delivers (issue #353 R1; a burn's or an improvement's
-  re-narration carries them) — then the player's line. The miss line is
+  is RECENT SCENE, MOVE OUTCOME, the player's line, then **one block of what
+  the result obliges its telling to** — WHAT THIS NARRATION MUST TELL, AND
+  MUST NOT (`moves/contracts/obligations.js` `obligationsFor` /
+  `formatObligationsBlock`, overhaul 4 slice 2; three lists — TELL, NOT YET,
+  NOT SO — a tag a line; it replaced the STAKES, PRICE, COST, FIGHT and VOW
+  blocks and the match line, their words kept) — and the instruction, which
+  says to keep to it. Its lines: [outcome]; [stakes] — the interpreter's hit
+  and miss lines the Confirm dialog showed (`resolution.stakes`,
+  `moves/stakes.js` `stakesShown`) and which one this outcome delivers
+  (issue #353 R1; a burn's or an improvement's re-narration carries them).
+  The miss line is
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
@@ -63,31 +69,49 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
   table's cards — the waypoint's claim, and the option the choice card was
   resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
-  above; still open, or declined, the stakes point at a block of its own
-  after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
-  THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
-  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
-  **What the table has still to answer** is read the same way, from the
-  table's cards, beside that settle (`resultUpgrade.withUnansweredCards`, in
-  `movePlanRequests` and for each of a round's move entries; the long haul's
-  third live run): a **cost that is the player's choice and not chosen yet**
-  (`openChoice` — the outcome's own choice card has no pick, or is not posted
-  yet: a free-flow result is narrated before its card; the choice is
-  `consequences.sufferPrompt` or the card's, and counts only when an option
-  costs something — a suffer move, a loss, a price, a complication) gets THE
-  COST IS THE PLAYER'S CHOICE (`stakes.formatOpenChoiceBlock`: what every
-  option has in common is narrated, the cost is not — a Heal weak hit's
-  narration had spent the supplies before the card asked "Lose Momentum, or
-  Sacrifice Resources?", known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN), and
-  the stakes' weak-hit line points at it instead of asking for "the cost … the
-  move outcome names"; once a pick is made nothing is said. An **Enter the
+  above; still open, or declined, the stakes point at the [price] line (NOT
+  YET "THE PRICE IS THE PLAYER'S CHOICE." / NOT SO "THE PRICE WAS NOT
+  PAID."), and a declined price's seed lines are dropped (issue #364
+  EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
+  **What the table has answered, and has still to answer,** is read the same
+  way, from the table's cards, beside that settle
+  (`obligations.unansweredCardsFor`, moved from `resultUpgrade.js`, through
+  `narrator.js` `withCardsAnswered` in `movePlanRequests` and for each of a
+  round's move entries; the long haul's third live run): a **cost that is
+  the player's choice and not chosen yet** (`openChoice` — the outcome's own
+  choice card has no pick, or is not posted yet: a free-flow result is
+  narrated before its card; the choice is `consequences.sufferPrompt` or the
+  card's, and counts only when an option costs something — a suffer move, a
+  loss, a price, a complication) gets NOT YET [cost] "THE COST IS THE
+  PLAYER'S CHOICE." (what every option has in common is narrated, the cost
+  is not — a Heal weak hit's narration had spent the supplies before the
+  card asked "Lose Momentum, or Sacrifice Resources?", known-issues
+  COST-NARRATED-BEFORE-IT-IS-CHOSEN), and the stakes' weak-hit line points
+  at it instead of asking for "the cost … the move outcome names"; **a cost
+  picked before the narration** (a held result kept by its pick, a round
+  whose entry's card was answered first — `chosen`, the option's label from
+  the card's `chosenIndex` / `pickedIndices` / `pickedSuffers`) gets TELL
+  [chosen] "‹PC› chose ‹option›. Tell what it cost them." An **Enter the
   Fray whose fight no one has begun** (`fightOffer` — its threshold card,
-  found by the resolution's id, is unanswered, or the way out was taken) gets
-  THE FIGHT IS STILL ONLY OFFERED / THE FIGHT WAS NOT BEGUN
-  (`stakes.formatFightOfferBlock`; `combat-flow.md` §1). A **Fulfill Your Vow
-  hit** carries THE VOW IS FULFILLED (never claim an answer the narration does
-  not state — `vow-flow.md` §3), and a roll **with a match** is told, under its
-  outcome block's "[MATCH]", to tell the twist and never write the word. The
+  found by the resolution's id, is unanswered, or the way out was taken)
+  gets [fight] — NOT YET "THE FIGHT IS STILL ONLY OFFERED." / NOT SO "THE
+  FIGHT WAS NOT BEGUN." (`combat-flow.md` §1). A **Fulfill Your Vow hit**
+  carries TELL [vow] "THE VOW IS FULFILLED." (never claim an answer the
+  narration does not state — `vow-flow.md` §3); a **progress move's miss**
+  with a recommit card (Fulfill Your Vow, Finish an Expedition, Forge a
+  Bond) NOT YET [recommit]; **Reach a Milestone** TELL [milestone]; a roll
+  **with a match** TELL [match] — tell the twist and never write the word;
+  a soft refusal **rolled at the GM's word** TELL [overridden]. Which of
+  these a move's result carries beyond the generic ones is its contract
+  row's `obliges` (`moves/contracts/table.js`). NOT SO [state] says what the
+  sheet holds of a person or a fight the beat touches — a connection the
+  line, the move's target or the scene frame's cast names, whose
+  relationship is full and unbonded ("‹person› is ‹PC›'s connection, not a
+  bond: their relationship is full and no bond is forged."), or that is
+  lost; "No fight is under way." for a line that reads as fighting with
+  none open (`narrator.js` `beatSituation` reads the speaker's situation for
+  it — TRACK-TOLD-AS-A-BOND); NOT SO [sheet] and [apparatus] close every
+  block. The
   move and round roles name the outcome's own words — strong hit, weak hit,
   miss, match — as never to appear as such (known-issues
   NARRATION-NAMES-THE-OUTCOME).
@@ -178,7 +202,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   scene gives way (what was heard was a recording, a relay, a mistake, or has
   stopped); the user message says a yes/no answer back in plain words with its
   question, after the recent scene and before the ask
-  (`narratorPrompt.formatOracleAnswerRule`, read by `buildOracleUserMessage`;
+  (its obligations block — TELL [oracle] the answer, NOT SO [oracle] its
+  opposite — `obligationsFor({ mode: "oracle" })`, read by `buildOracleUserMessage`;
   nothing for a table roll, a price or a complication); and RECENT ORACLE
   RESULTS ([3b]) tells every later narration that the answer stands over
   earlier narration. A table's result keeps its latitude, and is never turned

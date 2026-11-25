@@ -103,10 +103,21 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`src/session/swearVow.js`), which: creates the vow **item on every PC**
 (`createCharacterVowItem` — idempotent by `vowId`, carries
 `sharedVow`/`linkedConnectionName`/optional deadline clock), creates the
-immediate-crisis **tension clock** when the meta has one, creates the **target
-NPC connection** — a bond Item on every PC the vow was sworn on
-(`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
-alone; only for a **person** target: the target line carries its kind
+immediate-crisis **tension clock** when the meta has one, records the
+**target as a person** — an NPC card the vow is linked to, **no bond Item on
+any sheet** (overhaul 4, D5; this **reverses the settled decision of issue
+#241 and issue #321 U23**, which made the target a connection on every PC
+who swore so the swear could take its +1 — by the rules a vow is sworn +1
+only to someone already a connection, and a connection is what Make a
+Connection makes; D5 is the design's first decision to take back if the
+opening reads worse for it). The sworn card says they are recorded and not
+yet anyone's connection, and offers **🤝 Make a Connection** to each PC who
+swore (flags `vowTarget: { name, hostId }`, `swornActorIds`; a press relays
+`vow.makeConnection` → `swearVow.applyVowTargetMakeConnection`: the move
+posted as that PC with the target's card as its target, once a PC — its
+player's press or a GM's). The inciting swear's roll adds nothing for its
+target now (`enrichBondAdds` reads the roller's bond Items). Only for a
+**person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
@@ -566,7 +577,7 @@ plan's truth as revealed). Three parts:
   claimed — where it gives no name there is none, and the narration says what
   is still not known. The vow plan's own line no longer ties "truth" to the
   vow's end: it is revealed by being told;
-- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED**
+- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED** (the obligations block's TELL [vow] line, `moves/contracts/obligations.js` — the row's `obliges`, overhaul 4 slice 2)
   (`buildNarratorUserMessage`, a round's entry too; a sheet-rolled hit goes
   the same way): never write that an answer is known, named, found or proved
   without stating it — with no plan in play, and no answer in the story, the

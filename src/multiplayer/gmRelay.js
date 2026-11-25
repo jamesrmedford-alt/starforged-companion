@@ -206,6 +206,8 @@ export const GM_ACTIONS = Object.freeze({
   "draft.dismiss":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftDismissFromRelay" },
   // Issue #362 D10 — "No — a new person" on a row read as someone the table knows
   "draft.newPerson":           { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftNewPersonFromRelay" },
+  // A draft row's 🤝 Make a Connection — a Confirm records the person, the move makes the connection (overhaul 4, D4).
+  "draft.makeConnection":      { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftMakeConnectionFromRelay", record: true },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
@@ -225,6 +227,8 @@ export const GM_ACTIONS = Object.freeze({
   "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion", record: true },
   "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay", record: true },
   "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay", record: true },
+  // The sworn card's 🤝 Make a Connection — the inciting vow's target is a person (overhaul 4, D5).
+  "vow.makeConnection":        { load: () => import("../session/swearVow.js"),                       fn: "applyVowTargetMakeConnection", record: true },
   "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone", record: true },
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond", record: true },
   // Claude: a pick that keeps a held result its card answers on a card of its own waits for that result's narration

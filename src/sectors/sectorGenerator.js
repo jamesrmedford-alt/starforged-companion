@@ -549,7 +549,8 @@ export async function createEntityJournals(sector, campaignState) {
       const conn = getConnection(connectionJournalId);
       if (conn?._id) {
         for (const pc of getPlayerActors()) {
-          await createCharacterBondItem(pc, { name: conn.name, rank: conn.rank, connectionId: conn._id });
+          // The game's launch step (rulebook ch. 2): recorded as setup, not a move (overhaul 4, D5).
+          await createCharacterBondItem(pc, { name: conn.name, rank: conn.rank, connectionId: conn._id, by: "setup" });
         }
       }
     } catch (err) {

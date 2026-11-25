@@ -37,12 +37,14 @@
  * Two rules hold for every predicate: an unknown holds (a meter or a list not
  * read — the move is made), and a predicate reads the situation and the
  * reading, never the line's prose — save NOT_AT_A_PC, which keeps
- * lineIsToAFellowPlayerCharacter's lexical test of the addressee (narrator.js).
+ * lineIsToAFellowPlayerCharacter's lexical test of the addressee (narrator.js),
+ * handed to it on the situation (`table.spokenToAFellowPc`, readMoveSituation):
+ * this file imports no narrator — obligations.js reads the table, and the
+ * narrator reads obligations.js.
  *
  * A predicate never throws: the gate catches a test that does, and holds.
  */
 
-import { lineIsToAFellowPlayerCharacter } from "../../narration/narrator.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "../sceneChallenge.js";
 import { legacyTrackNamed } from "../statEnrichment.js";
 
@@ -425,12 +427,12 @@ export const NOT_AT_A_PC = pre({
     if (r?.targetId && pcs.some(p => p.actorId === r.targetId && p.actorId !== s?.roller?.actorId)) return false;
     if (lower(r?.target) && byName(pcs.filter(p => p.actorId !== s?.roller?.actorId), r.target)) return false;
     if (!lower(r?.line)) return true;
-    // The test is the social moves' one; asked as Compel so it reads the
-    // addressee for every row that requires this (it keys on three move ids).
-    return !lineIsToAFellowPlayerCharacter("compel", r.line, s?.roller?.name ?? null, {
-      pcActors: pcs.map(p => ({ name: p.name })),
-      npcNames: (s?.people ?? []).map(p => p.name).filter(Boolean),
-    });
+    // The social moves' test of the addressee (narrator.js
+    // lineIsToAFellowPlayerCharacter, with the table's PCs and people), as
+    // the situation carries it; not read, unknown.
+    const asked = s?.table?.spokenToAFellowPc;
+    if (typeof asked !== "function") return null;
+    return !asked(r.line, s?.roller?.name ?? null);
   },
   why: () => "the line is spoken to a fellow player character — between player characters that is roleplay, not a roll",
 });

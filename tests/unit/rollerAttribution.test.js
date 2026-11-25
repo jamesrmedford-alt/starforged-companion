@@ -86,7 +86,9 @@ describe('the vow-swearing scene is written for the character who swore', () => 
   });
 });
 
-describe("Confirm on a draft card puts the connection's bond on the PC the narration was for", () => {
+// Overhaul 4, D4 (amending issue #321 U23): a Confirm records the person and
+// bonds no one — the card's PC is offered 🤝 Make a Connection, which rolls.
+describe("Confirm on a draft card records the person — the card's PC is offered the move, not given the bond", () => {
   /** A narration for `actorId` queues a new NPC on the GM's draft card; the GM confirms it. */
   async function confirmDraftFrom(actorId) {
     const gm = table.client('gm-1');
@@ -103,14 +105,18 @@ describe("Confirm on a draft card puts the connection's bond on the PC the narra
     return card;
   }
 
-  it("Ren's narration introduced them: the bond is on Ren's sheet, not Kira's", async () => {
+  it("Ren's narration introduced them: no bond on any sheet, and the row offers Ren — not Kira — the move", async () => {
     const card = await confirmDraftFrom('pc-quinn');
     expect(card.flags[MODULE_ID].actorId).toBe('pc-quinn');
-    expect({ ren: bondNames('pc-quinn'), kira: bondNames('pc-pat') }).toEqual({ ren: ['Vance Oduya'], kira: [] });
+    expect({ ren: bondNames('pc-quinn'), kira: bondNames('pc-pat') }).toEqual({ ren: [], kira: [] });
+    const content = table.world.message(card._id).content;
+    expect(content).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-quinn"/);
+    expect(content).not.toMatch(/data-actor-id="pc-pat"/);
   });
 
-  it("control: a card that names no PC falls back to the confirming GM's — the first PC", async () => {
-    await confirmDraftFrom(null);
-    expect({ ren: bondNames('pc-quinn'), kira: bondNames('pc-pat') }).toEqual({ ren: [], kira: ['Vance Oduya'] });
+  it("control: a card that names no PC bonds no one and offers the move to no one", async () => {
+    const card = await confirmDraftFrom(null);
+    expect({ ren: bondNames('pc-quinn'), kira: bondNames('pc-pat') }).toEqual({ ren: [], kira: [] });
+    expect(table.world.message(card._id).content).not.toMatch(/sf-draft-make-connection/);
   });
 });

@@ -132,7 +132,10 @@ export const RECORD_EVENTS = Object.freeze([
   row('vow.sworn', 2, ['itemId', 'actorId', 'name', 'rank', 'shared'], ['vow', 'res'], ['log', 'recap']),
   row('vow.linked', 2, ['name', 'connectionName'], ['vow', 'conn', 'res'], ['log', 'recap']),
   row('vow.closed', 2, ['name', 'how'], ['vow', 'res'], ['log', 'recap']),
-  row('connection.made', 2, ['name', 'rank'], ['conn', 'nar'], ['log', 'recap'], { blank: ['name'] }),
+  // Written where the bond Item is made (actorBridge.createCharacterBondItem),
+  // with whose sheet (`actorId`) and what made it (`by`: { move } or "setup" —
+  // overhaul 4, D12); a person recorded is entity.confirmed alone.
+  row('connection.made', 2, ['name', 'rank', 'actorId', 'by'], ['conn', 'nar'], ['log', 'recap'], { blank: ['name'] }),
   row('connection.developed', 2, ['name', 'rank', 'ticks'], ['conn'], ['log', 'recap']),
   row('connection.bonded', 2, ['name', 'rank'], ['conn'], ['log', 'recap']),
   row('connection.lost', 2, ['name', 'reason'], ['conn'], ['log', 'recap']),

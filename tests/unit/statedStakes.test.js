@@ -58,8 +58,14 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import {
-  normaliseStakes, withPriceSource, statedPrice, formatStakesBlock, STAKES_LINE_MAX, STAKES_SETTING,
+  normaliseStakes, withPriceSource, statedPrice, STAKES_LINE_MAX, STAKES_SETTING,
 } from '../../src/moves/stakes.js';
+import { obligationsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
 import { buildNarratorUserMessage } from '../../src/narration/narratorPrompt.js';
 import { staticSettingScope } from '../helpers/settingScopes.js';
 
@@ -109,7 +115,7 @@ describe('issue #353 R1 — the stakes the interpreter states', () => {
 
   it('the narrator is told what was shown, and which line the outcome delivers', () => {
     const miss = formatStakesBlock(stakes(), 'miss');
-    expect(miss).toContain('## STAKES STATED BEFORE THE ROLL');
+    expect(miss).toContain('[stakes] The player saw these before rolling:');
     expect(miss).toContain(`- On a hit: ${HIT_LINE}`);
     expect(miss).toContain(`- On a miss: ${MISS_LINE} (Endure Harm −1)`);
     expect(miss).toContain('This is a miss: deliver the miss as stated');
@@ -139,7 +145,7 @@ describe('issue #353 R1 — the stakes the interpreter states', () => {
   it('it reaches the move\'s user message, after the outcome', () => {
     const text = buildNarratorUserMessage({ loremasterContext: '[MOVE: Gather Information +wits] [OUTCOME: Miss]', outcome: 'miss',
       stakes: stakes() }, 'I pull the logs.', 3, 'Kira');
-    expect(text.indexOf('## MOVE OUTCOME')).toBeLessThan(text.indexOf('## STAKES STATED BEFORE THE ROLL'));
+    expect(text.indexOf('## MOVE OUTCOME')).toBeLessThan(text.indexOf('[stakes] The player saw these before rolling:'));
     expect(text).toContain(MISS_LINE);
   });
 });
@@ -231,7 +237,7 @@ describe('issue #353 R1 — a miss pays what was at stake', () => {
 
   it('the narration is told the stakes and that the miss is what it costs — and is seeded with that price', async () => {
     await roll('gather_information');
-    const call = narrations().find(c => /## STAKES STATED BEFORE THE ROLL/.test(c.userText ?? ''));
+    const call = narrations().find(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? ''));
     expect(call, 'the move narration').toBeTruthy();
     expect(call.userText).toContain(`- On a miss: ${MISS_LINE} (Endure Harm −1)`);
     expect(call.userText).toContain('This is a miss: deliver the miss as stated');
@@ -246,7 +252,7 @@ describe('issue #353 R1 — a miss pays what was at stake', () => {
     expect(lastLog().outcome).toBe('strong_hit');
     expect(pc.system.health.value).toBe(5);
     expect(table.cards(f => f.burnReversal).at(-1)?.content).toMatch(/health \+1 refunded/);
-    const renarration = narrations().filter(c => /## STAKES STATED BEFORE THE ROLL/.test(c.userText ?? '')).at(-1);
+    const renarration = narrations().filter(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? '')).at(-1);
     expect(renarration.userText).toContain('This is a strong hit: deliver the hit as stated.');
   });
 

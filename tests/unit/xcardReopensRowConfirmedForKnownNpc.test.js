@@ -198,7 +198,9 @@ describe('issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the d
     expect(draftRow().status, 'the row still reads "Vex"').toBe('pending');
   });
 
-  it('a later Confirm of the reopened row bonds the card\'s own PC with her, and the row is confirmed again', async () => {
+  // Overhaul 4, D4: a Confirm records the person — the reopened row's later
+  // Confirm bonds no one; the bond is Make a Connection's.
+  it('a later Confirm of the reopened row confirms it again — and bonds no one (D4)', async () => {
     await earlierNarrationQueuesVex();
     gmMakesVexACard();
     await hitWithVex('pc-ren', 'Ren');
@@ -212,8 +214,7 @@ describe('issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED — the X-Card reopens the d
     syncChat();
 
     expect(npcCards()).toHaveLength(1);
-    expect(bonds(kira).map(i => i.name), 'the earlier narration was Kira\'s').toEqual(['Vex']);
-    expect(flagsOf(bonds(kira)[0]).bondedByNarrationId, 'the GM\'s Confirm, not a narration\'s').toBeUndefined();
+    expect(bonds(kira), 'a Confirm records the person').toEqual([]);
     expect(bonds(ren)).toEqual([]);
   });
 

@@ -2883,11 +2883,12 @@ async function applyOutcomeEffects({
           notApplied.push(`combat progress ×${marks} — its fight is over`);
         }
       } else {
+        // No createTrack: a move's marks never begin a fight — only Enter the
+        // Fray's commit does (createCombatTrackFromThreshold; overhaul 4, D6).
         const result = await applyCombatProgress(
           { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, combatRank: interpretation?.combatRank, markCount: marks },
           {
             listTracks:   () => listProgressTracks(),
-            createTrack:  (data) => addProgressTrack(data),
             markProgress: (id) => markProgressById(id),
           },
         );
