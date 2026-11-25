@@ -20,6 +20,7 @@ import { milestoneTicks } from "./milestone.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { parseCardButtons } from "./cardActions.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
+import { gatePress } from "./contracts/pressGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -135,6 +136,13 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
       }
       return { marked: false, reason: "no-vow" };
     }
+
+    // The pick is a Reach a Milestone made by a button: the move gate is
+    // asked first (overhaul 4, design §6.2) — a refusal marks nothing and
+    // leaves the picker open, its reason told.
+    const gate = await gatePress("reach_a_milestone", { actorId: actor.id ?? null, reading: { targetId: vow.id ?? null, target: vow.name ?? null },
+      ctx, label: "milestone pick" });
+    if (!gate.ok) return { marked: false, reason: "cannot" };
 
     // Claimed before the mark (issue #336 Y24; decisions #309 "claims before
     // effects"): the vow was marked first and the stamp's refusal swallowed,

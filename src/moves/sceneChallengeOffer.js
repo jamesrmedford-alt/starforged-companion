@@ -95,6 +95,14 @@ export async function applySceneChallengeOffer(payload = {}, ctx = {}) {
     return { applied: false, reason: "not-gm" };
   }
   if (message.flags?.[MODULE_ID]?.sceneChallengeBegun) return { applied: false, reason: "already-resolved" };
+  // The press is Begin the Scene, a move made by a button (overhaul 4,
+  // design §6.2 and 7.2): the move gate is asked before the claim. Its row
+  // requires nothing, so it passes by construction; a precondition put on
+  // the row binds this button too.
+  const { gatePress } = await import("./contracts/pressGate.js");
+  const gate = await gatePress("begin_the_scene", { reading: { target: offer.label ?? null }, ctx, label: "scene challenge offer" });
+  if (!gate.ok) return { applied: false, reason: "cannot" };
+  if (globalThis.game?.messages?.get?.(messageId)?.flags?.[MODULE_ID]?.sceneChallengeBegun) return { applied: false, reason: "already-resolved" };
   try {
     await message.update({ [`flags.${MODULE_ID}.sceneChallengeBegun`]: true });
   } catch (err) {

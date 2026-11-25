@@ -6616,6 +6616,19 @@ function linkedConnectionIdOf(copies) {
   return null;
 }
 
+/**
+ * The connection card a vow is linked to, as deepenVowConnectionOnce resolves
+ * it for a card that names none by id — for the move gate's reading of the
+ * won fight's 🤝 (cardActions.applyFightVowDeepenBond, overhaul 4), so the
+ * gate asks of the one the press would deepen.
+ *
+ * @param {{ vowId?: string|null, vowName?: string|null, actorId?: string|null }} vow
+ * @returns {string|null}
+ */
+export function vowConnectionLinkOf({ vowId = null, vowName = null, actorId = null } = {}) {
+  return linkedConnectionIdOf(payoffVowCopies({ vowId, vowName, actorId }));
+}
+
 async function postDeepenAlreadyPaidCard(connectionName, vowName, { bonded = false } = {}) {
   const who = `<strong>${escapeChatHtml(connectionName ?? "your connection")}</strong>`;
   const vow = `&ldquo;${escapeChatHtml(vowName ?? "this vow")}&rdquo;`;
@@ -7138,29 +7151,49 @@ function registerNativeFulfilConsequenceHook() {
       }
       // The sheet roll's speaker is the PC who rolled.
       const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
-      if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
-        // Their copy gets the reward.
-        payFulfilledVowNative(parsed.source, parsed.outcome, { actorId }).catch(err =>
-          console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
-      } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
-        // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
-        // used to narrate only; the record kept bonded:false and no legacy.
-        // The roller's bond Item names the connection (issue #330 D5).
-        payForgedBondNative(parsed.source, { actorId }).catch(err =>
-          console.warn(`${MODULE_ID} | native-forge consequence failed:`, err?.message ?? err));
-      } else if (parsed.outcome === "miss" && (moveId === "fulfill_your_vow" || moveId === "forge_a_bond")) {
-        // A sheet roll's miss gets the recommit the pipeline offers (issue
-        // #330 D1). The hook acted on hits only, so the player recommitted by
-        // hand: the boxes cleared and the rank raised on every copy of the
-        // vow, or on the connection's record and its bond Items (issue #331
-        // X62).
-        offerSheetMissRecommit(moveId, parsed.source, actorId).catch(err =>
-          console.warn(`${MODULE_ID} | native recommit offer failed:`, err?.message ?? err));
-      }
+      // Its payoff is the move's: the gate is asked first (overhaul 4, design
+      // §6.2) — a vow already closed, a bond already forged, someone who is
+      // no connection of the roller's pays nothing, and the GMs are told why
+      // (it was a debug line; the roll on the sheet stands).
+      void import("./moves/contracts/pressGate.js")
+        .then(({ gatePress }) => gatePress(moveId, { actorId, reading: { target: parsed.source || null }, sheetRoll: true, label: "native progress roll" }))
+        .then((gate) => { if (gate.ok) payNativeProgressRoll(moveId, parsed, actorId); })
+        .catch(err => console.warn(`${MODULE_ID} | native progress roll: its payoff failed:`, err?.message ?? err));
     } catch (err) {
-      console.warn(`${MODULE_ID} | native-fulfil consequence hook threw:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | native-fulfil hook failed:`, err?.message ?? err);
     }
   });
+}
+
+/**
+ * What a vow's or a bond's progress roll on the system's sheet pays, once the
+ * move gate has let it (registerNativeFulfilConsequenceHook): a fulfilment's
+ * reward on the roller's copy, a forged bond, a miss's recommit offer.
+ *
+ * @param {string} moveId — "fulfill_your_vow" | "forge_a_bond" | another progress move
+ * @param {Object} parsed — parseIronswornProgressRoll's
+ * @param {string|null} actorId — the PC who rolled
+ */
+function payNativeProgressRoll(moveId, parsed, actorId) {
+  if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
+    // Their copy gets the reward.
+    payFulfilledVowNative(parsed.source, parsed.outcome, { actorId }).catch(err =>
+      console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
+  } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
+    // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
+    // used to narrate only; the record kept bonded:false and no legacy.
+    // The roller's bond Item names the connection (issue #330 D5).
+    payForgedBondNative(parsed.source, { actorId }).catch(err =>
+      console.warn(`${MODULE_ID} | native-forge consequence failed:`, err?.message ?? err));
+  } else if (parsed.outcome === "miss" && (moveId === "fulfill_your_vow" || moveId === "forge_a_bond")) {
+    // A sheet roll's miss gets the recommit the pipeline offers (issue
+    // #330 D1). The hook acted on hits only, so the player recommitted by
+    // hand: the boxes cleared and the rank raised on every copy of the
+    // vow, or on the connection's record and its bond Items (issue #331
+    // X62).
+    offerSheetMissRecommit(moveId, parsed.source, actorId).catch(err =>
+      console.warn(`${MODULE_ID} | native recommit offer failed:`, err?.message ?? err));
+  }
 }
 
 /**

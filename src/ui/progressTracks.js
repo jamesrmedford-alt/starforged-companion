@@ -1521,6 +1521,16 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       const vowId = typeof payload.vowId === 'string' ? payload.vowId.trim() : '';
       const link  = vowId ? resolveVowChoice(vowId) : null;
       if (vowId && !link) return refusedEdit('no-vow', payload);
+      // A scene challenge added here is Begin the Scene, a move made by a
+      // button (overhaul 4, D7(a)): the move gate is asked — its row requires
+      // nothing, so it passes by construction. A fight or an expedition added
+      // here is the table's own hand, never asked (D7: a GM mends a lost
+      // track; Ironsworn trusts the table with its sheet).
+      if (payload.type === 'scene_challenge') {
+        const { gatePress } = await import('../moves/contracts/pressGate.js');
+        const gate = await gatePress('begin_the_scene', { reading: { target: label }, ctx, label: 'panel add' });
+        if (!gate.ok) return refusedEdit('cannot', payload);
+      }
       const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank, ...(link ?? {}) });
       return { applied: true, trackId: track.id };
     }
