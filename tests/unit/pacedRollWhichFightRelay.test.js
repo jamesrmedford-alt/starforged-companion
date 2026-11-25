@@ -80,6 +80,18 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-test');
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, hasPlayerOwner: true });
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true });
+  // The two fights the card asks between, under way — a pick is made in one
+  // (the move gate's OPEN_FIGHT, overhaul 4): the Progress Tracks journal, as
+  // its store writes it.
+  const flagStore = { [`${MODULE_ID}.tracks`]: [
+    { id: 'fight-1', label: 'Corsairs', type: 'combat', rank: 'dangerous', ticks: 8, completed: false },
+    { id: 'fight-2', label: 'Drones',   type: 'combat', rank: 'dangerous', ticks: 8, completed: false },
+  ] };
+  table.journal._set({
+    id: 'pw-tracks', name: 'Starforged Progress Tracks',
+    getFlag: (mod, key) => flagStore[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flagStore[`${mod}.${key}`] = structuredClone(value); },
+  });
   scriptClaude(table, { fallback: () => 'Steel rings.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
   silenceConsoleErrors();
 });

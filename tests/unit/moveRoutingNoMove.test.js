@@ -45,7 +45,7 @@ import { buildClassifierContext } from "../../src/pacing/classifier.js";
 import { decidePacing, getRecentMoveDensity, recordRecentDecision, resetRecentDensity, reviseLastDecision } from "../../src/pacing/router.js";
 import { lineIsToAFellowPlayerCharacter } from "../../src/narration/narrator.js";
 import { readMove, readAction, configureMovePipeline } from "../../src/moves/movePipeline.js";
-import { getActiveCombatPosition } from "../../src/ui/progressTracks.js";
+import { getActiveCombatPosition, listProgressTracks } from "../../src/ui/progressTracks.js";
 
 const MODULE_ID = "starforged-companion";
 const OPTS = { campaignState: {}, mischiefLevel: "lawful", apiKey: "test-key" };
@@ -70,6 +70,7 @@ beforeEach(() => {
   game.actors._set("pc-isaac", makeTestActor({ id: "pc-isaac", name: "Isaac Sutton" }));
   game.actors._set("pc-karthik", makeTestActor({ id: "pc-karthik", name: "Karthik Shepherd" }));
   getActiveCombatPosition.mockResolvedValue(null);
+  listProgressTracks.mockResolvedValue([]);
   resetRecentDensity();
 });
 
@@ -381,6 +382,9 @@ describe("issue #354 P2-01 — readMove: a line that makes no move comes back to
   });
 
   it("…but not in an open fight, where outcomes are earned with dice", async () => {
+    // A fight under way, the roller in a bad spot in it — as its track holds
+    // it (the move gate reads the open fight: a Clash needs one, overhaul 4).
+    listProgressTracks.mockResolvedValue([{ id: "f1", type: "combat", label: "The boarders", completed: false, positions: { "pc-isaac": "bad_spot" } }]);
     getActiveCombatPosition.mockResolvedValue("bad_spot");
     scriptCalls({ interpreter: { moveId: "clash", statUsed: "iron", rationale: "Fights back.", confidence: "low" } });
     const result = await read({ narration: "I swing at the boarder" });

@@ -259,14 +259,18 @@ describe('ROUND-VOW-GONE-SAYS-FULFILLED — a refused reading of a closed vow sa
       isProgressMove: true, moveTarget: 'Find Chen', rationale: 'test', mischiefApplied: false };
     await relay('pl-1', 'batch.submit', { roundId: round().id, text: 'I see my vow to find Chen through.', submissionId: 'k1' });
     await table.drain();
-    expect(round().entries['pl-1'].reading.blocked).toBe('vow-forsaken');
+    // Kira holds no open vow: the move gate refuses it at Submit (overhaul 4) —
+    // a narrative reading her Round window shows the reason of, in the words
+    // that say how the vow closed.
+    const reading = round().entries['pl-1'].reading;
+    expect(reading).toMatchObject({ kind: 'narrative', refused: { moveId: 'fulfill_your_vow', code: 'open-vow', hard: true } });
+    expect(reading.refused.why).toBe('"Find Chen" was forsaken');
+    expect(reading.refused.why).not.toMatch(/fulfilled/);
 
     await relay('pl-2', 'batch.pass', { roundId: round().id });
     await sendNow();
     await table.drain();
-    const refused = table.cards(f => f.roundRefusedCard).at(-1)?.content ?? '';
-    expect(refused).toMatch(/The vow it named was forsaken/);
-    expect(refused).not.toMatch(/already fulfilled/);
+    expect(table.cards(f => f.moveResolution), 'nothing rolled').toEqual([]);
   }, 30_000);
 
   it('the vow selectors say whether the closed vow was forsaken', () => {

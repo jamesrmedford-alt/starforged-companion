@@ -59,6 +59,7 @@ import { narrateAndPostVowSwearing, suppressPcDirectedSocialMove, getRecentScene
 import {
   getPlayerActors,
   readVows,
+  readConnections,
   readMomentumState,
   completeVowItem,
   setSharedVowReward,
@@ -73,8 +74,8 @@ import { rerouteUnchartedCourse, sceneDestination, readForcedTravelDestination }
 import { finishVow } from "./vow.js";
 import { selectCombatTrack } from "./combat.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, bondedDevelopRoll, developmentAdded } from "./developRelationship.js";
-import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
-import { readSituation, isRecoveryMove, nothingToRecover, nothingToRecoverReason } from "./situation.js";
+import { readMoveSituation } from "./situation.js";
+import { checkMove, refusalOf } from "./contracts/gate.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
 import { extractRiders } from "./consequenceRiders.js";
@@ -232,6 +233,32 @@ function swornVowId(moveTargetId) {
 }
 
 /**
+ * The reading the move gate is given (contracts/gate.js checkMove): the
+ * move's target, by name and id, the patient a Heal is for
+ * (resolveHealPatient's — the roller, an ally or a companion; unresolved,
+ * anyone the party could treat), whether it was made from a waypoint card's
+ * alternative, and the line (NOT_AT_A_PC reads its addressee).
+ *
+ * @param {Object} interpretation
+ * @param {string} line
+ * @returns {Object}
+ */
+function gateReadingOf(interpretation, line) {
+  const situation = interpretation?.healSituation ?? null;
+  return {
+    target:   typeof interpretation?.moveTarget === "string" && interpretation.moveTarget.trim() ? interpretation.moveTarget.trim() : null,
+    targetId: typeof interpretation?.moveTargetId === "string" && interpretation.moveTargetId ? interpretation.moveTargetId : null,
+    patient:  interpretation?.moveId === "heal" ? {
+      actorId: interpretation.patientActorId ?? null,
+      companionItemId: interpretation.patientCompanionItemId ?? null,
+      self: situation === "self" || situation === "treated",
+    } : null,
+    fromWaypoint: interpretation?.fromWaypoint === true,
+    line: String(interpretation?.playerNarration ?? line ?? ""),
+  };
+}
+
+/**
  * Whether a forced travel move with no destination reads one from its line
  * (readMove, issue #348 PT05): a Set a Course always; an Undertake an
  * Expedition only with no expedition open — with one open it continues that
@@ -278,11 +305,15 @@ async function travelDestinationUnread(moveId) {
  *   "Roll a move instead"). A forced move is never read as none.
  * @returns {Promise<{ interpretation: Object, combatPosition: *, targetChoice: Object|null,
  *   speakerActor: Actor|null, rollerActor: Actor|null, noMove?: { rationale: string, lowConfidence: boolean,
- *   offeredMove: string|null } }>} — `noMove`: the line makes no move (or its
- *   reading is too unsure to roll, or it is read as a recovery move the
- *   roller's sheet has nothing for): the caller narrates it, with `offeredMove`
- *   — the move it might be — offered on the narration's card; nothing else is
- *   read. A recovery move with nothing to recover is never the one offered.
+ *   offeredMove: string|null, refused?: Object }, refused?: Object }>} — `noMove`: the line makes no
+ *   move (or its reading is too unsure to roll, or the move it is read as
+ *   cannot be made — `noMove.refused`, the gate's refusal, told in its
+ *   narration and on its card): the caller narrates it, with `offeredMove` —
+ *   the move it might be, which the gate lets be offered — on the narration's
+ *   card; nothing else is read. `refused`: a forced move's or an asked-for
+ *   roll's hard refusal — not rolled, no dialog: the caller posts the
+ *   not-rolled notice with its reason. A soft one rides the interpretation
+ *   (`softRefusal`) to the confirm dialog.
  */
 export async function readMove({
   narration, speakerActorId, campaignState, apiKey, dial,
@@ -319,50 +350,58 @@ export async function readMove({
         classifier, allowNoMove,
       });
 
+  // The move contracts' gate (overhaul 4, contracts/gate.js), on the roller's
+  // situation read once for this reading. The roll checks again (rollAndApply):
+  // the sheet may change between.
+  const gateRoller = rollerFor(speakerActorId).rollerActor;
+  if (interpretation?.moveId === "heal") resolveHealPatient(interpretation, gateRoller, { players: getPlayerActors() });
+  if (forced?.fromWaypoint === true) interpretation.fromWaypoint = true;
+  // A GM's "Roll anyway" on a soft refusal (index.js — a GM's post only).
+  if (forced?.gateOverride === true) interpretation.gateOverride = true;
+  const situation = await readMoveSituation(gateRoller, { campaignState });
+
   // No move is being made — or the reading is too unsure to roll (issue #354
-  // P2-01). The interpreter could only ever answer with a move: "Tell us the
-  // whole story" came back as Ask the Oracle with "this is a narrative
-  // exchange… low confidence" in its rationale, and the roll dialog opened
-  // all the same — `confidence` was read by nothing. The caller narrates the
-  // line and offers the move it might be: the classifier's, else the unsure
-  // reading's own. Not in an open fight (outcomes there are earned with
-  // dice), nor when a roll was asked for.
+  // P2-01), or the move it is read as cannot be made (the gate). The
+  // interpreter could only ever answer with a move: "Tell us the whole story"
+  // came back as Ask the Oracle with "this is a narrative exchange… low
+  // confidence" in its rationale, and the roll dialog opened all the same. The
+  // caller narrates the line and offers the move it might be: the refusal's
+  // own offer, else the classifier's, else the unsure reading's — each only
+  // where the gate lets it be offered. A move that cannot be made is told:
+  // its narration is given the premise as not so and its card says why
+  // (`refused` — NOTHING-TO-RECOVER-UNTOLD: eight recovery lines at full
+  // health were rightly given no move, and nobody was told). An unsure
+  // reading is not narrated in an open fight (outcomes there are earned with
+  // dice), nor is anything here when a roll was asked for.
   if (!forcedMoveId && allowNoMove !== false) {
     // A reading that failed (the interpreter's fallback) is not an unsure one:
     // it goes to the confirm dialog, which says so.
     const unsure = !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
     const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+    const verdict = (!interpretation.noMove && !interpretation.fallback && interpretation.moveId)
+      ? checkMove(interpretation.moveId, situation, gateReadingOf(interpretation, narration), { stage: "read" }) : null;
+    const refused = refusalOf(verdict);
 
-    // Nothing to recover (known-issues HEAL-ROLLED-AT-FULL-HEALTH): a recovery
-    // move the roller's sheet has nothing for is neither rolled nor offered.
-    // A Heal at 5 health of 5 was offered, pressed and rolled — "0 health (now
-    // 5)" for 2 supply — twice in live play. The interpreter is told the
-    // meters and the rule (its rule 10); this holds the two places a reading
-    // could still bring one back: its own reading of such a move where the
-    // sheet alone settles it (situation.js nothingToRecover, `sheetAlone` —
-    // Hearten, and Heal with nobody else to treat), and the classifier's
-    // move offered again on the card of a line read as no move. Not in an
-    // open fight, as an unsure reading is not; a forced move and a roll that
-    // was asked for never come here.
-    const nothingFor = (moveId, opts) => !combatPosition && isRecoveryMove(moveId)
-      && nothingToRecover(moveId, readSituation(rollerActor, { campaignState }), opts);
-    const moot = !interpretation.noMove && !interpretation.fallback && nothingFor(interpretation.moveId, { sheetAlone: true });
-
-    if (interpretation.noMove || unsure || moot) {
-      const offered = classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null;
-      // Offered again only while there is something for it to recover: with
-      // the interpreter's own "no move" beside the sheet, any of the four;
-      // with the sheet alone, where it settles the question.
-      const offerable = typeof offered === "string" && MOVES[offered]
-        && !nothingFor(offered, { sheetAlone: interpretation.noMove !== true });
+    if (interpretation.noMove || unsure || refused) {
+      const candidate = refused ? refused.offer : (classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null);
+      // After the interpreter's "no move" the classifier's move is offered
+      // with no reader behind it: the rows the sheet alone cannot settle (an
+      // item to resupply, a device to repair) refuse it too (`readAsNoMove`).
+      const offerVerdict = typeof candidate === "string" && MOVES[candidate]
+        ? checkMove(candidate, situation, { line: narration ?? "", readAsNoMove: interpretation.noMove === true }, { stage: "offer" })
+        : null;
+      // What is told: the reading's own refusal, else the classifier's move
+      // refused as the line's offer.
+      const told = refused ?? (candidate && candidate === classifier?.moveId ? refusalOf(offerVerdict) : null);
       return {
         interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor,
         noMove: {
-          rationale:     moot
-            ? `${interpretation.rationale ? `${interpretation.rationale} ` : ""}(Nothing to recover: ${nothingToRecoverReason(interpretation.moveId)} — narrated, with no ${moveDisplayName(interpretation.moveId)}.)`
+          rationale:     refused
+            ? `${interpretation.rationale ? `${interpretation.rationale} ` : ""}(Cannot be made: ${refused.why} — narrated, with no ${moveDisplayName(refused.moveId)}.)`
             : (interpretation.rationale ?? ""),
           lowConfidence: unsure,
-          offeredMove:   offerable ? offered : null,
+          offeredMove:   offerVerdict?.ok ? candidate : null,
+          ...(told ? { refused: told } : {}),
         },
       };
     }
@@ -411,20 +450,30 @@ export async function readMove({
     await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
 
-  // A scene-challenge move (Face Danger / Secure an Advantage within a
-  // scene challenge — issue #338 D2) with no challenge open is the
-  // ordinary move it varies: its progress and segments would land on
-  // nothing, and its strong hit takes no momentum. So is one whose own
-  // challenge — the one it names by id, as a paced card's Roll does — has
-  // ended, whatever else is open (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
-  if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
-    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
-      { trackId: interpretation.moveTargetId ?? null });
-    if (ordinary !== interpretation.moveId) {
-      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open — resolved as ${ordinary}.`);
-      interpretation.moveId   = ordinary;
-      interpretation.moveName = moveDisplayName(ordinary);
+  // The gate, for every reading that goes on: its reroutes, and — for a
+  // forced move or a roll that was asked for — its refusal. A scene-challenge
+  // move (Face Danger / Secure an Advantage within a scene challenge — issue
+  // #338 D2) with no challenge open is the ordinary move it varies, as is one
+  // whose own challenge, named by id, has ended (PACED-VARIANT-ROLL-ENDED-
+  // CHALLENGE); a Strike in a bad spot is a Clash. A hard refusal (nothing
+  // for the move to act on) is not rolled and goes to no dialog: the caller
+  // posts the not-rolled notice with its reason. A soft one (the sheet says
+  // it would change nothing) rides the interpretation to the GM's confirm
+  // dialog, whose Accept rolls it at the GM's word (D2). A typed line's
+  // refusal was told above.
+  const verdict = checkMove(interpretation.moveId, situation, gateReadingOf(interpretation, narration),
+    { stage: "read", override: interpretation.gateOverride === true });
+  if (verdict.ok && verdict.instead) {
+    console.debug(`${MODULE_ID} | ${interpretation.moveId}: made as ${verdict.instead} (the move gate's reroute).`);
+    interpretation.moveId   = verdict.instead;
+    interpretation.moveName = moveDisplayName(verdict.instead);
+  } else if (!verdict.ok) {
+    const refusal = refusalOf(verdict);
+    if (refusal.hard) {
+      const { speakerActor, rollerActor } = rollerFor(speakerActorId);
+      return { interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor, refused: refusal };
     }
+    interpretation.softRefusal = refusal;
   }
 
   // The miss stated before the roll is its price only for a move whose miss
@@ -687,12 +736,16 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
         kind:              READING_KIND.NARRATIVE,
         suggestedMove:     suggestedMove ?? null,
         suggestedTargetId: suggestedMove ? (pacing.suggestedTargetId ?? null) : null,
+        // The move the line was read as could not be made (the gate): the
+        // window shows why, and the round's narration is told it is not so.
+        ...(pacing.refused ? { refused: pacing.refused } : {}),
       };
     }
   }
   const read = await readMove({
     narration: text, speakerActorId, campaignState, apiKey, dial,
-    forced: forced ? { moveId: forced.moveId, moveTarget: forced.moveTarget ?? null, moveTargetId: forced.moveTargetId ?? null } : null,
+    forced: forced ? { moveId: forced.moveId, moveTarget: forced.moveTarget ?? null, moveTargetId: forced.moveTargetId ?? null,
+      ...(forced.fromWaypoint === true ? { fromWaypoint: true } : {}) } : null,
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
     classifier,
@@ -707,7 +760,16 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
   // and "Roll ⟨move⟩" stay. Never a social move against a fellow PC.
   if (read.noMove) {
     const suggestedMove = suppressPcDirectedSocialMove(read.noMove.offeredMove, text, speakerName);
-    return { kind: READING_KIND.NARRATIVE, suggestedMove: suggestedMove ?? null, suggestedTargetId: null };
+    return { kind: READING_KIND.NARRATIVE, suggestedMove: suggestedMove ?? null, suggestedTargetId: null,
+      ...(read.noMove.refused ? { refused: read.noMove.refused } : {}) };
+  }
+  // A move the gate refuses — hard, or soft: a round has no GM's confirm to
+  // roll it at the GM's word, so a soft refusal is final for the round (the GM
+  // can make the move after it) — is a narrative reading, told why.
+  const refused = read.refused ?? read.interpretation?.softRefusal ?? null;
+  if (refused) {
+    const suggestedMove = suppressPcDirectedSocialMove(refused.offer ?? null, text, speakerName);
+    return { kind: READING_KIND.NARRATIVE, suggestedMove: suggestedMove ?? null, suggestedTargetId: null, refused };
   }
   return readingFromMove(read, { forced });
 }
@@ -888,27 +950,9 @@ async function aidMadeInFight(moveId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Why a move that names a track was not rolled, in a sentence — a Batch Mode
- * round's refused reading (batch/driver.js); the "not rolled" card says the
- * same (index.js postTrackGoneCard). A forge's track is a connection:
- * severed, removed or bonded since its picker was posted (issue #345 AA50),
- * or one a typed forge named that is already bonded (FORGE-NAMED-BONDED-SCORED).
- *
- * @param {Object} interpretation
- * @param {{ alreadyBonded?: boolean }} [opts]
- * @returns {string}
- */
-function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
-  if (alreadyBonded) return `${interpretation?.moveTarget ?? "That connection"} is already bonded — there is no bond to forge.`;
-  return interpretation?.moveId === "forge_a_bond"
-    ? "The connection it named was severed, removed or bonded before the roll."
-    : "The track it named was deleted or finished before the roll.";
-}
-
-/**
  * Roll a confirmed move and apply its outcome: the confirm's ability adds and
- * stat substitution, the stat and progress enrichment, the "not rolled"
- * guards, the adds owed (Take a Break, the roller's +1, a bond), the dice,
+ * stat substitution, the move gate (a move that cannot be made is not rolled), the stat
+ * and progress enrichment, the adds owed (Take a Break, the roller's +1, a bond), the dice,
  * the outcome's effects, the per-move branches, a Pay the Price, the
  * narrator's relevance (with the GM's clarification dialog when it asks), the
  * move result card, and what follows that card — the cards that say what the
@@ -928,7 +972,7 @@ function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
  *   Burn Momentum or Improve Result is held — its Pay the Price is not paid and it is not narrated until
  *   the roller burns, improves or keeps it (heldResult.js). The card carries what the wait needs
  *   (`awaitingUpgrade`), and `held` comes back true: the caller records the move and does not narrate it.
- * @returns {Promise<{ refused: string, refusedReason?: string }|{ refused: null, resolution: Object, interpretation: Object,
+ * @returns {Promise<{ refused: string, refusedReason: string, refusal: Object }|{ refused: null, resolution: Object, interpretation: Object,
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
  *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null, held: boolean }>}
  */
@@ -985,7 +1029,7 @@ async function rollAndApply({
   cardFlags = null, onDiceRolled = null, resolutionId = null, holdForUpgrade = false,
 }, afterMoveCard) {
   const {
-    postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
+    applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
     postForgeABondCard, postExpeditionFinishCard, noteUnsavedOnCopy, postSceneFinishCard,
     postRecommitOfferCard, postVowRecommitOfferCard, postBondRecommitOfferCard,
     resolveVowItemCopies, completeVowItemByName, postFulfillVowCard, payFulfilledVowNative,
@@ -1006,22 +1050,44 @@ async function rollAndApply({
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }
 
-  // A scene-challenge variant with no challenge open is the ordinary move it
-  // varies (issue #338 D2; readMove applies it as it reads) — and again here,
-  // as it is rolled: a Batch Mode entry is rolled after it was read, so an
-  // earlier entry's Finish the Scene can have ended the challenge, and the
-  // variant would mark nothing and take no momentum on a strong hit (issue
-  // #342 Z39). One naming its challenge by id (a paced card's Roll) is the
-  // ordinary move once that one has ended, whatever else is open
-  // (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
-  if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
-    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
-      { trackId: interpretation.moveTargetId ?? null });
-    if (ordinary !== interpretation.moveId) {
-      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open as it is rolled — rolled as ${ordinary}.`);
-      interpretation.moveId   = ordinary;
-      interpretation.moveName = moveDisplayName(ordinary);
+  // The move gate at the dice — the authority (overhaul 4, contracts/gate.js):
+  // every roll, free-flow, a forced move and a Batch Mode round's entry, which
+  // is rolled after it was read (an earlier entry can have ended its track,
+  // healed its patient, bonded its connection). Before anything is applied
+  // and before any +1 is claimed: a move that is not rolled pays no add, and
+  // the +1s go on the next action roll made (issue #331 X17). Heal's patient
+  // is resolved first (pure — issue #325 W04): the care is checked for them.
+  //
+  // A refusal comes back with its reason (`refusal`): free-flow posts the
+  // not-rolled notice (index.js), a round its refused card and the entry's
+  // narration input (batch/driver.js). It replaces the "not rolled" guards
+  // for a track named by id that has ended (issue #306 R06, #321 U02), a
+  // finished fight's Battle (issue #325 W11), a second Finish the Scene
+  // (issue #342 Z07), a forge on a connection severed, removed or bonded
+  // (issue #345 AA50, FORGE-NAMED-BONDED-SCORED) — and adds what they never
+  // covered: a combat move with no fight (D6 — its marks made one), a
+  // connection's move with someone who is no connection of the roller's.
+  // Its reroutes are applied as they always were: a scene-challenge variant
+  // whose challenge is not open (or whose own, named by id, has ended) is the
+  // ordinary move it varies (issue #338 D2, #342 Z39,
+  // PACED-VARIANT-ROLL-ENDED-CHALLENGE); a Strike in a bad spot is a Clash.
+  // A soft refusal the GM accepted on the confirm dialog (`gateOverride`) is
+  // rolled, and the move card and its narration say so (`gateNote`).
+  resolveHealPatient(interpretation, rollerActor, { players: getPlayerActors() });
+  {
+    const situation = await readMoveSituation(rollerActor, { campaignState });
+    const verdict = checkMove(interpretation.moveId, situation, gateReadingOf(interpretation, narration),
+      { stage: "roll", override: interpretation.gateOverride === true });
+    if (!verdict.ok) {
+      console.debug(`${MODULE_ID} | ${interpretation.moveId} not rolled — the move gate: ${verdict.code} (${verdict.why}).`);
+      return { refused: verdict.code, refusedReason: verdict.why, refusal: refusalOf(verdict) };
     }
+    if (verdict.instead) {
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: rolled as ${verdict.instead} (the move gate's reroute).`);
+      interpretation.moveId   = verdict.instead;
+      interpretation.moveName = moveDisplayName(verdict.instead);
+    }
+    if (verdict.note) interpretation.gateNote = verdict.note;
   }
 
   // Apply opt-in adds from abilities the player kept checked in the
@@ -1104,51 +1170,6 @@ async function rollAndApply({
     return null;
   });
 
-  // The "not rolled" guards come before any +1 is taken: a move that is
-  // not rolled pays no add, and both decisions put the +1 on the next
-  // action roll MADE — a claim that adds nothing leaves it pending (issue
-  // #331 X17: a forced Battle on a fight that had ended ate Take a
-  // Break's +1 and the roller's own, then rolled nothing).
-  //
-  // A roll started from a track (a Progress Tracks row, an expedition
-  // card, a "Which vow?" pick) names it by id. When that track was
-  // deleted or finished meanwhile, nothing is rolled — and it says so: a
-  // same-named sibling is a different fight, and a score of 0 would be a
-  // certain miss with its consequences (issue #306 R06, #321 U02). A scene
-  // challenge's Finish the Scene too (issue #326 D6 made it a progress move
-  // after R06): a second finish, or a stale row, rolled a certain miss and
-  // paid its price for a scene already over (issue #342 Z07). And a Forge a
-  // Bond picked on a connection picker: a connection severed or deleted
-  // since was rolled at 0, and one bonded since (its id resolves nothing
-  // for a forge — selectConnection `unbonded`) said "Legacy reward marked"
-  // over a forge that marked nothing (issue #345 AA50).
-  // A typed Forge a Bond naming a connection already bonded is not rolled
-  // either, and its card says it was bonded (FORGE-NAMED-BONDED-SCORED: it
-  // was scored on the bond's own track, then the forge skipped it). The
-  // refusal carries its reason for a Batch Mode round's reading, which said
-  // "deleted or finished" for a forge too.
-  const alreadyBonded = tickInfo?.source === "connection" && tickInfo.alreadyBonded === true;
-  if (alreadyBonded || (interpretation.moveTargetId
-      && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
-        || tickInfo?.source === "scene_challenge" || tickInfo?.source === "connection")
-      && !tickInfo.trackId)) {
-    await postTrackGoneCard(interpretation, { alreadyBonded }).catch(err =>
-      console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-    return { refused: "track-gone", refusedReason: trackGoneReason(interpretation, { alreadyBonded }) };
-  }
-  // Battle is an action roll, so the guard above (progress moves) let a
-  // Battle naming a finished fight by id roll in full — its +2 momentum
-  // or a Pay the Price for a fight that was over (issue #325 W11).
-  if (interpretation.moveId === "battle" && interpretation.moveTargetId) {
-    const fights = await listProgressTracks().catch(() => []);
-    const fight  = fights.find(t => t.id === interpretation.moveTargetId);
-    if (!fight || fight.completed) {
-      await postTrackGoneCard(interpretation).catch(err =>
-        console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-      return { refused: "track-gone" };
-    }
-  }
-
   // Who the line implies, asked before the dice (issue #347 D1). A hybrid
   // move whose line implies someone it does not name — "I slip past him" —
   // asks the GM "Who are you interacting with?". Asked after the roll, the
@@ -1190,15 +1211,16 @@ async function rollAndApply({
   if (bonusAdd > 0) {
     interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
   }
-  // Heal: the patient — an ally the care is for, or a companion — resolved
-  // before the dice; the recovery card checks and heals them, not the
-  // healer (issue #325 W04).
-  resolveHealPatient(interpretation, rollerActor, { players: getPlayerActors() });
+  // Heal's patient was resolved before the gate (above): the recovery card
+  // checks and heals them, not the healer (issue #325 W04).
   // Aid Your Ally: the ally whose benefits a hit is (issue #325 W17).
   resolveAidedAlly(interpretation, rollerActor, { players: getPlayerActors() });
   // A bonded Test Your Relationship adds +1; a vow sworn to a connection
-  // +1, to a bonded one +2 (issue #325 W18).
-  const bondAdd = await enrichBondAdds(interpretation, { listConnections }).catch(err => {
+  // +1, to a bonded one +2 (issue #325 W18) — the roller's own connection,
+  // their bond Item (overhaul 4).
+  let rollerConnections = null;
+  try { rollerConnections = rollerActor ? readConnections(rollerActor) : null; } catch { rollerConnections = null; }
+  const bondAdd = await enrichBondAdds(interpretation, { listConnections, rollerConnections }).catch(err => {
     console.warn(`${MODULE_ID} | bond add enrichment failed:`, err?.message ?? err);
     return 0;
   });
@@ -1243,6 +1265,16 @@ async function rollAndApply({
   // A Set a Course read as Undertake an Expedition: the move card says why
   // (issue #348 PT06; readMove).
   if (interpretation.courseRerouted) resolution.courseRerouted = interpretation.courseRerouted;
+  // A soft refusal the GM rolled anyway: the move card and the narration say
+  // so (index.js postMoveResult; obligations.js TELL [overridden]).
+  if (interpretation.gateNote) resolution.gateNote = interpretation.gateNote;
+  // Explore a Waypoint at a site (a vault, a derelict) with no expedition
+  // under way — what the gate lets it be made for (EXPEDITION_OR_SITE): its
+  // strong hit offers no expedition progress, which would land on nothing
+  // (overhaul 4, D6 — the executor made an unnamed expedition for it). The
+  // momentum stays a pick on its card, so a match's Make a Discovery can
+  // still be taken instead of it.
+  await withoutExpeditionProgressWithNoExpedition(resolution);
 
   // The outcome's effects beyond the roller's meters and its choice card —
   // an arrival, the expedition's progress, a legacy mark, the companion's
@@ -1616,15 +1648,10 @@ async function rollAndApply({
         }
         await postForsakeVowCard(primary.item.name).catch(err =>
           console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
-      } else {
-        // No open vow of the roller's to clear: the move card says so and
-        // offers no costs — it said "Vow cleared." and offered them while
-        // every vow stayed open, the miss on the GM's console alone (issue
-        // #345 AA16; "No silent no-op on a player's action").
-        console.warn(`${MODULE_ID} | forsake: no vow of ${rollerActor?.name ?? "the roller"}'s matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
-        resolution.consequences = { ...resolution.consequences, sufferPrompt: null,
-          otherEffect: `No open vow of ${rollerActor?.name ?? "the character"}'s to forsake — no vow was cleared, and no cost is owed.` };
       }
+      // No open vow of the roller's: never rolled — the move gate refuses a
+      // Forsake Your Vow with none (OPEN_VOW of the roller's, read and rolled),
+      // where this branch once found out after the move (issue #345 AA16).
     } catch (err) {
       console.warn(`${MODULE_ID} | forsake vow failed:`, err?.message ?? err);
     }
@@ -2031,6 +2058,31 @@ export async function applyDevelopRelationship({ resolution, interpretation, cam
   await postDevelopRelationshipCard(roll ? { ...plan, roll } : plan).catch(err =>
     console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
   return plan;
+}
+
+/**
+ * An Explore a Waypoint's strong hit with no expedition under way (at a
+ * site): its "Mark expedition progress" pick is taken off its choice, leaving
+ * the +2 momentum — still a pick, which a match's Make a Discovery can retire
+ * (cardActions.applyWaypointOraclePick). Tracks that cannot be read change
+ * nothing. Mutates the resolution's consequences.
+ *
+ * @param {Object} resolution
+ * @returns {Promise<void>}
+ */
+async function withoutExpeditionProgressWithNoExpedition(resolution) {
+  const prompt = resolution?.consequences?.sufferPrompt;
+  if (resolution?.moveId !== "explore_a_waypoint" || !Array.isArray(prompt?.options)) return;
+  if (!prompt.options.some(o => typeof o?.expeditionProgress === "number")) return;
+  const tracks = await listProgressTracks().catch(() => null);
+  if (!Array.isArray(tracks) || tracks.some(t => t?.type === "expedition" && !t.completed)) return;
+  resolution.consequences = {
+    ...resolution.consequences,
+    sufferPrompt: { ...prompt, options: prompt.options.filter(o => typeof o?.expeditionProgress !== "number") },
+    otherEffect: resolution.isMatch
+      ? "Strong hit with a match — take +2 momentum (no expedition is under way to mark). With the match you may instead Make a Discovery."
+      : "Strong hit — take +2 momentum (no expedition is under way to mark).",
+  };
 }
 
 /**

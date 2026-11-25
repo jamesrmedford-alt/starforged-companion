@@ -63,7 +63,13 @@ import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { mapConsequences, settlePriceChoice, priceChoiceOf, withChoicePrice } from "../../src/moves/resolver.js";
-import { formatStakesBlock, formatPriceChoiceBlock } from "../../src/moves/stakes.js";
+import { obligationsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
+const formatPriceChoiceBlock = (priceChoice) => lineFor("price", { outcome: "miss", priceChoice });
 import { buildNarratorUserMessage, buildRoundUserMessage } from "../../src/narration/narratorPrompt.js";
 import { narrationInputFrom } from "../../src/moves/movePipeline.js";
 
@@ -138,7 +144,7 @@ describe("Sojourn — a miss narrated before its choice is told the price is off
     expect(narration.userText).toContain(`- On a miss: ${STATED} (Endure Stress −1)`);
     expect(narration.userText).not.toContain("it is what this miss costs");
     expect(narration.userText).toContain("the stated miss is the price it offers, not a price paid");
-    expect(narration.userText).toContain("## THE PRICE IS THE PLAYER'S CHOICE");
+    expect(narration.userText).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(narration.userText).toContain("has not chosen yet");
     expect(narration.userText).toContain("Swear an Iron Vow");
     expect(narration.userText).toContain(`The price it offers: ${STATED}`);
@@ -155,7 +161,7 @@ describe("Sojourn — a miss narrated before its choice is told the price is off
 
     const [narration] = narrations();
     expect(seededPrices(narration)).toEqual([WASTE]);
-    expect(narration.userText).toContain("## THE PRICE IS THE PLAYER'S CHOICE");
+    expect(narration.userText).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(narration.userText).toContain(`The price it offers: ${WASTE}`);
     expect(narration.userText).toContain("Do not show its cost as already paid");
     expect(pc.system.supply.value).toBe(3);
@@ -202,7 +208,7 @@ describe("Sojourn — a held miss is narrated after its choice (issue #364)", ()
     const [narration] = narrations();
     expect(seededPrices(narration)).toEqual([]);
     expect(narration.userText).not.toContain("it is what this miss costs");
-    expect(narration.userText).toContain("## THE PRICE WAS NOT PAID");
+    expect(narration.userText).toContain("[price] THE PRICE WAS NOT PAID.");
     expect(narration.userText).toContain("no price is paid");
     expect(narration.userText).toContain("the miss stated before the roll does not come to pass");
     expect(narration.userText).toContain("Swear an Iron Vow");
@@ -216,7 +222,7 @@ describe("Sojourn — a held miss is narrated after its choice (issue #364)", ()
     await click(moveCard(), '[data-action="sf-keep-result"]');
 
     expect(narrations()).toHaveLength(1);
-    expect(narrations()[0].userText).toContain("## THE PRICE IS THE PLAYER'S CHOICE");
+    expect(narrations()[0].userText).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(narrations()[0].userText).not.toContain("it is what this miss costs");
     // The price is still to pay, on its card.
     await click(choice(), PRICE);
@@ -239,7 +245,7 @@ describe("Sojourn — a held miss is narrated after its choice (issue #364)", ()
     expect(narrations()).toHaveLength(1);
     expect(narrations()[0].userText).not.toContain("it is what this miss costs");
     expect(narrations()[0].userText).not.toContain("THE PRICE WAS NOT PAID");
-    expect(narrations()[0].userText).toContain("## THE PRICE IS THE PLAYER'S CHOICE");
+    expect(narrations()[0].userText).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(ptpCards()).toEqual([]);
   }, 60_000);
 
@@ -294,11 +300,11 @@ describe("Sojourn's price choice — the pieces (issue #364)", () => {
     expect(settlePriceChoice(input(), "declined").oracleSeeds).toBeNull();
 
     const pending = formatPriceChoiceBlock({ price: WASTE, stated: false, instead: "swear_an_iron_vow", status: "pending" });
-    expect(pending).toMatch(/^## THE PRICE IS THE PLAYER'S CHOICE\n\n/);
+    expect(pending).toMatch(/^- \[price\] THE PRICE IS THE PLAYER'S CHOICE\. /);
     expect(pending).toContain("Swear an Iron Vow");
     expect(pending).toContain(`The price it offers: ${WASTE}`);
     const declined = formatPriceChoiceBlock({ price: WASTE, stated: false, instead: "swear_an_iron_vow", status: "declined" });
-    expect(declined).toMatch(/^## THE PRICE WAS NOT PAID\n\n/);
+    expect(declined).toMatch(/^- \[price\] THE PRICE WAS NOT PAID\. /);
     expect(declined).toContain("no price is paid.");
     expect(declined).not.toContain("stated before the roll");
     expect(formatPriceChoiceBlock({ price: WASTE, instead: "swear_an_iron_vow", status: "paid" })).toBe("");
@@ -312,9 +318,9 @@ describe("Sojourn's price choice — the pieces (issue #364)", () => {
     const round = (status) => buildRoundUserMessage({ sentenceTarget: 3, entries: [
       { actorName: "Kira", text: "I ask for shelter.", input: settlePriceChoice(kept, status) },
     ] });
-    expect(round("pending")).toContain("#### THE PRICE IS THE PLAYER'S CHOICE");
+    expect(round("pending")).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(round("pending")).not.toContain("it is what this miss costs");
-    expect(round("declined")).toContain("#### THE PRICE WAS NOT PAID");
+    expect(round("declined")).toContain("[price] THE PRICE WAS NOT PAID.");
     expect(round("declined")).not.toMatch(/Pay the Price: /);
     expect(round("paid")).toContain("deliver the miss as stated — it is what this miss costs");
   });

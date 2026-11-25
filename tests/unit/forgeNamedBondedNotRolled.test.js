@@ -49,6 +49,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 import { selectConnection } from '../../src/moves/developRelationship.js';
 
 const FORGE = (moveTarget) => ({
@@ -80,7 +81,11 @@ beforeEach(async () => {
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1,
       currentSceneId: 'sc-1', sceneTruths: [], connectionIds: ['conn-sable', 'conn-vex'] },
   } } });
-  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
+  // Kira's connections are her bond Items, keyed to each record (overhaul 4).
+  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [
+    bondItemFor({ _id: 'rec-conn-sable', name: 'Sable', relationshipTicks: 32, bonded: true }),
+    bondItemFor({ _id: 'rec-conn-vex', name: 'Vex', relationshipTicks: 32, bonded: false }),
+  ] } });
   connection('conn-sable', 'Sable', { relationshipTicks: 32, bonded: true });
   connection('conn-vex', 'Vex', { relationshipTicks: 32, bonded: false });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
@@ -108,10 +113,11 @@ describe('a typed Forge a Bond naming a bonded connection (FORGE-NAMED-BONDED-SC
     const rolled = await readAndRoll('I ask Sable to stand with us for good.');
     await table.settle();
 
-    expect(rolled.refused).toBe('track-gone');
-    expect(rolled.refusedReason).toBe('Sable is already bonded — there is no bond to forge.');
-    const [card] = table.cards(f => f.trackGoneCard);
-    expect(card?.content).toContain('<strong>Sable</strong> is already bonded');
+    // The move gate's NOT_BONDED (overhaul 4): refused at the reading and again
+    // at the dice, its reason handed back to the caller who tells it (free-flow's
+    // not-rolled notice, a round's refused card).
+    expect(rolled.refused).toBe('not-bonded');
+    expect(rolled.refusedReason).toBe('Sable is already bonded — there is no bond to forge');
     expect(resultCards()).toEqual([]);
     expect(world().legacyTracks?.bonds?.ticks ?? 0).toBe(0);
   }, 30_000);

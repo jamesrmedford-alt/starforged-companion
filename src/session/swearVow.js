@@ -24,7 +24,7 @@
 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection, isVowCopy, readVows } from "../character/actorBridge.js";
-import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
+import { entityExistsAnyType, postCreationEnrichment, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { relayCardAction, applyCardRollerFollowup } from "../moves/cardActions.js";
@@ -245,7 +245,15 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
     }
   }
 
-  // 2. The vow-target connection (same pipeline as make_a_connection auto-create).
+  // 2. The vow's target, recorded as a person (its NPC card) and linked to the
+  //    vow — never made anyone's connection (overhaul 4, D5). This REVERSES
+  //    the settled decision of issue #241 and issue #321 U23, which made the
+  //    target every swearer's connection so the swear could take its +1: by
+  //    the rules a vow is sworn +1 only to someone already a connection, and
+  //    a connection is what Make a Connection makes. The sworn card offers
+  //    🤝 Make a Connection to each who swore (applyVowTargetMakeConnection).
+  //    D5 is the design's first decision to take back if the opening reads
+  //    worse for it.
   let connection = null;
   if (plan.createTarget && campaignState) {
     try {
@@ -262,12 +270,12 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
       }, campaignState);
       await postCreationEnrichment("connection", connection, campaignState).catch(err =>
         console.warn(`${MODULE_ID} | swearVow: connection enrichment failed:`, err));
-      await registerConnectionOnActiveCharacter(connection, { actors: sworn }).catch(err =>
-        console.warn(`${MODULE_ID} | swearVow: bond item registration failed:`, err));
       // The opening scene recorded who they are and what is at stake under
       // their name, before this card existed (issue #286 A3).
       await promoteNewEntityLedgerSubjects(meta.target.name, "connection", connection, campaignState);
-      // A connection made: their agenda is planned (issue #353 Phase 4).
+      // A person recorded: their agenda is planned (issue #353 Phase 4 — the
+      // plan is about the NPC's card, connection or not; overhaul 4 keeps it
+      // for the person the vow concerns).
       const { planNpcAgenda } = await import("../world/secrets.js");
       await planNpcAgenda(connection, { campaignState, trigger: "vow_target" });
     } catch (err) {
@@ -290,7 +298,7 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
     }
   }
 
-  await postSwornConfirmation({ plan, actors: sworn, connection, crisis });
+  await postSwornConfirmation({ plan, actors: sworn, connection, crisis, campaignState });
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
 
@@ -318,6 +326,51 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
   return { actors: sworn, connection };
 }
 
+/** The vow target's NPC card id (its host Actor's), found by the record it holds, or null. */
+function targetHostId(record, campaignState) {
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+  const ids = [...new Set([...(campaignState?.connectionIds ?? []), ...(stored?.connectionIds ?? [])])];
+  for (const id of ids) {
+    const actor = globalThis.game?.actors?.get?.(id) ?? null;
+    const f = actor?.flags?.[MODULE_ID];
+    if (f?.entityType === "connection" && (f.entityId === record?._id || f.connection?._id === record?._id)) return id;
+  }
+  return null;
+}
+
+/** The sworn card's claim for one PC's Make a Connection. */
+function vowTargetMoveClaim(actorId) {
+  return `connectionMoveBy_${String(actorId ?? "").replace(/[^A-Za-z0-9_-]/g, "_")}`;
+}
+
+/**
+ * gmRelay handler for "vow.makeConnection" — the sworn card's 🤝 Make a
+ * Connection (overhaul 4, D5): the inciting vow's target was recorded as a
+ * person, and a connection with them is made by the move. One press a sworn
+ * PC (`swornActorIds`), its player's or a GM's (applyCardRollerFollowup):
+ * Make a Connection posted as that PC, the person's card its target.
+ *
+ * @param {{ messageId?: string, actorId?: string }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyVowTargetMakeConnection(payload = {}, ctx = {}) {
+  const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "make a connection (vow target)", claim: vowTargetMoveClaim(actorId),
+    isCard: (f) => f.vowSwornCard === true && typeof f.vowTarget?.name === "string" && !!f.vowTarget.name,
+    offers: (f) => !!actorId && Array.isArray(f.swornActorIds) && f.swornActorIds.includes(actorId),
+    roller: () => actorId,
+    build: (f) => ({
+      content: `I make a connection with ${f.vowTarget.name}.`,
+      flags: {
+        forcedMoveId: "make_a_connection", forcedMoveTarget: f.vowTarget.name,
+        ...(typeof f.vowTarget.hostId === "string" && f.vowTarget.hostId ? { forcedMoveTargetId: f.vowTarget.hostId } : {}),
+      },
+    }),
+  });
+}
+
 /** Post the reward-choice card for a sworn vow (two options + write-your-own). */
 async function postRewardChoiceCard(vowId, options) {
   try {
@@ -331,7 +384,7 @@ async function postRewardChoiceCard(vowId, options) {
 }
 
 /** Post the confirmation card describing exactly what was created. */
-async function postSwornConfirmation({ plan, actors, connection, crisis = null }) {
+async function postSwornConfirmation({ plan, actors, connection, crisis = null, campaignState = null }) {
   const names = (actors ?? []).map(a => a?.name).filter(Boolean).map(escapeHtml).join(", ");
   const vrank = plan.vow.rank ?? "dangerous";
   const lines = [
@@ -343,16 +396,28 @@ async function postSwornConfirmation({ plan, actors, connection, crisis = null }
   if (crisis?.label) {
     lines.push(`<p class="sf-incite-crisis">⏱ <strong>Immediate crisis:</strong> ${escapeHtml(crisis.label)} — a ${crisis.segments}-segment tension clock (a first scene to tackle now, separate from the vow).</p>`);
   }
+  // The target is a person, not a connection (D5): recorded, the vow tied to
+  // them, and Make a Connection offered to each who swore.
+  let vowTarget = null;
+  const swornIds = (actors ?? []).map(a => a?.id).filter(id => typeof id === "string" && id);
   if (connection) {
-    lines.push(`<p>✦ <strong>${escapeHtml(connection.name)}</strong> added to Connections` +
-      ` (find them in the Entities panel; use ✦ Finalise for a portrait).</p>`);
+    const hostId = targetHostId(connection, campaignState);
+    vowTarget = { name: connection.name ?? "", hostId };
+    lines.push(`<p>✦ <strong>${escapeHtml(connection.name)}</strong> recorded — the vow is sworn to them; ` +
+      `they are not yet anyone's connection (find them in the Entities panel; use ✦ Finalise for a portrait).</p>`);
+    if (swornIds.length) {
+      lines.push(`<div class="sf-milestone-suggest-row">` + (actors ?? []).filter(a => a?.id).map(a =>
+        `<button type="button" class="sf-followup-btn" data-action="sf-vow-make-connection" data-actor-id="${escapeHtml(a.id)}" ` +
+        `title="Roll Make a Connection for ${escapeHtml(a.name ?? "")}, with ${escapeHtml(connection.name)}">` +
+        `🤝 Make a Connection${swornIds.length > 1 ? ` (${escapeHtml(a.name ?? "")})` : ""}</button>`).join("") + `</div>`);
+    }
   } else if (plan.targetNotice) {
     lines.push(`<p><em>${escapeHtml(plan.targetNotice)}</em></p>`);
   }
   try {
     await ChatMessage.create({
       content: `<div class="sf-vow-sworn-card">${lines.join("")}</div>`,
-      flags:   { [MODULE_ID]: { vowSwornCard: true } },
+      flags:   { [MODULE_ID]: { vowSwornCard: true, ...(vowTarget ? { vowTarget, swornActorIds: swornIds } : {}) } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: confirmation card failed:`, err);
@@ -388,6 +453,29 @@ export function registerSwearVowHandler() {
 
   onChatMessageRender((message, root) => {
     const flags = message?.flags?.[MODULE_ID];
+    // The sworn card's 🤝 Make a Connection, one a sworn PC (D5): relayed to
+    // the canonical GM ("vow.makeConnection" → applyVowTargetMakeConnection).
+    if (flags?.vowSwornCard && flags.vowTarget) {
+      root.querySelectorAll('[data-action="sf-vow-make-connection"]').forEach((btn) => {
+        const actorId = btn.dataset.actorId ?? "";
+        const claim = vowTargetMoveClaim(actorId);
+        if (liveFlags(message)?.[claim]) { btn.disabled = true; return; }
+        const fresh = btn.cloneNode(true);
+        btn.replaceWith(fresh);
+        fresh.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          fresh.disabled = true;
+          await relayCardAction({
+            kind:       "vow.makeConnection",
+            payload:    { messageId: message?.id ?? null, actorId },
+            isResolved: () => !!liveFlags(message)?.[claim],
+            restore:    () => { fresh.disabled = false; },
+          });
+        });
+      });
+      return;
+    }
     if (!flags?.incitingIncidentCard || !flags?.incitingMeta?.vow) return;
 
     const btn = root.querySelector('[data-action="sf-swear-vow"]');

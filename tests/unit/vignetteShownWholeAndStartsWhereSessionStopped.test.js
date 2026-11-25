@@ -114,7 +114,9 @@ describe('an opening starts from where the last session stopped', () => {
     expect(msg).toMatch(/This opening picks the story up there, and nowhere later\./);
     expect(msg).toMatch(/whatever was still going on\s+when the session stopped is still going on/);
     expect(msg).toMatch(/Do not contradict it, do not\s+write as though it were over or behind them \("since the …"\)/);
-    expect(msg).toMatch(/do not\s+let more time pass than it allows \("for the third time this week"\)/);
+    // Its example came back as a count — "a third time", "fifth time" (SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+    expect(msg).toMatch(/do not\s+let more time pass than it allows\./);
+    expect(msg).not.toMatch(/third time this week/);
   });
 
   it('it is set where that leaves them: nobody is moved back aboard (issue #381 D1)', async () => {

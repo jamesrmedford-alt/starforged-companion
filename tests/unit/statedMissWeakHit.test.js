@@ -55,6 +55,7 @@ vi.mock('../../src/oracles/roller.js', async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -73,7 +74,7 @@ const flags   = (id) => table.world.message(id).flags[MODULE_ID];
 const ptpCard = () => table.cards(f => f.payThePriceCard).at(-1);
 const priceCards = () => table.cards(f => f.payThePriceCard);
 const lastLog = () => table.cards(f => f.narratorCard && f.resolutionId).at(-1)?.flags[MODULE_ID];
-const moveNarration = () => table.claude.calls.filter(c => /## STAKES STATED BEFORE THE ROLL/.test(c.userText ?? '')).at(-1);
+const moveNarration = () => table.claude.calls.filter(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? '')).at(-1);
 const promptOf = (call) => `${call?.system ?? ''}\n${call?.userText ?? ''}`;
 
 async function fight(moveId, dice, { statUsed = 'wits', line = 'We hold the docking bay against the raiders.' } = {}) {
@@ -96,6 +97,8 @@ beforeEach(async () => {
       currentSceneId: 'ac01-scene', sceneTruths: [], clocks: [] },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-test');
+  // a Clash is made in a fight, in a bad spot (the move gate's OPEN_FIGHT, POSITION) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'fight-1', label: 'Raiders', type: 'combat', rank: 'dangerous', ticks: 8, completed: false, combatState: 'bad_spot', positions: { 'pc-kira': 'bad_spot' } }]));
   pc = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, system: { momentum: { value: 2 } } });
   scriptClaude(table, { fallback: () => 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 });

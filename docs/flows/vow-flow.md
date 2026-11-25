@@ -103,10 +103,21 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`src/session/swearVow.js`), which: creates the vow **item on every PC**
 (`createCharacterVowItem` — idempotent by `vowId`, carries
 `sharedVow`/`linkedConnectionName`/optional deadline clock), creates the
-immediate-crisis **tension clock** when the meta has one, creates the **target
-NPC connection** — a bond Item on every PC the vow was sworn on
-(`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
-alone; only for a **person** target: the target line carries its kind
+immediate-crisis **tension clock** when the meta has one, records the
+**target as a person** — an NPC card the vow is linked to, **no bond Item on
+any sheet** (overhaul 4, D5; this **reverses the settled decision of issue
+#241 and issue #321 U23**, which made the target a connection on every PC
+who swore so the swear could take its +1 — by the rules a vow is sworn +1
+only to someone already a connection, and a connection is what Make a
+Connection makes; D5 is the design's first decision to take back if the
+opening reads worse for it). The sworn card says they are recorded and not
+yet anyone's connection, and offers **🤝 Make a Connection** to each PC who
+swore (flags `vowTarget: { name, hostId }`, `swornActorIds`; a press relays
+`vow.makeConnection` → `swearVow.applyVowTargetMakeConnection`: the move
+posted as that PC with the target's card as its target, once a PC — its
+player's press or a GM's). The inciting swear's roll adds nothing for its
+target now (`enrichBondAdds` reads the roller's bond Items). Only for a
+**person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
@@ -438,7 +449,13 @@ issue #321 U62) and the CAMPAIGN PREMISE block
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
 paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
-records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+records its facts in a scene (`ensureSceneStarted`, issue #321 U34). It is
+built from material — the vow's own words, the Iron truth and the recent
+narration (`buildVowSwearingUserMessage`, `getRecentNarrationContext`), the
+`vow_swearing` role naming no gesture: given the vow's name, "vows are sworn
+upon iron" and "pure sensory fiction", with "the iron they touch" in the
+role, the oath was one image in all four live long hauls (known-issues
+SET-PIECES-SHAPED-BY-THEIR-PROMPT). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
 **What the two readers of a typed line are told.** The pacing classifier and
@@ -486,12 +503,25 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **Begin a Session** (`openBeginSessionDialog`, the invoking client): when no
   PC holds a quest, its dialog and card say so ("No vow in play"), and the
   dialog offers Swear an Iron Vow for the user's own PC (`resolveUserActorId`)
-  — a vow and its rank. After the session's start is requested it is written
-  on that PC's sheet (`actorBridge.createCharacterVowItem`, no `vowId`), so the
-  canonical GM's `registerPlayerVowHook` posts its "🆕 New vow recorded" card
-  — ⚔ Swear it (roll), the reward offer, the 🤝 link: §1's player-authored
-  path. A vow the sheet refused is said to the user; the Begin card claims no
-  vow.
+  — a vow and its rank. The vow rides the `session.begin` relay (`vow: {
+  actorId, name, rank }`), and the canonical GM writes it on that PC's sheet
+  once the session is begun (`sessionLifecycleDialogs.js` `swearBeginVow` →
+  `actorBridge.createCharacterVowItem`, no `vowId`; the requester must own the
+  PC or be a GM — the payload is client-asserted), so the sheet watch records
+  its `vow.sworn` in the session it is sworn in, and `registerPlayerVowHook`
+  posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward offer,
+  the 🤝 link: §1's player-authored path. Made on the pressing client right
+  after the Begin was sent (the relay has no answer), a player's vow reached
+  the sheet before the GM had begun — at a world's first Begin, minted — the
+  session: its `vow.sworn` went to no session, or to the one before, and the
+  record named no vow sworn (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD). A
+  vow refused — for its character, or by the sheet — is whispered to the
+  requester and the GMs. The Begin card names the vow its dialog swears — "No
+  vow was in play besides a background vow: Kira swears one — *the vow*
+  (rank). Its card follows." — never "No character has a vow in play … swear
+  an iron vow" above it (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW: composed
+  as though no vow came with it); with no GM connected, that the vow is not
+  sworn until one has joined.
 - **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
   add form's vow select links any track it creates (a fight added by hand too
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
@@ -566,7 +596,7 @@ plan's truth as revealed). Three parts:
   claimed — where it gives no name there is none, and the narration says what
   is still not known. The vow plan's own line no longer ties "truth" to the
   vow's end: it is revealed by being told;
-- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED**
+- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED** (the obligations block's TELL [vow] line, `moves/contracts/obligations.js` — the row's `obliges`, overhaul 4 slice 2)
   (`buildNarratorUserMessage`, a round's entry too; a sheet-rolled hit goes
   the same way): never write that an answer is known, named, found or proved
   without stating it — with no plan in play, and no answer in the story, the
@@ -598,7 +628,11 @@ which checks the pick is one of the card's choices and that the requester
 owns the roller's PC (or is a GM), claims the card (`resolved`) and posts the
 forced fulfil with the copy as `forcedMoveTargetId`, spoken as the roller; a
 failed post releases the claim. A picked vow fulfilled or deleted before the
-roll resolves gets the "not rolled" card (`postTrackGoneCard`).
+roll resolves is refused by the move gate at the roll (`OPEN_VOW` by id —
+"\"Rescue Dani\" is fulfilled", "… was deleted before the roll"), the
+not-rolled notice (overhaul 4; the track-gone guard it replaces). A typed
+Fulfill naming a vow already closed by name is still the "vow-gone" card
+(`postTrackGoneCard`) — a name resolved, not a precondition.
 
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):

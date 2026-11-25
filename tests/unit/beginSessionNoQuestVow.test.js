@@ -77,7 +77,7 @@ describe('Begin a Session with no vow in play (issue #353 R3)', () => {
     expect(html).toContain('name="newVow"');
   });
 
-  it('Begin with a vow written: the card says no vow was in play, and the vow goes on Kira\'s sheet — whose card offers the swear roll', async () => {
+  it('Begin with a vow written: the card says Kira swears it, and the vow goes on Kira\'s sheet — whose card offers the swear roll', async () => {
     const kira = await seat([BACKGROUND()]);
     await begin('pl-1', d => d.submit({
       'input[name="newVow"]': '  Learn who sent the escort  ',
@@ -86,7 +86,10 @@ describe('Begin a Session with no vow in play (issue #353 R3)', () => {
 
     const card = beginCards().find(c => /Begin a Session/.test(c.content));
     expect(card.author).toBe('pl-1');
-    expect(card.content).toMatch(/No character has a vow in play besides a background vow/);
+    // Not "No character has a vow in play … swear an iron vow" above the vow its
+    // own dialog swore (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW).
+    expect(card.content).toMatch(/No vow was in play besides a background vow: Kira swears one — <strong>Learn who sent the escort<\/strong> \(formidable\)\. Its card follows\./);
+    expect(card.content).not.toMatch(/swear an iron vow to give this session a quest/);
     // The session began on the GM.
     expect(table.world.campaignState()).toMatchObject({ sessionActive: true, sessionStartedId: 'bsq-s2' });
 
@@ -134,5 +137,18 @@ describe('Begin a Session with a quest in play says nothing of it (issue #353 R3
     await seat([BACKGROUND(), vowItem('v-beacon', 'Find the lost beacon')]);
     await begin('pl-1', d => d.submit({}));
     expect(beginCards().find(c => /Begin a Session/.test(c.content)).content).not.toMatch(/No character has a vow in play/);
+  });
+});
+
+describe('Begin a Session with a vow written and no GM connected (BEGIN-CARD-BEFORE-ITS-OWN-VOW)', () => {
+  it('the card says the vow is not sworn until a GM has joined — and nothing is sworn', async () => {
+    const kira = await seat([BACKGROUND()]);
+    await table.leave('gm-1');
+    await begin('pl-1', d => d.submit({ 'input[name="newVow"]': 'Learn who sent the escort' }));
+    const card = beginCards().find(c => /Begin a Session/.test(c.content));
+    expect(card.content).toMatch(/the vow <strong>Learn who sent the escort<\/strong> is not sworn until a GM has joined/);
+    expect(card.content).toMatch(/No GM is connected — the session was not started/);
+    expect(card.content).not.toMatch(/swears one|Its card follows/);
+    expect(kira.items.contents.map(i => i.name)).toEqual(['Avenge the Iron Hollow']);
   });
 });

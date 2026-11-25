@@ -176,6 +176,7 @@ describe('Attempt to Fulfill Vow names no vow (issue #321 U02)', () => {
     await click('pl-1', card._id, '[data-action="sf-which-vow"][data-item-id="v-inc"]');
 
     expect(resolveMove).not.toHaveBeenCalled();
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    // Told by the move gate's not-rolled notice (overhaul 4).
+    expect(table.cards(f => f.moveNotRolledNotice === 'cannot')).toHaveLength(1);
   }, 30_000);
 });

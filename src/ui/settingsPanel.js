@@ -25,6 +25,7 @@ import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 import { stakesShown } from '../moves/stakes.js';
+import { refusalNote } from '../moves/contracts/obligations.js';
 import { registerSpotlightDefaultSetting } from '../narration/spotlightDefault.js';
 import { defaultSalienceThreshold } from '../world/salience.js';
 
@@ -2578,6 +2579,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
       forced:          this.#forced,
+      // The move gate's soft refusal (overhaul 4, D2): the sheet says the
+      // move would change nothing. Accept rolls it at the GM's word.
+      softRefusal:     interp.softRefusal?.why ? interp.softRefusal : null,
     };
   }
 
@@ -2590,6 +2594,12 @@ export class MoveConfirmDialog extends ApplicationV2 {
     ` : '';
 
     const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities, context.statUsed);
+    const refusalBlock = context.softRefusal ? `
+      <div class="confirm-cannot-make">
+        <span class="confirm-field-label">The sheet says</span>
+        <p class="confirm-cannot-make-text">${escapeAttr(refusalNote(context.softRefusal))}</p>
+        <p class="sf-ability-hint">Accept rolls it anyway, at the GM's word; the move card says so.</p>
+      </div>` : '';
 
     const html = `
       <div class="sf-move-confirm">
@@ -2605,6 +2615,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <span class="confirm-field-label">Interpretation</span>
           <p class="confirm-rationale-text">${escapeAttr(context.rationale)}</p>
         </div>
+        ${refusalBlock}
         ${renderStakesBlock(context.stakes)}
         ${mischiefBlock}
         ${abilitiesBlock}
@@ -2658,6 +2669,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
         // Whose "+its health" / "+integrity" was picked, when two assets
         // offered it (COMPANION-TRIGGER-SWAP-UNCUED).
         this.#interp.appliedStatAssetId = pickedStatAssetId || null;
+        // A soft refusal accepted: the GM's word over the sheet's (D2) — the
+        // roll's gate passes it, and the move card says so.
+        if (this.#interp.softRefusal) this.#interp.gateOverride = true;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);

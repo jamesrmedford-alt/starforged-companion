@@ -334,6 +334,13 @@ export class SequenceWorld {
     const made = (this.state().connectionIds ?? []).filter(id => !before.has(id));
     if (made.length !== 1) throw new Error(`sequence: confirming "${name}" listed ${made.length} new connections (${made.join(", ") || "none"})`);
     this.connections.set(ref, { hostId: made[0], recordId: flagsOf(this.actor(made[0])).connection?._id ?? null });
+    // The Confirm recorded the person (overhaul 4, D4); the connection is the
+    // move's — Make a Connection's hit, through its own writer (the bond Item
+    // on the PC, its connection.made recorded by the move).
+    const record = flagsOf(this.actor(made[0])).connection;
+    const { registerConnectionOnActiveCharacter } = await gm.import("../../src/entities/entityExtractor.js");
+    await gm.run(() => registerConnectionOnActiveCharacter(record, { actorId: pc, by: { move: "make_a_connection" } }));
+    await this.quiet();
   }
 
   /** A move card's 🤝 follow-up, then the picker: the roller's player presses the connection they mean. */
@@ -363,11 +370,12 @@ export class SequenceWorld {
   }
 
   /** The roll a fulfilled vow left `pc`, taken on its offer card: their player presses the connection it names. */
-  async takeBondRoll(ref, { pc, actionDie, challenge, doubled = false }) {
+  async takeBondRoll(ref, { pc, actionDie, challenge, doubled = false, refused = false }) {
     const hostId = this.hostId(ref);
     const offer = this.card((f, m) => isBondRollOffer(m) && !f.resolved && f.actorId === pc && (f.choices ?? []).some(c => c.hostId === hostId));
     if (!offer) throw new Error(`sequence: no open Develop Your Relationship offer for ${pc} with connection ${ref}`);
-    this.dice.push(...actionDice(actionDie, challenge));
+    // A roll the move gate refuses (not the roller's connection) throws no dice.
+    if (!refused) this.dice.push(...actionDice(actionDie, challenge));
     await this.press(playerOf(pc), offer._id, `[data-action="sf-connection-pick"][data-host-id="${hostId}"]`, { also: doubled ? GM : null });
   }
 

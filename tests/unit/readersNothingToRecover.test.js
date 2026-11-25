@@ -3,7 +3,8 @@
  * tests/unit/readersNothingToRecover.test.js
  *
  * A recovery move with nothing to recover is not offered or rolled
- * (known-issues HEAL-ROLLED-AT-FULL-HEALTH).
+ * (known-issues HEAL-ROLLED-AT-FULL-HEALTH) — and it is told
+ * (NOTHING-TO-RECOVER-UNTOLD).
  *
  * In the long haul's live runs a Heal was made at 5 health of 5, twice. The
  * third run's own words (explorations/long-haul-live-20261124-0321/, a58–a60):
@@ -17,17 +18,18 @@
  *   the roll        a weak hit, whose choice bought "0 health (now 5)" for 2
  *                    supply (5 → 3) — and the narrator supplied a cut.
  *
- * Neither reader was told a meter. Both are told the sheet now (the SITUATION
- * block), and their rules say a recovery move with nothing to recover is no
- * move: heal with health full and not wounded, hearten with spirit full and
- * not shaken, resupply with supply full and not unprepared, repair with the
- * command vehicle's integrity full and it not battered. The exception is
- * written into the pacing reader's always-offered block, not beside it.
+ * The fourth run (issue #383) found the other half: eight recovery lines at
+ * health 5/5 were rightly given no move — and nothing told the player, and
+ * the narrator, told only that "a line that sets about one of those has
+ * begun it", wrote "the cuts", "the gash".
  *
- * And where the sheet settles it the code decides (moves/situation.js
- * nothingToRecover): decidePacing drops such an offer, and readMove neither
- * rolls such a reading nor offers the pacing reader's move again on the card
- * of a line the move reader called no move.
+ * Both readers are told the sheet (the SITUATION block) and the rule. Where
+ * the sheet settles it the code decides — the move contracts' gate (overhaul
+ * 4, contracts/gate.js checkMove: RECOVERABLE, SOMETHING_DAMAGED): the pacing
+ * router does not offer such a move, readMove neither rolls such a reading
+ * nor offers the pacing reader's move again on the card of a line the move
+ * reader called no move, and the refusal rides on to the narration (its
+ * premise NOT SO) and the card (one line).
  */
 
 /* global makeTestActor */
@@ -51,7 +53,8 @@ import { decidePacing, resetRecentDensity } from '../../src/pacing/router.js';
 import { logPacingDecision } from '../../src/pacing/telemetry.js';
 import { interpretMove } from '../../src/moves/interpreter.js';
 import { readMove, readAction, configureMovePipeline } from '../../src/moves/movePipeline.js';
-import { readSituation, nothingToRecover, isRecoveryMove, nothingToRecoverReason } from '../../src/moves/situation.js';
+import { readMoveSituation } from '../../src/moves/situation.js';
+import { checkMove } from '../../src/moves/contracts/gate.js';
 import { listProgressTracks, getActiveCombatPosition } from '../../src/ui/progressTracks.js';
 import { invalidateActorCache, readCharacterSnapshot } from '../../src/character/actorBridge.js';
 
@@ -61,6 +64,7 @@ const MEDKIT = "I sit down in the galley and treat my wounds with the ship's med
 const MIRA = { name: 'Mira Kestrel', actorId: 'pc-mira' };
 const CS = { shipIds: ['ship-1'] };
 const flat = (text) => text.replace(/\s+/g, ' ');
+const HEALTH_FULL = "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked";
 
 /** Mira as she stood at a58: health 5, spirit 5, supply 5, no impact marked — unless said otherwise. */
 function installMira({ system = {}, items = [] } = {}) {
@@ -76,6 +80,7 @@ function installShip({ integrity = 5, battered = false } = {}) {
   }));
 }
 const companion = { id: 'gc', name: 'Glowcat', type: 'asset', system: { category: 'Companion', track: { enabled: true, name: 'Health', value: 2, min: 0, max: 5 } } };
+const fightTrack = [{ id: 'f1', type: 'combat', label: 'The Cinder Wren', completed: false, positions: { 'pc-mira': 'bad_spot' } }];
 
 /** Answer each Claude call by what it is: the classifier, or the interpreter. */
 function scriptCalls({ classifier = null, interpreter = null } = {}) {
@@ -88,6 +93,7 @@ function scriptCalls({ classifier = null, interpreter = null } = {}) {
 const callsTo = (pattern) => apiPost.mock.calls.filter(c => pattern.test(JSON.stringify(c[2].system ?? '')));
 const decide = (playerText = MEDKIT, campaignState = CS) => decidePacing({ playerText, campaignState, character: MIRA, apiKey: 'k' });
 const offer = (move, extra = {}) => ({ decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: move, sceneChallenge: null, category: 'downtime', confidence: 0.8, reasoning: 'It sets about a sheet-changing move.', ...extra });
+const gate = async (moveId, reading = {}, actor = game.actors.get('pc-mira')) => checkMove(moveId, await readMoveSituation(actor, { campaignState: CS }), reading);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -101,88 +107,69 @@ beforeEach(() => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('nothingToRecover — what the sheet says of a recovery move', () => {
-  const sheet = (over = {}) => ({
-    name: 'Mira Kestrel',
-    meters: { health: 5, spirit: 5, supply: 5 }, impacts: { wounded: false, shaken: false, unprepared: false },
-    vehicle: { name: 'Kobayashi IV', integrity: 5, max: 5, battered: false },
-    vows: [], connections: [], othersToTreat: 0, ...over,
-  });
-
-  it('each of the four, with its meter full and its impact clear: nothing', () => {
-    for (const move of ['heal', 'hearten', 'resupply', 'repair']) {
-      expect(isRecoveryMove(move)).toBe(true);
-      expect(nothingToRecover(move, sheet()), move).toBe(true);
+describe('the gate — what the sheet says of a recovery move', () => {
+  it('each of the four, with its meter full and its impact clear: nothing — Repair and Resupply only where no reader read the move', async () => {
+    installShip();
+    installMira();
+    for (const move of ['heal', 'hearten']) expect((await gate(move)).ok, move).toBe(false);
+    for (const move of ['resupply', 'repair']) {
+      expect((await gate(move)).ok, `${move}: a reader read it — an item, a device`).toBe(true);
+      expect((await gate(move, { readAsNoMove: true })).ok, `${move}: offered after a reading of no move`).toBe(false);
     }
   });
 
-  it('a meter down or its impact marked: something', () => {
-    expect(nothingToRecover('heal', sheet({ meters: { health: 4, spirit: 5, supply: 5 } }))).toBe(false);
-    expect(nothingToRecover('heal', sheet({ impacts: { wounded: true, shaken: false, unprepared: false } }))).toBe(false);
-    expect(nothingToRecover('hearten', sheet({ meters: { health: 5, spirit: 3, supply: 5 } }))).toBe(false);
-    expect(nothingToRecover('hearten', sheet({ impacts: { wounded: false, shaken: true, unprepared: false } }))).toBe(false);
-    expect(nothingToRecover('resupply', sheet({ meters: { health: 5, spirit: 5, supply: 2 } }))).toBe(false);
-    expect(nothingToRecover('resupply', sheet({ impacts: { wounded: false, shaken: false, unprepared: true } }))).toBe(false);
-    expect(nothingToRecover('repair', sheet({ vehicle: { name: 'K', integrity: 3, max: 5, battered: false } }))).toBe(false);
-    expect(nothingToRecover('repair', sheet({ vehicle: { name: 'K', integrity: 5, max: 5, battered: true } }))).toBe(false);
+  it('a meter down or its impact marked: something', async () => {
+    installShip({ integrity: 3 });
+    installMira({ system: { health: { value: 4 } } });
+    expect((await gate('heal')).ok).toBe(true);
+    installMira({ system: { debility: { wounded: true } } });
+    expect((await gate('heal')).ok).toBe(true);
+    installMira({ system: { spirit: { value: 3 } } });
+    expect((await gate('hearten')).ok).toBe(true);
+    installMira({ system: { debility: { shaken: true } } });
+    expect((await gate('hearten')).ok).toBe(true);
+    installMira({ system: { supply: { value: 2 } } });
+    expect((await gate('resupply', { readAsNoMove: true })).ok).toBe(true);
+    expect((await gate('repair', { readAsNoMove: true })).ok, 'the ship at 3 of 5').toBe(true);
+    installShip({ integrity: 5, battered: true });
+    expect((await gate('repair', { readAsNoMove: true })).ok, 'battered').toBe(true);
   });
 
-  it('what is not known is never "nothing": an unread meter, no command vehicle, no sheet', () => {
-    expect(nothingToRecover('heal', sheet({ meters: { health: null, spirit: 5, supply: 5 } }))).toBe(false);
-    expect(nothingToRecover('heal', sheet({ impacts: { wounded: null, shaken: false, unprepared: false } }))).toBe(false);
-    expect(nothingToRecover('repair', sheet({ vehicle: null }))).toBe(false);
-    expect(nothingToRecover('repair', sheet({ vehicle: { name: 'K', integrity: null, max: 5, battered: false } }))).toBe(false);
-    expect(nothingToRecover('heal', null)).toBe(false);
+  it('what is not known is never "nothing": no command vehicle, no sheet', async () => {
+    installMira();
+    expect((await gate('repair', { readAsNoMove: true })).ok, 'no command vehicle recorded').toBe(true);
+    expect(checkMove('heal', await readMoveSituation(null, { campaignState: CS }), {}).ok, 'no player character').toBe(true);
   });
 
-  it('no other move is a recovery move — Sojourn among them: what it mends is chosen on its hit', () => {
-    for (const move of ['sojourn', 'reach_a_milestone', 'face_danger', 'check_your_gear', null, undefined]) {
-      expect(isRecoveryMove(move)).toBe(false);
-      expect(nothingToRecover(move, sheet())).toBe(false);
-    }
+  it('says why, in the words the card and the narration are given', async () => {
+    installMira();
+    expect(await gate('heal')).toMatchObject({ code: 'recoverable-health', hard: false, why: HEALTH_FULL,
+      premise: { claim: 'a wound to treat', never: 'a cut, a gash, blood or a dressing on them' } });
   });
 
-  it('on the sheet alone it answers only where the sheet settles it: Hearten, and Heal with nobody else to treat', () => {
-    const alone = { sheetAlone: true };
-    expect(nothingToRecover('hearten', sheet(), alone)).toBe(true);
-    expect(nothingToRecover('heal', sheet(), alone)).toBe(true);
-    // The care could be for an ally or a companion: the reader decides.
-    expect(nothingToRecover('heal', sheet({ othersToTreat: 1 }), alone)).toBe(false);
-    expect(nothingToRecover('heal', sheet({ othersToTreat: null }), alone)).toBe(false);
-    // A Resupply may be after one particular item, a Repair for something else that is damaged.
-    expect(nothingToRecover('resupply', sheet(), alone)).toBe(false);
-    expect(nothingToRecover('repair', sheet(), alone)).toBe(false);
-  });
-
-  it('says why, for a rationale', () => {
-    expect(nothingToRecoverReason('heal')).toBe('health is full and no wound is marked');
-    expect(nothingToRecoverReason('repair')).toBe("the command vehicle's integrity is full and it is not battered");
-  });
-
-  it('the sheet is read as it stands, not from the cached snapshot: a meter changed a moment ago decides', () => {
+  it('the sheet is read as it stands, not from the cached snapshot: a meter changed a moment ago decides', async () => {
     const pc = installMira();
     expect(readCharacterSnapshot(pc).meters.health).toBe(5);      // cached at 5
     pc.system.health.value = 2;                                    // changed, with no hook to drop the cache
     pc.system.debility.shaken = true;
     expect(readCharacterSnapshot(pc).meters.health, 'the cached snapshot is stale').toBe(5);
-    const now = readSituation(pc, { campaignState: CS });
-    expect(now.meters.health).toBe(2);
-    expect(now.impacts.shaken).toBe(true);
-    expect(nothingToRecover('heal', now)).toBe(false);
-    expect(nothingToRecover('hearten', now)).toBe(false);
+    expect((await gate('heal')).ok).toBe(true);
+    expect((await gate('hearten')).ok).toBe(true);
   });
 
-  it('readSituation counts who else a Heal could be for: the other player characters and the speaker\'s companions', () => {
-    const pc = installMira();
-    expect(readSituation(pc, { campaignState: CS }).othersToTreat).toBe(0);
-    game.actors._set('pc-ash', makeTestActor({ id: 'pc-ash', name: 'Ash' }));
-    expect(readSituation(pc, { campaignState: CS }).othersToTreat).toBe(1);
+  it('a Heal is for its patient — and with none named, for anyone the party could treat: another PC, a companion', async () => {
+    installMira();
+    game.actors._set('pc-ash', makeTestActor({ id: 'pc-ash', name: 'Ash', system: { health: { value: 2 } } }));
+    expect((await gate('heal')).ok, 'Ash is hurt').toBe(true);
+    expect((await gate('heal', { patient: { self: true } })).ok, 'her own wounds: none').toBe(false);
     game.actors._reset();
-    const withCat = installMira({ items: [companion] });
-    expect(readSituation(withCat, { campaignState: CS }).othersToTreat).toBe(1);
+    installMira({ items: [companion] });
+    expect((await gate('heal')).ok, 'the Glowcat is hurt').toBe(true);
     // An NPC card is nobody a Heal's health goes to.
-    game.actors._set('npc-1', makeTestActor({ id: 'npc-1', name: 'Tamsin Okoro', flags: { [MODULE_ID]: { entityType: 'connection' } } }));
-    expect(readSituation(withCat, { campaignState: CS }).othersToTreat).toBe(1);
+    game.actors._reset();
+    installMira();
+    game.actors._set('npc-1', makeTestActor({ id: 'npc-1', name: 'Tamsin Okoro', system: { health: { value: 1 } }, flags: { [MODULE_ID]: { entityType: 'connection' } } }));
+    expect((await gate('heal')).ok).toBe(false);
   });
 });
 
@@ -248,16 +235,18 @@ describe('the move reader\'s rule: told the same meters, it answers that no move
   });
 });
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('decidePacing: a recovery move the sheet has nothing for is not offered', () => {
-  it('a58 — Heal offered at 5 health of 5, nobody else to treat: narrated, with no move on the card', async () => {
+describe('decidePacing: a recovery move the sheet has nothing for is not offered — and is told', () => {
+  it('a58 — Heal offered at 5 health of 5, nobody else to treat: narrated, no move on the card, the refusal handed on', async () => {
     installShip();
     installMira();
     scriptCalls({ classifier: offer('heal', { reasoning: 'Treating wounds with the medkit sets about healing, which changes the character sheet, so the heal move should be offered.' }) });
     const pacing = await decide();
-    expect(pacing).toMatchObject({ runMove: false, decision: 'NARRATIVE', suggestedMove: null });
-    expect(pacing.reasoning).toMatch(/^\[nothing to recover: health is full and no wound is marked — narrated, heal not offered\] Treating wounds with the medkit/);
+    expect(pacing).toMatchObject({ runMove: false, decision: 'NARRATIVE', suggestedMove: null,
+      refused: { moveId: 'heal', code: 'recoverable-health', hard: false, why: HEALTH_FULL } });
+    expect(pacing.reasoning).toMatch(/^\[cannot be made: recoverable-health — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked\] Treating wounds with the medkit/);
     // The telemetry says what was done with the reader's answer.
     expect(logPacingDecision.mock.calls.at(-1)[0]).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null });
   });
@@ -265,19 +254,21 @@ describe('decidePacing: a recovery move the sheet has nothing for is not offered
   it('called a MOVE, it is not rolled either', async () => {
     installMira();
     scriptCalls({ classifier: offer('heal', { decision: 'MOVE', confidence: 0.9 }) });
-    expect(await decide()).toMatchObject({ runMove: false, decision: 'NARRATIVE', suggestedMove: null });
+    expect(await decide()).toMatchObject({ runMove: false, decision: 'NARRATIVE', suggestedMove: null, refused: { moveId: 'heal' } });
   });
 
   it('Hearten at 5 spirit of 5, not shaken: the same', async () => {
     installMira();
     scriptCalls({ classifier: offer('hearten') });
-    expect(await decide('I put the kettle on and sit with a hot cup until I am easy again.')).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null });
+    expect(await decide('I put the kettle on and sit with a hot cup until I am easy again.')).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null, refused: { code: 'recoverable-spirit' } });
   });
 
   it('control: with something to recover, the move is offered as it always was', async () => {
     installMira({ system: { health: { value: 3 } } });
     scriptCalls({ classifier: offer('heal') });
-    expect(await decide()).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'heal' });
+    const pacing = await decide();
+    expect(pacing).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'heal' });
+    expect(pacing.refused).toBeUndefined();
 
     installMira({ system: { debility: { wounded: true } } });
     expect(await decide(), 'health full, the wound still marked').toMatchObject({ suggestedMove: 'heal' });
@@ -287,7 +278,7 @@ describe('decidePacing: a recovery move the sheet has nothing for is not offered
     expect(await decide()).toMatchObject({ suggestedMove: 'hearten' });
   });
 
-  it('a Heal that could be for someone else is the reader\'s to judge: an ally at the table, a companion', async () => {
+  it('a Heal for anyone the party could treat is offered: an ally hurt, a companion hurt — and refused with everyone whole', async () => {
     installMira();
     game.actors._set('pc-ash', makeTestActor({ id: 'pc-ash', name: 'Ash', system: { health: { value: 2 } } }));
     scriptCalls({ classifier: offer('heal') });
@@ -296,6 +287,13 @@ describe('decidePacing: a recovery move the sheet has nothing for is not offered
     game.actors._reset();
     installMira({ items: [companion] });
     expect(await decide('I see to the Glowcat\'s burned paw.')).toMatchObject({ suggestedMove: 'heal' });
+
+    game.actors._reset();
+    installMira();
+    game.actors._set('pc-ash', makeTestActor({ id: 'pc-ash', name: 'Ash', system: { supply: { value: 5 } } }));
+    const whole = await decide('I check Ash over for injuries.');
+    expect(whole).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null, refused: { code: 'recoverable-health' } });
+    expect(whole.refused.why).toBe("nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked; Ash's health is 5 of 5 and no wound is marked");
   });
 
   it('Resupply and Repair are the reader\'s to judge: one particular item, something else that is damaged', async () => {
@@ -309,7 +307,7 @@ describe('decidePacing: a recovery move the sheet has nothing for is not offered
 
   it('not in an open fight, where an offer is a MOVE and outcomes are earned with dice', async () => {
     installMira();
-    listProgressTracks.mockResolvedValue([{ id: 'f1', type: 'combat', label: 'The Cinder Wren', completed: false }]);
+    listProgressTracks.mockResolvedValue(fightTrack);
     scriptCalls({ classifier: offer('heal') });
     expect(await decide()).toMatchObject({ runMove: true, decision: 'MOVE', nominatedMove: 'heal' });
   });
@@ -332,7 +330,7 @@ describe('decidePacing: a recovery move the sheet has nothing for is not offered
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('readMove: such a move is neither rolled nor offered again', () => {
+describe('readMove: such a move is neither rolled nor offered again — and the refusal is handed on to be told', () => {
   const host = Object.fromEntries([
     'postWhichFightCard', 'postWhichVowCard', 'postWhichLegacyCard', 'postTrackGoneCard',
     'applyOutcomeEffects', 'addLegacyTicks', 'postDevelopRelationshipCard', 'applyReachMilestone',
@@ -353,19 +351,20 @@ describe('readMove: such a move is neither rolled nor offered again', () => {
     installShip();
   });
 
-  it('the move reader answers no move: the pacing reader\'s Heal is not offered on the card (it was — pressed, and rolled)', async () => {
+  it('the move reader answers no move: the pacing reader\'s Heal is not offered on the card (it was — pressed, and rolled) — and why is told', async () => {
     installMira();
     scriptCalls({ interpreter: NO_MOVE });
     const result = await read({ classifier: { moveId: 'heal', category: 'downtime', reasoning: 'Sets about healing.' } });
-    expect(result.noMove).toEqual({ rationale: 'Health is full: there is no wound to treat.', lowConfidence: false, offeredMove: null });
+    expect(result.noMove).toMatchObject({ rationale: 'Health is full: there is no wound to treat.', lowConfidence: false, offeredMove: null,
+      refused: { moveId: 'heal', code: 'recoverable-health', why: HEALTH_FULL } });
   });
 
   it('with its "no move" beside the sheet, none of the four is offered again', async () => {
     installMira();
     scriptCalls({ interpreter: { moveId: null, rationale: 'The stores are full.' } });
-    expect((await read({ classifier: { moveId: 'resupply', category: 'downtime' } })).noMove.offeredMove).toBeNull();
+    expect((await read({ classifier: { moveId: 'resupply', category: 'downtime' } })).noMove).toMatchObject({ offeredMove: null, refused: { code: 'recoverable-supply' } });
     scriptCalls({ interpreter: { moveId: null, rationale: 'The ship is whole.' } });
-    expect((await read({ classifier: { moveId: 'repair', category: 'downtime' } })).noMove.offeredMove).toBeNull();
+    expect((await read({ classifier: { moveId: 'repair', category: 'downtime' } })).noMove).toMatchObject({ offeredMove: null, refused: { code: 'something-damaged' } });
     scriptCalls({ interpreter: { moveId: null, rationale: 'She is easy in herself.' } });
     expect((await read({ classifier: { moveId: 'hearten', category: 'downtime' } })).noMove.offeredMove).toBeNull();
   });
@@ -374,9 +373,9 @@ describe('readMove: such a move is neither rolled nor offered again', () => {
     installMira();
     scriptCalls({ interpreter: HEAL });
     const result = await read({ classifier: { moveId: 'heal', category: 'downtime' } });
-    expect(result.noMove).toEqual({
-      rationale: 'She tends her own wounds. (Nothing to recover: health is full and no wound is marked — narrated, with no Heal.)',
-      lowConfidence: false, offeredMove: null,
+    expect(result.noMove).toMatchObject({
+      rationale: `She tends her own wounds. (Cannot be made: ${HEALTH_FULL} — narrated, with no Heal.)`,
+      lowConfidence: false, offeredMove: null, refused: { moveId: 'heal', code: 'recoverable-health' },
     });
   });
 
@@ -392,6 +391,7 @@ describe('readMove: such a move is neither rolled nor offered again', () => {
     const result = await read({ classifier: { moveId: 'heal', category: 'downtime' } });
     expect(result.noMove).toBeUndefined();
     expect(result.interpretation).toMatchObject({ moveId: 'heal', statUsed: 'iron', healSituation: 'self' });
+    expect(result.interpretation.softRefusal).toBeUndefined();
   });
 
   it('control: with a wound to treat and a move reader that reads none, the Heal is still offered', async () => {
@@ -408,40 +408,43 @@ describe('readMove: such a move is neither rolled nor offered again', () => {
     expect(result.interpretation.moveId).toBe('resupply');
   });
 
-  it('a Heal for someone else is its to judge too', async () => {
+  it('a Heal for someone else is its to judge too — its patient is who the gate reads', async () => {
     installMira();
     game.actors._set('pc-ash', makeTestActor({ id: 'pc-ash', name: 'Ash', system: { health: { value: 2 } } }));
     scriptCalls({ interpreter: { ...HEAL, statUsed: 'wits', healSituation: 'ally', moveTarget: 'Ash' } });
     const result = await read({ narration: 'I clean and bind the gash along Ash\'s ribs.' });
     expect(result.noMove).toBeUndefined();
-    expect(result.interpretation).toMatchObject({ moveId: 'heal', healSituation: 'ally', moveTarget: 'Ash' });
+    expect(result.interpretation).toMatchObject({ moveId: 'heal', healSituation: 'ally', moveTarget: 'Ash', patientActorId: 'pc-ash' });
   });
 
-  it('a roll that was asked for, and a card\'s forced move, are made: a player who means it can still roll it', async () => {
+  it('a roll that was asked for, and a card\'s forced move, reach the GM\'s confirm dialog with the reason — its Accept rolls it at the GM\'s word (D2)', async () => {
     installMira();
     scriptCalls({ interpreter: HEAL });
     const asked = await read({ allowNoMove: false });
     expect(asked.noMove).toBeUndefined();
-    expect(asked.interpretation.moveId).toBe('heal');
+    expect(asked.refused).toBeUndefined();
+    expect(asked.interpretation).toMatchObject({ moveId: 'heal', softRefusal: { moveId: 'heal', code: 'recoverable-health', hard: false } });
     const forced = await read({ forced: { moveId: 'heal' } });
     expect(forced.noMove).toBeUndefined();
-    expect(forced.interpretation.moveId).toBe('heal');
+    expect(forced.interpretation).toMatchObject({ moveId: 'heal', softRefusal: { code: 'recoverable-health' } });
   });
 
   it('not in an open fight', async () => {
     installMira();
+    listProgressTracks.mockResolvedValue(fightTrack);
     getActiveCombatPosition.mockResolvedValue('bad_spot');
     scriptCalls({ interpreter: HEAL });
     const result = await read();
     expect(result.noMove).toBeUndefined();
     expect(result.interpretation.moveId).toBe('heal');
+    expect(result.interpretation.softRefusal).toBeUndefined();
   });
 
-  it('a Batch Mode round\'s reading of the line is a narrative one, with no move to roll instead', async () => {
+  it('a Batch Mode round\'s reading of the line is a narrative one, with no move to roll instead — and the reason the window shows', async () => {
     installMira();
     scriptCalls({ classifier: offer('heal', { decision: 'MOVE', confidence: 0.9 }), interpreter: HEAL });
     const reading = await readAction({ text: MEDKIT, speakerActorId: 'pc-mira', campaignState: CS, apiKey: 'k', dial: 'balanced' });
-    expect(reading).toEqual({ kind: 'narrative', suggestedMove: null, suggestedTargetId: null });
+    expect(reading).toMatchObject({ kind: 'narrative', suggestedMove: null, suggestedTargetId: null, refused: { moveId: 'heal', code: 'recoverable-health' } });
     // The pacing router settled it: the move reader was not asked.
     expect(callsTo(/move interpreter/)).toHaveLength(0);
   });

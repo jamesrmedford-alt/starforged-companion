@@ -43,11 +43,17 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
   `src/multiplayer/gmGate.js`). Its user message (`buildNarratorUserMessage`)
-  is RECENT SCENE, MOVE OUTCOME, then STAKES STATED BEFORE THE ROLL — the
-  interpreter's hit and miss lines the Confirm dialog showed
-  (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
-  this outcome delivers (issue #353 R1; a burn's or an improvement's
-  re-narration carries them) — then the player's line. The miss line is
+  is RECENT SCENE, MOVE OUTCOME, the player's line, then **one block of what
+  the result obliges its telling to** — WHAT THIS NARRATION MUST TELL, AND
+  MUST NOT (`moves/contracts/obligations.js` `obligationsFor` /
+  `formatObligationsBlock`, overhaul 4 slice 2; three lists — TELL, NOT YET,
+  NOT SO — a tag a line; it replaced the STAKES, PRICE, COST, FIGHT and VOW
+  blocks and the match line, their words kept) — and the instruction, which
+  says to keep to it. Its lines: [outcome]; [stakes] — the interpreter's hit
+  and miss lines the Confirm dialog showed (`resolution.stakes`,
+  `moves/stakes.js` `stakesShown`) and which one this outcome delivers
+  (issue #353 R1; a burn's or an improvement's re-narration carries them).
+  The miss line is
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
@@ -63,31 +69,49 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
   table's cards — the waypoint's claim, and the option the choice card was
   resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
-  above; still open, or declined, the stakes point at a block of its own
-  after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
-  THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
-  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
-  **What the table has still to answer** is read the same way, from the
-  table's cards, beside that settle (`resultUpgrade.withUnansweredCards`, in
-  `movePlanRequests` and for each of a round's move entries; the long haul's
-  third live run): a **cost that is the player's choice and not chosen yet**
-  (`openChoice` — the outcome's own choice card has no pick, or is not posted
-  yet: a free-flow result is narrated before its card; the choice is
-  `consequences.sufferPrompt` or the card's, and counts only when an option
-  costs something — a suffer move, a loss, a price, a complication) gets THE
-  COST IS THE PLAYER'S CHOICE (`stakes.formatOpenChoiceBlock`: what every
-  option has in common is narrated, the cost is not — a Heal weak hit's
-  narration had spent the supplies before the card asked "Lose Momentum, or
-  Sacrifice Resources?", known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN), and
-  the stakes' weak-hit line points at it instead of asking for "the cost … the
-  move outcome names"; once a pick is made nothing is said. An **Enter the
+  above; still open, or declined, the stakes point at the [price] line (NOT
+  YET "THE PRICE IS THE PLAYER'S CHOICE." / NOT SO "THE PRICE WAS NOT
+  PAID."), and a declined price's seed lines are dropped (issue #364
+  EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
+  **What the table has answered, and has still to answer,** is read the same
+  way, from the table's cards, beside that settle
+  (`obligations.unansweredCardsFor`, moved from `resultUpgrade.js`, through
+  `narrator.js` `withCardsAnswered` in `movePlanRequests` and for each of a
+  round's move entries; the long haul's third live run): a **cost that is
+  the player's choice and not chosen yet** (`openChoice` — the outcome's own
+  choice card has no pick, or is not posted yet: a free-flow result is
+  narrated before its card; the choice is `consequences.sufferPrompt` or the
+  card's, and counts only when an option costs something — a suffer move, a
+  loss, a price, a complication) gets NOT YET [cost] "THE COST IS THE
+  PLAYER'S CHOICE." (what every option has in common is narrated, the cost
+  is not — a Heal weak hit's narration had spent the supplies before the
+  card asked "Lose Momentum, or Sacrifice Resources?", known-issues
+  COST-NARRATED-BEFORE-IT-IS-CHOSEN), and the stakes' weak-hit line points
+  at it instead of asking for "the cost … the move outcome names"; **a cost
+  picked before the narration** (a held result kept by its pick, a round
+  whose entry's card was answered first — `chosen`, the option's label from
+  the card's `chosenIndex` / `pickedIndices` / `pickedSuffers`) gets TELL
+  [chosen] "‹PC› chose ‹option›. Tell what it cost them." An **Enter the
   Fray whose fight no one has begun** (`fightOffer` — its threshold card,
-  found by the resolution's id, is unanswered, or the way out was taken) gets
-  THE FIGHT IS STILL ONLY OFFERED / THE FIGHT WAS NOT BEGUN
-  (`stakes.formatFightOfferBlock`; `combat-flow.md` §1). A **Fulfill Your Vow
-  hit** carries THE VOW IS FULFILLED (never claim an answer the narration does
-  not state — `vow-flow.md` §3), and a roll **with a match** is told, under its
-  outcome block's "[MATCH]", to tell the twist and never write the word. The
+  found by the resolution's id, is unanswered, or the way out was taken)
+  gets [fight] — NOT YET "THE FIGHT IS STILL ONLY OFFERED." / NOT SO "THE
+  FIGHT WAS NOT BEGUN." (`combat-flow.md` §1). A **Fulfill Your Vow hit**
+  carries TELL [vow] "THE VOW IS FULFILLED." (never claim an answer the
+  narration does not state — `vow-flow.md` §3); a **progress move's miss**
+  with a recommit card (Fulfill Your Vow, Finish an Expedition, Forge a
+  Bond) NOT YET [recommit]; **Reach a Milestone** TELL [milestone]; a roll
+  **with a match** TELL [match] — tell the twist and never write the word;
+  a soft refusal **rolled at the GM's word** TELL [overridden]. Which of
+  these a move's result carries beyond the generic ones is its contract
+  row's `obliges` (`moves/contracts/table.js`). NOT SO [state] says what the
+  sheet holds of a person or a fight the beat touches — a connection the
+  line, the move's target or the scene frame's cast names, whose
+  relationship is full and unbonded ("‹person› is ‹PC›'s connection, not a
+  bond: their relationship is full and no bond is forged."), or that is
+  lost; "No fight is under way." for a line that reads as fighting with
+  none open (`narrator.js` `beatSituation` reads the speaker's situation for
+  it — TRACK-TOLD-AS-A-BOND); NOT SO [sheet] and [apparatus] close every
+  block. The
   move and round roles name the outcome's own words — strong hit, weak hit,
   miss, match — as never to appear as such (known-issues
   NARRATION-NAMES-THE-OUTCOME).
@@ -178,7 +202,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   scene gives way (what was heard was a recording, a relay, a mistake, or has
   stopped); the user message says a yes/no answer back in plain words with its
   question, after the recent scene and before the ask
-  (`narratorPrompt.formatOracleAnswerRule`, read by `buildOracleUserMessage`;
+  (its obligations block — TELL [oracle] the answer, NOT SO [oracle] its
+  opposite — `obligationsFor({ mode: "oracle" })`, read by `buildOracleUserMessage`;
   nothing for a table roll, a price or a complication); and RECENT ORACLE
   RESULTS ([3b]) tells every later narration that the answer stands over
   earlier narration. A table's result keeps its latitude, and is never turned
@@ -266,6 +291,18 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and "familiar adversary" tiers, the list of mundane tasks, the list of
   gestures, the role's three example closings, `selectEndSessionNPC`. Kept
   (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **How a set-piece ends is its material's** (known-issues
+  SET-PIECES-SHAPED-BY-THEIR-PROMPT): no shape is given. Told "It stops when
+  the small thing is done, or put down", every closing of the fourth live run
+  ended on a thing put down; told "Its last sentence returns to what that
+  leaves open … Nothing new happens", and given "for the third time this week"
+  as the time not to let pass, every opening handled a counted object and
+  ended still. Both now end where the scene reaches its last result ("How it
+  ends is the material's"); the opening — and the role's OPENING — holds back
+  only the plot ("No turn of the plot happens in it: the first move is the
+  players'"). The MATERIAL says a result's words are the oracle's, never the
+  prose's (a record's name or place is written as it is): told "Never the
+  words themselves", six results were written as their own word.
   **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
   pressed the d100 is rolled for the Begin card as before, and — when a
   narration will follow (`narrationEnabled`, a keyed GM connected, the
@@ -1102,21 +1139,103 @@ vehicle's integrity full and it not battered are plain NARRATIVE with nothing
 offered, and the interpreter's rule 10 answers NO MOVE for them — each unless
 the line is plainly about something the meters do not show (care for an ally
 or a companion; one particular item; a support vehicle, a module, a companion
-or a device). Where the sheet settles it the code decides
-(`moves/situation.js nothingToRecover`, from the same `readSituation` the
-block is rendered from), outside a fight:
-- `router.decidePacing` turns the classifier's MOVE or offer of Hearten — or
-  of Heal when there is nobody else the care could be for (no other player
-  character, no companion) — into NARRATIVE with no move, and its reasoning
-  says why (`[nothing to recover: …]`, in the Pacing Telemetry journal);
-- `movePipeline.readMove` narrates the interpreter's own reading of such a
-  move instead of rolling it, and never offers a recovery move with nothing to
-  recover on the card of a line read as no move — the classifier's nominated
-  Heal was what that card carried. With the interpreter's "no move" beside
-  the sheet that holds for all four; on the sheet alone, for the two above.
-A forced move (a card's button) and a roll that was asked for (`!roll`, a
-round's "Roll a move instead") are made as they always were: a player who
-means it can still roll it. Sojourn is not held to one meter.
+or a device).
+
+**What the sheet settles, the move gate decides** (overhaul 4, "moves as
+contracts"). Every move has a row (`moves/contracts/table.js`
+`MOVE_CONTRACTS`: its trigger, its target, its preconditions —
+`moves/contracts/predicates.js`), and one gate (`moves/contracts/gate.js`
+`checkMove`) runs them over the situation read live
+(`moves/situation.js readMoveSituation`: the roller's sheet, the other PCs,
+the recorded people, the open tracks, the scene's site), where a move is
+offered and where it is made — the roll is the authority:
+- `router.decidePacing` asks it of the classifier's MOVE or offer: a move that
+  cannot be made — a recovery move with nothing to recover (`RECOVERABLE`,
+  `PARTY_HAS_SOMETHING_TO_RECOVER`), a social move spoken to a fellow player
+  character (`NOT_AT_A_PC`), a combat move with no fight (`OPEN_FIGHT`), a
+  connection's move with someone who is no connection of the speaker's
+  (`THEIR_CONNECTION`) — is NARRATIVE, or an offer of the move the refusal
+  names (Enter the Fray for a Strike with no fight; Make a Connection for a
+  Develop with a stranger); its reasoning says why (`[cannot be made: <code>
+  — <why>]`, in the Pacing Telemetry journal), and the decision carries the
+  refusal to the narration (`refused` → `narratePacedInput`'s `refusal`);
+- `movePipeline.readMove` asks it of the line's reading: a typed line whose
+  move cannot be made is narrated as a paced line, told why (`noMove.refused`
+  → `index.js narrateLineWithoutMove`), and nothing the gate refuses is offered
+  on that card; a forced move's or an asked-for roll's hard refusal is not
+  rolled (`refused` → the not-rolled notice, "No Strike — no fight is under
+  way. Nothing was rolled.", flag `cannotMake`), and a soft one goes to the
+  confirm dialog with the sheet's words (`interpretation.softRefusal`), whose
+  Accept rolls it at the GM's word;
+- `rollAndApply` asks it again before the dice (the forced moves, a card's
+  button, a Batch Mode round's entry — `driver.refusalFor` at resolution):
+  refused, nothing is rolled and the notice says why — a soft refusal of a
+  forced move with a **Roll anyway (GM)** button (`notRolled.rollAnyway` →
+  `cardActions.applyNotRolledRollAnyway`, the move re-posted with
+  `gateOverride`); rolled at the GM's word, the move card says "⚖ rolled at
+  the GM's word: …" and its narration is told so (`resolution.gateNote`).
+A hard refusal (nothing for the move to act on — no fight, no vow, no
+connection) is never overridden; a soft one (the sheet says the move would
+change nothing) is told on a typed line and rolled at a GM's word on a
+pressed one. Soft ones are not applied in a fight — there the dice decide —
+and the ones the sheet cannot see whole (Resupply's one particular item,
+Repair's device: `readerSettled`) only where no reader read the line as the
+move. An unknown is never a refusal: a meter or a list not read holds. Sojourn
+is held to the party as a whole, not one meter.
+
+**A cost chosen after its narration is told by the next beat** (overhaul 4,
+slice 5; D10 — CHOSEN-COST-NEVER-TOLD: two Endure Stress costs chosen after
+the roll's narration were never told). The pick stamps its choice card
+`pickedAfterNarration` when its result's narration card is on the table
+(`sufferCard.js`); the next narration that is a beat of play — a move's, a
+paced line's, a round's — carries TELL [chosen-since] for each such pick no
+narration has told (`obligations.choicesChosenSince`, any roller's, never
+its own result's), and once its card posts the canonical GM stamps the
+card `toldBy` (`markChosenCostsTold`) — told once; a refused stamp is told
+again, a player's own key cannot stamp, an X-Carded card is not carried.
+
+**The narration is checked against its block before it posts** (overhaul 4,
+slice 4 — `moves/contracts/checks.js`, D9): `narrateKeepingObligations`
+wraps the move's (`narrateResolution` — so a held result's and an upgrade's
+re-narration too) and the paced line's (`narratePacedInput`) narrator call.
+The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
+block is applied) and held to its lines by class: **certain** —
+[apparatus] (an outcome's name, a sheet number, a two-word move's name
+outside the closing offer line) and [match] (the word); **floor** — [vow]
+(a word of the vow's name, or what is still not known) and [chosen]
+(logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
+in the prose ([premise] by its refusal's code — "starts on the cuts" under
+a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
+[oracle], [state]) sends one Haiku call (`api-proxy.js`, label
+`obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
+consistency check on). A failure is asked once more — the same prompt plus
+YOUR DRAFT — NOT POSTED and the line it broke (labels
+`narrateResolution:reask` / `narratePacedInput:reask`); the second reply is
+held to the certain checks only and posted whatever it says. At most one
+judge call and one re-ask a narration. Each verdict is a row on the
+Consistency Check telemetry page (`kind: "obligation"`). The round's and the
+oracle follow-up's narrations carry the block but are not yet checked.
+
+**The refusal is told** — in the user message, never the system prompt
+(`rules/narrator-memory.md` invariant 7b): the paced message ends with a
+**WHAT THIS NARRATION MUST TELL, AND MUST NOT** block
+(`moves/contracts/obligations.js` `obligationsFor` /
+`formatObligationsBlock`) before its instruction — NOT SO `[premise]`: what
+the line took for granted is not so, with the refusal's reason ("A fight under
+way is not so — no fight is under way. The line sets about it: narrate the
+attempt meeting the facts, never the premise as real: never a blow struck, a
+shot fired or a foe engaged in a fight."); NOT YET `[offer]`: the move offered
+is only offered (SUGGESTED MOVE's "It has not been made…" half, moved here);
+NOT SO `[sheet]`: no sheet changes in narration (the instruction's "Nor does
+anything…" sentence, moved here — for a refused line, "No move was rolled for
+this line, and none will be"); NOT SO `[apparatus]`: no dice, no sheet number,
+no outcome's or move's name. A move rolled at the GM's word carries TELL
+`[overridden]` in its move message; a
+round's entry refused at the roll carries its `[premise]` block in the
+round's message (`####`, under the entry). The paced card says it too
+(`<p class="sf-cannot-make">`, flag `cannotMake` — the runner's check reads
+it), and a round's window shows the refused entry's note
+(`roundView.cannotMake`).
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
@@ -1233,7 +1352,14 @@ and Chronicle entries had it, labelled. The role says a recap says only what
 its sources say: nothing inferred, nothing filled in between two lines (a beat
 may be missing because the table took it out), what a player wrote is the
 character's claim, whose things are whose, how a thing stands is WHERE THINGS
-STAND's word, one name for everyone. The reply is cited sentences (decision
+STAND's word, one name for everyone — and what happened is told, never the
+dice or the numbers: "strong hit", "weak hit", "miss" and "match" never as
+such, no number from a sheet or a track, a rank as how hard a vow, a tie or a
+fight is, never a word for someone (`RECAP_SOURCES_RULE`, the move
+narration's outcome-word rule worded for a recap; its user message ends on
+it — known-issues RECAP-TELLS-THE-DICE: 13 of the fourth live run's 64 recap
+sentences named an outcome; the record's lines keep theirs, which the
+sentences cite). The reply is cited sentences (decision
 D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
 no sentence cites sends it back once, a reply that is not the JSON is asked
 for once more before the recap that stood stays, and the text kept has every

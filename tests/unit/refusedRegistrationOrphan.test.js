@@ -89,7 +89,7 @@ async function runLoadTimeRepairs() {
 }
 
 describe('a Confirm whose registration the world refused, then confirmed again', () => {
-  it('the retry adopts the card the first Confirm made — one Vex, listed, with its bond', async () => {
+  it('the retry adopts the card the first Confirm made — one Vex, listed (a person: no bond, overhaul 4 D4)', async () => {
     expectConsoleError(/registering connectionIds failed/);
     expectConsoleError(/draft confirm: createXxx failed/);
     const gm = table.client('gm-1');
@@ -111,10 +111,10 @@ describe('a Confirm whose registration the world refused, then confirmed again',
     expect(rows(card)).toEqual([['Vex', 'confirmed']]);
     expect(named('Vex')).toHaveLength(1);
     expect(world().connectionIds).toEqual([orphanId]);
-    // The adopted card gets what the first Confirm never reached: the PC's bond Item.
+    // A Confirm records the person: no bond Item on the PC's sheet (overhaul 4, D4).
     const kira = table.actors.find(a => a.id === 'pc-kira');
     const recordId = named('Vex')[0].flags[MODULE_ID].connection._id;
-    expect(kira.items.contents.filter(i => i.flags?.[MODULE_ID]?.connectionId === recordId)).toHaveLength(1);
+    expect(kira.items.contents.filter(i => i.flags?.[MODULE_ID]?.connectionId === recordId)).toHaveLength(0);
   }, 30_000);
 
   it('control: with the write accepted one Confirm makes one listed card', async () => {

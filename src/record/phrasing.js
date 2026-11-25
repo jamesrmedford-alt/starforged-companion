@@ -37,15 +37,28 @@ export function changeText(c) {
   return `${METERS[what] ?? what} ${c?.from ?? '?'} → ${c?.to ?? '?'}`;
 }
 
-/** "Compel (+heart), strong hit (a match)"; an upgrade says what it was and how it was raised. */
+/**
+ * The moves made on a vow: their line names it. "Swear an Iron Vow (+heart),
+ * weak hit — LASTING: a vow sworn" said which vow nowhere, and a recap took
+ * the character's background vow for the one sworn (known-issues
+ * VOW-SWORN-UNNAMED-IN-THE-RECORD).
+ */
+const VOW_MOVES = Object.freeze(new Set(['swear_an_iron_vow', 'reach_a_milestone', 'fulfill_your_vow', 'forsake_your_vow']));
+
+/**
+ * "Compel (+heart), strong hit (a match)"; an upgrade says what it was and
+ * how it was raised; a move made on a vow names it — "Swear an Iron Vow
+ * (+heart): “Find the lost ark”, weak hit".
+ */
 export function moveText(move) {
   if (!move) return '';
   const name = move.name ?? move.moveId ?? 'A move';
   const stat = move.stat && move.rollKind !== 'progress' ? ` (+${move.stat})` : '';
+  const vow = VOW_MOVES.has(move.moveId) && String(move.target?.name ?? '').trim() ? `: ${q(move.target.name)}` : '';
   const outcome = move.upgraded
     ? `${OUTCOMES[move.upgraded.from] ?? move.upgraded.from ?? '?'}, made a ${OUTCOMES[move.outcome] ?? move.outcome ?? '?'} by ${move.upgraded.how === 'burn' ? 'burning momentum' : 'an asset'}`
     : (OUTCOMES[move.outcome] ?? move.outcome ?? '');
-  return `${name}${stat}${outcome ? `, ${outcome}` : ''}${move.match ? ' (a match)' : ''}`;
+  return `${name}${stat}${vow}${outcome ? `, ${outcome}` : ''}${move.match ? ' (a match)' : ''}`;
 }
 
 const TRACK_KINDS = Object.freeze({
@@ -70,7 +83,10 @@ export function didText(d) {
     case 'track.ended':      return `the ${trackKind(d.type)} ${q(d.label)} ${d.completed ? 'brought to its end' : 'closed unfinished'}`;
     case 'position.changed': return `${d.name ?? 'a character'} ${d.to === 'in_control' ? 'in control' : 'in a bad spot'} in ${q(d.label)}`;
     case 'fight.offered':    return `a fight offered: ${q(d.label)}${d.suggestedRank ? ` (${d.suggestedRank})` : ''}`;
-    case 'connection.made':  return `made a connection: ${d.name}${d.rank ? ` (${d.rank})` : ''}`;
+    // A starting connection is the game's setup, not a deed of the story (overhaul 4, D12).
+    case 'connection.made':  return d.by === 'setup'
+      ? `a connection from the start: ${d.name}${d.rank ? ` (${d.rank})` : ''}`
+      : `made a connection: ${d.name}${d.rank ? ` (${d.rank})` : ''}`;
     case 'connection.developed': return `developed the relationship with ${d.name} (${boxes(d.ticks?.from)} → ${boxes(d.ticks?.to)} boxes)`;
     case 'connection.bonded': return `forged a bond with ${d.name}`;
     case 'connection.lost':  return `lost the connection with ${d.name}${d.reason ? ` (${d.reason})` : ''}`;

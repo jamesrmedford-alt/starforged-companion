@@ -703,6 +703,10 @@ export function readConnections(actor) {
       // The connection was severed: its record is `active: false`, written
       // through as this flag (setBondItemLost, issue #330 D10).
       lost:      b.flags?.[MODULE_ID]?.lost === true,
+      // The connection record's `_id` the Item is keyed to (bondItemsFor) —
+      // how the move contracts' situation finds the person's NPC card
+      // (moves/situation.js readMoveSituation). null on an Item with no key.
+      connectionId: b.flags?.[MODULE_ID]?.connectionId ?? null,
     };
   });
 }
@@ -1869,22 +1873,59 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * hands the row back too, for the X-Card to reopen (issue #364
  * XCARD-BOND-DRAFT-ROW-CONFIRMED). Only with a `narrationId`.
  *
+ * A connection is this Item (FOLDER-002: the NPC card is a person), so the
+ * session record's `connection.made` is written here, when the Item is made
+ * — once, never for an Item that existed — with what made it (`by`:
+ * `{ move: "make_a_connection", nar }` for the move's hit, "setup" for the
+ * game's launch step; overhaul 4, D12). It was written when the NPC card was
+ * made, so a person recorded with no connection on anyone's sheet reached
+ * the recap as "made a connection" (CONNECTION-MADE-BY-CONFIRMING-A-DRAFT).
+ * tests/unit/moveOnlyState.test.js holds every caller to a move or setup.
+ *
  * @param {Actor} actor
  * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null,
- *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null }} data
+ *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null,
+ *   by?: { move: string, nar?: string|null, res?: string|null }|"setup"|null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterBondItem(actor, data) {
   const narrationId = typeof data?.narrationId === "string" && data.narrationId ? data.narrationId : null;
   const draftRow = narrationId && data?.draftRow && typeof data.draftRow === "object" ? data.draftRow : null;
-  return createCharacterProgressItem(actor, {
+  const connectionId = data?.connectionId ?? null;
+  const items = actor?.items?.contents ?? (Array.isArray(actor?.items) ? actor.items : []);
+  const existed = !!connectionId && items.some(i => i?.type === "progress" && i.flags?.[MODULE_ID]?.connectionId === connectionId);
+  const item = await createCharacterProgressItem(actor, {
     subtype:    "bond",
     name:       data?.name || "Unknown Connection",
     rank:       data?.rank,
     flagKey:    "connectionId",
-    flagValue:  data?.connectionId ?? null,
+    flagValue:  connectionId,
     ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId, ...(draftRow ? { bondedFromDraft: draftRow } : {}) } } : {}),
   });
+  if (item && !existed) {
+    const by = data?.by === "setup" ? "setup"
+      : (data?.by && typeof data.by === "object" && typeof data.by.move === "string" ? { move: data.by.move, ...(data.by.res ? { res: data.by.res } : {}) } : null);
+    const hostId = connectionHostId(connectionId);
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.made", {
+      ref: { conn: hostId, nar: narrationId ?? (data?.by && typeof data.by === "object" ? data.by.nar ?? null : null) },
+      d: { name: data?.name ?? "", rank: data?.rank ?? null, actorId: actor?.id ?? null, by },
+    })).catch(() => {});
+  }
+  return item;
+}
+
+/** The NPC card (host Actor id) a connection record's id names, or null. */
+function connectionHostId(connectionId) {
+  if (!connectionId) return null;
+  try {
+    for (const a of globalThis.game?.actors?.contents ?? (Array.isArray(globalThis.game?.actors) ? globalThis.game.actors : [])) {
+      const f = a?.flags?.[MODULE_ID];
+      if (f?.entityType === "connection" && (f.entityId === connectionId || f.connection?._id === connectionId)) return a.id ?? null;
+    }
+  } catch (err) {
+    console.debug(`${MODULE_ID} | bond item: the connection's NPC card could not be found:`, err?.message ?? err);
+  }
+  return null;
 }
 
 /**

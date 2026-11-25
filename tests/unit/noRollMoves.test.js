@@ -73,6 +73,12 @@ beforeEach(async () => {
   } } });
   await table.setClaudeKey("gm-1", "sk-ant-test");
   pc = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, system: { momentum: { value: 9 } } });
+  // An expedition under way: a waypoint is explored on one (overhaul 4's
+  // EXPEDITION_OR_SITE) — the Progress Tracks journal, as its store writes it.
+  const flagStore = { [`${MODULE_ID}.tracks`]: [{ id: "ex-drift", label: "To the Drift", type: "expedition", rank: "dangerous", ticks: 8, completed: false }] };
+  table.journal._set({ id: "nr-tracks", name: "Starforged Progress Tracks",
+    getFlag: (mod, key) => flagStore[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flagStore[`${mod}.${key}`] = structuredClone(value); } });
   scriptClaude(table, { fallback: () => 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 });
 
@@ -101,14 +107,15 @@ describe("T05 — Make a Discovery from a waypoint match rolls nothing and offer
     expect(narration.flags[MODULE_ID]).toMatchObject({ moveId: "make_a_discovery", outcome: null });
   });
 
-  it("a typed Make a Discovery rolls nothing even when the interpreter names a stat", async () => {
+  it("a typed Make a Discovery is not made — a discovery comes from a waypoint's match: narrated, told why, nothing rolled or marked", async () => {
+    // Overhaul 4: the move gate's FROM_A_WAYPOINT (soft) — typed alone, the
+    // line is narrated and its card says why.
     await type({ moveId: "make_a_discovery", moveName: "Make a Discovery", statUsed: "iron", adds: 0 }, [0.65, 0.75, 0]);
-    const card = moveCards().at(-1);
-    expect(rolled.last).toMatchObject({ rollKind: "none", actionDie: 0, challengeDice: [], outcome: null });
-    expect(card.content).toMatch(/no action roll/);
-    expect(card.content).not.toMatch(/\+iron|Miss|sf-burn-momentum/);
+    expect(moveCards(), "nothing rolled").toHaveLength(0);
+    const paced = table.cards(f => f.pacedNarrative).at(-1);
+    expect(paced.flags[MODULE_ID].cannotMake).toMatchObject({ moveId: "make_a_discovery", code: "from-a-waypoint", hard: false });
     expect(pc.system.momentum.value).toBe(9);
-    expect(world().legacyTracks.discoveries.ticks).toBe(2);
+    expect(world().legacyTracks.discoveries?.ticks ?? 0).toBe(0);
   });
 
   it("control: an action move still rolls its dice and offers a burn on a miss", async () => {

@@ -53,6 +53,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 
 // The measured line (the readers' test's develop-2; run 2's a60 without its move name).
@@ -80,7 +81,11 @@ async function seed(connections) {
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-test');
   actors = {};
-  actors.mira = table.addActor({ id: 'pc-mira', name: 'Mira Kestrel', ownership: { 'pl-1': 3 } });
+  // Mira's connections are her bond Items, keyed to each record (overhaul 4 —
+  // an NPC card alone is a person, not a connection).
+  actors.mira = table.addActor({ id: 'pc-mira', name: 'Mira Kestrel', ownership: { 'pl-1': 3 }, items: { contents: connections.map(c => bondItemFor({
+    _id: `rec-${c.id}`, name: c.name, rank: c.rank ?? 'dangerous', relationshipTicks: c.ticks ?? 0, bonded: !!c.bonded,
+  })) } });
   for (const c of connections) {
     actors[c.id] = table.addActor({
       id: c.id, name: c.name, type: 'character',

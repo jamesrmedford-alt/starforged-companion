@@ -37,12 +37,15 @@ import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParse
 import { markSeedsUsed } from '../session/sceneSeeds.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
-import { logNarratorUsage } from '../pacing/telemetry.js';
+import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
+import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
+import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
+import { readMoveSituation } from '../moves/situation.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -84,9 +87,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
-import { priceChoiceStatus, withUnansweredCards } from '../moves/resultUpgrade.js';
-// What the long haul's third live run turned up (a line of its own, apart from the block above).
-import { formatOracleAnswerRule } from './narratorPrompt.js';
+import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
@@ -1366,6 +1367,13 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
+  const touched = await beatSituation(character?.actorId ?? null, campaignState);
+  // Costs chosen after their narration, told by this beat of play (D10) —
+  // not this result's own (its card is [chosen]).
+  const chosenSince = choicesChosenSince({ except: [resolution?._id, resolution?.upgradeOf] });
+  // One list for the block and its checks (overhaul 4, slice 4).
+  const moveObligations = obligationsFor({ mode: 'move', resolution, situation: touched.situation,
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince });
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1375,7 +1383,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
     ),
-    { audio: extras.audioMarkupEnabled === true },
+    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast, obligations: moveObligations },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1392,14 +1400,23 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
 
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateResolution',
-      apiKey,
-      systemPrompt,
-      userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-    });
+    // Checked against its obligations before it posts (overhaul 4, slice 4 —
+    // contracts/checks.js): a failure is asked once more, with the draft and
+    // the line it broke; only the reply returned has its fact block applied.
+    const kept = await narrateKeepingObligations(
+      (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
+        label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
+        apiKey,
+        systemPrompt,
+        userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      })),
+      moveObligations,
+      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
+        onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
+    );
+    const raw = kept.raw;
     if (xCard.interrupted('narrateResolution')) {
       // The reply is discarded; the plans the move asked for are still owed
       // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS).
@@ -1423,6 +1440,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
     sideDataApplied = true;
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
+    await markChosenCostsTold(chosenSince, narrationId);
     reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
     // Its Chronicle entry is written from the session record's beat once the
@@ -1458,6 +1476,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
         if (narration?.trim()) {
           sideDataApplied = true;
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
+          await markChosenCostsTold(chosenSince, narrationId);
           reportNarratedMove(resolution?.moveId ?? null, resolution?.oracleSeeds ?? null);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
           return narration;
@@ -1476,6 +1495,42 @@ export async function narrateResolution(resolution, campaignState, options = {},
   }
 }
 
+
+/**
+ * A result, or a round entry's narration input, with what its cards say
+ * (contracts/obligations.js unansweredCardsFor) — `openChoice`, `chosen`,
+ * `fightOffer` — for its obligations block. Fresh each narration: what a card
+ * said when an earlier narration was written is not carried.
+ *
+ * @param {Object|null} input
+ * @returns {Object|null}
+ */
+function withCardsAnswered(input) {
+  if (!input || typeof input !== 'object') return input;
+  const rest = { ...input };
+  delete rest.openChoice; delete rest.chosen; delete rest.fightOffer;
+  return { ...rest, ...unansweredCardsFor(input) };
+}
+
+/**
+ * The situation a narration's [state] lines read (moves/situation.js
+ * readMoveSituation), and the scene's cast — what the beat touches. Null when
+ * it cannot be read: then no [state] line is told.
+ *
+ * @param {string|null} actorId
+ * @param {Object|null} campaignState
+ * @returns {Promise<{ situation: Object|null, cast: string[] }>}
+ */
+async function beatSituation(actorId, campaignState) {
+  const cast = Array.isArray(campaignState?.sceneFrame?.present)
+    ? campaignState.sceneFrame.present.filter(n => typeof n === 'string' && n.trim()) : [];
+  try {
+    return { situation: actorId ? await readMoveSituation(actorId, { campaignState }) : null, cast };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the sheet could not be read for what the beat touches:`, err?.message ?? err);
+    return { situation: null, cast };
+  }
+}
 
 /**
  * A move as its narration takes it, and the plans it asks that narration to
@@ -1518,9 +1573,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
 function movePlanRequests(resolution, campaignState, refBase) {
   let move = resolution;
   if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
-  // What the table has still to answer about the result — a cost that is the
-  // player's choice, not yet chosen: its narration stops short of it.
-  move = withUnansweredCards(move);
+  // What the table has answered, and has still to answer, about the result —
+  // a cost that is the player's choice (open: its narration stops short of
+  // it; chosen before it: told), an Enter the Fray's fight not begun — read
+  // from its cards for its obligations block (overhaul 4,
+  // contracts/obligations.js unansweredCardsFor).
+  move = withCardsAnswered(move);
   if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
   if (!skeletonsEnabled()) return { resolution: move, planRequests: [], planIds: [] };
   const asked = forResolution([move?.upgradeOf, move?._id].find(id => typeof id === 'string' && id) ?? null,
@@ -1735,8 +1793,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const entries = roundNarrationEntries(round)
     .map(e => (e.input?.priceChoice
       ? { ...e, input: settlePriceChoice(e.input, priceChoiceStatus(e.input.resolutionId ?? null)) } : e))
-    // …and so is a cost still its player's to choose (narrateResolution's rule).
-    .map(e => (e.input?.kind === 'move' ? { ...e, input: withUnansweredCards(e.input) } : e))
+    // …and so are its cards — a cost still its player's to choose, or chosen
+    // before the round is narrated (narrateResolution's rule).
+    .map(e => (e.input?.kind === 'move' ? { ...e, input: withCardsAnswered(e.input) } : e))
     .map(e => (globalThis.game?.user?.isGM === true
       ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };
@@ -1803,7 +1862,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, { ...settings, narrationLength: sentenceTarget }, null, '', extras,
   );
+  const roundChosenSince = choicesChosenSince({ except: entries.map(e => e.input?.resolutionId).filter(Boolean) });
   const userMessage = buildRoundUserMessage({
+    chosenSince: roundChosenSince,
     recentContext: getRecentNarrationContext(
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
@@ -1850,6 +1911,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, beatShape: extras.beatShape?.id ?? null,
       });
+      await markChosenCostsTold(roundChosenSince, narrationId);
       for (const e of entries) reportNarratedMove(e.input?.moveId ?? null, e.input?.oracleSeeds ?? null);
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
@@ -4235,8 +4297,12 @@ function buildOracleUserMessage({
     );
   }
   // A yes/no answer binds the narration of it (ORACLE-NO-NARRATED-AS-YES): said
-  // back after the recent scene, which may say otherwise, and before the ask.
-  const binds = formatOracleAnswerRule({ kind, question, rolledLine });
+  // back after the recent scene, which may say otherwise, and before the ask
+  // — its obligations block, TELL [oracle] the answer, NOT SO its opposite
+  // (overhaul 4).
+  const binds = formatObligationsBlock(obligationsFor({
+    mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine },
+  }));
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
@@ -4591,16 +4657,23 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
 }
 
 /**
- * Build the user message for a vow-swearing scene: the Iron truth (how the
- * Ironsworn bind their oaths in this world) + the vow being sworn. Pure;
- * exported for tests.
+ * Build the user message for a vow-swearing scene: its material — the vow's
+ * own words, the Iron truth (how the Ironsworn bind their oaths in this
+ * world) and the scene the character swears it in (the recent narration) —
+ * and that the oath is built from it. Given the vow's name, "vows are sworn
+ * upon iron" and "Pure sensory fiction; do not restate the vow's text", the
+ * oath was one image in all four live long hauls — a palm pressed flat to a
+ * bulkhead, the words said low (known-issues
+ * SET-PIECES-SHAPED-BY-THEIR-PROMPT). Pure; exported for tests.
  *
  * @param {{ name?: string, rank?: string|null }} vow
  * @param {{ title?: string, description?: string }|null} ironTruth
+ * @param {{ recentScene?: string }} [opts] — the recent narration, as the ring gives it
  * @returns {string}
  */
-export function buildVowSwearingUserMessage(vow, ironTruth) {
-  const subject   = vow?.name ? `"${vow.name}"` : "a vow";
+export function buildVowSwearingUserMessage(vow, ironTruth, { recentScene = "" } = {}) {
+  const name      = typeof vow?.name === "string" ? vow.name.trim() : "";
+  const subject   = name ? `"${name}"` : "a vow";
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
   // A custom Iron truth chosen in the World Truths dialog is its title alone
   // (issue #322 V34).
@@ -4614,14 +4687,21 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
     : ironTruth?.title
       ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
       : `In this world, vows are sworn upon iron.`;
+  const recent = typeof recentScene === "string" ? recentScene.trim() : "";
   return [
     `A character is swearing ${subject}${rank}.`,
     ``,
-    truthLine,
+    `THE OATH'S MATERIAL`,
+    `- The vow's own words: ${name ? `"${name}"` : "none on record — the scene says what is sworn"}.`,
+    `- How oaths are bound: ${truthLine}`,
+    `- The scene: where the character is now, who is there and what has just happened — the active ` +
+      `scene in this prompt${recent ? ", and the recent narration below" : ""}.`,
+    ...(recent ? [``, `RECENT NARRATION (most recent last):`, recent] : []),
     ``,
-    `Write 2-3 sentences depicting the act of swearing this vow, grounded in how the`,
-    `Ironsworn swear their oaths above. Pure sensory fiction; do not restate the vow's`,
-    `text or mention game mechanics.`,
+    `Write 2-3 sentences: this character swearing this vow, there and then, built from that material. ` +
+      `The words sworn are the vow's own, or the character's for them. What is sworn upon is iron at ` +
+      `hand there, as this world binds an oath. The moment comes out of the scene and what the vow is ` +
+      `about — no stock gesture. Do not mention game mechanics.`,
   ].join("\n");
 }
 
@@ -4661,7 +4741,9 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   // What is really behind the vow is decided here (issue #353 Phase 4).
   const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character, planRequests });
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
-  const userMessage  = buildVowSwearingUserMessage(vow, ironTruth);
+  // The scene it is sworn in: the oath is built from it (buildVowSwearingUserMessage).
+  const recentScene  = getRecentNarrationContext(campaignState?.currentSessionId ?? null, getNarratorContextCards());
+  const userMessage  = buildVowSwearingUserMessage(vow, ironTruth, { recentScene });
 
   const call = async () => {
     const raw  = await callNarratorAPI({
@@ -4814,6 +4896,11 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * @param {Object} [options]
  * @param {string|null} [options.suggestedMove] — when set, the narrator is
  *   instructed to end with an italicized inline hint nominating this move
+ * @param {Object|null} [options.refusal] — the move the line was read as
+ *   could not be made (moves/contracts/gate.js refusalOf; the pacing router's
+ *   or readMove's): the narration is told its premise is not so, and the card
+ *   says why in one line (`cannotMake` — NOTHING-TO-RECOVER-UNTOLD). Its
+ *   button is never the refused move, whatever the closing hint names.
  * Never throws: a throw outside its own guarded steps — before the prompt
  * is built (the X-Card watch, the key, the speaker's character) — told
  * nobody; the pacing router only logged it (known-issues PACED-ROUTER-THROW).
@@ -4870,7 +4957,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     // which only logged it: the line sat in chat, narrated by nothing and told
     // to nobody, as a failed call's line did before AB21 (issue #347 residual
     // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
-    let suggestedMove, extras, systemPrompt, userMessage;
+    let suggestedMove, extras, systemPrompt, userMessage, pacedObligations = [], pacedChosenSince = [];
     try {
       await ensureSceneStarted(campaignState, 'first_narration_paced');
 
@@ -4894,9 +4981,15 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
       const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
       const sentenceTarget = settings.narrationLength ?? 3;
+      const touched = await beatSituation(character?.actorId ?? null, campaignState);
+      pacedChosenSince = choicesChosenSince();
+      // One list for the block and its checks (overhaul 4, slice 4).
+      pacedObligations = obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince });
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-        { audio: extras.audioMarkupEnabled === true },
+        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
+          situation: touched.situation, cast: touched.cast, obligations: pacedObligations },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
@@ -4905,12 +4998,20 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     }
 
     try {
-      const raw = await callNarratorAPI({
-        label: 'narratePacedInput',
-        apiKey, systemPrompt, userMessage,
-        model:     settings.narrationModel,
-        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-      });
+      // Checked against its obligations before it posts (overhaul 4, slice 4).
+      const kept = await narrateKeepingObligations(
+        (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
+          label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
+          apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+          model:     settings.narrationModel,
+          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+        })),
+        pacedObligations,
+        { apiKey, judge: obligationJudgeOn(),
+          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
+          onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
+      );
+      const raw = kept.raw;
       if (xCard.interrupted('narratePacedInput')) {
         // Discarded because the X-Card was played while it was written: said
         // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
@@ -4927,8 +5028,9 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         return null;
       }
 
-      const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
+      const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+      await markChosenCostsTold(pacedChosenSince, narrationId);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
       // Its Chronicle entry is written from the session record's beat (record/chronicleView.js).
@@ -4952,8 +5054,9 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
           });
           if (text?.trim()) {
-            const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
+            const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
+            await markChosenCostsTold(pacedChosenSince, narrationId);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
             return text;
@@ -5146,16 +5249,38 @@ export async function runNarrationTierUpdate(narrationText, campaignState, { nar
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null) {
+/**
+ * The paced card's Roll button: the move the closing hint invites, else the
+ * one offered (reconcileSuggestedMove) — never a move the gate refused for
+ * this line, whatever the hint names: its Roll would only be refused again.
+ *
+ * @param {string} text — the narration
+ * @param {string|null} suggestedMove — the offer (a refusal's own offer, when it has one)
+ * @param {{ playerText: string, speakerName: string|null, refusal: Object|null }} opts
+ * @returns {string|null}
+ */
+function pacedButtonMove(text, suggestedMove, { playerText, speakerName, refusal }) {
+  const move = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName });
+  return refusal?.moveId && move === refusal.moveId ? (suggestedMove === refusal.moveId ? null : suggestedMove) : move;
+}
+
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null, refusal = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
+    : '';
+  // A move the line was read as that could not be made: one line on the card
+  // it already gets, above its buttons (overhaul 4, D3 —
+  // NOTHING-TO-RECOVER-UNTOLD: nobody was told).
+  const cannotMake = refusal?.moveId
+    ? `<p class="sf-cannot-make">${escapeChatHtml(refusalNote(refusal))}</p>`
     : '';
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
+        ${cannotMake}
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -5193,6 +5318,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         matchedEntityIds: Array.isArray(matchedEntityIds) ? [...matchedEntityIds] : [],
         narrationId:      narrationId ?? null,   // for the X-Card (issue #321 U07)
         ...beatShapeFlag(beatShape),             // the shape this beat was written in (beatVariety)
+        // The move the line could not make, and why — what the card's note
+        // says, for the playtest runner's `refused-not-rolled` check.
+        ...(refusal?.moveId ? { cannotMake: { moveId: refusal.moveId, code: refusal.code ?? null, why: refusal.why ?? '', hard: refusal.hard === true } } : {}),
         timestamp:        new Date().toISOString(),
       },
     },
@@ -6041,6 +6169,52 @@ async function ensureSceneStarted(campaignState, reason) {
     return;
   }
   await startScene(campaignState, { reason });
+}
+
+/**
+ * Whether a narration's tripped obligation lines go to the judge (overhaul 4,
+ * slice 4, D9): where the post-narration audit runs — fact continuity on, its
+ * consistency check on (default on) — and on a GM: a player's own key gets the
+ * certain and floor checks only, as the audit is the canonical GM's.
+ *
+ * @returns {boolean}
+ */
+function obligationJudgeOn() {
+  if (globalThis.game?.user?.isGM !== true) return false;
+  try {
+    return factContinuityEnabled() && (game.settings.get(MODULE_ID, 'factContinuity.consistencyCheck') ?? true) !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * A narration's obligation verdicts, a row on the Consistency Check
+ * telemetry page (overhaul 4, slice 4): each judged, re-asked or still-broken
+ * line, by tag and class — what the next live run counts. GM-gated and
+ * best-effort (logConsistencyDecision). Never throws.
+ *
+ * @param {"move"|"paced"} mode
+ * @param {{ verdicts: Array<Object>, reasked: boolean, stillBroken?: Array<Object> }} v
+ * @param {Object|null} campaignState
+ * @param {string|null} narrationId
+ */
+function logObligationVerdict(mode, v, campaignState, narrationId) {
+  try {
+    const rows = [
+      ...(v?.verdicts ?? []).map(x => ({ kind: 'obligation', mode, ...x })),
+      ...(v?.stillBroken ?? []).map(x => ({ kind: 'obligation', mode, action: 'posted-broken', ...x })),
+    ];
+    if (!rows.length) return;
+    console.info(`${MODULE_ID} | obligations (${mode}): ${rows.map(r => `[${r.tag ?? r.tripped?.join(',') ?? '?'}] ${r.class ?? ''} ${r.action ?? (r.judged ? 'judged' : '')}`.trim()).join('; ')}${v?.reasked ? ' — re-asked' : ''}.`);
+    void logConsistencyDecision({
+      sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
+      sessionNumber: campaignState?.sessionNumber ?? null, prose: `[obligations ${mode}${narrationId ? ` ${narrationId}` : ''}]`,
+      contradictions: rows, dispatched: false,
+    })?.catch?.(() => {});
+  } catch (err) {
+    console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
+  }
 }
 
 /** Whether fact continuity is switched on — on when the setting cannot be read (unit tests, very early init). */

@@ -28,7 +28,13 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 
 import { apiPost } from '../../src/api-proxy.js';
 import { narrateOracleFollowup } from '../../src/narration/narrator.js';
-import { formatOracleAnswerRule, formatRecentOraclesBlock, buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
+import { formatRecentOraclesBlock, buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
+import { obligationsFor, formatObligationsBlock } from '../../src/moves/contracts/obligations.js';
+
+// The answer's rule is the follow-up's obligations block now — TELL [oracle]
+// the answer, NOT SO [oracle] its opposite (overhaul 4, slice 2; the words of
+// formatOracleAnswerRule, kept): this stand-in is that block.
+const formatOracleAnswerRule = (oracle) => formatObligationsBlock(obligationsFor({ mode: 'oracle', oracle }));
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -105,7 +111,7 @@ describe('ORACLE-NO-NARRATED-AS-YES — an oracle\'s answer binds the narration 
 
   it('a question typed with none still binds the answer', () => {
     expect(formatOracleAnswerRule({ kind: 'oracle_yes_no', question: '', rolledLine: ROLLED }))
-      .toMatch(/^The answer is NO\. It is the table's answer/);
+      .toMatch(/- \[oracle\] The answer is NO\. It is the table's answer/);
   });
 
   it('control: a table roll, a price and a complication answer no yes/no question', async () => {

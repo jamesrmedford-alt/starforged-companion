@@ -184,7 +184,9 @@ describe('MATERIAL — what the narrator is given', () => {
     const block = formatMaterial(seeds());
     expect(block).toMatch(/Each numbered result is in the scene, recognisably\./);
     expect(block).toMatch(/for what the words mean here, at the size of a quiet moment/);
-    expect(block).toMatch(/Never the words themselves,\s+and never a turn of the plot\./);
+    expect(block).toMatch(/a small trouble\), and never a turn of the plot\./);
+    // Never written as rolled (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+    expect(block).toMatch(/A result's words are the oracle's, never the prose's: no word of a result is\s+written as it was rolled\./);
     expect(block).toMatch(/The scene has no business and no featured thing of its own\./);
     expect(block).toMatch(/Nothing is\s+eaten, drunk, mended, heard or noticed in it that is not one of the results\s+or already on record\./);
     expect(block).toMatch(/gives way to the one in brackets under it — once/);

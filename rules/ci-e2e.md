@@ -936,7 +936,8 @@ whatever happens to the others.
   records it revealed. The long haul's stand-in does not: its plans share one
   truth, and one told would read as another's leaked. In the recovery
   scenario the stand-in reader calls Heal both times — it is the module's own
-  rule (`situation.js` `nothingToRecover`) that must say no to the second.
+  rule (the move gate's `RECOVERABLE`, `moves/contracts/predicates.js`) that
+  must say no to the second.
   At every charter's session set-piece (its user message's first line:
   OPENING, CLOSING or SPOTLIGHT VIGNETTE) the stand-in writes each MATERIAL
   result into its prose and accounts for it in its fact block (`builtFrom`),

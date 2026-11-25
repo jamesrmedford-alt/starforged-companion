@@ -85,7 +85,11 @@ recorded under its name promoted to it; its bond is §2's.
   then the silent portrait, started, §1 below).
   Its dedup — the detection prompt's ESTABLISHED list, the parse's and the
   route's `entityExistsAnyType` / `entityExistsForName`, the listed NPCs
-  `connectNamedFigure` matches — reads the store's entity id lists as well
+  `connectNamedFigure` matches; and against the pending draft rows, the
+  dismissed names, the records and the reply's other names, a name with or
+  without its leading article (`draftNameKey` — "The Ashen Wake" and "Ashen
+  Wake" were two pending cards for one ship, known-issues
+  DRAFT-CARDS-FOR-ONE-SHIP) — reads the store's entity id lists as well
   as the move's copy (`withStoredEntityIds`): the move holds the copy it
   read before its lock claim, and an NPC the GM confirmed from a draft card
   while the move was confirmed or narrated was in no list it read, so the
@@ -208,16 +212,25 @@ recorded under its name promoted to it; its bond is §2's.
   latest store, on the GM's campaignState write chain —
   CACHE-MUTATED-BEFORE-WRITE). The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
-  that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
-  the bond Item on that PC (issue #321 U23). A Batch Mode round's card
-  carries every acting PC instead (`actorIds`; issue #342 D3, the
-  maintainer's ruling A — it was the first entry's PC): a connection row's
-  Confirm is a button per acting PC and **No one**, the pick checked against
-  the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Since issue #354 P2-16
-  (amending D3 for free-flow) a free-flow card's person row asks the same
-  way — the narration's PC by name, and **No one** — where one Confirm
-  always bonded the person to the acting PC. A detected person is the one
+  that knows it — move, paced, `@scene`, oracle follow-up); a Batch Mode
+  round's card carries every acting PC instead (`actorIds`; issue #342 D3).
+  **A Confirm records the person — an NPC card, no bond Item on any sheet,
+  no `connection.made`** (overhaul 4, D4: a connection is what Make a
+  Connection makes; in the long haul's fourth live run the GM's Confirm "as
+  the player character's connection" made one no roll had made,
+  CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). It amends issue #321 U23 (Confirm
+  bonded the card's PC), #342 D3 and #354 P2-16 (a button per PC and **No
+  one**) and #362 D10's "offered to each player character": `draftConfirmPick`
+  and the **No one** button are gone, and `draftBondHolder` names only a Make
+  a Connection's roller. Beside Confirm — pending or confirmed — the row
+  offers **🤝 Make a Connection** to each PC the card names (`cardHolders`),
+  until that PC has pressed it (the row's `connectionMoves`): a GM's press
+  relays `draft.makeConnection` → `applyDraftMakeConnectionFromRelay` on the
+  canonical GM, which records the person first if they are not yet, stamps
+  the press on the row and posts Make a Connection as that PC with the
+  person's card as its target (`forcedMoveTargetId`, held while another move
+  resolves); its hit makes the bond by the move's own path (a listed NPC gets
+  the roller's bond Item — `connectChosenFigure`), its miss none. A detected person is the one
   already known under part of their name or a near spelling
   (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
   PC's first name; a near spelling is the same letters in another order or a
@@ -379,10 +392,22 @@ portrait block), and a tab with no marked introduction gets one at its top
 erased a promoted detail from every surface, and a Finalise on an unseeded
 card replaced what the GM had typed).
 
-`registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
-bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
-when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it
-used to go to the first PC whoever rolled (issue #321 U23). One portrait per
+`registerConnectionOnActiveCharacter(record, { actorId, actors, by })` puts the
+bond Item on each of `actors`, else on `actorId` when it is a PC, else on the
+acting user's own PC (`resolveUserActorId`); it used to go to the first PC
+whoever rolled (issue #321 U23). Every caller is a Make a Connection's hit
+now (the inciting vow's crew was the other — overhaul 4, D5), and `by` rides
+to the bond Item: **`connection.made` is recorded where the bond Item is
+made** (`actorBridge.createCharacterBondItem` — once, for an Item that did
+not exist; `d: { name, rank, actorId, by }`, `by` `{ move:
+"make_a_connection" }` or, for the starting sector's local connection and
+the quickstart's, `"setup"`), never where the NPC card is made
+(`connection.js createConnection` wrote it, so a person recorded reached the
+recap as "made a connection" — D12). `tests/unit/moveOnlyState.test.js`
+holds every caller of a bond's writer to a move or setup. The bond adds
+(`statEnrichment.enrichBondAdds`) read the roller's own bond Items: a vow
+sworn to a person, or a Test with someone the roller holds no bond for,
+adds nothing. One portrait per
 new card: with Auto-Seed NPC on, the `createActor` seed hook owns a new
 connection card's portrait (from the creator's `portraitSourceDescription`)
 and the creator's `postCreationEnrichment` skips it (`seedHookOwnsPortrait`);
@@ -399,6 +424,22 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 (an entity deleted meanwhile stores nothing; one image at a time per entity).
 
 ## 2. Develop (relationship progress)
+
+- **A connection's moves are made with the roller's connection** (overhaul 4,
+  "moves as contracts"): Develop Your Relationship, Test Your Relationship
+  and Forge a Bond need a live bond Item on the roller's own sheet for the
+  one the move names (`moves/contracts/predicates.js THEIR_CONNECTION` — by
+  the picker's host id, the record id the Item is keyed to
+  (`flags[MODULE].connectionId`) or the Item's id, else by name, else the
+  sole one). An NPC card alone is a person, not a connection
+  (FOLDER-002): a Develop with someone the roller has no bond Item for is
+  refused, Make a Connection offered — the typed line narrated and told why,
+  a pressed one's not-rolled notice. A full relationship track refuses a
+  Develop soft, Forge a Bond offered (`ROOM_ON_RELATIONSHIP`); a bonded one
+  is never forged again (`NOT_BONDED`); and a social move spoken to a fellow
+  player character is roleplay, not a roll (`NOT_AT_A_PC`). Make a Connection
+  with someone already the roller's is refused soft, Develop offered
+  (`NOT_YET_THEIR_CONNECTION`).
 
 - **Something done for a connection, said in the fiction, is at least
   *offered* Develop Your Relationship** (known-issues
@@ -543,16 +584,17 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   the id first (issue #301 B01 — the flags used to be missing, so forge
   scored 0 or the sole bonded connection's track, and develop marked the
   sole bonded connection). A forge picked for a connection severed, deleted
-  or bonded since the picker was posted is not rolled, and a "not rolled"
-  card says so, as for a gone fight or vow (rollMove's track-gone guard; for
-  a forge the id rung resolves no bonded connection — issue #345 AA50: it
+  or bonded since the picker was posted is not rolled, and the not-rolled
+  notice says so, as for a gone fight or vow — the move gate at the roll
+  (overhaul 4): severed or deleted, `THEIR_CONNECTION` ("Sable is not Kira's
+  connection"); bonded, `NOT_BONDED` ("Sable is already bonded — there is no
+  bond to forge", Develop Your Relationship offered) — issue #345 AA50: it
   was rolled at 0, or its card said "Legacy reward marked" over a forge that
-  marked nothing). So is a typed forge that names a bonded connection: the
-  name rungs take `unbonded` too, `enrichProgressTicks` marks the result
-  `alreadyBonded`, and the card — and a Batch Mode round's refusal, from
-  rollMove's `refusedReason` — say it is already bonded
+  marked nothing. So is a typed forge that names a bonded connection, and a
+  Batch Mode round's refusal carries the same words
   (FORGE-NAMED-BONDED-SCORED: it was scored on the bond's own track, then
-  the forge skipped it). A click with
+  the forge skipped it; `enrichProgressTicks` still scores such a forge
+  nothing, should the gate not have read the sheet). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the

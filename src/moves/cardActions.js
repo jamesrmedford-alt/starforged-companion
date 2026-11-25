@@ -446,7 +446,9 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true,
+        // `fromWaypoint`: made from the waypoint's own alternative — what the
+        // move gate asks of a discovery or a chaos (FROM_A_WAYPOINT).
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, fromWaypoint: true,
           // Not rolled, the ordinary reward's cards this press retires below come back too.
           ...sourceCardFlag(messageId, "waypointRewardClaimed", null,
             { value: "alternative", reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
@@ -715,6 +717,10 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | milestone suggestion: card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "milestone suggestion");
     try {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
@@ -863,6 +869,10 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "attempt to fulfil");
     try {
       if (askAmong?.length) {
         // Which vow? — Fulfill Your Vow's own card, its pick the roller's
@@ -922,6 +932,29 @@ function fulfilVowChoices(rollerId) {
 // A "Not rolled" notice's "Narrate it — no move" — gmRelay "notRolled.narrate" (issue #354 P2-01)
 // A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Keep the held result a card's press goes on from (overhaul 4, D11): a press
+ * on a card the held roll itself posted — ⚔ Begin the fight and 🚪 Find
+ * another way, the move card's suggestion buttons — is the decision the hold
+ * waited for (heldResult.js keepHeldResultForChoice, what a chosen
+ * consequence calls). Awaited: the roll's narration — told the fight begun,
+ * or not — posts before what the press makes. A result not held is nothing
+ * to keep. Never throws.
+ *
+ * @param {string|null|undefined} resolutionId — the held roll's
+ * @param {string} label
+ * @returns {Promise<void>}
+ */
+async function keepHeldRollOf(resolutionId, label) {
+  if (typeof resolutionId !== "string" || !resolutionId) return;
+  try {
+    const { keepHeldResultForChoice } = await import("./heldResult.js");
+    await keepHeldResultForChoice(resolutionId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the held roll could not be kept first:`, err?.message ?? err);
+  }
+}
 
 /**
  * The fulfilVow.attempt shape for a card button that rolls the card's
@@ -1175,6 +1208,42 @@ export function applyNotRolledNarrate(payload = {}, ctx = {}) {
       ? { alias: String(f.lineSpeaker.alias), ...(typeof f.lineAuthorId === "string" && f.lineAuthorId ? { authorId: f.lineAuthorId } : {}) }
       : null),
     build: (f) => ({ content: f.restoreLine, flags: { narrateOnly: true } }),
+  });
+}
+
+/**
+ * gmRelay handler for "notRolled.rollAnyway" — a "Not rolled" notice's "Roll
+ * anyway (GM)" (overhaul 4, D2): a forced move the move gate refused soft —
+ * the sheet says it would change nothing (a Heal with nothing to heal) — is
+ * rolled all the same at a GM's word. The move is posted again once, flagged
+ * `gateOverride` (index.js trusts it on a GM's post alone), as the PC it was
+ * for; the move card says it was rolled at the GM's word. A GM's press only —
+ * a hard refusal is never overridden and offers no such button. Claim
+ * `rolledAnyway`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyNotRolledRollAnyway(payload = {}, ctx = {}) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | roll anyway: user ${ctx?.requesterId ?? "?"} is not a GM — refused.`);
+    refusePress(ctx, "not-owner");
+    return Promise.resolve({ posted: false, reason: "not-gm" });
+  }
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "roll anyway", claim: "rolledAnyway",
+    isCard: (f) => f.moveNotRolledNotice === "cannot" && typeof f.rollAnyway?.moveId === "string" && !!f.rollAnyway.moveId,
+    roller: (f) => (typeof f.rollAnyway?.actorId === "string" && f.rollAnyway.actorId ? f.rollAnyway.actorId : null),
+    build: (f) => ({
+      content: f.rollAnyway.content || `${f.rollAnyway.moveId}`,
+      flags: {
+        forcedMoveId: f.rollAnyway.moveId, gateOverride: true, bypassPacing: true,
+        ...(typeof f.rollAnyway.moveTarget === "string" && f.rollAnyway.moveTarget ? { forcedMoveTarget: f.rollAnyway.moveTarget } : {}),
+        ...(typeof f.rollAnyway.moveTargetId === "string" && f.rollAnyway.moveTargetId ? { forcedMoveTargetId: f.rollAnyway.moveTargetId } : {}),
+        ...(f.rollAnyway.fromWaypoint === true ? { fromWaypoint: true } : {}),
+      },
+    }),
   });
 }
 
@@ -1633,6 +1702,13 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | fight threshold: card ${messageId} could not be claimed — nothing done:`, err?.message ?? err);
       return { applied: false, reason: "claim-refused" };
     }
+    // Begin the fight keeps its Enter the Fray, then makes the fight: the
+    // roll's narration is told the fight begun (the claim above — no [fight]
+    // line) or, for the way out, not begun — and posts before the fight's
+    // card (HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE: a held Enter the Fray
+    // miss was narrated after the next attack line, which kept it; overhaul
+    // 4, D11).
+    await keepHeldRollOf(f.resolutionId, "fight threshold");
 
     if (choice === "wayOut") {
       const { buildWayOutHtml } = await import("./combatThreshold.js");
@@ -1805,6 +1881,10 @@ export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | connection suggestion: card ${messageId} could not be claimed — no picker posted:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "connection suggestion");
     const { postConnectionPickerCard } = await import("../index.js");
     const posted = await postConnectionPickerCard(null, pickAction, { actorId: rollerId }).catch(err => {
       console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);

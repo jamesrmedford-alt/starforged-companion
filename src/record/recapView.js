@@ -135,8 +135,9 @@ export function recapSource({ read, standing = [], notes = [], earlier = [], cur
       lines.push({ id, text: `[${id}] ${facts}`, lasting: !!beat.lasting });
     });
     if (!newest && lines.length > TURNING_POINTS_PER_SESSION) lines = lines.slice(-TURNING_POINTS_PER_SESSION);
+    // A strike as struck, a name changed since beside it (read.js).
     const struck = session.corrections.filter(c => c.kind === 'strike')
-      .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : ''}`);
+      .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : (c.now?.length ? ` (now: ${c.now.join(', ')})` : '')}`);
     blocks.push({
       session, newest, lines,
       head: `### ${sessionLabel(session)}${newest ? ' — the latest session, in full' : ' — its turning points'}`,
@@ -343,11 +344,26 @@ export async function standingLines(campaignState) {
     const status = v.forsaken ? 'forsaken' : v.completed ? 'fulfilled' : `${BOXES(v.ticks)} of 10 boxes marked`;
     lines.push(`The vow ${quote(v.name)} (${v.rank}) — ${status}; held by ${v.holders.join(' and ')}.`);
   }
+  // Each PC's connections are the bond Items on their sheet, told in the
+  // sheet's words (situation.js connectionStanding — TRACK-TOLD-AS-A-BOND);
+  // an NPC card no PC holds a bond Item for is a person met, never "a
+  // connection" (FOLDER-002; overhaul 4 — a person recorded from a draft's
+  // Confirm reached the recap as a connection made).
   try {
+    const { connectionStanding } = await import('../moves/situation.js');
+    const held = new Set();
+    for (const actor of pcs) {
+      for (const c of bridge.readConnections(actor)) {
+        if (!clean(c.name)) continue;
+        if (c.connectionId) held.add(c.connectionId);
+        held.add(clean(c.name).toLowerCase());
+        lines.push(`${clean(c.name)} — ${clean(actor.name)}'s connection${c.rank ? ` (${c.rank})` : ''}, ${connectionStanding(c)}.`);
+      }
+    }
     const { listConnections } = await import('../entities/connection.js');
     for (const c of listConnections(campaignState ?? {})) {
-      const status = c.active === false ? 'lost' : c.bonded ? 'bonded' : `relationship ${BOXES(c.relationshipTicks)} of 10 boxes`;
-      lines.push(`${clean(c.name)} — a connection${c.rank ? ` (${c.rank})` : ''}, ${status}.`);
+      if (!clean(c.name) || held.has(c._id) || held.has(clean(c.name).toLowerCase()) || c.active === false) continue;
+      lines.push(`${clean(c.name)} — a person met${c.role ? ` (${clean(c.role)})` : ''}; no one's connection.`);
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | recap: the connections could not be read for where things stand:`, err?.message ?? err);
