@@ -597,6 +597,30 @@ describe('each beat\'s check on the world', () => {
       .toMatchObject({ status: 'done', detail: 'resupply came up strong_hit at a2' });
   });
 
+  it('a recovery beat with nothing spent is moot once the night has passed — not exercised, and the run goes on (the sixth live run, a56–a57)', () => {
+    // The sixth live run's fight cost nothing (its miss paid the miss the
+    // reader stated before the roll), and its player, told to mend only what
+    // is spent, stopped the run at beat 22 (CHARTER-RECOVER-NOTHING-SPENT).
+    const NIGHT = 'I rest aboard until the next morning.';
+    const night = [{ step: 'a1', fromPlayer: true, text: NIGHT }, { step: 'a1', narrator: true, text: 'The night passes quietly in the clamps.' }];
+    const moot = check('recovered', {}, [setup, markOf('a1', tableOf())], { messages: night });
+    expect(moot).toMatchObject({ status: 'not-exercised', doneAt: 'a1' });
+    expect(moot.detail).toBe('nothing to recover — Mira\'s health 5 of 5, spirit 5 of 5, supply 5 of 5 — nothing on the sheet is spent');
+    // Not before the night line is answered: the beat's own line comes first.
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf())], { messages: night.slice(0, 1) })).toMatchObject({ status: 'current' });
+    // Something spent, the beat stands.
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf({ pc: { spirit: 3 } }))], { messages: night }).detail)
+      .toBe('no recover move yet — Mira\'s health 5 of 5, spirit 3 of 5, supply 5 of 5 — spent: spirit');
+    // The pointer moves on to the next beat.
+    const pointer = createPointer([
+      { id: 'r', n: 1, session: 1, title: 'Recover', check: { type: 'recovered' } },
+      { id: 'n', n: 2, session: 1, title: 'Next', check: { type: 'recovered' } },
+    ]);
+    pointer.advance({ marks: [setup], messages: [], actions: [], charter: {} }, 'a0');
+    pointer.advance({ marks: [setup, markOf('a1', tableOf())], messages: night, actions: [], charter: {} }, 'a1');
+    expect(pointer.state.map(b => b.status)).toEqual(['not-exercised', 'current']);
+  });
+
   it('the cast\'s connection is one card, followed by its id: renamed since it was made, its bond is still found', () => {
     const made = markOf('a1', tableOf({ connections: [{ ...conn, name: 'Tamsin Vey', ticks: 0 }] }));
     const renamed = (extra) => tableOf({ connections: [{ ...conn, name: 'Tamsin Okoro', ...extra }] });

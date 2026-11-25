@@ -271,6 +271,9 @@ function waitingText(cards) {
 }
 
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
+/** A line of play in the beat's window that a narration answered (not a scene question, not a set-piece). */
+const answeredLineOfPlay = (v) => v.linesInWindow.filter(m => !isSceneQuestion(m.text))
+  .some(l => v.messagesInWindow.some(m => m.narrator && m.step === l.step && !m.vignette));
 const notYet = (detail, progress = 0) => ({ done: false, detail, progress });
 const failed = (detail) => ({ done: true, failed: true, detail });
 
@@ -530,7 +533,16 @@ export const BEAT_CHECKS = {
     // missed and its Resupply came up a strong hit, and the beat was read off
     // the miss alone (issue #377 round 2).
     const rolls = v.rolls.filter(r => moves.includes(r.moveId) && r.rolled);
-    const sheet = sheetSpent(v.now).text;
+    const spent = sheetSpent(v.now);
+    const sheet = spent.text;
+    // Nothing spent once the night has passed (the beat's own line answered):
+    // nothing to recover, and the beat cannot be put to the test. The sixth
+    // live run's fight cost nothing — its miss paid the miss the reader stated
+    // before the roll — and its player, told to mend only what is spent,
+    // stopped the run at beat 22 (known-issues CHARTER-RECOVER-NOTHING-SPENT).
+    if (!rolls.length && sheet && !spent.spent.length && answeredLineOfPlay(v)) {
+      return { done: false, moot: true, detail: `nothing to recover — ${sheet}` };
+    }
     if (!rolls.length) return notYet(`no recover move yet${sheet ? ` — ${sheet}` : ""}`);
     const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
@@ -839,6 +851,14 @@ export function createPointer(beats) {
         if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; cur.linesAtProgress = cur.lines; cur.waits = 0; cur.rolledAtProgress = cur.rolled.length; }
         if (result.done) {
           Object.assign(cur, { status: result.failed ? "failed" : "done", doneAt: step });
+          changes.push({ ...cur });
+          at += 1;
+          continue;
+        }
+        // A beat the world gives nothing to do (`moot` — a recovery with
+        // nothing spent): not exercised, and the run goes on to the next.
+        if (result.moot) {
+          Object.assign(cur, { status: "not-exercised", doneAt: step, detail: result.detail });
           changes.push({ ...cur });
           at += 1;
           continue;

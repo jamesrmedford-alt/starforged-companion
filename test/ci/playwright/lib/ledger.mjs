@@ -118,9 +118,11 @@ export function markedCorrected(prompt, word) {
  * name and one of these tells the rename and does not use the old name as if
  * it stood — "The table renamed her from "Tamsin Vey," so Okoro is the
  * surname the story holds." (the long haul's fifth live run, a55, scored a
- * refusal until a refusal could say `former`).
+ * refusal until a refusal could say `former`); "Earlier lines and records may
+ * have called her Tamsin Vey; that name was the table's mistake, and Okoro is
+ * what you know her by." (the sixth, a55).
  */
-export const FORMER_MARK = /\b(?:renamed|formerly|previously|once (?:went|called|known)|used to (?:go|be)|no longer|was called|went by|is now|instead of)\b/i;
+export const FORMER_MARK = /\b(?:renamed|formerly|previously|once (?:went|called|known)|used to (?:go|be)|no longer|was called|went by|is now|instead of|called (?:her|him|them)|mistake|corrected)\b/i;
 
 /** How many words may stand between a refusal's word and what it is said of. */
 export const NEAR_WORDS = 10;

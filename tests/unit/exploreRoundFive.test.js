@@ -108,7 +108,9 @@ describe('F7: an answer that tells the rename does not use the old name as if it
     expect(F7.refusals[0]).toMatchObject({ id: 'the old name used as if current', anywhere: ['Tamsin Vey', 'Vey'], former: true });
     expect(FORMER_MARK.test('The table renamed her from "Tamsin Vey," so Okoro is the surname the story holds.')).toBe(true);
     expect(refusalsIn(RENAME_TOLD, F7)).toEqual([]);
-    for (const told of ['Tamsin Okoro, formerly Tamsin Vey, keeps the ledger.', 'She no longer goes by Vey; she is Tamsin Okoro.', 'Her name is now Tamsin Okoro instead of Tamsin Vey.']) {
+    // …and the sixth live run's a55: "may have called her", "the table's mistake".
+    for (const told of ['Tamsin Okoro, formerly Tamsin Vey, keeps the ledger.', 'She no longer goes by Vey; she is Tamsin Okoro.', 'Her name is now Tamsin Okoro instead of Tamsin Vey.',
+      'Earlier lines and records may have called her Tamsin Vey; that name was the table\'s mistake, and Okoro is what you know her by.']) {
       expect(refusalsIn(told, F7), told).toEqual([]);
     }
   });
