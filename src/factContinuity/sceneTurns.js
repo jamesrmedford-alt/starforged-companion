@@ -310,20 +310,20 @@ export function sceneOpeningOf(state) {
  *   NOT SO [letgo]  each question play let go (§7.3): not to end on it or bring
  *                   it back unless the player's line takes it up
  *
- * Told, and audited: every beat's obligations go to the post-narration
- * audit (overhaul 4 — consistencyCheck.js, kind `obligation`), these with
- * them. Not checked in code: overhaul 4's checks (moves/contracts/checks.js)
- * trip only their own kinds, and this overhaul does not edit them. The
- * design's code checks for these — [place] a tripwire for the judge
- * ("docked", "berth", "clamps" in the prose of a ship's fight), [letgo] a
- * floor (a let-go stem in the prose's last two sentences that the line does
- * not hold) — are checks.js's to make (known-issues
- * SCENE-OBLIGATIONS-UNCHECKED).
+ * Checked before the narration posts (moves/contracts/checks.js, overhaul 4's
+ * classes): [place] is a judge tripwire — "docked", "berth", "clamps" in the
+ * prose send the line to the one small judge call, which reads its `judge`
+ * words (the ship fighting as a ship while still docked; a fight on foot
+ * breaks nothing), and a violation is asked once more; [letgo] a floor,
+ * logged — a stem of its let-go question (`letGo`, the frame's entry) in the
+ * prose's last two sentences that the beat's player words do not hold;
+ * [scene] logged. All three also go to the post-narration audit (kind
+ * `obligation`).
  *
  * @param {Object} state — the scene ledger as the store has it
  * @param {{ ship?: string }} [opts] — the ship's line as the scene's read has
  *   it (narratorPrompt.js sceneForReading: "Kobayashi IV docked at Bleakhold Station")
- * @returns {Array<{ kind: string, list: string, text: string }>}
+ * @returns {Array<{ kind: string, list: string, text: string, judge?: string, letGo?: { text: string, stems: string[] } }>}
  */
 export function sceneObligations(state, { ship = '' } = {}) {
   const out = [];
@@ -337,13 +337,16 @@ export function sceneObligations(state, { ship = '' } = {}) {
   if (docked) {
     out.push({ kind: 'place', list: 'NOT SO', text: `${docked[1]} is docked at ${docked[2]} by the ship's record. If this fight `
       + 'is the ship\'s, she is no longer docked: say where she is in your fact block (ship/position). If it is fought on foot, '
-      + 'she stays docked.' });
+      + 'she stays docked.',
+      // What the judge reads (checks.js): the line's NOT SO as a statement.
+      judge: `${docked[1]} fighting as a ship — firing, turning, running — while the narration still has her docked, berthed `
+        + `or in the clamps at ${docked[2]}. A fight on foot while she stays docked breaks nothing.` });
   }
   const frame = state?.sceneFrame;
   const own = frame && typeof frame === 'object' && (frame.sceneId ?? null) === (state.currentSceneId ?? null);
   for (const e of own ? normaliseLetGo(frame.letGo) : []) {
     out.push({ kind: 'letgo', list: 'NOT SO', text: `Play let this go: "${e.text}". Do not end on it or bring it back unless the `
-      + 'player\'s line takes it up.' });
+      + 'player\'s line takes it up.', letGo: e });
   }
   return out;
 }
