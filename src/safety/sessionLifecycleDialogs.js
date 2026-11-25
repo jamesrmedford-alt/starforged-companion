@@ -27,7 +27,8 @@
  * Split: the dialog and the chat card run on the invoking client (any
  * player may type `!begin-session` / `!end-session`); every world write —
  * the session-active flip, foci, momentum, clocks, scene close, rolling
- * summary, Session Log and the narrator vignettes — runs on the canonical
+ * summary, Session Log, the narrator vignettes and the vow Begin's dialog
+ * swears (once the session is begun) — runs on the canonical
  * GM in applyBeginSession / applyEndSession (GM_ACTIONS in
  * src/multiplayer/gmRelay.js), invoked through requestGmAction. A player's
  * client cannot write world-scoped campaignState or other players' actors,
@@ -189,29 +190,67 @@ function renderNoQuestBlock(swearer) {
     + `background vow, so this session has no quest to play toward.</p>${offer}</div>`;
 }
 
+/** Relay-payload vow name → one trimmed line, capped at the dialog's maxlength. */
+function cleanVowName(value) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, VOW_NAME_MAX) : "";
+}
+
 /**
  * Swear the vow Begin a Session's "no vow in play" offer was given (issue
- * #353 R3), on the user's own character's sheet, through actorBridge. The
- * canonical GM's createItem hook then posts its "🆕 New vow recorded" card —
- * the ⚔ Swear it (roll), the reward offer and the connection link
- * (session/swearVow.js registerPlayerVowHook). A vow the sheet refused is
- * said to this user, who can add it on the sheet.
+ * #353 R3) — on the canonical GM, in the Begin it belongs to, once the
+ * session is begun: on its character's sheet, through actorBridge. Its sheet
+ * watch then records the `vow.sworn` in that session (record/sheetWatch.js),
+ * and its createItem hook posts the "🆕 New vow recorded" card — the ⚔ Swear
+ * it (roll), the reward offer and the connection link
+ * (session/swearVow.js registerPlayerVowHook).
  *
- * @param {string} actorId
- * @param {string} name
- * @param {string} rank
- * @returns {Promise<Object|null>} the vow Item, or null when it was not made
+ * The pressing client made it, right after it had sent the Begin — the relay
+ * has no answer — so on a player's client the vow reached the sheet before
+ * the GM had begun (at a world's first Begin, minted) the session: its
+ * `vow.sworn` was built for the session the store held then, none (dropped)
+ * or the one before (filed there), and the record named no vow sworn
+ * (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD, the fourth live run's a2).
+ *
+ * The payload is client-asserted (rules/reachability.md §8): the character
+ * must be a PC the requester owns (or the requester a GM), the name is cut to
+ * the dialog's maxlength and the rank is one of the game's. A vow refused —
+ * for its character, or by the sheet — is said to the requester and the GMs.
+ * Never throws.
+ *
+ * @param {{ actorId?: string, name?: string, rank?: string }|null} vow — the relay's
+ * @param {Object} [ctx] — the relay's
+ * @returns {Promise<Object|null>} the vow Item, or null when none was made
  */
-async function swearSessionVow(actorId, name, rank) {
-  const { getActor, createCharacterVowItem } = await import("../character/actorBridge.js");
-  const actor = getActor(actorId);
-  const item  = actor
-    ? await createCharacterVowItem(actor, { name, rank: RANKS.includes(rank) ? rank : "dangerous" })
-    : null;
-  if (!item) {
-    ui.notifications?.warn?.(`Starforged Companion: the vow "${name}" could not be saved — add it on the character sheet.`);
+async function swearBeginVow(vow, ctx = {}) {
+  const name = cleanVowName(vow?.name);
+  if (!name) return null;
+  try {
+    const { getActor, createCharacterVowItem, isPlayerCharacterActor } = await import("../character/actorBridge.js");
+    const { requesterOwnsActor } = await import("../moves/burnMomentum.js");
+    const actor = typeof vow?.actorId === "string" && vow.actorId ? getActor(vow.actorId) : null;
+    if (!actor || !isPlayerCharacterActor(actor) || !requesterOwnsActor(actor, ctx)) {
+      await postBeginVowNotSworn(ctx, name, actor && isPlayerCharacterActor(actor)
+        ? `only ${String(actor.name ?? "its character")}'s player or a GM can swear it for them`
+        : "the character it was for is not one of the table's player characters");
+      return null;
+    }
+    const item = await createCharacterVowItem(actor, { name, rank: RANKS.includes(vow?.rank) ? vow.rank : "dangerous" });
+    if (!item) await postBeginVowNotSworn(ctx, name, "the sheet did not save it — add it on the character sheet");
+    return item ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: the vow "${name}" was not sworn:`, err?.message ?? err);
+    return null;
   }
-  return item;
+}
+
+/** Whisper the requester and the GMs that the vow Begin's dialog was given was not sworn, and why. */
+async function postBeginVowNotSworn(ctx, name, why) {
+  const gmIds = Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Vow not sworn</strong><p>The vow <em>${escapeHtml(name)}</em> from Begin a Session was not sworn: ${escapeHtml(why)}.</p></div>`,
+    whisper: [...new Set([ctx?.requesterId ?? null, ...gmIds].filter(Boolean))],
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true, beginVowNotSworn: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the vow-not-sworn notice failed:`, err?.message ?? err));
 }
 
 async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }, pickUp = "") {
@@ -263,15 +302,16 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
+  // The vow the "no vow in play" offer was given rides the Begin: the
+  // canonical GM swears it on the user's own character once the session is
+  // begun (swearBeginVow — VOW-SWORN-UNNAMED-IN-THE-RECORD).
+  const vow = quest?.inPlay === false && quest.newVow && quest.swearer?.id
+    ? { actorId: quest.swearer.id, name: quest.newVow, rank: quest.newVowRank }
+    : null;
   await requestGmActionSafely("session.begin", {
     vignetteRolled, includeGalley: includeGalley !== false, pickUp, ...(spotlightRoll ? { spotlightRoll } : {}),
+    ...(vow ? { vow } : {}),
   });
-
-  // The vow the "no vow in play" offer was given, after the session's start
-  // (so its swear roll meets a begun session): on the user's own character.
-  if (quest?.inPlay === false && quest.newVow && quest.swearer?.id) {
-    await swearSessionVow(quest.swearer.id, quest.newVow, quest.newVowRank);
-  }
 }
 
 /**
@@ -363,21 +403,23 @@ async function warmNarratorCacheAfterBegin() {
  * vignette. The start effects run once per session: Begin again on a session
  * already begun posts a note and changes nothing (issue #300 F11).
  *
- * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string, spotlightRoll?: number }} payload —
+ * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string, spotlightRoll?: number,
+ *   vow?: { actorId: string, name: string, rank?: string } }} payload —
  *   `pickUp`: the table's own word on where and when the session picks up;
  *   `spotlightRoll`: the Begin card's Spotlight Vignette d100, sent when a
- *   narration of it will follow
- * @param {Object} [_ctx]
+ *   narration of it will follow; `vow`: the vow the dialog's "no vow in play"
+ *   offer was given, sworn here once the session is begun (swearBeginVow)
+ * @param {Object} [ctx] — the relay's: who pressed Begin
  * @returns {Promise<void>}
  */
-export function applyBeginSession(payload = {}, _ctx = {}) {
+export function applyBeginSession(payload = {}, ctx = {}) {
   const run = settledWithin(_beginChain, SESSION_CHAIN_WAIT_MS, "Begin a Session (the Begin ahead of it)")
-    .then(() => beginSessionOnce(payload));
+    .then(() => beginSessionOnce(payload, ctx));
   _beginChain = run.catch(() => {});
   return run;
 }
 
-async function beginSessionOnce(payload) {
+async function beginSessionOnce(payload, ctx = {}) {
   const vignetteRolled = payload.vignetteRolled === true;
   const includeGalley  = payload.includeGalley !== false;
   // The table's own word on where and when the session picks up (issue #381
@@ -417,6 +459,8 @@ async function beginSessionOnce(payload) {
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
       console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
       await postSessionAlreadyBegunCard(cs.currentSessionId);
+      // The dialog's vow is no start effect: sworn into the session under way.
+      await swearBeginVow(payload.vow, ctx);
       return;
     }
     beginSession(cs);
@@ -454,6 +498,11 @@ async function beginSessionOnce(payload) {
     await postSessionNotStartedCard(vignetteRolled);
   }
   if (!begun) return;
+
+  // The vow the dialog swore, now the session it is sworn in is begun —
+  // before the start effects, as its card followed the Begin card when the
+  // pressing client made it (swearBeginVow).
+  await swearBeginVow(payload.vow, ctx);
 
   if (vignetteRolled) {
     await applyMomentumToAllPlayers(1, { sessionId, award: "Begin a Session — the Spotlight Vignette" });

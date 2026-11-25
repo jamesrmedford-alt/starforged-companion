@@ -37,15 +37,28 @@ export function changeText(c) {
   return `${METERS[what] ?? what} ${c?.from ?? '?'} → ${c?.to ?? '?'}`;
 }
 
-/** "Compel (+heart), strong hit (a match)"; an upgrade says what it was and how it was raised. */
+/**
+ * The moves made on a vow: their line names it. "Swear an Iron Vow (+heart),
+ * weak hit — LASTING: a vow sworn" said which vow nowhere, and a recap took
+ * the character's background vow for the one sworn (known-issues
+ * VOW-SWORN-UNNAMED-IN-THE-RECORD).
+ */
+const VOW_MOVES = Object.freeze(new Set(['swear_an_iron_vow', 'reach_a_milestone', 'fulfill_your_vow', 'forsake_your_vow']));
+
+/**
+ * "Compel (+heart), strong hit (a match)"; an upgrade says what it was and
+ * how it was raised; a move made on a vow names it — "Swear an Iron Vow
+ * (+heart): “Find the lost ark”, weak hit".
+ */
 export function moveText(move) {
   if (!move) return '';
   const name = move.name ?? move.moveId ?? 'A move';
   const stat = move.stat && move.rollKind !== 'progress' ? ` (+${move.stat})` : '';
+  const vow = VOW_MOVES.has(move.moveId) && String(move.target?.name ?? '').trim() ? `: ${q(move.target.name)}` : '';
   const outcome = move.upgraded
     ? `${OUTCOMES[move.upgraded.from] ?? move.upgraded.from ?? '?'}, made a ${OUTCOMES[move.outcome] ?? move.outcome ?? '?'} by ${move.upgraded.how === 'burn' ? 'burning momentum' : 'an asset'}`
     : (OUTCOMES[move.outcome] ?? move.outcome ?? '');
-  return `${name}${stat}${outcome ? `, ${outcome}` : ''}${move.match ? ' (a match)' : ''}`;
+  return `${name}${stat}${vow}${outcome ? `, ${outcome}` : ''}${move.match ? ' (a match)' : ''}`;
 }
 
 const TRACK_KINDS = Object.freeze({

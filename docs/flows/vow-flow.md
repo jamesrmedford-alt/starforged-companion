@@ -486,12 +486,20 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **Begin a Session** (`openBeginSessionDialog`, the invoking client): when no
   PC holds a quest, its dialog and card say so ("No vow in play"), and the
   dialog offers Swear an Iron Vow for the user's own PC (`resolveUserActorId`)
-  — a vow and its rank. After the session's start is requested it is written
-  on that PC's sheet (`actorBridge.createCharacterVowItem`, no `vowId`), so the
-  canonical GM's `registerPlayerVowHook` posts its "🆕 New vow recorded" card
-  — ⚔ Swear it (roll), the reward offer, the 🤝 link: §1's player-authored
-  path. A vow the sheet refused is said to the user; the Begin card claims no
-  vow.
+  — a vow and its rank. The vow rides the `session.begin` relay (`vow: {
+  actorId, name, rank }`), and the canonical GM writes it on that PC's sheet
+  once the session is begun (`sessionLifecycleDialogs.js` `swearBeginVow` →
+  `actorBridge.createCharacterVowItem`, no `vowId`; the requester must own the
+  PC or be a GM — the payload is client-asserted), so the sheet watch records
+  its `vow.sworn` in the session it is sworn in, and `registerPlayerVowHook`
+  posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward offer,
+  the 🤝 link: §1's player-authored path. Made on the pressing client right
+  after the Begin was sent (the relay has no answer), a player's vow reached
+  the sheet before the GM had begun — at a world's first Begin, minted — the
+  session: its `vow.sworn` went to no session, or to the one before, and the
+  record named no vow sworn (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD). A
+  vow refused — for its character, or by the sheet — is whispered to the
+  requester and the GMs; the Begin card claims no vow.
 - **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
   add form's vow select links any track it creates (a fight added by hand too
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
