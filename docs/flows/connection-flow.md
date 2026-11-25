@@ -85,7 +85,11 @@ recorded under its name promoted to it; its bond is §2's.
   then the silent portrait, started, §1 below).
   Its dedup — the detection prompt's ESTABLISHED list, the parse's and the
   route's `entityExistsAnyType` / `entityExistsForName`, the listed NPCs
-  `connectNamedFigure` matches — reads the store's entity id lists as well
+  `connectNamedFigure` matches; and against the pending draft rows, the
+  dismissed names, the records and the reply's other names, a name with or
+  without its leading article (`draftNameKey` — "The Ashen Wake" and "Ashen
+  Wake" were two pending cards for one ship, known-issues
+  DRAFT-CARDS-FOR-ONE-SHIP) — reads the store's entity id lists as well
   as the move's copy (`withStoredEntityIds`): the move holds the copy it
   read before its lock claim, and an NPC the GM confirmed from a draft card
   while the move was confirmed or narrated was in no list it read, so the

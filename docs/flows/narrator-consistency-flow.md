@@ -157,7 +157,13 @@ longer special-cases them).
   case — and each place once, from the text as stored: for "Tamsin" →
   "Tamsin Okoro" it wrote "tied the vow to Tamsin Okoro Okoro" on the pages
   and in the recap (known-issues NEW-NAME-WRITTEN-TWICE). The stored list
-  (capped) still tells the narrator. CORRECTED is
+  (capped) still tells the narrator. A ◈ New Entities Detected row still
+  pending under the old name takes the new one in the same call
+  (`recordNameChanged` → `entityExtractor.js`
+  `carryNameChangeToPendingDrafts`, its card rendered again): the narrator's
+  next use of the new name is no new ship to the detector, and a Confirm makes
+  the record under it (known-issues DRAFT-CARDS-FOR-ONE-SHIP — "Cinder Wren"
+  was offered beside the pending "The Ashen Wake"). CORRECTED is
   its scene's (and its place's); the change is told past both — NAMES THE TABLE
   CHANGED in the narrator's context, every mode, and in the session summary's
   source — wherever the old name still reaches a prompt. In the long haul's
