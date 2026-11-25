@@ -228,7 +228,7 @@ describe("an unnamed destination becomes a place in the game (PT07)", () => {
     const location = table.actors.find(a => a.id === site.actorId);
     expect(location.flags[MODULE_ID].location.status).toBe("visited");
     const [discovered] = table.cards(f => f.siteDiscovered);
-    expect(discovered.content).toMatch(/no chart showed before/);
+    expect(discovered.content).toMatch(/No chart showed this place before/);
     expect(state().currentLocationId).toBe(site.actorId);
     expect(scene.notes.contents.find(n => n.flags?.[MODULE_ID]?.siteId === site.id).text).toBe(GAP_SITE);
   }, 30_000);

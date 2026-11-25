@@ -111,6 +111,16 @@ describe('a rolled result is never written as its own word', () => {
   });
 });
 
+describe('a quiet scene leaves the characters\' things as the records have them (issue #388 #12)', () => {
+  // a19's lull read "Deliver" as Mira setting her own brass star-compass on
+  // Tamsin's counter; a20 told the compass as left there.
+  it('an opening\'s and a closing\'s MATERIAL say nothing of theirs changes hands — the spotlight, a turn of the plot, does not', () => {
+    const rule = /What the characters hold, owe and have said stays as the records have it:\s+nothing of theirs changes hands, and nothing is given, promised, spent or\s+broken in this scene\. The table decides those\./;
+    expect(formatMaterial(OPENING_SEEDS)).toMatch(rule);
+    expect(formatMaterial(OPENING_SEEDS, { spotlight: true })).not.toMatch(rule);
+  });
+});
+
 describe('the oath is built from the vow\'s own words and the scene it is sworn in', () => {
   const VOW = { name: 'Find who is raiding the Cinder Expanse lanes', rank: 'dangerous' };
 

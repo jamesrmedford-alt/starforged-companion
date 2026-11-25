@@ -116,7 +116,15 @@ describe('the system prompt: the same bytes for every call', () => {
     for (let n = 1; n <= 12; n += 1) expect(text, `rule ${n}`).toMatch(new RegExp(`^${n}\\. `, 'm'));
     // Asking for trust is named as talk; a deed for a connection needs nothing at risk; headway the scene bears out;
     // a line that names its move asks for it, everyday English included (issue #384, the first measure's mend).
-    expect(text).toContain('asking for the relationship itself while it is still being built: to be trusted, to be friends, to count on each other, to be someone\'s contact');
+    expect(text).toContain('asking one of the speaker\'s connections for the relationship itself while it is still being built: to be trusted, to be friends, to count on each other');
+    // …and asked of someone not yet a connection it is Make a Connection (issue #388 #4: the fifth live long haul's
+    // a5, "Will you be that?" with "Connections: none", was read as talk).
+    expect(text).toContain('With someone the SITUATION does not list among the speaker\'s connections, seeking that tie');
+    expect(text).toContain('is make_a_connection\'s trigger: it searches out a new relationship');
+    expect(text).toContain('it seeks a new relationship (make_a_connection)');
+    // A move NOT NOW names is named in blocked, so the table can say why (issue #388 #7).
+    expect(text).toContain('name the move it set about in blocked: the table tells the player why');
+    expect(text).toContain('- blocked: only with move null');
     // ...but a lasting tie asked for with the track full is Forge a Bond, and a vow sworn in their service is Swear an Iron Vow.
     expect(text).toContain('when the SITUATION shows the relationship ready to forge (its track full) is forge_a_bond');
     expect(text).toContain('A vow sworn, in anyone\'s service, is swear_an_iron_vow');

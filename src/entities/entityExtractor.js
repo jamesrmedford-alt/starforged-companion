@@ -398,6 +398,11 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
   const wjState = describeWorldJournalState(campaignState);
 
   const lines = detectionPlayerLines(playerLines);
+  // The characters by name, for what a description says of them (issue #388
+  // smaller: a13's draft "The player character's sister" — the narration
+  // says "you", and the detector had no name for them).
+  let pcNames = [];
+  try { pcNames = getPlayerActors().map(a => String(a?.name ?? "").trim()).filter(Boolean); } catch { pcNames = []; }
 
   const isPaced = moveId === PACED_NARRATIVE_MOVE_ID;
   const moveLine = isPaced
@@ -426,6 +431,9 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `guess from the name. Likewise set "role" to the role or occupation the`,
     `narration gave them ("dockmaster", "smuggler") and "goal" to what it says`,
     `they want — each null when the prose did not say.`,
+    `A "description" says who or what it is in the story's own terms. The`,
+    `narration's "you" is ${pcNames.length ? pcNames.join(" or ") : "the character it is about"}: name them so, and never`,
+    `write "the player", "the player character" or "the PC".`,
     ``,
     `ESTABLISHED ENTITIES (do not return these as new entities):`,
     established.length ? established.join(", ") : "(none)",
@@ -2933,6 +2941,8 @@ export async function applyDraftMakeConnectionFromRelay(payload = {}, ctx = {}) 
         forcedMoveId: "make_a_connection", forcedMoveTarget: record.name ?? draft.name,
         ...(hostId ? { forcedMoveTargetId: hostId } : {}),
         bypassPacing: true, deferWhileBusy: true,
+        // The card's words, not the player's (issue #388 #10).
+        madeLine: true,
       } },
     });
   } catch (err) {

@@ -412,8 +412,9 @@ export async function postSiteDiscoveryCard(result) {
     `<h3>◈ Site Discovered — ${escapeSiteHtml(site.name)}</h3>` +
     (uncharted
       // An uncharted destination recorded under a working label (issue #348
-      // PT07): charted now, and named as the crew name it.
-      ? `<p>The crew reach a place no chart showed before. It is now charted on the sector map ` +
+      // PT07): charted now, and named as the table names it. No "crew": a
+      // character may fly alone (issue #388 smaller, the fifth live run's a26).
+      ? `<p>No chart showed this place before. It is now charted on the sector map ` +
         `under its working label — give it its name by renaming its location in the Entities panel.</p>`
       : `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
         `It is now charted on the sector map — undertake an expedition there, or ` +

@@ -95,8 +95,8 @@ beforeEach(() => {
 
 /** A narration that moves the ship to Krell's Den (the REQUIRED ship/position emission), then its card. */
 async function narrateToKrell(narrationId = 'nar-krell') {
-  const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: "Krell's Den" }] };
-  const text = applyNarratorSidecar(`The Wayfinder noses into Krell's Den.\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution' });   // a move's narration: a beat of play moves the ship (overhaul 2 §6.3)
+  const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: "Krell's Den", from: 'result' }] };
+  const text = applyNarratorSidecar(`The Wayfinder noses into Krell's Den.\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });   // a rolled move's result: it binds, and moves the ship (overhaul 2 §6.3; issue #388 #2)
   await postNarrationCard(text, { moveId: 'set_a_course', outcome: 'strong_hit', _id: `res-${narrationId}` },
     stored(), { playerText: 'We burn for the outpost.', playerName: 'Kira', narrationId });
   await vi.waitFor(() => expect(position().nearestSettlementId).toBe('act-krell'));

@@ -364,7 +364,7 @@ export function applyVowTargetMakeConnection(payload = {}, ctx = {}) {
     build: (f) => ({
       content: `I make a connection with ${f.vowTarget.name}.`,
       flags: {
-        forcedMoveId: "make_a_connection", forcedMoveTarget: f.vowTarget.name,
+        forcedMoveId: "make_a_connection", forcedMoveTarget: f.vowTarget.name, madeLine: true,
         ...(typeof f.vowTarget.hostId === "string" && f.vowTarget.hostId ? { forcedMoveTargetId: f.vowTarget.hostId } : {}),
       },
     }),

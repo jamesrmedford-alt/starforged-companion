@@ -3193,11 +3193,35 @@ export function formatEstablishedLoreBlock(lore) {
     return v.length > 160 ? `${v.slice(0, 157)}…` : v;
   };
   const lines = ['## ESTABLISHED LORE', ''];
-  for (const l of list) {
-    const text = clip(l.text);
-    lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
-  }
+  for (const l of list) lines.push(loreLine(String(l.title ?? '').trim(), clip(l.text)));
   return lines.join('\n');
+}
+
+/**
+ * One Lore entry as a line — `- title: text` — its fact said once (issue
+ * #388 #18, LORE-LINE-SAID-TWICE). A truth's Lore entry is titled
+ * "Subject: fact" and holds the fact again: the fifth live long haul's
+ * narrator read "- Mira Kestrel: promised Tamsin Vey she would be back before
+ * the next cargo arrives: promised Tamsin Vey she would be back before the
+ * next cargo arrives" for every one. A title that holds its text is the line;
+ * one that opens on it cut short ("Subject: the first words…") gives way to
+ * its subject and the whole text. The world snapshot's lore and this block
+ * write it the same way.
+ *
+ * @param {string} title
+ * @param {string} text
+ * @returns {string}
+ */
+export function loreLine(title, text) {
+  const t = String(title ?? '').trim();
+  const x = String(text ?? '').trim();
+  if (!x) return `- ${t || 'Lore'}`;
+  if (!t) return `- Lore: ${x}`;
+  const low = (s) => s.toLowerCase().replace(/\s+/g, ' ');
+  if (low(t) === low(x) || low(t).endsWith(`: ${low(x)}`)) return `- ${t}`;
+  const cut = /^(.+?):\s+(.+?)\s*(?:…|\.\.\.)$/.exec(t);
+  if (cut && low(x).startsWith(low(cut[2]))) return `- ${cut[1]}: ${x}`;
+  return `- ${t}: ${x}`;
 }
 
 /**
@@ -3613,7 +3637,9 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {number} sentenceTarget   — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} [speakerName]
  * @param {string} [recentContext]  — the last few ring entries (may be empty)
- * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
+ * @param {{ audio?: boolean, toldBefore?: boolean, madeLine?: boolean }} [opts] — `audio`: the narration is read
+ *   aloud (shorter sentences); `toldBefore`: the line was narrated before the roll — an offer's Roll (issue #388
+ *   #14); `madeLine`: the line is a card's words for a move pressed on it, not the player's (issue #388 #10)
  * @returns {string}
  */
 export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '', opts = {}) {
@@ -3635,10 +3661,25 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     ? speakerName.trim()
     : null;
   const cleanedPlayerNarration = sanitizePlayerText(playerNarration);
-  if (cleanedPlayerNarration) {
+  if (cleanedPlayerNarration && opts?.madeLine === true) {
+    // A move pressed on a card or a panel (issue #388 #10): its line is the
+    // card's words for the move, never the character's — [unsaid] says so.
+    parts.push(
+      `## THE MOVE — pressed on a card; the player wrote no line\n\n` +
+      `The card's words for it: "${cleanedPlayerNarration}"`,
+    );
+  } else if (cleanedPlayerNarration) {
     parts.push(
       `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
-      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"`,
+      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"` +
+      // A move rolled from its offer (issue #388 #14, BEAT-TOLD-TWICE): the
+      // line was narrated before the roll, and each offered Develop of the
+      // fifth live long haul told its line twice — the pen given three times.
+      (opts?.toldBefore === true
+        ? `\n\nThis line was narrated before the move was made: that narration is in RECENT SCENE, above. ` +
+          `It is told. Go on from where it ends — tell what the move decides, and do not tell the line, ` +
+          `or anything that narration already told, again.`
+        : ''),
     );
   }
 
@@ -3660,7 +3701,7 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // kept their words in it.
   const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
-    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [],
+    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [], madeLine: opts?.madeLine === true,
   }));
   if (obligations) parts.push(obligations);
 

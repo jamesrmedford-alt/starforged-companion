@@ -551,7 +551,7 @@ async function runSufferCall(call, actor, opts) {
           content: subject.content,
           ...(actor ? { speaker: { actor: actor.id, alias: actor.name } } : {}),
           flags: { [MODULE_ID]: {
-            bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true,
+            bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true, madeLine: true,
             ...(subject.targetId ? { forcedMoveTargetId: subject.targetId, forcedMoveTarget: subject.targetName } : {}),
             // The card that owes it: a roll then not made re-opens it (issue #347 AB06).
             ...(typeof opts?.sufferCardId === "string" && opts.sufferCardId

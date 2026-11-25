@@ -131,6 +131,8 @@ describe('applyConnectionPick', () => {
     // It carries the card's claim, handed back if the move is not rolled (issue #347 AB06).
     expect(posted.flags[MODULE_ID]).toEqual({
       bypassPacing: true, forcedMoveId: 'forge_a_bond', deferWhileBusy: true,
+      // The card's words for the move, not the player's (issue #388 #10).
+      madeLine: true,
       forcedMoveTarget: 'Kira', forcedMoveTargetId: 'conn-1',
       // The card it claimed, handed back if the move is not rolled (issue #347 AB06).
       sourceCard: { messageId: 'pick-1', claim: 'resolved', value: true, release: false },
@@ -456,7 +458,7 @@ describe('applyWaypointOraclePick', () => {
       speaker: { actor: 'pc-b' },
     });
     // `fromWaypoint`: made from the waypoint's own alternative — what the move gate asks of a discovery (overhaul 4).
-    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true, fromWaypoint: true,
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true, fromWaypoint: true, madeLine: true,
       sourceCard: { messageId: 'wp-1', claim: 'waypointRewardClaimed', value: 'alternative', release: null,
         reopenRetired: { resolutionId: waypoint.flags[MODULE_ID].resolutionId ?? null, kind: 'discovery' } } });
     expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');
@@ -630,7 +632,7 @@ describe('applyMilestoneSuggestion (issue #321 U20)', () => {
     expect(card.flags[MODULE_ID].milestoneMarked).toBe(true);
     expect(forcedMoves()).toHaveLength(1);
     expect(forcedMoves()[0]).toMatchObject({ content: 'Mark progress on your vow.', speaker: { actor: 'pc-b' } });
-    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'reach_a_milestone', deferWhileBusy: true,
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'reach_a_milestone', deferWhileBusy: true, madeLine: true,
       sourceCard: { messageId: 'mv-1', claim: 'milestoneMarked', value: true, release: false } });
     expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, GM_CTX)).toEqual({ posted: false, reason: 'already-marked' });
     expect(forcedMoves()).toHaveLength(1);

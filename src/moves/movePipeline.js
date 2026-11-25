@@ -314,7 +314,9 @@ function applyOfferReading(interpretation, reading) {
  * @param {Object} args.campaignState — the working copy
  * @param {string|null} args.apiKey
  * @param {*} args.dial — the Mischief dial
- * @param {{ moveId: string, moveTarget?: string|null, moveTargetId?: string|null }|null} [args.forced]
+ * @param {{ moveId: string, moveTarget?: string|null, moveTargetId?: string|null, fromOffer?: boolean }|null} [args.forced]
+ *   — `fromOffer`: an offer's Roll, its line narrated on the offer's card (inputMethod "offer");
+ *   `madeLine`: a button's move, its line the card's words (inputMethod "button")
  * @param {string|null} [args.swearToConnection] — a forced Swear an Iron Vow's connection
  * @param {boolean} [args.gatherChoices] — a round's reading: go on past a target choice
  * @param {import("./reader.js").Reading|null} [args.reading] — the line reader's
@@ -379,6 +381,13 @@ export async function readMove({
   if (forced?.fromWaypoint === true) interpretation.fromWaypoint = true;
   // A GM's "Roll anyway" on a soft refusal (index.js — a GM's post only).
   if (forced?.gateOverride === true) interpretation.gateOverride = true;
+  // An offer's Roll: the line was narrated on the offer's card — its
+  // resolution's narration goes on from it (issue #388 #14, BEAT-TOLD-TWICE).
+  if (forced?.fromOffer === true) interpretation.inputMethod = "offer";
+  // A button's move: its line is the card's words, not the player's — the
+  // narration gives the character none (issue #388 #10, BUTTON-ROLL-SPEAKS-
+  // FOR-THE-CHARACTER).
+  else if (forced?.madeLine === true) interpretation.inputMethod = "button";
   const situation = await readMoveSituation(gateRoller, { campaignState });
 
   // No move is being made — or the reading is too unsure to roll (issue #354

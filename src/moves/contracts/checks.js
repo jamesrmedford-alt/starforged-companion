@@ -9,7 +9,9 @@
  *   certain   a regular expression in code: [apparatus] (an outcome's name;
  *             a move's display name of two words or more outside the closing
  *             offer line; a sheet number), [match] (the word, for a roll that
- *             matched) — a failure is re-asked once
+ *             matched), [material] (a set-piece's rolled word as a label, a
+ *             name or its pair — materialViolations) — a failure is re-asked
+ *             once
  *   floor     a lexical minimum: [vow] (the prose shares a word with the
  *             vow's name, or says what is still not known — re-asked once);
  *             [chosen] (a word of the cost's meter — logged); [letgo] (a stem
@@ -17,7 +19,8 @@
  *             the beat's player words do not hold — logged; overhaul 2 §10.3)
  *   judge     a NOT YET / NOT SO line whose tripwire words appear in the prose
  *             ([premise], [cost], [price], [fight], [offer], [oracle],
- *             [state], and overhaul 2's [place]: "docked", "berth", "clamps"
+ *             [state], [unsaid] (speech words, on a move pressed on a card),
+ *             and overhaul 2's [place]: "docked", "berth", "clamps"
  *             on the beat that opens a fight's scene while the ship's record
  *             has her docked): one small model call (Haiku, through
  *             api-proxy.js, label `obligationJudge`) asks whether the prose
@@ -101,6 +104,56 @@ export function certainViolations(prose, obligations) {
   if (kinds.has("match")) {
     const m = /\bmatch(?:es|ed)?\b/i.exec(text);
     if (m) out.push({ tag: "match", quote: quoteAround(text, m.index, m[0].length) });
+  }
+  const material = (obligations ?? []).find(o => o?.kind === "material");
+  if (material) out.push(...materialViolations(bodyOf(text), material));
+  return out;
+}
+
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const capitalised = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+
+/**
+ * [material]: a set-piece's rolled word written as it was rolled (issue #388
+ * #11, ORACLE-WORD-WRITTEN-AS-ROLLED) — as a label (a sentence opened by the
+ * word and set off by a comma, a colon or a dash, or the word alone in quotes:
+ * "Fortify, in the plainest sense"), as a name (the word with a capital in
+ * mid-sentence — "who on this ring served the Dominion" — unless the records
+ * hold it so, `onRecord`), or a result's words together ("a fiery gas"). The
+ * word in an ordinary sentence ("a vial of her blood") is the prose's: only
+ * these three are certain. One violation a word.
+ *
+ * @param {string} body — the prose, its closing offer line left out
+ * @param {{ words?: string[], pairs?: string[][], onRecord?: string[] }} material
+ * @returns {Array<{ tag: "material", quote: string }>}
+ */
+export function materialViolations(body, { words = [], pairs = [], onRecord = [] } = {}) {
+  const text = String(body ?? "");
+  const out = [];
+  const seen = new Set();
+  const push = (m, word) => {
+    if (!m || seen.has(word.toLowerCase())) return;
+    seen.add(word.toLowerCase());
+    out.push({ tag: "material", quote: quoteAround(text, m.index, m[0].length) });
+  };
+  const named = new Set((onRecord ?? []).map(w => String(w).toLowerCase()));
+  for (const raw of words ?? []) {
+    const word = String(raw ?? "").trim();
+    if (word.length < 3) continue;
+    const w = escapeRe(word);
+    const label = new RegExp(`(?:^|[.!?…]["”’)]*\\s+)${w}\\s*(?:[,:;—–]|-\\s)|["“‘*_]${w}["”’*_]`, "i").exec(text);
+    if (label) { push(label, word); continue; }
+    if (named.has(word.toLowerCase())) continue;
+    push(new RegExp(`(?<=[a-z0-9,;'’)]\\s{1,3})${escapeRe(capitalised(word))}(?![A-Za-z])`).exec(text), word);
+  }
+  for (const pair of pairs ?? []) {
+    const parts = (Array.isArray(pair) ? pair : []).map(p => String(p ?? "").trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    const m = new RegExp(`(?<![A-Za-z])${parts.map(escapeRe).join("[\\s-]+")}(?![A-Za-z])`, "i").exec(text);
+    if (m && !seen.has(parts.join(" ").toLowerCase())) {
+      seen.add(parts.join(" ").toLowerCase());
+      out.push({ tag: "material", quote: quoteAround(text, m.index, m[0].length) });
+    }
   }
   return out;
 }
@@ -195,6 +248,11 @@ const OFFER_WORDS = Object.freeze({
   forge_a_bond: ["bond", "bonded"],
 });
 
+/** Speech, said or told — what trips [unsaid] (a move pressed on a card gives the character no words). */
+const SPEECH_WORDS = ["tell", "tells", "told", "say", "says", "said", "ask", "asks", "asked", "promise", "promises", "promised",
+  "admit", "admits", "confess", "confesses", "swear", "swears", "explain", "explains", "answer", "answers", "reply", "replies",
+  "assure", "assures", "whisper", "whispers", "murmur", "murmurs", "insist", "insists"];
+
 /** The words that trip a line's judge, by what it tells; null for a line with none. */
 function tripWords(o, { refusalCode = null, offer = null, question = "", person = null } = {}) {
   switch (o?.kind) {
@@ -206,6 +264,7 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
     case "oracle":  return o.list === "NOT SO" ? contentWords(question) : null;
     case "state":   return person && /not a bond/.test(o.text) ? ["bond", "bonded"] : (/No fight/.test(o.text) ? FIGHT_WORDS : null);
     case "place":   return DOCKED_WORDS;
+    case "unsaid":  return SPEECH_WORDS;
     default:        return null;
   }
 }

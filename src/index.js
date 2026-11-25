@@ -1203,7 +1203,13 @@ export function registerChatHook() {
           // (issue #384, slice 3): only a GM's post is trusted, and only for
           // the move it was read as.
           reading: message.author?.isGM === true && message.flags?.[MODULE_ID]?.forcedReading?.moveId === forcedMoveId
-            ? message.flags[MODULE_ID].forcedReading : null } : null,
+            ? message.flags[MODULE_ID].forcedReading : null,
+          // An offer's Roll: its line was narrated on the offer's card
+          // (cardActions.js applyPacedRoll; issue #388 #14).
+          fromOffer: message.flags?.[MODULE_ID]?.fromOffer === true,
+          // A card's or a panel's own words for the move, not the player's
+          // (`madeLine`; issue #388 #10).
+          madeLine: message.flags?.[MODULE_ID]?.madeLine === true } : null,
         swearToConnection,
         // The line reader's reading, carried (issue #384, slice 2): a line
         // it routed to a roll is not read again — the gate is asked once more

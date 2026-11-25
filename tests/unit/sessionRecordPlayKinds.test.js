@@ -38,6 +38,7 @@ import { runGmAction } from '../../src/multiplayer/gmRelay.js';
 import { applyClockAdvances } from '../../src/clocks/clocks.js';
 import { markRelationshipProgress, forgeBond, loseConnection } from '../../src/entities/connection.js';
 import { startScene, endScene } from '../../src/factContinuity/sceneLifecycle.js';
+import { setVowLinkedConnection, renameVowLinksToConnection } from '../../src/character/actorBridge.js';
 import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
 import { installJournalMock, addConnectionEntity } from '../helpers/fullStateFixture.js';
 
@@ -118,6 +119,41 @@ describe('vows — the sheet watch on a PC\'s vow Items', () => {
     const did = readRecord({ session: SESSION }).sessions[0].beats.flatMap(b => b.did.map(d => d.kind));
     expect(did).toEqual(['vow.sworn', 'progress.marked', 'vow.closed']);
     expect(readRecord({ session: SESSION }).sessions[0].beats.map(b => b.lasting).filter(Boolean)).toEqual(['a vow sworn', 'a vow fulfilled']);
+  });
+
+  it('a tie when the vow is linked, or moved to another card; none when a rename carries the link (issue #388 #9)', async () => {
+    // The fifth live long haul: the GM renamed Tamsin Vey's card at x19, the
+    // link's name followed it, and the record said "tied the vow … to Tamsin
+    // Okoro" — the a83 recap: "The vow was tied to Tamsin again."
+    const kira = makeTestActor({ id: 'pc-kira', name: 'Kira' });
+    game.actors._set('pc-kira', kira);
+    const a = vowOn(kira, 'it-a', 'vow-dock');
+    // The writers' Item#update, run as Foundry runs it (preUpdate, the change, update).
+    a.update = (change) => itemEdit(a, Object.entries(change).reduce((acc, [path, value]) => {
+      const parts = path.split('.'); let cur = acc;
+      for (const p of parts.slice(0, -1)) cur = (cur[p] ??= {});
+      cur[parts.at(-1)] = value;
+      return acc;
+    }, {}));
+    a.setFlag = (mod, key, value) => a.update({ [`flags.${mod}.${key}`]: value });
+    kira.items.contents.push(a);
+
+    expect(await setVowLinkedConnection('vow-dock', 'Tamsin Vey', 'npc-tamsin')).toEqual({ ok: true });
+    expect(await renameVowLinksToConnection('npc-tamsin', 'Tamsin Okoro')).toBe(1);
+    expect(a.flags[MODULE_ID]).toMatchObject({ linkedConnectionName: 'Tamsin Okoro', linkedConnectionId: 'npc-tamsin' });
+    expect(await setVowLinkedConnection('vow-dock', 'Rook', 'npc-rook')).toEqual({ ok: true });
+
+    expect(stored().filter(e => e.k === 'vow.linked').map(e => [e.ref.conn, e.d.connectionName])).toEqual([
+      ['npc-tamsin', 'Tamsin Vey'], ['npc-rook', 'Rook'],
+    ]);
+  });
+
+  it('a link by name alone (no card yet) is a tie each time its name changes', async () => {
+    const kira = makeTestActor({ id: 'pc-kira', name: 'Kira' });
+    const a = vowOn(kira, 'it-a', 'vow-dock');
+    await itemEdit(a, { flags: { [MODULE_ID]: { linkedConnectionName: 'Tamsin' } } });
+    await itemEdit(a, { flags: { [MODULE_ID]: { linkedConnectionName: 'Rook' } } });
+    expect(stored().filter(e => e.k === 'vow.linked').map(e => [e.ref.conn ?? null, e.d.connectionName])).toEqual([[null, 'Tamsin'], [null, 'Rook']]);
   });
 
   it('forsaken: the flag the forsake stamps after the completion closes it as forsaken', async () => {

@@ -22,6 +22,9 @@ import { composeOpeningScene } from '../../src/session/galleyVignette.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
 import { seedSessionRecord, seedLegacySessionPage, playedBeats, recordedEvent } from '../helpers/sessionRecordSeed.js';
 import { _resetSummaryViewForTests } from '../../src/record/summaryView.js';
+import { readRecord } from '../../src/record/read.js';
+import { renderSessionLogBody } from '../../src/record/sessionLogView.js';
+import { recordSourceOf } from '../helpers/sessionRecordSeed.js';
 
 const S1 = 's-1';
 const SCENE = `sc-${S1}`;
@@ -106,5 +109,78 @@ describe('overhaul 2 §9 — an opening is told where the last session stopped, 
     expect(msg).toContain('Mira left the manifest with Tamsin at Hollow Spire.');
     expect(msg).not.toContain('the table\'s facts');
     expect(msg).not.toContain('under Let go');
+  });
+});
+
+describe('a cutaway after the last scene is no place play stopped (issue #388 #1, OPENING-TOLD-FROM-THE-CUTAWAY)', () => {
+  // The fifth live long haul's session 2: its last played frame had Mira alone
+  // at the Bleakhold docking ring, with the oracle's survivor binding; the a46
+  // closing started a scene of its own, "Tamsin Okoro" in an observation
+  // lounge on Hollow Spire, and a48's opening was told "With them at the end:
+  // Tamsin Okoro." with nothing of what bound.
+  const S2 = 's-2';
+  const minted = { currentSessionId: 's-3', sessionNumber: 3 };
+  const cut = (k, opts) => ({ ...recordedEvent(S2, k, opts), scene: 'sc-cut' });
+  const SURVIVOR = 'has at least one crew member alive aboard, trapped behind the jammed hatch';
+  function sessionTwo({ cutaway = true } = {}) {
+    const events = playedBeats(S2, [
+      { said: 'I look over the wreckage of the cutter.', told: 'The hatch hangs jammed halfway.' },
+    ], { actor: 'pc-mira', number: 2 });
+    return [
+      events[0],
+      recordedEvent(S2, 'scene.started', { d: { sceneId: `sc-${S2}`, reason: 'fight_end', cause: 'fight', what: 'the fight with The Cinder Wren is over',
+        place: { id: 'set-bleak', type: 'settlement', name: 'Bleakhold Station' } } }),
+      ...events.slice(1),
+      recordedEvent(S2, 'truth.set', { ref: { truth: 't-alive', nar: `nar-${S2}-1` }, d: { subject: { kind: 'text', text: 'Cinder Wren' }, fact: SURVIVOR, by: 'narrator', basis: 'dice' } }),
+      recordedEvent(S2, 'frame', { ref: { nar: `nar-${S2}-1` }, d: { location: 'Bleakhold Station docking ring', present: ['Mira Kestrel'],
+        situation: 'The Kobayashi IV drifts beside the disabled Cinder Wren', question: 'Is anyone left alive aboard the wreck?' } }),
+      ...(cutaway ? [
+        cut('scene.started', { d: { sceneId: 'sc-cut', reason: 'session_vignette', cause: 'cutaway', what: 'a cutaway',
+          place: { id: 'set-bleak', type: 'settlement', name: 'Bleakhold Station' } } }),
+        cut('narration', { ref: { nar: 'nar-cut', card: 'card-cut' }, d: { mode: 'vignette_close' },
+          text: 'Tamsin has found the observation lounge on the Hollow Spire\'s upper ring empty.' }),
+        cut('frame', { ref: { nar: 'nar-cut' }, d: { location: 'Observation lounge, Hollow Spire upper ring', present: ['Tamsin Okoro'],
+          situation: 'Tamsin kneels on the lounge floor reaching for a gear' } }),
+      ] : []),
+    ];
+  }
+
+  let journals;
+  beforeEach(() => {
+    journals = installJournalMock();
+    _resetSummaryViewForTests();
+    globalThis.game.actors._set('pc-mira', globalThis.makeTestActor({ id: 'pc-mira', type: 'character', name: 'Mira Kestrel' }));
+  });
+  afterEach(() => journals.restore());
+
+  it('the opening is told the last played scene: its place, what binds and the question still open — never the cutaway\'s company', async () => {
+    await seedSessionRecord(S2, sessionTwo(), { number: 2 });
+    const msg = await opening(minted);
+    expect(msg).toContain('WHERE THE LAST SESSION STOPPED — session 2\'s record, the table\'s facts:');
+    expect(msg).toContain('  Place: Bleakhold Station.');
+    expect(msg).toContain(`  What binds: Cinder Wren — ${SURVIVOR} (the dice).`);
+    expect(msg).toContain('  Still open: Is anyone left alive aboard the wreck? (the player\'s)');
+    expect(msg).not.toContain('With them at the end: Tamsin Okoro');
+    expect(msg).not.toContain('Observation lounge');
+  });
+
+  it('the characters are not "with them": the frame\'s own PC is left out of who was there', async () => {
+    await seedSessionRecord(S2, sessionTwo(), { number: 2 });
+    expect(await opening(minted)).not.toMatch(/With them at the end:[^\n]*Mira Kestrel/);
+  });
+
+  it('control: the same session with no cutaway is told the same', async () => {
+    await seedSessionRecord(S2, sessionTwo({ cutaway: false }), { number: 2 });
+    const msg = await opening(minted);
+    expect(msg).toContain(`  What binds: Cinder Wren — ${SURVIVOR} (the dice).`);
+    expect(msg).toContain('  Place: Bleakhold Station.');
+  });
+
+  it('the Session Log heads the cutaway as one — "A cutaway — …" — never as a scene the characters played', () => {
+    const [session] = readRecord({ session: S2 }, recordSourceOf(S2, sessionTwo(), { number: 2 })).sessions;
+    const body = renderSessionLogBody(session);
+    expect(body).toContain('<li><em>A cutaway — Observation lounge, Hollow Spire upper ring.</em></li>');
+    expect(body).not.toContain('A new scene — Observation lounge');
+    expect(body).toContain('<li><em>A new scene — the fight with The Cinder Wren is over (Bleakhold Station docking ring).</em></li>');
   });
 });

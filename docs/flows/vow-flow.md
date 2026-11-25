@@ -551,7 +551,11 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **End a Session**: the open vows (`vowChoices`, one per vow) and the PCs'
   connections (`tableConnectionNames`, a severed one left out) are one-click
   choices beside the two focus fields, which stay free text. The quest focus
-  chosen there is `sessionFocus.quest` at the next Begin — rung 2 above.
+  chosen there is `sessionFocus.quest` at the next Begin — rung 2 above —
+  unless it is the name of a vow already fulfilled or forsaken
+  (`openThreads.js closedVowNamed`; issue #388 #13): End's card says so while
+  End again can note another, Begin's dialog and card mark it "a vow already
+  fulfilled", and `sessionFocus` carries no quest.
 
 **The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
 asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an

@@ -45,6 +45,11 @@
  *                told as a bond)
  *   [sheet]      no sheet changes in narration but what TELL names
  *   [apparatus]  no dice, no sheet number, no outcome's or move's name
+ *   [unsaid]     a move pressed on a card, with no line of the player's: no
+ *                words for the character (issue #388 #10)
+ *   [material]   a set-piece's rolled words, never written as rolled — as a
+ *                name, a label or together (issue #388 #11; the MATERIAL
+ *                block's own rule, sceneSeeds.js formatMaterial)
  *
  * The table's cards a result's obligations read (unansweredCardsFor — moved
  * here from resultUpgrade.js withUnansweredCards): the outcome's choice card
@@ -347,12 +352,32 @@ export const OBLIGATION_KINDS = Object.freeze({
     list: "NOT SO", check: "certain",
     text: ({ offer }) => `Never write the dice, a number off a sheet, an outcome's name, or a move's name${offer ? " — save the one closing offer line" : ""} — and never a word about how this narration is built.`,
   }),
+  // A move pressed on a card or a panel, with no line of the player's (issue
+  // #388 #10, BUTTON-ROLL-SPEAKS-FOR-THE-CHARACTER): the fifth live long
+  // haul's a82, a bonded Develop pressed on a card, was told "You tell Tamsin
+  // plainly that she is the one person on these docks you would trust", the
+  // Chronicle filed it, and a85's answer quoted it as Mira's words.
+  unsaid: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: () => "No line of the player's made this move — it was pressed on a card. The character says, asks, promises " +
+      "and confesses nothing in this narration, in quotes or told (\"you tell her that …\"): what they say is the player's. " +
+      "Tell what the move does, and what the others do and say.",
+    judge: () => "The player's character (\"you\") speaks — says, asks, promises or confesses something, in quotes or told (\"you tell her that …\").",
+  }),
+  // A set-piece's MATERIAL rule, held by its certain check (checks.js
+  // materialViolations; issue #388 #11). Its words ride on the line.
+  material: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: () => "A result's words are the oracle's, never the prose's: no word of a result is written as it was rolled — " +
+      "not as a name, not as a label, not its words together. Write what it means here, in words of your own.",
+  }),
 });
 
 const line = (kind, input = {}) => {
   const row = OBLIGATION_KINDS[kind];
   const list = typeof row.list === "function" ? row.list(input) : row.list;
-  return { kind, list, text: row.text(input) };
+  // A judge line may say to the judge what it trips on in its own words (checks.js judgeNarration).
+  return { kind, list, text: row.text(input), ...(typeof row.judge === "function" ? { judge: row.judge(input) } : {}) };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -642,14 +667,18 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  *   "round-entry" one entry of a Batch Mode round — a rolled move's result kinds, or a refused entry's premise
  *   "round"       the round as a whole — the state, the sheet, the apparatus
  *   "oracle"      an oracle follow-up — a yes/no answer told and its opposite not so
+ *   "set-piece"   an opening, a closing or a spotlight — its rolled words never
+ *                 written as rolled ([material]: `material`, sceneSeeds.js rolledWordsOf)
  *
- * @param {{ mode: "paced"|"move"|"round-entry"|"round"|"oracle", resolution?: Object|null, refusal?: Object|null,
+ * @param {{ mode: "paced"|"move"|"round-entry"|"round"|"oracle"|"set-piece", resolution?: Object|null, refusal?: Object|null,
  *   offer?: string|null, note?: string|null, oracle?: Object|null, situation?: Object|null, line?: string,
- *   cast?: string[], speaker?: string|null }} input
+ *   cast?: string[], speaker?: string|null,
+ *   material?: { words: string[], pairs: string[][], onRecord: string[] }|null,
+ *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid])
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
-  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [] } = {}) {
+  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, madeLine = false } = {}) {
   const out = [];
   const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
     .map(fact => line("state", { fact }));
@@ -665,6 +694,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
   } else if (mode === "move") {
     out.push(...since());
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
+    if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
@@ -681,6 +711,13 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (answer) {
       out.push(line("oracle", { oracle: answer, part: "tell" }));
       out.push(line("oracle", { oracle: answer, part: "not" }));
+    }
+  } else if (mode === "set-piece") {
+    const words = Array.isArray(material?.words) ? material.words.filter(w => typeof w === "string" && w) : [];
+    if (words.length) {
+      out.push({ ...line("material"), words,
+        pairs: Array.isArray(material.pairs) ? material.pairs : [],
+        onRecord: Array.isArray(material.onRecord) ? material.onRecord : [] });
     }
   }
   return out;

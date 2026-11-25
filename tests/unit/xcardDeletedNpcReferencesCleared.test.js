@@ -95,6 +95,8 @@ beforeEach(() => {
     flags: { [MODULE_ID]: { vowId: 'v-dock' } },
     setFlag: async (mod, key, value) => { (vow.flags[mod] ??= {})[key] = value; },
   };
+  // Foundry's Item#update over flag paths — the link writes the name and the id as one update.
+  vow.update = async (change) => { for (const [path, val] of Object.entries(change)) { const m = /^flags\.([^.]+)\.(.+)$/.exec(path); if (m) await vow.setFlag(m[1], m[2], val); } };
   kira.items.contents.push(vow);
   game.actors._set('pc-kira', kira);
   apiPost.mockImplementation(async (_url, _headers, body) => {

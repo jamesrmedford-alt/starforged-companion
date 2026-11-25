@@ -1077,6 +1077,11 @@ describe('what a run counts for its review', () => {
     expect(answered[0].sentence).toContain('You answer the hatch. "Before the next cargo tide.');
     expect(spokenFor([{ step: 'a60', narrator: true, text: 'The visitor is listening. "Careful what you tell her," the voice says. "I know that compass."' }]), 'the voice speaks, not you').toEqual([]);
     expect(spokenFor([{ step: 'a51', narrator: true, text: '"Tamsin\'s," you say, and the plating gives back a short pause.' }])).toHaveLength(1);
+    // Speech told for the character (issue #388 #10): the fifth live run's a82, a button's Develop.
+    expect(spokenFor([{ step: 'a82', narrator: true, text: 'You tell Tamsin plainly that she is the one person on these docks you would trust with the ship\'s secrets. She takes it slowly.' }]))
+      .toMatchObject([{ step: 'a82', sentence: expect.stringContaining('You tell Tamsin plainly that she is the one person') }]);
+    expect(spokenFor([{ step: 'a9', narrator: true, text: 'You ask her why the berth was sold.' }])).toHaveLength(1);
+    expect(spokenFor([{ step: 'a9', narrator: true, text: 'You tell yourself that the hull will hold. You know that she is lying.' }]), 'what you tell yourself, or know, is no speech').toEqual([]);
   });
 
   it('counts what the narrator was told and wrote anyway — the first live run\'s own sentences (issue #377 items 2, 4)', () => {

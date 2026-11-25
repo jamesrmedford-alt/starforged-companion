@@ -206,6 +206,31 @@ export function vowChoices(vows = tableVows()) {
     });
 }
 
+/** A focus or a vow's name as it is compared: case, spacing and closing punctuation aside. */
+const focusKey = (s) => String(s ?? "").replace(/\s+/g, " ").trim().replace(/[\s.!?;:,]+$/, "").toLowerCase();
+
+/**
+ * The closed vow a quest focus names: `{ name, how }` when the focus is a
+ * vow's own name and every vow of that name is fulfilled or forsaken; null
+ * for anything else. End a Session's choices are the open vows alone, but its
+ * focus is the player's own words — the fifth live long haul typed the vow
+ * fulfilled at a81 in at a94, and the next Begin card named it as the quest
+ * beside "No character has a vow in play", and the narrator was told it as
+ * the session's (issue #388 #13, END-FOCUS-ON-A-FULFILLED-VOW). Only this
+ * one case is read from a focus.
+ *
+ * @param {string} focus
+ * @param {Object[]} [vows] — tableVows' (read now when not given)
+ * @returns {{ name: string, how: "fulfilled"|"forsaken" }|null}
+ */
+export function closedVowNamed(focus, vows = tableVows()) {
+  const want = focusKey(focus);
+  if (!want) return null;
+  const named = (Array.isArray(vows) ? vows : []).filter(v => v && focusKey(v.name) === want);
+  if (!named.length || named.some(v => !v.completed)) return null;
+  return { name: String(named[0].name).trim(), how: named.every(v => v.forsaken) ? "forsaken" : "fulfilled" };
+}
+
 /**
  * The link a vow choice makes — `{ linkedVowId, linkedVowName }` — for an
  * open vow named by its id (a copy's `vowId` or its Item id), as the vows

@@ -212,7 +212,16 @@ function recordVowChanges(item, before, after, options, userId) {
   } else if (after.completed && after.forsaken && !before.forsaken) {
     recordEvent('vow.closed', { ...base, d: { name: after.name, how: 'forsaken', ...made } });
   }
-  if (after.linkedConnectionName && after.linkedConnectionName !== before.linkedConnectionName) {
+  // A tie made, or moved to another connection — by the connection's id where
+  // the vow has one. A rename of the linked card carries the link's name with
+  // it (VOW-CONNECTION-LINK-BY-NAME) and ties nothing new: recorded so, the
+  // fifth live long haul's recap said "The vow was tied to Tamsin again." of
+  // the GM's rename (issue #388 #9, RENAME-RECORDED-AS-A-TIE).
+  const linkedTo = (v) => (typeof v.linkedConnectionId === 'string' && v.linkedConnectionId ? v.linkedConnectionId : null);
+  const tied = after.linkedConnectionName && (linkedTo(after)
+    ? linkedTo(after) !== linkedTo(before)
+    : after.linkedConnectionName !== before.linkedConnectionName);
+  if (tied) {
     recordEvent('vow.linked', { ...base, ref: { ...base.ref, conn: after.linkedConnectionId ?? null },
       d: { name: after.name, connectionName: after.linkedConnectionName } });
   }

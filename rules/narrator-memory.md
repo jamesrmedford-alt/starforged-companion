@@ -366,7 +366,10 @@ layers. This file is the never-break list.
    ship** — a move's, a paced line's, a round's, an oracle follow-up's
    narration, and the inciting incident's starting position (the premise's);
    a bookend's, a clock vignette's and the oath scene's ship/position are
-   dropped and logged. A fight begun while the ship's line reads "docked at"
+   dropped and logged. And of a beat of play's, only a change whose basis
+   binds — the player's line, the dice, the GM, the premise: the narrator's
+   colour never moves her; one that restates where she already is keeps the
+   record, so "docked at" is not read as "near" (issue #388 #2, D17 amended). A fight begun while the ship's line reads "docked at"
    tells the beat that opens its scene NOT SO [place]; no code infers
    undocking (D9 — a crew may fight on the dock). A line walks the
    characters to another recorded place only when the beat's frame names

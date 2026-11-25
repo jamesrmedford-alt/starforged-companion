@@ -111,7 +111,14 @@ export function applySidecar(sidecar, ctx) {
     // here — a scene travels, and that strike is that place's
     // (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half).
     const here = { place: sceneLocation };
-    const basis = basisOf(t.from, fact, subjectRef);
+    // A hidden plan's truth the narration revealed (`revealOf`, the code's
+    // marker — secrets.js revealedTruthsOf) is the table's, decided when its
+    // plan was made: it binds as the GM's, never as the narrator's colour.
+    // Held as colour, the fifth live long haul's revealed vow truth was then
+    // filed to Lore at its scene's end — the run's one violation (issue #388
+    // #6, REVEALED-PLAN-TRUTH-AS-COLOUR).
+    const revealed = typeof t.revealOf === 'string' && /^[\w-]{1,64}$/.test(t.revealOf);
+    const basis = revealed ? 'gm' : basisOf(t.from, fact, subjectRef);
     const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact, here)
       ?? findEquivalentTruth(storedTruths, subject, fact, here);
     if (dupe) {

@@ -249,9 +249,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `recordedStop` — `readRecord({ session })` of the session
   `lastSessionToTell` names, else of the newest earlier session the record
   says a table began, as a summary never made leaves it to the record): its
-  last scene's place (`scene.started`'s, else
+  last scene the characters played — a closing or spotlight cutaway
+  (`scene.started` `cause: 'cutaway'`) passed over (issue #388 #1,
+  OPENING-TOLD-FROM-THE-CUTAWAY) — its place (`scene.started`'s, else
   the session's end's), who was with them at the end (its last frame's
-  `present`), what binds there (the truths its beats established — the
+  `present`, the PCs left out), what binds there (the truths its beats established — the
   player's, the dice's, the GM's, the premise's, labelled; never colour), the
   question still open (the last frame's, unanswered) and what play let go,
   the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
@@ -321,7 +323,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   only the plot ("No turn of the plot happens in it: the first move is the
   players'"). The MATERIAL says a result's words are the oracle's, never the
   prose's (a record's name or place is written as it is): told "Never the
-  words themselves", six results were written as their own word.
+  words themselves", six results were written as their own word. The
+  narration is held to it before it posts ([material], a certain check —
+  see the checks below; issue #388 #11). An opening's and a closing's
+  MATERIAL also say what the characters hold, owe and have said stays as the
+  records have it (issue #388 #12); the spotlight's does not.
   **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
   pressed the d100 is rolled for the Begin card as before, and — when a
   narration will follow (`narrationEnabled`, a keyed GM connected, the
@@ -1257,12 +1263,18 @@ draft.
 The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
 block is applied) and held to its lines by class: **certain** —
 [apparatus] (an outcome's name, a sheet number, a two-word move's name
-outside the closing offer line) and [match] (the word); **floor** — [vow]
+outside the closing offer line), [match] (the word) and, on a session
+set-piece (`narrateSessionVignette`, mode `set-piece`), [material] (a rolled
+word written as a label, as a name no record holds, or a result's words
+together — `materialViolations`, issue #388 #11; label
+`narrateSessionVignette:reask`); **floor** — [vow]
 (a word of the vow's name, or what is still not known) and [chosen]
 (logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
 in the prose ([premise] by its refusal's code — "starts on the cuts" under
 a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
-[oracle], [state]) sends one Haiku call (`api-proxy.js`, label
+[oracle], [state]; [unsaid] by speech words, on a move pressed on a card —
+its line the card's `madeLine`, shown as "THE MOVE — pressed on a card; the
+player wrote no line", issue #388 #10) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
 consistency check on). A failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
@@ -1677,13 +1689,21 @@ Starship" took the facts, the scene's place and relevance, issue #345 AA06), shi
 `position` stateChanges routed to the §20 ship record — a beat of play's only
 (overhaul 2 §6.3: a move's, a paced line's, a round's, an oracle follow-up's,
 and the inciting incident's starting position; a bookend's, a clock
-vignette's and the oath scene's are dropped and logged) — `applySceneFrame`
+vignette's and the oath scene's are dropped and logged), and of those only a
+change whose basis binds (`factBasis` with `about: ['ship']` — the line's, the
+dice's, the GM's, the premise's; the narrator's colour never moves her), and
+one that restates where she already is (the same settlement or location, its
+words all in the record's line — `restatesWhereSheIs`) keeps the record, so
+"docked at" is not turned into "near" (issue #388 #2, D17 amended) — `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
 play — it sets no question and changes none); every beat's frame is first
 read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
 `ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
-line, a round's lines, the oracle's typed question — and `ctx.mode`): a
+line, a round's lines, the oracle's typed question, and `rolled` — whether a
+rolled move decided the beat, whose `result` facts then bind as the dice's
+(`rolledMove`; a move with no roll decides nothing — issue #388 #5) — and
+`ctx.mode`): a
 question the frame does not already hold stands only when the mode may set
 one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
 and the command vehicle's names are no evidence — `namesNoEvidence`) and it

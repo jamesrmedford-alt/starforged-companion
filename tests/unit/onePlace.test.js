@@ -88,6 +88,7 @@ describe('overhaul 2 §6 — one place, on the table', () => {
       { moveId: null, matchedEntityIds: [], narrationId: `nar-${Math.random().toString(36).slice(2, 8)}`, ...ctx }));
   }
   const shipTo = (value) => ({ newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value }] });
+  const shipLine = (value) => ({ newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value, from: 'line' }] });
 
   it('a34→a41: docked, then a fight begun — [place] is told; the frame says the cockpit, the Ship line is the store\'s', async () => {
     table.replies = reply({ location: 'Bleakhold Station docking ring, at the Kobayashi IV\'s lock' });
@@ -127,8 +128,11 @@ describe('overhaul 2 §6 — one place, on the table', () => {
       await applyBlock(shipTo('Hollow Spire'), ctx);
       expect(ship.flags[MODULE_ID].ship.position, ctx.mode).toMatchObject(DOCKED);
     }
-    // A beat of play's does: a paced line's narration.
-    await applyBlock(shipTo('Hollow Spire'), { mode: 'paced_narrative' });
+    // A beat of play's colour does not (issue #388 #2: the fifth live long haul's a25 moved her on no tag)…
+    await applyBlock(shipTo('Hollow Spire'), { mode: 'paced_narrative', ground: { line: 'I wait at the lock.', decided: '' } });
+    expect(ship.flags[MODULE_ID].ship.position, 'colour').toMatchObject(DOCKED);
+    // …its player's line does: a paced line's narration, the place in the line.
+    await applyBlock(shipLine('Hollow Spire'), { mode: 'paced_narrative', ground: { line: 'I take the Kobayashi IV across to Hollow Spire.', decided: '' } });
     expect(ship.flags[MODULE_ID].ship.position).toMatchObject({ nearestSettlementId: HOLLOW });
   }, 60_000);
 

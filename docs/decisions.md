@@ -6,6 +6,22 @@ rejected.
 
 ---
 
+## The fifth live long haul's seams, mended (issue #388 — 2026-11-25)
+
+**Decision** (the maintainer: "fix the recommended items in 388 and any others you'd currently recommend"; each taken at the review's recommendation, and each the maintainer's to take back). Where a piece hands its work to the next:
+
+- **The opening reads the last scene played; the closing shows no one who was there.** A cutaway (a closing or a spotlight, `cause: 'cutaway'`) is no scene the characters played, and "WHERE THE LAST SESSION STOPPED" is read past it. The closing never cuts away to someone in the last frame's `present`; with everyone present it shows a place.
+- **D17, amended: the narration's colour never moves the ship.** A narration's ship-position change is applied only where its basis binds — the player's line, the dice, the GM, the premise (the opening incident's own) — and a change that restates where she already is keeps the record, so "docked at" is no longer read as "near". The ship's record stays the moves', the GM's and the player's.
+- **A rolled move's narration binds its result; a move with no roll decides nothing** (amends overhaul 2 §5's shared-word floor for `result`). The word test stays for an oracle's answer and a filled clock. A revealed plan's truth (`revealOf`) is the GM's — the hidden plan is the table's prepared truth — and binds.
+- **Reader rule 4, refined** (amends issue #384's "a plea for trust is talk"): asking for trust, friendship or a tie is talk *to a connection* while the relationship is being built; to someone who is not yet a connection it is Make a Connection's trigger. A reading of no move may name the move the line set about (`blocked`), and the gate's refusal of it is told as a named move's is.
+- **Set-pieces are held to their MATERIAL in code:** a certain [material] check — a rolled word as a label, a name no record holds, or a result's words together — asked again once, failing open. The word in an ordinary sentence is the prose's: a certain check flags only what is plainly the oracle's word. An opening and a closing leave what the characters hold, owe and have said as the records have it; the spotlight, a turn of the plot, is not bound so.
+- **The player's words are the player's.** A move pressed on a card or a panel carries `madeLine`: its line is the card's words, never the character's, and its narration is told so with NOT SO [unsaid], a judge line tripped by speech words. An offer's Roll carries `fromOffer`, and its narration goes on from the offer's, which already told the line. Both ride the resolution's `inputMethod` ("button", "offer"), the field a burn's and an improve's re-narration already use.
+- **A focus is the player's words; a closed vow is no quest.** End a Session notes what is typed, and says when it is the name of a vow already fulfilled or forsaken while End again can note another. Begin marks it so, and the narrator is not told it as the session's quest. Nothing else is read from a focus's text.
+
+**Why:** the fifth live long haul (issue #388) reached every beat, and what a player would complain of was at these seams. The openings were told the closing cutaway's company. The closing showed the NPC standing beside the character. The narration's colour moved the ship, so the record and the fiction disagreed from the arrival on. A result bound by an accident of words. The revealed plan was filed as colour. A move the reader declined went untold. A plea to a stranger was read as talk.
+
+**Rejected:** *a lexical rule for the ship's position* (overhaul 2 D5's reason holds: a line names places for other reasons); *flagging every rolled word in a set-piece* — "a vial of her blood" for "Surrender Blood" is the prose's own reading, and a check that re-asks it would flatten the scenes; *refusing a closed-vow focus at End* — the focus is the player's words, and the momentum is for noting one.
+
 ## One reader reads every line: the switch, made on its measure (overhaul 1, issue #384 — 2026-11-25)
 
 **Decision** (taken on the second measure under the maintainer's standing "go with your recommendation when in doubt", as the design's section 8.2 allows, and confirmed by the maintainer before the switch was built): the two readers — the pacing pre-classifier, then the move interpreter — are replaced by one call that reads each typed line. Its decisions D1–D16 stand as taken (the entry "Overhauls 1 and 4 — one reader, and moves as contracts" below).

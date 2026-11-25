@@ -93,13 +93,13 @@ export const READER_CATALOGUE = Object.freeze([
   ]),
   group("CONNECTION", [
     entry("make_a_connection", "Make a Connection", {
-        ruling: "Not for someone who is already the character's connection: the SITUATION lists them.",
+        ruling: "Not for someone who is already the character's connection: the SITUATION lists them. With anyone else, asking to have them as a contact — someone to come back to, who counts on you in turn — is this (rule 4).",
       }),
     entry("develop_your_relationship", "Develop Your Relationship", {
       list: ["swearing a vow to undertake a perilous quest in their service", "completing a quest to their benefit",
         "leveraging their help in desperate circumstances", "giving them something of worth", "sharing a profound moment",
         "standing with them against hardship", "overcoming a test of your relationship"],
-      ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4). A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
+      ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking a connection for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4); asking it of someone not yet a connection is Make a Connection. A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
     }),
     entry("test_your_relationship", "Test Your Relationship"),
     entry("forge_a_bond", "Forge a Bond", {

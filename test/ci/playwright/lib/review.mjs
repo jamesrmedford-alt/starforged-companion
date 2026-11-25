@@ -689,12 +689,17 @@ function recordSizesResult(r) {
 
 /**
  * Lines the narrator spoke for the player's character: quoted speech in a
- * sentence that gives it to "you" ("…," you say). A count to start the
- * reading from, with each sentence quoted.
+ * sentence that gives it to "you" ("…," you say), or speech told for them —
+ * "You tell Tamsin plainly that she is the one person…", "you promise her
+ * that…", "you ask him why…" (issue #388 #10: the fifth live run's a82, a
+ * button's Develop, spoke so for Mira, and the count, reading quotes alone,
+ * found 0). Not what "you" tell yourself. A count to start the reading from,
+ * with each sentence quoted.
  */
 export function spokenFor(messages = []) {
   const out = [];
   const VERBS = "say|said|tell|told|ask|asked|answer|answered|reply|replied|murmur|mutter|whisper|call|shout|add|admit|explain|snap|growl|hear yourself";
+  const told = /\byou\s+(?:tell|told|promise|promised|assure|assured|admit|admitted|confess|confessed|swear|swore|explain|explained|ask|asked|warn|warned|insist|insisted)\s+(?!yourself\b)(?:[^.!?"“]{0,40}?\s)?(?:that|whether|if|why|who|what|how|where|when)\b/i;
   // The speech is given to "you": «"…," you say», or «You answer the hatch.
   // "…"» — the verb outside the quote. «"Careful what you tell her," the
   // voice says» is somebody else speaking.
@@ -706,6 +711,7 @@ export function spokenFor(messages = []) {
     const sentences = sentencesOf(m.text);
     sentences.forEach((s, i) => {
       if (quote.test(s) && tagged.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
+      else if (!quote.test(s) && told.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
       else if (leads.test(s) && /^\s*["“]/.test(sentences[i + 1] ?? "") && !new RegExp(`["”][,.]?\\s+(?!you\\b)\\S+(?:\\s+\\S+)?\\s+(?:says|said|asks|answers|replies)\\b`, "i").test(sentences[i + 1])) {
         out.push({ step: m.step, scene: m.vignette ?? null, sentence: `${s} ${sentences[i + 1]}`.slice(0, 240) });
       }

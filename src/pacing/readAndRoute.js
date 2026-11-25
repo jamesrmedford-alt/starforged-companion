@@ -79,7 +79,9 @@ export function isDense(density) {
 /**
  * Turn a reading into roll, offer or narrate — the first row that applies:
  *
- *   1. No move → narrate.
+ *   1. No move → narrate. A move the reader names as `blocked` (the line set
+ *      about it, NOT NOW names it) is asked of the gate first: refused, it is
+ *      row 2's refusal, told; refused with an `instead`, that move is read on.
  *   2. The gate refuses the move: its `instead` (Strike → Clash in a bad
  *      spot) is read on from row 3; with none, narrate — what was refused
  *      rides as `unmade` for the narration (D15).
@@ -118,11 +120,26 @@ export function isDense(density) {
 export function routeReading(reading, ctx = {}) {
   const result = (route, why, extra = {}) => ({ route, why, moveId: null, offeredMove: null, unmade: null, remapped: null, dial: null, ...extra });
   let moveId = reading?.moveId && MOVES[reading.moveId] ? reading.moveId : null;
-  if (!moveId) return result("narrate", "no move");
+  // 1. No move — but a move the line set about that NOT NOW names (the
+  // reader's `blocked`) is asked of the gate, so its refusal is told as row
+  // 2's is (issue #388 #7: a named Hearten at full spirit got narration and
+  // no word of why). The gate saying it can be made leaves the reader's no-move.
+  const blocked = !moveId && reading?.blocked && MOVES[reading.blocked] ? reading.blocked : null;
+  if (!moveId && !blocked) return result("narrate", "no move");
+  let remapped = null;
+  if (blocked) {
+    const verdict = typeof ctx.check === "function" ? ctx.check(blocked) : null;
+    if (!verdict || verdict.ok !== false) return result("narrate", "no move");
+    if (!(verdict.instead && MOVES[verdict.instead])) {
+      return result("narrate", `not now: ${verdict.why}`, { unmade: { moveId: blocked, why: verdict.why, ...(verdict.verdict ? { verdict: verdict.verdict } : {}) } });
+    }
+    // Its intent's move that can be made (Strike → Enter the Fray) is read on, as row 2's `instead` is.
+    remapped = { from: blocked, why: verdict.why };
+    moveId = verdict.instead;
+  }
 
   // 2. The gate.
-  let remapped = null;
-  const gate = typeof ctx.check === "function" ? ctx.check(moveId) : null;
+  const gate = !remapped && typeof ctx.check === "function" ? ctx.check(moveId) : null;
   if (gate && gate.ok === false) {
     if (gate.instead && MOVES[gate.instead]) {
       remapped = { from: moveId, why: gate.why };

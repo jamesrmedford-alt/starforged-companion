@@ -197,7 +197,14 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
       at = opened ? (placeOf(begun.get(beat.scene)?.where?.location) ?? place) : place;
       const why = opened ? String(begun.get(beat.scene)?.what ?? '').trim() : '';
       const head = why && at ? `${why} (${at})` : (why || at);
-      if (opened) beats.push(`<li><em>A new scene${head ? ` — ${escapeHtml(head)}` : ''}.</em></li>`);
+      // A cutaway (a closing's or a spotlight's scene) is somewhere the
+      // characters were not: it is headed so, never as a scene they played
+      // (issue #388 #1 — the fifth live run's log read "A new scene — Hollow
+      // Spire dock-level washroom" between two of Mira's).
+      const cutaway = opened && begun.get(beat.scene)?.cause === 'cutaway';
+      if (opened) beats.push(cutaway
+        ? `<li><em>A cutaway${at ? ` — ${escapeHtml(at)}` : ''}.</em></li>`
+        : `<li><em>A new scene${head ? ` — ${escapeHtml(head)}` : ''}.</em></li>`);
     } else if (place && at && !samePlace(place, at)) {
       beats.push(`<li><em>The scene moves — ${escapeHtml(place)}.</em></li>`);
     }
