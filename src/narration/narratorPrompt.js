@@ -3318,7 +3318,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   // the offer not yet made, the sheet unchanged, no apparatus — a refused
   // move's premise told as not so, and what the sheet says of a person or a
   // fight the line touches (overhaul 4).
-  const block = formatObligationsBlock(obligationsFor({
+  const block = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
     situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [],
   }));
@@ -3401,7 +3401,7 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // beat touches ([state], TRACK-TOLD-AS-A-BOND); the sheet and the
   // apparatus. The STAKES, PRICE, FIGHT, COST and VOW blocks it replaces
   // kept their words in it.
-  const obligations = formatObligationsBlock(obligationsFor({
+  const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
     cast: opts?.cast ?? [], speaker,
   }));

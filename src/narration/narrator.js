@@ -37,7 +37,8 @@ import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParse
 import { markSeedsUsed } from '../session/sceneSeeds.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
-import { logNarratorUsage } from '../pacing/telemetry.js';
+import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
+import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
@@ -1367,6 +1368,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
     campaignState, settings, character, '', extras,
   );
   const touched = await beatSituation(character?.actorId ?? null, campaignState);
+  // One list for the block and its checks (overhaul 4, slice 4).
+  const moveObligations = obligationsFor({ mode: 'move', resolution, situation: touched.situation,
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null });
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1376,7 +1380,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
     ),
-    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast },
+    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast, obligations: moveObligations },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1393,14 +1397,23 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
 
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateResolution',
-      apiKey,
-      systemPrompt,
-      userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-    });
+    // Checked against its obligations before it posts (overhaul 4, slice 4 —
+    // contracts/checks.js): a failure is asked once more, with the draft and
+    // the line it broke; only the reply returned has its fact block applied.
+    const kept = await narrateKeepingObligations(
+      (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
+        label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
+        apiKey,
+        systemPrompt,
+        userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      })),
+      moveObligations,
+      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
+        onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
+    );
+    const raw = kept.raw;
     if (xCard.interrupted('narrateResolution')) {
       // The reply is discarded; the plans the move asked for are still owed
       // (issue #364 XCARD-PAUSED-NARRATION-PLAN-REQUESTS).
@@ -4920,7 +4933,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     // which only logged it: the line sat in chat, narrated by nothing and told
     // to nobody, as a failed call's line did before AB21 (issue #347 residual
     // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
-    let suggestedMove, extras, systemPrompt, userMessage;
+    let suggestedMove, extras, systemPrompt, userMessage, pacedObligations = [];
     try {
       await ensureSceneStarted(campaignState, 'first_narration_paced');
 
@@ -4945,10 +4958,13 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
       const sentenceTarget = settings.narrationLength ?? 3;
       const touched = await beatSituation(character?.actorId ?? null, campaignState);
+      // One list for the block and its checks (overhaul 4, slice 4).
+      pacedObligations = obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast });
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
         { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
-          situation: touched.situation, cast: touched.cast },
+          situation: touched.situation, cast: touched.cast, obligations: pacedObligations },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
@@ -4957,12 +4973,20 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     }
 
     try {
-      const raw = await callNarratorAPI({
-        label: 'narratePacedInput',
-        apiKey, systemPrompt, userMessage,
-        model:     settings.narrationModel,
-        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-      });
+      // Checked against its obligations before it posts (overhaul 4, slice 4).
+      const kept = await narrateKeepingObligations(
+        (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
+          label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
+          apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+          model:     settings.narrationModel,
+          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+        })),
+        pacedObligations,
+        { apiKey, judge: obligationJudgeOn(),
+          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
+          onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
+      );
+      const raw = kept.raw;
       if (xCard.interrupted('narratePacedInput')) {
         // Discarded because the X-Card was played while it was written: said
         // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
@@ -6118,6 +6142,52 @@ async function ensureSceneStarted(campaignState, reason) {
     return;
   }
   await startScene(campaignState, { reason });
+}
+
+/**
+ * Whether a narration's tripped obligation lines go to the judge (overhaul 4,
+ * slice 4, D9): where the post-narration audit runs — fact continuity on, its
+ * consistency check on (default on) — and on a GM: a player's own key gets the
+ * certain and floor checks only, as the audit is the canonical GM's.
+ *
+ * @returns {boolean}
+ */
+function obligationJudgeOn() {
+  if (globalThis.game?.user?.isGM !== true) return false;
+  try {
+    return factContinuityEnabled() && (game.settings.get(MODULE_ID, 'factContinuity.consistencyCheck') ?? true) !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * A narration's obligation verdicts, a row on the Consistency Check
+ * telemetry page (overhaul 4, slice 4): each judged, re-asked or still-broken
+ * line, by tag and class — what the next live run counts. GM-gated and
+ * best-effort (logConsistencyDecision). Never throws.
+ *
+ * @param {"move"|"paced"} mode
+ * @param {{ verdicts: Array<Object>, reasked: boolean, stillBroken?: Array<Object> }} v
+ * @param {Object|null} campaignState
+ * @param {string|null} narrationId
+ */
+function logObligationVerdict(mode, v, campaignState, narrationId) {
+  try {
+    const rows = [
+      ...(v?.verdicts ?? []).map(x => ({ kind: 'obligation', mode, ...x })),
+      ...(v?.stillBroken ?? []).map(x => ({ kind: 'obligation', mode, action: 'posted-broken', ...x })),
+    ];
+    if (!rows.length) return;
+    console.info(`${MODULE_ID} | obligations (${mode}): ${rows.map(r => `[${r.tag ?? r.tripped?.join(',') ?? '?'}] ${r.class ?? ''} ${r.action ?? (r.judged ? 'judged' : '')}`.trim()).join('; ')}${v?.reasked ? ' — re-asked' : ''}.`);
+    void logConsistencyDecision({
+      sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
+      sessionNumber: campaignState?.sessionNumber ?? null, prose: `[obligations ${mode}${narrationId ? ` ${narrationId}` : ''}]`,
+      contradictions: rows, dispatched: false,
+    })?.catch?.(() => {});
+  } catch (err) {
+    console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
+  }
 }
 
 /** Whether fact continuity is switched on — on when the setting cannot be read (unit tests, very early init). */

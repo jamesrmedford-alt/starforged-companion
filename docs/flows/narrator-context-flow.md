@@ -1171,6 +1171,28 @@ Repair's device: `readerSettled`) only where no reader read the line as the
 move. An unknown is never a refusal: a meter or a list not read holds. Sojourn
 is held to the party as a whole, not one meter.
 
+**The narration is checked against its block before it posts** (overhaul 4,
+slice 4 — `moves/contracts/checks.js`, D9): `narrateKeepingObligations`
+wraps the move's (`narrateResolution` — so a held result's and an upgrade's
+re-narration too) and the paced line's (`narratePacedInput`) narrator call.
+The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
+block is applied) and held to its lines by class: **certain** —
+[apparatus] (an outcome's name, a sheet number, a two-word move's name
+outside the closing offer line) and [match] (the word); **floor** — [vow]
+(a word of the vow's name, or what is still not known) and [chosen]
+(logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
+in the prose ([premise] by its refusal's code — "starts on the cuts" under
+a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
+[oracle], [state]) sends one Haiku call (`api-proxy.js`, label
+`obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
+consistency check on). A failure is asked once more — the same prompt plus
+YOUR DRAFT — NOT POSTED and the line it broke (labels
+`narrateResolution:reask` / `narratePacedInput:reask`); the second reply is
+held to the certain checks only and posted whatever it says. At most one
+judge call and one re-ask a narration. Each verdict is a row on the
+Consistency Check telemetry page (`kind: "obligation"`). The round's and the
+oracle follow-up's narrations carry the block but are not yet checked.
+
 **The refusal is told** — in the user message, never the system prompt
 (`rules/narrator-memory.md` invariant 7b): the paced message ends with a
 **WHAT THIS NARRATION MUST TELL, AND MUST NOT** block
