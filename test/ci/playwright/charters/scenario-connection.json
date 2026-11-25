@@ -1,7 +1,7 @@
 {
   "name": "scenario-connection",
   "flow": "a connection: met and made under a part of her name, two favours done for her, a bond forged",
-  "description": "A scenario of the suite (suites/scenarios.json): one relationship from first meeting to a bond, on the road the long haul's third live run lost (beats 2, 3, 18, 22, 23: the card for Tamsin Vey was proposed as \"Tamsin\" and never made). The player names her in full and the narrator writes \"Tamsin\"; the GM's rules confirm the draft under the part of her name (lib/cast.mjs). Two favours done for her are to be at least offered Develop Your Relationship (known-issues FAVOUR-TO-A-CONNECTION-READ-AS-TALK); then the bond. Make a Connection's and Forge a Bond's rolls are scripted.",
+  "description": "A scenario of the suite (suites/scenarios.json): one relationship from first meeting to a bond, on the road the long haul's third live run lost (beats 2, 3, 18, 22, 23: the card for Tamsin Vey was proposed as \"Tamsin\" and never made). The player names her in full and the narrator writes \"Tamsin\"; the GM's rules confirm the draft under the part of her name (lib/cast.mjs), recording her with no bond (\"No one\" on today's card) — and it is Make a Connection that makes her Mira's connection (the fourth live run's GM made her one from the draft, and the roll never came: known-issues CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). The favours and the bond require her to be Mira's connection, whichever road made her one, not the roll (`requires`). Two favours done for her are to be at least offered Develop Your Relationship (known-issues FAVOUR-TO-A-CONNECTION-READ-AS-TALK); then the bond. Make a Connection's and Forge a Bond's rolls are scripted.",
   "caps": {
     "actions": 15,
     "calls": 60,
@@ -74,8 +74,11 @@
     {
       "id": "c3",
       "title": "Develop Your Relationship: a favour for her",
-      "needs": [
-        "c2"
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "tell": "Do something for Tamsin that costs you: in a line of play, bring her something of value — the salvage claim you won off Bleakhold, which she has been chasing for a month. If a card offers a \"Roll …\" button for it, press it; if a card asks which connection, choose her.",
       "check": {
@@ -92,8 +95,11 @@
     {
       "id": "c4",
       "title": "Develop Your Relationship again: a risk for her",
-      "needs": [
-        "c2"
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "tell": "Once more, in a line of play: take a risk on Tamsin's behalf — stand at her stall when the dock boss's collectors come for her, and make them leave. If a card offers a \"Roll …\" button for it, press it; if a card asks which connection, choose her.",
       "check": {
@@ -110,8 +116,11 @@
     {
       "id": "c5",
       "title": "Forge a Bond",
-      "needs": [
-        "c2"
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "tell": "Ask her, in your own words, to stand with you for good — a tie that outlasts this job and the next. If a card asks which connection, choose her.",
       "check": {

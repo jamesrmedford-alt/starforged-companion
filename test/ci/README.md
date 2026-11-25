@@ -233,7 +233,11 @@ real pipeline, and fixed rules — no model — answer what the module asks of
 the GM (the move's confirmation; "Who are you interacting with?"; a draft for
 someone in the charter's cast — under their name, or a whole-word part of it
 that is nobody else's: the third live run's card for Tamsin Vey was proposed
-as "Tamsin"). An **observer** reads the
+as "Tamsin" — confirmed as a person recorded with no bond, "No one" where the
+card offers it, else its Confirm, never a character's button, so that it is
+the player's Make a Connection that makes her the character's connection; a
+rehearsal may ask for the character's button instead, `EXPLORE_DRAFT_HOLDER=pc`,
+the road the fourth live run's GM took). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model. The run is then **reviewed by whoever made it** — the full
 transcript annotated, a scorecard, the action items as an issue, what it cost
@@ -248,6 +252,7 @@ code or rewrites a recording: it writes evidence.
 ./scripts/cloud.sh explore                 # LIVE: real models, real money, up to the caps
 ./scripts/cloud.sh explore --replay playwright/artifacts/explore/<run>   # an earlier run again, no key
 EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse           # the long haul, rehearsed (about 15 minutes)
+EXPLORE_DRAFT_HOLDER=pc EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse   # the fourth live run's road: the draft card makes the connection
 ./scripts/cloud.sh explore --suite scenarios --rehearse   # the short scenarios, one flow each, rehearsed — see below
 ```
 
@@ -271,7 +276,9 @@ mechanics together:
 - **27 beats**, each with a result the observer checks in the world. The
   player is told the beats and which is current; the observer marks a beat
   done and moves on, and a beat not reached in eight actions is
-  `not-exercised`. A beat's `id` is its name for good and `n` where it stands
+  `not-exercised` — as is one that needs of the world what it does not hold
+  when it comes (`requires`: beats 3, 19 and 23 need Tamsin Vey to be the
+  character's connection, whichever road made her one, not beat 2's roll). A beat's `id` is its name for good and `n` where it stands
   now: the expedition, added after the third live run, is `b7a` and stands
   eighth.
 - **An expedition** (beat 8, `b7a`): the character leaves the charted lane

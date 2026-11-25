@@ -408,8 +408,13 @@
       "session": 1,
       "title": "Link the vow to them",
       "needs": [
-        "b1",
-        "b2"
+        "b1"
+      ],
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "tell": "On the card of your vow (\"New vow recorded\") choose Tamsin Vey in its dropdown, then press its Link button.",
       "check": {
@@ -688,8 +693,11 @@
       "n": 19,
       "session": 2,
       "title": "Interruption: the GM renames the connection's card",
-      "needs": [
-        "b2"
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "interruption": "rename",
       "tell": "The table's, not yours: the GM renames a card. Wait.",
@@ -750,8 +758,11 @@
       "n": 23,
       "session": 3,
       "title": "Develop the relationship to a full track; Forge a Bond",
-      "needs": [
-        "b2"
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
       ],
       "tell": "Grow closer to Tamsin, one line each time: do something that costs you or matters to her — give her something of value, take a risk on her behalf, bring her what you have learned about the raids. Each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her.",
       "check": {

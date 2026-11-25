@@ -254,6 +254,21 @@ export function readScreenText(user) {
  * revealed — as a narrator that follows its instructions does, so that a
  * rehearsal walks the reveal (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED).
  * It tells nothing a prompt does not ask for.
+ *
+ * The stand-in readers make the script's move — save one: a Make a Connection
+ * for someone the readers' SITUATION block already lists among the
+ * character's connections is no move, and the line is narrated, as the live
+ * readers read it (the fourth live run, a5–a8). The stand-in used to roll it
+ * all the same, so a rehearsal could never show a connection made by a draft
+ * card rather than by the roll (known-issues
+ * CONNECTION-MADE-BY-CONFIRMING-A-DRAFT); with the GM's rules on that road
+ * (EXPLORE_DRAFT_HOLDER=pc) it does.
+ *
+ * The scripted player keeps to its beats: an entry of a beat the pointer has
+ * not come to waits for it — played early, its line would land in the window
+ * of the beat before (one that cannot be done is given up after its stall,
+ * lib/beats.mjs STALL_ACTIONS), and the beat it was written for would never
+ * see it.
  */
 export function createRollingRehearsal({ charter, forget = false }) {
   const script = charter.rehearsal ?? [];
@@ -271,6 +286,17 @@ export function createRollingRehearsal({ charter, forget = false }) {
   let current = null;          // the entry the table is answering now
   let turn = 0;
   const skipped = [];
+  const sameName = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+  // The character's connections, as the readers' SITUATION block names them
+  // (src/moves/situation.js renderSituation: `- Connections: "Tamsin Vey" (…)`).
+  const connectionsIn = (text) => [...(/^- Connections: (.*)$/m.exec(String(text ?? ""))?.[1] ?? "").matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  /** The connection a scripted Make a Connection asks for that the sheet already holds — by name, or as one cast member — or null. */
+  const connectedAlready = (entry, text) => {
+    if (entry?.move?.id !== "make_a_connection") return null;
+    const target = entry.move.target ?? null;
+    const member = castMemberFor(target, members)?.name ?? null;
+    return connectionsIn(text).find(n => sameName(n, target) || (member && castMemberFor(n, members)?.name === member)) ?? null;
+  };
 
   const base = (reason) => ({ action: "wait", text: "", message: "", button: 0, option: "", window: 0, fields: [], seconds: 0, note: "", reason });
 
@@ -336,6 +362,8 @@ export function createRollingRehearsal({ charter, forget = false }) {
       if (!entry) return { ...base("the rehearsal script is done"), action: "stop" };
       // The pointer has moved past this entry's beat: the beat is over.
       if (entry.beat != null && screen.beat != null && screen.beat > entry.beat) { skipped.push({ at, why: `beat ${entry.beat} was over` }); at += 1; waited = 0; continue; }
+      // …or has not come to it yet: the beat before is still being walked.
+      if (entry.beat != null && screen.beat != null && screen.beat < entry.beat) return { ...base(`waiting for beat ${entry.beat}: beat ${screen.beat} is not over`), seconds: 3 };
       const input = resolve(entry, screen);
       if (input) {
         at += 1; waited = 0;
@@ -420,7 +448,12 @@ export function createRollingRehearsal({ charter, forget = false }) {
     const entry = current ?? {};
 
     if (tool === "take_action") return toolUse(playerInput(user));
+    // A Make a Connection for someone already a connection is no move (the live readers' reading).
+    const connected = connectedAlready(entry, `${system}\n${user}`);
     if (system.includes("pacing pre-classifier")) {
+      if (connected && entry.action === "say") {
+        return text(JSON.stringify({ decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: `rehearsal: ${connected} is already among the connections — there is no connection to make` }));
+      }
       if (entry.offer && entry.action === "say") {
         return text(JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE", suggestedMove: entry.offer.id, sceneChallenge: null, category: entry.offer.category ?? "progress", confidence: 0.9, reasoning: `rehearsal: the script offers this line ${entry.offer.id}` }));
       }
@@ -429,6 +462,7 @@ export function createRollingRehearsal({ charter, forget = false }) {
         : { decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));
     }
     if (system.includes("move interpreter")) {
+      if (connected) return text(JSON.stringify({ moveId: null, noMove: true, rationale: `Rehearsal: ${connected} is already a connection; there is none to make.` }));
       const move = entry.move ?? { id: "face_danger", stat: "wits" };
       return text(JSON.stringify({
         moveId: move.id, moveName: TITLE(move.id), statUsed: move.stat ?? null, statValue: 0,

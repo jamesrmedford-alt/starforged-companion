@@ -77,7 +77,7 @@ import { installRehearsal } from "./lib/rehearsal.mjs";
 import { castCardId, createPointer, classifyLongRun } from "./lib/beats.mjs";
 import { charterProblem } from "./lib/charter.mjs";
 import { scoreLongRun } from "./lib/longrun.mjs";
-import { GM_ANSWERS, startGmRules, reloadGm, cancelEndSession, playXCard, renameConnection } from "./lib/gm.mjs";
+import { GM_ANSWERS, draftHolderFor, startGmRules, reloadGm, cancelEndSession, playXCard, renameConnection } from "./lib/gm.mjs";
 import {
   annotatedTranscript, scorecard, reviewDataOf, questionsOf,
 } from "./lib/review.mjs";
@@ -302,6 +302,10 @@ async function main() {
     assert(Array.isArray(charter.rehearsal) && charter.rehearsal.length, `the ${charter.name} charter has no rehearsal script`);
     installRehearsal({ charter, forget: FORGETFUL });
   }
+  // Whose connection the GM's rules make a cast member's draft: nobody's —
+  // the person recorded with no bond — unless a rehearsal asks for the fourth
+  // live run's road; a replay's run's own (lib/gm.mjs draftHolderFor).
+  const draftHolder = draftHolderFor({ mode: MODE, env: process.env, earlier });
 
   // A charter with beats is a long run (issue #373): its own caps, the table
   // read as data after every action, beats walked by a pointer.
@@ -351,6 +355,7 @@ async function main() {
 
   log(`${charter.name} charter, ${MODE} mode — evidence in ${path.relative(process.cwd(), dir)}`);
   if (MODE === "rehearsal") log(`a rehearsal: the model API is stood in for${FORGETFUL ? " — by a narrator that keeps nothing" : ""}`);
+  if (draftHolder !== "none") log(`the GM's rules confirm a cast member's draft with the player character's button where the card offers one (${MODE === "replay" ? "the replayed run's rule" : "EXPLORE_DRAFT_HOLDER"}): the draft makes the connection, and Make a Connection cannot`);
   if (CALLS) log(`caps: ${caps.actions} actions, ${caps.calls} model calls, ${caps.minutes} minutes, $${caps.usd} — player ${config.player.model}`);
 
   const browser = await chromium.launch();
@@ -412,7 +417,7 @@ async function main() {
       return [...beat, ...(MODE === "rehearsal" ? charter.rehearsalDice ?? [] : [])];
     };
     stopRules = startGmRules(gm, {
-      cast: Object.values(charter.cast ?? {}), pcId: ids.pcId, log,
+      cast: Object.values(charter.cast ?? {}), pcId: ids.pcId, log, draftHolder,
       state: () => ({ armed: armedNow(), lastLine }),
       onAnswer: (a) => {
         accepted.push({ step: stepNow, did: a.did, note: a.note ?? null, ...(a.cast ? { cast: a.cast } : {}) });
@@ -686,6 +691,8 @@ async function main() {
     if (replayable) {
       out.json("replay.json", {
         charter,
+        // The GM's rules as this run had them, for its replay (lib/gm.mjs draftHolderFor).
+        gm:        { draftHolder },
         actions:   actions.filter(a => a.scripted).map(a => a.scripted),
         dice,
         random,
@@ -707,6 +714,7 @@ async function main() {
         : "none — no model was called",
       prices: CALLS ? config.prices : undefined,
       settings: charter.settings ?? {},
+      gm: { draftHolder },
       classification: verdict.classification,
       because: verdict.because,
       note: MODE === "rehearsal"

@@ -8,8 +8,9 @@
 // asking a model for the result.
 //
 // A beat that is not reached is `not-exercised` and the run goes on: eight
-// actions on a beat that makes no progress (`STALL_ACTIONS`), or a beat that
-// needs one that was never done. A beat with several parts (four facts to
+// actions on a beat that makes no progress (`STALL_ACTIONS`), a beat that
+// needs one that was never done, or one that requires of the world what it
+// does not hold when it comes (`requires`). A beat with several parts (four facts to
 // plant, a track to fill) reports its progress, and the eight actions are
 // counted from the last time it moved. Nothing here calls a beat that was
 // never reached a pass.
@@ -149,6 +150,36 @@ const attacks = (moves) => (moves.some(m => m === "strike" || m === "clash") ? [
 
 /** The moves a beat wants rolled: its `wants`, and the moves its check names. */
 export const wantsOf = (beat) => attacks([...new Set([...(beat?.wants ?? []), ...(beat?.check?.moves ?? []), ...(beat?.check?.move ? [beat.check.move] : [])])]);
+
+/**
+ * What of the world a beat needs that is not another beat — `requires`: the
+ * checks of BEAT_CHECKS that must hold when it comes (`{ "type":
+ * "connectionMade", "name": "Tamsin Vey" }`: she is the character's
+ * connection, whichever road made her one). The fourth live run lost beats 3,
+ * 19, 23 and 24 to `needs: ["b2"]`: the GM's rule had made Tamsin a connection
+ * from her draft card, so beat 2's roll never came — while the vow's Link and
+ * a full track were on the table all along (known-issues
+ * CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). One road's miss does not cost the
+ * beats that need only what either road makes. Pure.
+ *
+ * @param {object} beat
+ * @param {ReturnType<typeof beatView>} view — the world as the beat comes
+ * @returns {string[]} each requirement the world does not hold, with what its check sees
+ */
+export function unmetRequirements(beat, view) {
+  const out = [];
+  for (const req of beat?.requires ?? []) {
+    const check = BEAT_CHECKS[req?.type];
+    const result = check ? check(view, req) : { done: false, detail: `no check the observer knows (${req?.type})` };
+    if (!result.done || result.failed) out.push(`${requirementOf(req, view)}, which the world does not hold (${result.detail})`);
+  }
+  return out;
+}
+/** A requirement in words. */
+function requirementOf(req, view) {
+  if (req?.type === "connectionMade") return `${req.name ?? view.cast.connection?.name ?? "the cast's connection"} to be ${view.pc?.name ?? "the character"}'s connection`;
+  return `the world to hold what a ${req?.type} check sees`;
+}
 
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
 const notYet = (detail, progress = 0) => ({ done: false, detail, progress });
@@ -629,7 +660,7 @@ export const BEAT_CHECKS = {
  * The pointer over a charter's beats.
  *
  * @param {Array<{ id: string, n: number, session: number, title: string, tell?: string, check: object,
- *   needs?: string[], stall?: number, interruption?: string }>} beats
+ *   needs?: string[], requires?: object[], stall?: number, interruption?: string }>} beats
  */
 export function createPointer(beats) {
   // `lines` / `linesAtProgress`: the lines of play typed on the beat, and how
@@ -677,6 +708,14 @@ export function createPointer(beats) {
           const missing = (beat.needs ?? []).filter(id => byId(id)?.status !== "done");
           if (missing.length) {
             Object.assign(cur, { status: "not-exercised", doneAt: step, detail: `it needs beat ${missing.map(id => byId(id)?.n ?? id).join(", ")}, which was not done` });
+            changes.push({ ...cur });
+            at += 1;
+            continue;
+          }
+          // What it needs of the world, whichever beat brought it about.
+          const unmet = unmetRequirements(beat, beatView({ ...run, from: step }));
+          if (unmet.length) {
+            Object.assign(cur, { status: "not-exercised", doneAt: step, detail: `it needs ${unmet.join("; and ")}` });
             changes.push({ ...cur });
             at += 1;
             continue;

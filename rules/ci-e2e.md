@@ -467,9 +467,25 @@ hold still, and could not be replayed. The rules: a proposed move's
 confirmation is accepted as proposed; "Who are you interacting with?" is
 answered with the charter's named NPC when the player's line names them and
 the window offers them, else "No specific entity", which is what closing it
-means; a draft for someone in the charter's `cast` is confirmed, as the
-player character's connection, and every other draft is left. Nothing else is
-answered.
+means; a draft for someone in the charter's `cast` is confirmed **as a person
+recorded with no bond on anybody's sheet** — "No one" where the row offers it,
+else the row's own Confirm, never a character's "whose connection?" button —
+so that it is the player's Make a Connection that makes them the character's
+connection; every other draft is left. Nothing else is answered. The fourth
+live run's GM pressed the character's button on the draft instead: a bond
+with no Make a Connection, so beat 2's roll could never come, and every plea
+for a tie was read as Develop Your Relationship (known-issues
+CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). The rule reads both cards: today's,
+whose person's row asks whose connection with a button per character and
+"No one" (`data-actor-id=""`), and the one the moves-as-contracts overhaul
+makes (decision D4), whose Confirm records the person and whose Make a
+Connection button rolls the move (`lib/gm.mjs` `draftConfirmSelectors`). The
+rule the kept runs were made under — the character's button — is kept for
+their replays (`gm.draftHolder` in a run's `replay.json` and `run.json`; a run
+kept from before the rule was written down has none, and replays as it
+pressed), and for a rehearsal that asks for it (`EXPLORE_DRAFT_HOLDER=pc`,
+`draftHolderFor`) to walk the fourth live run's road for nothing while
+today's card still offers it; a live run is refused it.
 
 **A cast member's draft is theirs under a part of the name** (`lib/cast.mjs`,
 `draftToConfirm` in `lib/gm.mjs`). The third live long haul's player named
@@ -704,8 +720,17 @@ and the rules that go with each:
   that is the table's (an interruption): there waiting is right. A
   beat that makes no progress in eight actions (`STALL_ACTIONS`; a beat with
   parts — four facts to plant, a track to fill — counts from the last time it
-  moved), or that `needs` a beat never done, is `not-exercised` and the run
-  goes on. Never call an unreached beat a pass. What happened in the step
+  moved), that `needs` a beat never done, or that `requires` of the world what
+  it does not hold when it comes (`unmetRequirements`: checks of `BEAT_CHECKS`
+  that must hold then), is `not-exercised` and the run goes on. Never call an
+  unreached beat a pass. **Gate a beat on what it needs, not on the road that
+  usually makes it**: the fourth live run lost beats 3, 19, 23 and 24 to
+  `needs: ["b2"]` — the connection had been made from the draft card, so beat
+  2's roll never came, while the vow's Link and a full track were on the table
+  all along. Beats 3, 19 and 23 now require `{ "type": "connectionMade",
+  "name": "Tamsin Vey" }` (she is the character's connection, whichever road
+  made her one); beat 24 still needs beat 23's bond. The re-score asks it the
+  same way (`lib/longrun.mjs` `recheckBeats`). What happened in the step
   that finished a beat belongs to that beat: the next one's window opens after
   it.
 - **Seven decisive rolls are scripted, the rest are real, all are recorded**
@@ -981,7 +1006,15 @@ the suffer card, the victory card and every prompt on the way are reached with
 no key. Its scripted player finds a button by its label, a dropdown by its
 option and a window by its title on the screen its prompt shows; waits a few
 turns for one that is not there yet; skips what the table never offered; and
-drops an entry whose `beat` the pointer has passed. `rehearsalDice` scripts
+drops an entry whose `beat` the pointer has passed — and waits on one whose
+`beat` the pointer has not come to, which played early would land in the
+window of the beat before. Its readers make the script's move save one: a
+Make a Connection for someone the SITUATION block already lists among the
+character's connections is narrated, as the live readers read it (the fourth
+live run, a5–a8); before, the stand-in rolled it all the same, so no rehearsal
+could show a connection made by its draft card. `EXPLORE_DRAFT_HOLDER=pc`
+rehearses that road: beat 2 is not exercised, and beats 3, 19, 23 and 24 are
+walked on the connection the draft made. `rehearsalDice` scripts
 the rolls the six do not, so that a rehearsal walks the same road every time.
 Both stand-ins answer the campaign recap as the module asks for it since its
 source is the session record (issue #382; `citedRecapReply`): JSON
@@ -1013,9 +1046,10 @@ settled before its relay had landed, and a destination that became no place
 for want of map data in the seed's sector. **A charter's rehearsal walks the
 road the last live run walked**: the long haul's stand-in detector proposes
 the cast's connection as "Tamsin" (a script entry's `detects`), so the draft
-confirmed under a part of the name, the vow's Link, the rename and the bond
-are all rehearsed on that card — the exact-name road is the first two kept
-runs' replays. Since the detector is given the player's line (its PLAYER'S
+confirmed under a part of the name (with "No one", and made the character's
+connection by the rehearsal's Make a Connection), the vow's Link, the rename
+and the bond are all rehearsed on that card — the exact-name road is the
+first two kept runs' replays. Since the detector is given the player's line (its PLAYER'S
 LINE block, issue #380), which holds the name in full, `detects` is what the
 stand-in reports for the member it names, and the cast's full name is not
 reported beside it: before that, the first rehearsal on the new module read
@@ -1179,9 +1213,10 @@ actions for a rehearsal). A charter without `beats` is scored as the memory
 goal (`scoreMemory`). A charter with `beats` is a long run: `caps`, `cast`
 (the NPCs the GM's rules know), `facts` with `refusals` and `probes`, `baits`,
 `beats` (`id`, `n`, `session`, `title`, `tell` — what the player is told —
-`check`, and where they apply `needs`, `dice`, `interruption`, `after`,
-`playerTitle`, `wants`, `setupLines`, `lastResort`, `lastResortAfter`), and
-`rehearsalDice`. **A beat's `id` is its name for good and `n` is where it
+`check`, and where they apply `needs`, `requires`, `dice`, `interruption`,
+`after`, `playerTitle`, `wants`, `setupLines`, `lastResort`,
+`lastResortAfter`), and `rehearsalDice`. `requires` names checks the observer
+knows (`charterProblem` refuses any other). **A beat's `id` is its name for good and `n` is where it
 stands now**: a kept run's beats, a fact's `plantedBy` and a beat's `needs`
 are told by the id, so a beat added in the middle takes a new id (`b7a`, the
 expedition, eighth) and the rest are renumbered, not renamed. The tests that

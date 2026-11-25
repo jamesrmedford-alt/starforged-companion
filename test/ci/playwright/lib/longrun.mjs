@@ -7,7 +7,7 @@
 //
 // Pure: marks, messages, actions and requests in; verdicts out.
 
-import { BEAT_CHECKS, beatView } from "./beats.mjs";
+import { BEAT_CHECKS, beatView, unmetRequirements } from "./beats.mjs";
 import { checkMechanics } from "./mechanics.mjs";
 import { scoreLedger, scoreBaits, scoreLeaks } from "./ledger.mjs";
 
@@ -66,7 +66,8 @@ export function scoreLongRun({ charter, beats, marks, messages, actions, request
  * on the pointer as it stood, so a beat is not moved to other steps. Within
  * its window a beat is done at the first step its check says so; a beat the
  * run gave up on is done if the corrected check finds it done, and is still
- * not exercised if not.
+ * not exercised if not. A beat that needs one no longer done, or requires of
+ * the world what it did not hold when it came, is not exercised.
  *
  * @param {{ charter: object, beats: object[], marks: object[], messages: object[], actions: object[] }} run
  * @returns {object[]} the beats' states, re-checked
@@ -89,6 +90,13 @@ export function recheckBeats({ charter, beats, marks, messages, actions }) {
     if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
     const from = index.get(was.enteredAt) ?? 0;
     const to = index.get(was.doneAt) ?? marks.length - 1;
+    // What it needs of the world (`requires`), as the world stood when it came
+    // — as the pointer asks it (lib/beats.mjs createPointer).
+    const unmet = unmetRequirements(beat, beatView({ marks: marks.slice(0, from + 1), messages: upTo(messages, from), actions: upTo(actions, from), charter, from: was.enteredAt }));
+    if (unmet.length) {
+      Object.assign(next, { status: "not-exercised", detail: `it needs ${unmet.join("; and ")}` });
+      continue;
+    }
     let result = null;
     let at = was.doneAt ?? null;
     for (let i = from; i <= to; i++) {

@@ -936,9 +936,12 @@ describe('a rehearsal that rolls', () => {
     expect(input('[m4] Gamemaster: New vow recorded\n     buttons: (1) "⚔ Swear it (roll)"')).toMatchObject({ action: 'click', message: 'm4', button: 1 });
     expect(input('CHAT: empty', 2)).toMatchObject({ action: 'say', text: 'I work the docks.' });
     expect(input(describeScreen(SCREEN), 3)).toMatchObject({ action: 'choose', message: 'm1', button: 1, option: 'Tamsin Vey' });
-    // The optional click is never offered: one wait, then on to the next line.
+    // The optional click is never offered: one wait, then it is given up —
+    // and the next line, beat 5's, waits until beat 5 comes: said while beat 3
+    // is current it would be beat 3's line (the fourth live run, issue #383).
     expect(input('CHAT: empty', 3)).toMatchObject({ action: 'wait' });
-    expect(input('CHAT: empty', 3)).toMatchObject({ action: 'say', text: expect.stringContaining('star-compass') });
+    expect(input('CHAT: empty', 3)).toMatchObject({ action: 'wait', reason: 'waiting for beat 5: beat 3 is not over' });
+    expect(input('CHAT: empty', 5)).toMatchObject({ action: 'say', text: expect.stringContaining('star-compass') });
     expect(r.skipped).toMatchObject([{ why: '"Endure Harm" was never on screen' }]);
   });
 

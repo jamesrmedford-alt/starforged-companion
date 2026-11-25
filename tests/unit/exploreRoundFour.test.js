@@ -1,0 +1,251 @@
+/**
+ * STARFORGED COMPANION
+ * tests/unit/exploreRoundFour.test.js
+ *
+ * What the long haul's fourth live run (2026-11-24,
+ * explorations/long-haul-live-20261124-213912/; issue #383) found wrong with
+ * the runner and the charter — known-issues EXPLORE-ROUND-4-RUNNER and the
+ * runner's and the charter's halves of the rows beside it — each mended and
+ * held here, by the run's own steps where they can be:
+ *
+ *   1. the GM's rules record a cast member's draft with no bond — "No one"
+ *      where the card offers it, else its Confirm, never a character's button
+ *      — so that the player's Make a Connection is what makes her a
+ *      connection, on today's card and on the moves-as-contracts overhaul's;
+ *      the beats
+ *      that need the connection ask the world for it, not for beat 2's roll;
+ *      and the rehearsal can walk either road (CONNECTION-MADE-BY-CONFIRMING-
+ *      A-DRAFT, #1 a and b).
+ */
+
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DRAFT_HOLDERS, draftConfirmSelectors, draftHolderFor, draftToConfirm } from '../../test/ci/playwright/lib/gm.mjs';
+import { castMembers } from '../../test/ci/playwright/lib/cast.mjs';
+import { BEAT_CHECKS, STALL_ACTIONS, beatView, createPointer, unmetRequirements } from '../../test/ci/playwright/lib/beats.mjs';
+import { recheckBeats } from '../../test/ci/playwright/lib/longrun.mjs';
+import { charterProblem } from '../../test/ci/playwright/lib/charter.mjs';
+import { createRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
+
+const ROOT = path.resolve(__dirname, '../..');
+const PLAYWRIGHT = path.join(ROOT, 'test/ci/playwright');
+const readJson = (file) => JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, file), 'utf8'));
+const CHARTER = { name: 'long-haul', ...readJson('charters/long-haul.json') };
+const CONNECTION = { name: 'scenario-connection', ...readJson('charters/scenario-connection.json') };
+const RUN_4_FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261124-213912');
+const RUN_4 = JSON.parse(fs.readFileSync(path.join(RUN_4_FOLDER, 'replay.json'), 'utf8'));
+/** What the fourth run's module was answered at a step, by call kind. */
+const said = (step, kind) => RUN_4.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.response.content.map(c => c.text ?? '').join('')).join('\n');
+
+// The table as the observer records it (lib/table.mjs), in small.
+const PC = { id: 'pc', name: 'Mira Kestrel', health: 5, spirit: 5, supply: 5, momentum: 2, momentumMax: 10, momentumReset: 2, debilities: [], vows: [], bonds: [], legacies: {} };
+const tableOf = (over = {}) => ({
+  session: { active: true, id: 's1', pendingMove: false, xCardActive: false, questFocus: '' }, location: { id: 'L1', name: 'Hollow Spire' },
+  ship: { token: null, tokenAt: null }, pcs: [{ ...PC, ...(over.pc ?? {}) }], connections: [], entityCards: [], tracks: [],
+  legacy: {}, scene: { truths: [] }, helpers: {}, plans: [], ...over, pc: undefined,
+});
+const markOf = (step, table, cards = []) => ({ step, phase: 'session-1', table, cards });
+const moveCard = (id, name, diceLine, shown, extra = {}) => ({ id, move: { resolutionId: id, actorId: 'pc', name, diceLine, shown, burn: null, held: null, ...extra } });
+const narratedAs = (id, resolutionId, moveId, outcome) => ({ id, narration: { resolutionId, moveId, outcome, narrationId: `n-${id}` } });
+const line = (step, text, phase = 'session-1') => ({ id: `l-${step}`, step, phase, text, fromPlayer: true, card: [] });
+
+// Tamsin Vey as the fourth run's GM made her (a4): a card, and a bond Item on Mira's sheet.
+const TAMSIN = { hostId: 'A1', recordId: 'r1', name: 'Tamsin Vey', rank: 'dangerous', bonded: false, active: true, ticks: 0 };
+const BOND = { id: 'i1', name: 'Tamsin Vey', rank: 'dangerous', ticks: 0, completed: false, connectionId: 'r1', lost: false };
+const VOW = { id: 'v1', vowId: 'v1', name: 'Find who is raiding the Cinder Expanse lanes', rank: 'dangerous', ticks: 0, completed: false, linkedConnectionId: null, linkedConnectionName: null };
+/** She is recorded (a card) — and, with `bond`, Mira's connection. */
+const recorded = ({ bond = false, ticks = 0, vows = [VOW] } = {}) => tableOf({
+  connections: [{ ...TAMSIN, ticks }], entityCards: [{ id: 'A1', name: 'Tamsin Vey', entityType: 'connection' }],
+  pc: { vows, bonds: bond ? [{ ...BOND, ticks }] : [] },
+});
+
+// ── 1. a cast member recorded with "No one"; beats gated on the connection ───
+
+describe('the GM\'s rules record a cast member\'s draft with no bond (the fourth live run, a4)', () => {
+  it('the run\'s GM pressed the character\'s button: a bond with no Make a Connection — and every plea for a tie was then Develop Your Relationship', () => {
+    const notes = fs.readFileSync(path.join(RUN_4_FOLDER, 'annotated-transcript.md'), 'utf8');
+    expect(notes).toContain('confirmed the draft for Tamsin Vey, as the player character\'s connection');
+    expect(said('a5', /interpretMove/)).toMatch(/"moveId":\s*"develop_your_relationship"/);
+    expect(RUN_4.expected.beats).toMatchObject({ b2: 'not-exercised', b3: 'not-exercised', b18: 'not-exercised', b22: 'not-exercised', b23: 'not-exercised' });
+  });
+
+  /**
+   * Which of a row's Confirm buttons the selectors press, as the page does
+   * (the first selector any button matches, the first such button): each
+   * button by its `data-actor-id` — an actor's id, "" for "No one", absent
+   * for a plain Confirm.
+   */
+  const pressedOf = (buttons, selectors) => {
+    for (const s of selectors) {
+      const hit = buttons.find(b => (s === '' ? true : s === '[data-actor-id=""]' ? b.actorId === '' : s === ':not([data-actor-id])' ? b.actorId === undefined : s === `[data-actor-id="${b.actorId}"]`));
+      if (hit) return hit.label;
+    }
+    return null;
+  };
+  const CARDS = {
+    // Today's card (renderDraftCardHtml): a person's row asks whose connection — a button per character, and "No one" …
+    'today, with the card\'s character': [{ label: 'Mira Kestrel', actorId: 'P1' }, { label: 'No one', actorId: '' }],
+    // … or, where the card names none, a plain Confirm (the confirming user's own character's) and "No one".
+    'today, with no character on the card': [{ label: 'Confirm' }, { label: 'No one', actorId: '' }],
+    // The moves-as-contracts overhaul's card (decision D4): its Confirm records the person; Make a Connection rolls the move.
+    'the overhaul\'s card': [{ label: 'Confirm' }],
+    'a place or a ship': [{ label: 'Confirm' }],
+    'a row that offers only a character\'s button': [{ label: 'Mira Kestrel', actorId: 'P1' }],
+  };
+
+  it('records the person with no bond: "No one" where the row offers it, else its own Confirm — never a character\'s button', () => {
+    expect(DRAFT_HOLDERS).toEqual(['none', 'pc']);
+    const rule = draftConfirmSelectors({ pcId: 'P1' });
+    expect(rule).toEqual(['[data-actor-id=""]', ':not([data-actor-id])']);
+    expect(Object.fromEntries(Object.entries(CARDS).map(([card, buttons]) => [card, pressedOf(buttons, rule)]))).toEqual({
+      'today, with the card\'s character': 'No one',
+      'today, with no character on the card': 'No one',
+      'the overhaul\'s card': 'Confirm',
+      'a place or a ship': 'Confirm',
+      'a row that offers only a character\'s button': null,
+    });
+    // The rule the kept runs were made under, kept for their replays: the character's button, else the first Confirm.
+    const before = draftConfirmSelectors({ pcId: 'P1', holder: 'pc' });
+    expect(before).toEqual(['[data-actor-id="P1"]', '']);
+    expect(pressedOf(CARDS['today, with the card\'s character'], before)).toBe('Mira Kestrel');
+    expect(pressedOf(CARDS['the overhaul\'s card'], before), 'no character\'s button on that card: its Confirm').toBe('Confirm');
+    // Which draft is confirmed is unchanged: the cast member's, once.
+    const members = castMembers(CHARTER.cast);
+    expect(draftToConfirm([{ messageId: 'm', index: 0, name: 'Tamsin Vey', type: 'connection' }], members)).toMatchObject({ member: { name: 'Tamsin Vey' }, exact: true });
+  });
+
+  it('the module\'s draft card marks its buttons as the rule reads them: "No one" by an empty actor id, a character\'s by theirs', () => {
+    // src/entities/entityExtractor.js renderDraftCardHtml (issue #354 P2-16), today's card.
+    const source = fs.readFileSync(path.join(ROOT, 'src/entities/entityExtractor.js'), 'utf8');
+    expect(source).toContain('`<button class="sf-draft-btn sf-draft-confirm sf-draft-no-bond" data-action="sf-draft-confirm" `');
+    expect(source).toContain('data-actor-id="" title="Add them with no connection on anyone\'s sheet">No one</button>');
+    expect(source).toContain('`data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`');
+    expect(source).toContain('`data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>`');
+  });
+
+  it('a run records her with no bond; a rehearsal may ask for the fourth run\'s road; a replay plays under its own run\'s rule', () => {
+    expect(draftHolderFor({ mode: 'live', env: {} })).toBe('none');
+    expect(draftHolderFor({ mode: 'rehearsal', env: {} })).toBe('none');
+    expect(draftHolderFor({ mode: 'rehearsal', env: { EXPLORE_DRAFT_HOLDER: 'pc' } })).toBe('pc');
+    expect(draftHolderFor({ mode: 'rehearsal', env: { EXPLORE_DRAFT_HOLDER: ' PC ' } })).toBe('pc');
+    expect(() => draftHolderFor({ mode: 'rehearsal', env: { EXPLORE_DRAFT_HOLDER: 'tamsin' } })).toThrow(/EXPLORE_DRAFT_HOLDER is one of none, pc/);
+    expect(() => draftHolderFor({ mode: 'live', env: { EXPLORE_DRAFT_HOLDER: 'pc' } }), 'a live run never presses a character\'s button').toThrow(/is for a rehearsal: a live run's GM records a cast member with no bond/);
+    expect(draftHolderFor({ mode: 'replay', earlier: { gm: { draftHolder: 'none' } } })).toBe('none');
+    expect(draftHolderFor({ mode: 'replay', earlier: { gm: { draftHolder: 'none' } }, env: { EXPLORE_DRAFT_HOLDER: 'pc' } }), 'not the environment\'s').toBe('none');
+    // The kept runs were made before the rule was written down: they replay as they were played.
+    expect(RUN_4.gm).toBeUndefined();
+    expect(draftHolderFor({ mode: 'replay', earlier: RUN_4 })).toBe('pc');
+  });
+});
+
+describe('the beats that need the connection ask the world for it, not for beat 2\'s roll (#1 b)', () => {
+  const b2 = CHARTER.beats.find(b => b.id === 'b2');
+  const b3 = CHARTER.beats.find(b => b.id === 'b3');
+  const REQUIRES = [{ type: 'connectionMade', name: 'Tamsin Vey' }];
+
+  it('beats 3, 19 and 23 require her to be the character\'s connection — whichever road made her one; beat 24 needs beat 23\'s bond', () => {
+    for (const id of ['b3', 'b18', 'b22']) {
+      const beat = CHARTER.beats.find(b => b.id === id);
+      expect(beat.requires, id).toEqual(REQUIRES);
+      expect(beat.needs ?? [], id).not.toContain('b2');
+    }
+    expect(b3.needs).toEqual(['b1']);
+    expect(CHARTER.beats.find(b => b.id === 'b23').needs).toEqual(['b22']);
+    expect(CHARTER.beats.filter(b => (b.needs ?? []).includes('b2')).map(b => b.id), 'nothing waits on beat 2\'s roll').toEqual([]);
+    // Beat 2 itself still wants the roll: its check is the kept runs' own.
+    expect(b2.check).toEqual({ type: 'connectionMade', name: 'Tamsin Vey', move: 'make_a_connection' });
+    expect(charterProblem(CHARTER)).toBeNull();
+  });
+
+  it('the connection scenario likewise: its favours and its bond need her made, not the roll that should make her', () => {
+    for (const id of ['c3', 'c4', 'c5']) {
+      const beat = CONNECTION.beats.find(b => b.id === id);
+      expect(beat.requires, id).toEqual(REQUIRES);
+      expect(beat.needs ?? [], id).not.toContain('c2');
+    }
+    expect(CONNECTION.beats.find(b => b.id === 'c2').check).toEqual({ type: 'connectionMade', name: 'Tamsin Vey', move: 'make_a_connection' });
+    expect(charterProblem(CONNECTION)).toBeNull();
+  });
+
+  it('a charter may require only what a check the observer knows can see', () => {
+    const odd = { ...CONNECTION, beats: CONNECTION.beats.map(b => (b.id === 'c3' ? { ...b, requires: [{ type: 'friendship' }] } : b)) };
+    expect(charterProblem(odd)).toBe('a beat requires of the world what no check the observer knows can see (c3 requires what a "friendship" check would see)');
+    expect(BEAT_CHECKS.connectionMade).toBeTypeOf('function');
+  });
+
+  /** Beats 2 and 3 walked over the marks: beat 2 left to stall, then beat 3 (its need of beat 1 set aside: beat 1 is not walked here). */
+  const walk = (marks, beat3 = { ...b3, needs: [] }) => {
+    const pointer = createPointer([{ ...b2, needs: [] }, beat3]);
+    const run = (upTo) => ({ marks: marks.slice(0, upTo + 1), messages: [], actions: [], charter: CHARTER });
+    pointer.advance(run(0), marks[0].step);
+    for (let i = 1; i < marks.length; i++) {
+      pointer.record(marks[i].step, { action: 'wait', seconds: 3 });
+      pointer.advance(run(i), marks[i].step);
+    }
+    return pointer.state;
+  };
+  // Her card and her bond from a4, and no Make a Connection ever rolled: the fourth run's road.
+  const drafted = [markOf('a3', tableOf({ pc: { vows: [VOW] } })), ...Array.from({ length: STALL_ACTIONS + 2 }, (_, i) => markOf(`a${4 + i}`, recorded({ bond: true })))];
+
+  it('the fourth run\'s road: beat 2 is not exercised — no Make a Connection could come — and beat 3 is walked all the same', () => {
+    const [two, three] = walk(drafted);
+    expect(two).toMatchObject({ status: 'not-exercised' });
+    expect(two.detail).toContain('Tamsin Vey has a card and a bond Item; make_a_connection has not been rolled');
+    expect(three.status, 'beat 3 is current: the vow is to be linked').toBe('current');
+    expect(three.detail).toBe('no vow is linked to a connection');
+    // As the run had it — gated on beat 2 — it was lost with beat 2.
+    const [, lost] = walk(drafted, { ...b3, requires: undefined, needs: ['b2'] });
+    expect(lost).toMatchObject({ status: 'not-exercised', detail: 'it needs beat 2, which was not done' });
+  });
+
+  it('the other road missed too: with no connection at all, beat 3 is not exercised, and says what it needed of the world', () => {
+    const none = [markOf('a3', tableOf({ pc: { vows: [VOW] } })), ...Array.from({ length: STALL_ACTIONS + 2 }, (_, i) => markOf(`a${4 + i}`, recorded({ bond: false })))];
+    const [, three] = walk(none);
+    expect(three).toMatchObject({ status: 'not-exercised' });
+    expect(three.detail).toBe('it needs Tamsin Vey to be Mira Kestrel\'s connection, which the world does not hold (Tamsin Vey has a card; Mira Kestrel holds no bond Item for it)');
+    expect(unmetRequirements(b3, beatView({ marks: drafted, messages: [], actions: [], charter: CHARTER, from: 'a4' }))).toEqual([]);
+  });
+
+  it('a re-score asks it the same way, over the steps the run gave the beat', () => {
+    const marks = drafted.slice(0, 3);
+    const was = [{ id: 'b3', n: 3, status: 'not-exercised', actions: 0, steps: [], enteredAt: 'a5', doneAt: 'a5', detail: 'x' }];
+    const charter = { ...CHARTER, beats: [{ ...b3, needs: [] }] };
+    expect(recheckBeats({ charter, beats: was, marks, messages: [], actions: [] })[0]).toMatchObject({ status: 'not-exercised', detail: 'no vow is linked to a connection' });
+    const bare = [markOf('a3', tableOf()), markOf('a4', tableOf()), markOf('a5', tableOf())];
+    expect(recheckBeats({ charter, beats: was, marks: bare, messages: [], actions: [] })[0]).toMatchObject({ status: 'not-exercised', detail: 'it needs Tamsin Vey to be Mira Kestrel\'s connection, which the world does not hold (Tamsin Vey has no connection card yet)' });
+  });
+});
+
+describe('the rehearsal walks either road: its readers refuse a connection already made, and its player keeps to its beats', () => {
+  const entry = CHARTER.rehearsal.find(e => e.beat === 2 && e.move?.id === 'make_a_connection');
+  const turn = (beat) => ({ system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: `CURRENT BEAT: ${beat} of 27 [session 1] — Meet someone\n\nYOUR SCREEN NOW:\n[m1] Gamemaster: hello` }] });
+  const pacing = (connections) => ({ system: 'You are the pacing pre-classifier for a Starforged table.', messages: [{ role: 'user', content: `## CHARACTER\nName: Mira Kestrel\nSITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded).\n- Connections: ${connections}.\n\n## PLAYER INPUT\n${entry.text}` }] });
+  const reading = (r, connections) => JSON.parse(r.reply(pacing(connections)).content[0].text);
+  const rehearse = () => { const r = createRehearsal({ charter: { ...CHARTER, rehearsal: [entry] } }); r.reply(turn(2)); return r; };
+
+  it('makes the scripted Make a Connection where she is no one\'s connection yet — the "No one" road', () => {
+    expect(entry.move).toMatchObject({ id: 'make_a_connection', target: 'Tamsin Vey' });
+    expect(reading(rehearse(), 'none')).toMatchObject({ decision: 'MOVE', suggestedMove: 'make_a_connection' });
+  });
+
+  it('narrates it where the sheet already holds her — under her name, or the part of it her card was made under', () => {
+    for (const held of ['"Tamsin Vey" (dangerous, relationship 0 of 10 boxes)', '"Tamsin" (dangerous, relationship 0 of 10 boxes)']) {
+      const r = rehearse();
+      expect(reading(r, held), held).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null, reasoning: expect.stringContaining('is already among the connections') });
+      const asked = { system: 'You are the move interpreter.', messages: [{ role: 'user', content: `Connections:\n- Connections: ${held}.` }] };
+      expect(JSON.parse(r.reply(asked).content[0].text)).toMatchObject({ noMove: true, moveId: null });
+    }
+    // Someone else held is no reason to refuse her.
+    expect(reading(rehearse(), '"Idris Vane" (troublesome, relationship 0 of 10 boxes)')).toMatchObject({ decision: 'MOVE' });
+  });
+
+  it('its scripted player waits for a later beat\'s entry until that beat comes, and does not spend its patience on it', () => {
+    const later = CHARTER.rehearsal.find(e => e.beat === 3 && e.action === 'choose');
+    const r = createRehearsal({ charter: { ...CHARTER, rehearsal: [later] } });
+    const screen = (beat) => ({ ...turn(beat), messages: [{ role: 'user', content: `CURRENT BEAT: ${beat} of 27 [session 1] — Link\n\nYOUR SCREEN NOW:\n[e1] Gamemaster: New vow recorded\n     buttons: (1) "Link"\n     dropdown (1) "For a connection?" = "— none —" options: — none — | Tamsin Vey` }] });
+    for (let i = 0; i < 6; i++) expect(r.reply(screen(2)).content[0].input, `turn ${i + 1}`).toMatchObject({ action: 'wait', reason: 'waiting for beat 3: beat 2 is not over' });
+    expect(r.reply(screen(3)).content[0].input).toMatchObject({ action: 'choose', option: 'Tamsin Vey' });
+    expect(r.skipped).toEqual([]);
+  });
+});
