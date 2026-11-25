@@ -6,6 +6,59 @@ rejected.
 
 ---
 
+## One reader reads every line: the switch, made on its measure (overhaul 1, issue #384 — 2026-11-25)
+
+**Decision** (taken on the second measure under the maintainer's standing "go with your recommendation when in doubt", as the design's section 8.2 allows, and confirmed by the maintainer before the switch was built): the two readers — the pacing pre-classifier, then the move interpreter — are replaced by one call that reads each typed line. Its decisions D1–D16 stand as taken (the entry "Overhauls 1 and 4 — one reader, and moves as contracts" below).
+
+- **Slice 1, as built** (ed7c4f7f, be708859; unwired until the switch). The reader is `src/moves/reader.js` (`readLine`, three modes, one byte-stable system prompt cached for an hour). Its catalogue quotes each move's trigger from the system's own text (`readerCatalogue.js`; a Quench test checks every quote against the installed pack). The situation it is told is `readerSituation.js`, which lives beside `situation.js` rather than inside it because overhaul 4 extends that file. The route lives in `src/pacing/readAndRoute.js`, beside `router.js` rather than inside it, because overhaul 4 edits that file. `routeReading` holds the dials, the density and the fight backstop in code (D1 option B), and `readAndRoute` takes the pacing config and the density from its caller. Until overhaul 4's `availableMoves` landed, a stand-in (`availability.js`, D14) told the reader what the game's text settles, and refused only what the code then refused: Hearten, and Heal with nothing to recover and nobody else to treat, both of these in a fight too (§4.5); the position pair; and the scene-challenge variants, the last two remapped to the right move. Criterion 7 of §8.2 (cost) is judged at the mean, an arm's whole spend a line, with the median reported beside it (the maintainer, 2026-11-25): the median sets the pacing reader's one call against a whole reading, which is not what "dearer" means here.
+- **The first measure: do not switch** (`readers-live-20261125-060517`, at 8b7bf479; $2.12). Three of the nine criteria failed: lines read (102 of 112 against the two readers' 108), issue #383's kinds (trust, a supported claim and a named move after a run each 2 of 4) and cost ($0.0070 a line against $0.0066). The misses were the reader's own rules, read word for word. Haiku 5.5 on the one prompt read 88 of 112 and 19 of 40 controls (Sonnet 102 and 38), so the reader stays on Sonnet 5.5 (known-issues READERS-MODEL).
+- **The mend** (743c2441, from the reader's own reasons): a move with no roll needs nothing at risk; headway the scene bears out is a step; a named move is marked `asked` in code; a sure reading is offered at the low dials; and a cheaper call (the cached Mischief note, a reply that leaves out what is null or false).
+- **The second measure: switch** (`readers-live-20261125-073803`, both designs on one tree at b86559b3; $1.83). All nine criteria held: 108 of 112 lines read against the two readers' 104; 40 of 40 controls narrated against 32; $0.0055 a line against $0.0065 (the mean); a rolled line read in 2.4 s against 5.2 s; every issue #383 kind 4 of 4 (the two readers: trust 0 of 4, claim-refuted 0 of 4); the fights 12 of 12, none illegal for the position. Two regressions, both the mend's own connection rules, were left for the switch's own slice to mend: swear-1 read as Develop Your Relationship, and bond-1 as talk.
+- **The switch, as built** (slices 2–4). Slice 2 (9911661d): `decidePacing` reads every typed line through `readAndRoute`, after the master switch and a `!roll`; the move contracts' gate is `routeReading`'s row 2, and the move a refusal offers is the card's Roll; `interpretMove` keeps its name, signature and return (D10) as the reader in its chosen, roll and open modes, the last the second try for a failed reading (D13); a round's reading is told no density and adds none (D12); the reader is told the place, the ship and the frame by overhaul 2's one read. Mended from the second measure: a vow sworn in anyone's service is Swear an Iron Vow, never Develop's deed in its place (swear-1); asking to make a tie lasting with the relationship track full is Forge a Bond (bond-1), while asking for trust or friendship as the track is still being built stays talk. Deleted with the two readers: `pacing/classifier.js` (its dial words and arithmetic kept in `pacing/dials.js`), the move interpreter's own prompt and call, the router's hops for the pacing reader, the old SITUATION block, and the tests that held their prompts — their rules live on in the reader's. The readers' test reads with `decidePacing`; its `two:` arms are refused, and a kept run is their baseline (`READERS_BASELINE`). Slice 3 (509c1f59): an offer's Roll is made as the reader read it (the card's `offerReading`, trusted only on a GM's post and only for the move it was read as); a Batch Mode round's "Roll <move>" does not carry it yet. Slice 4 (c72c76ab, overhaul 4's slice 6): the reader's POSSIBLE NOW / NOT NOW and its quoted triggers are built on the move contracts (`src/moves/contracts/available.js` — `availableMoves`, `formatAvailableMoves`, `moveTriggers`), so what the reader is told can be made is what the gate lets be made; the reader and `readAndRoute` read the speaker's situation as the contracts do, once; the stand-in `availability.js` is deleted; and the reader's recent scene is the current scene's part of the ring (overhaul 2's slice 5).
+- **The final measure: the switch stands** (`readers-live-20261125-122551`, the one reader as wired into play, slices 2–4, against the kept two readers of -073803; $0.82). All nine criteria held: 110 of 112 lines read (the two readers: 104); no move rolled or offered that a line did not want (5); 40 of 40 controls (32); every issue #383 kind 4 of 4; the fights 12 of 12; $0.0054 a line ($0.0065); a rolled line in 2.0 s (5.2 s), a narrated one in 1.4 s (1.8 s); none of 152 readings unreadable. The second measure's two regressions are mended (swear-1 read as the vow, bond-1 as the bond), and slice 4's lists from the contracts changed no recovery reading. One close line, progress-4 (a step claimed alone in the cockpit), now reads as no move: counted, not mended — a claimed step narrated costs the player one ask, where reading an unsupported claim as a milestone rewarded it. The three runs are kept in `test/ci/playwright/readers/runs/` with their answered reports. The next live long haul is the measure in play.
+
+**Why:** the fourth live run's reading faults (issue #383) were each one prompt rule losing to another over the dials — a plea for a tie booked as Develop Your Relationship, a claimed proof offered a milestone, a named move offered for the run's density. One reader told the whole situation, with code applying the dials, read more lines right, read no control as a move, and cost less.
+
+**Rejected:** *switching on the first measure* — it failed three criteria; *the one reader on Haiku 5.5* — far behind on the same prompt (READERS-MODEL); *keeping the two readers* — the second and final measures held on every criterion.
+
+## Moves as contracts, as built (overhaul 4, issue #385 — 2026-11-25)
+
+**Decision** (the maintainer ordered overhaul 4 built — "Please do all of that. Go with your recommendation when in doubt"; each decision taken at the design's recommendation, as the entry "Overhauls 1 and 4 …" below records, and each the maintainer's to take back). As built in slices 1–5 and their follow-ups:
+
+- **D1 — a contract table beside MOVES** (`src/moves/contracts/table.js`, its predicates as code in `predicates.js`), not fields on `schemas.js` MOVES: `schemas.js` stays data, and one sweep test holds the table to the move list (`moveContracts.test.js`).
+- **D2 — hard and soft.** A hard precondition (nothing for the move to act on — no fight, no vow, no connection) is refused outright, never overridden; a soft one (the sheet says the move would change nothing) is refused for a typed line and may be rolled at a GM's word (the confirm dialog's Accept; the not-rolled notice's Roll anyway). `!roll` does not override; it reaches the dialog. Soft preconditions are not applied in a fight.
+- **D3 — a refusal is told** in the fiction (the narration's NOT SO [premise]) and in one line on the card it already gets — never a card of its own.
+- **D4 — a draft card never makes a connection:** Confirm records the person; the row offers 🤝 Make a Connection, which rolls; "No one" goes. A Make a Connection hit still confirms a pending row as the roller's. Amends issue #354 P2-16, #342 D3 and #362 D10.
+- **D5 — the inciting vow's target is a person linked to the vow, not a connection**; the sworn card offers Make a Connection. This reverses a settled decision — issue #241 and issue #321 U23 (the inciting target made the swearers' connection) — and is the first to take back if the opening reads worse. Sector creation's local connection and the quickstart's stay, recorded `by: setup`.
+- **D6 — a move never makes another move's track:** a combat move needs a fight (only Enter the Fray's commit makes one), Explore a Waypoint an expedition or a site (known-issues PHANTOM-FIGHT-FROM-A-MARK, PHANTOM-EXPEDITION-FROM-A-WAYPOINT).
+- **D7 — the table's own hand is never blocked**, recorded `by: "hand"`, never told as a deed; the panel's Add of a scene challenge is Begin the Scene.
+- **D8 — one obligations block**, TELL / NOT YET / NOT SO, a tag a line, last before the instruction, in user messages only, the tuned wordings kept.
+- **D9 — checks by class:** certain → re-ask once; floor → re-ask ([vow]) or log; tripwire → one small judge call before posting → re-ask once, fail-open; the rest logged by the audit. One judge and one re-ask a narration.
+- **D10 — a cost chosen after its narration** is told by the next narration that is a beat of play, once, carried on the choice card.
+- **D11 — a press on a card the held roll itself posted keeps the held result first**; Begin the fight keeps, then makes the track. Amends issue #362 D5.
+- **D12 — a refused move records nothing;** every move-only state event names what made it (`by`); `connection.made` is written where the bond is made.
+- **D13 — the contracts own what can be made now** (`availableMoves`, the reader's POSSIBLE NOW / NOT NOW, the trigger words), built with overhaul 1's slice 4 (`src/moves/contracts/available.js`); the gate re-checks.
+- **D14 — Reach a Milestone for a claim:** the reader is told "shown in the scene, not only claimed"; nothing in code decides "shown".
+- **D15 — Sojourn is soft:** someone in the party has something to recover; the community is the reader's.
+- **D16 — the order** as the design's section 12.
+- **The follow-ups, as built:** the moves a button makes ask the gate too (`pressGate.js` `gatePress`: a milestone pick, a won fight's ⚑ and 🤝, the threshold card's Enter the Fray commit, a scene challenge's Begin and the Progress Tracks panel's Add of one, `!bond`, and the payoff of a vow or bond progress roll made on the sheet — a refused press told in one line, a sheet roll's or a command's whispered to the GMs); every beat's narration is checked (`narrateKeepingObligations` around the move's, the paced line's, the round's and the oracle follow-up's narrator calls and every rate-limit retry; a re-ask that throws keeps the first draft); the post-narration audit is given the narration's obligation lines and may answer kind `obligation`; and `by` is written on the record's move-only state events — `{ move, res }`, or `"hand"` for the sheet's own edit, the Progress Tracks panel or `!sever`. Two of the roller's connections with one name count as their connection. Left open: `by` on three writes (known-issues RECORD-BY-GAPS), buttons offered that the gate then refuses (BUTTON-OFFERED-THEN-REFUSED), a vow ticked complete on the sheet before its Fulfill roll (NATIVE-VOW-TICKED-BEFORE-FULFIL), and the [oracle] tripwire tripping on the question's own words (ORACLE-JUDGE-TRIPS-ON-QUESTION).
+
+**Why:** the fourth live run (issue #383) found a connection made by a draft's Confirm with no Make a Connection, and a recovery refused with nothing told and narrated as real; building the gate found two more tracks made by moves that do not make them (a combat mark's fight, a waypoint's expedition).
+
+## Scenes turn in code; a fact says where it came from (overhaul 2, issue #386 — 2026-11-25)
+
+**Decided (D1, at the design's recommendation; this reverses issue #353 R2, "scenes stay manual"):** a scene turns when the table's stores show that its place or its situation changed. The triggers are the characters' recorded place, the ship's place, a fight, expedition or scene challenge begun or ended, and a time skip in the player's words or a Sojourn. The check runs at the start of a beat of play's narration, on the canonical GM (`sceneLifecycle.js turnSceneIfDue`, `sceneTurns.js sceneTurnDue`, from narrator.js `ensureCurrentScene`). The narration's word never turns a scene, and a narration ends no scene. An answered question cuts forward within the scene, so R2's rejection of "ending the scene on an answer" stands. `!scene` and the bookends are unchanged. The way back is D1's option C, the GM's `!scene` alone, and that choice is the maintainer's.
+
+**Amended (D16; this amends issue #362 D4):** a turn is a scene end less what belongs to the session. The scene's unanswered mysteries are carried into the next scene (`secrets.js carrySceneMysteries`), and the `!pace` override stands. Both still end at `!scene end`, a `!scene start` over the scene, End a Session and the mint. D4's "retired at every scene end" now reads "at every scene end but a turn".
+
+**Decided (D5–D8, D13, D15):** every truth and state value carries a basis: `player`, `dice`, `gm` or `setup` (these bind), or `narrator` (colour). The narrator's `from` is floored against the beat's own words. Colour fades after the scene's latest `COLOUR_BEATS` narrations, sheds first under the cap, and is never migrated, filed or told by a view. The GM's Keep raises it to bind. An entry written before bases reads as its asserter's. The audit reads only what binds. **(D9, D17):** no code infers undocking, and a walked line moves the current location but never the ship; a Set a Course's beat walks nowhere (its arrival is the move's own).
+
+**Kept (D5, reconsidered during the build and kept, 2026-11-25):** the tag is the only way a narrator fact binds — no lexical rule, not even for whereabouts, since a line names places for other reasons ("who saw the courier leave the Hollow Spire" names a place the dockmaster is not said to be at). The fact block's rule says plainly that a fact the player's own line states is tagged "line", with a worked example whose facts pass the floor. A whereabouts the narration alone set is no LAST KNOWN.
+
+**Decided (§10.3 — the scene's obligations checked, 14972e9f):** in overhaul 4's classes, [place] is a judge tripwire — "docked", "berth", "clamps", "moored" in the prose of the beat that opens a fight's scene while the ship's record has her docked; the judge reads the ship fighting as a ship while still docked, a fight on foot breaks nothing, a breach is asked once more and the judge fails open — and [letgo] is a floor, logged and never re-asked: a let-go stem in the prose's last two sentences, unless the player's line names the question and so takes it up. [scene] stays the audit's (known-issues SCENE-OBLIGATIONS-UNCHECKED).
+
+Why: the fourth live run (#383) showed one scene per session; the narrator's own hooks re-set as the scene's question; colour filed as canon and contradicting what the player said; and the frame and the ship's record disagreeing for forty beats.
+
 ## Overhaul 2 — scenes that begin and end, facts that know where they came from: scoped as issue #386, decisions taken to build (2026-11)
 
 **Decision** (the maintainer, 2026-11-25: "Please also execute overhaul 2"; and, for the round, "Go with your recommendation when in doubt"): overhaul 2 is scoped as issue #386, its decisions taken at the design's recommendations, each the maintainer's to take back. Among them: scenes turn in code — on a change of place, of the ship's place, a fight, an expedition, a scene challenge, or a time skip in the player's line — through one check, `ensureCurrentScene` (D1–D4); every truth and state entry carries a basis (player, dice, GM, setup, narrator), and only the narrator's own colour does not bind: it is shown as colour, drops out six narrations after it was last said, ends with its scene, and is never filed as lore, a card detail or a last-known place (D5–D8, D13); the location, the ship's position and the frame's place inside it are one place, composed (D9, D17); a scene question comes from the player's words, and one left unanswered three beats is let go, its hook with it (D10).
@@ -1913,6 +1966,8 @@ mark and its time; the ids are the reporting client's.
 ---
 ## Issue #362 D5: a held result is kept by its roller going on — and by the session's end and Batch Mode's start (2026-11)
 
+*(Amended 2026-11-25 by overhaul 4 D11, issue #385: a press on a card the held roll itself posted — ⚔ Begin the fight, 🚪 Find another way, the move card's own suggestions — keeps the held result first; Begin the fight keeps, then makes the track. See "Moves as contracts, as built".)*
+
 **Decision:** (issue #362 D5, HELD-RESULT-WHO-KEEPS-IT; decided A,
 maintainer 2026-11-17; with AC32 HELD-RESULT-OUTLIVES-ROUND-ENTRY, which it
 settles.) A free-flow result held for Burn / Improve / Keep (issue #354
@@ -2068,6 +2123,8 @@ failure card with a Retry* — the narration would go on without the price
 while it waited for a GM's press, and the report is itself a chat card.
 ## Issue #362 D10: a person read as a known one is listed, a GM can make an NPC card, and deleting one tears its connection down (2026-11)
 
+*(Amended 2026-11-25 by overhaul 4 D4, issue #385: a Confirm — a ＋ New NPC row's too — records the person with no bond on any sheet, and the row offers 🤝 Make a Connection to each PC; "No one" is gone.)*
+
 **Decision:** ([#362](https://github.com/jamesrmedford-alt/starforged-companion/issues/362) D10 DETECTED-PERSON-DROPPED-SILENTLY; the maintainer's answer A of 2026-11-16/17 — "New Entities card lists a detected person read as a known one ("read as <known>") with a "No — a new person" button; a GM create path for an NPC card; a deleteActor handler runs the X-Card's connection teardown".) Three parts:
 - **Read as someone known, listed — not dropped.** The person rule (issue #354 P2-16: "Archer" is Vuldar Archer, "Captain Sutton" the PC Isaac Sutton) still keeps such a person from being offered, but the New Entities card lists them as a row read as the known one ("Read as Vuldar Archer", `status: "known"`), with **No — a new person**: a GM's press makes it an ordinary pending row (`newPerson`) whose Confirm makes the card. One row a name — a narration that keeps using the short name lists it once. The known person's whole name stays a silent duplicate. The same rule now holds where it was whole-name only (the coverage's D8): a reply's second name for one person is read as the first, and Confirm reads a row the person rule reads as someone known — a stale "Archer" pressed after Vuldar Archer was made — as them, instead of making a second card and a second bond (a `newPerson` row is made; Make a Connection's candidates take the known person over such a row).
 - **A GM makes an NPC card by hand.** The Entities panel's **＋ New NPC** (GM only) takes a name and a description and posts a New Entities card with that one row (`newPerson`), offered to each player character and No one: its Confirm makes the NPC the way a detected one is made — seed, portrait, agenda plan, bond — so there is one creation path. A name an NPC already has is refused. A character Actor made in the sidebar is still a player character (issue #342 Z73).
@@ -2123,6 +2180,8 @@ This amends "One thing has one record, whatever it is called (P2-15 – P2-17, P
 
 **Rejected:** *removing the caps* (D9's option B) — not chosen; a playtest that wants rulebook meters can revisit it here.
 ## Issue #362 D4: a hidden plan closes with its subject; a scene's unanswered mysteries end with it (2026-11)
+
+*(Amended 2026-11-25 by overhaul 2 D16, issue #386: a turn of the scene carries its unanswered mysteries into the next scene — they are retired at every scene end but a turn.)*
 
 **Decision:** (the maintainer's answer A, 2026-11-17.) The code closes a plan
 as its subject ends, whatever the narration that ends it says or does:
@@ -2240,7 +2299,7 @@ The six answers:
 - **P2-05 — the minimum line length stays, and says so.** A line under ten characters is still read as table talk (short out-of-fiction chatter must not be narrated). Its author is told, on their own client, and the line goes back in their chat box. Not accepted: narrating any line with a word in it, or giving the classifier a "not part of the fiction" answer.
 - **P2-07 — Rotating Spotlight defaults off, with a one-time switch-off.** Saving the Narrator tab stores every field, so a default flip alone would reach almost no existing world: the canonical GM switches a stored "on" off once at world load, whispers the GMs why, and marks the world (`narratorSpotlightDefaultOffApplied`). A GM who ticks it again keeps it. This amends "Multiplayer spotlight is implied by narration", which recorded "(world, default on)". The rotation still counts characters, not players — it was not gated on connected users.
 - **P2-10 — free-flow asks Burn / Improve / Keep before a result's price and narration**, as a Batch Mode round asks before its narration. A result whose card offers Burn Momentum or Improve Result is *held* (`rollMove`'s `holdForUpgrade`; `moves/heldResult.js`): the card posts with **Keep the result**, the move is recorded so the buttons are live, and nothing is paid or narrated. Keep pays the price and narrates; a burn or an improvement finds nothing paid — nothing to undo, nothing struck — and its narration is the move's one narration, told the player's own line, after paying the held price if the upgraded result pays one too. The roller going on keeps it: their next line or move ("burn momentum before applying any other effects of the move"), or a consequence chosen on the outcome's choice card. What the wait needs is on the card (`flags.awaitingUpgrade`), so it survives a reload and any GM can press Keep. This goes further than a round, which pays the price at the roll and holds only the narration — the round was not changed. Results that offer no upgrade are paid and narrated at once, as before. **A world setting, "Ask before paying and narrating" (`holdResultForUpgrade`, default on), switches it off** — not asked for in the decision; added because the flow could not be played in Foundry before it shipped, and because off keeps the earlier pay-then-undo flow (which a round's rolls still use) reachable from free-flow and its tests on it. Remove the setting once the held flow has been played, if the table has no use for the old one. Known limit: a held result whose roller never acts again, and whose card nobody presses, stays held — End a Session does not settle it (superseded by issue #362 D5: only the roller's own line or action keeps a held result, and End a Session and switching Batch Mode on keep every one).
-- **P2-16 — a "No one" choice beside Confirm on free-flow New Entities cards.** Amends issue #342 D3, which kept one Confirm on free-flow cards: a person's row now asks whose connection they are on every card — the narration's PC by name, and **No one**, which records the person with no bond Item on anybody's sheet (the `noBond` path a round's card already had). A Confirm that always bonded put a hostile stranger on a PC's sheet as a relationship.
+- **P2-16 — a "No one" choice beside Confirm on free-flow New Entities cards.** Amends issue #342 D3, which kept one Confirm on free-flow cards: a person's row now asks whose connection they are on every card — the narration's PC by name, and **No one**, which records the person with no bond Item on anybody's sheet (the `noBond` path a round's card already had). A Confirm that always bonded put a hostile stranger on a PC's sheet as a relationship. *(Amended 2026-11-25 by overhaul 4 D4, issue #385: "No one" is gone — every person's Confirm records them with no bond Item, and the row offers 🤝 Make a Connection.)*
 
 What the fixes established:
 - **A line can make no move (P2-01).** The interpreter may answer `"moveId": null`; `readMove` returns that — or a low-confidence reading outside a fight — as `noMove`, and the line is narrated as a paced line with the classifier's move offered on its card. Not when a roll was asked for (`!roll`, a round's "Roll a move instead") or with pacing switched off, where every line is a move as before. A reply that names no move at all, or cannot be parsed, is a failed reading: it goes to the confirm dialog, never to narration. The confirm dialog's **No move — narrate** and the "Not rolled" notice's **Narrate it — no move** narrate a typed line as it stands. A confidence threshold on the classifier was considered and withdrawn (P2-03): four of the seven unwanted rolls scored 75–80%.
@@ -2272,10 +2331,11 @@ What the fixes established:
 
 **Decision:** (issue #353 Phase 4, "When a skeleton is made" and "What the
 GM sees".)
-- **A connection made gets an agenda plan** — Make a Connection's
-  auto-create, a named NPC the GM confirmed from the draft card, the inciting
-  vow's target (`planNpcAgenda`): an `npcAgenda` plan about the NPC's card
-  by its id, its rolls their goal and role (the seed's), a Character
+- **A person recorded gets an agenda plan** — Make a Connection's
+  auto-create, a named NPC the GM confirmed from the draft card (a person, no
+  connection — overhaul 4, D4), the inciting vow's target (a person linked to
+  the vow — D5) (`planNpcAgenda`): an `npcAgenda` plan about the NPC's card
+  by its id, connection or not, its rolls their goal and role (the seed's), a Character
   Disposition and an Action + Theme for what they hide. Its truth is left to
   the next narration they are in (DECIDE NOW), not decided at creation — the
   capture that made them has no narration left to write it. One plan an NPC
@@ -2345,6 +2405,8 @@ plan's kind or a hint* — any content on a shared screen leaks it.
   `tensionClockId` — no second clock). A GM's press, claimed once on the
   card, run on the canonical GM (gmRelay `sceneChallenge.begin`). Scenes stay
   manual (R2, decided): the module offers the challenge, never ends a scene.
+  *(Since overhaul 2 D1, 2026-11-25, a scene challenge begun or ended turns
+  the scene.)*
 - **A narration's clocks and plans leave with it** — and, since issue #362
   AC33, the pacing of a plan clock it played a step of. A clock a narration
   started carries its `narrationId`: the X-Card's pause write drops it, and a
@@ -2592,6 +2654,8 @@ mean?" oracle and fits any subject.
 ---
 
 ## Issue #353 R2: each scene has a question; scenes stay manual (2026-11)
+
+*(Reversed in part 2026-11-25 by overhaul 2 D1, issue #386: scenes turn in code when the table's stores show the place or the situation changed. An answer still cuts forward within the scene, so the rejection of ending a scene on an answer stands — see "Scenes turn in code; a fact says where it came from".)*
 
 **Decision:** (issue #353 R2; decided, maintainer 2026-11-13: scenes stay
 manual — a scene ends only at `!scene end` or with the session; the module
@@ -3544,7 +3608,9 @@ option A; D4 option A, narrowly; D6 option B. Each row's ID in brackets.)
   (option B — a wrong bond one click away in every multi-PC round), no PC
   (option C — it changes free-flow parity), and the discovery move's roller
   (the Batch Mode auditor's variant — it still gives the second roller's NPC
-  to the first).
+  to the first). *(Amended 2026-11-25 by overhaul 4 D4, issue #385: a round
+  card's connection row is a Confirm that records the person, with 🤝 Make a
+  Connection for each acting PC; "No one" and the pick are gone.)*
 - **A reversal clears the unprepared its reverted price made** [D4; option A,
   narrowly]: the price route's receipt carries the marks it made
   (`unpreparedMarked`, and `alliesMarked` from `markUnprepared`), and
@@ -6327,8 +6393,9 @@ and the summary End a Session archives to the Session Log had no reader.
 - **Last known whereabouts.** `endScene` keeps each recorded character's
   location / vessel / condition (`WHEREABOUTS_ATTRIBUTES`) on their record as
   `lastKnown`, attribute by attribute (a value this scene did not mention
-  keeps its old one). The card renders it as LAST KNOWN; the active scene's
-  CURRENT STATE wins over it.
+  keeps its old one). The card renders it as LAST KNOWN; what the active scene
+  says of them now (STANDING NOW, or what the narration described) wins over
+  it. Since overhaul 2 (§5.6) only binding whereabouts are kept.
 - **Place details go to the place.** A scene-subject truth migrates to the
   scene's recorded place: the frame's location when it names, or mentions by
   full name, exactly one recorded settlement / planet / location / ship; else
@@ -9726,7 +9793,9 @@ fight's outcome surfaced against the vow on a win. Specifics:
   that connection) and is adjustable. Scaling mirrors combat→vow — the **source** challenge's rank sets the
   mark count, the **target** track's rank sets ticks/mark: combat→vow = (fight rank → marks, vow rank →
   ticks); vow→connection = (vow rank → marks, connection rank → ticks). Rounds the scope into a trio:
-  combat→vow, vow→connection, and the existing forge→Bonds-legacy.
+  combat→vow, vow→connection, and the existing forge→Bonds-legacy. *(Overhaul 4 D5, 2026-11-25:
+  the inciting vow's target is recorded as a person linked to the vow, not made a connection; a
+  connection with them is Make a Connection's.)*
 
 **Reason:** Playtest — a rescue vow led into combat with "no clear goals or tie-in to the vow"; the fight
 should have wildly advanced or fulfilled the vow. An interplay audit found the mechanics largely already
@@ -9778,6 +9847,9 @@ recorded on the vow's payoff ledger. See "Issue #326 audit" → "A vow deepens i
    by every detection path that knows its narration's PC); the shared vow's target becomes a
    connection of every PC who swore it; the oath scene is written for the PC who swore; the
    Private Channel and the toolbar's Chronicle use the user's own PC.)*
+   *(Overhaul 4 D5, 2026-11-25, issue #385, reverses one part of this: the shared vow's target is a
+   person linked to the vow, no longer a connection of every PC who swore it; the sworn card offers
+   each of them 🤝 Make a Connection.)*
    *(Issue #326 D8, 2026-11-03: the move pipeline's own fallback follows U23 too. A GM's
    narration, or any narration at a one-PC table, still rolls the first PC; a player with no PC
    of their own at a table of several is whispered that they need a character, and nothing is
