@@ -341,6 +341,9 @@ export function readCards(gm) {
       if (f.payThePriceCard) card.price = { text: clean(doc.body?.textContent ?? "").slice(0, 300), actorId: f.actorId ?? null, resolutionId: f.resolutionId ?? null };
       if (f.fightVowCard) card.victory = pick(f, ["vowName", "vowId", "marks", "connectionName", "connectionId", "actorId", "resolvedActions", "fulfilAttempted", "deepenRetired"]);
       if (f.connectionPicker) card.picker = pick(f, ["pickAction", "resolved", "choices", "actorId"]);
+      // "⚑ Reach a Milestone — Which vow advances?": the vows to pick from, and
+      // whether one was picked (lib/beats.mjs cardsWaiting tells the player).
+      if (f.milestonePicker) card.milestonePicker = pick(f, ["resolved", "choices"]);
       if (f.playerVowCard) card.vowCard = { ...pick(f, ["vowName", "vowId", "actorId", "swearRolled", "linkedConnection", "vowGone"]), hasLinkRow: !!doc.querySelector(".sf-vow-connection") };
       if (f.vowLinkedCard) card.vowLinked = true;
       if (f.combatThresholdCard) card.threshold = pick(f, ["label", "position", "actorId", "thresholdTaken"]);

@@ -456,8 +456,12 @@ export function playerTurnPrompt({ history, snapshot, notebook = [], beat = null
   if (beat) {
     // What the observer has to say plainly stands on a line of its own,
     // above the count: a note in brackets was read past (the third live run).
+    // So does a card on the table that waits on the player (`waiting`, lib/
+    // beats.mjs cardsWaiting): the fourth live run's player typed past a held
+    // result's "Keep the result" (a38) and past "Which vow advances?" (a71).
     parts.push(`CURRENT BEAT: ${beat.n} of ${beat.of} [session ${beat.session}] — ${beat.title}${beat.tell ? `\n${beat.tell}` : ""}`
       + (beat.alert ? `\nTHE OBSERVER: ${beat.alert}` : "")
+      + (beat.waiting ? `\nWAITING ON YOU: ${beat.waiting}` : "")
       + `\n(${beat.actions} action${beat.actions === 1 ? "" : "s"} spent on this beat so far${beat.note ? `; ${beat.note}` : ""}.)`);
   }
   parts.push(notebook.length ? `YOUR NOTEBOOK:\n${notebook.map(n => `- ${n}`).join("\n")}` : "YOUR NOTEBOOK: empty");

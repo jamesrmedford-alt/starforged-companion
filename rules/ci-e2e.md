@@ -716,8 +716,15 @@ and the rules that go with each:
   (`wantsOf`) and the beat has not moved since, or the player has waited
   twice running on a beat that has not moved, `brief()` says so on a line of
   its own (`alert`; "THE OBSERVER: …" in the turn prompt): what was rolled,
-  that the beat is NOT done, that waiting will not finish it. Not on a beat
-  that is the table's (an interruption): there waiting is right. A
+  that the beat is NOT done, that waiting will not finish it. A move made with
+  no roll is a move for this — Develop Your Relationship before a bond, Reach
+  a Milestone: the fourth live run's Develop at a5–a7, on the beat that wanted
+  a connection made, raised no alert. And a card on the table that waits on
+  the player — a result held for Keep or Burn, the milestone's "Which vow
+  advances?", a connection to pick, a cost to choose — is named on a line of
+  its own too (`waiting`, `cardsWaiting`; "WAITING ON YOU: …"): the fourth live
+  run's player skipped Keep at a38 and typed past the vow picker at a71. Not on
+  a beat that is the table's (an interruption): there waiting is right. A
   beat that makes no progress in eight actions (`STALL_ACTIONS`; a beat with
   parts — four facts to plant, a track to fill — counts from the last time it
   moved), that `needs` a beat never done, or that `requires` of the world what
@@ -1250,7 +1257,11 @@ line goes unread.
   have brought nothing about — or once a roll has come that is not one of the
   beat's, or the player has waited twice running on a beat that has not
   moved — so the beats that depend on this one are still reached; the beat
-  keeps that it came to it (`lastResort: true` in `beats.json`).
+  keeps that it came to it (`lastResort: true` in `beats.json`). It is told
+  once: the line that names the move spends it, and it is not told again
+  until the beat has moved (`lastResortSpent`, the steps that spent it; the
+  note says so). The fourth live run told it every turn once it was unlocked,
+  and its player named three moves in beat 22 alone (a64, a66, a68).
 - **A memory question is asked with `@scene`**, the module's own way to ask
   about what is established: it skips the pacing reader and is answered as
   "a camera, not a writer". Typed as a line of play it is continued as

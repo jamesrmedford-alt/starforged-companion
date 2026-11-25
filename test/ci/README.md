@@ -311,10 +311,13 @@ question about what is established is asked with `@scene` (one of each set
 is kept as a line of play, to compare), and a beat's move is named only as a
 last resort the observer unlocks after two plain lines bring nothing — or
 once a roll has come that is not the beat's, or the player has waited twice
-running on a beat that has not moved. Then the observer also says, on a line
-of its own, that the beat is NOT done and that waiting will not finish it:
-the third live run's player took a roll for the end of a beat twice, and
-waited six turns each time. The
+running on a beat that has not moved — told once, and spent by the line that
+names the move. Then the observer also says, on a line of its own, that the
+beat is NOT done and that waiting will not finish it (a move made with no
+roll counts as one): the third live run's player took a roll for the end of a
+beat twice, and waited six turns each time. A card that waits on the player —
+a held result's "Keep the result", the milestone's "Which vow advances?" — is
+named on a line of its own as well ("WAITING ON YOU"). The
 scorecard's **Plain lines** row says what each line of play became —
 rolled, offered a move, or narrated with nothing offered — and whether it
 named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").

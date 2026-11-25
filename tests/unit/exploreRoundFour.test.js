@@ -16,6 +16,11 @@
  *      that need the connection ask the world for it, not for beat 2's roll;
  *      and the rehearsal can walk either road (CONNECTION-MADE-BY-CONFIRMING-
  *      A-DRAFT, #1 a and b).
+ *   6. the observer tells the last resort once, and the line that names the
+ *      move spends it; it sees a move made with no roll as a move; and it
+ *      names the cards that wait on the player — a held result's "Keep the
+ *      result", the milestone's "Which vow advances?" (EXPLORE-ROUND-4-RUNNER,
+ *      #16 a–c; the Keep half of HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -23,10 +28,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DRAFT_HOLDERS, draftConfirmSelectors, draftHolderFor, draftToConfirm } from '../../test/ci/playwright/lib/gm.mjs';
 import { castMembers } from '../../test/ci/playwright/lib/cast.mjs';
-import { BEAT_CHECKS, STALL_ACTIONS, beatView, createPointer, unmetRequirements } from '../../test/ci/playwright/lib/beats.mjs';
+import { BEAT_CHECKS, LAST_RESORT_AFTER, STALL_ACTIONS, beatView, createPointer, unmetRequirements } from '../../test/ci/playwright/lib/beats.mjs';
 import { recheckBeats } from '../../test/ci/playwright/lib/longrun.mjs';
 import { charterProblem } from '../../test/ci/playwright/lib/charter.mjs';
 import { createRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
+import { playerTurnPrompt } from '../../test/ci/playwright/lib/player.mjs';
+import { readCards } from '../../test/ci/playwright/lib/table.mjs';
+import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PLAYWRIGHT = path.join(ROOT, 'test/ci/playwright');
@@ -247,5 +255,168 @@ describe('the rehearsal walks either road: its readers refuse a connection alrea
     for (let i = 0; i < 6; i++) expect(r.reply(screen(2)).content[0].input, `turn ${i + 1}`).toMatchObject({ action: 'wait', reason: 'waiting for beat 3: beat 2 is not over' });
     expect(r.reply(screen(3)).content[0].input).toMatchObject({ action: 'choose', option: 'Tamsin Vey' });
     expect(r.skipped).toEqual([]);
+  });
+});
+
+/**
+ * Run a page function as the page would, with the globals it reads stood in
+ * for: `game`, and a DOMParser that knows no markup (a card's text is then
+ * its content with the tags taken out). Restored after.
+ */
+async function withPage(globals, fn) {
+  const names = ['DOMParser', ...Object.keys(globals)];
+  const saved = Object.fromEntries(names.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
+  globalThis.DOMParser = class { parseFromString(html) { const text = String(html).replace(/<[^>]+>/g, ' '); return { querySelector: () => null, querySelectorAll: () => [], body: { textContent: text } }; } };
+  Object.assign(globalThis, globals);
+  try { return await fn(); } finally {
+    for (const [k, d] of Object.entries(saved)) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; }
+  }
+}
+
+// ── 6. the observer: the last resort spent once, a move with no roll, the cards that wait ──
+
+describe('the last resort is told once and spent by the line that names the move (the fourth live run, beat 22: a64, a66, a68)', () => {
+  const b21 = CHARTER.beats.find(b => b.id === 'b21');
+  /** A beat walked line by line: each line typed, the table read, the pointer moved, the player briefed. */
+  const walkLines = (beat, entered = tableOf()) => {
+    const pointer = createPointer([{ ...beat, needs: [], requires: undefined }]);
+    const marks = [markOf('a61', entered)];
+    const messages = [];
+    pointer.advance({ marks, messages, actions: [], charter: CHARTER }, 'a61');
+    const say = (step, text, cards = [], table = entered) => {
+      messages.push(line(step, text));
+      pointer.record(step, { action: 'say', text });
+      marks.push(markOf(step, table, cards));
+      pointer.advance({ marks, messages, actions: [], charter: CHARTER }, step);
+      return pointer.brief();
+    };
+    return { pointer, say };
+  };
+
+  it('two plain lines unlock it; the line that names the move spends it, and it is not told again while the beat stands still', () => {
+    const { pointer, say } = walkLines(b21);
+    say('a62', RUN_4.actions[61].text);
+    const told = say('a63', RUN_4.actions[62].text);
+    expect(told.note).toContain(`LAST RESORT — ${LAST_RESORT_AFTER} plain lines have brought nothing about: this once you may name the move — ${b21.lastResort}`);
+    // The run's a64, named: nothing came of it (there was nothing to heal).
+    expect(movesNamedIn(RUN_4.actions[63].text)).toEqual(['Heal']);
+    const spent = say('a64', RUN_4.actions[63].text);
+    expect(spent.note).not.toContain('LAST RESORT —');
+    expect(spent.note).toContain('the last resort was spent on your line at a64: say what you do in plain lines again');
+    expect(pointer.state[0]).toMatchObject({ lastResort: true, lastResortSpent: ['a64'] });
+    // a65, plain: in the run the last resort was told again here, and a66 named Resupply.
+    const after = say('a65', RUN_4.actions[64].text);
+    expect(after.note).not.toContain('LAST RESORT —');
+    expect(after.note).toContain('the last resort was spent on your line at a64');
+  });
+
+  it('once the beat moves, the next roll it needs starts from plain lines again — and the last resort can be told for it', () => {
+    const gather = { id: 'bx', n: 4, session: 1, title: 'Gather Information', playerTitle: 'Ask around the docks', tell: 'Work the docks.',
+      check: { type: 'moveRolled', moves: ['gather_information'], outcome: 'strong_hit' }, lastResort: 'say that you gather information on the docks' };
+    const { say } = walkLines(gather);
+    say('a1', 'I ask along the docks who saw the raiders last.');
+    expect(say('a2', 'I lean on the water-seller until she tells me what she saw.').note).toContain('LAST RESORT —');
+    // Named, and rolled — a weak hit: the beat moves, but is not done.
+    const weak = [moveCard('g3', 'Gather Information', 'Action: 4 + 3 = 7 | Challenge: 2, 9', 'weak_hit'), narratedAs('n3', 'g3', 'gather_information', 'weak_hit')];
+    const moved = say('a3', 'I gather information on the docks.', weak);
+    expect(moved.note).not.toContain('LAST RESORT —');
+    expect(moved.note, 'the beat moved: nothing is spent').not.toContain('was spent');
+    expect(say('a4', 'I try the harbour office next.').note).not.toContain('LAST RESORT —');
+    expect(say('a5', 'I buy the clerk a drink and ask again.').note).toContain('LAST RESORT — 2 plain lines have brought nothing about');
+  });
+});
+
+describe('a move made with no roll is a move: the stray alert sees it (the fourth live run, a5–a7)', () => {
+  const b2 = CHARTER.beats.find(b => b.id === 'b2');
+
+  it('a Develop Your Relationship on the beat that wants a connection made raises the alert, and unlocks the last resort', () => {
+    // The run's a5: the move reader read the plea for a tie as Develop, with no action roll.
+    expect(said('a5', /interpretMove/)).toMatch(/"moveId":\s*"develop_your_relationship"/);
+    const pointer = createPointer([{ ...b2, needs: [] }]);
+    const marks = [markOf('a3', tableOf())];
+    const messages = [];
+    pointer.advance({ marks, messages, actions: [], charter: CHARTER }, 'a3');
+    const say = (step, text, cards, table) => { messages.push(line(step, text)); pointer.record(step, { action: 'say', text }); marks.push(markOf(step, table, cards)); pointer.advance({ marks, messages, actions: [], charter: CHARTER }, step); return pointer.brief(); };
+    expect(say('a4', RUN_4.actions[3].text, [], recorded({ bond: true })).alert).toBe('');
+    const develop = [moveCard('d5', 'Develop Your Relationship', '', null), narratedAs('n5', 'd5', 'develop_your_relationship', null)];
+    const told = say('a5', RUN_4.actions[4].text, develop, recorded({ bond: true, ticks: 8 }));
+    expect(told.alert).toBe('A MOVE WAS MADE — Develop Your Relationship, with no roll — AND IT IS NOT WHAT THIS BEAT NEEDS. The beat is NOT done, and waiting will not finish it: do what the beat asks again, in other words.');
+    expect(told.note).toContain(`LAST RESORT — a move came that is not this beat's: this once you may name the move — ${b2.lastResort}`);
+    expect(pointer.state[0].rolled).toEqual([{ step: 'a5', moveId: 'develop_your_relationship', outcome: null, noRoll: true }]);
+  });
+
+  it('a no-roll move the beat wants raises nothing — Reach a Milestone on the vow beat', () => {
+    const b24 = CHARTER.beats.find(b => b.id === 'b24');
+    const pointer = createPointer([{ ...b24, needs: [] }]);
+    const marks = [markOf('a72', tableOf({ pc: { vows: [VOW] } }))];
+    pointer.advance({ marks, messages: [], actions: [], charter: CHARTER }, 'a72');
+    pointer.record('a73', { action: 'say', text: 'x' });
+    marks.push(markOf('a73', tableOf({ pc: { vows: [{ ...VOW, ticks: 8 }] } }), [moveCard('rm', 'Reach a Milestone', '', null), narratedAs('nm', 'rm', 'reach_a_milestone', null)]));
+    pointer.advance({ marks, messages: [line('a73', RUN_4.actions[72].text)], actions: [], charter: CHARTER }, 'a73');
+    expect(pointer.brief().alert).toBe('');
+  });
+});
+
+describe('a card that waits on the player is said on a line of its own (the fourth live run: Keep skipped at a38, "Which vow advances?" at a71)', () => {
+  const b9 = CHARTER.beats.find(b => b.id === 'b9');
+  const b24 = CHARTER.beats.find(b => b.id === 'b24');
+  const MISS = { open: true, resolvedBy: null, resolution: { moveId: 'enter_the_fray', outcome: 'miss' } };
+  const fray = (held) => moveCard('m38', 'Enter the Fray', 'Action: 3 + 1 = 4 | Challenge: 6, 7', 'miss', { held });
+  const looms = { id: 't38', threshold: { label: 'The Ashen Wake', position: 'bad_spot' } };
+  const brief = (beat, steps) => {
+    const pointer = createPointer([{ ...beat, needs: [] }]);
+    const marks = [markOf('a37', tableOf())];
+    pointer.advance({ marks, messages: [], actions: [], charter: CHARTER }, 'a37');
+    for (const [step, cards] of steps) { pointer.record(step, { action: 'click' }); marks.push(markOf(step, tableOf({ pc: { vows: [VOW] } }), cards)); pointer.advance({ marks, messages: [], actions: [], charter: CHARTER }, step); }
+    return pointer.brief();
+  };
+
+  it('a held result: press "Keep the result" before typing anything else — and the turn prompt says so above the count', () => {
+    const told = brief(b9, [['a38', [fray(MISS), looms]]]);
+    expect(told.waiting).toBe('the result of Enter the Fray (a miss) is held on its card, and nothing comes of it until you choose: press "Keep the result" on it — or "🔥 Burn Momentum", where this beat tells you to burn. Answer it before you type anything else.');
+    const prompt = playerTurnPrompt({ history: [], snapshot: { character: null, windows: [], messages: [] }, beat: told });
+    expect(prompt).toContain('\nWAITING ON YOU: the result of Enter the Fray (a miss) is held on its card');
+    expect(prompt.indexOf('WAITING ON YOU:')).toBeLessThan(prompt.indexOf('action spent on this beat so far'));
+    expect(CHARTER.playerNotes.join('\n')).toContain('If a card offers "Keep the result", press it');
+    // Kept: nothing waits.
+    expect(brief(b9, [['a38', [fray(MISS), looms]], ['a39', [fray({ ...MISS, open: false, resolvedBy: 'keep' })]]]).waiting).toBe('');
+  });
+
+  it('the milestone\'s vow picker, and a connection\'s: press the one the beat is about — and a picker answered waits for nothing', () => {
+    const picker = (resolved) => ({ id: 'mp71', milestonePicker: { resolved, choices: [{ vowId: 'v0', actorId: 'pc', marks: 1 }, { vowId: 'v1', actorId: 'pc', marks: 1 }] } });
+    const pressed = [moveCard('rm71', 'Reach a Milestone', '', null), picker(false)];
+    expect(brief(b24, [['a71', pressed]]).waiting).toBe('"⚑ Reach a Milestone — Which vow advances?" asks which of your vows: press the one this beat is about. Answer it before you type anything else.');
+    expect(brief(b24, [['a71', pressed], ['a72', [picker(true)]]]).waiting).toBe('');
+    const develop = { id: 'cp', picker: { pickAction: 'develop', resolved: false, choices: [{ hostId: 'A1', name: 'Tamsin Vey' }] } };
+    expect(brief(b24, [['a71', [develop]]]).waiting).toBe('a card asks which connection: press the one this beat is about. Answer it before you type anything else.');
+  });
+
+  it('a picker from before the beat came is no longer this beat\'s; one posted in the step that brought it is; on a beat that is the table\'s nothing is said', () => {
+    const cp = { id: 'cp', picker: { pickAction: 'develop', resolved: false, choices: [] } };
+    const walkTwo = (cardsAtA1, cardsAtA2) => {
+      const pointer = createPointer([{ id: 'p1', n: 1, session: 1, title: 'x', check: { type: 'oracleAsked' } }, { ...b24, n: 2, needs: [] }]);
+      const marks = [markOf('a1', tableOf(), cardsAtA1), markOf('a2', tableOf(), [...cardsAtA2, { id: 'o2', oracle: { answer: 'yes' } }]), markOf('a3', tableOf())];
+      pointer.advance({ marks: marks.slice(0, 1), messages: [], actions: [], charter: CHARTER }, 'a1');
+      pointer.advance({ marks: marks.slice(0, 2), messages: [], actions: [], charter: CHARTER }, 'a2');
+      pointer.advance({ marks, messages: [], actions: [], charter: CHARTER }, 'a3');
+      expect(pointer.current().beat.id).toBe('b24');
+      return pointer.brief().waiting;
+    };
+    expect(walkTwo([cp], []), 'posted before the beat before it was done').toBe('');
+    expect(walkTwo([], [cp]), 'posted in the step that brought the beat').toContain('which connection');
+    const reload = CHARTER.beats.find(b => b.id === 'b12');
+    expect(brief(reload, [['a38', [fray(MISS)]]]).waiting).toBe('');
+  });
+
+  it('the table read keeps the milestone picker the module posts — whether it was answered, and its choices', async () => {
+    const MODULE = 'starforged-companion';
+    const game = { messages: { contents: [
+      { id: 'mp', timestamp: 1, content: '<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong><p>Which vow advances?</p></div>', flags: { [MODULE]: { milestonePicker: true, resolved: false, choices: [{ vowId: 'v1', actorId: 'pc', marks: 1 }] } } },
+      { id: 'cp', timestamp: 2, content: '<div></div>', flags: { [MODULE]: { connectionPicker: true, pickAction: 'develop', resolved: true, choices: [] } } },
+    ] } };
+    const cards = await withPage({ game }, () => readCards({ page: { evaluate: async (fn, arg) => fn(arg) } }));
+    expect(cards[0]).toMatchObject({ id: 'mp', milestonePicker: { resolved: false, choices: [{ vowId: 'v1', actorId: 'pc', marks: 1 }] } });
+    expect(cards[1]).toMatchObject({ id: 'cp', picker: { pickAction: 'develop', resolved: true } });
+    expect(cards[1].milestonePicker).toBeUndefined();
   });
 });
