@@ -660,6 +660,17 @@ Two side effects beyond display:
    match text, so present entities keep their ENTITIES IN SCENE card every
    turn.
 
+**Openings from the record** (overhaul 2 slice 6 — §9;
+OPENING-CONTRADICTS-WHERE-IT-STOPPED). A session's opening is told where the
+last session stopped by that session's record (`galleyVignette.js
+whereLastSessionStopped` → internal `recordedStop`): its last scene's place,
+who was with them at the end, what binds there — the player's, the dice's,
+the GM's, the premise's facts, labelled, never the narration's colour — the
+question still open and what play let go; then the last narration as the
+table read it, its details the narration's own. Nothing in the opening
+contradicts what binds; its ending, the material's, never ends on a let-go
+hook. A session from before the record is told by its summary, as before.
+
 **One place** (overhaul 2 slice 4 — §6, D9, D17;
 SHIP-POSITION-AND-FRAME-DISAGREE). In the fourth live run's session 3 the
 frame said "open space off the lock" while the ship's record said docked at

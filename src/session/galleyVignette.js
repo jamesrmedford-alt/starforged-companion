@@ -238,9 +238,12 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
   // that leaves open … Nothing new happens", the fourth live run's three each
   // handled a counted object and ended still (a20, a54, a89). Only the plot
   // is held back: the first move is the players'.
-  const ending = material
+  const ending = (material
     ? "How it ends is the material's: its last sentence stays with whichever result the scene reaches last."
-    : "How it ends comes from the scene itself.";
+    : "How it ends comes from the scene itself.")
+    // …and never on a hook play let go (overhaul 2 §9 — the last session's
+    // record lists them under Let go).
+    + (!picked && lastSession?.record?.letGo?.length ? " It never ends on anything under Let go." : "");
 
   return [
     "OPENING VIGNETTE — begin-session.",
@@ -270,25 +273,38 @@ export function buildGalleyVignetteUserMessage(participants, campaignState, { ea
 }
 
 /**
- * Where the last session stopped — the one read of it. Two things say so:
+ * Where the last session stopped — the one read of it. Three things say so:
  *
- *   - the summary of the session before this one (LAST SESSION, read from
- *     the session record — lifecycle.js lastSessionToTell, issue #382);
+ *   - the last session's record (overhaul 2 §9 — recordedStop): its last
+ *     scene's place, who was there at the end, what binds there, the question
+ *     still open, what play let go — the table's facts, which the opening may
+ *     not contradict;
  *   - the last narration the table read, word for word, from the chat's cards
  *     (narrator.js getLastStoryNarration — the ring's own source, no store of
- *     its own). The summary can be off, late or wrong; this is what was read.
+ *     its own): how it read, its details the narration's own;
+ *   - for a session from before the record, the summary of the session
+ *     before this one (LAST SESSION — lifecycle.js lastSessionToTell, issue
+ *     #382). With a record the summary is not told here: it stays in the
+ *     system prompt under its "narrative texture only" caveat, and the fourth
+ *     live run's a20 opened against its last narration with it (a slip "left
+ *     on Tamsin's counter" while the colour had it in Mira's hands).
  *
- * Null with neither — a campaign's first session, or a world whose chat is
- * gone and whose summary is off: nothing is said then, and the opening's
- * place is rolled. Called from one place, composeOpeningScene.
+ * Null with none — a campaign's first session, or a world whose chat is gone
+ * and whose summary is off: nothing is said then, and the opening's place is
+ * rolled. Called from one place, composeOpeningScene.
  *
  * @param {Object|null} campaignState
- * @returns {Promise<{ text: string, sessionNumber: number|null, lastNarration: string, lastNarrationThisSession: boolean }|null>}
+ * @returns {Promise<{ text: string, sessionNumber: number|null, lastNarration: string, lastNarrationThisSession: boolean,
+ *   record: Object|null }|null>}
  */
 async function whereLastSessionStopped(campaignState) {
   const prev = lastSessionToTell(campaignState);
   const own  = !!prev?.sessionId && prev.sessionId === campaignState?.currentSessionId;
-  const text = !own && typeof prev?.text === "string" ? prev.text.trim() : "";
+  // LAST SESSION's session, else the newest earlier one the record says a
+  // table began: LAST SESSION is told only by a summary, and one never made
+  // (the setting off, a call that failed) leaves the record to say it.
+  const record = own ? null : await recordedStop(prev?.sessionId ?? null, campaignState);
+  const text = !own && !record && typeof prev?.text === "string" ? prev.text.trim() : "";
   // Loaded when asked for: the narrator is this scene's caller, and nothing
   // that only builds or posts the scene's card needs it.
   let last = null;
@@ -298,13 +314,98 @@ async function whereLastSessionStopped(campaignState) {
   } catch (err) {
     console.warn(`${MODULE_ID} | opening scene: the last narration could not be read:`, err?.message ?? err);
   }
-  if (!text && !last?.text) return null;
+  if (!text && !last?.text && !record) return null;
   return {
     text,
-    sessionNumber: text && Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null,
+    sessionNumber: (text || record) && Number.isFinite(prev?.sessionNumber) ? prev.sessionNumber
+      : (record && Number.isFinite(record.number) ? record.number : null),
     lastNarration: last?.text ?? "",
     lastNarrationThisSession: !!last?.sessionId && last.sessionId === campaignState?.currentSessionId,
+    record,
   };
+}
+
+/** A record's words, one line. */
+const oneLine = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+
+/** What a truth rests on, as the opening's WHERE block says it (narratorPrompt.js's labels). */
+const STOP_BASIS = Object.freeze({ player: "the player", dice: "the dice", gm: "the GM", setup: "the premise" });
+
+/**
+ * Where the last session stopped, by its record (overhaul 2 §9): its last
+ * scene — the place it began at (`scene.started`'s place, else the session's
+ * end's), who was with them at the end (its last frame's `present`), what binds
+ * there (the truths its beats established — the player's, the dice's, the
+ * GM's, the premise's; never the narration's colour, which no view tells), the
+ * question still open (its last frame's, unanswered — the player's) and what
+ * play let go in the session; the ship from its live record (nothing moves it
+ * between sessions). Null for a session from before the record (`legacy`) or
+ * one with nothing to say. Never throws.
+ *
+ * @param {string|null} sessionId — null: the newest earlier session the record says a table began
+ * @param {Object|null} campaignState
+ * @returns {Promise<{ place: string, ship: string, present: string[], binds: Array<{ subject: string, fact: string, basis: string }>,
+ *   open: string, letGo: string[], number: number|null }|null>}
+ */
+async function recordedStop(sessionId, campaignState) {
+  try {
+    const [{ readRecord }, { recordSource }, { sceneForReading }] = await Promise.all([
+      import("../record/read.js"), import("../record/pages.js"), import("../narration/narratorPrompt.js"),
+    ]);
+    const source = recordSource();
+    const current = campaignState?.currentSessionId ?? null;
+    const id = sessionId ?? [...readRecord({ session: "campaign" }, source).sessions].reverse()
+      .find(s => s.sessionId !== current && !s.legacy && s.begun)?.sessionId ?? null;
+    if (!id) return null;
+    const session = readRecord({ session: id }, source).sessions[0] ?? null;
+    if (!session || session.legacy) return null;
+    const scene = Array.isArray(session.scenes) && session.scenes.length ? session.scenes[session.scenes.length - 1] : null;
+    const where = scene?.last ?? scene?.where ?? null;
+    const place = oneLine(scene?.place?.name) || oneLine(session.ended?.place?.name);
+    const present = (Array.isArray(where?.present) ? where.present : []).map(oneLine).filter(Boolean);
+    const inScene = (b) => !b.removed && (!scene?.sceneId || b.scene === scene.sceneId);
+    const binds = (Array.isArray(session.beats) ? session.beats : []).filter(inScene).flatMap(b => b.established ?? [])
+      .map(t => ({ subject: oneLine(t.subject?.text ?? t.subject?.name ?? ""), fact: oneLine(t.fact), basis: t.basis }))
+      .filter(t => t.fact && STOP_BASIS[t.basis]);
+    const open = where?.question && where.questionAnswered !== true ? oneLine(where.question) : "";
+    const letGo = (Array.isArray(session.letGo) ? session.letGo : []).map(oneLine).filter(Boolean);
+    const shipLine = oneLine(sceneForReading(campaignState).ship);
+    const ship = /^not yet established\b/i.test(shipLine) ? "" : shipLine;
+    if (!place && !present.length && !binds.length && !open && !letGo.length) return null;
+    return { place, ship, present, binds, open, letGo, number: Number.isFinite(session.number) ? session.number : null };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | opening scene: the last session's record could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * The record's account of where the last session stopped (overhaul 2 §9):
+ *
+ *   WHERE THE LAST SESSION STOPPED — session 1's record, the table's facts:
+ *     Place: Hollow Spire — Kobayashi IV docked at Hollow Spire.
+ *     With them at the end: Tamsin Vey.
+ *     What binds: the manifest — Mira left it with Tamsin for safekeeping (the player); …
+ *     Still open: What will Mira tell the hauler crew about the raiders? (the player's)
+ *     Let go — never bring these back: "Who else knew Mira was coming?".
+ *
+ * @param {Object} record — recordedStop's
+ * @param {number|null} sessionNumber
+ * @returns {string[]}
+ */
+function recordedStopLines(record, sessionNumber) {
+  const which = Number.isFinite(sessionNumber) ? `session ${sessionNumber}'s record` : "its record";
+  const lines = [`WHERE THE LAST SESSION STOPPED — ${which}, the table's facts:`];
+  if (record.place || record.ship) {
+    lines.push(`  Place: ${record.place || "not recorded"}${record.ship ? ` — ${record.ship}` : ""}.`);
+  }
+  if (record.present.length) lines.push(`  With them at the end: ${record.present.join(", ")}.`);
+  if (record.binds.length) {
+    lines.push(`  What binds: ${record.binds.map(t => `${t.subject ? `${t.subject} — ` : ""}${t.fact} (${STOP_BASIS[t.basis]})`).join("; ")}.`);
+  }
+  if (record.open) lines.push(`  Still open: ${record.open} (the player's)`);
+  if (record.letGo.length) lines.push(`  Let go — never bring these back: ${record.letGo.map(t => `"${t}"`).join(", ")}.`);
+  return lines;
 }
 
 /**
@@ -320,18 +421,34 @@ async function whereLastSessionStopped(campaignState) {
 function formatLastSessionStopped(lastSession, { outranked = false } = {}) {
   const text = typeof lastSession?.text === "string" ? lastSession.text.replace(/\s+/g, " ").trim() : "";
   const last = typeof lastSession?.lastNarration === "string" ? lastSession.lastNarration.trim() : "";
-  if (!text && !last) return "";
-  const which = Number.isFinite(lastSession.sessionNumber) ? ` (session ${lastSession.sessionNumber}, as its summary has it)` : " (as its summary has it)";
+  const record = lastSession?.record ?? null;
+  if (!text && !last && !record) return "";
   const lines = [];
-  if (text) lines.push(`WHERE THE LAST SESSION STOPPED${which}:`, text);
-  if (last) {
-    lines.push(
-      ...(text ? [""] : []),
-      lastSession.lastNarrationThisSession
-        ? "THE LAST NARRATION, word for word — written this session, before it began; what the table last read:"
-        : `${text ? "ITS LAST NARRATION" : "WHERE THE LAST SESSION STOPPED — ITS LAST NARRATION"}, word for word — what the table last read${text ? " (where the two differ, this is the later word)" : ""}:`,
-      last,
-    );
+  if (record) {
+    // The record's facts first, then the last narration as the table read it
+    // (overhaul 2 §9): what binds is the record's, the details the narration's.
+    lines.push(...recordedStopLines(record, lastSession.sessionNumber));
+    if (last) {
+      lines.push(
+        "",
+        lastSession.lastNarrationThisSession
+          ? "THE LAST NARRATION, as the table read it — written this session, before it began; the narration's own words, what binds is above:"
+          : "ITS LAST NARRATION, as the table read it — the narration's own words; what binds is above:",
+        last,
+      );
+    }
+  } else {
+    const which = Number.isFinite(lastSession.sessionNumber) ? ` (session ${lastSession.sessionNumber}, as its summary has it)` : " (as its summary has it)";
+    if (text) lines.push(`WHERE THE LAST SESSION STOPPED${which}:`, text);
+    if (last) {
+      lines.push(
+        ...(text ? [""] : []),
+        lastSession.lastNarrationThisSession
+          ? "THE LAST NARRATION, word for word — written this session, before it began; what the table last read:"
+          : `${text ? "ITS LAST NARRATION" : "WHERE THE LAST SESSION STOPPED — ITS LAST NARRATION"}, word for word — what the table last read${text ? " (where the two differ, this is the later word)" : ""}:`,
+        last,
+      );
+    }
   }
   lines.push(
     "",
@@ -347,12 +464,23 @@ function formatLastSessionStopped(lastSession, { outranked = false } = {}) {
         "moment inside that situation, not after it: whatever was still going on",
         "when the session stopped is still going on — a ship alongside, a lock",
         "standing open, a question unanswered, someone waiting — and it has its",
-        "place in this scene, if only at its edge. Do not contradict it, do not",
-        "write as though it were over or behind them (\"since the …\"), and do not",
+        "place in this scene, if only at its edge.",
+        // With the record's account (overhaul 2 §9): what binds is not to be
+        // contradicted; the last narration's details are its own.
+        ...(record
+          ? [
+            "Nothing in this scene contradicts what binds, above. The last narration is",
+            "how it read: its details are the narration's own and may be left out.",
+            "Do not write as though it were over or behind them (\"since the …\"), and do",
+          ]
+          : [
+            "Do not contradict it, do not",
+            "write as though it were over or behind them (\"since the …\"), and do not",
+          ]),
         // Its example of the time not to let pass — "for the third time this
         // week" — came back as a count: "a third time", "fifth time", "third
         // confession" (SET-PIECES-SHAPED-BY-THEIR-PROMPT).
-        "let more time pass than it allows.",
+        ...(record ? ["not let more time pass than it allows."] : ["let more time pass than it allows."]),
       ]),
   );
   return lines.join("\n");

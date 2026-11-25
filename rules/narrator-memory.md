@@ -498,7 +498,13 @@ layers. This file is the never-break list.
    in its source (`chronicleKeeps.lastingChangeOf`), and every LASTING beat is
    told. LAST SESSION is read from the record by one accessor
    (`lifecycle.js` `lastSessionToTell`): the newest earlier begun session's
-   summary, then what a session nobody began played, as facts. Full drop
+   summary, then what a session nobody began played, as facts. A session's
+   opening is not told the summary for a session with a record (overhaul 2
+   §9): it is told where that session stopped by its record — its last
+   scene's place, who was there, what binds there (never colour), the
+   question still open, what play let go (`galleyVignette.js
+   whereLastSessionStopped`) — and the last narration as it read; the summary
+   stays in the system prompt as LAST SESSION, narrative texture. Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 9. **The session record is one record of what happened** (issue #382;
