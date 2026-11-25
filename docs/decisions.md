@@ -6,6 +6,13 @@ rejected.
 
 ---
 
+## Overhaul 2 — scenes that begin and end, facts that know where they came from: scoped as issue #386, decisions taken to build (2026-11)
+
+**Decision** (the maintainer, 2026-11-25: "Please also execute overhaul 2"; and, for the round, "Go with your recommendation when in doubt"): overhaul 2 is scoped as issue #386, its decisions taken at the design's recommendations, each the maintainer's to take back. Among them: scenes turn in code — on a change of place, of the ship's place, a fight, an expedition, a scene challenge, or a time skip in the player's line — through one check, `ensureCurrentScene` (D1–D4); every truth and state entry carries a basis (player, dice, GM, setup, narrator), and only the narrator's own colour does not bind: it is shown as colour, drops out six narrations after it was last said, ends with its scene, and is never filed as lore, a card detail or a last-known place (D5–D8, D13); the location, the ship's position and the frame's place inside it are one place, composed (D9, D17); a scene question comes from the player's words, and one left unanswered three beats is let go, its hook with it (D10).
+
+- **D1 reverses a settled decision** — issue #353 R2, "scenes stay manual" (a scene turned only on `!scene`, End a Session or the four-hour re-mint): run 3's opening hook bound all 22 prompts of a session, and the narrator's colour was written back as binding fact. It is the first of these to take back if scenes turn too often in play (the design estimates four to six a session).
+- **D16 amends issue #362 D4** — a turn of the scene is today's scene end, except that the scene's unanswered mysteries and the `!pace` override last until the session's end.
+
 ## Overhauls 1 and 4 — one reader, and moves as contracts: scoped as issues #384 and #385, decisions taken to build (2026-11)
 
 **Decision** (the maintainer, 2026-11-25, after the long haul's fourth live run — "I thought 1 and 4 were on the docket already and done", then "Please do all of that. Go with your recommendation when in doubt"):
