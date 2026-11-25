@@ -308,8 +308,8 @@ describe('compareDesigns — the switch\'s criteria, model by model', () => {
     expect(by[5]).toMatchObject({ pass: true });
     expect(by[6].detail).toMatch(/^rolled 2\.10 s against 4\.30 s; narrated 2\.10 s against 1\.30 s$/);
     expect(by[6].pass, 'a narrated line 0.8 s slower is too slow').toBe(false);
-    // The median as the criterion words it decides; the mean is told beside it.
-    expect(by[7].detail).toMatch(/^\$\d\.\d{4} against \$\d\.\d{4}; the mean line \$\d\.\d{4} against \$\d\.\d{4}$/);
+    // The whole spend a line decides; the median is told beside it.
+    expect(by[7].detail).toMatch(/^\$\d\.\d{4} against \$\d\.\d{4} a line; the median line \$\d\.\d{4} against \$\d\.\d{4}$/);
     expect(by[8]).toMatchObject({ pass: true });
     expect(by[9]).toMatchObject({ pass: true, detail: '0 of 5' });
     expect(pair.verdict).toBe('do not switch');
@@ -322,6 +322,18 @@ describe('compareDesigns — the switch\'s criteria, model by model', () => {
     expect(pair.criteria.find(c => c.n === 5)).toMatchObject({ pass: null, detail: 'no fight line was read' });
     expect(['do not switch', 'not measured in full']).toContain(pair.verdict);
     expect(compareDesigns(summarise(run.filter(r => r.design === 'two'), { prices: PRICES }))).toEqual([]);
+  });
+
+  it('cost is judged at the whole spend a line — the median, which sets one pacing call against a whole reading, is told beside it', () => {
+    const summary = summarise(madeUpRun(), { prices: PRICES });
+    const at = (arm, lineUsd) => { summary.byArm[arm] = { ...summary.byArm[arm], spend: { ...summary.byArm[arm].spend, lineUsd } }; };
+    // Today's median line is the pacing reader's one call; the one reader's every line is one call that reads it all.
+    at('two:claude-sonnet-5-5', { n: 5, mean: 0.0068, median: 0.0039 });
+    at('one:claude-sonnet-5-5', { n: 5, mean: 0.0057, median: 0.0057 });
+    const seven = () => compareDesigns(summary)[0].criteria.find(c => c.n === 7);
+    expect(seven()).toMatchObject({ pass: true, detail: '$0.0057 against $0.0068 a line; the median line $0.0057 against $0.0039' });
+    at('one:claude-sonnet-5-5', { n: 5, mean: 0.0070, median: 0.0030 });
+    expect(seven().pass, 'cheaper at the median, dearer a line').toBe(false);
   });
 
   it('the dials\' share strays: an arm that offers what the other rolls', () => {

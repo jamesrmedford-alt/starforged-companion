@@ -658,9 +658,9 @@ function spendOf(list, prices) {
     lineReader:  time(msOf("line")),
     line:        time(perLine),
     routes:      { narrated: byRoute("narrated"), offered: byRoute("offered"), rolled: byRoute("rolled") },
-    // The median line (the switch's criterion 7, as worded) and the mean: today's median line is often
-    // the pacing reader's one call, so the mean is the whole mix's cost a line, beside it.
-    lineUsd:     { n: lineUsd.length, median: percentile(lineUsd, 0.5), mean: lineUsd.length ? lineUsd.reduce((n, x) => n + x, 0) / lineUsd.length : null },
+    // A line's cost: the mean — the arm's whole spend a line, the switch's criterion 7 (the maintainer,
+    // 2026-11-25: the median sets the pacing reader's one call against a whole reading) — and the median beside it.
+    lineUsd:     { n: lineUsd.length, mean: list.length && priced.length ? priced.reduce((n, c) => n + costOf(prices[c.model], c.usage), 0) / list.length : null, median: percentile(lineUsd, 0.5) },
   };
 }
 
@@ -827,10 +827,12 @@ export function compareDesigns(summary) {
     add(6, "time: a rolled line 1 s faster, a narrated one no more than 0.3 s slower",
       timed ? rolled[0] <= rolled[1] - 1000 && narrated[0] <= narrated[1] + 300 : null,
       `rolled ${secs(rolled[0])} against ${secs(rolled[1])}; narrated ${secs(narrated[0])} against ${secs(narrated[1])}`);
-    const cost = [b.spend.lineUsd.median, a.spend.lineUsd.median];
+    // Cost is judged at the mean — the whole spend a line; the median, which sets the pacing reader's
+    // one call against a whole reading, is told beside it.
     const mean = [b.spend.lineUsd.mean, a.spend.lineUsd.mean];
-    add(7, "cost: the median line no dearer", cost.every(Number.isFinite) ? cost[0] <= cost[1] : null,
-      `${usd(cost[0])} against ${usd(cost[1])}; the mean line ${usd(mean[0])} against ${usd(mean[1])}`);
+    const median = [b.spend.lineUsd.median, a.spend.lineUsd.median];
+    add(7, "cost: a line no dearer (the whole spend a line)", mean.every(Number.isFinite) ? mean[0] <= mean[1] : null,
+      `${usd(mean[0])} against ${usd(mean[1])} a line; the median line ${usd(median[0])} against ${usd(median[1])}`);
     const share = [b.rolledShare, a.rolledShare];
     add(8, "the dials hold: the rolled share within 10 points", share.every(x => x != null) ? Math.abs(share[0] - share[1]) <= 0.10 : null,
       `${share[0] == null ? "–" : `${Math.round(share[0] * 100)}%`} (${b.actionRolled} of ${b.actionRead}) against ${share[1] == null ? "–" : `${Math.round(share[1] * 100)}%`} (${a.actionRolled} of ${a.actionRead})`);
@@ -906,13 +908,13 @@ function designSections(summary) {
   const route = (t) => (t.n ? `${secs(t.medianMs)} (${t.n})` : "–");
   out.push("## Calls and time by where a line ended", "",
     "A line's reading time is its calls' together (the pacing reader's and the move reader's, or the line reader's one); a line ended rolled, offered on a button, or narrated with nothing.", "",
-    "| Arm | Calls a line | Narrated: median (lines) | Offered: median (lines) | Rolled: median (lines) | A line's cost: median | A line's cost: mean |",
+    "| Arm | Calls a line | Narrated: median (lines) | Offered: median (lines) | Rolled: median (lines) | A line's cost: mean (the criterion) | A line's cost: median |",
     "|---|---|---|---|---|---|---|");
   const dollars = (n) => (n == null ? "–" : `$${n.toFixed(4)}`);
   for (const arm of arms) {
     const s = byArm[arm].spend;
     out.push(`| \`${arm}\` | ${s.callsPerLine == null ? "–" : s.callsPerLine.toFixed(2)} | ${route(s.routes.narrated)} | ${route(s.routes.offered)} | ${route(s.routes.rolled)} `
-      + `| ${dollars(s.lineUsd.median)} | ${dollars(s.lineUsd.mean)} |`);
+      + `| ${dollars(s.lineUsd.mean)} | ${dollars(s.lineUsd.median)} |`);
   }
   out.push("");
 

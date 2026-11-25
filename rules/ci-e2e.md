@@ -1358,7 +1358,10 @@ by the switch's criteria (`lib/readers.mjs` `compareDesigns`): the measure is
 READERS_REPEATS=2`. Its list holds fights (a combat track with the character's
 `position` in it, written with `setCombatTrackPosition`), lines that follow a
 run of moves (`recentMoves`), the two named-move lines (`named`, read right
-only when rolled — `want.rolled`) and issue #383's kinds (`kind`).
+only when rolled — `want.rolled`) and issue #383's kinds (`kind`), two lines
+each. Its cost criterion is the whole spend a line (the mean), with the median
+told beside it: the median sets the pacing reader's one call against a whole
+reading.
 
 ## Quench batch coupling — shared defaults and hooks
 
