@@ -737,7 +737,9 @@ and the rules that go with each:
   all along. Beats 3, 19 and 23 now require `{ "type": "connectionMade",
   "name": "Tamsin Vey" }` (she is the character's connection, whichever road
   made her one); beat 24 still needs beat 23's bond. The re-score asks it the
-  same way (`lib/longrun.mjs` `recheckBeats`).
+  same way (`lib/longrun.mjs` `recheckBeats`). What happened in the step
+  that finished a beat belongs to that beat: the next one's window opens after
+  it.
 - **A beat is written for the world the beats before it leave**, and its
   player is told nothing that world does not bear out. The fourth live run's
   recovery beat asked for the medkit or the market with health and supply
@@ -752,9 +754,7 @@ and the rules that go with each:
   (a70, refuted by the narration it produced): it now asks for the finding
   first, and for nothing claimed beyond what the narrator has told. Its fight
   was told off Bleakhold's ring one step after the ship had docked: it is
-  fought at the ring now, the ship in her berth. What happened in the step
-  that finished a beat belongs to that beat: the next one's window opens after
-  it.
+  fought at the ring now, the ship in her berth.
 - **Seven decisive rolls are scripted, the rest are real, all are recorded**
   (decision 3's six, and the expedition's finish; a beat's `dice`). They are
   armed at the GM's confirmation, by the move it names — never by whichever
