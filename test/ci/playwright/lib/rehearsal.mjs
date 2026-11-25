@@ -170,7 +170,8 @@ export function createRehearsal({ charter, forget = false }) {
     if (system.includes("NARRATOR ROLE AND VOICE")) {
       const prose = knows ? `You stop for a moment. ${fact.statement}` : "The moment passes. Nothing more comes of it.";
       if (!system.includes("MANDATORY SIDECAR")) return text(prose);
-      const sidecar = { newTruths: knows ? [{ subject: pc, fact: fact.statement }] : [], stateChanges: [] };
+      // The player's own words, tagged as theirs (overhaul 2, D5): untagged, a fact is the narrator's colour and fades.
+      const sidecar = { newTruths: knows ? [{ subject: pc, fact: fact.statement, from: "line" }] : [], stateChanges: [] };
       return text(`${prose}\n\n\`\`\`json\n${JSON.stringify(sidecar, null, 2)}\n\`\`\``);
     }
     return text("{}");
@@ -402,7 +403,8 @@ export function createRollingRehearsal({ charter, forget = false }) {
     } else if (entry.plants?.length) {
       const said = statementsOf(entry.plants);
       prose = forget ? "The moment passes. Nothing more comes of it." : `You say it plainly, and it stays said. ${said.join(" ")}`;
-      if (!forget) sidecar.newTruths = said.map(fact => ({ subject: pc, fact }));
+      // Said by the player (the plant's own line), so tagged theirs: it binds, and the recalls hold (overhaul 2, D5).
+      if (!forget) sidecar.newTruths = said.map(fact => ({ subject: pc, fact, from: "line" }));
     } else if (entry.probe) {
       const fact = facts.find(f => f.id === entry.probe);
       prose = known(entry.probe) ? `It comes back to you at once. ${fact.statement}` : "You reach for it and nothing comes. Whatever it was, it is not here now.";
