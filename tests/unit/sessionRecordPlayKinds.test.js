@@ -191,11 +191,20 @@ describe('the frame, a question, a choice', () => {
     expect(beat).toMatchObject({ kind: 'question', line: { text: 'Is the hatch sealed?' }, told: { text: 'The hatch is sealed.', mode: 'scene_answer' }, lasting: null });
   });
 
-  it('a card press a GM_ACTIONS row marks `record` is a choice — the press\'s own pick, by the requester — and a refused press is none', async () => {
-    await runGmAction('milestone.pick', { messageId: 'card-m', pick: 'vow-ark' }, { requesterId: 'pl-1' });
-    await runGmAction('milestone.pick', { messageId: 'card-m', pick: 'vow-other', refuse: true }, { requesterId: 'pl-1' });
-    await new Promise(r => setTimeout(r, 0));
-    await recordSettled();
-    expect(stored().map(e => [e.k, e.who.user, e.ref.card, e.d])).toEqual([['choice', 'pl-1', 'card-m', { action: 'milestone.pick', picked: 'vow-ark' }]]);
+  it('a card press a GM_ACTIONS row marks `record` is a choice — the words of the button pressed, by the requester — and a refused press is none', async () => {
+    // The milestone picker's buttons, as index.js renders them: the press names its vow by the button's data.
+    const card = { id: 'card-m', flags: { [MODULE_ID]: { milestonePicker: true } }, content:
+      '<button data-action="sf-milestone-pick" data-actor-id="pc-1" data-vow-id="vow-ark">Find the lost ark</button>'
+      + '<button data-action="sf-milestone-pick" data-actor-id="pc-1" data-vow-id="vow-other">Avenge the Hollow</button>' };
+    game.messages = { contents: [card], get: (id) => (id === card.id ? card : null) };
+    try {
+      await runGmAction('milestone.pick', { messageId: 'card-m', actorId: 'pc-1', vowId: 'vow-ark' }, { requesterId: 'pl-1' });
+      await runGmAction('milestone.pick', { messageId: 'card-m', actorId: 'pc-1', vowId: 'vow-other', refuse: true }, { requesterId: 'pl-1' });
+      await new Promise(r => setTimeout(r, 0));
+      await recordSettled();
+    } finally {
+      delete game.messages;
+    }
+    expect(stored().map(e => [e.k, e.who.user, e.ref.card, e.d])).toEqual([['choice', 'pl-1', 'card-m', { action: 'milestone.pick', picked: 'Find the lost ark' }]]);
   });
 });

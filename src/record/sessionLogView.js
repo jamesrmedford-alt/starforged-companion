@@ -144,6 +144,30 @@ function correctionLine(c) {
   return '';
 }
 
+/** A frame's Where, trimmed — null for none. */
+function placeOf(location) {
+  const s = typeof location === 'string' ? location.replace(/\s+/g, ' ').trim() : '';
+  return s || null;
+}
+
+/** The words that name a place, without the ones that only place it there ("aboard the …, in the …"). */
+const PLACE_GLUE = new Set(['the', 'a', 'an', 'in', 'on', 'at', 'of', 'off', 'aboard', 'inside', 'by', 'near', 's', 'and']);
+const placeWords = (place) => new Set((place.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(w => !PLACE_GLUE.has(w)));
+
+/**
+ * Whether two frames' Wheres are one place, worded twice — "Kobayashi IV,
+ * cockpit" and "aboard the Kobayashi IV, in the cockpit": the words of one
+ * hold the other's. The narrator rewrites the frame every beat, and a
+ * rewording is no move.
+ */
+function samePlace(a, b) {
+  const x = placeWords(a);
+  const y = placeWords(b);
+  if (!x.size || !y.size) return a.toLowerCase() === b.toLowerCase();
+  const within = (p, q) => [...p].every(w => q.has(w));
+  return within(x, y) || within(y, x);
+}
+
 /**
  * The page's body for one session of the read.
  *
@@ -155,17 +179,26 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
   const lines = [`<h2>${escapeHtml(session?.name || 'Session')}</h2>`];
   if (!enabled || !session) return lines.join('');
 
-  // A new scene where one began this session, before its first beat.
+  // A new scene where one began this session, before its first beat, named
+  // where it began; a move of place within a scene, a line of its own before
+  // the first beat set there (known-issues RECORD-VIEW-SMALLER: a scene was
+  // labelled where it ended, and its move of place said nowhere).
   const begun = new Map((session.scenes ?? []).map(sc => [sc.sceneId, sc]));
   const beats = [];
   let scene = undefined;
+  let at = null;                       // where the beats listed so far are, in their scene
   for (const beat of session.beats) {
     const line = beatLine(beat);
     if (!line) continue;
-    if (beat.scene !== scene && begun.has(beat.scene)) {
-      const where = begun.get(beat.scene)?.where?.location ?? beat.where?.location ?? null;
-      beats.push(`<li><em>A new scene${where ? ` — ${escapeHtml(where)}` : ''}.</em></li>`);
+    const place = placeOf(beat.where?.location);
+    if (beat.scene !== scene) {
+      const opened = begun.has(beat.scene);
+      at = opened ? (placeOf(begun.get(beat.scene)?.where?.location) ?? place) : place;
+      if (opened) beats.push(`<li><em>A new scene${at ? ` — ${escapeHtml(at)}` : ''}.</em></li>`);
+    } else if (place && at && !samePlace(place, at)) {
+      beats.push(`<li><em>The scene moves — ${escapeHtml(place)}.</em></li>`);
     }
+    if (place) at = place;
     scene = beat.scene;
     beats.push(line);
   }

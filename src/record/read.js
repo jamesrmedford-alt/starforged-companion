@@ -362,8 +362,12 @@ function sessionBeats(events, { xcarded, superseded }) {
         if (viaXCard) continue;
         where = { location: d.location ?? null, present: Array.isArray(d.present) ? d.present : [], situation: d.situation ?? null,
           question: d.question ?? null, questionAnswered: d.questionAnswered === true };
+        // A scene is where it began: its first frame. Each later frame gave it
+        // its Where, so session 2's opening in the cockpit was labelled "A new
+        // scene — Bleakhold Station docking ring", where it ended (known-issues
+        // RECORD-VIEW-SMALLER); a move within it is its beats' (`where`).
         const scene = scenes.findLast(x => x.sceneId === (e.scene ?? null));
-        if (scene) scene.where = where;
+        if (scene && !scene.where?.location) scene.where = where;
         continue;
       }
       case 'question': {
@@ -559,6 +563,10 @@ function correctNames(session, { names, nameOf, otherNames }) {
     ...(typeof s.text === 'string' ? { text: fix(s.text) } : {}),
     ...(s.kind === 'entity' && s.entityId && !s.text ? { name: actorName(s.entityId) ?? fix(s.name) } : {}),
   } : s);
+  const whereAnew = (w) => ({ ...w, location: fix(w.location), situation: fix(w.situation), question: fix(w.question),
+    present: (w.present ?? []).map(fix) });
+  // Where each scene began, as its label is shown (sessionLogView.js).
+  for (const sc of session.scenes ?? []) if (sc.where) sc.where = whereAnew(sc.where);
   for (const beat of session.beats) {
     beat.who.name = actorName(beat.who.actor);
     if (beat.line) beat.line.text = fix(beat.line.text);
@@ -568,10 +576,7 @@ function correctNames(session, { names, nameOf, otherNames }) {
       }
       if (d.actorId && d.kind === 'position.changed') d.name = actorName(d.actorId) ?? fix(d.name);
     }
-    if (beat.where) {
-      beat.where = { ...beat.where, location: fix(beat.where.location), situation: fix(beat.where.situation), question: fix(beat.where.question),
-        present: (beat.where.present ?? []).map(fix) };
-    }
+    if (beat.where) beat.where = whereAnew(beat.where);
     if (beat.told) beat.told.text = fix(beat.told.text);
     if (beat.move?.target?.name) beat.move.target = { ...beat.move.target, name: fix(beat.move.target.name) };
     for (const c of beat.changes) c.name = actorName(c.actor) ?? fix(c.name);

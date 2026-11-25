@@ -431,10 +431,13 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
       requesterIsGM: !!requester?.isGM,
       local,
     };
+    // The words of the button pressed, read off its card before the handler
+    // can write the card over (pressedLabel).
+    const pressed = entry.record === true ? pressedLabel(kind, payload ?? {}) : null;
     const result = await handler(payload ?? {}, ctx);
     const refused = _refusedPresses.get(ctx);
     if (refused) await tellRefusedPress(ctx, refused);
-    else if (entry.record === true) recordChoice(kind, payload ?? {}, ctx, result);
+    else if (entry.record === true) recordChoice(kind, payload ?? {}, ctx, result, pressed);
     return result;
   };
   return UNQUEUED_ACTIONS.has(kind) ? task() : enqueueGmAction(kind, task);
@@ -444,20 +447,106 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
 // A choice made on a card is a choice on the session record (issue #382)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The payload keys a card's press names its pick by, the most telling first.
-const PICK_KEYS = ['choice', 'way', 'pick', 'option', 'pickKind', 'sufferId', 'optionIndex', 'label', 'trackId'];
+/**
+ * The presses whose button carries no data of its pick — it is named by its
+ * own action alone: the payload key that holds the pick and, for each of its
+ * values, the action of its button (moves/combatThreshold.js
+ * buildCombatThresholdHtml, which index.js registerCombatThresholdHook sends
+ * as "fray" / "wayOut"; moves/sojournNeed.js's two, sent as "vow" / "done").
+ */
+const ACTION_OF_PICK = Object.freeze({
+  'combat.threshold': Object.freeze({ key: 'choice', actions: Object.freeze({ fray: 'sf-enter-fray', wayOut: 'sf-way-out' }) }),
+  'sojourn.need':     Object.freeze({ key: 'way', actions: Object.freeze({ vow: 'sf-sojourn-need-swear', done: 'sf-sojourn-need-done' }) }),
+});
+
+/** A payload key that never names the button pressed: the card's id, and the presser's own PC (client-asserted). */
+const NOT_A_PICK = new Set(['action', 'messageId', 'actorId']);
+
+/** The most of a button's words a choice keeps. */
+const PICKED_MAX = 160;
+
+const HTML_ENTITIES = Object.freeze({
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', times: '×',
+});
+
+function decodeEntities(s) {
+  return String(s ?? '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, e) => {
+    const k = e.toLowerCase();
+    if (k.startsWith('#x')) return String.fromCodePoint(parseInt(k.slice(2), 16));
+    if (k.startsWith('#')) return String.fromCodePoint(Number(k.slice(1)));
+    return HTML_ENTITIES[k] ?? whole;
+  });
+}
+
+/**
+ * A card's buttons as its HTML has them: each one's `data-*`, camel-cased as
+ * `HTMLElement.dataset` reads them, and the words it shows — with the marks
+ * around them left out (an icon before them, "✓ ", " (unavailable)").
+ */
+function cardButtons(content) {
+  const out = [];
+  for (const [, attrs, inner] of String(content ?? '').matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    const data = {};
+    for (const [, name, value] of attrs.matchAll(/\bdata-([a-z0-9-]+)="([^"]*)"/gi)) {
+      data[name.toLowerCase().replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase())] = decodeEntities(value);
+    }
+    const words = decodeEntities(inner.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+      .replace(/^[^\p{L}\p{N}“"‘'(]+/u, '')
+      .replace(/\s*\(unavailable\)$/i, '')
+      .trim();
+    out.push({ data, words });
+  }
+  return out;
+}
+
+/**
+ * The words of the button a card press names, as its card showed them when it
+ * was pressed — read before its handler runs, which may write the card over
+ * ("◈ Consequence resolved"). The button is the one its action names
+ * (ACTION_OF_PICK), else the card's one button whose data the press carries:
+ * each `data-*` of it the payload names, equal. Null when no one button is it
+ * — the card gone, a press no button names, a press of a card's only button
+ * with no pick to it. Never throws.
+ *
+ * @param {string} kind
+ * @param {Object} payload
+ * @returns {string|null}
+ */
+function pressedLabel(kind, payload) {
+  try {
+    const messageId = typeof payload?.messageId === 'string' && payload.messageId ? payload.messageId : null;
+    const content = messageId ? globalThis.game?.messages?.get?.(messageId)?.content : null;
+    if (typeof content !== 'string' || !content) return null;
+    const buttons = cardButtons(content);
+    const byAction = ACTION_OF_PICK[kind];
+    const action = byAction ? byAction.actions[payload[byAction.key]] : null;
+    const named = action
+      ? buttons.filter(b => b.data.action === action)
+      : buttons.filter((b) => {
+        const keys = Object.keys(b.data).filter(k => !NOT_A_PICK.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== '');
+        return keys.length > 0 && keys.every(k => String(payload[k]) === b.data[k]);
+      });
+    const words = [...new Set(named.map(b => b.words).filter(Boolean))];
+    return words.length === 1 ? words[0].slice(0, PICKED_MAX) : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Put a card press its handler took on the session record as a `choice` —
  * the rows of GM_ACTIONS marked `record` (tests/unit/sessionRecordEvents.test.js
- * names every other row and why it records none). The pick is the press's
- * own option id; a refusal — the handler said nothing was applied — records
- * nothing. The card's resolution, when it has one, ties the choice to its
- * move's beat. Fire-and-forget; never throws.
+ * names every other row and why it records none). The pick is the words of
+ * the button pressed (pressedLabel), or none: it was the press's own option
+ * id, and the views printed it — "chose “enum”", "chose “any”", "chose
+ * “fray”" (known-issues RECORD-VIEW-SMALLER, the fourth live run). A refusal —
+ * the handler said nothing was applied — records nothing. The card's
+ * resolution, when it has one, ties the choice to its move's beat.
+ * Fire-and-forget; never throws.
  */
-function recordChoice(kind, payload, ctx, result) {
+function recordChoice(kind, payload, ctx, result, picked = null) {
   if (result === false || result?.applied === false || result?.posted === false || result?.ok === false) return;
-  const key = PICK_KEYS.find(k => payload[k] !== undefined && payload[k] !== null && payload[k] !== '');
   const messageId = typeof payload.messageId === 'string' && payload.messageId ? payload.messageId : null;
   let res = null;
   try { res = (messageId && globalThis.game?.messages?.get?.(messageId)?.flags?.[MODULE_ID]?.resolutionId) || null; } catch { res = null; }
@@ -466,7 +555,7 @@ function recordChoice(kind, payload, ctx, result) {
     .then(({ recordEvent }) => recordEvent('choice', {
       who: { user: ctx?.requesterId ?? null, actor: typeof payload.actorId === 'string' ? payload.actorId : null },
       ref: { card: messageId, res },
-      d: { action: kind, picked: key ? String(payload[key]) : null },
+      d: { action: kind, picked: typeof picked === 'string' && picked ? picked : null },
       ...(typed ? { text: typed } : {}),
     }))
     .catch(err => console.warn(`${MODULE_ID} | gmRelay: "${kind}" was not put on the session record:`, err?.message ?? err));

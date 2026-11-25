@@ -173,7 +173,8 @@ describe('getRollingSessionSummary — a view of the session record', () => {
     await getRollingSessionSummary(makeState());
     const user = userOf(calls[0]);
     expect(user).toContain('the player wrote “I give him my father\'s compass.”\nTOLD AS: “The old man turns the compass over.”');
-    expect(user).toMatch(/## QUESTIONS — asked of the narrator; nothing happened because one was asked\n\n\[\d\] Asked the narrator “is it raining\?”\nTOLD AS: “Rain needles the canopy\.”/);
+    // Unnumbered: no beat a summary may cite (known-issues RECORD-VIEW-SMALLER).
+    expect(user).toMatch(/## QUESTIONS — asked of the narrator; nothing happened because one was asked\n\n- Asked the narrator “is it raining\?”\n {2}ANSWERED: “Rain needles the canopy\.”/);
   });
 
   it('a non-GM gets the fresh text but stores nothing', async () => {
