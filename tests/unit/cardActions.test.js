@@ -447,7 +447,8 @@ describe('applyWaypointOraclePick', () => {
       content: 'I follow what the waypoint revealed — making a discovery.',
       speaker: { actor: 'pc-b' },
     });
-    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true,
+    // `fromWaypoint`: made from the waypoint's own alternative — what the move gate asks of a discovery (overhaul 4).
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true, fromWaypoint: true,
       sourceCard: { messageId: 'wp-1', claim: 'waypointRewardClaimed', value: 'alternative', release: null,
         reopenRetired: { resolutionId: waypoint.flags[MODULE_ID].resolutionId ?? null, kind: 'discovery' } } });
     expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');

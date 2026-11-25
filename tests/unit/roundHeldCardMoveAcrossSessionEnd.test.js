@@ -85,6 +85,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -118,6 +119,8 @@ beforeEach(async () => {
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: 'rpc-scene', sceneTruths: [], clocks: [], legacyTracks: {} },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
+  // a waypoint is explored on an expedition (the move gate's EXPEDITION_OR_SITE) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'ex-1', label: 'To the Drift', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false }]));
   // Kira's momentum 2 beats neither of her challenge dice: no Burn, so her own result holds nothing.
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] },
     system: { wits: 2, heart: 2, momentum: { value: 2 }, supply: { value: 3 }, health: { value: 5 }, spirit: { value: 5 } } });

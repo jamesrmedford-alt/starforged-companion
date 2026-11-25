@@ -179,14 +179,16 @@ describe('issue #345 AA16 — a Forsake Your Vow that finds no single vow of the
     ]);
   }, 30_000);
 
-  it('Kira holding no open vow: Ren\'s is untouched, and the move card says nothing was cleared and offers no cost', async () => {
+  it('Kira holding no open vow: Ren\'s is untouched, nothing is rolled, no cost is offered, and Kira is told why', async () => {
     const rens = vowItem('v-ren', 'Repay the Syndicate', { vowId: 'v-ren' });
     await setUp([], [rens]);
     await kiraForsakes('Kira forsakes her vow.', null);
     expect(state(rens)).toEqual({ completed: false, forsaken: false });
-    const card = moveCard();
-    expect(card?.content ?? '').not.toContain('Vow cleared');
-    expect(card?.content ?? '').toMatch(/No open vow of Kira.s to forsake/);
+    // The move gate refuses it before any dice (OPEN_VOW of the roller's —
+    // overhaul 4): it once found out after the move that there was no vow.
+    expect(moveCard(), 'not rolled').toBeFalsy();
+    const told = [...table.cards(f => f.moveNotRolledNotice === 'cannot'), ...table.cards(f => f.pacedNarrative && f.cannotMake)];
+    expect(told.map(c => String(c.content ?? '')).join(' ')).toMatch(/No Forsake Your Vow — Kira has no open vow/);
     expect(table.cards(f => f.sufferCard), 'no forsake costs').toHaveLength(0);
     expect(table.cards(f => f.forsakeVowCard), 'no "Vow Forsaken" card').toHaveLength(0);
   }, 30_000);

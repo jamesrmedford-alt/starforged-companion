@@ -59,7 +59,8 @@ describe('item 3 — an offered move has not been made', () => {
   it('with no move offered, nothing on a sheet changes in narration', () => {
     const msg = buildPacedNarrativeUserMessage("I treat my wounds with the ship's medkit", '', 3, null, 'Mira Kestrel');
     expect(msg).not.toContain('## SUGGESTED MOVE');
-    expect(msg).toMatch(/Nor does anything on a character's sheet change — no wound is\s+treated or healed/);
+    // The rule is the [sheet] line of the narration's obligations block now (overhaul 4).
+    expect(msg).toMatch(/\[sheet\] Nothing on a character's sheet changes — no wound is\s+treated or healed/);
     expect(msg).toMatch(/the\s+move that decides it is still to be made/);
   });
 });

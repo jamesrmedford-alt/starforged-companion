@@ -27,6 +27,7 @@ vi.mock('../../src/ui/settingsPanel.js', async (original) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -91,6 +92,8 @@ beforeEach(async () => {
       currentSceneId: 'no-scene', sceneTruths: [], clocks: [] },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-test');
+  // the fight and the expedition the follow-ups finish, under way (the move gate's OPEN_FIGHT, OPEN_TRACK) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'fight-1', label: 'Corsairs', type: 'combat', rank: 'dangerous', ticks: 32, completed: false }, { id: 'exp-1', label: 'The Drift', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false }]));
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, hasPlayerOwner: true, items: { contents: [makeVow('vow-ren', 'Repay the Syndicate', 'vid-ren')] } });
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true, items: { contents: [makeVow('vow-kira', 'Find Chen', 'vid-kira')] } });
   scriptClaude(table, { fallback: () => 'Steel rings.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });

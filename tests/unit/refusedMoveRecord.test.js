@@ -59,7 +59,8 @@ async function kiraMakesADiscovery() {
   control.dice = null;
   await table.client("pl-1").chat("Make a discovery — something wondrous in the ruin.", {
     speaker: { actor: "pc-kira", alias: "Kira" },
-    flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "make_a_discovery" } },
+    // From a waypoint match's alternative, as the game makes a discovery (overhaul 4's FROM_A_WAYPOINT).
+    flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "make_a_discovery", fromWaypoint: true } },
   });
   await table.settle(); await table.drain();
 }

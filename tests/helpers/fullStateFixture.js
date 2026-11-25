@@ -134,6 +134,46 @@ export function addFactionEntity(journals, data) {
   return { journalId: journal.id, internalId };
 }
 
+/**
+ * The bond Item a PC's sheet holds for a connection record — what
+ * actorBridge.createCharacterBondItem writes (keyed by the record's `_id`),
+ * and what the forge / develop / sever writers keep in step with the record
+ * (setBondItemForged, setBondItemTicks, setBondItemLost). Under the move
+ * contracts (overhaul 4) a connection IS this Item on the roller's sheet: an
+ * NPC card alone is a person, and a connection's moves refuse one with no
+ * bond Item of the roller's (contracts/predicates.js THEIR_CONNECTION).
+ *
+ * @param {{ _id: string, name: string, rank?: string, relationshipTicks?: number, bonded?: boolean }} record
+ * @param {{ id?: string, lost?: boolean }} [opts]
+ * @returns {Object} an Item for makeTestActor's / addActor's `items.contents`
+ */
+export function bondItemFor(record, { id = null, lost = false } = {}) {
+  return {
+    id: id ?? `bond-${record._id}`, name: record.name, type: "progress",
+    system: { subtype: "bond", rank: record.rank ?? "dangerous", progress: Number(record.relationshipTicks ?? 0), completed: record.bonded === true },
+    flags: { [MODULE_ID]: { connectionId: record._id, ...(lost ? { lost: true } : {}) } },
+  };
+}
+
+/**
+ * The "Starforged Progress Tracks" journal holding `tracks`, as the store
+ * writes it (ui/progressTracks.js — a document flag of the track list) — for
+ * a booted table's `table.journal._set(…)`. A move the move gate asks a track
+ * of (a fight under way, an expedition) is made in one (overhaul 4).
+ *
+ * @param {Array<Object>} tracks — each `{ id, label, type, rank, ticks, completed, positions? }`
+ * @param {string} [id]
+ * @returns {Object}
+ */
+export function progressTracksJournal(tracks = [], id = "tracks-journal") {
+  const flags = { [`${MODULE_ID}.tracks`]: structuredClone(tracks) };
+  return {
+    id, name: "Starforged Progress Tracks",
+    getFlag: (mod, key) => flags[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flags[`${mod}.${key}`] = structuredClone(value); },
+  };
+}
+
 export function addConnectionEntity(_journals, data) {
   // Connections are NPC-card `character` Actors now (FOLDER-002). Like
   // addLocationEntity, the returned `journalId` carries the Actor id for

@@ -50,6 +50,7 @@ vi.mock('../../src/moves/resolver.js', async (original) => {
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 import { selectConnection } from '../../src/moves/developRelationship.js';
 
 let table, sable;
@@ -68,7 +69,11 @@ beforeEach(async () => {
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, hasPlayerOwner: true });
-  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true });
+  // Sable is Kira's connection: the bond Item on Kira's sheet, keyed to the
+  // record (overhaul 4 — the move gate reads it; an NPC card alone is a person).
+  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true, items: { contents: [
+    bondItemFor({ _id: 'rec-sable', name: 'Sable', relationshipTicks: 24, bonded: false }),
+  ] } });
   sable = table.addActor({
     id: 'conn-sable', name: 'Sable', type: 'character',
     flags: { [MODULE_ID]: { entityType: 'connection', connection: {
@@ -109,12 +114,18 @@ const setSable = async (patch) => {
   const rec = sable.flags[MODULE_ID].connection;
   await table.client('gm-1').run(() => game.actors.get('conn-sable')
     .update({ [`flags.${MODULE_ID}.connection`]: { ...rec, ...patch } }));
+  // …and its mirror on Kira's sheet, as the record's writers write it through
+  // (loseConnection → setBondItemLost, forgeBond → setBondItemForged).
+  const bond = table.actors.get('pc-kira').items.contents[0];
+  if (patch.active === false) bond.flags[MODULE_ID].lost = true;
+  if (patch.bonded === true) bond.system.completed = true;
   await table.settle();
 };
 
 const forgeResults = () => table.cards(f => f.moveResolution && f.resolutionId !== 'res-kira')
   .filter(m => /Forge a Bond/.test(String(m.content ?? '')));
-const notRolledCards = () => table.cards(f => f.trackGoneCard);
+// Told by the not-rolled notice (the move gate's refusal — overhaul 4; it was the track-gone card).
+const notRolledCards = () => table.cards(f => f.moveNotRolledNotice === 'cannot');
 
 describe('issue #345 AA50 — a Forge a Bond pick whose connection changed after the picker was posted', () => {
   it('control: Sable unchanged — the pick is rolled and forges the bond', async () => {
@@ -128,8 +139,7 @@ describe('issue #345 AA50 — a Forge a Bond pick whose connection changed after
     await forgeSable(() => setSable({ active: false }));
     expect({ rolled: forgeResults().length, told: notRolledCards().length }).toEqual({ rolled: 0, told: 1 });
     const said = String(notRolledCards()[0].content ?? '');
-    expect(said).toContain('Forge a Bond — not rolled');
-    expect(said).toContain('<strong>Sable</strong> is no longer a connection to forge a bond with');
+    expect(said).toContain("No Forge a Bond — Sable is not Kira's connection.");
     expect(said).toContain('Nothing was rolled.');
   }, 30_000);
 
