@@ -688,8 +688,9 @@ charter or touch the runner:
   (`sufferPrompt`): the cards that report a cost applied carry `sufferCard`
   too, and the check's first form counted one of those as owed — the third
   run's replay showed three for two. The instruction is a prompt line — whether a player
-  model follows it is read in the next live run; the check does not depend
-  on it. A replay of a run made before this still reproduces: what is
+  model follows it is read live (the fifth live long haul's player answered
+  every choice card, nothing owed at its end; issue #388); the check does
+  not depend on it. A replay of a run made before this still reproduces: what is
   compared is the goal's status, its failing layer and the health checks,
   not the class.
 
