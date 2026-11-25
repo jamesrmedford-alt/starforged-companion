@@ -249,7 +249,8 @@ async function createQuickstartPc() {
     const { createCharacterBondItem }  = await import("../character/actorBridge.js");
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
     for (const conn of listConnections(cs)) {
-      await createCharacterBondItem(actor, { name: conn.name, rank: conn.rank, connectionId: conn._id });
+      // The quickstart's starting connection: setup, not a move (overhaul 4, D5).
+      await createCharacterBondItem(actor, { name: conn.name, rank: conn.rank, connectionId: conn._id, by: "setup" });
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | quickstart: connection backfill failed:`, err?.message ?? err);

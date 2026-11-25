@@ -70,7 +70,10 @@ export function didText(d) {
     case 'track.ended':      return `the ${trackKind(d.type)} ${q(d.label)} ${d.completed ? 'brought to its end' : 'closed unfinished'}`;
     case 'position.changed': return `${d.name ?? 'a character'} ${d.to === 'in_control' ? 'in control' : 'in a bad spot'} in ${q(d.label)}`;
     case 'fight.offered':    return `a fight offered: ${q(d.label)}${d.suggestedRank ? ` (${d.suggestedRank})` : ''}`;
-    case 'connection.made':  return `made a connection: ${d.name}${d.rank ? ` (${d.rank})` : ''}`;
+    // A starting connection is the game's setup, not a deed of the story (overhaul 4, D12).
+    case 'connection.made':  return d.by === 'setup'
+      ? `a connection from the start: ${d.name}${d.rank ? ` (${d.rank})` : ''}`
+      : `made a connection: ${d.name}${d.rank ? ` (${d.rank})` : ''}`;
     case 'connection.developed': return `developed the relationship with ${d.name} (${boxes(d.ticks?.from)} → ${boxes(d.ticks?.to)} boxes)`;
     case 'connection.bonded': return `forged a bond with ${d.name}`;
     case 'connection.lost':  return `lost the connection with ${d.name}${d.reason ? ` (${d.reason})` : ''}`;

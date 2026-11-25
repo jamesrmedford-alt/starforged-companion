@@ -137,8 +137,10 @@ describe('issue #362 AC17 — two people whose names differ in a vowel are two p
   });
 });
 
-describe('issue #354 P2-16 — a free-flow card asks whose connection a person is, with "No one"', () => {
-  it('a person\'s row offers the narration\'s PC by name and "No one"; a place\'s row keeps its Confirm', async () => {
+// Overhaul 4, D4 amends P2-16: a Confirm records the person (no bond, so no
+// "No one"); the row offers its narration's PC 🤝 Make a Connection.
+describe('issue #354 P2-16, amended (D4) — a free-flow card records a person and offers its PC the move', () => {
+  it('a person\'s row offers the narration\'s PC Make a Connection, beside its one Confirm; a place\'s row keeps its Confirm', async () => {
     await routeEntityDrafts([
       person('the escort', 'A voice from the far side of the blockade.'),
       { type: 'location', name: 'Relay Nine', description: 'A dead comm relay.', confidence: 'high' },
@@ -146,11 +148,11 @@ describe('issue #354 P2-16 — a free-flow card asks whose connection a person i
     const [card] = draftCards();
     expect(card, 'a draft card was posted').toBeTruthy();
     const html = String(card.content);
-    expect(html).toMatch(/data-actor-id="pc-isaac"[^>]*>Isaac Sutton</);
-    expect(html).toMatch(/sf-draft-no-bond[^>]*data-actor-id=""[^>]*>No one</);
-    expect(html).toMatch(/pick No one to add them with no connection on any sheet/);
-    // One "No one" — the person's row only.
-    expect(html.match(/>No one</g)).toHaveLength(1);
+    expect(html).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-isaac"[^>]*>🤝 Make a Connection</);
+    expect(html).toMatch(/a connection is made only by the move/);
+    expect(html).not.toContain('No one');
+    // The 🤝 is the person's row's only.
+    expect(html.match(/data-action="sf-draft-make-connection"/g)).toHaveLength(1);
   });
 });
 

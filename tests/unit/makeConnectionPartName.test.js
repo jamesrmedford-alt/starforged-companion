@@ -117,6 +117,14 @@ async function kiraMeetsArcher({ confirm = true } = {}) {
   gm.click(card._id, '[data-action="sf-draft-confirm"]');
   await table.drain();
   expect(cards().map(a => a.name), 'Vuldar Archer has a card (setup)').toEqual(['Vuldar Archer']);
+  // A Confirm records the person (overhaul 4, D4): Kira's connection is her
+  // Make a Connection's — its hit's writer, here.
+  {
+    const host = table.actors.find(a => a?.name === 'Vuldar Archer' && a.flags?.[MODULE_ID]?.entityType === 'connection');
+    const { registerConnectionOnActiveCharacter } = await table.client('gm-1').import('../../src/entities/entityExtractor.js');
+    await table.client('gm-1').run(() => registerConnectionOnActiveCharacter(host.flags[MODULE_ID].connection, { actorId: 'pc-pat', by: { move: 'make_a_connection' } }));
+    await table.settle();
+  }
   expect(bondNames('pc-pat'), "he is Kira's connection (setup)").toEqual(['Vuldar Archer']);
   return card;
 }

@@ -81,23 +81,23 @@ function dialogAnswers(fields) {
 }
 
 describe('issue #362 D10 (2) — a GM makes an NPC card by hand', () => {
-  it('the NPC waits on a New Entities card, offered to each player character and No one', async () => {
+  it('the NPC waits on a New Entities card: Confirm records them, and each player character is offered Make a Connection (D4)', async () => {
     const card = await offer({ name: '  Captain   Sutton ', description: "Isaac's father, a retired hauler." });
     expect(card, 'a card').toBeTruthy();
     const [row] = card.flags[MODULE].drafts;
     expect({ name: row.name, status: row.status, newPerson: row.newPerson, actorIds: card.flags[MODULE].actorIds })
       .toEqual({ name: 'Captain Sutton', status: 'pending', newPerson: true, actorIds: ['pc-isaac', 'pc-kira'] });
     const html = String(card.content);
-    expect(html).toMatch(/data-actor-id="pc-isaac"[^>]*>Isaac Sutton</);
-    expect(html).toMatch(/data-actor-id="pc-kira"[^>]*>Kira</);
-    expect(html).toMatch(/sf-draft-no-bond[^>]*>No one</);
+    expect(html).toMatch(/data-actor-id="pc-isaac"[^>]*>🤝 Make a Connection \(Isaac Sutton\)</);
+    expect(html).toMatch(/data-actor-id="pc-kira"[^>]*>🤝 Make a Connection \(Kira\)</);
+    expect(html).not.toContain('No one');
   });
 
-  it('its Confirm makes the card and the bond on the PC picked — a name like a known person\'s is the GM\'s to give', async () => {
+  it('its Confirm makes the card and no bond — a name like a known person\'s is the GM\'s to give (D4)', async () => {
     const card = await offer({ name: 'Captain Sutton', description: "Isaac's father." });
-    await extractor.applyDraftConfirmFromRelay({ messageId: card.id, draftIndex: 0, pick: 'pc-kira' }, GM_CTX);
+    await extractor.applyDraftConfirmFromRelay({ messageId: card.id, draftIndex: 0 }, GM_CTX);
     expect({ cards: npcCards('Captain Sutton').length, kira: bondNames(global.game.actors.get('pc-kira')) })
-      .toEqual({ cards: 1, kira: ['Captain Sutton'] });
+      .toEqual({ cards: 1, kira: [] });
   });
 
   it('a name an NPC already has is refused — no card', async () => {

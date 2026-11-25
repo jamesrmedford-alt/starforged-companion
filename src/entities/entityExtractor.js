@@ -906,7 +906,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         // An X-Card landing while the card is made deletes it (the stamp
         // above); nothing more is added to it — no bond, portrait or facts.
         if (removed()) return { created, queued: [] };
-        await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId }).catch(err =>
+        await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId, by: { move: "make_a_connection", nar: narrationId ?? null } }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         if (removed()) return { created, queued: [] };
         // The narration that introduced them recorded their identity anchor
@@ -2586,11 +2586,10 @@ function draftCardHolders(actorIds) {
 }
 
 /**
- * The PCs a card's connection rows are offered to: a round's acting PCs
- * (`flags.actorIds`, issue #342 D3), else the one PC its narration was for
- * (`flags.actorId`) — a button for them beside "No one" (issue #354 P2-16).
- * null for a card that names no PC still in the game: its rows keep a plain
- * Confirm (the acting user's own PC, bondHolderActor) and "No one".
+ * The PCs a card's connection rows offer 🤝 Make a Connection to: a round's
+ * acting PCs (`flags.actorIds`, issue #342 D3), else the one PC its narration
+ * was for (`flags.actorId`). null for a card that names no PC still in the
+ * game: its rows offer the move to no one (Confirm still records the person).
  *
  * @param {Object} f — the card's module flags
  * @returns {Array<{ actorId: string, name: string }>|null}
@@ -2604,20 +2603,24 @@ function cardHolders(f) {
 /**
  * Render the HTML body of the draft entity card from a `drafts` array.
  * Pure / re-runnable so the renderChatMessage hook can rebuild after each
- * Confirm/Dismiss click. `holders` — the PCs the card offers a person to
- * (cardHolders): a pending connection row asks whose connection it is, a
- * button per PC and "No one", in place of its Confirm — a round's acting PCs
- * (issue #342 D3), or the one PC a free-flow narration was for. "No one"
- * records the person with no connection on anybody's sheet: a Confirm that
- * always bonded put a hostile stranger on a PC's sheet as a relationship
- * (issue #354 P2-16, which amends D3's "free-flow cards keep their one
- * Confirm"). With no holder (null) a connection row keeps its Confirm, beside
- * "No one".
+ * Confirm/Dismiss click. A connection row's Confirm records the person — an
+ * NPC card, no connection on anybody's sheet: a connection is what Make a
+ * Connection makes (overhaul 4, D4 — in the long haul's fourth live run the
+ * GM's Confirm "as the player character's connection" made one no roll had
+ * made, CONNECTION-MADE-BY-CONFIRMING-A-DRAFT; it amends issue #354 P2-16,
+ * #342 D3 and #362 D10, whose buttons asked whose connection a person was).
+ * Beside it, pending or confirmed, the row offers 🤝 Make a Connection to each
+ * of `holders` (cardHolders) — a round's acting PCs, or the one PC a
+ * free-flow narration was for — until that PC has pressed it
+ * (`connectionMoves`): the move is rolled as them, with the person as its
+ * target (applyDraftMakeConnectionFromRelay), and its hit makes the bond.
  */
 function renderDraftCardHtml(drafts, holders = null) {
-  const noOne = (e) =>
-    `<button class="sf-draft-btn sf-draft-confirm sf-draft-no-bond" data-action="sf-draft-confirm" ` +
-    `data-index="${e.index}" data-actor-id="" title="Add them with no connection on anyone's sheet">No one</button>`;
+  const makeConnection = (e) => (Array.isArray(holders) ? holders : [])
+    .filter(h => !(Array.isArray(e.connectionMoves) && e.connectionMoves.includes(h.actorId)))
+    .map(h => `<button class="sf-draft-btn sf-draft-make-connection" data-action="sf-draft-make-connection" ` +
+      `data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}" title="Roll Make a Connection for ${escapeHtml(h.name)}, with them">` +
+      `🤝 Make a Connection${holders.length > 1 ? ` (${escapeHtml(h.name)})` : ""}</button>`).join("");
   const items = drafts.map((e) => {
     const glyph = TYPE_GLYPHS[e.type] ?? "◇";
     const label = TYPE_LABELS[e.type] ?? e.type;
@@ -2626,7 +2629,8 @@ function renderDraftCardHtml(drafts, holders = null) {
 
     let actions;
     if (status === "confirmed") {
-      actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>`;
+      actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>` +
+        (e.type === "connection" ? makeConnection(e) : "");
     } else if (status === "dismissed") {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
     } else if (status === DRAFT_XCARDED) {
@@ -2641,20 +2645,11 @@ function renderDraftCardHtml(drafts, holders = null) {
         `<span class="sf-draft-status sf-draft-status-known">Read as ${who}</span>` +
         `<button class="sf-draft-btn sf-draft-new-person" data-action="sf-draft-new-person" data-index="${e.index}" ` +
         `title="They are someone else — offer them as a new person">No — a new person</button>`;
-    } else if (e.type === "connection" && Array.isArray(holders)) {
-      actions =
-        `<span class="sf-draft-holder-ask">Confirm — whose connection?</span>` +
-        holders.map(h =>
-          `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
-          `data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`).join("") +
-        noOne(e) +
-        `<button class="sf-draft-btn sf-draft-dismiss" ` +
-        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     } else if (e.type === "connection") {
       actions =
         `<button class="sf-draft-btn sf-draft-confirm" ` +
-        `data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>` +
-        noOne(e) +
+        `data-action="sf-draft-confirm" data-index="${e.index}" title="Record them — no connection on anyone's sheet">Confirm</button>` +
+        makeConnection(e) +
         `<button class="sf-draft-btn sf-draft-dismiss" ` +
         `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     } else {
@@ -2685,7 +2680,7 @@ function renderDraftCardHtml(drafts, holders = null) {
   const hint = allResolved
     ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.${knownHint}</div>`
     : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.` +
-      (personPending ? ` A person is added as a connection on the sheet of the character you pick — or pick No one to add them with no connection on any sheet.` : ``) +
+      (personPending ? ` A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.` : ``) +
       knownHint + `</div>`;
 
   return (
@@ -2755,9 +2750,36 @@ export function registerDraftCardHooks() {
     });
     wire("sf-draft-confirm", "draft.confirm");
     wire("sf-draft-dismiss", "draft.dismiss");
+    // 🤝 Make a Connection for one of the card's PCs (overhaul 4, D4): settled
+    // once that PC's press is on the row.
+    root.querySelectorAll('[data-action="sf-draft-make-connection"]').forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const idx = Number(btn.dataset.index);
+        const actorId = btn.dataset.actorId ?? null;
+        const { relayCardAction } = await import("../moves/cardActions.js");
+        await relayCardAction({
+          kind:       "draft.makeConnection",
+          payload:    { messageId: message?.id ?? null, draftIndex: idx, actorId },
+          isResolved: () => draftRowConnectionMoves(message?.id, idx).includes(actorId),
+          restore:    () => { btn.disabled = false; },
+        });
+      });
+    });
     // A person read as someone known: "No — a new person" (issue #362 D10).
     wire("sf-draft-new-person", "draft.newPerson", (messageId, idx) => draftRowStatus(messageId, idx) !== DRAFT_KNOWN);
   });
+}
+
+/** The PCs whose 🤝 Make a Connection the live card's row has posted. */
+function draftRowConnectionMoves(messageId, draftIndex) {
+  const message = globalThis.game?.messages?.get?.(messageId);
+  const drafts = message?.flags?.[MODULE_ID]?.drafts;
+  const row = Array.isArray(drafts) ? drafts.find(d => d?.index === draftIndex) : null;
+  return Array.isArray(row?.connectionMoves) ? row.connectionMoves : [];
 }
 
 /** True when the live card's row is no longer pending (confirmed or dismissed). */
@@ -2803,17 +2825,95 @@ async function relayedDraftPress(payload, ctx) {
 /**
  * gmRelay handler for "draft.confirm" — runs on the canonical GM, one press
  * at a time (DRAFT-CONFIRM-TWO-GMS): confirmDraft creates the row's entity
- * unless the row is no longer pending.
+ * unless the row is no longer pending. A person's Confirm records them — no
+ * bond on any sheet (D4).
  *
- * @param {{ messageId?: string, draftIndex?: number, pick?: string }} payload
+ * @param {{ messageId?: string, draftIndex?: number }} payload
  * @param {Object} ctx — the relay context
  * @returns {Promise<{ applied: boolean }>}
  */
 export async function applyDraftConfirmFromRelay(payload = {}, ctx = {}) {
   const press = await relayedDraftPress(payload, ctx);
   if (!press) return { applied: false };
-  await handleDraftConfirm(press.message, press.draftIndex, typeof payload.pick === "string" ? payload.pick : undefined);
+  await handleDraftConfirm(press.message, press.draftIndex);
   return { applied: true };
+}
+
+/**
+ * gmRelay handler for "draft.makeConnection" — a draft row's 🤝 Make a
+ * Connection (overhaul 4, D4): the card's buttons are a GM's (a GM's press,
+ * relayedDraftPress), for one of the PCs the card offers the move to
+ * (cardHolders). On the canonical GM, one press at a time: the row's person
+ * is recorded first if they are not yet (confirmDraft — no bond), the PC's
+ * press stamped on the row (`connectionMoves`), and Make a Connection posted
+ * as that PC with the person's card as its target, held while another move
+ * resolves (`deferWhileBusy`). Its hit makes the bond — the move's own path
+ * (connectNamedFigure: a listed NPC gets the roller's bond Item, recorded
+ * `connection.made` by make_a_connection); its miss makes none. A press that
+ * names no PC the card offers, or one already posted, posts nothing.
+ *
+ * @param {{ messageId?: string, draftIndex?: number, actorId?: string }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyDraftMakeConnectionFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { posted: false, reason: "not-a-press" };
+  const { message, draftIndex } = press;
+  const f = message.flags?.[MODULE_ID] ?? {};
+  const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;
+  const holder = (cardHolders(f) ?? []).find(h => h.actorId === actorId) ?? null;
+  const draft = (Array.isArray(f.drafts) ? f.drafts : []).find(d => d?.index === draftIndex) ?? null;
+  if (!holder || draft?.type !== "connection" || !["pending", "confirmed"].includes(draft.status ?? "pending")) {
+    console.warn(`${MODULE_ID} | draft card: Make a Connection for "${actorId ?? "?"}" is not on row ${draftIndex} — nothing posted.`);
+    return { posted: false, reason: "not-on-card" };
+  }
+  if (Array.isArray(draft.connectionMoves) && draft.connectionMoves.includes(actorId)) return { posted: false, reason: "already-posted" };
+
+  const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  // The person first: recorded by the row's Confirm, with no bond (D4).
+  if ((draft.status ?? "pending") === "pending") await confirmDraft(message, draftIndex, {});
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState;
+  const record = listedConnectionNamed(draft.name, stored);
+  // The person's NPC card — the move's target by id (its host Actor's).
+  const hostId = record ? ((stored?.connectionIds ?? []).find((id) => {
+    try { return getConnection(id)?._id === record._id; } catch { return false; }
+  }) ?? null) : null;
+  if (!record) {
+    console.warn(`${MODULE_ID} | draft card: "${draft.name}" could not be recorded — Make a Connection not posted.`);
+    return { posted: false, reason: "no-person" };
+  }
+  const stamped = await changeDraftRows(message, (rows) => {
+    const at = rows.findIndex(d => d.index === draftIndex);
+    if (at < 0) return null;
+    const moves = Array.isArray(rows[at].connectionMoves) ? rows[at].connectionMoves : [];
+    if (moves.includes(actorId)) return null;
+    rows[at] = { ...rows[at], connectionMoves: [...moves, actorId] };
+    return rows;
+  });
+  if (!stamped) return { posted: false, reason: "already-posted" };
+  const actor = globalThis.game?.actors?.get?.(actorId) ?? null;
+  try {
+    await ChatMessage.create({
+      content: `I make a connection with ${draft.name}.`,
+      speaker: { actor: actorId, alias: actor?.name ?? holder.name },
+      flags: { [MODULE_ID]: {
+        forcedMoveId: "make_a_connection", forcedMoveTarget: record.name ?? draft.name,
+        ...(hostId ? { forcedMoveTargetId: hostId } : {}),
+        bypassPacing: true, deferWhileBusy: true,
+      } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft card: Make a Connection could not be posted — the row's press is released:`, err?.message ?? err);
+    await changeDraftRows(message, (rows) => {
+      const at = rows.findIndex(d => d.index === draftIndex);
+      if (at < 0) return null;
+      rows[at] = { ...rows[at], connectionMoves: (rows[at].connectionMoves ?? []).filter(id => id !== actorId) };
+      return rows;
+    }).catch(() => {});
+    return { posted: false, reason: "post-failed" };
+  }
+  return { posted: true };
 }
 
 /**
@@ -2863,73 +2963,37 @@ export async function applyDraftNewPersonFromRelay(payload = {}, ctx = {}) {
 const _draftsInFlight = new Set();
 
 /**
- * A Confirm press. On a round's card (`flags.actorIds`, issue #342 D3) a
- * connection row's press names whose connection the NPC is — `pick` is one
- * of the card's acting PCs, or "" for no one — checked against the card's
- * own choices, as the connection pickers check theirs; a press that names
- * none of them creates nothing.
+ * A Confirm press: the row's entity is made — for a person, an NPC card with
+ * no connection on any sheet (overhaul 4, D4; the row's 🤝 Make a Connection
+ * is how one is made).
  *
  * @param {ChatMessage} message
  * @param {number} draftIndex
- * @param {string} [pick] — the pressed button's `data-actor-id`
  * @returns {Promise<void>}
  */
-async function handleDraftConfirm(message, draftIndex, pick) {
+async function handleDraftConfirm(message, draftIndex) {
   const key = `${message?.id}:${draftIndex}`;
   if (_draftsInFlight.has(key)) return;
   _draftsInFlight.add(key);
   try {
-    const opts = draftConfirmPick(message, draftIndex, pick);
-    if (!opts) {
-      console.warn(`${MODULE_ID} | draft confirm: "${pick ?? ""}" is not a character this card offers — nothing created.`);
-      globalThis.ui?.notifications?.warn?.("Pick whose connection this is — one of the characters on the card, or No one.");
-      return;
-    }
-    await confirmDraft(message, draftIndex, opts);
+    await confirmDraft(message, draftIndex, {});
   } finally {
     _draftsInFlight.delete(key);
   }
 }
 
 /**
- * The bond a Confirm press asks for (handleDraftConfirm). A row that is no
- * person's: `{}`. A connection row: `{ noBond: true }` for "No one" (pick
- * ""), on any card (issue #354 P2-16); on a round's card (`flags.actorIds`)
- * `{ actorId }` for one of its acting PCs; on any other card `{}` — the
- * card's own PC (`flags.actorId`) — for its plain Confirm or its PC's button.
- * null when the press names none of these (a stale button, a PC no longer on
- * the card).
- *
- * @param {ChatMessage} message
- * @param {number} draftIndex
- * @param {string|undefined} pick
- * @returns {{ actorId?: string, noBond?: true }|null}
- */
-function draftConfirmPick(message, draftIndex, pick) {
-  const f = message?.flags?.[MODULE_ID] ?? {};
-  const offered = Array.isArray(f.actorIds) ? f.actorIds : null;
-  const draft = (Array.isArray(f.drafts) ? f.drafts : []).find(d => d?.index === draftIndex);
-  if (draft?.type !== "connection") return {};
-  if (pick === "") return { noBond: true };
-  if (!offered) return (pick === undefined || pick === f.actorId) ? {} : null;
-  return (typeof pick === "string" && offered.includes(pick) && draftCardHolders([pick]).length) ? { actorId: pick } : null;
-}
-
-/**
  * Whose sheet a confirmed connection row's bond Item goes on
- * (registerConnectionOnActiveCharacter's target): `opts.actorId` — a Make a
- * Connection's roller (confirmNamedPendingConnection, issue #325 W23) or the
- * PC a GM picked on a round's card; nobody's for `opts.noBond` (issue #342
- * D3); else the card's own PC (`flags.actorId`, issue #321 U23).
+ * (registerConnectionOnActiveCharacter's target): only a Make a Connection's
+ * roller (`opts.actorId` — connectChosenFigure's hit, issue #325 W23). A
+ * Confirm alone bonds no one (overhaul 4, D4 — the card's PC was given the
+ * bond, issue #321 U23; the "No one" button went with it). null: no bond.
  *
- * @param {ChatMessage} message
- * @param {{ actorId?: string|null, noBond?: boolean }} opts
- * @returns {{ actorId: string|null }|{ actors: [] }}
+ * @param {{ actorId?: string|null }} opts
+ * @returns {{ actorId: string }|null}
  */
-function draftBondHolder(message, opts) {
-  if (typeof opts?.actorId === "string" && opts.actorId) return { actorId: opts.actorId };
-  if (opts?.noBond === true) return { actors: [] };
-  return { actorId: message?.flags?.[MODULE_ID]?.actorId ?? null };
+function draftBondHolder(opts) {
+  return typeof opts?.actorId === "string" && opts.actorId ? { actorId: opts.actorId } : null;
 }
 
 /**
@@ -2980,9 +3044,11 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   // BOND-ITEM-AFTER-RELIST).
   if (entityExistsForName(draft.name, draft.type, campaignState)) {
     const existing = draft.type === "connection" ? listedConnectionNamed(draft.name, campaignState) : null;
-    if (existing) {
+    const holder = draftBondHolder(opts);
+    if (existing && holder) {
       await registerConnectionOnActiveCharacter(existing, {
-        ...draftBondHolder(message, opts),
+        ...holder,
+        by: { move: "make_a_connection", nar: opts.narrationId ?? null },
         // A Make a Connection confirming the row of an NPC who exists already
         // adds a bond to a known NPC: stamped, for an X-Card on its narration
         // (issue #364 DELETED-NPC-NAME-REFERENCES) — and with the row it
@@ -3052,10 +3118,12 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       // An X-Card on that narration meanwhile takes the stamped card back:
       // no bond for it (XCARD-LATE-CAPTURE).
       if (isNarrationXCarded(opts.narrationId)) return null;
-      await registerConnectionOnActiveCharacter(record, {
-        ...draftBondHolder(message, opts),
-      }).catch(err =>
-        console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+      // A Make a Connection's roller gets the bond (its hit); a Confirm alone records the person (D4).
+      const holder = draftBondHolder(opts);
+      if (holder) {
+        await registerConnectionOnActiveCharacter(record, { ...holder, by: { move: "make_a_connection", nar: opts.narrationId ?? null } }).catch(err =>
+          console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+      }
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
         { name: draft.name, description: draft.description ?? "" },
@@ -3373,7 +3441,7 @@ async function connectChosenFigure(pick, slot, dismissed, narrationId) {
   if (pick.kind === "listed") {
     // The NPC was known before this hit: the bond it adds carries the
     // narration's id, for an X-Card on it (issue #364 DELETED-NPC-NAME-REFERENCES).
-    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId, narrationId });
+    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId, narrationId, by: { move: "make_a_connection", nar: narrationId ?? null } });
     return { entity: { type: "connection", name: pick.record.name }, record: pick.record };
   }
   const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
@@ -4208,12 +4276,17 @@ function escapeHtml(s) {
  * row's index), stamped beside it so the X-Card reopens the row with the bond
  * (issue #364 XCARD-BOND-DRAFT-ROW-CONFIRMED).
  *
+ * `by` — what makes the connection, passed on to the bond Item's
+ * `connection.made` (actorBridge.createCharacterBondItem): every caller is a
+ * Make a Connection's hit (overhaul 4 — a draft's Confirm and the inciting
+ * vow's swear make none, D4 / D5; tests/unit/moveOnlyState.test.js).
+ *
  * @param {Object} record — the connection record (`_id`, `name`, `rank`)
  * @param {{ actorId?: string|null, actors?: Actor[]|null, narrationId?: string|null,
- *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null }} [target]
+ *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null,
+ *   by?: { move: string, nar?: string|null }|null }} [target]
  */
-// Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null, draftRow = null } = {}) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null, narrationId = null, draftRow = null, by = null } = {}) {
   if (!record?._id) return;
   const holders = Array.isArray(actors)
     ? actors.filter(isPlayerCharacterActor)
@@ -4225,6 +4298,7 @@ export async function registerConnectionOnActiveCharacter(record, { actorId = nu
       connectionId: record._id,
       narrationId,
       draftRow,
+      by,
     });
   }
 }

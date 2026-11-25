@@ -208,16 +208,25 @@ recorded under its name promoted to it; its bond is §2's.
   latest store, on the GM's campaignState write chain —
   CACHE-MUTATED-BEFORE-WRITE). The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
-  that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
-  the bond Item on that PC (issue #321 U23). A Batch Mode round's card
-  carries every acting PC instead (`actorIds`; issue #342 D3, the
-  maintainer's ruling A — it was the first entry's PC): a connection row's
-  Confirm is a button per acting PC and **No one**, the pick checked against
-  the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Since issue #354 P2-16
-  (amending D3 for free-flow) a free-flow card's person row asks the same
-  way — the narration's PC by name, and **No one** — where one Confirm
-  always bonded the person to the acting PC. A detected person is the one
+  that knows it — move, paced, `@scene`, oracle follow-up); a Batch Mode
+  round's card carries every acting PC instead (`actorIds`; issue #342 D3).
+  **A Confirm records the person — an NPC card, no bond Item on any sheet,
+  no `connection.made`** (overhaul 4, D4: a connection is what Make a
+  Connection makes; in the long haul's fourth live run the GM's Confirm "as
+  the player character's connection" made one no roll had made,
+  CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). It amends issue #321 U23 (Confirm
+  bonded the card's PC), #342 D3 and #354 P2-16 (a button per PC and **No
+  one**) and #362 D10's "offered to each player character": `draftConfirmPick`
+  and the **No one** button are gone, and `draftBondHolder` names only a Make
+  a Connection's roller. Beside Confirm — pending or confirmed — the row
+  offers **🤝 Make a Connection** to each PC the card names (`cardHolders`),
+  until that PC has pressed it (the row's `connectionMoves`): a GM's press
+  relays `draft.makeConnection` → `applyDraftMakeConnectionFromRelay` on the
+  canonical GM, which records the person first if they are not yet, stamps
+  the press on the row and posts Make a Connection as that PC with the
+  person's card as its target (`forcedMoveTargetId`, held while another move
+  resolves); its hit makes the bond by the move's own path (a listed NPC gets
+  the roller's bond Item — `connectChosenFigure`), its miss none. A detected person is the one
   already known under part of their name or a near spelling
   (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
   PC's first name; a near spelling is the same letters in another order or a
@@ -379,10 +388,22 @@ portrait block), and a tab with no marked introduction gets one at its top
 erased a promoted detail from every surface, and a Finalise on an unseeded
 card replaced what the GM had typed).
 
-`registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
-bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
-when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it
-used to go to the first PC whoever rolled (issue #321 U23). One portrait per
+`registerConnectionOnActiveCharacter(record, { actorId, actors, by })` puts the
+bond Item on each of `actors`, else on `actorId` when it is a PC, else on the
+acting user's own PC (`resolveUserActorId`); it used to go to the first PC
+whoever rolled (issue #321 U23). Every caller is a Make a Connection's hit
+now (the inciting vow's crew was the other — overhaul 4, D5), and `by` rides
+to the bond Item: **`connection.made` is recorded where the bond Item is
+made** (`actorBridge.createCharacterBondItem` — once, for an Item that did
+not exist; `d: { name, rank, actorId, by }`, `by` `{ move:
+"make_a_connection" }` or, for the starting sector's local connection and
+the quickstart's, `"setup"`), never where the NPC card is made
+(`connection.js createConnection` wrote it, so a person recorded reached the
+recap as "made a connection" — D12). `tests/unit/moveOnlyState.test.js`
+holds every caller of a bond's writer to a move or setup. The bond adds
+(`statEnrichment.enrichBondAdds`) read the roller's own bond Items: a vow
+sworn to a person, or a Test with someone the roller holds no bond for,
+adds nothing. One portrait per
 new card: with Auto-Seed NPC on, the `createActor` seed hook owns a new
 connection card's portrait (from the creator's `portraitSourceDescription`)
 and the creator's `postCreationEnrichment` skips it (`seedHookOwnsPortrait`);

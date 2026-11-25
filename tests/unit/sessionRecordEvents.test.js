@@ -55,7 +55,8 @@ const SITES = {
   'vow.sworn':         ['src/record/sheetWatch.js'],
   'vow.linked':        ['src/record/sheetWatch.js'],
   'vow.closed':        ['src/record/sheetWatch.js'],
-  'connection.made':   ['src/entities/connection.js'],
+  // Written where the bond Item is made (overhaul 4, D12) — the NPC card is a person.
+  'connection.made':   ['src/character/actorBridge.js'],
   'connection.developed': ['src/entities/connection.js'],
   'connection.bonded': ['src/entities/connection.js'],
   'connection.lost':   ['src/entities/connection.js'],
