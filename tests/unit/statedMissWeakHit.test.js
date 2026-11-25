@@ -74,7 +74,7 @@ const flags   = (id) => table.world.message(id).flags[MODULE_ID];
 const ptpCard = () => table.cards(f => f.payThePriceCard).at(-1);
 const priceCards = () => table.cards(f => f.payThePriceCard);
 const lastLog = () => table.cards(f => f.narratorCard && f.resolutionId).at(-1)?.flags[MODULE_ID];
-const moveNarration = () => table.claude.calls.filter(c => /## STAKES STATED BEFORE THE ROLL/.test(c.userText ?? '')).at(-1);
+const moveNarration = () => table.claude.calls.filter(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? '')).at(-1);
 const promptOf = (call) => `${call?.system ?? ''}\n${call?.userText ?? ''}`;
 
 async function fight(moveId, dice, { statUsed = 'wits', line = 'We hold the docking bay against the raiders.' } = {}) {

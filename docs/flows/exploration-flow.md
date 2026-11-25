@@ -378,7 +378,9 @@ finish docks there and charts nothing.
   offered. The resolution carries the choice (`priceChoice`: the price, and
   what may replace it), and its narration is told where it stands **when it
   is written** (`narrator.js` → `resultUpgrade.priceChoiceStatus` →
-  `resolver.settlePriceChoice`; `stakes.js` `formatPriceChoiceBlock`): a
+  `resolver.settlePriceChoice`; the obligations block's [price] line,
+  `moves/contracts/obligations.js` — it replaced `stakes.js`
+  `formatPriceChoiceBlock`, its words kept): a
   free-flow miss is narrated before its card is picked — *pending*: the
   price is offered, shown arriving, never "what this miss costs"; a held
   result's (and a Batch Mode round's) card posts before its narration —

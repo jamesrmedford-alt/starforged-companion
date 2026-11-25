@@ -55,8 +55,14 @@ import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { mapConsequences } from "../../src/moves/resolver.js";
-import { withUnansweredCards } from "../../src/moves/resultUpgrade.js";
-import { formatStakesBlock, formatOpenChoiceBlock } from "../../src/moves/stakes.js";
+import { obligationsFor, unansweredCardsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
+const formatOpenChoiceBlock = (openChoice) => lineFor("cost", { openChoice });
+const withUnansweredCards = (input) => ({ ...input, ...unansweredCardsFor(input) });
 import { buildNarratorUserMessage, buildRoundUserMessage } from "../../src/narration/narratorPrompt.js";
 
 // Run 3, a59 — the player's line, the stakes the dialog showed and the outcome block sent.
@@ -66,7 +72,7 @@ const STAKES = { hit: "The cleaning and binding hold, and the wounds begin to cl
 const OUTCOME = "[MOVE: Heal +iron] [ROLL: Action: 4 + 1 = 5 vs Challenge: 1, 5] [OUTCOME: Weak Hit] "
   + "[CONSEQUENCE: As a strong hit, but recovery costs extra time or resources: Lose Momentum (-2) OR Sacrifice Resources (-2).]";
 const OLD_DELIVER = "deliver the hit as stated, with the cost or complication the move outcome names";
-const HEADING = "## THE COST IS THE PLAYER'S CHOICE";
+const HEADING = "[cost] THE COST IS THE PLAYER'S CHOICE.";
 
 // The dice of a59: challenge 1 and 5, action die 4 (+iron 1) = 5 — a weak hit.
 const WEAK_HIT = [0, 0.45, 0.5];
@@ -107,7 +113,8 @@ describe("a result's cost that is the player's choice — as its narration is to
     expect(user).toMatch(/What every option has in common has happened: narrate it\./);
     expect(user).toMatch(/no cost has been paid: narrate none of them as taken — nothing spent, used up, run short, lost or damaged/);
     expect(user).toMatch(/Bring the beat to where the cost falls due, and stop there\./);
-    expect(user.indexOf(HEADING)).toBeLessThan(user.indexOf("## PLAYER NARRATION"));
+    // The one block comes after the player's line, before the instruction (overhaul 4).
+    expect(user.indexOf(HEADING)).toBeGreaterThan(user.indexOf("## PLAYER NARRATION"));
   });
 
   it("the card on the table and unanswered (a held result, a round): still open", () => {
@@ -123,10 +130,12 @@ describe("a result's cost that is the player's choice — as its narration is to
     const resolution = healWeakHit();
     globalThis.game.messages.contents.push(choiceCard(resolution, { pickedIndices: [3], chosenIndex: 3, resolved: true }));
     const told = withUnansweredCards(resolution);
-    expect(told).toBe(resolution);
+    // Nothing open — and the pick is told (TELL [chosen], overhaul 4 slice 2).
+    expect(unansweredCardsFor(resolution)).toEqual({ chosen: { labels: ["Take/give +3 health, then Sacrifice Resources (-2)"] } });
     const user = buildNarratorUserMessage(told, LINE, 3, "Mira Kestrel");
     expect(user).toContain(OLD_DELIVER);
     expect(user).not.toContain(HEADING);
+    expect(user).toContain("- [chosen] Mira Kestrel chose Take/give +3 health, then Sacrifice Resources (-2). Tell what it cost them.");
   });
 
   it("\"Make a suffer move\": which one is the player's — the trouble is shown, not what it takes", () => {
@@ -145,16 +154,16 @@ describe("a result's cost that is the player's choice — as its narration is to
     for (const [moveId, outcome] of [["heal", "strong_hit"], ["secure_an_advantage", "weak_hit"]]) {
       const resolution = { _id: `res-${moveId}`, moveId, outcome, consequences: mapConsequences(moveId, outcome, false) };
       expect(resolution.consequences.sufferPrompt, moveId).toBeTruthy();
-      expect(withUnansweredCards(resolution), moveId).toBe(resolution);
+      expect(unansweredCardsFor(resolution), moveId).toEqual({});
     }
   });
 
   it("control: a result with no choice, and a miss's price that is a choice of its own", () => {
     const strike = { _id: "res-strike", moveId: "strike", outcome: "strong_hit", consequences: mapConsequences("strike", "strong_hit", false) };
-    expect(withUnansweredCards(strike)).toBe(strike);
+    expect(unansweredCardsFor(strike)).toEqual({});
     const sojourn = { _id: "res-sj", moveId: "sojourn", outcome: "miss", consequences: mapConsequences("sojourn", "miss", false),
       priceChoice: { status: "pending", instead: "swear_an_iron_vow" } };
-    expect(withUnansweredCards(sojourn)).toBe(sojourn);   // its own block tells it (formatPriceChoiceBlock)
+    expect(unansweredCardsFor(sojourn)).toEqual({});   // its own line tells it ([price])
     expect(formatOpenChoiceBlock(null)).toBe("");
     expect(formatStakesBlock(STAKES, "weak_hit")).toContain(OLD_DELIVER);
   });
@@ -163,7 +172,7 @@ describe("a result's cost that is the player's choice — as its narration is to
     const user = buildRoundUserMessage({ entries: [{ actorName: "Mira Kestrel", text: LINE,
       input: { kind: "move", moveName: "Heal", statUsed: "iron", outcome: "weak_hit", outcomeLabel: "Weak Hit",
         loremasterContext: OUTCOME, stakes: STAKES, openChoice: withUnansweredCards(healWeakHit()).openChoice } }], sentenceTarget: 3 });
-    expect(user).toContain("#### THE COST IS THE PLAYER'S CHOICE");
+    expect(user).toContain("[cost] THE COST IS THE PLAYER'S CHOICE.");
     expect(user).not.toContain(OLD_DELIVER);
   });
 });

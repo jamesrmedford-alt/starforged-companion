@@ -143,7 +143,8 @@ describe('a Forge a Bond hit through the pipeline', () => {
       { safety: { lines: [], veils: [], privateLines: [] }, worldTruths: {}, connectionIds: [] },
       { narrationTone: 'wry', narrationLevity: 'default', narrationPerspective: 'auto', narrationLength: 3, narrationInstructions: '' },
       readCharacterSnapshot(game.actors.get('pc-kira')), '', { mode: 'paced_narrative' }));
-    expect(prompt).toContain('Connections: Sable (dangerous, progress 10/10, bonded)');
+    // In the situation's words (moves/situation.js connectionStanding — overhaul 4, TRACK-TOLD-AS-A-BOND).
+    expect(prompt).toContain('Connections: Sable (dangerous, bonded)');
     expect(prompt).not.toMatch(/Sable \([^)]*fulfilled/);
   }, 30_000);
 });

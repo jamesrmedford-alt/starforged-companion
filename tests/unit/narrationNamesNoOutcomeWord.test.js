@@ -56,7 +56,9 @@ describe('NARRATION-NAMES-THE-OUTCOME — the dice\'s own words are not written 
     const user = buildNarratorUserMessage(move(RUN3_A27),
       'The Ashen Wake bursts out of the dark off Bleakhold, so I swing the Kobayashi IV around and turn to fight her, guns hot.', 3, 'Mira Kestrel');
     expect(user).toContain('[OUTCOME: Strong Hit with a Match [MATCH]]');
-    expect(user).toMatch(/Do not explain the mechanical outcome — embody it\. This roll came with a match: tell its twist as something that happens in the scene, and never write the word "match"\./);
+    // The match line is TELL [match] of the narration's one block now (overhaul 4, slice 2), its words kept.
+    expect(user).toContain('- [match] This roll came with a match: tell its twist as something that happens in the scene, and never write the word "match".');
+    expect(user).toMatch(/Do not explain the mechanical outcome — embody it\. Keep to the block above/);
     expect(user.indexOf('[MATCH]')).toBeLessThan(user.indexOf('never write the word "match"'));
   });
 

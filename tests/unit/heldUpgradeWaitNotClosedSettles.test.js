@@ -78,7 +78,7 @@ const WAIT_OPEN = `flags.${MODULE_ID}.awaitingUpgrade.open`;
 let table, pc;
 const flags      = (id) => table.world.message(id).flags[MODULE_ID];
 const priceCards = () => table.cards(f => f.payThePriceCard);
-const tellings   = () => table.claude.calls.filter(c => /## STAKES STATED BEFORE THE ROLL/.test(c.userText ?? ''));
+const tellings   = () => table.claude.calls.filter(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? ''));
 const notices    = () => table.cards(f => f.payoffFailureCard && f.steps?.some(s => s.step === 'heldWait'));
 const settled    = async () => { await table.settle(); await table.drain(); };
 

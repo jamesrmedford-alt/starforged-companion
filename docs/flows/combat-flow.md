@@ -325,19 +325,20 @@ third live run, a27: under the card above, the Enter the Fray's narration
 already had "Your first salvo takes her forward plating"; had the player taken
 the way out, the salvo would have stood). The threshold card is on the table
 before the roll is narrated (`out.afterMoveCard`), so the narration reads it:
-`resultUpgrade.withUnansweredCards` (called where `narrator.js` settles a
+`obligations.unansweredCardsFor` (moved from `resultUpgrade.js`; called through `narrator.js` `withCardsAnswered` where `narrator.js` settles a
 price choice, for a move and for a round's entries) finds the card by the
 resolution's id (`findThresholdCard`) and puts `fightOffer` on the result —
 `"offered"` while the card has no `thresholdTaken`, `"declined"` once it is
 `"wayOut"`, with the card's carried `position`; nothing once it is `"fray"`,
 or when the roll posted no card (an open fight resumed). The move's user
-message then carries THE FIGHT IS STILL ONLY OFFERED
-(`stakes.formatFightOfferBlock`): the scene is brought to the moment before
+message's obligations block then carries NOT YET [fight] "THE FIGHT IS STILL
+ONLY OFFERED." (`moves/contracts/obligations.js`, overhaul 4 slice 2 — the
+words of the block it replaced, `stakes.formatFightOfferBlock`): the scene is brought to the moment before
 the first blow — where each side stands, the footing the roll gave — and no
 further; no shot is fired, nothing and no one is hit; a first salvo in the
 stakes or the player's line is shown as about to happen, never as done.
-Declined, THE FIGHT WAS NOT BEGUN: no blow is struck at all. The stakes
-block's hit line calls the stated hit "the opening this roll has won" instead
+Declined, NOT SO [fight] "THE FIGHT WAS NOT BEGUN.": no blow is struck at all. The [stakes]
+line calls the stated hit "the opening this roll has won" instead
 of "deliver the hit as stated" (the interpreter's stated hit for a27 was "open
 with a clean salvo"). No flag from the pipeline is involved, and the track is
 still made only on the card.

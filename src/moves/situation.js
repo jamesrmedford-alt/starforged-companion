@@ -149,6 +149,27 @@ function progress(ticks) {
   return `${boxes} of ${TRACK_BOXES} boxes${extra ? ` and ${extra} tick${extra === 1 ? "" : "s"}` : ""}`;
 }
 
+/**
+ * A connection's standing in the sheet's words — the SITUATION block's, the
+ * narrator's CHARACTER block's and the recap's WHERE THINGS STAND (one
+ * wording for the readers, the narrator and the recap — TRACK-TOLD-AS-A-BOND:
+ * with no bond forged, recaps said "that bond" and `@scene` "bonded" of a
+ * full relationship track; overhaul 4). A connection is a bond Item on a
+ * PC's sheet (FOLDER-002): its track is the relationship, its completion the
+ * bond.
+ *
+ * @param {{ ticks?: number, progress?: number, bonded?: boolean, completed?: boolean, lost?: boolean }} c —
+ *   a readConnections row, or the situation's; `progress` (boxes) where no ticks are given
+ * @returns {string} "relationship 4 of 10 boxes" · "relationship 10 of 10 boxes — full, no bond forged yet" ·
+ *   "bonded" · "lost — no longer a connection"
+ */
+export function connectionStanding(c) {
+  if (c?.lost === true) return "lost — no longer a connection";
+  if (c?.bonded === true || c?.completed === true) return "bonded";
+  const ticks = ticksOf(Number.isFinite(Number(c?.ticks)) ? c.ticks : Number(c?.progress ?? 0) * TICKS_PER_BOX);
+  return `relationship ${progress(ticks)}${ticks >= TRACK_TICKS ? " — full, no bond forged yet" : ""}`;
+}
+
 /** "Health 5 of 5 (full, not wounded)" — a meter beside the impact its recovery move clears. */
 function meter(label, value, marked, impact, max = METER_MAX) {
   if (value === null) return `${label} unknown`;
@@ -176,12 +197,7 @@ function renderSituation(situation) {
   const { meters, impacts, vehicle } = situation;
   const vows = situation.vows.map(v =>
     `"${v.name}" (${[v.rank, progress(v.ticks)].filter(Boolean).join(", ")}${v.swornTo ? `; sworn to ${v.swornTo}` : ""})`);
-  const connections = situation.connections.map((c) => {
-    const track = c.bonded
-      ? "bonded"
-      : `relationship ${progress(c.ticks)}${c.full ? " — full, no bond forged yet" : ""}`;
-    return `"${c.name}" (${[c.rank, track].filter(Boolean).join(", ")})`;
-  });
+  const connections = situation.connections.map(c => `"${c.name}" (${[c.rank, connectionStanding(c)].filter(Boolean).join(", ")})`);
   return [
     `SITUATION — ${situation.name}'s sheet as it stands:`,
     `- Meters: ${[
@@ -384,7 +400,7 @@ async function readTracks(actorId) {
  *   roller: Object|null, party: Array<Object>|null, people: Array<Object>|null,
  *   tracks: Object|null,
  *   scene: { sceneId: string|null, placeId: string|null, atSite: boolean|null, siteKind: string|null, combatActive: boolean|null },
- *   table: { pcCount: number|null },
+ *   table: { pcCount: number|null, spokenToAFellowPc: ((line: string, speakerName: string|null) => boolean)|null },
  * }>}
  */
 export async function readMoveSituation(actorOrId, { campaignState = null } = {}) {
@@ -422,6 +438,22 @@ export async function readMoveSituation(actorOrId, { campaignState = null } = {}
     }
   }
 
-  return { roller, party, people, tracks, scene, table: { pcCount } };
+  // The addressee test NOT_AT_A_PC asks of a line — the social moves' own
+  // (narrator.js lineIsToAFellowPlayerCharacter, finding G), with the table's
+  // PCs and the people it has recorded — loaded here, so the predicates
+  // import no narrator (contracts/predicates.js).
+  let spokenToAFellowPc = null;
+  try {
+    const { lineIsToAFellowPlayerCharacter } = await import("../narration/narrator.js");
+    const pcActors = [roller, ...(party ?? [])].filter(Boolean).map(p => ({ name: p.name }));
+    const npcNames = (people ?? []).map(p => p.name).filter(Boolean);
+    // Asked as Compel: the test keys on the social moves, and a row that
+    // requires NOT_AT_A_PC is one of them or reads the addressee the same way.
+    spokenToAFellowPc = (line, speakerName) => lineIsToAFellowPlayerCharacter("compel", line, speakerName, { pcActors, npcNames });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | move situation: the addressee test could not be loaded — taken as unknown:`, err?.message ?? err);
+  }
+
+  return { roller, party, people, tracks, scene, table: { pcCount, spokenToAFellowPc } };
 }
 

@@ -566,7 +566,7 @@ plan's truth as revealed). Three parts:
   claimed — where it gives no name there is none, and the narration says what
   is still not known. The vow plan's own line no longer ties "truth" to the
   vow's end: it is revealed by being told;
-- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED**
+- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED** (the obligations block's TELL [vow] line, `moves/contracts/obligations.js` — the row's `obliges`, overhaul 4 slice 2)
   (`buildNarratorUserMessage`, a round's entry too; a sheet-rolled hit goes
   the same way): never write that an answer is known, named, found or proved
   without stating it — with no plan in play, and no answer in the story, the

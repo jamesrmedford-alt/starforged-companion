@@ -193,7 +193,7 @@ describe("a Batch Mode round — Explore a Waypoint's miss with a match is told 
     const entry = kirasEntry(roundCalls()[0].userText);
     expect(entry).toMatch(/Kira — Explore a Waypoint.*: miss/);
     expect(entry).toContain(`- On a miss: ${WAYPOINT_MISS} (Endure Harm −1)`);
-    expect(entry).toContain("#### THE PRICE IS THE PLAYER'S CHOICE");
+    expect(entry).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(entry).toContain('the player may Pay the Price or Confront Chaos instead, and has not chosen yet');
     expect(entry).toContain(`The price it offers: ${WAYPOINT_MISS}`);
     expect(entry).toContain(`Pay the Price: ${WAYPOINT_MISS}`);
@@ -230,7 +230,7 @@ describe("a Batch Mode round — Explore a Waypoint's miss with a match is told 
     expect(table.cards(f => f.batchHeldMoveNotice)).toHaveLength(1);
 
     const entry = await renKeeps();
-    expect(entry).toContain('#### THE PRICE WAS NOT PAID');
+    expect(entry).toContain('[price] THE PRICE WAS NOT PAID.');
     expect(entry).toContain('the player chose to Confront Chaos instead of paying a price: no price is paid');
     expect(entry).toContain('the miss stated before the roll does not come to pass');
     expect(entry).not.toMatch(/Pay the Price: /);
@@ -246,7 +246,7 @@ describe("a Batch Mode round — Explore a Waypoint's miss with a match is told 
     await click(choiceCard('explore_a_waypoint'), option(1));
 
     const entry = await renKeeps();
-    expect(entry).toContain('#### THE PRICE WAS NOT PAID');
+    expect(entry).toContain('[price] THE PRICE WAS NOT PAID.');
     expect(entry).not.toContain(WASTE);
     expect(kira.system.supply.value).toBe(3);
   }, 60_000);
@@ -262,7 +262,7 @@ describe("a Batch Mode round — Sojourn's miss is told as its choice stands (is
     expect(flagsOf(choiceCard('sojourn')).resolved).toBe(false);
     const entry = kirasEntry(roundCalls()[0].userText);
     expect(entry).toMatch(/Kira — Sojourn.*: miss/);
-    expect(entry).toContain("#### THE PRICE IS THE PLAYER'S CHOICE");
+    expect(entry).toContain("[price] THE PRICE IS THE PLAYER'S CHOICE.");
     expect(entry).toContain('Swear an Iron Vow');
     expect(entry).toContain(`The price it offers: ${SOJOURN_MISS}`);
     expect(entry).not.toContain('it is what this miss costs');
@@ -290,7 +290,7 @@ describe("a Batch Mode round — Sojourn's miss is told as its choice stands (is
     expect(table.cards(f => f.sufferDeferred && f.route === 'swear_an_iron_vow')).toEqual([]);
 
     const entry = await renKeeps();
-    expect(entry).toContain('#### THE PRICE WAS NOT PAID');
+    expect(entry).toContain('[price] THE PRICE WAS NOT PAID.');
     expect(entry).toContain('no price is paid, and the miss stated before the roll does not come to pass');
     expect(entry).not.toMatch(/Pay the Price: /);
     expect(entry).not.toContain('it is what this miss costs');
@@ -317,7 +317,7 @@ describe("a Batch Mode round — Sojourn's miss is told as its choice stands (is
     expect(strongHits()).toHaveLength(0);
 
     const entry = await renKeeps();
-    expect(entry).toContain('#### THE PRICE WAS NOT PAID');
+    expect(entry).toContain('[price] THE PRICE WAS NOT PAID.');
     await table.client('gm-1').click(need._id, DONE);
     await table.settle(); await table.drain();
 
