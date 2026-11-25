@@ -36,14 +36,13 @@
       "text": "With the dockmaster, Vance Oduya, looking on, I comb his berth logs for who saw the courier leave the Hollow Spire, before the trail goes cold.",
       "reads": "move", "move": "gather_information",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" },
-        { "kind": "callClaudeAPI>interpretMove" }
+        { "kind": "callReaderAPI>readLine" }
       ] },
     { "id": "ren-acts", "do": "roundSubmit", "as": "gm",
       "text": "I keep watch on the docking ring while Mira talks.",
       "reads": "narrative",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" }
+        { "kind": "callReaderAPI>readLine" }
       ] },
     { "id": "mira-ready", "do": "roundConfirm", "as": "player",
       "calls": [],
@@ -78,7 +77,7 @@
       "text": "I lean in the hatchway and watch the dockmaster's hands.",
       "reads": "narrative",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" }
+        { "kind": "callReaderAPI>readLine" }
       ] },
     { "id": "ren-ready-2", "do": "roundConfirm", "as": "gm",
       "calls": [],

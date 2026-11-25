@@ -48,6 +48,15 @@ describe("the certain checks", () => {
     // A one-word move's name is an ordinary word.
     expect(certainViolations("You strike the hatch and it gives.", apparatus)).toEqual([]);
   });
+  it("the narration speaking of its own build — the beat-shape hint read back as prose (NARRATION-WRITES-ITS-SHAPE-DIRECTIVE)", () => {
+    // The batch-round playthrough's recorded round 2 (2026-11-25), as it opened.
+    const leaked = "The first sentence should be about someone other than Ren: Vance, or Mira. Vance keeps his arms folded.";
+    expect(certainViolations(leaked, apparatus)).toEqual([{ tag: "apparatus", quote: expect.stringContaining("first sentence") }]);
+    expect(certainViolations("Open on someone other than the acting character. The hatch groans.", apparatus)).toHaveLength(1);
+    // Control: the same beat told, with nothing said of how it is told.
+    expect(certainViolations("Vance keeps his arms folded and watches Ren read the log.", apparatus)).toEqual([]);
+    expect(certainViolations("The first light of the station's day crawls across the hull.", apparatus)).toEqual([]);
+  });
   it("[match]: the word, only for a roll that matched", () => {
     expect(certainViolations("The match flares on the scope.", [{ kind: "match" }])).toHaveLength(1);
     expect(certainViolations("The match flares on the scope.", apparatus)).toEqual([]);

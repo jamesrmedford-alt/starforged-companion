@@ -56,6 +56,11 @@ export const JUDGE_TIMEOUT_MS = 4000;
 
 const OUTCOME_NAME = /\b(?:strong|weak)[ -]hit\b/i;
 const SHEET_NUMBER = /\b\d+\s+(?:health|spirit|supply|momentum|integrity)\b|[+−-]\d+\s+momentum\b/i;
+// The narration speaking of its own build — the beat-shape hint read back as prose
+// (proseVariety.js BEAT_SHAPES; NARRATION-WRITES-ITS-SHAPE-DIRECTIVE): "The first
+// sentence should be about someone other than Ren: Vance, or Mira." opened a
+// recorded round (the batch-round playthrough, 2026-11-25).
+const SHAPE_ECHO = /\bfirst sentence\b|\bacting character\b/i;
 
 /** The prose without its closing italic offer line (the one place a move may be named). */
 function bodyOf(prose) {
@@ -86,6 +91,8 @@ export function certainViolations(prose, obligations) {
     if (outcome) out.push({ tag: "apparatus", quote: quoteAround(body, outcome.index, outcome[0].length) });
     const number = SHEET_NUMBER.exec(body);
     if (number) out.push({ tag: "apparatus", quote: quoteAround(body, number.index, number[0].length) });
+    const shape = SHAPE_ECHO.exec(body);
+    if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
     for (const name of MULTIWORD_MOVE_NAMES) {
       const at = body.indexOf(name);
       if (at >= 0) { out.push({ tag: "apparatus", quote: quoteAround(body, at, name.length) }); break; }

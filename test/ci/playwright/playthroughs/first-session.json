@@ -35,7 +35,7 @@
   "steps": [
     { "id": "open", "do": "beginSession", "as": "player", "galley": true,
       "calls": [
-        { "kind": "callNarratorAPI>narrateSessionVignette", "contains": ["SHIP POSITION: Kobayashi IV near Hollow Spire"] }
+        { "kind": "callNarratorAPI>narrateSessionVignette", "contains": ["Kobayashi IV near Hollow Spire"] }
       ],
       "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [
@@ -48,8 +48,7 @@
       "dice": { "challenge": [2, 5], "action": 5 },
       "move": "gather_information", "outcome": "strong_hit",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" },
-        { "kind": "callClaudeAPI>interpretMove" },
+        { "kind": "callReaderAPI>readLine" },
         { "kind": "callNarratorAPI>narrateResolution", "carries": ["MOVE OUTCOME"], "section": { "CHARACTER": "Name: Mira Kestrel" } },
         { "kind": "callHaiku>defaultCallDetectionAPI" },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: gather_information" } }
@@ -71,7 +70,7 @@
     { "id": "ask-vance", "do": "say", "as": "player",
       "text": "I tell Vance what I heard on the way in — that the Ascendancy has been buying up berths all along the ring — and leave it at that.",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" },
+        { "kind": "callReaderAPI>readLine" },
         { "kind": "callNarratorAPI>narratePacedInput",
           "section": { "CHARACTER": "Name: Mira Kestrel", "IN PLAY NOW": "Vance Oduya (Connection", "WORLD SNAPSHOT": "VANCE ODUYA — Connection" },
           "sectionLacks": { "PARTY": "Vance Oduya" } },
@@ -93,9 +92,8 @@
       "dice": { "challenge": [2, 3], "action": 5 },
       "move": "set_a_course", "outcome": "strong_hit",
       "calls": [
-        { "kind": "callClassifierAPI>classifyInput" },
-        { "kind": "callClaudeAPI>interpretMove" },
-        { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Bleakhold Station"] },
+        { "kind": "callReaderAPI>readLine" },
+        { "kind": "callNarratorAPI>narrateResolution", "contains": ["Kobayashi IV docked at Bleakhold Station"] },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
       ],
       "optionalCalls": ["callNarratorAPI>narrateResolution", "callNarratorAPI>getRollingSessionSummary"],
@@ -109,8 +107,8 @@
     { "id": "drag-home", "do": "dragShip", "as": "gm", "to": "Hollow Spire",
       "dice": { "challenge": [2, 3], "action": 5 }, "outcome": "strong_hit",
       "calls": [
-        { "kind": "callClaudeAPI>interpretMove" },
-        { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
+        { "kind": "callReaderAPI>readLine" },
+        { "kind": "callNarratorAPI>narrateResolution", "contains": ["Kobayashi IV docked at Hollow Spire"] },
         { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
       ],
       "optionalCalls": ["callNarratorAPI>narrateResolution", "callNarratorAPI>getRollingSessionSummary"],
@@ -136,9 +134,11 @@
       ] },
     { "id": "reopen", "do": "beginSession", "as": "player", "galley": true, "spotlight": true,
       "calls": [
-        { "kind": "callNarratorAPI>narrateSessionVignette", "section": { "WORLD SNAPSHOT": ["### EARLIER SESSIONS", "- Session 1:", "Vance Oduya"] } }
+        { "kind": "callNarratorAPI>getCampaignRecap" },
+        { "kind": "callNarratorAPI>narrateSessionVignette", "section": { "WORLD SNAPSHOT": ["### EARLIER SESSIONS", "- Session 1:", "Vance Oduya"] } },
+        { "kind": "callNarratorAPI>narrateSessionVignette" }
       ],
-      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
+      "optionalCalls": ["callHaiku>defaultCallTierAPI", "callHaiku>defaultCallDetectionAPI"],
       "then": [
         { "check": "momentum", "of": "Mira Kestrel", "is": 8 },
         { "check": "momentum", "of": "Vance Oduya", "is": 2 },

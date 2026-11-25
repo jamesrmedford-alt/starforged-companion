@@ -151,10 +151,10 @@ describe('the batch-round scenario pins what a round tells the narrator (issue #
   const [, scenario, recording] = SCENARIOS.find(([name]) => name === 'batch-round');
   const step = (id) => scenario.steps.find(s => s.id === id);
 
-  it('each round narrates once, with the passes it schedules; each reading is pacing (and interpretation for a move)', () => {
+  it('each round narrates once, with the passes it schedules; each reading is the line reader\'s one call, for a move too (issue #384)', () => {
     const kinds = (id) => (step(id).calls ?? []).map(c => c.kind);
-    expect(kinds('mira-acts')).toEqual(['callClassifierAPI>classifyInput', 'callClaudeAPI>interpretMove']);
-    expect(kinds('ren-acts')).toEqual(['callClassifierAPI>classifyInput']);
+    expect(kinds('mira-acts')).toEqual(['callReaderAPI>readLine']);
+    expect(kinds('ren-acts')).toEqual(['callReaderAPI>readLine']);
     for (const id of ['round-1', 'round-2']) {
       expect(kinds(id).filter(k => k === 'callNarratorAPI>narrateRound')).toHaveLength(1);
     }

@@ -345,7 +345,7 @@ export const OBLIGATION_KINDS = Object.freeze({
   }),
   apparatus: Object.freeze({
     list: "NOT SO", check: "certain",
-    text: ({ offer }) => `Never write the dice, a number off a sheet, an outcome's name, or a move's name${offer ? " — save the one closing offer line" : ""}.`,
+    text: ({ offer }) => `Never write the dice, a number off a sheet, an outcome's name, or a move's name${offer ? " — save the one closing offer line" : ""} — and never a word about how this narration is built.`,
   }),
 });
 
