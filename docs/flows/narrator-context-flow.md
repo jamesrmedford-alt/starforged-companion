@@ -1171,6 +1171,17 @@ Repair's device: `readerSettled`) only where no reader read the line as the
 move. An unknown is never a refusal: a meter or a list not read holds. Sojourn
 is held to the party as a whole, not one meter.
 
+**A cost chosen after its narration is told by the next beat** (overhaul 4,
+slice 5; D10 — CHOSEN-COST-NEVER-TOLD: two Endure Stress costs chosen after
+the roll's narration were never told). The pick stamps its choice card
+`pickedAfterNarration` when its result's narration card is on the table
+(`sufferCard.js`); the next narration that is a beat of play — a move's, a
+paced line's, a round's — carries TELL [chosen-since] for each such pick no
+narration has told (`obligations.choicesChosenSince`, any roller's, never
+its own result's), and once its card posts the canonical GM stamps the
+card `toldBy` (`markChosenCostsTold`) — told once; a refused stamp is told
+again, a player's own key cannot stamp, an X-Carded card is not carried.
+
 **The narration is checked against its block before it posts** (overhaul 4,
 slice 4 — `moves/contracts/checks.js`, D9): `narrateKeepingObligations`
 wraps the move's (`narrateResolution` — so a held result's and an upgrade's

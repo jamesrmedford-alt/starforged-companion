@@ -3320,7 +3320,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   // fight the line touches (overhaul 4).
   const block = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
-    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [],
+    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [], chosenSince: opts?.chosenSince ?? [],
   }));
   if (block) parts.push(block);
 
@@ -3403,7 +3403,7 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // kept their words in it.
   const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
-    cast: opts?.cast ?? [], speaker,
+    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [],
   }));
   if (obligations) parts.push(obligations);
 
@@ -3481,7 +3481,7 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @param {boolean} [args.audio] — the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false }) {
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false, chosenSince = [] }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -3530,7 +3530,7 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
   );
 
   // The round's own obligations — the sheet, the apparatus (overhaul 4).
-  const roundBlock = formatObligationsBlock(obligationsFor({ mode: 'round' }));
+  const roundBlock = formatObligationsBlock(obligationsFor({ mode: 'round', chosenSince }));
   if (roundBlock) parts.push(roundBlock);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);

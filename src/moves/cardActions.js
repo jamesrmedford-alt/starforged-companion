@@ -717,6 +717,10 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | milestone suggestion: card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "milestone suggestion");
     try {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
@@ -865,6 +869,10 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "attempt to fulfil");
     try {
       if (askAmong?.length) {
         // Which vow? — Fulfill Your Vow's own card, its pick the roller's
@@ -924,6 +932,29 @@ function fulfilVowChoices(rollerId) {
 // A "Not rolled" notice's "Narrate it — no move" — gmRelay "notRolled.narrate" (issue #354 P2-01)
 // A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Keep the held result a card's press goes on from (overhaul 4, D11): a press
+ * on a card the held roll itself posted — ⚔ Begin the fight and 🚪 Find
+ * another way, the move card's suggestion buttons — is the decision the hold
+ * waited for (heldResult.js keepHeldResultForChoice, what a chosen
+ * consequence calls). Awaited: the roll's narration — told the fight begun,
+ * or not — posts before what the press makes. A result not held is nothing
+ * to keep. Never throws.
+ *
+ * @param {string|null|undefined} resolutionId — the held roll's
+ * @param {string} label
+ * @returns {Promise<void>}
+ */
+async function keepHeldRollOf(resolutionId, label) {
+  if (typeof resolutionId !== "string" || !resolutionId) return;
+  try {
+    const { keepHeldResultForChoice } = await import("./heldResult.js");
+    await keepHeldResultForChoice(resolutionId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the held roll could not be kept first:`, err?.message ?? err);
+  }
+}
 
 /**
  * The fulfilVow.attempt shape for a card button that rolls the card's
@@ -1671,6 +1702,13 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | fight threshold: card ${messageId} could not be claimed — nothing done:`, err?.message ?? err);
       return { applied: false, reason: "claim-refused" };
     }
+    // Begin the fight keeps its Enter the Fray, then makes the fight: the
+    // roll's narration is told the fight begun (the claim above — no [fight]
+    // line) or, for the way out, not begun — and posts before the fight's
+    // card (HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE: a held Enter the Fray
+    // miss was narrated after the next attack line, which kept it; overhaul
+    // 4, D11).
+    await keepHeldRollOf(f.resolutionId, "fight threshold");
 
     if (choice === "wayOut") {
       const { buildWayOutHtml } = await import("./combatThreshold.js");
@@ -1843,6 +1881,10 @@ export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | connection suggestion: card ${messageId} could not be claimed — no picker posted:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "connection suggestion");
     const { postConnectionPickerCard } = await import("../index.js");
     const posted = await postConnectionPickerCard(null, pickAction, { actorId: rollerId }).catch(err => {
       console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);

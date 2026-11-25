@@ -241,6 +241,11 @@ export const OBLIGATION_KINDS = Object.freeze({
       return `${who} chose ${labels}. Tell what it cost them.`;
     },
   }),
+  "chosen-since": Object.freeze({
+    list: "TELL", check: "floor",
+    text: ({ pick }) => `Since the last narration, ${pick.who} chose ${pick.labels.join("; then ")}. `
+      + "Show what it has cost them, in a sentence, before the beat goes on.",
+  }),
   fight: Object.freeze({
     list: ({ resolution }) => (resolution?.fightOffer?.status === "declined" ? "NOT SO" : "NOT YET"), check: "judge",
     text: ({ resolution }) => {
@@ -537,6 +542,58 @@ export function unansweredCardsFor(input) {
   }
 }
 
+/**
+ * The costs chosen after their result's narration that no narration has told
+ * yet (design §8.4, D10): the choice cards the pick stamped
+ * `pickedAfterNarration` (sufferCard.js), answered, with no `toldBy`, not
+ * superseded or X-Carded — any roller's (in solo play it is the roller's next
+ * beat; at a table, whoever speaks next). `except`: the resolutions the
+ * narration is itself of (their own cards are [chosen]). Any client may read
+ * them; the canonical GM stamps `toldBy` once the narration's card posts
+ * (markChosenCostsTold). Never throws.
+ *
+ * @param {{ except?: string[] }} [opts]
+ * @returns {Array<{ cardId: string, resolutionId: string|null, who: string, labels: string[] }>}
+ */
+export function choicesChosenSince({ except = [] } = {}) {
+  try {
+    const skip = new Set((except ?? []).filter(Boolean));
+    const out = [];
+    for (const m of allMessages()) {
+      const f = m?.flags?.[MODULE_ID];
+      if (!f?.sufferCard || f.pickedAfterNarration !== true || f.toldBy || f.superseded === true || f.xCarded === true) continue;
+      if (!answered(f) || skip.has(f.resolutionId)) continue;
+      const picked = chosenCost({ priceChoice: null }, [f]);
+      if (!picked) continue;
+      const actor = typeof f.actorId === "string" ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+      out.push({ cardId: m.id, resolutionId: f.resolutionId ?? null, who: String(actor?.name ?? "").trim() || "The player", labels: picked.labels });
+    }
+    return out.slice(0, 4);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the costs chosen since could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Stamp each told cost's card `toldBy` — the narration that told it — once
+ * its card is on the table (canonical GM; a player's own key cannot, and the
+ * next GM narration tells them again — accepted). A stamp the world refuses
+ * is retried by the next narration. Never throws.
+ *
+ * @param {Array<{ cardId: string }>} picks
+ * @param {string|null} narrationId
+ * @returns {Promise<void>}
+ */
+export async function markChosenCostsTold(picks, narrationId) {
+  if (!Array.isArray(picks) || !picks.length || !narrationId || globalThis.game?.user?.isGM !== true) return;
+  for (const pick of picks) {
+    const message = globalThis.game?.messages?.get?.(pick.cardId) ?? null;
+    await message?.update?.({ [`flags.${MODULE_ID}.toldBy`]: narrationId })
+      .catch(err => console.warn(`${MODULE_ID} | the told cost's card ${pick.cardId} could not be stamped — the next narration tells it again:`, err?.message ?? err));
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Building them
 // ─────────────────────────────────────────────────────────────────────────────
@@ -592,17 +649,21 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
-  situation = null, line: said = "", cast = [], speaker = null } = {}) {
+  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [] } = {}) {
   const out = [];
   const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
     .map(fact => line("state", { fact }));
+  // A cost chosen after its narration, told here — a beat of play (D10).
+  const since = () => (Array.isArray(chosenSince) ? chosenSince : []).filter(p => p?.labels?.length).map(pick => line("chosen-since", { pick }));
   if (mode === "paced") {
+    out.push(...since());
     if (refusal?.premise) out.push(line("premise", { refusal }));
     if (offer) out.push(line("offer", { offer }));
     out.push(...state());
     out.push(line("sheet", { mode, refused: !!refusal }));
     out.push(line("apparatus", { offer }));
   } else if (mode === "move") {
+    out.push(...since());
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
     out.push(...state());
     out.push(line("sheet", { mode }));
@@ -611,6 +672,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (resolution && resolution.kind === "move") out.push(...resultObligations(resolution, { speaker, entry: true }));
     else if (refusal?.premise) out.push(line("premise", { refusal }));
   } else if (mode === "round") {
+    out.push(...since());
     out.push(...state());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
