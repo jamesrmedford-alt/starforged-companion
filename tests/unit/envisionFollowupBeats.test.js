@@ -18,13 +18,14 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
-const control = vi.hoisted(() => ({ ptpRoll: null }));
+const control = vi.hoisted(() => ({ ptpRoll: null, perilRoll: null }));
 vi.mock('../../src/oracles/roller.js', async (orig) => {
   const original = await orig();
   return {
     ...original,
     rollOracle: vi.fn((id, opts = {}) => original.rollOracle(id,
-      id === 'pay_the_price' && control.ptpRoll ? { ...opts, roll: control.ptpRoll } : opts)),
+      id === 'pay_the_price' && control.ptpRoll ? { ...opts, roll: control.ptpRoll }
+        : id === 'spaceborne_peril' && control.perilRoll ? { ...opts, roll: control.perilRoll } : opts)),
   };
 });
 
@@ -32,6 +33,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { SPACEBORNE_PERIL } from '../../src/oracles/tables/space.js';
+import { ACTION, THEME } from '../../src/oracles/tables/core.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const PROSE = 'Something moves in the dark between the hulls.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
@@ -43,6 +45,7 @@ afterAll(() => table?.teardown());
 
 beforeEach(async () => {
   control.ptpRoll = null;
+  control.perilRoll = null;
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false, narratorSessionSummary: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 's-1', sessionNumber: 1,
@@ -73,6 +76,9 @@ async function settleBeat(work) {
 
 describe('issue #353 Phase 0 — a chosen complication is played as its own beat', () => {
   it('"Peril at the waypoint": the peril is rolled on Spaceborne Peril, carded, and narrated at once', async () => {
+    // A row of the table's own (its 97–99 chain to Action + Theme, held below):
+    // unpinned, the chain came up about one run in thirty-three and failed this.
+    control.perilRoll = 10;
     const gm = table.client('gm-1');
     const { runSufferResolution } = await gm.import('../../src/moves/sufferDialog.js');
     await settleBeat(() => gm.run(() => runSufferResolution(
@@ -85,8 +91,7 @@ describe('issue #353 Phase 0 — a chosen complication is played as its own beat
     const f = card.flags['starforged-companion'];
     const peril = f.oracleMemory?.answer;
     expect(f.oracleMemory?.name).toBe('Spaceborne Peril');
-    // The roller resolves a chained row into its leaves; each is a row of the table.
-    expect(String(peril).split(' / ').every(p => SPACEBORNE_PERIL.some(r => r.result === p))).toBe(true);
+    expect(SPACEBORNE_PERIL.some(r => r.result === peril && r.min <= 10 && 10 <= r.max), `"${peril}" is the row at 10`).toBe(true);
     expect(card.content).toContain('Spaceborne Peril');
     expect(card.content).not.toMatch(/Narrator will surface/);
 
@@ -96,6 +101,21 @@ describe('issue #353 Phase 0 — a chosen complication is played as its own beat
     expect(call.userText).toContain(`Spaceborne Peril: ${peril}`);
     const beat = table.cards(f2 => f2.oracleNarrationCard === true).at(-1);
     expect(beat.flags['starforged-companion']).toMatchObject({ narratorCard: true, narrationKind: 'complication', oracleCardId: card._id ?? card.id });
+  }, 30_000);
+
+  it('the peril\'s chained rows (97–99) resolve to an Action and a Theme, never the placeholder', async () => {
+    control.perilRoll = 98;
+    const gm = table.client('gm-1');
+    const { runSufferResolution } = await gm.import('../../src/moves/sufferDialog.js');
+    await settleBeat(() => gm.run(() => runSufferResolution(
+      [{ kind: 'complication', scope: 'waypoint', label: 'Peril at the waypoint' }],
+      gm.game.actors.get('pc-kira'),
+    )));
+    const peril = String(table.cards(f => f.complication === true).at(-1).flags['starforged-companion'].oracleMemory?.answer);
+    expect(peril).not.toMatch(/Action \+ Theme/);
+    const [action, ...theme] = peril.split(' ');
+    expect(ACTION.some(r => r.result === action), `"${action}" is an Action`).toBe(true);
+    expect(THEME.some(r => r.result === theme.join(' ')), `"${theme.join(' ')}" is a Theme`).toBe(true);
   }, 30_000);
 
   it('a complication with no table ("Complication at destination") is narrated unrolled', async () => {

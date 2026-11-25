@@ -55,10 +55,35 @@ export function legacyRewardLine(rank, legacyLabel) {
 
 // ── Concrete promised rewards (#241 Phase 2) ────────────────────────────────
 
+/** The longest description a reward option keeps (characters): its card's button. */
+const REWARD_DESCRIPTION_MAX = 120;
+
+/**
+ * A description no longer than the card takes, cut at the last whole word
+ * that fits and marked as cut (known-issues REWARD-TEXT-CUT-MID-WORD: the
+ * long haul's runs 3 and 4 offered "…installed on your ship by a grateful"
+ * and "…sell their p", cut wherever the 120th character fell). One word too
+ * long to cut at a space is cut where it must be. Pure.
+ *
+ * @param {string} text
+ * @param {number} [max]
+ * @returns {string}
+ */
+function shortenAtWord(text, max = REWARD_DESCRIPTION_MAX) {
+  const s = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const room = s.slice(0, max - 1);
+  // The room ends on a whole word when the text goes on with a space.
+  const whole = s.charAt(max - 1) === " " ? room : room.replace(/\s+\S*$/u, "");
+  const kept = whole.replace(/[\s,;:—–-]+$/u, "");
+  return `${kept || room}…`;
+}
+
 /**
  * Parse the model's reward-proposal JSON into ≤2 `{ description, form }` options.
  * Pure + defensive (mirrors abilityScanner.parseHaikuResponse): strips fences,
- * slices to the outermost object, clamps to 2, normalises the form. Exported
+ * slices to the outermost object, clamps to 2, normalises the form, and cuts
+ * a description too long for its card at a word (shortenAtWord). Exported
  * for tests.
  *
  * @param {string} raw
@@ -77,7 +102,7 @@ export function parseRewardProposals(raw) {
       .filter(r => r && typeof r.description === "string" && r.description.trim())
       .slice(0, 2)
       .map(r => ({
-        description: r.description.trim().slice(0, 120),
+        description: shortenAtWord(r.description),
         form:        REWARD_FORMS.includes(r.form) ? r.form : "gear",
       }));
   } catch (err) {
@@ -98,7 +123,8 @@ function buildRewardPrompt(kind, target, context) {
     ``,
     `Propose TWO concrete, fiction-grounded rewards they could earn by succeeding — the kind of`,
     `tangible payoff a GM would promise up front (e.g. a custom raygun, safe passage, a useful`,
-    `contact, a vital secret). Keep each description short and specific.`,
+    `contact, a vital secret). Keep each description short and specific:`,
+    `one phrase of at most 15 words — it is shown on a button.`,
     ``,
     `Return ONLY JSON: { "rewards": [ { "description": "<short concrete reward>", "form": "<asset|gear|supply|momentum|contact|knowledge>" }, { ... } ] }`,
     `- form "asset"/"gear" = equipment or a new capability; "supply"/"momentum" = a resource boost;`,

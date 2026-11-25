@@ -195,6 +195,8 @@ export const GM_ACTIONS = Object.freeze({
   "payThePrice.suffer":        { load: () => import("../index.js"),                                  fn: "applyPayThePriceSufferFromRelay" },
   // Issue #347 AB06 — forced moves a GM held, handed to the GM who became canonical
   "forcedMove.hold":           { load: () => import("../index.js"),                                  fn: "holdHandedOverForcedMoves" },
+  // Issue #382 — the session record: an event a co-GM's client reports, written by the canonical GM (its one writer)
+  "record.append":             { load: () => import("../record/record.js"),                          fn: "applyRecordAppendFromRelay" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Known-issues SUMMARY-KEYLESS-GM — the rolling summary a keyed player's client made, for a keyless GM to store
@@ -204,6 +206,8 @@ export const GM_ACTIONS = Object.freeze({
   "draft.dismiss":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftDismissFromRelay" },
   // Issue #362 D10 — "No — a new person" on a row read as someone the table knows
   "draft.newPerson":           { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftNewPersonFromRelay" },
+  // A draft row's 🤝 Make a Connection — a Confirm records the person, the move makes the connection (overhaul 4, D4).
+  "draft.makeConnection":      { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftMakeConnectionFromRelay", record: true },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
@@ -211,54 +215,58 @@ export const GM_ACTIONS = Object.freeze({
   "move.keepResult":           { load: () => import("../moves/heldResult.js"),                       fn: "applyKeepResultFromRelay", claude: true },
   // Issue #364 SOJOURN-VOW-OPTION-REMINDER-ONLY — the community's need card of a Sojourn miss: "⚔ Swear an Iron Vow"
   // writes the vow on the roller's sheet; "✔ It is done" resolves the Sojourn as a strong hit and narrates it
-  "sojourn.need":              { load: () => import("../moves/sojournNeed.js"),                      fn: "applySojournNeedFromRelay", claude: true },
-  "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
-  "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
-  "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },
-  "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle" },
-  "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick" },
+  "sojourn.need":              { load: () => import("../moves/sojournNeed.js"),                      fn: "applySojournNeedFromRelay", claude: true, record: true },
+  "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick", record: true },
+  "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick", record: true },
+  "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick", record: true },
+  "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle", record: true },
+  "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick", record: true },
   // Issue #329 X06 — the "⚔ A fight looms" card's ⚔ Begin the fight / Find another
   // way, claimed once on the card (the legacy "combat.enterFray" socket, folded in)
-  "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice" },
-  "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion" },
-  "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay" },
-  "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay" },
-  "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone" },
-  "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
+  "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice", record: true },
+  "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion", record: true },
+  "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay", record: true },
+  "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay", record: true },
+  // The sworn card's 🤝 Make a Connection — the inciting vow's target is a person (overhaul 4, D5).
+  "vow.makeConnection":        { load: () => import("../session/swearVow.js"),                       fn: "applyVowTargetMakeConnection", record: true },
+  "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone", record: true },
+  "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond", record: true },
   // Claude: a pick that keeps a held result its card answers on a card of its own waits for that result's narration
   // (Sojourn's "Community needs help" — issue #364 SOJOURN-OATH-NARRATED-BEFORE-MISS)
-  "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay", claude: true },
+  "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay", claude: true, record: true },
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
   // Issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED — a split journal's Merge, a GM's press claimed once on the card
   "journal.merge":             { load: () => import("../world/journalSplitMerge.js"),                fn: "applyJournalMerge" },
   // Issue #353 Phase 3 — a countdown's "Begin the scene challenge", a GM's press claimed once on the card
-  "sceneChallenge.begin":      { load: () => import("../moves/sceneChallengeOffer.js"),              fn: "applySceneChallengeOffer" },
+  "sceneChallenge.begin":      { load: () => import("../moves/sceneChallengeOffer.js"),              fn: "applySceneChallengeOffer", record: true },
   // Issue #321 group A — one-shot card buttons claimed on the GM-authored card:
   // U02 "Which vow?" (a Fulfill Your Vow that named none of several open vows);
   // U20 a move card's "⚑ Mark Progress on Vow", and an expedition's "🔁 Recommit"
   // (the legacy "expedition.recommit" socket relay, folded in — RELAY-LEGACY-KINDS)
-  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
+  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick", record: true },
   // Issue #331 X63 — "Which legacy track?" (a Continue a Legacy that named none), each track claimed once
-  "legacy.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyLegacyTrackPick" },
-  "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion" },
+  "legacy.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyLegacyTrackPick", record: true },
+  "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion", record: true },
   // Known-issues FULFIL-BUTTON-LOCAL-DISABLE — a move card's and a won-fight card's
   // "🏁 Attempt to Fulfill", claimed once on the card
-  "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow" },
+  "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow", record: true },
   // Issue #338 D1 — a card's forced follow-up, the roller's to press, claimed once on the card:
   // "⚔ Attempt to Finish the Fight", "🗺 Finish the Expedition", a new vow's "⚔ Swear it (roll)"
-  "tda.attempt":               { load: () => import("../moves/cardActions.js"),                      fn: "applyTakeDecisiveActionAttempt" },
-  "expedition.finish":         { load: () => import("../moves/cardActions.js"),                      fn: "applyFinishExpeditionAttempt" },
-  "vow.swearRoll":             { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowSwearFromRelay" },
+  "tda.attempt":               { load: () => import("../moves/cardActions.js"),                      fn: "applyTakeDecisiveActionAttempt", record: true },
+  "expedition.finish":         { load: () => import("../moves/cardActions.js"),                      fn: "applyFinishExpeditionAttempt", record: true },
+  "vow.swearRoll":             { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowSwearFromRelay", record: true },
   // Known-issues PACED-ROLL-OPEN-PRESS — the same shape for a paced card's "Roll <move>"
   // and a "Which fight?" pick (checked against the card's own fights)
-  "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll" },
+  "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll", record: true },
   // Issue #354 P2-01 — a "Not rolled" notice's "Narrate it — no move", claimed once on the notice
-  "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate" },
-  "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick" },
-  "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
+  "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate", record: true },
+  // Overhaul 4 (D2) — a "Not rolled" notice's GM "Roll anyway" on a soft refusal, claimed once
+  "notRolled.rollAnyway":      { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledRollAnyway", record: true },
+  "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick", record: true },
+  "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer", record: true },
   // Issue #330 D1 — a Fulfill Your Vow's / Forge a Bond's miss "🔁 Recommit", claimed once on the card
-  "vow.recommit":              { load: () => import("../moves/cardActions.js"),                      fn: "applyVowRecommitOffer" },
-  "bond.recommit":             { load: () => import("../moves/cardActions.js"),                      fn: "applyBondRecommitOffer" },
+  "vow.recommit":              { load: () => import("../moves/cardActions.js"),                      fn: "applyVowRecommitOffer", record: true },
+  "bond.recommit":             { load: () => import("../moves/cardActions.js"),                      fn: "applyBondRecommitOffer", record: true },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
   // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)
@@ -429,12 +437,134 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
       requesterIsGM: !!requester?.isGM,
       local,
     };
+    // The words of the button pressed, read off its card before the handler
+    // can write the card over (pressedLabel).
+    const pressed = entry.record === true ? pressedLabel(kind, payload ?? {}) : null;
     const result = await handler(payload ?? {}, ctx);
     const refused = _refusedPresses.get(ctx);
     if (refused) await tellRefusedPress(ctx, refused);
+    else if (entry.record === true) recordChoice(kind, payload ?? {}, ctx, result, pressed);
     return result;
   };
   return UNQUEUED_ACTIONS.has(kind) ? task() : enqueueGmAction(kind, task);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A choice made on a card is a choice on the session record (issue #382)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The presses whose button carries no data of its pick — it is named by its
+ * own action alone: the payload key that holds the pick and, for each of its
+ * values, the action of its button (moves/combatThreshold.js
+ * buildCombatThresholdHtml, which index.js registerCombatThresholdHook sends
+ * as "fray" / "wayOut"; moves/sojournNeed.js's two, sent as "vow" / "done").
+ */
+const ACTION_OF_PICK = Object.freeze({
+  'combat.threshold': Object.freeze({ key: 'choice', actions: Object.freeze({ fray: 'sf-enter-fray', wayOut: 'sf-way-out' }) }),
+  'sojourn.need':     Object.freeze({ key: 'way', actions: Object.freeze({ vow: 'sf-sojourn-need-swear', done: 'sf-sojourn-need-done' }) }),
+});
+
+/** A payload key that never names the button pressed: the card's id, and the presser's own PC (client-asserted). */
+const NOT_A_PICK = new Set(['action', 'messageId', 'actorId']);
+
+/** The most of a button's words a choice keeps. */
+const PICKED_MAX = 160;
+
+const HTML_ENTITIES = Object.freeze({
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', times: '×',
+});
+
+function decodeEntities(s) {
+  return String(s ?? '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, e) => {
+    const k = e.toLowerCase();
+    if (k.startsWith('#x')) return String.fromCodePoint(parseInt(k.slice(2), 16));
+    if (k.startsWith('#')) return String.fromCodePoint(Number(k.slice(1)));
+    return HTML_ENTITIES[k] ?? whole;
+  });
+}
+
+/**
+ * A card's buttons as its HTML has them: each one's `data-*`, camel-cased as
+ * `HTMLElement.dataset` reads them, and the words it shows — with the marks
+ * around them left out (an icon before them, "✓ ", " (unavailable)").
+ */
+function cardButtons(content) {
+  const out = [];
+  for (const [, attrs, inner] of String(content ?? '').matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    const data = {};
+    for (const [, name, value] of attrs.matchAll(/\bdata-([a-z0-9-]+)="([^"]*)"/gi)) {
+      data[name.toLowerCase().replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase())] = decodeEntities(value);
+    }
+    const words = decodeEntities(inner.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+      .replace(/^[^\p{L}\p{N}“"‘'(]+/u, '')
+      .replace(/\s*\(unavailable\)$/i, '')
+      .trim();
+    out.push({ data, words });
+  }
+  return out;
+}
+
+/**
+ * The words of the button a card press names, as its card showed them when it
+ * was pressed — read before its handler runs, which may write the card over
+ * ("◈ Consequence resolved"). The button is the one its action names
+ * (ACTION_OF_PICK), else the card's one button whose data the press carries:
+ * each `data-*` of it the payload names, equal. Null when no one button is it
+ * — the card gone, a press no button names, a press of a card's only button
+ * with no pick to it. Never throws.
+ *
+ * @param {string} kind
+ * @param {Object} payload
+ * @returns {string|null}
+ */
+function pressedLabel(kind, payload) {
+  try {
+    const messageId = typeof payload?.messageId === 'string' && payload.messageId ? payload.messageId : null;
+    const content = messageId ? globalThis.game?.messages?.get?.(messageId)?.content : null;
+    if (typeof content !== 'string' || !content) return null;
+    const buttons = cardButtons(content);
+    const byAction = ACTION_OF_PICK[kind];
+    const action = byAction ? byAction.actions[payload[byAction.key]] : null;
+    const named = action
+      ? buttons.filter(b => b.data.action === action)
+      : buttons.filter((b) => {
+        const keys = Object.keys(b.data).filter(k => !NOT_A_PICK.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== '');
+        return keys.length > 0 && keys.every(k => String(payload[k]) === b.data[k]);
+      });
+    const words = [...new Set(named.map(b => b.words).filter(Boolean))];
+    return words.length === 1 ? words[0].slice(0, PICKED_MAX) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put a card press its handler took on the session record as a `choice` —
+ * the rows of GM_ACTIONS marked `record` (tests/unit/sessionRecordEvents.test.js
+ * names every other row and why it records none). The pick is the words of
+ * the button pressed (pressedLabel), or none: it was the press's own option
+ * id, and the views printed it — "chose “enum”", "chose “any”", "chose
+ * “fray”" (known-issues RECORD-VIEW-SMALLER, the fourth live run). A refusal —
+ * the handler said nothing was applied — records nothing. The card's
+ * resolution, when it has one, ties the choice to its move's beat.
+ * Fire-and-forget; never throws.
+ */
+function recordChoice(kind, payload, ctx, result, picked = null) {
+  if (result === false || result?.applied === false || result?.posted === false || result?.ok === false) return;
+  const messageId = typeof payload.messageId === 'string' && payload.messageId ? payload.messageId : null;
+  let res = null;
+  try { res = (messageId && globalThis.game?.messages?.get?.(messageId)?.flags?.[MODULE_ID]?.resolutionId) || null; } catch { res = null; }
+  const typed = [payload.objective, payload.text].find(t => typeof t === 'string' && t.trim());
+  import('../record/record.js')
+    .then(({ recordEvent }) => recordEvent('choice', {
+      who: { user: ctx?.requesterId ?? null, actor: typeof payload.actorId === 'string' ? payload.actorId : null },
+      ref: { card: messageId, res },
+      d: { action: kind, picked: typeof picked === 'string' && picked ? picked : null },
+      ...(typed ? { text: typed } : {}),
+    }))
+    .catch(err => console.warn(`${MODULE_ID} | gmRelay: "${kind}" was not put on the session record:`, err?.message ?? err));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,22 +586,30 @@ const _refusedPresses = new WeakMap();
  * 15 s later with nothing said. runGmAction tells the requester
  * — and the GMs, as the module's refusal notices do — once, when the handler
  * returns; a helper's record and its caller's are the one refusal (the last
- * stands).
+ * stands). "cannot" — the move the button makes cannot be made now: the move
+ * gate's refusal (overhaul 4, contracts/pressGate.js gatePress), told in its
+ * one line (`note`) and carried on the notice as `cannotMake`.
  *
  * @param {Object} ctx — the handler's relay context
- * @param {"not-owner"|"no-actor"|"not-a-pc"} reason
+ * @param {"not-owner"|"no-actor"|"not-a-pc"|"cannot"} reason
  * @param {{ name?: string }|null} [actor] — the character the press was for
+ * @param {{ note?: string|null, refusal?: Object|null }} [why] — "cannot"'s:
+ *   gate.js refusalOf's refusal and obligations.js refusalNote's line
  */
-export function refusePress(ctx, reason, actor = null) {
+export function refusePress(ctx, reason, actor = null, { note = null, refusal = null } = {}) {
   if (!ctx || typeof ctx !== "object") return;
   const name = typeof actor?.name === "string" && actor.name.trim() ? actor.name.trim() : null;
-  _refusedPresses.set(ctx, { reason, name });
+  _refusedPresses.set(ctx, { reason, name, note, refusal });
 }
 
 /** Whisper the requester and the GMs why their press changed nothing (refusePress). Never throws. */
-async function tellRefusedPress(ctx, { reason, name }) {
+async function tellRefusedPress(ctx, { reason, name, note = null, refusal = null }) {
   const presser = typeof ctx?.requester?.name === "string" && ctx.requester.name ? ctx.requester.name : null;
-  const [title, why] = reason !== "not-owner"
+  // "cannot": the move gate refused the move the button makes (overhaul 4 —
+  // contracts/pressGate.js), told in the line every refusal carries.
+  const [title, why] = reason === "cannot"
+    ? ["Not made", escapeHtml(note ?? "That move cannot be made now.")]
+    : reason !== "not-owner"
     ? ["Character gone", "The character that button was for is no longer one of the table&rsquo;s player characters."]
     : name
       ? ["Not your button", `That button is ${escapeHtml(name)}&rsquo;s: only ${escapeHtml(name)}&rsquo;s player or a GM can press it.`]
@@ -482,7 +620,8 @@ async function tellRefusedPress(ctx, { reason, name }) {
     await globalThis.ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>${title}</strong><p>${why} ${outcome}</p></div>`,
       whisper: [...new Set([ctx?.requesterId, ...gmIds].filter(Boolean))],
-      flags:   { [MODULE_ID]: { pressRefusedNotice: true } },
+      flags:   { [MODULE_ID]: { pressRefusedNotice: true,
+        ...(reason === "cannot" && refusal?.moveId ? { cannotMake: { moveId: refusal.moveId, code: refusal.code ?? null, why: refusal.why ?? "", hard: refusal.hard === true } } : {}) } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | gmRelay: telling ${ctx?.requesterId ?? "?"} their press was refused failed:`, err?.message ?? err);

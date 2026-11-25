@@ -112,6 +112,12 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, items: { contents: [] } });
   table.addActor({ id: 'pc-ash',  name: 'Ash',  ownership: { 'pl-3': 3 }, items: { contents: [] } });
+  // The fight Kira's Strike card is from, under way — her ⚔ Attempt to Finish
+  // the Fight is made in it (the move gate's OPEN_FIGHT, overhaul 4).
+  const flagStore = { [`${MODULE_ID}.tracks`]: [{ id: 'fight-1', label: 'Raiders', type: 'combat', rank: 'dangerous', ticks: 32, completed: false }] };
+  table.journal._set({ id: 'cm-tracks', name: 'Starforged Progress Tracks',
+    getFlag: (mod, key) => flagStore[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flagStore[`${mod}.${key}`] = structuredClone(value); } });
   scriptClaude(table, { fallback: () => ROUND_REPLY });
   silenceConsoleErrors();
   await table.client('gm-1').setSetting('batchMode.enabled', true);

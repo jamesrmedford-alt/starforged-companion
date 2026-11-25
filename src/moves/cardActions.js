@@ -46,6 +46,7 @@ import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank, selectFulfilVow } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
+import { gatePress } from "./contracts/pressGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -446,7 +447,9 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true,
+        // `fromWaypoint`: made from the waypoint's own alternative — what the
+        // move gate asks of a discovery or a chaos (FROM_A_WAYPOINT).
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, fromWaypoint: true,
           // Not rolled, the ordinary reward's cards this press retires below come back too.
           ...sourceCardFlag(messageId, "waypointRewardClaimed", null,
             { value: "alternative", reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
@@ -715,6 +718,10 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | milestone suggestion: card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "milestone suggestion");
     try {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
@@ -863,6 +870,10 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "attempt to fulfil");
     try {
       if (askAmong?.length) {
         // Which vow? — Fulfill Your Vow's own card, its pick the roller's
@@ -922,6 +933,29 @@ function fulfilVowChoices(rollerId) {
 // A "Not rolled" notice's "Narrate it — no move" — gmRelay "notRolled.narrate" (issue #354 P2-01)
 // A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Keep the held result a card's press goes on from (overhaul 4, D11): a press
+ * on a card the held roll itself posted — ⚔ Begin the fight and 🚪 Find
+ * another way, the move card's suggestion buttons — is the decision the hold
+ * waited for (heldResult.js keepHeldResultForChoice, what a chosen
+ * consequence calls). Awaited: the roll's narration — told the fight begun,
+ * or not — posts before what the press makes. A result not held is nothing
+ * to keep. Never throws.
+ *
+ * @param {string|null|undefined} resolutionId — the held roll's
+ * @param {string} label
+ * @returns {Promise<void>}
+ */
+async function keepHeldRollOf(resolutionId, label) {
+  if (typeof resolutionId !== "string" || !resolutionId) return;
+  try {
+    const { keepHeldResultForChoice } = await import("./heldResult.js");
+    await keepHeldResultForChoice(resolutionId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the held roll could not be kept first:`, err?.message ?? err);
+  }
+}
 
 /**
  * The fulfilVow.attempt shape for a card button that rolls the card's
@@ -1145,6 +1179,9 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
         // A scene-challenge Roll's challenge, as the Finish an Expedition
         // button forwards its track (PACED-VARIANT-NO-TARGET).
         ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+        // The offer's reading, from the GM's card (issue #384, slice 3): the
+        // Roll is made as read, with no second call. Only for the card's move.
+        ...(f.offerReading && typeof f.offerReading === "object" && f.offerReading.moveId === moveId ? { forcedReading: f.offerReading } : {}),
       } };
     },
   });
@@ -1175,6 +1212,42 @@ export function applyNotRolledNarrate(payload = {}, ctx = {}) {
       ? { alias: String(f.lineSpeaker.alias), ...(typeof f.lineAuthorId === "string" && f.lineAuthorId ? { authorId: f.lineAuthorId } : {}) }
       : null),
     build: (f) => ({ content: f.restoreLine, flags: { narrateOnly: true } }),
+  });
+}
+
+/**
+ * gmRelay handler for "notRolled.rollAnyway" — a "Not rolled" notice's "Roll
+ * anyway (GM)" (overhaul 4, D2): a forced move the move gate refused soft —
+ * the sheet says it would change nothing (a Heal with nothing to heal) — is
+ * rolled all the same at a GM's word. The move is posted again once, flagged
+ * `gateOverride` (index.js trusts it on a GM's post alone), as the PC it was
+ * for; the move card says it was rolled at the GM's word. A GM's press only —
+ * a hard refusal is never overridden and offers no such button. Claim
+ * `rolledAnyway`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyNotRolledRollAnyway(payload = {}, ctx = {}) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | roll anyway: user ${ctx?.requesterId ?? "?"} is not a GM — refused.`);
+    refusePress(ctx, "not-owner");
+    return Promise.resolve({ posted: false, reason: "not-gm" });
+  }
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "roll anyway", claim: "rolledAnyway",
+    isCard: (f) => f.moveNotRolledNotice === "cannot" && typeof f.rollAnyway?.moveId === "string" && !!f.rollAnyway.moveId,
+    roller: (f) => (typeof f.rollAnyway?.actorId === "string" && f.rollAnyway.actorId ? f.rollAnyway.actorId : null),
+    build: (f) => ({
+      content: f.rollAnyway.content || `${f.rollAnyway.moveId}`,
+      flags: {
+        forcedMoveId: f.rollAnyway.moveId, gateOverride: true, bypassPacing: true,
+        ...(typeof f.rollAnyway.moveTarget === "string" && f.rollAnyway.moveTarget ? { forcedMoveTarget: f.rollAnyway.moveTarget } : {}),
+        ...(typeof f.rollAnyway.moveTargetId === "string" && f.rollAnyway.moveTargetId ? { forcedMoveTargetId: f.rollAnyway.moveTargetId } : {}),
+        ...(f.rollAnyway.fromWaypoint === true ? { fromWaypoint: true } : {}),
+      },
+    }),
   });
 }
 
@@ -1600,7 +1673,7 @@ function thresholdVowOptions(content) {
  * @param {Object} [_ctx] — relay context (anyone at the table may press)
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
-export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
+export async function applyCombatThresholdChoice(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1627,12 +1700,29 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
   const release = () => message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: null })
     .catch(err => console.warn(`${MODULE_ID} | fight threshold: releasing the claim failed:`, err?.message ?? err));
   try {
+    // Begin the fight is Enter the Fray's commit, a move made by a button:
+    // the move gate is asked before the claim (overhaul 4, design §6.2). The
+    // row requires nothing today, so the press passes by construction — and
+    // a precondition put on the row binds this button too. The way out is no
+    // move of its own (its off-ramp is rolled, and gated, as a forced move).
+    if (choice === "fray") {
+      const gate = await gatePress("enter_the_fray", { actorId: typeof f.actorId === "string" && f.actorId ? f.actorId : null,
+        reading: { target: typeof f.label === "string" && f.label ? f.label : null }, ctx, label: "fight threshold" });
+      if (!gate.ok) return { applied: false, reason: "cannot" };
+    }
     try {
       await message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: choice });
     } catch (err) {
       console.warn(`${MODULE_ID} | fight threshold: card ${messageId} could not be claimed — nothing done:`, err?.message ?? err);
       return { applied: false, reason: "claim-refused" };
     }
+    // Begin the fight keeps its Enter the Fray, then makes the fight: the
+    // roll's narration is told the fight begun (the claim above — no [fight]
+    // line) or, for the way out, not begun — and posts before the fight's
+    // card (HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE: a held Enter the Fray
+    // miss was narrated after the next attack line, which kept it; overhaul
+    // 4, D11).
+    await keepHeldRollOf(f.resolutionId, "fight threshold");
 
     if (choice === "wayOut") {
       const { buildWayOutHtml } = await import("./combatThreshold.js");
@@ -1805,6 +1895,10 @@ export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | connection suggestion: card ${messageId} could not be claimed — no picker posted:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    // A press on a card the held roll itself posted keeps it first (overhaul
+    // 4, D11 — amends issue #362 D5: who goes on keeps it): its narration
+    // comes before what this press makes, and the next line finds nothing held.
+    await keepHeldRollOf(f.resolutionId, "connection suggestion");
     const { postConnectionPickerCard } = await import("../index.js");
     const posted = await postConnectionPickerCard(null, pickAction, { actorId: rollerId }).catch(err => {
       console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);
@@ -1839,6 +1933,11 @@ export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
  */
 export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
+    // The won fight's ⚑ is a Reach a Milestone made by a button: the move
+    // gate is asked first (overhaul 4, design §6.2).
+    const gate = await gatePress("reach_a_milestone", { actorId: typeof f.actorId === "string" ? f.actorId : null,
+      reading: { targetId: typeof f.vowId === "string" ? f.vowId : null, target: f.vowName ?? null }, ctx, label: "fight-vow milestone" });
+    if (!gate.ok) return false;
     // Once per card on the vow's payoff ledger too (issue #336 Y24): the
     // stamp follows the mark (R04), and a refused stamp left the button live
     // for a second mark.
@@ -1877,15 +1976,27 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       console.debug(`${MODULE_ID} | fight-vow deepen: ${f.connectionName}'s card was deleted — nothing deepened.`);
       return false;
     }
+    // The deepen is the connection's progress, the roller's own connection's
+    // (overhaul 4: THEIR_CONNECTION — a bond Item on their sheet): asked as
+    // Develop Your Relationship, made by a button (design §6.2) — of the card
+    // the deepen resolves (the card's id, else the vow's link), else the name.
+    const { deepenVowConnectionOnce, vowConnectionLinkOf } = await import("../index.js");
+    const linkId = (typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null)
+      ?? vowConnectionLinkOf({ vowId: typeof f.vowId === "string" ? f.vowId : null, vowName: f.vowName ?? null,
+        actorId: typeof f.actorId === "string" ? f.actorId : null });
+    const gate = await gatePress("develop_your_relationship", { actorId: typeof f.actorId === "string" ? f.actorId : null,
+      reading: { targetId: linkId, target: f.connectionName }, ctx, label: "fight-vow deepen" });
+    if (!gate.ok) return false;
     // Once per vow (issue #326 D1): this press and the vow's fulfilment share
     // one deepen — whichever lands first pays, recorded on the vow.
-    const { deepenVowConnectionOnce } = await import("../index.js");
     const marks = marksForSourceRank(f.vowRank);
     const res = await deepenVowConnectionOnce({
       vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
       actorId: typeof f.actorId === "string" ? f.actorId : null,
       connectionName: f.connectionName,
       connectionId: typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null, marks,
+      // Made by a button as Develop Your Relationship (the session record's `by`, D12).
+      by: { move: "develop_your_relationship", res: null },
     });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });

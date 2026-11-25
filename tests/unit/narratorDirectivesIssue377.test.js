@@ -59,7 +59,8 @@ describe('item 3 — an offered move has not been made', () => {
   it('with no move offered, nothing on a sheet changes in narration', () => {
     const msg = buildPacedNarrativeUserMessage("I treat my wounds with the ship's medkit", '', 3, null, 'Mira Kestrel');
     expect(msg).not.toContain('## SUGGESTED MOVE');
-    expect(msg).toMatch(/Nor does anything on a character's sheet change — no wound is\s+treated or healed/);
+    // The rule is the [sheet] line of the narration's obligations block now (overhaul 4).
+    expect(msg).toMatch(/\[sheet\] Nothing on a character's sheet changes — no wound is\s+treated or healed/);
     expect(msg).toMatch(/the\s+move that decides it is still to be made/);
   });
 });
@@ -75,8 +76,9 @@ describe('item 4 — a solo character is alone with the ship, and no stat is sen
     expect(msg).not.toMatch(/invent generic absurd crew/);
     expect(msg).not.toMatch(/Absent crewmates/);
     expect(msg).toMatch(/Nobody else is aboard[\s\S]*Do not invent one, present or absent/);
-    expect(msg).toMatch(/the character, the only person aboard, is/);
     expect(msg).not.toMatch(/laundry|escape pod/);
+    // Issue #381 D7: alone, and no crew — but the ship is no longer the joke.
+    expect(msg).not.toMatch(/the ship itself as the absurd company|The humour is the ship's/);
   });
 
   it('no stat line, and a rule against stating one', () => {

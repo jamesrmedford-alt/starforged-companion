@@ -96,12 +96,14 @@ narrows, at least one test must exercise the **live composition** — the real
   at least one test that runs the real writer — on the client that writes it —
   and asserts at the real reader: `tests/unit/multiplayerComposition.test.js`
   on the multi-client harness (Private Lines, oracle results and `!truth` →
-  the GM's narration prompt; Take a Break → the next roll; the narrator card →
-  `!recap session`; a Claude key → command routing), or
-  `pipelineNextMoveAdd.test.js` for a single-client hop. `RECAP-MATCH-DEAD`:
-  the session recap's "A match was rolled" line read a narrator-card `isMatch`
-  flag that no code ever wrote, behind a unit test that hand-set it. Pointing
-  the test at the real `postNarrationCard` exposed it.
+  the GM's narration prompt; Take a Break → the next roll; the pipeline's
+  roll, on the session record → `!recap session`; a Claude key → command
+  routing), or `pipelineNextMoveAdd.test.js` for a single-client hop.
+  `RECAP-MATCH-DEAD`: the session recap's "A match was rolled" line read a
+  narrator-card `isMatch` flag that no code ever wrote, behind a unit test
+  that hand-set it. Pointing the test at the real `postNarrationCard` exposed
+  it (the card reads the roll's match from the session record now, issue
+  #382 slice 5).
 
 ## 4. No speculative API surface
 

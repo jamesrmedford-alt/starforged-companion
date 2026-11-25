@@ -17,8 +17,9 @@
  * Scenario (the usual forced move): a paced card offers "Roll Face Danger";
  * the player clicks it; the canonical GM reads the stat with a stat-only
  * interpretation. The Starforged moves compendium holds the vendored Face
- * Danger document as the system ships it. The interpreter's user message
- * carries `<canonical_move>` with the move's text. Control: a pack document
+ * Danger document as the system ships it. The line reader's chosen-mode
+ * message (issue #384, the interpreter's successor) carries `<canonical_move>`
+ * with the move's text. Control: a pack document
  * whose text is in `system.description` (the old reader's field) is sent too.
  */
 
@@ -47,7 +48,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const STARFORGED_MOVES = 'foundry-ironsworn.starforgedmoves';
@@ -56,7 +57,7 @@ const VENDOR_FACE_DANGER = path.resolve(__dirname,
 const HAVE_VENDOR = fs.existsSync(VENDOR_FACE_DANGER);
 const vendoredFaceDanger = HAVE_VENDOR ? JSON.parse(fs.readFileSync(VENDOR_FACE_DANGER, 'utf8')) : null;
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? '');
+const isInterpreter = (call) => isReaderCall(call);
 const SNEAK = 'I melt into the shadows and slip past the sentries.';
 
 let table;
@@ -109,7 +110,8 @@ async function clickRollFaceDanger() {
   await table.settle(); await table.drain();
   const readings = table.claude.calls.filter(isInterpreter);
   expect(readings).toHaveLength(1);
-  expect(readings[0].userText).toContain('MOVE ALREADY CHOSEN: the player chose Face Danger');
+  // The line reader in its chosen mode (issue #384 — the switch retired the interpreter's prompt).
+  expect(readings[0].userText).toContain('MODE — THE MOVE IS CHOSEN: face_danger (Face Danger)');
   return readings[0].userText;
 }
 

@@ -36,14 +36,11 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
-const NWMA = JSON.stringify({
-  decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'face_danger',
-  category: 'exploration', confidence: 0.7, reasoning: 'Risky, but the player may want to narrate it.',
-});
+const isClassifier = (call) => isReaderCall(call);
+const NWMA = readerReply({ move: 'face_danger', risk: 'slight', category: 'exploration' });
 const LEAP = 'I vault the railing and sprint for the airlock.';
 
 let table;

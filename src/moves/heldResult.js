@@ -47,6 +47,7 @@ import { messageAuthorId } from "../multiplayer/speaker.js";
 import { withPayThePriceSeed } from "./resolver.js";
 import { requesterOwnsActor, claimResultUpgrade, releaseResultUpgrade } from "./burnMomentum.js";
 import { dropUpgradeHints } from "./resultUpgrade.js";
+import { recordEvent } from "../record/record.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -242,6 +243,8 @@ export async function keepHeldResult(message, by = "keep") {
     }
     if (!(await closeWait(message, by))) return { applied: false, reason: "claim-refused" };
     const resolution = JSON.parse(JSON.stringify(held.resolution));
+    // The held result stands as rolled: on the session record (issue #382).
+    recordEvent("move.kept", { who: { user: game.user?.id ?? null, actor: actorId }, ref: { res: resolution._id ?? null }, d: { by } });
     try {
       if (resolution.consequences?.routePayThePrice) await payHeldPrice(held, resolution, actorId);
       // Its still-open choice cards no longer say to burn or improve first.

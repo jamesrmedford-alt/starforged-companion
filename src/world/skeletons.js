@@ -24,6 +24,7 @@
  */
 
 import { sameSubject } from "../entities/nameMatch.js";
+import { words, tellingStems } from "./tellingWords.js";
 
 /** The kinds of plan (issue #353 "The skeleton record"). */
 export const SKELETON_KINDS = Object.freeze(["threat", "mystery", "npcAgenda", "expedition", "discovery", "vow"]);
@@ -495,11 +496,6 @@ export function applyPlanToSkeleton(record, plan) {
   return next;
 }
 
-/** The words of a name or a passage, lower-cased, for whole-word matching. */
-function words(value) {
-  return String(value ?? "").toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
-}
-
 /** Leading articles and filler a subject name may carry ("the escort"). */
 const NAME_FILLER = new Set(["the", "a", "an", "of", "and", "to", "in", "on", "at"]);
 
@@ -517,6 +513,44 @@ export function nameMentioned(name, passage) {
   for (let i = 0; i + need.length <= have.length; i += 1) {
     if (need.every((w, j) => have[i + j] === w)) return true;
   }
+  return false;
+}
+
+// The telling words a reveal is read by — the common ones left out, each
+// stemmed — are tellingWords.js's, which a scene question's provenance reads
+// too (overhaul 2): a leaf, so its readers read no plan.
+
+/**
+ * Whether a narration's prose tells any of a plan's truth (known-issues
+ * VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live run, a64): the
+ * prose has at least one of the truth's own telling words, other than the
+ * words of what the plan is about (`about`: its subject's name, a mystery's
+ * question), which a narration uses without telling anything. A fulfilment's
+ * fact block recorded its vow's truth as revealed — the raiders are "a
+ * coordinated crew working the lanes from inside Hollow Spire's shadow",
+ * their leader after "a vulnerable enclave kept hidden" — under prose that
+ * said "The thing you swore to find has a hand and a seal, and both are named
+ * now": none of it.
+ *
+ * A floor, not a judgement of whether the truth was stated — that is asked of
+ * the narrator in its prompt (narratorPrompt.js formatUnrevealedBlock). It
+ * catches the reveal whose prose told nothing, and takes any telling that
+ * keeps one of the truth's words: a higher bar turned away plain reveals in
+ * other words ("Someone sold her berth to people who wanted her gone"), and a
+ * truth left unrevealed after its prose told it is the worse mistake to make
+ * by rule. True for a truth with no telling words of its own.
+ *
+ * @param {string} prose — the narration, its fact block removed
+ * @param {string} truth — the plan's truth
+ * @param {{ about?: string[] }} [opts] — what the plan is about: left out of the truth's words
+ * @returns {boolean}
+ */
+export function proseTellsTruth(prose, truth, { about = [] } = {}) {
+  const own = tellingStems(truth);
+  for (const a of Array.isArray(about) ? about : []) for (const s of tellingStems(a)) own.delete(s);
+  if (!own.size) return true;
+  const told = tellingStems(prose);
+  for (const s of own) if (told.has(s)) return true;
   return false;
 }
 

@@ -5,7 +5,11 @@
 // its bounds, each mark of progress the size its rank gives, each reward the
 // size its rank gives, each effect landing once on the character who rolled,
 // a session's momentum paid once each way, the move lock free once the table
-// has settled, and every line of play answered exactly once.
+// has settled, every line of play answered exactly once — and a result held
+// for Keep or Burn narrated before the line after it, not after. And overhaul
+// 2's (issue #386 §14): no scene question set on what play let go, a scene
+// turned when its place or its situation changed, and none of the
+// narration's own colour filed when its scene ended.
 //
 // The expectations come from tests/helpers/sequence/rules.js — transcribed
 // from the play kit and the recorded decisions, importing nothing from src/.
@@ -21,8 +25,8 @@
 
 import {
   METER_MIN, METER_MAX, MOMENTUM_MIN, MOMENTUM_MAX, PROGRESS_TICKS, TRACK_TICKS, TICKS_PER_BOX,
-  BONDED_DEVELOP, MOVE_MOMENTUM, FIGHT_MARKS, SUFFER_METER,
-  rolledScore, boxesFilled, bondReward, burnedOutcome, decisiveOutcome, dieCancelled, fulfilReward, isMatch, outcomeOf, progressScore,
+  BONDED_DEVELOP, MOVE_MOMENTUM, FIGHT_MARKS, SUFFER_METER, EXPEDITION_MARKS, WAYPOINT_CHOICE,
+  rolledScore, boxesFilled, bondReward, burnedOutcome, decisiveOutcome, dieCancelled, expeditionFinished, expeditionReward, fulfilReward, isMatch, outcomeOf, progressScore,
   rankOf, recover, sufferCost, xpForBoxes,
 } from "../../../../tests/helpers/sequence/rules.js";
 import { parseDiceLine, parsePriceLine, faceOf } from "./table.mjs";
@@ -30,10 +34,11 @@ import { parseDiceLine, parsePriceLine, faceOf } from "./table.mjs";
 /** The checks, in the order the scorecard lists them. */
 export const CHECKS = [
   "roll-score", "roll-outcome", "roll-match", "roll-cancelled-die", "roll-narrated-as-rolled", "dice-as-they-fell", "progress-score",
-  "meter-bounds", "track-bounds", "progress-per-mark", "bond-mirror", "link-mirror",
+  "meter-bounds", "track-bounds", "progress-per-mark", "expedition-progress", "bond-mirror", "link-mirror",
   "legacy-reward", "xp-per-box",
   "move-momentum", "milestone-once", "suffer-cost", "recover-amount", "burn",
-  "session-momentum", "lock-free", "answered-once",
+  "session-momentum", "lock-free", "answered-once", "held-narrated-in-turn",
+  "let-go-stays", "scene-turned", "colour-not-filed",
 ];
 
 const slug = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -48,7 +53,27 @@ export function cardsAt(marks, i) {
 }
 
 const pcOf = (table, id) => table?.pcs?.find(p => p.id === id) ?? (table?.pcs?.length === 1 ? table.pcs[0] : null);
+
+// ── overhaul 2's own words (the design's, not the module's) ──────────────────
+
+/** Words no question is about. */
+const PLAIN = new Set(["that", "this", "there", "their", "them", "they", "what", "when", "where", "which", "while", "with", "will", "would",
+  "could", "should", "from", "into", "about", "have", "has", "been", "were", "does", "your", "still", "just", "else", "here", "then", "than"]);
+/** A text's words, four letters or more, each by its first five letters — "lights" is "light". */
+const stemsOf = (text) => new Set((String(text ?? "").toLowerCase().match(/[a-z][a-z'’-]{3,}/g) ?? [])
+  .map(w => w.replace(/['’]s$/, "")).filter(w => w.length >= 4 && !PLAIN.has(w)).map(w => w.slice(0, 5)));
+/** The names at the table — no evidence of what a question is about (the player characters, the ship, the cards). */
+const namesAt = (table) => stemsOf([...(table?.pcs ?? []).map(p => p.name), table?.ship?.name, ...(table?.entityCards ?? []).map(c => c.name)].filter(Boolean).join(" "));
+/** A line that skips time (overhaul 2 §4.2 — the player's words, or a Sojourn). */
+const SKIPS_TIME = /\b(?:the next (?:morning|day|evening|night|dawn)|the following (?:morning|day|evening|night|week)|overnight|until (?:morning|dawn|the next)|(?:hours|days) later|sleep (?:until|through)|time passes)\b/i;
+const sameFact = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const openFight = (table, id = null) => (table?.tracks ?? []).find(t => t.type === "combat" && (id ? t.id === id : !t.completed)) ?? null;
+
+const expeditions = (table) => (table?.tracks ?? []).filter(t => t.type === "expedition");
+/** What each expedition's track gained in a step — a track begun in it counts from nothing. */
+const expeditionGains = (before, after) => expeditions(after)
+  .map(t => ({ track: t, gain: t.ticks - (expeditions(before).find(b => b.id === t.id)?.ticks ?? 0), begun: !expeditions(before).some(b => b.id === t.id) }))
+  .filter(g => g.gain !== 0 || g.begun);
 
 /**
  * @param {object} o
@@ -70,6 +95,18 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
 
   const index = new Map(marks.map((k, i) => [k.step, i]));
   const actionAt = (step) => actions.find(a => a.step === step)?.action ?? null;
+  // The steps a beat of play was narrated in — the narrations a scene turns
+  // at (a move's, a paced line's, a round's, an oracle follow-up's): no
+  // set-piece, no clock or vow scene, no fallback card, and no answer to an
+  // @scene question (a camera on the story, never a beat).
+  const sceneAsked = new Set(messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).map(m => m.step));
+  const playIn = new Set(messages.filter((m) => {
+    const card = m.card ?? [];
+    return m.narrator && !m.vignette && !card.includes("sceneResponse") && !card.includes("narrationFallback") && !sceneAsked.has(m.step)
+      && (!!m.moveId || card.includes("pacedNarrative") || card.includes("oracleNarrationCard") || card.includes("roundId"));
+  }).map(m => m.step));
+  // A scene owed a turn (scene-turned): by the first beat of play from `from`.
+  let owed = [];
   const firstSeen = new Map();          // card id → the step it was first seen in
   for (const k of marks) for (const c of k.cards ?? []) if (!firstSeen.has(c.id)) firstSeen.set(c.id, k.step);
   const newIn = (mark) => (mark.cards ?? []).filter(c => firstSeen.get(c.id) === mark.step);
@@ -132,6 +169,13 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
           const vow = done.length === 1 ? (before.pcs ?? []).flatMap(p => p.vows).find(b => b.id === done[0].id) : null;
           if (vow) hold("progress-score", step, progressScore(vow.ticks) === roll.score, `fulfill_your_vow: scored ${roll.score}; the vow had ${vow.ticks} ticks (${progressScore(vow.ticks)} boxes)`);
         }
+        if (moveId === "finish_an_expedition") {
+          // The expedition it scores: the one it completed, else the one open one.
+          const ended = expeditions(after).filter(t => t.completed && expeditions(before).find(b => b.id === t.id)?.completed === false);
+          const open = expeditions(before).filter(t => !t.completed);
+          const track = ended.length === 1 ? expeditions(before).find(b => b.id === ended[0].id) : open.length === 1 ? open[0] : null;
+          if (track) hold("progress-score", step, progressScore(track.ticks) === roll.score, `finish_an_expedition: scored ${roll.score}; the expedition "${track.label}" had ${track.ticks} ticks (${progressScore(track.ticks)} boxes)`);
+        }
         if (moveId === "forge_a_bond") {
           const forged = (after.connections ?? []).filter(c => c.bonded && !(before.connections ?? []).find(b => b.hostId === c.hostId)?.bonded);
           const conn = forged.length === 1 ? (before.connections ?? []).find(b => b.hostId === forged[0].hostId) : null;
@@ -191,6 +235,32 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
       }
     }
 
+    // ── an expedition: one mark for a hit that undertakes it, one for a waypoint's ──
+    // Undertake an Expedition marks once on a hit — on the track it begins,
+    // or the open one — and nothing on a miss; Explore a Waypoint's strong
+    // hit marks once when its roller picks the progress. Each by the rank's
+    // own mark (a track filled to its tenth box holds no more).
+    const oneMark = (g) => g.gain === PROGRESS_TICKS[rankOf(g.track.rank)] || (g.gain > 0 && g.track.ticks === TRACK_TICKS);
+    const gains = expeditionGains(before, after);
+    for (const card of fresh.filter(c => c.move && parseDiceLine(c.move.diceLine))) {
+      const narrated = [...cardsAt(marks, i).values()].find(c => c.narration?.resolutionId && c.narration.resolutionId === card.move.resolutionId && !c.narration.upgradeOf) ?? null;
+      const moveId = narrated?.narration?.moveId ?? card.move.burn?.moveId ?? card.move.held?.resolution?.moveId ?? slug(card.move.name);
+      if (moveId !== "undertake_an_expedition") continue;
+      // A result held for a burn has marked nothing yet; one burned in this step is the upgrade's to answer for.
+      if (card.move.held?.open || card.move.burn?.consumed) continue;
+      const outcome = card.move.shown;
+      const marksWanted = EXPEDITION_MARKS[outcome];
+      if (marksWanted == null) continue;
+      hold("expedition-progress", step, marksWanted === 0 ? gains.length === 0 : gains.length === 1 && oneMark(gains[0]),
+        marksWanted === 0
+          ? `undertake_an_expedition missed, and ${gains.map(g => `"${g.track.label}" ${g.begun ? "was begun" : `gained ${g.gain} ticks`}`).join("; ")}`
+          : `undertake_an_expedition (${say(outcome)}) marks progress once: ${gains.length ? gains.map(g => `the ${rankOf(g.track.rank)} expedition "${g.track.label}" gained ${g.gain} ticks`).join("; ") : "no expedition gained any"}`);
+    }
+    if (/^Mark expedition progress\b/i.test(label)) {
+      hold("expedition-progress", step, gains.length === 1 && oneMark(gains[0]),
+        `"${label}" marks progress ${WAYPOINT_CHOICE.marks === 1 ? "once" : `${WAYPOINT_CHOICE.marks} times`}: ${gains.length ? gains.map(g => `the ${rankOf(g.track.rank)} expedition "${g.track.label}" gained ${g.gain} ticks`).join("; ") : "no expedition gained any"}`);
+    }
+
     // ── mirrors: one fact in two stores ───────────────────────────────────────
     for (const pc of after.pcs ?? []) {
       for (const bond of pc.bonds.filter(b => !b.lost)) {
@@ -226,6 +296,24 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
       const want = BONDED_DEVELOP[bondedRoll.outcome]?.bondsTicks ?? 0;
       hold("legacy-reward", step, bondsGain === want, `a bonded Develop Your Relationship came up ${say(bondedRoll.outcome)}: the bonds legacy gained ${bondsGain} ticks, not ${want}`);
     } else if (bondsGain !== 0) hold("legacy-reward", step, false, `the bonds legacy gained ${bondsGain} ticks with no bond forged and no bonded roll in this step`);
+    // An expedition finished: the discoveries legacy by its rank — one rank
+    // lower on a weak hit — and nothing for one a miss left open.
+    const finish = stepRolls.find(r => r.moveId === "finish_an_expedition") ?? null;
+    if (finish && !fresh.find(c => c.move?.resolutionId === finish.resolutionId)?.move?.held?.open) {
+      const ended = expeditions(after).filter(t => t.completed && expeditions(before).find(b => b.id === t.id)?.completed === false);
+      const discoveriesGain = ticksOf(after, "discoveries") - ticksOf(before, "discoveries");
+      if (expeditionFinished(finish.outcome)) {
+        if (ended.length === 1) {
+          const want = expeditionReward(rankOf(ended[0].rank), finish.outcome);
+          // Its card must say what the legacy track shows.
+          const told = fresh.find(c => c.expeditionFinished)?.expeditionFinished.legacyTicks ?? null;
+          const cardWrong = told != null && Number(told) !== discoveriesGain;
+          hold("legacy-reward", step, discoveriesGain === want && !cardWrong,
+            `the ${rankOf(ended[0].rank)} expedition "${ended[0].label}" was finished on ${say(finish.outcome)}: the discoveries legacy gained ${discoveriesGain} ticks`
+            + (discoveriesGain !== want ? `, not ${want}` : "") + (cardWrong ? ` — and its card says ${told}` : ""));
+        } else hold("legacy-reward", step, false, `finish_an_expedition came up ${say(finish.outcome)} and ${ended.length} expeditions were completed, not one`);
+      } else hold("legacy-reward", step, ended.length === 0 && discoveriesGain === 0, `finish_an_expedition missed: ${ended.length} expedition(s) completed and the discoveries legacy gained ${discoveriesGain} ticks`);
+    }
     for (const card of fresh.filter(c => c.legacyXp)) {
       const { track, boxes, xp, cleared } = card.legacyXp;
       const filled = boxesFilled(ticksOf(before, track), ticksOf(after, track));
@@ -336,14 +424,98 @@ export function checkMechanics({ marks = [], messages = [], actions = [], dice =
       }
     }
 
+    // ── overhaul 2: what play let go stays let go (§7.3) ──────────────────────
+    // A scene question newly set while play has let one go is the player's
+    // only if the line took the let-go one up: one sharing a word of it that
+    // the step's line does not hold re-sets what play let go.
+    const letGo = after.scene?.letGo ?? [];
+    const question = String(after.scene?.frame?.question ?? "").trim();
+    if (letGo.length && question && question !== String(before.scene?.frame?.question ?? "").trim()) {
+      const names = namesAt(after);
+      const said = stemsOf(action?.action === "say" ? action.text : "");
+      const asked = [...stemsOf(question)].filter(s => !names.has(s));
+      const again = letGo.find(e => asked.some(s => stemsOf(e.text).has(s) && !said.has(s)));
+      hold("let-go-stays", step, !again, () => `the scene's question became "${question}" — on "${again.text}", which play let go, and the line did not take it up`);
+    }
+
+    // ── overhaul 2: a scene turns when its place or its situation changes (§4.2)
+    // Begins before: an arrival, a fight begun or a line that skips time turns
+    // the scene before the narration that tells it — the step's own beat. Ends
+    // after: a fight ended turns it at the next beat of play. One turn may
+    // answer two causes (place, then ship, then fight…): any owed one will do.
+    // Only where the table read records a scene's anchor (a run from before
+    // overhaul 2 has none — its scenes never turned: no check is made).
+    const anchored = !!after.scene && Object.prototype.hasOwnProperty.call(after.scene, "began");
+    const beforeTracks = (before.tracks ?? []).filter(t => t.type === "combat");
+    const afterTracks = (after.tracks ?? []).filter(t => t.type === "combat");
+    if (after.session?.id !== before.session?.id) owed = [];
+    const owe = (why, causes, sceneBefore, now) => { if (anchored) owed.push({ step, why, causes, sceneBefore, from: i + (now ? 0 : 1) }); };
+    if (after.location?.id && after.location.id !== (before.location?.id ?? null)) owe(`the characters arrived at ${after.location.name ?? after.location.id}`, ["place", "ship"], before.scene?.id ?? null, true);
+    for (const t of afterTracks) if (!t.completed && !beforeTracks.some(b => b.id === t.id)) owe(`the fight "${t.label}" began`, ["fight"], before.scene?.id ?? null, true);
+    for (const b of beforeTracks) {
+      const now = afterTracks.find(t => t.id === b.id);
+      if (!b.completed && (!now || now.completed)) owe(`the fight "${b.label}" ended`, ["fight"], after.scene?.id ?? null, false);
+    }
+    if (action?.action === "say" && SKIPS_TIME.test(String(action.text ?? ""))) owe(`the line skipped time ("${action.text}")`, ["time"], before.scene?.id ?? null, true);
+    // A beat of play here: a narration the observer saw — or, where it kept
+    // no messages, a narrator card new in the step that answered no @scene question.
+    const playHere = playIn.has(step) || fresh.some(c => c.narration && !c.narration.sceneResponse && !c.narration.upgradeOf
+      && (c.narration.moveId || c.narration.pacedNarrative || c.narration.oracleNarrationCard)
+      && !messages.find(m => m.id === c.id)?.vignette && !sceneAsked.has(step));
+    if (playHere) {
+      const due = owed.filter(o => o.from <= i);
+      if (due.length) {
+        const causes = [...new Set(due.flatMap(o => o.causes))];
+        const scene = after.scene ?? {};
+        const began = scene.began?.sceneId === scene.id ? scene.began : null;
+        for (const o of due) {
+          hold("scene-turned", o.step, !!scene.id && scene.id !== o.sceneBefore && causes.includes(began?.cause),
+            () => `${o.why}, and the beat of play after it (${step}) was told in ${scene.id === o.sceneBefore ? "the same scene" : `a scene begun for ${began?.cause ?? "no recorded cause"}`}, not one begun for ${o.causes.join(" or ")}`);
+        }
+        owed = owed.filter(o => !due.includes(o));
+      }
+    }
+
+    // ── overhaul 2: the narration's colour is never filed (§5.6) ──────────────
+    // When a scene ends, its colour truths — the narration's own, basis
+    // narrator — leave with it: no Lore entry and no tier detail carries one.
+    if (before.scene?.id && after.scene?.id !== before.scene.id) {
+      for (const t of (before.scene.truths ?? []).filter(x => x.basis === "narrator" && !x.retracted)) {
+        const filedAt = (after.filed ?? []).find(f => sameFact(f.fact) === sameFact(t.fact) && (!t.narrationId || f.narrationId === t.narrationId));
+        hold("colour-not-filed", step, !filedAt, () => `"${t.fact}", the narration's own colour, was filed when its scene ended: ${filedAt.where}`);
+      }
+    }
+
     // ── the lock, and every line answered once ────────────────────────────────
     if (mark.settled !== false && !mark.waitingOnGm) {
       hold("lock-free", step, after.session.pendingMove !== true, "the move lock was held after the table had settled");
     }
+    // A held result's narration comes when it is kept or burned — with its
+    // own move card's resolutionId, rolled in an earlier step. Pressed "Keep
+    // the result", it is narrated in the press's step, before any other line;
+    // kept by the roller's next line (src/moves/heldResult.js "later"), it is
+    // narrated after that line — the player reads a result of an earlier line
+    // as if it answered this one. The fourth live run's a38 Enter the Fray
+    // miss, kept by a41's attack, was told after it: "You are a half-beat
+    // late…", then the Clash's own "The turn is too tight and too late…".
+    // That is no second answer to the line (`answered-once`); it is a
+    // finding of its own (known-issues HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE).
+    const narrations = fresh.filter(c => c.narration && !c.narration.upgradeOf && !c.narration.oracleNarrationCard
+      && !messages.find(m => m.id === c.id)?.vignette);
+    const heldCard = (c) => {
+      const card = c.narration.resolutionId ? [...cardsAt(marks, i).values()].find(k => k.move?.resolutionId === c.narration.resolutionId) : null;
+      return card?.move?.held && firstSeen.get(card.id) !== step ? card : null;
+    };
+    const kept = narrations.map(c => ({ narration: c, card: heldCard(c) })).filter(x => x.card);
     const isLine = action?.action === "say" && !String(action.text ?? "").startsWith("!");
+    for (const { card } of kept) {
+      const moveId = card.move.held.resolution?.moveId ?? slug(card.move.name);
+      const outcome = card.move.held.resolution?.outcome ?? card.move.shown;
+      hold("held-narrated-in-turn", step, !isLine,
+        `${moveId} (${say(outcome)}), rolled at ${firstSeen.get(card.id)} and held for Keep or Burn, was kept by the next line and narrated after the next line (${step}): the player read it as this line's answer`);
+    }
     if (isLine && before.session.active && after.session.active && mark.settled !== false && !mark.waitingOnGm) {
-      const answers = fresh.filter(c => c.narration && !c.narration.upgradeOf && !c.narration.oracleNarrationCard
-        && !messages.find(m => m.id === c.id)?.vignette);
+      const answers = narrations.filter(c => !kept.some(x => x.narration.id === c.id));
       // A card that asks for a choice answers the line too: a fight offered, a
       // cost to pick, a result held until it is kept or burned.
       const asks = fresh.filter(c => c.threshold || c.picker || c.suffer || c.price || c.move?.held?.open);

@@ -66,6 +66,9 @@ beforeEach(async () => {
       lastSessionTimestamp: new Date().toISOString(), sessionEndedId: null,
       currentSceneId: null, sceneTruths: [], sceneState: { bySubject: {}, sceneId: null }, sceneFrame: null, clocks: [],
       characterIds: ["pc-kira"],
+      // A place for End a Session's closing cutaway to show (issue #381 D6: with
+      // nobody on record and nowhere to show, there is no closing).
+      activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
       // A recap from before this session's Chronicle entry: out of date, so
       // End a Session writes a new one once its closing vignette is posted.
       campaignRecapCache: { text: "Previously: nothing yet.", generatedAt: "2026-11-01T00:00:00.000Z", chronicleLength: 0, chronicleHash: "00000000" },
@@ -89,7 +92,10 @@ beforeEach(async () => {
     flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The docking clamps take hold.", sessionId: "rv-s1", narrationId: "nar-played" } },
   }));
   await table.settle(); await table.drain();
-  scriptClaude(table, { fallback: (call) => (isRecap(call) ? RECAP : isClosing(call) ? VIGNETTE : "{}") });
+  // The recap answers in cited sentences (issue #382 D11): its one cites the
+  // Chronicle entry above — a player's note to the recap, [note-1].
+  const cited = JSON.stringify({ paragraphs: [[{ text: RECAP, because: ["note-1"] }]] });
+  scriptClaude(table, { fallback: (call) => (isRecap(call) ? cited : isClosing(call) ? VIGNETTE : "{}") });
   silenceConsoleErrors();
 });
 
@@ -113,7 +119,7 @@ describe("RECAP-TAKES-CLOSING-VIGNETTE-AS-THE-SCENE — the closing vignette's c
     expect(recap.system).not.toMatch(/pirate ship/i);
     expect(recap.system).not.toMatch(/tangerine/i);
     expect(recap.system).not.toMatch(/SCENE FRAME/);
-    expect(recap.system).not.toMatch(/ACTIVE SCENE — BINDING/);
+    expect(recap.system).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(world().campaignRecapCache?.text).toBe(RECAP);
   }, 30_000);
 
@@ -127,10 +133,13 @@ describe("RECAP-TAKES-CLOSING-VIGNETTE-AS-THE-SCENE — the closing vignette's c
     expect(Object.keys(cs.sceneState?.bySubject ?? {})).toEqual([]);
   }, 30_000);
 
-  it("what the cutaway established is kept: filed as a scene's end files it", async () => {
+  // A bookend writes colour only (overhaul 2 §5.2, §10.4): what the cutaway
+  // described ends with its scene as a scene's end leaves colour — filed
+  // nowhere — and the record keeps it.
+  it("what the cutaway described is colour: its scene's end files none of it", async () => {
     await endSession();
     const lore = filed().filter(f => f.startsWith("World Journal — Lore /"));
-    expect(lore.join("\n")).toMatch(/the raider captain: Eats a tangerine/);
+    expect(lore.join("\n")).not.toMatch(/Eats a tangerine/);
   }, 30_000);
 
   it("a vignette that fails after opening its scene leaves none open either", async () => {
@@ -151,14 +160,32 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
 
   it("a recap asked for mid-session is not told the open scene is binding", () => {
     const recap = prompt("campaign_recap");
-    expect(recap).not.toMatch(/ACTIVE SCENE — BINDING/);
+    expect(recap).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(recap).not.toMatch(/SCENE FRAME/);
-    expect(recap).not.toMatch(/Toffee burning/);
+    expect(recap).not.toMatch(/They are\s+binding/);
+  });
+
+  // Since known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN (the long haul's third
+  // live run) a recap is told how things stand — the open scene's facts and
+  // state among them — as the later word on them, under a heading of its own:
+  // not as the scene the campaign is set in, which is what A1 took out. The
+  // closing cutaway's scene has ended by the time End a Session's recap is
+  // written (the first describe, above), so nothing of it is in that section.
+  // Issue #382 slice 2: how things stand is the recap's user message, read
+  // live (record/recapView.js standingLines) — the scene's facts come from the
+  // record, as beats; the system prompt carries no scene of its own at all.
+  it("what it is told of the open scene is how things stand, not where the campaign is set", async () => {
+    const recap = prompt("campaign_recap");
+    expect(recap).not.toMatch(/WHERE THINGS STAND NOW/);
+    expect(recap).not.toMatch(/Toffee burning in a skillet/);
+    const { standingLines } = await import("../../src/record/recapView.js");
+    const state = { ...withScene(), sceneState: { sceneId: "sc-open", bySubject: { "the skillet": [{ attribute: "smell", value: "burnt sugar", subjectText: "the skillet", basis: "player" }] } } };
+    expect(await standingLines(state)).toContain("the skillet — smell: burnt sugar.");
   });
 
   it("control: a narration of that scene still is", () => {
     const paced = prompt("paced_narrative");
-    expect(paced).toMatch(/ACTIVE SCENE — BINDING/);
+    expect(paced).toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(paced).toMatch(/Toffee burning/);
   });
 
@@ -170,7 +197,7 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
     try {
       const recap = buildNarratorSystemPrompt({ ...withScene(), shipIds: ["cv-k4"] }, {}, null, "", { mode: "campaign_recap" });
       expect(recap).toMatch(/SHIP POSITION: .*docked at Bleakhold Station/);
-      expect(recap).not.toMatch(/ACTIVE SCENE — BINDING/);
+      expect(recap).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     } finally {
       game.actors._reset();
     }

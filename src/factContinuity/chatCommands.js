@@ -25,6 +25,13 @@
  *   - applyFactContinuityCommand() runs on the canonical GM and builds the
  *     permission context from the REQUESTER (ctx.requesterIsGM), never from
  *     game.user — on the relay path that is the GM's own user.
+ *
+ * The session's earlier scenes (TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE): a
+ * scene's end clears its ledger, and its truths are kept on the session record
+ * — the GM's (the Session Log journal). So `!truth list` is relayed too, and
+ * the canonical GM whispers the typist the active scene's truths and then the
+ * earlier scenes' that bind and stand, each with the id `!truth strike` takes;
+ * a strike of an earlier scene's truth goes through earlierScenes.js.
  */
 
 import { collectAllEntities } from "../context/relevanceResolver.js";
@@ -44,10 +51,12 @@ import {
   findTruthByIdOrPrefix,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
-import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
+import { propagateRetraction, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
-import { nameCorrectionOf, withNameChange } from "./nameChanges.js";
+import { nameCorrectionOf, withNameChange, recordNameChanged } from "./nameChanges.js";
+import { earlierSceneTruths, findEarlierSceneTruth, strikeEarlierSceneTruth } from "./earlierScenes.js";
+import { recordSettled } from "../record/record.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -122,27 +131,27 @@ export async function handleFactContinuityCommand(message) {
     ui.notifications?.warn(parsed.usage);
     return;
   }
-  // A read: listed on the typist's own client, to them.
-  if (parsed.verb === "list") {
-    await postTruthList(message);
-    return;
-  }
 
+  // Every verb, `!truth list` too: the earlier scenes' truths are on the
+  // session record, which is the GM's (see the header).
   await requestGmAction("factContinuity.command", { text });
 }
 
 /**
- * `!truth list`: whisper the typist the active scene's live truths, each
+ * `!truth list`, on the canonical GM: whisper the typist the active scene's
+ * live truths, then the session's earlier scenes' that bind and stand, scene
+ * by scene (earlierScenes.js — TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE: once
+ * the scene had turned, a truth set two scenes back was listed nowhere), each
  * with the id prefix `!truth strike` takes and whether they may strike it —
  * the id was shown nowhere, so a player could not strike a truth at all and
- * `!truth strike` had no id to take in normal play (issue #326 W67).
+ * `!truth strike` had no id to take in normal play (issue #326 W67). An
+ * earlier scene's truth is said in the names the table uses now.
  *
- * @param {ChatMessage} message — the typed command
+ * @param {Object} campaignState
+ * @param {{ isGM: boolean, to: string|null }} who — whether the typist is a GM, and their user id
  * @returns {Promise<void>}
  */
-async function postTruthList(message) {
-  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const isGM  = !!game.user?.isGM;
+async function postTruthList(campaignState, { isGM, to }) {
   const live  = (campaignState.sceneTruths ?? []).filter(t => t?.id && !t.retracted && String(t.fact ?? "").trim());
   let entities = [];
   try { entities = collectAllEntities(campaignState); }
@@ -151,21 +160,27 @@ async function postTruthList(message) {
     if (subject?.kind === "scene") return "scene";
     if (subject?.kind === "entity") {
       const e = entities.find(x => (x.journalId ?? x._id) === subject.entityId || x._id === subject.entityId);
-      return e?.name ?? subject.entityId ?? "entity";
+      return e?.name ?? subject.name ?? subject.entityId ?? "entity";
     }
     return String(subject?.text ?? "unknown");
   };
-  const rows = live.map(t => {
+  const row = (t, subject, fact) => {
     const locked = !canCorrectTruth(t, { isGM });
-    return `<li><code>${escapeHtml(String(t.id).slice(0, 8))}</code> ${escapeHtml(label(t.subject))} — ${escapeHtml(t.fact)}` +
+    return `<li><code>${escapeHtml(String(t.id).slice(0, 8))}</code> ${escapeHtml(label(subject))} — ${escapeHtml(fact)}` +
       `${locked ? ` <em>(GM's — only a GM can strike it)</em>` : ""}</li>`;
-  }).join("");
-  const body = live.length
+  };
+  const rows = live.map(t => row(t, t.subject, t.fact)).join("");
+  // What the scene ends of this session kept, as the record holds it once its writes have landed.
+  await recordSettled();
+  const earlier = earlierSceneTruths(campaignState)
+    .map(g => `<p>${escapeHtml(g.label)}:</p><ul>${g.truths.map(t => row(t, t.shown.subject, t.shown.fact)).join("")}</ul>`).join("");
+  const body = (live.length
     ? `<p>Truths in this scene — strike one with <code>!truth strike &lt;id&gt;</code>:</p><ul>${rows}</ul>`
-    : `<p>No truths are recorded in this scene.</p>`;
+    : `<p>No truths are recorded in this scene.</p>`)
+    + (earlier ? `<p>Earlier this session — strike one the same way:</p>${earlier}` : "");
   await ChatMessage.create({
     content: `<div class="sf-fc-command-card"><div class="sf-fc-command-label">◈ Fact Continuity</div><div class="sf-fc-command-body">${body}</div></div>`,
-    whisper: [message?.author?.id ?? game.user?.id].filter(Boolean),
+    whisper: [to].filter(Boolean),
     flags:   { [MODULE_ID]: { factContinuityCommand: true, domain: "truth", verb: "list" } },
   });
 }
@@ -199,6 +214,12 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   // Journal lore), and the write below lands on the store as it is after
   // that — never this read held across the await (issue #321 U06b).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+
+  // A read, whispered to the typist: nothing is written, and no scene is started.
+  if (parsed.verb === "list") {
+    await postTruthList(campaignState, { isGM, to: ctx.requesterId ?? game.user?.id ?? null });
+    return "listed";
+  }
 
   // NARR-CMD-SUBJECT (narrator-context audit 2026-07): resolve command
   // subjects against the full entity roster, exactly like the sidecar apply
@@ -251,11 +272,31 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       // — is left as it is (issue #336 Y30), and the card says so; its fact
       // is not named (it may be one the table removed).
       const already = struck ? null : findTruthByIdOrPrefix(campaignState.sceneTruths, parsed.rest);
+      // None in this scene's ledger: one an earlier scene of this session
+      // established, as its record keeps it (earlierScenes.js —
+      // TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE). It is struck there, and it
+      // persists itself: the session's kept strikes, the record, its copies.
+      let earlier = null;
+      if (!struck && !already) {
+        await recordSettled();
+        const found = findEarlierSceneTruth(campaignState, parsed.rest);
+        earlier = found?.truth
+          ? { ...(await strikeEarlierSceneTruth(found.truth, campaignState, permCtx, { about: subjectAbout(found.truth.subject, entities) })), truth: found.truth }
+          : found;
+      }
       resultLine = struck
         ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
         : already?.retracted
           ? `Truth <code>${escapeHtml(String(already.id).slice(0, 8))}</code> is already retracted — nothing changed.`
-          : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
+          : earlier?.struck
+            ? `Truth <code>${escapeHtml(String(earlier.struck.id).slice(0, 8))}</code> struck — it was set in an earlier scene of this session.`
+            : earlier?.ambiguous
+              ? `More than one truth this session starts with <code>${escapeHtml(parsed.rest)}</code> — give more of its id.`
+              : earlier?.why === "permission"
+                ? `Truth <code>${escapeHtml(String(earlier.truth.id).slice(0, 8))}</code> not struck — the GM set it; only a GM can strike it.`
+                : earlier?.why === "write"
+                  ? `Truth <code>${escapeHtml(String(earlier.truth.id).slice(0, 8))}</code> not struck — the change could not be saved.`
+                  : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const fact    = String(parsed.fact ?? "").trim();
@@ -303,7 +344,7 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         : `No matching state entry.`;
     } else {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
-      const result  = setStateValue(subjectKey(subject), parsed.attribute, parsed.value, campaignState);
+      const result  = setStateValue(subjectKey(subject), parsed.attribute, parsed.value, campaignState, permCtx);
       if (result) changed = "sceneState";
       resultLine = result
         ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.attribute)}: ${escapeHtml(parsed.value)}</em>.`
@@ -313,8 +354,9 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // Persist only what the command changed, onto the store as it is now
     // (rules/reachability.md §9): the ledger field, merged with the store's
     // (a narration's truths and a relayed X-Card that landed while a Strike
-    // propagated stay; a released move lock is not written back), and a
-    // Strike's regen mark on the stored rolling summary. A no-match writes
+    // propagated stay; a released move lock is not written back). A strike
+    // reaches the session summary through the session record — the summary
+    // that told it is stale, and made again (issue #382). A no-match writes
     // nothing.
     // A kept strike's lift is dropped from the stored session list in the
     // same write — while the store holds this scene: an X-Card that took the
@@ -322,12 +364,10 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // scene changed meanwhile takes the truth's set with it.
     // A name change rides the same write (issue #377 item 1).
     if (changed) {
-      const further = struckTruth ? markSummaryForRegen
-        : liftKept ? (target) => {
-          if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
-          liftKept.dropped = dropSessionStrike(target, liftKept.strike);
-        }
-          : null;
+      const further = !struckTruth && liftKept ? (target) => {
+        if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
+        liftKept.dropped = dropSessionStrike(target, liftKept.strike);
+      } : null;
       await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
         onto: (further || renamed) ? (latest) => {
           if (further) further(latest);
@@ -337,6 +377,8 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
           }
         } : null,
       });
+      // The write landed: the change goes on the session record (issue #382).
+      if (renamed) recordNameChanged(renamed);
     }
 
     // A lift brings back the lore copies the strike retracted, so the fact

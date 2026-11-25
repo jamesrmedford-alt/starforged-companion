@@ -131,8 +131,11 @@ describe('CampaignStateSchema', () => {
     expect(cache).toBeDefined();
     expect(cache.text).toBe('');
     expect(cache.generatedAt).toBeNull();
-    expect(cache.chronicleLength).toBe(0);
-    expect(cache.chronicleHash).toBeNull();   // the chronicle a recap was made from (issue #301 B04)
+    expect(cache.cites).toEqual([]);
+    expect(cache.sourceHash).toBeNull();      // the record's source a recap was made from (issue #382)
+    // The Chronicle's key is retired (issue #301 B04's count and hash).
+    expect(cache).not.toHaveProperty('chronicleLength');
+    expect(cache).not.toHaveProperty('chronicleHash');
   });
 });
 
@@ -168,15 +171,15 @@ describe('session boundaries (issue #286 C3, C4)', () => {
     expect(state.sessionEndedId).toBeNull();
   });
 
-  it('the mint keeps the closing session\'s summary as previousSessionSummary', () => {
-    const state = makeState({
-      currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1',
-      sessionSummary: { sessionId: 's1', text: ' The crew paid Vex 300 credits. ', coveredCount: 9, updatedAt: '2026-10-01T00:00:00Z' },
-    });
+  // Issue #382 slice 3: LAST SESSION is read from the session record
+  // (lifecycle.js lastSessionToTell) — the mint carries nothing of a summary.
+  it('the mint carries no summary: LAST SESSION is the record\'s, and the mint persists none', () => {
+    const state = makeState({ currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1' });
     mintSession(state);
-    expect(state.previousSessionSummary).toEqual({
-      sessionId: 's1', sessionNumber: 4, text: 'The crew paid Vex 300 credits.', updatedAt: '2026-10-01T00:00:00Z',
-    });
+    expect(state).not.toHaveProperty('previousSessionSummary');
+    expect(state).not.toHaveProperty('unsummarisedSession');
+    expect(SESSION_MINT_FIELDS).not.toContain('previousSessionSummary');
+    expect(SESSION_MINT_FIELDS).not.toContain('unsummarisedSession');
   });
 
   // Issue #321 U12: a session nobody ended handed its open gate to the next
@@ -203,16 +206,6 @@ describe('session boundaries (issue #286 C3, C4)', () => {
     mintSession(state);
     expect(state.deletedChatMessages).toEqual([]);
     expect(SESSION_MINT_FIELDS).toContain('deletedChatMessages');
-  });
-
-  it('a closing session with no summary of its own leaves the older one in place', () => {
-    const older = { sessionId: 's0', sessionNumber: 3, text: 'Earlier.', updatedAt: null };
-    const state = makeState({
-      currentSessionId: 's1', sessionNumber: 4, previousSessionSummary: older,
-      sessionSummary: { sessionId: 's0', text: 'Stale — another session.', coveredCount: 2 },
-    });
-    mintSession(state);
-    expect(state.previousSessionSummary).toBe(older);
   });
 
   it('chat activity refreshes the activity stamp at most every 10 minutes', async () => {

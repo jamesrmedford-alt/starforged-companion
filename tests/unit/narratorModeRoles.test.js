@@ -45,7 +45,10 @@ describe("each narrator mode has its role and latitude", () => {
 
   it("control: the session vignette keeps its own role", () => {
     const prompt = buildNarratorSystemPrompt({}, {}, null, "", { mode: "session_vignette" });
-    expect(prompt).toContain("the calm before / the calm after");
+    expect(prompt).toContain("render a session set-piece");
+    // Issue #381: "the calm before / the calm after" was the role's stock for
+    // a set-piece too, and is gone from it.
+    expect(prompt).not.toContain("the calm before / the calm after");
   });
 });
 

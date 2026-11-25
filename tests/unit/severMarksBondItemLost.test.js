@@ -96,6 +96,7 @@ describe("issue #330 D10 — a severed connection is no longer a live bond on th
     const connLine = prompt.split("\n").find(l => l.startsWith("Connections:")) ?? "";
     expect(connLine).toContain("Sable");
     expect(connLine).not.toContain("Vex");
-    expect(prompt).toMatch(/Connections lost \(severed — no longer a bond\): Vex/);
+    // In the situation's words (overhaul 4, TRACK-TOLD-AS-A-BOND): a severed one is no connection.
+    expect(prompt).toMatch(/Connections lost — no longer a connection: Vex/);
   });
 });

@@ -25,7 +25,8 @@ import { MODULE_ID } from "./foundry.mjs";
 import { readTable, readCards } from "./table.mjs";
 
 /** The module calls that narrate in answer to a player's line. */
-const NARRATION_KIND = /^callNarratorAPI>narrate(?!SessionVignette)/;
+// A scene question (`@scene …`) is answered by the narrator too: its call is `interrogateScene`.
+const NARRATION_KIND = /^callNarratorAPI>(?:narrate(?!SessionVignette)|interrogateScene)/;
 /** Failing layers, in the order a fact travels them. */
 export const LAYERS = ["storage", "retrieval", "generation"];
 
@@ -101,6 +102,13 @@ export function readWorld(gm, facts, notMemory = []) {
         narrator: f.narratorCard === true,
         vignette: f.sessionVignetteCard === true ? (f.vignetteKind ?? "vignette") : null,
         moveId: f.moveId ?? null, outcome: f.outcome ?? null,
+        // The scene it was told in (record/cards.js's stamp — overhaul 2 §8).
+        sceneId: typeof f.sceneId === "string" && f.sceneId ? f.sceneId : null,
+        // A paced narration's offer and the move the contracts refused it
+        // (narrator.js postPacedNarrativeCard): how the table routed a line
+        // the line reader read (lib/review.mjs freeformOf).
+        suggestedMove: typeof f.suggestedMove === "string" && f.suggestedMove ? f.suggestedMove : null,
+        cannotMake: f.cannotMake && typeof f.cannotMake.moveId === "string" ? { moveId: f.cannotMake.moveId, code: f.cannotMake.code ?? null } : null,
       };
     });
 

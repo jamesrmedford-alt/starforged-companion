@@ -46,6 +46,9 @@ async function seed(extra = {}) {
       ...CampaignStateSchema, sessionActive: false, sessionStartedId: null, currentSessionId: 'bs-s1',
       sessionNumber: 1, lastSessionTimestamp: new Date().toISOString(), clocks: [], safetyFlags: [],
       currentSceneId: null, sceneTruths: [], sceneState: { bySubject: {}, sceneId: null }, sceneFrame: null,
+      // A place for End a Session's closing cutaway to show (issue #381 D6: with
+      // nobody on record and nowhere to show, there is no closing).
+      activeSectorId: 'sec-q', sectors: [{ id: 'sec-q', name: 'Quiet Reach', settlements: [{ id: 'st-q', name: 'Lantern Rest' }] }],
       ...extra,
     },
   } } });

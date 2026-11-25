@@ -1,0 +1,309 @@
+{
+  "name": "scenario-connection",
+  "flow": "a connection: met and made under a part of her name, two favours done for her, a bond forged",
+  "description": "A scenario of the suite (suites/scenarios.json): one relationship from first meeting to a bond, on the road the long haul's third live run lost (beats 2, 3, 18, 22, 23: the card for Tamsin Vey was proposed as \"Tamsin\" and never made). The player names her in full and the narrator writes \"Tamsin\"; the GM's rules confirm the draft under the part of her name (lib/cast.mjs), recording her with no bond (\"No one\" on today's card) — and it is Make a Connection that makes her Mira's connection (the fourth live run's GM made her one from the draft, and the roll never came: known-issues CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). The favours and the bond require her to be Mira's connection, whichever road made her one, not the roll (`requires`). Two favours done for her are to be at least offered Develop Your Relationship (known-issues FAVOUR-TO-A-CONNECTION-READ-AS-TALK); then the bond. Make a Connection's and Forge a Bond's rolls are scripted.",
+  "caps": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play one short scene by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type, use exactly those words.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides.",
+    "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
+    "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line.",
+    "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
+    "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
+    "Mira has her background vow on her sheet, to find the lost colony ship Verity's Hope, which no beat touches. Wherever a card or a dropdown asks which vow, choose the one this scene is about, not that one.",
+    "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "If the narrator has not answered yet, wait rather than repeat yourself."
+  ],
+  "cast": {
+    "connection": {
+      "name": "Tamsin Vey",
+      "pronouns": "she/her",
+      "role": "salvage broker",
+      "description": "A salvage broker who keeps a ledger stall on the Hollow Spire docks."
+    }
+  },
+  "facts": [],
+  "beats": [
+    {
+      "id": "c1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session",
+      "tell": "Type !begin-session. In the window that opens leave vignette unticked and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1
+      }
+    },
+    {
+      "id": "c2",
+      "title": "Meet someone and make them a connection",
+      "needs": [
+        "c1"
+      ],
+      "tell": "First, in one line of play, meet Tamsin Vey, a salvage broker at her ledger stall on the Hollow Spire docks — name her in full. When the narrator has answered, make her someone you keep: in a line, tell her you are after more than one deal — someone on these docks you can come back to, and who can count on you in turn — and ask whether she will be that. Offer no payment and strike no bargain: you are after a lasting tie, not a trade. A roll should follow; the beat is done when the observer's note says she is your connection, and not before.",
+      "check": {
+        "type": "connectionMade",
+        "name": "Tamsin Vey",
+        "move": "make_a_connection"
+      },
+      "dice": {
+        "moves": [
+          "make_a_connection"
+        ],
+        "roll": "strong_hit"
+      },
+      "playerTitle": "Meet someone, and make them someone you keep",
+      "lastResort": "say that you set out to make a connection with Tamsin Vey — a lasting tie, not a bargain",
+      "lastResortAfter": 3,
+      "setupLines": 1,
+      "wants": [
+        "make_a_connection"
+      ],
+      "n": 2,
+      "session": 1
+    },
+    {
+      "id": "c3",
+      "title": "Develop Your Relationship: a favour for her",
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
+      ],
+      "tell": "Do something for Tamsin that costs you: in a line of play, bring her something of value — the salvage claim you won off Bleakhold, which she has been chasing for a month. If a card offers a \"Roll …\" button for it, press it; if a card asks which connection, choose her.",
+      "check": {
+        "type": "relationshipDeveloped"
+      },
+      "playerTitle": "Do something for her that costs you",
+      "lastResort": "end your line with \"…, to Develop Your Relationship\"",
+      "wants": [
+        "develop_your_relationship"
+      ],
+      "n": 3,
+      "session": 1
+    },
+    {
+      "id": "c4",
+      "title": "Develop Your Relationship again: a risk for her",
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
+      ],
+      "tell": "Once more, in a line of play: take a risk on Tamsin's behalf — stand at her stall when the dock boss's collectors come for her, and make them leave. If a card offers a \"Roll …\" button for it, press it; if a card asks which connection, choose her.",
+      "check": {
+        "type": "relationshipDeveloped"
+      },
+      "playerTitle": "Take a risk on her behalf",
+      "lastResort": "end your line with \"…, to Develop Your Relationship\"",
+      "wants": [
+        "develop_your_relationship"
+      ],
+      "n": 4,
+      "session": 1
+    },
+    {
+      "id": "c5",
+      "title": "Forge a Bond",
+      "requires": [
+        {
+          "type": "connectionMade",
+          "name": "Tamsin Vey"
+        }
+      ],
+      "tell": "Ask her, in your own words, to stand with you for good — a tie that outlasts this job and the next. If a card asks which connection, choose her.",
+      "check": {
+        "type": "bondForged"
+      },
+      "dice": {
+        "moves": [
+          "forge_a_bond"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      },
+      "playerTitle": "Ask her to stand with you for good",
+      "lastResort": "say that you ask Tamsin to forge a bond with you",
+      "lastResortAfter": 1,
+      "wants": [
+        "forge_a_bond"
+      ],
+      "n": 5,
+      "session": 1
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      },
+      "vows": [
+        {
+          "name": "Find the lost colony ship Verity's Hope",
+          "rank": "epic"
+        }
+      ]
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes",
+      "mapData": {
+        "settlements": [],
+        "discoveries": []
+      }
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [
+    {
+      "moves": [
+        "develop_your_relationship"
+      ],
+      "roll": "strong_hit"
+    }
+  ],
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "false"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "On the Hollow Spire docks I find Tamsin Vey, the salvage broker, at her ledger stall, and ask what she has heard of the raids.",
+      "names": [
+        "Tamsin"
+      ],
+      "detects": [
+        "Tamsin"
+      ]
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I tell Tamsin Vey I am after more than one deal: someone on these docks I can come back to, and who can count on me in turn. I ask whether she will be that.",
+      "names": [
+        "Tamsin"
+      ],
+      "detects": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "make_a_connection",
+        "stat": "heart",
+        "target": "Tamsin Vey"
+      }
+    },
+    {
+      "beat": 3,
+      "action": "say",
+      "text": "I slide the Bleakhold salvage claim across Tamsin's ledger: it is hers, the one she has been chasing for a month.",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin"
+      }
+    },
+    {
+      "beat": 4,
+      "action": "say",
+      "text": "When the dock boss's collectors come for Tamsin's stall, I stand in front of it and tell them to try someone else.",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "develop_your_relationship",
+        "target": "Tamsin"
+      }
+    },
+    {
+      "beat": 5,
+      "action": "say",
+      "text": "I ask Tamsin to stand with me for good, this job and the next, come what may.",
+      "names": [
+        "Tamsin"
+      ],
+      "move": {
+        "id": "forge_a_bond",
+        "target": "Tamsin",
+        "progress": true
+      }
+    }
+  ]
+}

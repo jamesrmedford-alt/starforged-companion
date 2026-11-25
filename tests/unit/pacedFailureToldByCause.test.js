@@ -37,17 +37,17 @@ vi.mock("../../src/narration/narrator.js", async (importOriginal) => {
 });
 
 import { simulateTable, USERS } from "../helpers/multiClient.js";
-import { scriptClaude, claudeFault } from "../helpers/faults.js";
+import { scriptClaude, claudeFault, isReaderCall, readerReply } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
 const NARRATION_MODEL = "claude-sonnet-5-5";
 const LINE = "I lean on the bar and listen to the dockhands argue.";
-const NARRATIVE = JSON.stringify({ decision: "NARRATIVE", suggestedMove: null, category: "social", confidence: 0.9, reasoning: "listening, no risk" });
+const NARRATIVE = readerReply({ category: 'social' });
 const MOVE = JSON.stringify({ decision: "MOVE", suggestedMove: null, category: "action", confidence: 0.9, reasoning: "a risky act" });
 const PROSE = "The dockhands bicker over a crate of stolen coolant.\n```json\n{\"newTruths\":[],\"stateChanges\":[]}\n```";
 
-const isClassifier  = (call) => /pacing pre-classifier/.test(call.system ?? "");
-const isInterpreter = (call) => /move interpreter/.test(call.system ?? "");
+const isClassifier  = (call) => isReaderCall(call);
+const isInterpreter = (call) => isReaderCall(call);
 const isNarration   = (call) => call.model === NARRATION_MODEL && !isClassifier(call) && !isInterpreter(call);
 
 let table;
@@ -147,7 +147,8 @@ describe("PACED-ROUTER-THROW — a throw in the router before the narration star
     await table.client("pl-1").chat(LINE, { speaker: { actor: "pc-kira" } });
     await table.settle(); await table.drain();
 
-    expect(table.claude.calls.filter(isInterpreter), "not handed to the move pipeline").toHaveLength(0);
+    // One reading, and no second: the line was not handed to the move pipeline (which would read it again).
+    expect(table.claude.calls.filter(isInterpreter), "not handed to the move pipeline").toHaveLength(1);
     const { cards } = toldAfter(LINE);
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatch(/That line was not narrated/);

@@ -100,7 +100,6 @@ describe('issue #362 AC17 — two people whose names differ in a vowel are two p
   beforeEach(() => {
     global.game.actors._set('npc-soren', npc('npc-soren', 'Soren Okoro'));
     vi.spyOn(wj, 'recordLoreDiscovery').mockResolvedValue(undefined);
-    vi.spyOn(wj, 'appendSessionLogBeat').mockResolvedValue(undefined);
     vi.spyOn(wj, 'getConfirmedLore').mockReturnValue([]);
     vi.spyOn(wj, 'getNarratorAssertedLore').mockReturnValue([]);
   });
@@ -138,8 +137,10 @@ describe('issue #362 AC17 — two people whose names differ in a vowel are two p
   });
 });
 
-describe('issue #354 P2-16 — a free-flow card asks whose connection a person is, with "No one"', () => {
-  it('a person\'s row offers the narration\'s PC by name and "No one"; a place\'s row keeps its Confirm', async () => {
+// Overhaul 4, D4 amends P2-16: a Confirm records the person (no bond, so no
+// "No one"); the row offers its narration's PC 🤝 Make a Connection.
+describe('issue #354 P2-16, amended (D4) — a free-flow card records a person and offers its PC the move', () => {
+  it('a person\'s row offers the narration\'s PC Make a Connection, beside its one Confirm; a place\'s row keeps its Confirm', async () => {
     await routeEntityDrafts([
       person('the escort', 'A voice from the far side of the blockade.'),
       { type: 'location', name: 'Relay Nine', description: 'A dead comm relay.', confidence: 'high' },
@@ -147,11 +148,11 @@ describe('issue #354 P2-16 — a free-flow card asks whose connection a person i
     const [card] = draftCards();
     expect(card, 'a draft card was posted').toBeTruthy();
     const html = String(card.content);
-    expect(html).toMatch(/data-actor-id="pc-isaac"[^>]*>Isaac Sutton</);
-    expect(html).toMatch(/sf-draft-no-bond[^>]*data-actor-id=""[^>]*>No one</);
-    expect(html).toMatch(/pick No one to add them with no connection on any sheet/);
-    // One "No one" — the person's row only.
-    expect(html.match(/>No one</g)).toHaveLength(1);
+    expect(html).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-isaac"[^>]*>🤝 Make a Connection</);
+    expect(html).toMatch(/a connection is made only by the move/);
+    expect(html).not.toContain('No one');
+    // The 🤝 is the person's row's only.
+    expect(html.match(/data-action="sf-draft-make-connection"/g)).toHaveLength(1);
   });
 });
 
@@ -183,11 +184,12 @@ describe('issue #354 P2-18 — a working label is filed as a name', () => {
 });
 
 describe('issue #354 P2-19 — a contradiction card says what conflicts', () => {
-  const ledger = { state: 'ACTIVE SCENE STATE\n  Isaac Sutton — location: the bridge\n  Isaac Sutton — condition: unhurt\n  ISV Savela — integrity: 4' };
+  // The block's standing state, each line labelled with what it rests on (overhaul 2 §5.5).
+  const ledger = { standing: 'STANDING NOW:\n  Isaac Sutton — location: the bridge (the GM)\n  Isaac Sutton — condition: unhurt (the GM)\n  ISV Savela — integrity: 4 (the GM)' };
 
   it('a state catch shows the recorded value and the narration\'s words, the subject by its proper name', () => {
     const shown = describeContradiction(
-      { subject: 'isaac sutton', kind: 'state', violated: 'ACTIVE SCENE STATE — isaac sutton location', evidence: 'Isaac steps out of the airlock onto the hull.' },
+      { subject: 'isaac sutton', kind: 'state', violated: 'STANDING NOW — isaac sutton location', evidence: 'Isaac steps out of the airlock onto the hull.' },
       {}, ledger);
     expect(shown).toEqual({ subject: 'Isaac Sutton', recorded: 'location: the bridge', evidence: 'Isaac steps out of the airlock onto the hull.' });
   });
@@ -200,7 +202,7 @@ describe('issue #354 P2-19 — a contradiction card says what conflicts', () => 
   });
 
   it('with no ledger line it falls back to the audit\'s words, without a section heading — and never throws', () => {
-    expect(describeContradiction({ subject: 'Archer', kind: 'state', violated: 'CURRENT STATE: mood — furious', evidence: 'She laughs.' }, {}, {}))
+    expect(describeContradiction({ subject: 'Archer', kind: 'state', violated: 'STANDING NOW: mood — furious', evidence: 'She laughs.' }, {}, {}))
       .toMatchObject({ subject: 'Archer', recorded: 'mood — furious' });
     expect(() => describeContradiction(null, null, null)).not.toThrow();
   });

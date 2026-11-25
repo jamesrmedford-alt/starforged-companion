@@ -1,0 +1,238 @@
+{
+  "schema": 1,
+  "charter": "long-haul",
+  "mode": "live",
+  "questions": [
+    "With a player that never names a move, what becomes of each plain line that wants one — rolled, offered on a button, read as another move, or narrated with nothing offered — and how many beats come to their last resort?",
+    "Does the player in fact stay in the fiction: how many lines name a move outside a last resort, and does play still reach every beat within the run's caps?",
+    "Are the memory questions asked with @scene answered plainly and rightly, with no invented speaker — including facts planted in an earlier session (sets B and C)?",
+    "The four questions left as lines of play: are they still answered through an invented all-knowing voice, and are they offered a move?",
+    "Is the fight begun this time (its card after the roll, \"Begin the fight\"), and do the miss's price, the burn, the GM's reload mid-fight and Take Decisive Action hold? (Run 2 exercised none of them.)",
+    "Do the fixes made after run 2 hold in play from plain lines: a recovery line offered its move, a full relationship track read as Forge a Bond, a corrected or changed name not told as a story?",
+    "Is a step toward the vow said in the fiction read as a milestone, or narrated with nothing offered, as the readers' test found twelve times in twelve?",
+    "Does the narrator still return to one detail beat after beat and close each beat on someone waiting — counted — and does any narration write its outcome's label (\"Strong hit…\") into the prose?",
+    "Does each recap sentence match the transcript?",
+    "Beats done, checks violated, cost and a line's wait against runs 1 and 2."
+  ],
+  "startedAt": "2026-11-24T03:21:10.612Z",
+  "finishedAt": "2026-11-24T03:43:03.081Z",
+  "commit": "51b0f45193a5285d1df5218414c3a931ae64070f",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "classification": "suspected-quality-issue",
+  "because": "the ledger: 1 fact(s) refused, 0 lost — each excerpt is to be read",
+  "playerStopped": "every beat has been walked",
+  "goal": {
+    "status": "walked",
+    "reason": "21 of 26 beats done, 0 failed, 5 not exercised",
+    "beats": {
+      "beats": 26,
+      "done": 21,
+      "failed": 0,
+      "notExercised": 5
+    },
+    "checks": {
+      "made": 660,
+      "violated": 0
+    },
+    "ledger": {
+      "facts": 7,
+      "recalled": 5,
+      "carriedUnasked": 0,
+      "lost": 0,
+      "refused": 1,
+      "notProbed": 0,
+      "notPlanted": 1,
+      "probesAsked": 18,
+      "probesCounted": 10,
+      "probesRecalled": 8,
+      "bands": {
+        "near": 3,
+        "mid": 4,
+        "far": 1
+      },
+      "refusals": 5
+    },
+    "scripted": [
+      {
+        "step": "a38",
+        "beat": 11,
+        "move": "clash",
+        "faces": [
+          1,
+          9,
+          1
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a40",
+        "beat": 13,
+        "move": "take_decisive_action",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a64",
+        "beat": 24,
+        "move": "fulfill_your_vow",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      }
+    ],
+    "interruptions": [
+      {
+        "step": "x12",
+        "beat": 12,
+        "did": "the GM's page reloaded",
+        "result": "the page came back and the world went quiet"
+      },
+      {
+        "step": "x14",
+        "beat": 14,
+        "did": "End a Session was opened on the player's screen and closed unanswered",
+        "result": "closed by its close control"
+      },
+      {
+        "step": "x15",
+        "beat": 15,
+        "did": "the X-Card was played from the player's client (!x); the GM resumed (!x clear)",
+        "result": "the X-Card went up and came down"
+      }
+    ]
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "costsOwed": [],
+    "knownFailures": [],
+    "errors": 0,
+    "uncaught": [],
+    "refused": []
+  },
+  "budget": {
+    "caps": {
+      "actions": 100,
+      "calls": 400,
+      "minutes": 60,
+      "usd": 15
+    },
+    "stopped": null,
+    "actions": 78,
+    "calls": 238,
+    "minutes": 21.81,
+    "usd": 1.7112,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 78,
+        "usd": 0.746,
+        "input": 238160,
+        "output": 21357,
+        "cacheRead": 423500,
+        "cacheWrite": 5500
+      },
+      "module": {
+        "calls": 160,
+        "usd": 0.9652,
+        "input": 348142,
+        "output": 37624,
+        "cacheRead": 437784,
+        "cacheWrite": 94010
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/long-haul-live-20261124-032110 node explore.mjs",
+  "rescored": {
+    "at": "2026-11-24T04:15:21.500Z",
+    "commit": "bd258e5bc5948dfe639a2cb9ec96786515bf6d58",
+    "was": {
+      "classification": "suspected-quality-issue",
+      "because": "the ledger: 1 fact(s) refused, 0 lost — each excerpt is to be read",
+      "beats": {
+        "beats": 26,
+        "done": 20,
+        "failed": 0,
+        "notExercised": 6
+      },
+      "ledger": {
+        "facts": 7,
+        "recalled": 5,
+        "carriedUnasked": 0,
+        "lost": 0,
+        "refused": 1,
+        "notProbed": 0,
+        "notPlanted": 1,
+        "probesAsked": 18,
+        "probesCounted": 10,
+        "probesRecalled": 8,
+        "bands": {
+          "near": 3,
+          "mid": 4,
+          "far": 1
+        },
+        "refusals": 5
+      }
+    },
+    "note": "scored again from this run's evidence by the checks as corrected after it (rescore.mjs); what the table did is unchanged",
+    "charter": "facts, baits and beat checks as charters/long-haul.json has them now"
+  }
+}

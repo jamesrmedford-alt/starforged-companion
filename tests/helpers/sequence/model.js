@@ -145,10 +145,20 @@ export function developBondedRelationship(model, connection, pc, actionDie, chal
   return { outcome: result.outcome, raised };
 }
 
-/** The roll a fulfilled vow left its roller, taken: theirs, for the connection the vow was sworn to. Once. */
+/**
+ * The roll a fulfilled vow left its roller, taken: theirs, for the connection
+ * the vow was sworn to. Once. A Develop Your Relationship is made with the
+ * roller's own connection — the bond Item on their sheet (the move gate's
+ * THEIR_CONNECTION, overhaul 4): a vow sworn to a crewmate's connection leaves
+ * a roll its roller cannot take — refused, nothing paid, the offer still open.
+ *
+ * @returns {{ outcome: string|null, raised: boolean, refused?: boolean }}
+ */
 export function takeBondRoll(model, vow, actionDie, challenge) {
+  const connection = swornConnection(model, vow);
+  if (!connection?.holders?.includes(vow.pc)) return { outcome: null, raised: false, refused: true };
   vow.bondRoll = "taken";
-  return developBondedRelationship(model, swornConnection(model, vow), vow.pc, actionDie, challenge);
+  return developBondedRelationship(model, connection, vow.pc, actionDie, challenge);
 }
 
 export function recommitConnection(model, connection, challenge) {

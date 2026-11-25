@@ -231,7 +231,13 @@ guards. See `rules/ci-e2e.md` → "Cloud sessions".
 its own screen and types, clicks and fills dialogs. The GM's client runs the
 real pipeline, and fixed rules — no model — answer what the module asks of
 the GM (the move's confirmation; "Who are you interacting with?"; a draft for
-someone in the charter's cast). An **observer** reads the
+someone in the charter's cast — under their name, or a whole-word part of it
+that is nobody else's: the third live run's card for Tamsin Vey was proposed
+as "Tamsin" — confirmed as a person recorded with no bond, "No one" where the
+card offers it, else its Confirm, never a character's button, so that it is
+the player's Make a Connection that makes her the character's connection; a
+rehearsal may ask for the character's button instead, `EXPLORE_DRAFT_HOLDER=pc`,
+the road the fourth live run's GM took). An **observer** reads the
 world, the chat and the prompts the module sent and scores the goal without
 asking a model. The run is then **reviewed by whoever made it** — the full
 transcript annotated, a scorecard, the action items as an issue, what it cost
@@ -246,6 +252,8 @@ code or rewrites a recording: it writes evidence.
 ./scripts/cloud.sh explore                 # LIVE: real models, real money, up to the caps
 ./scripts/cloud.sh explore --replay playwright/artifacts/explore/<run>   # an earlier run again, no key
 EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse           # the long haul, rehearsed (about 15 minutes)
+EXPLORE_DRAFT_HOLDER=pc EXPLORE_CHARTER=long-haul ./scripts/cloud.sh explore --rehearse   # the fourth live run's road: the draft card makes the connection
+./scripts/cloud.sh explore --suite scenarios --rehearse   # the short scenarios, one flow each, rehearsed — see below
 ```
 
 | Mode | Key | What it tells you |
@@ -265,35 +273,173 @@ prompt for that question, in the answer — so a miss says where it was lost:
 and about ninety player actions that load the narrator's memory and the
 mechanics together:
 
-- **26 beats**, each with a result the observer checks in the world. The
+- **27 beats**, each with a result the observer checks in the world. The
   player is told the beats and which is current; the observer marks a beat
   done and moves on, and a beat not reached in eight actions is
-  `not-exercised`.
-- **A ledger of seven facts** — a possession, a name and its pronouns, an
-  item handed over, a promise, where the ship is, a correction, a rename —
+  `not-exercised` — as is one that needs of the world what it does not hold
+  when it comes (`requires`: beats 3, 19 and 23 need Tamsin Vey to be the
+  character's connection, whichever road made her one, not beat 2's roll). A beat's `id` is its name for good and `n` where it stands
+  now: the expedition, added after the third live run, is `b7a` and stands
+  eighth.
+- **An expedition** (beat 8, `b7a`): the character leaves the charted lane
+  after a clipped distress call — Undertake an Expedition, which begins a
+  track and marks it — looks over what she finds — Explore a Waypoint, whose
+  strong hit offers a mark or momentum on a card — and ends the journey with
+  the card's "🗺 Finish the Expedition", so that no expedition is told to the
+  narrator as under way while she flies to Bleakhold. Its check
+  (`BEAT_CHECKS.expedition`): a track begun while the beat was current,
+  progress marked on it, a waypoint explored, the track complete.
+- **A ledger of eight facts** — a possession, a name and its pronouns, an
+  item handed over, a promise, where the ship is, a correction, a rename, and
+  an item given and then left (beat 5's dock-fee slip, read by its refusals
+  alone: it has no probe, so the kept runs' beat checks stand) —
   each asked about in every later session, scored stored / in the prompt / in
   the answer, with the words that would contradict it; read against the
   narrator's answers **and** against every summary, Chronicle entry and recap
   the helpers wrote.
 - **Mechanical checks after every action**, from the game's text: each roll
   recomputed from the dice on its card, meters and tracks in bounds, progress
-  and rewards by rank, an effect landing once, the lock free, every line
-  answered once.
-- **Six decisive rolls scripted, the rest real, all recorded**; the GM is
-  fixed rules.
+  and rewards by rank — an expedition's mark, and its finish on the
+  discoveries legacy, among them — an effect landing once, the lock free,
+  every line answered once. And overhaul 2's three (issue #386 §14):
+  `let-go-stays` (no scene question set on what play let go, unless the line
+  took it up), `scene-turned` (an arrival, a fight begun or ended, a line that
+  skips time — the next beat of play told in a scene begun for it) and
+  `colour-not-filed` (none of the narration's own colour filed when its scene
+  ended). The last two are made only where the table records why a scene
+  began, so a run kept from before overhaul 2 is not held to them.
+- **Seven decisive rolls scripted, the rest real, all recorded** — the
+  issue's six and the expedition's finish; the GM is fixed rules.
 - **Four interruptions** made by the runner: the GM's page reloads mid-fight,
   End a Session is opened and closed unanswered, the X-Card is played, the
   connection's card is renamed.
 
-Its rehearsal rolls: the stand-in's classifier calls a move where the script
-makes the line one, so the move path — confirmation, held result, price,
-victory card — is walked with no key. A long run also writes `beats.json`,
+Its player stays in the fiction: no beat gives it a move's name to type, a
+question about what is established is asked with `@scene` (one of each set
+is kept as a line of play, to compare), and a beat's move is named only as a
+last resort the observer unlocks after two plain lines bring nothing — or
+once a roll has come that is not the beat's, or the player has waited twice
+running on a beat that has not moved — told once, and spent by the line that
+names the move. Then the observer also says, on a line of its own, that the
+beat is NOT done and that waiting will not finish it (a move made with no
+roll counts as one): the third live run's player took a roll for the end of a
+beat twice, and waited six turns each time. A card that waits on the player —
+a held result's "Keep the result", the milestone's "Which vow advances?" — is
+named on a line of its own as well ("WAITING ON YOU"). The
+scorecard's **Plain lines** row says what each line of play became —
+rolled, offered a move, narrated with nothing offered, or rightly narrated
+with nothing on the sheet to recover — and whether it named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+It reads the line reader's reading and the route the table took, off what
+the step posted (a move card is a roll, a paced card's move an offer); a
+run kept from before the switch is read by its two readers' replies.
+Its **Refrains** row and section count what each session's narrations of
+play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
+longest run in a row, and the narrations that end on someone waiting,
+watching or still — now scene by scene as well, with the worst scene named
+— and **Speed** gives a line of play's wait apart from a scene question's.
+
+**Overhaul 2's counts** (issue #386, design §14) are read off every run's
+review, from the table read after every step (`lib/table.mjs`: each truth's
+basis and the narrations that said it, why the scene began, what play let
+go, the ship's position line, and what a scene's end filed) and from the
+recorded replies. The scorecard's rows and sections: **Scenes** (each
+session's scenes, and why each began), **One place** (a narration or an
+`@scene` answer that has the ship docked when her record has her away, or
+away when docked, and a frame that names another place than the record's —
+and every `@scene` asked where she is, with its answer), **Reconciling in
+prose** (the sentences that explain a difference in the prose: "no longer
+at…", "though the scene frame…"), **Colour told as fact** (the narration's
+own colour, basis narrator, that a recap, a summary or the Chronicle tells),
+**What binds** (each session's truths by basis, and the tags the module
+refused: a `from: "line"` the line does not bear out) and **Openings** (each
+session's opening, beside the record it was told from, for the cold read). A
+section, *Overhaul 2's counts, against run 4*, sets each beside the fourth
+live run's. `review-data.json` carries them as `scenes`, `places`,
+`reconciliations`, `colour`, `provenance` and `openings`. The long haul plays
+what they need: beat 5's slip given and then left, the `@scene` question
+after the fight of where the Kobayashi IV is (beat 17), and beat 22's line
+that lets the night pass.
+
+**The third live run of the long haul** (2026-11-24, $1.71) is kept at
+`playwright/explorations/long-haul-live-20261124-0321/`: the first with a player
+that names no move, and the first reviewed cold — `cold-read.md` (a reader given
+the transcript alone), `annotated-transcript.md`, `scorecard.md` and
+`review-notes.md` (the recaps checked sentence by sentence, each finding with its
+cause). It replays with no key like the others.
+
+**The fourth live run of the long haul** (2026-11-24, $2.86) is kept at
+`playwright/explorations/long-haul-live-20261124-213912/`: the first on the
+readers' Sonnet 5.5, the session record and set-pieces built from oracle rolls,
+with the expedition beat — reviewed the same way (`cold-read.md`,
+`annotated-transcript.md`, `scorecard.md`, `review-notes.md` — its findings,
+issue #383). Its replay diverges from today's module wherever a fix since
+changed what the module does.
+
+**The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
+calls that read every line of play — is it a move, and which — tried on about
+sixty-five in-fiction lines that name no move (but one that names its move on
+purpose, read after a run of moves, which wants it rolled), each with the
+reading it should get, with nothing rolled or narrated. Dry by default (no key: the
+prompts are built, the readings are stubs); `--live` reads them on Sonnet 5.5
+— the readers' own model — and on Haiku 5.5, which they ran on before, and
+needs `READERS_QUESTIONS`, as a live exploration needs its own:
+
+```bash
+READERS_QUESTIONS="$(cat questions.txt)" READERS_REPEATS=2 ./scripts/cloud.sh readers --live
+```
+
+`READERS_ARMS`, `READERS_REPEATS`, `READERS_CAP_USD` (default $2.00) and
+`READERS_ONLY` (line ids, for a pilot) are the caller's. Evidence goes to
+`playwright/artifacts/readers/<run>/`; a run that is kept has its answered
+`report.md`, `results.json` and `run.json` under `playwright/readers/runs/`.
+The first (2026-11-24, $0.71) is there.
+
+Its rehearsal rolls: the stand-in line reader reads the script's move in a
+line the script makes one — asked for, with the script's stat and target, so
+the module rolls it at any dial and after any run of rolls, as the two
+readers' stand-in rolled it (the lines themselves name no move) — and the move
+path — confirmation, held result, price, victory card — is walked with no
+key. A line the script offers a move for is read unasked, and offered. The
+stand-in's `asked` is a choice, not a measure: a rehearsal walks the beats,
+and how the real reader reads a plain line is the live run's to measure (the
+Plain lines row) and the readers' plain-line test's. A long run also writes `beats.json`,
 `mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
 model calls, 60 minutes, $15.
 
+**The short scenarios, beside the long haul** (`playwright/suites/scenarios.json`,
+run by `playwright/suite.mjs`). The long haul stays as it is — the
+memory-stability test — but one early fault there costs every beat that
+depends on it (the third live run lost five beats to one card that was never
+made). A scenario is a short charter with beats — 3 to 8, its own caps (at most
+15 actions, 60 model calls, 10 minutes, $1.50) — that starts from a seeded
+state of its own, in a world cleared and seeded for it, so each flow is tested
+whatever happens to the others: a fight from its first blow to Take Decisive
+Action (`scenario-fight`), a connection made and bonded (`scenario-connection`),
+a vow sworn, marked and fulfilled with its truth told (`scenario-vow`), a wound
+healed and nothing offered once whole (`scenario-recovery`), an expedition
+(`scenario-expedition`), and `@scene` answered plainly with nothing written
+back (`scenario-scene-answer`). Each run is a long run's evidence in a folder of
+its own; the suite writes one `summary.md` / `summary.json` over them (per
+scenario: its class, each beat's result, the checks, calls, cost, the folder).
+
+```bash
+./scripts/cloud.sh explore --suite scenarios --rehearse                    # all six, no key
+EXPLORE_SUITE_ONLY=scenario-fight,scenario-vow ./scripts/cloud.sh explore --suite scenarios --rehearse
+./scripts/cloud.sh explore --suite scenarios --replay playwright/artifacts/explore/suite-scenarios-rehearsal-<time>
+```
+
+A live suite is paid for like any live run (its questions first, a rehearsal
+and its prompts read first, the maintainer's go-ahead), each scenario under its
+own caps and the suite under its `total` ($9). None has been made. See
+`rules/ci-e2e.md` → "A suite of short scenarios".
+
 Every run that calls a model — either charter — writes `review-data.json`
 and the generated layers of its review: `annotated-transcript.md` and
-`scorecard.md`, with the reader's notes left to write.
+`scorecard.md`, with the reader's notes left to write. A live run's scorecard
+opens with a place for **the cold read**: the plain transcript read straight
+through, before anything is scored, by a reader who has seen neither the
+charter, the run's questions nor the fixes it was to verify
+(`rules/ci-e2e.md` → "Read it cold before you score it").
 
 **When a check turns out wrong**, a long run is not bought again: its
 evidence is scored again by the checks as they are now.

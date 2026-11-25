@@ -50,7 +50,7 @@ import {
 } from '../world/worldJournal.js';
 import { listSkeletons, skeletonsEnabled } from '../world/secrets.js';
 import { tableVows, distinctOpenVows, trackVowName } from '../session/openThreads.js';
-import { lastSessionToTell } from '../session/lifecycle.js';
+import { earlierSessionStories } from '../record/summaryView.js';
 import { formatEntityCard, formatSnapshotPlan, SNAPSHOT_BLOCK_HEADING } from './narratorPrompt.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -337,34 +337,23 @@ function sessionNumberOf(value) {
 
 /**
  * Earlier sessions' summaries — the newest SNAPSHOT_SESSION_SUMMARIES before
- * this one, oldest first: the summary the last mint kept (LAST SESSION,
- * `previousSessionSummary`) and the "Story so far" each session's Session Log
- * page holds — and what stands open: the open vows and tracks, by name.
+ * this one, oldest first, each the summary the session record holds for it
+ * (record/summaryView.js earlierSessionStories — LAST SESSION's, with what
+ * was played in sessions nobody began since; a session from before the
+ * record, its Session Log page's story) — and what stands open: the open
+ * vows and tracks, by name.
  */
 function memoryUnits(campaignState, { progressTracks = [], summaries = true } = {}) {
   const out = [];
   if (summaries) {
-    const current = campaignState?.currentSessionId ?? null;
-    const bySession = new Map();
-    for (const { entry } of listWorldJournalEntries('sessionLog')) {
-      const text = oneLine(entry.summary?.narrative);
-      if (!entry.sessionId || entry.sessionId === current || !text) continue;
-      bySession.set(entry.sessionId, { sessionId: entry.sessionId, number: sessionNumberOf(entry.sessionNumber), text });
-    }
-    // A mint's record of a session whose summary is still to come has no text
-    // yet: the record it stands in front of is told meanwhile, as the per-beat
-    // LAST SESSION block tells it (lifecycle.js lastSessionToTell — issue #364
-    // LATE-ROUND-NO-LAST-SESSION-RECORD).
-    const prev = lastSessionToTell(campaignState?.previousSessionSummary);
-    if (prev?.sessionId && prev.sessionId !== current && oneLine(prev.text)) {
-      // The session that closed last — the newest earlier one, numbered or not.
-      bySession.set(prev.sessionId, { sessionId: prev.sessionId, number: sessionNumberOf(prev.sessionNumber), text: oneLine(prev.text), last: true });
-    }
+    const stories = earlierSessionStories(campaignState, { limit: SNAPSHOT_SESSION_SUMMARIES })
+      .map(s => ({ sessionId: s.sessionId ?? 'between-sessions', number: sessionNumberOf(s.sessionNumber), text: oneLine(s.text), last: s.last }))
+      .filter(s => s.text);
     // An unnumbered summary of the session that closed last is still the
     // newest: ranked as the oldest, it was the one the newest three left out.
     const LAST_UNNUMBERED = 999998;   // after every numbered session, before 'memory:open'
     const numbered = (s) => (Number.isFinite(s.number) ? s.number : (s.last ? LAST_UNNUMBERED : -1));
-    const newest = [...bySession.values()]
+    const newest = stories
       .sort((a, b) => (numbered(b) - numbered(a)) || String(b.sessionId).localeCompare(String(a.sessionId)))
       .slice(0, SNAPSHOT_SESSION_SUMMARIES);
     for (const s of newest) {

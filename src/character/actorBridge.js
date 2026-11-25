@@ -139,12 +139,71 @@ export function registerSystemNoteAttribution() {
     // A change the module shows on a card of its own: the system's note for
     // it is not posted at all (withoutSystemNotes) — false cancels the create.
     if (_quietNotes > 0 && systemNoteOfModuleWrite(data) !== null) return false;
+    // A change whose note follows a card still to be posted: held for the
+    // caller, who posts it then (holdingSystemNotes) — the create is cancelled.
+    const holder = _noteHolders.at(-1);
+    const held = holder ? heldNoteData(data) : null;
+    if (held) { holder.push(held); return false; }
     reattributeSystemNote(message, data);
     return undefined;
   });
 }
 
 let _quietNotes = 0;
+
+// The lists system notes are being held in, the newest span last (holdingSystemNotes).
+const _noteHolders = [];
+
+/**
+ * Run a module write with the ironsworn system's change notes for it held
+ * rather than posted, and return them with the write's result — for a change
+ * whose note belongs after a card that is not on the table yet. A fulfilled
+ * vow's "… marked completed" is written before the Fulfill Your Vow's own roll
+ * card is posted, and stood above it as if it were the cause (the long haul's
+ * third live run, a64). The caller posts the notes once that card is up
+ * (postSystemNotes); each is re-spoken as a posted one is (the system's line,
+ * said by no Actor, the PC's name leading it). Only notes for Actors this
+ * client's bridge is writing are held, as withoutSystemNotes drops them. A
+ * write that throws has what it logged before then posted at once — a held
+ * note is never lost with its span — and the error goes on to the caller.
+ *
+ * @param {() => Promise<*>} write
+ * @returns {Promise<{ result: *, notes: Object[] }>} `notes`: ChatMessage creation data, in the order logged
+ */
+export async function holdingSystemNotes(write) {
+  const notes = [];
+  _noteHolders.push(notes);
+  const release = () => {
+    const at = _noteHolders.indexOf(notes);
+    if (at >= 0) _noteHolders.splice(at, 1);
+  };
+  try {
+    const result = await write();
+    release();
+    return { result, notes };
+  } catch (err) {
+    release();
+    await postSystemNotes(notes);
+    throw err;
+  }
+}
+
+/**
+ * Post the system notes a write's span held (holdingSystemNotes), in the order
+ * they were logged. Never throws: a note the world refuses is logged.
+ *
+ * @param {Object[]} notes
+ * @returns {Promise<void>}
+ */
+export async function postSystemNotes(notes) {
+  for (const data of Array.isArray(notes) ? notes : []) {
+    try {
+      await ChatMessage.create(data);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | actorBridge: a held system note could not be posted:`, err?.message ?? err);
+    }
+  }
+}
 
 /**
  * Run a module write whose change the module reports on a card of its own,
@@ -188,6 +247,44 @@ function systemNoteOfModuleWrite(data) {
 }
 
 /**
+ * What re-speaks the system's change-log line for a module write (see
+ * reattributeSystemNote): its content with the Actor's name leading, no Actor
+ * speaking, the module's `systemNote` flag. Null for anything else.
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {{ content: string, style: number, speaker: Object, flags: Object }|null}
+ */
+function respokenNoteFields(data) {
+  const note = systemNoteOfModuleWrite(data);
+  if (note === null) return null;
+  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
+  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
+    style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
+    speaker: { actor: null, token: null, scene: null, alias: null },
+    // A module flag: no longer an emote, the note would otherwise read as a
+    // player's line to the move pipeline (index.js isPlayerNarration skips
+    // any module-flagged message) and run a move of its own.
+    flags:   { [MODULE_ID]: { systemNote: true } },
+  };
+}
+
+/**
+ * A system note for a module write, as creation data of its own: what the
+ * system was about to post, re-spoken (respokenNoteFields) — for a held note,
+ * posted later by its caller (holdingSystemNotes). Null for anything else.
+ *
+ * @param {Object} data — a ChatMessage's creation data
+ * @returns {Object|null}
+ */
+function heldNoteData(data) {
+  const respoken = respokenNoteFields(data);
+  if (respoken === null) return null;
+  return { ...data, ...respoken, flags: { ...(data.flags ?? {}), ...respoken.flags } };
+}
+
+/**
  * The ironsworn system's change-log line (an emote whose whole content is one
  * `<em>` line, spoken by an Actor) posted while this client's bridge is
  * writing that Actor: re-spoken by no Actor — the author's (the writing
@@ -201,20 +298,10 @@ function systemNoteOfModuleWrite(data) {
  * @returns {boolean} whether it was re-spoken
  */
 function reattributeSystemNote(message, data) {
-  const note = systemNoteOfModuleWrite(data);
-  if (note === null) return false;
-  const name = globalThis.game?.actors?.get?.(data.speaker.actor)?.name ?? data.speaker.alias ?? "";
-  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const respoken = respokenNoteFields(data);
+  if (respoken === null) return false;
   try {
-    message?.updateSource?.({
-      content: `<em>${escaped ? `${escaped}: ` : ""}${note}</em>`,
-      style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
-      speaker: { actor: null, token: null, scene: null, alias: null },
-      // A module flag: no longer an emote, the note would otherwise read as a
-      // player's line to the move pipeline (index.js isPlayerNarration skips
-      // any module-flagged message) and run a move of its own.
-      flags:   { [MODULE_ID]: { systemNote: true } },
-    });
+    message?.updateSource?.(respoken);
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | actorBridge: re-speaking the system's change note failed:`, err?.message ?? err);
@@ -258,6 +345,22 @@ export function getPlayerActors() {
  */
 export function isPlayerCharacterActor(actor) {
   return actor?.type === 'character' && !actor?.flags?.[MODULE_ID]?.entityType;
+}
+
+/**
+ * Every Actor's name in the world — player characters, NPC cards, ships —
+ * for the session record's read (record/pages.js recordSource): a word of a
+ * name in play is never taken for a changed name's short form. [] when the
+ * actors cannot be read.
+ *
+ * @returns {string[]}
+ */
+export function actorNames() {
+  try {
+    return Array.from(game.actors ?? []).map(a => a?.name).filter(n => typeof n === 'string' && n);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -336,6 +439,92 @@ export function readCharacterSnapshot(actor) {
 
   _snapshotCache.set(actor.id, snapshot);
   return snapshot;
+}
+
+/**
+ * What a PC's sheet holds that the session record keeps the changes of — its
+ * meters, its impacts, its legacy tracks and the XP the sheet shows — read
+ * live, never from the cached snapshot: the record's sheet watch reads it
+ * before and after a write and records what moved (record/sheetWatch.js). The
+ * sheet's field paths stay in this file.
+ *
+ * @param {Actor|null} actor
+ * @returns {{ health: number, spirit: number, supply: number, momentum: number, xp: number,
+ *   impacts: Object<string, boolean>, legacies: Object<string, number> }|null}
+ */
+export function readSheetFacts(actor) {
+  if (!actor) return null;
+  const sys = actor.system ?? {};
+  const legacies = {};
+  for (const track of SHEET_LEGACY_TRACKS) legacies[track] = readSheetLegacy(actor, track);
+  return {
+    health:   meterValue(sys.health),
+    spirit:   meterValue(sys.spirit),
+    supply:   meterValue(sys.supply),
+    momentum: meterValue(sys.momentum),
+    xp:       sheetXp(sys).value,
+    impacts:  readDebilities(actor),
+    legacies,
+  };
+}
+
+/**
+ * The condition track of an asset Item the session record keeps the changes
+ * of: a companion's health, or a vehicle's integrity (the command vehicle's
+ * asset on its starship, a support vehicle's on its PC). Null for any other
+ * Item, and for a track that is switched off.
+ *
+ * @param {Item|null} item
+ * @returns {{ what: "companion-health"|"integrity", value: number }|null}
+ */
+export function readAssetTrackFact(item) {
+  if (item?.type !== 'asset') return null;
+  const track = item.system?.track;
+  if (!track || track.enabled === false) return null;
+  const value = Number(track.value ?? 0);
+  if (!Number.isFinite(value)) return null;
+  if (String(item.system?.category ?? '').toLowerCase().includes('companion')) return { what: 'companion-health', value };
+  if (String(track.name ?? '').trim().toLowerCase() === 'integrity') return { what: 'integrity', value };
+  return null;
+}
+
+/**
+ * A vow Item's facts the session record keeps the changes of — its name,
+ * rank, ticks, whether it is closed (and forsaken), the connection it is tied
+ * to, its stable id across copies — or null for an Item that is no vow
+ * (record/sheetWatch.js). The vow's field paths stay in this file (readVows).
+ *
+ * @param {Item|null} item
+ * @returns {{ name: string, rank: string, ticks: number, completed: boolean, forsaken: boolean,
+ *   shared: boolean, vowId: string|null, linkedConnectionName: string|null, linkedConnectionId: string|null }|null}
+ */
+export function readVowFact(item) {
+  if (item?.type !== 'progress' || item?.system?.subtype !== 'vow') return null;
+  const f = item.flags?.[MODULE_ID] ?? {};
+  return {
+    name:      item.name ?? '',
+    rank:      rankName(item.system?.rank ?? 'dangerous'),
+    ticks:     Number(item.system?.progress ?? item.system?.current ?? 0),
+    completed: item.system?.completed === true,
+    forsaken:  f.forsaken === true,
+    shared:    f.sharedVow === true,
+    vowId:     typeof f.vowId === 'string' && f.vowId ? f.vowId : null,
+    linkedConnectionName: typeof f.linkedConnectionName === 'string' && f.linkedConnectionName ? f.linkedConnectionName : null,
+    linkedConnectionId:   typeof f.linkedConnectionId === 'string' && f.linkedConnectionId ? f.linkedConnectionId : null,
+  };
+}
+
+/**
+ * Whether this client is writing to the Actor through this bridge right now —
+ * a module write, as against a hand's edit of the sheet. True only on the
+ * client making the write, while it is in flight (the same mark that has the
+ * system's change note said by the system, reattributeSystemNote).
+ *
+ * @param {string|null} actorId
+ * @returns {boolean}
+ */
+export function moduleWriteInFlight(actorId) {
+  return typeof actorId === 'string' && _moduleWritesInFlight.has(actorId);
 }
 
 /**
@@ -423,7 +612,7 @@ function readGrantedRewards(actor) {
  * convention explicit.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground, shared }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground, shared, clock, vowId, linkedConnectionName }>}
  */
 export function readVows(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -471,8 +660,19 @@ export function readVows(actor) {
       // carries the same one (issue #321 U02 — a Fulfill Your Vow counts the
       // copies as one vow). null on a vow the module has not stamped yet.
       vowId:        v.flags?.[MODULE_ID]?.vowId ?? null,
+      // The connection the vow is sworn to, by the name its cards say
+      // (setVowLinkedConnection keeps it in step with the connection's card)
+      // — null for a vow that serves nobody. Read by the readers' situation
+      // block (moves/situation.js): "sworn to Tamsin Okoro".
+      linkedConnectionName: linkedConnectionNameOf(v),
     };
   });
+}
+
+/** A vow Item's linked connection, by name — null when it is linked to nobody. */
+function linkedConnectionNameOf(item) {
+  const name = item?.flags?.[MODULE_ID]?.linkedConnectionName;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
 
 /**
@@ -503,8 +703,28 @@ export function readConnections(actor) {
       // The connection was severed: its record is `active: false`, written
       // through as this flag (setBondItemLost, issue #330 D10).
       lost:      b.flags?.[MODULE_ID]?.lost === true,
+      // The connection record's `_id` the Item is keyed to (bondItemsFor) —
+      // how the move contracts' situation finds the person's NPC card
+      // (moves/situation.js readMoveSituation). null on an Item with no key.
+      connectionId: b.flags?.[MODULE_ID]?.connectionId ?? null,
     };
   });
+}
+
+/**
+ * The sheet's health, spirit and supply as they stand — read live, never from
+ * the cached snapshot (as readMomentumState reads momentum): what both
+ * readers of a typed line are told of the sheet, and what decides whether a
+ * recovery move has anything to recover (moves/situation.js), must be what
+ * the sheet holds now. A meter the sheet does not carry is null.
+ *
+ * @param {Actor} actor
+ * @returns {{ health: number|null, spirit: number|null, supply: number|null }}
+ */
+export function readMeters(actor) {
+  const sys = actor?.system ?? {};
+  const live = (meter) => (meter == null ? null : meterValue(meter));
+  return { health: live(sys.health), spirit: live(sys.spirit), supply: live(sys.supply) };
 }
 
 /**
@@ -575,9 +795,11 @@ export function readMomentumState(actor) {
  * (issue #316 T01). The bases are the sheet's; the module never writes them.
  * @param {Actor} actor
  * @param {{ health?: number, spirit?: number, supply?: number, momentum?: number }} meterChanges
+ * @param {Object} [options] — passed to Actor#update: a writer that knows what
+ *   caused the change says so for the session record (record/sheetWatch.js recordCause)
  * @returns {Promise<void>}
  */
-export async function applyMeterChanges(actor, meterChanges) {
+export async function applyMeterChanges(actor, meterChanges, options = undefined) {
   if (!actor) return;
 
   const sys   = actor.system ?? {};
@@ -618,7 +840,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   if (Object.keys(updates).length) {
     refuseStaleActorWrite('applyMeterChanges');
     console.log(`actorBridge | applyMeterChanges update:`, updates);
-    await moduleUpdate(actor, updates);
+    await moduleUpdate(actor, updates, options);
     invalidateActorCache(actor.id);
   }
 }
@@ -1063,10 +1285,11 @@ export async function setVehicleAssetBattered(actor, itemId, battered = true) {
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null, restore?: boolean }} [opts] — the vehicle asset
+ * @param {{ itemId?: string|null, restore?: boolean, options?: Object }} [opts] — the vehicle asset;
+ *   `options`: passed to the Item's update (what caused it, for the session record — record/sheetWatch.js recordCause)
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
  */
-export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false } = {}) {
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false, options = undefined } = {}) {
   const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
   if (!asset) {
     console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -1080,7 +1303,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   if (after === before) return { ok: true, ...at, after };
   try {
     refuseStaleActorWrite('vehicle integrity');
-    await moduleUpdate(asset, { 'system.track.value': after });
+    await moduleUpdate(asset, { 'system.track.value': after }, options);
   } catch (err) {
     console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -1096,10 +1319,11 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null }} [opts] — the companion (getCompanionAsset)
+ * @param {{ itemId?: string|null, options?: Object }} [opts] — the companion (getCompanionAsset);
+ *   `options`: passed to the Item's update (what caused it, for the session record — record/sheetWatch.js recordCause)
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: string, error?: string }>}
  */
-export async function applyCompanionHealthChange(actor, delta, { itemId = null } = {}) {
+export async function applyCompanionHealthChange(actor, delta, { itemId = null, options = undefined } = {}) {
   const companion = getCompanionAsset(actor, itemId);
   if (!companion) {
     console.warn(`actorBridge | companion health: no companion${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -1112,7 +1336,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
   if (after === before) return { ok: true, ...at, after };
   try {
     refuseStaleActorWrite('companion health');
-    await moduleUpdate(companion, { 'system.track.value': after });
+    await moduleUpdate(companion, { 'system.track.value': after }, options);
   } catch (err) {
     console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -1128,7 +1352,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
  * @param {number} ticks
  * @returns {Promise<void>}
  */
-export async function markVowProgress(actor, vowItemId, ticks) {
+export async function markVowProgress(actor, vowItemId, ticks, options = undefined) {
   if (!actor || ticks <= 0) return;
 
   const item = actor.items?.find(i => i.id === vowItemId);
@@ -1153,7 +1377,8 @@ export async function markVowProgress(actor, vowItemId, ticks) {
 
   if (next !== current) {
     refuseStaleActorWrite('markVowProgress');
-    await moduleUpdate(item, { 'system.current': next });
+    // `options`: what made the mark, for the session record (record/sheetWatch.js recordCause).
+    await moduleUpdate(item, { 'system.current': next }, options);
     invalidateActorCache(actor.id);
   }
 }
@@ -1202,7 +1427,7 @@ export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
  * @param {string} vowItemId
  * @returns {Promise<boolean>} true when the item was newly marked completed
  */
-export async function completeVowItem(actor, vowItemId) {
+export async function completeVowItem(actor, vowItemId, options = undefined) {
   if (!actor || !vowItemId) return false;
 
   const item = actor.items?.find(i => i.id === vowItemId);
@@ -1213,7 +1438,8 @@ export async function completeVowItem(actor, vowItemId) {
   if (item.system?.completed === true) return false; // already closed
 
   refuseStaleActorWrite('completeVowItem');
-  await moduleUpdate(item, { 'system.completed': true });
+  // `options`: what closed it, for the session record (record/sheetWatch.js recordCause).
+  await moduleUpdate(item, { 'system.completed': true }, options);
   invalidateActorCache(actor.id);
   return true;
 }
@@ -1602,6 +1828,11 @@ export async function recordGrantedReward(actor, reward) {
       ...list,
       { description: reward.description, form: reward.form ?? "gear" },
     ]);
+    // On the session record (issue #382), once the sheet took it.
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("reward.granted", {
+      who: { actor: actor.id ?? null }, ref: { vow: reward.vowId ?? null },
+      d: { actorId: actor.id ?? null, reward: String(reward.description) },
+    })).catch(() => {});
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | recordGrantedReward failed:`, err?.message ?? err);
@@ -1644,22 +1875,59 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * hands the row back too, for the X-Card to reopen (issue #364
  * XCARD-BOND-DRAFT-ROW-CONFIRMED). Only with a `narrationId`.
  *
+ * A connection is this Item (FOLDER-002: the NPC card is a person), so the
+ * session record's `connection.made` is written here, when the Item is made
+ * — once, never for an Item that existed — with what made it (`by`:
+ * `{ move: "make_a_connection", nar }` for the move's hit, "setup" for the
+ * game's launch step; overhaul 4, D12). It was written when the NPC card was
+ * made, so a person recorded with no connection on anyone's sheet reached
+ * the recap as "made a connection" (CONNECTION-MADE-BY-CONFIRMING-A-DRAFT).
+ * tests/unit/moveOnlyState.test.js holds every caller to a move or setup.
+ *
  * @param {Actor} actor
  * @param {{ name: string, rank?: string, connectionId?: string, narrationId?: string|null,
- *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null }} data
+ *   draftRow?: { messageId: string|null, index: number, status?: "dismissed" }|null,
+ *   by?: { move: string, nar?: string|null, res?: string|null }|"setup"|null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterBondItem(actor, data) {
   const narrationId = typeof data?.narrationId === "string" && data.narrationId ? data.narrationId : null;
   const draftRow = narrationId && data?.draftRow && typeof data.draftRow === "object" ? data.draftRow : null;
-  return createCharacterProgressItem(actor, {
+  const connectionId = data?.connectionId ?? null;
+  const items = actor?.items?.contents ?? (Array.isArray(actor?.items) ? actor.items : []);
+  const existed = !!connectionId && items.some(i => i?.type === "progress" && i.flags?.[MODULE_ID]?.connectionId === connectionId);
+  const item = await createCharacterProgressItem(actor, {
     subtype:    "bond",
     name:       data?.name || "Unknown Connection",
     rank:       data?.rank,
     flagKey:    "connectionId",
-    flagValue:  data?.connectionId ?? null,
+    flagValue:  connectionId,
     ...(narrationId ? { extraFlags: { bondedByNarrationId: narrationId, ...(draftRow ? { bondedFromDraft: draftRow } : {}) } } : {}),
   });
+  if (item && !existed) {
+    const by = data?.by === "setup" ? "setup"
+      : (data?.by && typeof data.by === "object" && typeof data.by.move === "string" ? { move: data.by.move, ...(data.by.res ? { res: data.by.res } : {}) } : null);
+    const hostId = connectionHostId(connectionId);
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.made", {
+      ref: { conn: hostId, nar: narrationId ?? (data?.by && typeof data.by === "object" ? data.by.nar ?? null : null) },
+      d: { name: data?.name ?? "", rank: data?.rank ?? null, actorId: actor?.id ?? null, by },
+    })).catch(() => {});
+  }
+  return item;
+}
+
+/** The NPC card (host Actor id) a connection record's id names, or null. */
+function connectionHostId(connectionId) {
+  if (!connectionId) return null;
+  try {
+    for (const a of globalThis.game?.actors?.contents ?? (Array.isArray(globalThis.game?.actors) ? globalThis.game.actors : [])) {
+      const f = a?.flags?.[MODULE_ID];
+      if (f?.entityType === "connection" && (f.entityId === connectionId || f.connection?._id === connectionId)) return a.id ?? null;
+    }
+  } catch (err) {
+    console.debug(`${MODULE_ID} | bond item: the connection's NPC card could not be found:`, err?.message ?? err);
+  }
+  return null;
 }
 
 /**

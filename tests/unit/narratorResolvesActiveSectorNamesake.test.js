@@ -25,7 +25,9 @@
 
 /* global makeTestActor */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { applyNarratorSidecar } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
+// The narrations' facts are the table's (overhaul 2 §5.1–5.2): what a scene's end
+// files is what binds; the narrator's own colour has its own tests (colourNotFiled).
 import { resolveRelevance, collectAllEntities, activeSectorNamesakeFirst } from '../../src/context/relevanceResolver.js';
 import { endScene } from '../../src/factContinuity/sceneLifecycle.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
@@ -77,7 +79,7 @@ describe("issue #345 AA06 — the narrator's name resolvers take the active sect
       newTruths: [{ subject: 'Derelict Starship', fact: 'Its reactor is still warm' }],
       stateChanges: [{ subject: 'Derelict Starship', attribute: 'condition', value: 'hull breached on deck 3' }],
     })}\n\`\`\``;
-    applyNarratorSidecar(raw, copy(), { narrationId: 'nar-1' });
+    applyAsTheTable(raw, copy(), { narrationId: 'nar-1' });
     await flush();
     const truth = (stored().sceneTruths ?? []).find(t => t.fact === 'Its reactor is still warm');
     expect(truth?.subject?.kind).toBe('entity');                       // the setup resolves the roster
@@ -96,7 +98,7 @@ describe("issue #345 AA06 — the narrator's name resolvers take the active sect
       sceneFrame: { location: 'Derelict Starship', situation: 'sweeping the decks' },
       newTruths: [{ subject: 'scene', fact: 'The gravity plating is failing' }], stateChanges: [],
     })}\n\`\`\``;
-    applyNarratorSidecar(raw, copy(), { narrationId: 'nar-1' });
+    applyAsTheTable(raw, copy(), { narrationId: 'nar-1' });
     await flush();
     await endScene(copy(), { reason: 'scene_command' });
     expect(tierOf('site-new-actor').join(' | ')).toMatch(/gravity plating is failing/i);

@@ -20,7 +20,8 @@ import { parseHTML } from '../helpers/cardDom.js';
 const MODULE_ID = 'starforged-companion';
 const TRUTH = {
   id: 'tr-limp0001', subject: { kind: 'text', text: 'Vance' }, fact: 'walks with a limp',
-  sessionId: 'sess-1', sceneId: 'sc-9', asserter: 'narrator', retracted: false, correctedTo: null,
+  // The player's (overhaul 2 §5.1): the audit reads what binds.
+  sessionId: 'sess-1', sceneId: 'sc-9', asserter: 'narrator', basis: 'player', retracted: false, correctedTo: null,
 };
 
 beforeEach(() => {

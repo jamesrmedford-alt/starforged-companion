@@ -5,16 +5,33 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
-import { formatStakesBlock, formatPriceChoiceBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
-import { formatNameChangesBlock } from '../factContinuity/nameChanges.js';
+import { normaliseLetGo, touchesLetGo, binds, entryBasis, inColourWindow } from '../factContinuity/provenance.js';
+import { formatNameChangesBlock, writeNewNames } from '../factContinuity/nameChanges.js';
+import { actorNames } from '../character/actorBridge.js';
 import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
+import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
+import { connectionStanding } from '../moves/situation.js';
+
+/**
+ * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
+ * TELL [scene], NOT SO [letgo]; factContinuity/sceneTurns.js
+ * sceneObligations), as the narration's caller hands them in: well-formed
+ * `{ kind, list, text }` lines only.
+ *
+ * @param {unknown} lines
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+function sceneLines(lines) {
+  return (Array.isArray(lines) ? lines : []).filter(o => o && typeof o.kind === 'string' && typeof o.list === 'string'
+    && typeof o.text === 'string' && o.text.trim());
+}
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -78,10 +95,11 @@ export function appendSidecarInstruction(options = {}) {
     '    ```json',
     '    {',
     '      "newTruths": [',
+    '        { "subject": "Vance", "fact": "agreed to fly the crate to the docks", "from": "result" },',
     '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
     '      ],',
     '      "stateChanges": [',
-    '        { "subject": "Vance",     "attribute": "location", "value": "aboard his shuttle" },',
+    '        { "subject": "Vance",     "attribute": "location", "value": "aboard his shuttle", "from": "line" },',
     '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
     '      ]' + (sceneFrameEnabled ? ',' : ''),
   ];
@@ -113,12 +131,32 @@ export function appendSidecarInstruction(options = {}) {
     'tooling concern).',
     '',
     'Rules:',
-    '- A "newTruth" is binding — a fact that, if asserted again later, must',
-    '  not change. Use it for established physical traits, named history,',
-    '  declared backstory.',
+    // Overhaul 2 §5.4 (D5): it read "A newTruth is binding" — every fact the
+    // narration wrote bound later narration and was filed as canon at its
+    // scene's end. A fact says where it comes from; code checks the claim
+    // against the beat's own words (factContinuity/provenance.js factBasis).
+    '- A "newTruth" records a fact your prose establishes. Say where it comes',
+    '  from: "from": "line" when the player\'s line says it — what their',
+    '  character does, says, gives, carries, where they go; "from": "result"',
+    '  when the move\'s outcome or the oracle\'s answer decides it. Leave "from"',
+    '  out when it is your own description. Only "line" and "result" facts bind',
+    '  later narration; your own descriptions are kept for this scene as',
+    '  colour and then let go.',
     '- A "stateChange" is what is true right now. Use it for posture, mood,',
     '  visible state, door positions, lighting, weather. These supersede',
-    '  prior state for the same subject + attribute.',
+    '  prior state for the same subject + attribute. Say where it comes from',
+    '  as for a newTruth.',
+    // The tag is the only way a narrator fact binds (§5.2, D5 — no lexical
+    // rule): a fact the player's own line states, left untagged, is colour and
+    // never becomes LAST KNOWN. The example's facts pass the floor against
+    // their own line (provenanceFloor.test.js).
+    '- A fact the player\'s own line states is always tagged "from": "line" —',
+    '  what their character does, says, gives or carries, and where they and',
+    '  whoever is with them are — in the line\'s own words. E.g. the line "I',
+    '  hand Kael the datapad and wait with him in the cargo bay" states',
+    '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
+    '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
+    '  "value": "in the cargo bay with the PC", "from": "line" }.',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
     '  character is (their location, the vessel or structure they are',
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
@@ -163,15 +201,21 @@ export function appendSidecarInstruction(options = {}) {
     '  turn.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
-    '- REQUIRED: when your prose moves the player\'s command vehicle —',
-    '  departure, transit, or arrival — emit the exact shape',
-    '  { "subject": "ship", "attribute": "position", "value": "<destination',
-    '  name>" }. The "ship" subject is reserved for the command vehicle;',
-    '  the value is matched against known settlements, planets, and',
-    '  locations, so prefer an established place name over an invented',
-    '  phrase. Do not emit it when the ship has not moved.',
-    '- Do not declare a truth that diverges from the active scene block. If',
-    '  a fact needs to change, the player or GM will retract the old one.',
+    // Overhaul 2 §6.2 (SHIP-POSITION-AND-FRAME-DISAGREE): it read "when your
+    // prose moves" the ship — the fourth live run's a38 moved it in the
+    // player's line ("drops out of the dark off Bleakhold's ring. I spin the
+    // Kobayashi IV to face her"), nothing recorded it, and the frame said
+    // "open space" while the ship's record said docked.
+    '- REQUIRED: when the player\'s line or your prose puts the player\'s',
+    '  command vehicle somewhere its position does not say — departure,',
+    '  transit, arrival, undocked, under way, in a fight off the station —',
+    '  emit the exact shape { "subject": "ship", "attribute": "position",',
+    '  "value": "<where she is now>" }. The "ship" subject is reserved for the',
+    '  command vehicle; the value is matched against known settlements,',
+    '  planets, and locations, so prefer an established place name over an',
+    '  invented phrase. Do not emit it when the ship has not moved.',
+    '- Do not declare a truth that diverges from WHAT BINDS. What the narration',
+    '  has described may change when the player\'s line changes it.',
     '- Do not re-emit a newTruth that restates a fact already shown in the',
     '  ACTIVE SCENE block — identity anchors are recorded once, the first',
     '  time. Never re-assert a fact listed under CORRECTED.',
@@ -179,19 +223,44 @@ export function appendSidecarInstruction(options = {}) {
 
   if (sceneFrameEnabled) {
     lines.push(
-      '- "sceneFrame" is a full snapshot of the scene as it stands AFTER',
-      '  your narration: where the scene is set, every named character',
-      '  present or directly engaged (include characters on comms), and the',
-      '  situation in one sentence. Include it on EVERY response — it',
-      '  replaces the previous snapshot. Keep names exactly as established.',
-      '- "question" (inside "sceneFrame") is what this scene is deciding, in a',
-      '  few words. Set it on the scene\'s first beat; afterwards copy it',
-      '  unchanged from SCENE FRAME — it is kept for the scene. When this beat',
-      '  answers it, add "questionAnswered": true and end the beat on a cut',
-      '  forward — to the consequence, the next place or a later hour — not on',
-      '  another exchange in the same room. Once it is answered, set the',
-      '  question the scene turns on now. Never end the scene: the table ends',
-      '  scenes.',
+      // Overhaul 2 §6.1, §7.1 (FRAME-REASONING-IN-PROSE): the frame sat
+      // under "binding", and the narration argued its own Where against the
+      // player's line ("You are no longer at Tamsin's stall, so…"). The
+      // place is the stores'; the frame is the narration's own.
+      '- "sceneFrame" describes the scene as your narration leaves it; the',
+      '  player\'s line moves it. "location": where the characters are, in a',
+      '  few words — a room, a street, a deck, a stall — never where the ship',
+      '  is in space: the ship\'s position says that, and a move of the ship is',
+      '  a ship/position change. "present": every named character present or',
+      '  directly engaged (include characters on comms); "situation": the',
+      '  situation in one sentence. Include it on EVERY response — it replaces',
+      '  the previous snapshot. Keep names exactly as established. When the',
+      '  player\'s line has moved the scene, write it where the line put it, and',
+      '  never explain a difference in the prose.',
+      // Known-issues NARRATOR-REFRAINS: the rule read "Set it on the scene's
+      // first beat; afterwards copy it unchanged … it is kept for the scene",
+      // and nothing ends a scene but the table — a session's opening hook was
+      // its question for the whole session, rung at the end of every beat. A
+      // question is the player's line's, and one play leaves unanswered is
+      // let go (narrator.js SCENE_QUESTION_BEATS; THE SCENE then asks
+      // for the next — buildLedgerBlock's `askSceneQuestion`). Since overhaul
+      // 2 (§7.2–7.3, REFRAIN-OUTLIVES-THE-QUESTION) the code holds both: a
+      // question that shares no word with the player's line is not set, and a
+      // let-go one — under PLAY LET THESE GO — is not set again in any words.
+      '- "question" (inside "sceneFrame") is what this scene is deciding now, in a',
+      '  few words, and it is the player\'s: when the player\'s latest line sets out',
+      '  to settle something, set that, in a few words that use the line\'s own;',
+      '  when it does not, or no line prompted this beat, set none — never a hook',
+      '  of your own. While THE SCENE shows what it turns on, copy it unchanged. When',
+      '  this beat answers it, add "questionAnswered": true and end the beat on a',
+      '  cut forward — to the consequence, the next place or a later hour — not on',
+      '  another exchange in the same room. A question play left unanswered is',
+      '  listed under PLAY LET THESE GO: do not set it again, in any words, and do',
+      '  not bring it back in your prose, unless the player\'s line takes it up.',
+      // Overhaul 2 §4.5 (D1, reversing issue #353 R2's "scenes stay manual"):
+      // the stores turn the scene; the narration's word never does.
+      '  The scene turns when the place or the situation changes; your fact block',
+      '  never ends one.',
     );
   }
 
@@ -229,7 +298,8 @@ export function appendSidecarInstruction(options = {}) {
 
 /**
  * What a mode adds to the sidecar instruction — the opening scene's
- * premise-capture rules (narrator-memory architecture A2); '' for every other
+ * premise-capture rules (narrator-memory architecture A2), a session
+ * set-piece's "builtFrom" (issue #381); '' for every other
  * mode. On its own so the instruction itself is the same for every mode: it
  * sits in the system prompt's standing block, which is cached across modes,
  * and this goes in the per-narration block (issue #354 P2-23).
@@ -238,6 +308,22 @@ export function appendSidecarInstruction(options = {}) {
  * @returns {string}
  */
 export function sidecarModeAddendum(mode) {
+  // A session set-piece's account of its rolled material (issue #381): the
+  // one key this mode adds to the fact block. The same text for every call of
+  // the mode — the material itself is in the user message.
+  if (mode === 'session_vignette') {
+    return [
+      'A session set-piece is built from the MATERIAL its user message gives:',
+      'results rolled for this scene. When the message carries MATERIAL, your',
+      'JSON block MUST also carry "builtFrom": one entry for each numbered',
+      'result, with the three to eight words of your prose that are it, exactly',
+      'as you wrote them —',
+      '[{ "n": 1, "words": "<words of your prose>" }, { "n": 2, "words": "…", "second": true }].',
+      '"second": true only when you set a result aside for the one in brackets',
+      'under it. A result the scene did not use gets no entry: never claim one',
+      'the prose does not hold. With no MATERIAL, leave "builtFrom" out.',
+    ].join('\n');
+  }
   if (mode !== 'inciting_incident') return '';
   return [
     'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
@@ -269,24 +355,42 @@ export function sidecarModeAddendum(mode) {
  */
 const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
 
+/** How a binding entry's basis is named in the block (overhaul 2 §5.5). */
+const BASIS_LABELS = Object.freeze({ player: 'the player', dice: 'the dice', gm: 'the GM', setup: 'the premise' });
+
 /**
- * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6.
+ * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6,
+ * reshaped by overhaul 2 (§5.5, D8) so the narrator weighs what binds apart
+ * from what its own narration described:
  *
- * Returns an object with separately budgetable sub-blocks so the assembler
- * can drop state under budget pressure while keeping truths:
+ *   ## ACTIVE SCENE — WHAT BINDS, AND WHAT THE NARRATION DESCRIBED
+ *   THE SCENE — began 4 beats ago, when the Kobayashi IV arrived at Bleakhold Station.
+ *     Place / Ship      — where the characters are and where the ship is, by the stores
+ *     Where / Present / Now / Turns on — the frame: the narration's, the question the player's
+ *   WHAT BINDS          — what the player said, the dice decided, the GM set, the premise
+ *   CORRECTED           — the table's strikes
+ *   STANDING NOW        — binding state
+ *   WHAT THE NARRATION HAS DESCRIBED — colour: this scene's, while one of its
+ *                         latest COLOUR_BEATS narrations wrote or restated it
+ *   PLAY LET THESE GO   — the questions play let go
+ *   COMMAND VEHICLE     — the ship's identity line
  *
- *   {
- *     header:        '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE\n\n…',
- *     truths:        'TRUTHS:\n  Vance — Walks with a slight limp\n  …',
- *     corrections:   'CORRECTED (retracted by the table — do NOT re-assert…',
- *     state:         'CURRENT STATE (right now in this scene):\n  Vance — …',
- *     shipPosition:  '',                        // populated in §20
- *     combined:      header + truths + corrections + state,  // for direct prompt use
- *     tokenEstimates:{ header, truths, corrections, state, ship },
- *   }
+ * It used to open on "BINDING TRUTHS AND CURRENT STATE … They are binding …
+ * must not diverge from them" over every truth the narration had written and
+ * the frame's Where — so the narrator argued its own scenery against the
+ * player's line (FRAME-REASONING-IN-PROSE: "You are no longer at Tamsin's
+ * stall, so the manifest is not where you left it").
  *
- * Returns `{ combined: '' }` (all fields empty strings) when there is nothing
- * to render — both ledgers empty for the in-scope subjects.
+ * Returns the sub-blocks for their readers — `scene` and `place` (its Place
+ * and Ship lines, which the consistency audit reads), `binds`, `corrections`,
+ * `standing`, `described`, `letGo`, `shipPosition` (the command vehicle's
+ * lines as a meta mode renders them alone) — and `combined`.
+ *
+ * Under `maxTokens` the described state sheds first, oldest first, then the
+ * described truths, then standing state (every other attribute before a
+ * character's location / vessel / condition, oldest first, issue #286 A6).
+ * Never dropped: THE SCENE, WHAT BINDS, CORRECTED, PLAY LET THESE GO, the
+ * ship (invariant 4).
  *
  * Filtering (fact-continuity scope §6 — "Filtering"). A subject is in scope
  * for this turn if any of:
@@ -295,21 +399,26 @@ const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
  *   - the entity ID appears in `options.matchedEntityIds`         — always
  *   - the entity ID equals `options.currentLocationId`            — always
  * The ledger holds only the current scene's entries, so a free-text subject is
- * scene-local by construction. It used to need its exact phrase in the
- * player's text or the frame's present list, so "dock master" or "her" lost
- * "the dockmaster" (issue #286 B4). Recorded entities stay scoped by match:
- * relevance, the current location, and the frame's cast (buildNarratorExtras).
+ * scene-local by construction (issue #286 B4). Recorded entities stay scoped
+ * by match: relevance, the current location, and the frame's cast.
  *
  * @param {Object} campaignState     — CampaignStateSchema
  * @param {Object} [options]
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
- * @param {number} [options.maxTokens] — soft cap; state lines shed when exceeded
- *   (location / vessel / condition last)
+ * @param {number} [options.maxTokens] — soft cap; described colour, then standing state, shed when exceeded
  * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
- * @returns {{ header: string, truths: string, state: string,
- *             shipPosition: string, combined: string,
- *             tokenEstimates: { header: number, truths: number, state: number, ship: number } }}
+ * @param {string} [options.askSceneQuestion] — what Turns on says when the frame holds no
+ *   question (the narration is asked to set one); '' or omitted: no line
+ * @param {Set<string>|null} [options.colourWindow] — the scene's latest COLOUR_BEATS narrations' ids
+ *   (null: the scene's cards are unstamped — all its colour stands)
+ * @param {number|null} [options.sceneBeats] — how many narrations the scene has had
+ * @param {string} [options.playerLine] — the beat's player words (a let-go hook it takes up stands)
+ * @param {Array|null} [options.nameChanges] — the names the table changed, from the store: written new
+ *   in the frame's words as THE SCENE renders them (sceneForReading)
+ * @returns {{ header: string, scene: string, place: string, binds: string, corrections: string,
+ *   standing: string, described: string, letGo: string, shipPosition: string, combined: string,
+ *   tokenEstimates: Object }}
  */
 export function buildLedgerBlock(campaignState, options = {}) {
   const truths = Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : [];
@@ -322,6 +431,8 @@ export function buildLedgerBlock(campaignState, options = {}) {
   if (currentLocationId) matchedIds.add(currentLocationId);
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
+  const window            = options?.colourWindow instanceof Set ? options.colourWindow : null;
+  const playerLine        = typeof options?.playerLine === 'string' ? options.playerLine : '';
 
   // ── Scene frame (Cluster A4) ─────────────────────────────────────────────
   // The narrator-maintained snapshot of the active scene. The recorded
@@ -333,41 +444,43 @@ export function buildLedgerBlock(campaignState, options = {}) {
     && typeof campaignState.sceneFrame === 'object'
     ? campaignState.sceneFrame
     : null;
-  const presentNames = Array.isArray(frame?.present)
-    ? frame.present.filter(p => typeof p === 'string' && p.trim())
-    : [];
+  const letGoList = frame ? normaliseLetGo(frame.letGo) : [];
 
-  // ── Filter truths ────────────────────────────────────────────────────────
-  const truthLines = [];
+  // ── Truths: what binds, and what the narration described ────────────────
+  // A truth's basis (overhaul 2 §5.1): the player's line, the dice, the GM,
+  // the premise bind; the narrator's own colour is shown apart, while one of
+  // the scene's latest narrations wrote or restated it, and not once a hook
+  // it carries was let go (§5.3).
+  const bindLines = [];
+  const describedEntries = [];
   for (const t of truths) {
     if (!t || t.retracted) continue;
     if (!isSubjectInScope(t.subject, matchedIds)) continue;
     const label = formatSubjectLabel(t.subject, nameLookup);
     const fact  = String(t.fact ?? '').trim();
     if (!fact) continue;
-    truthLines.push(`  ${label} — ${fact}`);
+    if (binds(t)) {
+      bindLines.push(`  ${label} — ${fact} (${BASIS_LABELS[entryBasis(t)]})`);
+    } else if (inColourWindow(t, window) && !touchesLetGo(fact, playerLine, letGoList)) {
+      describedEntries.push({ line: `  ${label} — ${fact}`, truth: true, keep: false,
+        updatedAt: Number(t.createdAt) || 0, order: describedEntries.length });
+    }
   }
 
   // ── Retraction defense (NARR-RETRACT-PASSIVE) ────────────────────────────
-  // A bare Strike used to just skip the truth at render — the originating
-  // prose stays in the recent-narration ring and the rolling summary, so the
-  // narrator could freely re-assert a fact the GM corrected. Render bare
-  // strikes (no `correctedTo` — replacements already carry the corrected
-  // fact as a live truth) as explicit do-not-re-assert lines: this scene's,
+  // A bare Strike renders as an explicit do-not-re-assert line: this scene's,
   // and since issue #286 B6 the session's earlier scenes' too — the ring and
-  // the summary's source outlive the scene. Not scope-filtered: retractions
-  // are rare, load-bearing, and must hold even on turns that don't name the
-  // subject. Capped at the most recent few to bound tokens; never dropped
-  // under budget pressure (truths tier). An earlier scene's strike of a scene
-  // fact is named only at its place (issue #345 AA28): elsewhere the same
-  // words are that place's own fact, which the narrator may record.
+  // the summary's source outlive the scene. Not scope-filtered; capped at the
+  // most recent few; never dropped. An earlier scene's strike of a scene fact
+  // is named only at its place (issue #345 AA28). A strike of colour is a
+  // strike (invariant 6b).
   const MAX_CORRECTION_LINES = 5;
   const correctionLines = sessionRetractedFacts(campaignState, { here: frame?.location })
     .slice(-MAX_CORRECTION_LINES)
     .map(f => `  ${f.label} — ${f.fact}`);
 
-  // ── Filter state ─────────────────────────────────────────────────────────
-  const stateEntries = [];
+  // ── State: standing, and described ───────────────────────────────────────
+  const standingEntries = [];
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
@@ -380,70 +493,86 @@ export function buildLedgerBlock(campaignState, options = {}) {
       const attr  = String(e?.attribute ?? '').trim();
       const value = e?.value;
       if (!attr || value === undefined || value === null || value === '') continue;
-      stateEntries.push({
-        line:      `  ${label} — ${attr}: ${value}`,
+      const row = {
         keep:      STATE_KEPT_LONGEST.has(attr.toLowerCase()),
         updatedAt: Number(e?.updatedAt) || 0,
-        order:     stateEntries.length,
-      });
+      };
+      if (binds(e)) {
+        standingEntries.push({ ...row, line: `  ${label} — ${attr}: ${value} (${BASIS_LABELS[entryBasis(e)]})`, order: standingEntries.length });
+      } else if (inColourWindow(e, window) && !touchesLetGo(String(value), playerLine, letGoList)) {
+        describedEntries.push({ ...row, line: `  ${label} — ${attr}: ${value}`, truth: false, order: describedEntries.length });
+      }
     }
   }
-  const stateLines = stateEntries.map(s => s.line);
 
-  // ── Render the frame block ───────────────────────────────────────────────
-  // Confirmed-lore tier: never dropped under budget pressure (like the ship
-  // line) — losing "where we are and who is here" is how drift starts.
+  // ── THE SCENE ────────────────────────────────────────────────────────────
+  // Three stores, three facts (overhaul 2 §6.1): the characters' recorded
+  // place, the ship's position, and where in that place the frame says they
+  // are — the narration's own. The scene's anchor says why it began.
+  // One read of the scene (sceneForReading), which the reader is told too
+  // (formatSceneForReading — overhaul 2 §10.1): the narrator and the reader
+  // are told the scene by one renderer, from one read.
+  const read = sceneForReading(campaignState, {
+    sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
+  });
+  const what = read.began?.what ?? '';
+  const beats = read.began?.beats ?? null;
+  const sceneHead = what
+    ? (beats === null ? `THE SCENE — began when ${what}.`
+      : beats === 0 ? `THE SCENE — begins with this beat: ${what}.`
+      : `THE SCENE — began ${beats} beat${beats === 1 ? '' : 's'} ago, when ${what}.`)
+    : 'THE SCENE';
+  const vehicle = commandVehicleLines(campaignState);
+  const placeLines = [];
+  if (read.place?.name) placeLines.push(`  Place:    ${read.place.name} — where the characters are, by the table's record`);
+  if (read.ship) placeLines.push(`  Ship:     ${read.ship}`);
   const frameLines = [];
   if (frame) {
-    if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
-    if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
-    if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
-    // What the scene is deciding (issue #353 R2).
-    if (typeof frame.question === 'string' && frame.question.trim()) {
+    if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
+    if (read.present.length) frameLines.push(`  Present:  ${read.present.join(', ')}`);
+    if (read.now)            frameLines.push(`  Now:      ${read.now} — as the narration has it`);
+    // What the scene is deciding (issue #353 R2) — the player's (overhaul 2
+    // §7.2). With none standing, a narration that can set one is asked for
+    // it, in its caller's words (`askSceneQuestion`; NARRATOR-REFRAINS).
+    const ask = typeof options?.askSceneQuestion === 'string' ? options.askSceneQuestion.trim() : '';
+    if (read.question) {
       frameLines.push(frame.questionAnswered === true
-        ? `  Question (answered): ${frame.question.trim()} — the scene has moved past it; set the question it turns on now.`
-        : `  Question: ${frame.question.trim()}`);
+        ? `  Turns on (answered): ${read.question} — the scene has moved past it; set what it turns on now.`
+        : `  Turns on: ${read.question} — from the player's line`);
+    } else if (ask && frameLines.length) {
+      frameLines.push(`  Turns on: ${ask}`);
     }
   }
-  const frameBlock = frameLines.length
-    ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')
+  // A scene with nothing to say of itself says nothing: no anchor, no place, no frame.
+  const hasScene = !!(what || placeLines.length || frameLines.length);
+  const sceneBlock = hasScene ? [sceneHead, ...placeLines, ...frameLines].join('\n') : '';
+
+  // ── What play let go (overhaul 2 §7.3) ───────────────────────────────────
+  // The questions play left unanswered for SCENE_QUESTION_BEATS beats, at
+  // most LET_GO_MAX. Never dropped.
+  const letGoBlock = letGoList.length
+    ? [
+        'PLAY LET THESE GO — hooks the narration posed that play did not take up. Do not end on one,',
+        'restate it or bring it back, in the prose or the fact block, unless the player\'s line takes it up:',
+        ...letGoList.map(e => `  "${e.text}"`),
+      ].join('\n')
     : '';
 
-  // ── Ship position (§20) ──────────────────────────────────────────────────
-  // The command vehicle's persistent position record is fact-continuity
-  // confirmed-lore tier — it is never dropped under budget pressure and
-  // renders even when truths / state are otherwise empty. Returns "" when
-  // no command vehicle exists or its position record is blank.
-  const shipPositionLine = buildShipPositionLine(campaignState);
-
   // ── Empty short-circuit ──────────────────────────────────────────────────
-  if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock
-      && !correctionLines.length) {
+  if (!bindLines.length && !standingEntries.length && !describedEntries.length && !vehicle.identity && !sceneBlock
+      && !correctionLines.length && !letGoBlock) {
     return {
-      header: '', frame: '', truths: '', corrections: '', state: '', shipPosition: '',
-      combined: '',
-      tokenEstimates: { header: 0, frame: 0, truths: 0, corrections: 0, state: 0, ship: 0 },
+      header: '', scene: '', place: '', binds: '', corrections: '', standing: '', described: '', letGo: '',
+      shipPosition: '', combined: '',
+      tokenEstimates: { header: 0, scene: 0, binds: 0, corrections: 0, standing: 0, described: 0, letGo: 0, ship: 0 },
     };
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  // Header only renders when there are truths, state, or a frame to
-  // introduce — the SHIP POSITION line stands on its own when it's the only
-  // thing in the block (§20).
-  const header = (truthLines.length || stateLines.length || frameBlock || correctionLines.length)
-    ? [
-        '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
-        '',
-        'You established the following facts during this scene. They are',
-        'binding. Subsequent narration must honour them and may add to them,',
-        'but must not diverge from them.',
-      ].join('\n')
+  const header = '## ACTIVE SCENE — WHAT BINDS, AND WHAT THE NARRATION DESCRIBED';
+  const bindsBlock = bindLines.length
+    ? ['WHAT BINDS — what the player said, the dice decided or the GM set. Never contradict it:', ...bindLines].join('\n')
     : '';
-
-  const truthsBlock = truthLines.length
-    ? ['TRUTHS:', ...truthLines].join('\n')
-    : '';
-
   const correctionsBlock = correctionLines.length
     ? [
         'CORRECTED (retracted by the table — do NOT re-assert these, even if',
@@ -451,56 +580,176 @@ export function buildLedgerBlock(campaignState, options = {}) {
         ...correctionLines,
       ].join('\n')
     : '';
-
-  const renderState = (entries) => (entries.length
-    ? ['CURRENT STATE (right now in this scene):', ...entries.map(s => s.line)].join('\n')
+  const renderStanding = (entries) => (entries.length ? ['STANDING NOW:', ...entries.map(e => e.line)].join('\n') : '');
+  const renderDescribed = (entries) => (entries.length
+    ? [
+        'WHAT THE NARRATION HAS DESCRIBED — your own colour in this scene. Keep to it while it stands. When the player\'s',
+        'line, the dice or the GM change any of it, it changes, and the narration follows without a word of argument.',
+        'It is not carried out of this scene.',
+        ...entries.map(e => e.line),
+      ].join('\n')
     : '');
-  let stateBlock = renderState(stateEntries);
+  let standingBlock  = renderStanding(standingEntries);
+  let describedBlock = renderDescribed(describedEntries);
 
-  // ── Soft-cap enforcement: shed state when over budget ────────────────────
-  // Ship position and the scene frame count toward the budget for telemetry
-  // but are never dropped — both are confirmed-lore tier (scope §20.5;
-  // narrator-memory architecture A4). Only state sheds, one line at a time:
-  // every other attribute before a character's location, vessel and
-  // condition (the REQUIRED emissions), the oldest first within each (issue
-  // #286 A6 — the whole block used to drop at once, REQUIRED facts included,
-  // and stayed dropped for the rest of the scene because truths only grow).
+  // ── Soft-cap enforcement (overhaul 2 D8, amending invariant 4) ───────────
+  // The described colour sheds first — state, oldest first, then truths,
+  // oldest first — then standing state, every other attribute before a
+  // character's location, vessel and condition, the oldest first (issue #286
+  // A6). THE SCENE, WHAT BINDS, CORRECTED, PLAY LET THESE GO and the ship are
+  // never dropped.
   const tokenEstimates = {
     header:      estimateTokens(header),
-    frame:       estimateTokens(frameBlock),
-    truths:      estimateTokens(truthsBlock),
+    scene:       estimateTokens(sceneBlock),
+    binds:       estimateTokens(bindsBlock),
     corrections: estimateTokens(correctionsBlock),
-    state:       estimateTokens(stateBlock),
-    ship:        estimateTokens(shipPositionLine),
+    letGo:       estimateTokens(letGoBlock),
+    standing:    estimateTokens(standingBlock),
+    described:   estimateTokens(describedBlock),
+    ship:        estimateTokens(vehicle.identity),
   };
-  const fixedTokens = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-                    + tokenEstimates.corrections + tokenEstimates.ship;
-  if (fixedTokens + tokenEstimates.state > maxTokens && stateEntries.length) {
-    const sheddingOrder = stateEntries.slice().sort((a, b) =>
-      (a.keep - b.keep) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
-    const kept = new Set(stateEntries);
-    for (const victim of sheddingOrder) {
-      kept.delete(victim);
-      stateBlock = renderState(stateEntries.filter(s => kept.has(s)));
-      if (fixedTokens + estimateTokens(stateBlock) <= maxTokens) break;
+  const fixedTokens = tokenEstimates.header + tokenEstimates.scene + tokenEstimates.binds
+                    + tokenEstimates.corrections + tokenEstimates.letGo + tokenEstimates.ship;
+  const over = () => fixedTokens + estimateTokens(standingBlock) + estimateTokens(describedBlock) > maxTokens;
+  if (over()) {
+    const describedOrder = describedEntries.slice().sort((a, b) =>
+      (a.truth - b.truth) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
+    const keptDescribed = new Set(describedEntries);
+    for (const victim of describedOrder) {
+      if (!over()) break;
+      keptDescribed.delete(victim);
+      describedBlock = renderDescribed(describedEntries.filter(e => keptDescribed.has(e)));
     }
-    tokenEstimates.state = estimateTokens(stateBlock);
+    const standingOrder = standingEntries.slice().sort((a, b) =>
+      (a.keep - b.keep) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
+    const keptStanding = new Set(standingEntries);
+    for (const victim of standingOrder) {
+      if (!over()) break;
+      keptStanding.delete(victim);
+      standingBlock = renderStanding(standingEntries.filter(e => keptStanding.has(e)));
+    }
+    tokenEstimates.standing  = estimateTokens(standingBlock);
+    tokenEstimates.described = estimateTokens(describedBlock);
   }
 
-  const combined = [header, frameBlock, truthsBlock, correctionsBlock, stateBlock, shipPositionLine]
+  const combined = [header, sceneBlock, bindsBlock, correctionsBlock, standingBlock, describedBlock, letGoBlock, vehicle.identity]
     .filter(Boolean)
     .join('\n\n');
 
   return {
     header,
-    frame:        frameBlock,
-    truths:       truthsBlock,
+    scene:        sceneBlock,
+    place:        placeLines.join('\n'),
+    binds:        bindsBlock,
     corrections:  correctionsBlock,
-    state:        stateBlock,
-    shipPosition: shipPositionLine,
+    standing:     standingBlock,
+    described:    describedBlock,
+    letGo:        letGoBlock,
+    // A meta mode's whole ledger (formatLedgerSection's shipPositionOnly):
+    // the command vehicle's identity and position lines, as one read gives them.
+    shipPosition: buildShipPositionLine(campaignState),
     combined,
     tokenEstimates,
   };
+}
+
+/**
+ * The scene, as one read (overhaul 2 §6.1, §10.1): three stores, three facts
+ * — the characters' recorded place (`currentLocationId`), where the ship is
+ * (its position record's line), and where in that place the frame says they
+ * are, who is present, what is happening and what the scene turns on (the
+ * narration's; the question the player's) — and why it began (its anchor).
+ * Names the table changed are written new in the frame's words as they are
+ * read (nameChanges.js writeNewNames, the record's rule — the fourth live
+ * run's a50 copied "Ashen Wake pilot" a step after the cutter was renamed).
+ * Read by the ACTIVE SCENE block's THE SCENE and by the reader
+ * (formatSceneForReading). It writes nothing and turns
+ * nothing. Never throws.
+ *
+ * @param {Object} campaignState
+ * @param {{ sceneBeats?: number|null, sceneFrameEnabled?: boolean, nameChanges?: Array|null }} [opts] —
+ *   `nameChanges` the table's changes from the store (narrator extras), else campaignState's
+ * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
+ *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
+ */
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null } = {}) {
+  const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
+    && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
+    ? campaignState.sceneBegan : null;
+  const beats = Number.isInteger(sceneBeats) && sceneBeats >= 0 ? sceneBeats : null;
+  const began = anchor ? { cause: anchor.cause ?? 'first', what: typeof anchor.what === 'string' ? anchor.what.trim() : '', beats } : null;
+  const placeName = currentPlaceName(campaignState);
+  const place = placeName ? { id: campaignState.currentLocationId, name: placeName } : null;
+  const ship = commandVehicleLines(campaignState).position.replace(/^SHIP POSITION:\s*/, '');
+  const frame = sceneFrameEnabled !== false && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
+    ? campaignState.sceneFrame : null;
+  const changes = Array.isArray(nameChanges) ? nameChanges
+    : Array.isArray(campaignState?.nameChanges) ? campaignState.nameChanges : [];
+  const others = changes.length ? actorNames() : [];
+  const fresh = (text) => {
+    const t = typeof text === 'string' ? text.trim() : '';
+    return t && changes.length ? writeNewNames(t, changes, { otherNames: others }) : t;
+  };
+  const question = typeof frame?.question === 'string' ? frame.question.trim() : '';
+  return {
+    began,
+    place,
+    ship,
+    where: fresh(frame?.location),
+    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    now: fresh(frame?.situation),
+    question: fresh(question),
+    letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
+  };
+}
+
+/**
+ * The scene as the reader is told it (overhaul 2 §10.1) — the same read the
+ * narrator's THE SCENE renders, in two lines:
+ *   "- Place: Bleakhold Station. Ship: Kobayashi IV docked at Bleakhold Station.
+ *      Scene — began when the characters arrived (3 beats ago); where: …; present: …; now: …; turns on: …."
+ * '' with nothing to say.
+ *
+ * @param {ReturnType<typeof sceneForReading>} scene
+ * @returns {string}
+ */
+export function formatSceneForReading(scene) {
+  if (!scene || typeof scene !== 'object') return '';
+  const ship = /^not yet established\b/i.test(scene.ship ?? '') ? 'not yet established' : (scene.ship ?? '');
+  const head = [scene.place?.name ? `Place: ${scene.place.name}.` : '', ship ? `Ship: ${ship}.` : '']
+    .filter(Boolean).join(' ');
+  const bits = [];
+  if (scene.began?.what) {
+    const ago = Number.isInteger(scene.began.beats) ? ` (${scene.began.beats} beat${scene.began.beats === 1 ? '' : 's'} ago)` : '';
+    bits.push(`began when ${scene.began.what}${ago}`);
+  }
+  if (scene.where) bits.push(`where: ${scene.where}`);
+  if (Array.isArray(scene.present) && scene.present.length) bits.push(`present: ${scene.present.join(', ')}`);
+  if (scene.now) bits.push(`now: ${scene.now}`);
+  if (scene.question) bits.push(`turns on: ${scene.question}`);
+  if (Array.isArray(scene.letGo) && scene.letGo.length) bits.push(`play let go: ${scene.letGo.map(t => `"${t}"`).join(', ')}`);
+  const lines = [];
+  if (head) lines.push(`- ${head}`);
+  if (bits.length) lines.push(`${head ? '  ' : '- '}Scene — ${bits.join('; ')}.`);
+  return lines.join('\n');
+}
+
+/**
+ * The characters' recorded place by name (`currentLocationId` — overhaul 2
+ * §6.1: canonical for the scene's place), or ''. Never throws.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+function currentPlaceName(campaignState) {
+  const id = campaignState?.currentLocationId;
+  if (typeof id !== 'string' || !id) return '';
+  try {
+    const name = resolveEntityById(id)?.data?.name;
+    return typeof name === 'string' ? name.trim() : '';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -519,7 +768,22 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * @returns {string}
  */
 export function buildShipPositionLine(campaignState) {
-  if (!campaignState) return '';
+  const { identity, position } = commandVehicleLines(campaignState);
+  return [identity, position].filter(Boolean).join('\n');
+}
+
+/**
+ * The command vehicle's two lines: its identity (COMMAND VEHICLE — name,
+ * type, integrity) and where it is (SHIP POSITION — its record's line, or the
+ * "not yet established" guard). Both '' with no command vehicle. The scene
+ * block shows the position as THE SCENE's Ship line and the identity last
+ * (overhaul 2 §5.5); a meta mode renders both, alone (buildShipPositionLine).
+ *
+ * @param {Object} campaignState
+ * @returns {{ identity: string, position: string }}
+ */
+function commandVehicleLines(campaignState) {
+  if (!campaignState) return { identity: '', position: '' };
   try {
     const ids   = Array.isArray(campaignState.shipIds) ? campaignState.shipIds : [];
     const MID   = 'starforged-companion';
@@ -542,14 +806,13 @@ export function buildShipPositionLine(campaignState) {
         payload = actor.flags?.[MID]?.ship ?? null;
       }
     }
-    if (!actor) return '';
+    if (!actor) return { identity: '', position: '' };
     // The record as getShip gives it: its integrity is the STARSHIP asset's
     // Integrity track on the sheet (issue #345 AA20 — the record's copy was
     // read, and drifted from what the player saw and marked).
     payload = withSheetNotes('ship', actor, payload);
 
     const name  = actor?.name ?? payload?.name ?? '';
-    const lines = [];
 
     // Identity line — always present so the narrator knows the command
     // vehicle exists and its name, even before any position is established.
@@ -568,28 +831,21 @@ export function buildShipPositionLine(campaignState) {
       const impacts = [battered && 'battered', cursed && 'cursed'].filter(Boolean);
       idParts.push(`integrity ${payload.integrity}/${max}${impacts.length ? ` [${impacts.join(', ')}]` : ''}`);
     }
-    lines.push(`COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`);
+    const identity = `COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`;
 
     // Position line — when the record carries information. When it doesn't,
     // say so explicitly: with no position signal the narrator confidently
     // improvises one from the campaign premise (v1.7.10 finding #5 — the
     // ship sat near Astra on the map while "where am I" answered Mudd).
-    const posLine = formatShipPositionLine(payload?.position, campaignState, name);
-    if (posLine) {
-      lines.push(posLine);
-    } else {
-      lines.push(
-        'SHIP POSITION: not yet established — do NOT assert or invent where '
+    const position = formatShipPositionLine(payload?.position, campaignState, name)
+      || ('SHIP POSITION: not yet established — do NOT assert or invent where '
         + 'the ship is. If the player asks where they are, say their position '
         + 'has not been established yet and suggest anchoring it (the GM can '
-        + 'type !at <place> or position the ship token on the sector map).',
-      );
-    }
-
-    return lines.join('\n');
+        + 'type !at <place> or position the ship token on the sector map).');
+    return { identity, position };
   } catch (err) {
-    console.warn?.('starforged-companion | buildShipPositionLine failed:', err?.message ?? err);
-    return '';
+    console.warn?.('starforged-companion | the command vehicle\'s lines failed:', err?.message ?? err);
+    return { identity: '', position: '' };
   }
 }
 
@@ -744,6 +1000,11 @@ journals, panels, records, dice, moves, contradictions, or anything in
 this prompt block — those are tooling concerns, not story. Depict; do
 not narrate the act of bookkeeping.`,
 
+  // "No new named entity may appear in this narration" read plainly forbade
+  // the narrator to write a name the player's own line had just given
+  // (known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD); the one sentence after it
+  // excepts that. INTERACTION's "Introduce new named entities" forbids only
+  // the narrator's own, and is unchanged.
   embellishment: `## NARRATOR PERMISSIONS — EMBELLISHMENT MODE
 
 This turn is texture, not revelation. Narrate its mood and detail.
@@ -753,7 +1014,9 @@ You MUST:
 - Stay grounded in the current scene
 
 You may NOT introduce any new named entity (no new named entity may appear
-in this narration — no person, ship, location, faction, or creature). You
+in this narration — no person, ship, location, faction, or creature). A name
+the player's own line has just given to someone or something in the scene is
+theirs, not a new entity of yours: you may use it. You
 may not introduce any new plot element or revelation, and you may not
 advance any story thread beyond the immediate moment.
 
@@ -774,7 +1037,10 @@ const NARRATOR_PERMISSION_KEYS = new Set(Object.keys(NARRATOR_PERMISSIONS));
 // so its default is null. campaign_recap is a meta mode with no latitude block
 // (its role description governs). The rest map to the block that matches the
 // mode's job: paced continuation deepens established entities (interaction);
-// scene answers, oracle flavour, and vignettes add texture only (embellishment);
+// oracle flavour and vignettes add texture only (embellishment); an `@scene`
+// answer has no latitude at all — its role description is its whole rule, and
+// the embellishment block's "focus on concrete sensory and emotional detail"
+// was the scenery that invented (known-issues SCENE-ANSWER-NOT-A-CAMERA);
 // the inciting incident opens the campaign and may introduce its central figure,
 // reuse-first (discovery — see its reuse-before-invent rule). An explicit
 // extras.narratorClass always overrides the default.
@@ -784,7 +1050,7 @@ const DEFAULT_PERMISSION_CLASS_BY_MODE = {
   // each move's relevance — passed in as extras.narratorClass, as for a move.
   round_resolution:    null,
   paced_narrative:     'interaction',
-  scene_interrogation: 'embellishment',
+  scene_interrogation: null,
   oracle_followup:     'embellishment',
   session_vignette:    'embellishment',
   inciting_incident:   'discovery',
@@ -1046,10 +1312,11 @@ export function formatEntityCard(entity, entityType) {
   if (entityType === 'connection') lines.push(...formatConnectionStanding(entity));
 
   // Last known whereabouts from earlier scenes (issue #286 C1) — kept by
-  // endScene; the active scene's CURRENT STATE supersedes them.
+  // endScene, binding ones only (overhaul 2 §5.6); what the active scene says
+  // of them now — STANDING NOW, or what the narration described — supersedes them.
   const lastKnown = formatLastKnown(entity.lastKnown);
   if (lastKnown.length) {
-    lines.push('', 'LAST KNOWN (from earlier scenes — this scene\'s CURRENT STATE wins):', ...lastKnown);
+    lines.push('', 'LAST KNOWN (from earlier scenes — what this scene says of them now wins):', ...lastKnown);
   }
 
   // Generative tier — pinned first, then the newest, with slots held for
@@ -1108,13 +1375,120 @@ const META_MODES = new Set(['campaign_recap']);
 // sent to every mode, beside the mode's own length (issue #326 W40).
 const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
+/**
+ * What an oracle's answer is to the narration that tells it (known-issues
+ * ORACLE-NO-NARRATED-AS-YES). "Is anyone left alive aboard the wreck?" rolled
+ * NO, and the follow-up wrote "The open comm still hisses with the dry voice's
+ * breathing, which means someone is aboard": the narrator kept what it had
+ * made — a voice on the comm, three beats running — over what the oracle
+ * said. RECENT ORACLE RESULTS already asked it not to contradict the dice;
+ * nothing said which gives way when the scene and the answer disagree. The
+ * scene does. In the mode's role (the same for every follow-up); the user
+ * message says it of the one answer (its obligations block's TELL [oracle] /
+ * NOT SO [oracle] lines — moves/contracts/obligations.js).
+ */
+const ORACLE_ANSWER_BINDS =
+  `The oracle's answer is the table's, not yours, and it binds the story from here. A yes ` +
+  `is narrated as yes and a no as no — never as its opposite, never as doubtful, and never ` +
+  `as something still to be found out. Where the scene so far said otherwise — a voice ` +
+  `heard, a light seen, a thing taken for granted — the scene gives way, not the answer: ` +
+  `reconcile it inside the fiction, in this narration (what was heard was a recording, a ` +
+  `relay or an echo, was mistaken, or has stopped), so that nothing left standing ` +
+  `contradicts the answer. A table's result is read with latitude; it is never turned ` +
+  `into its reverse.`;
+
+/** The heading of a recap's section on how things stand (record/recapView.js); the recap's rules name it. */
+const STANDS_NOW_HEADING = 'WHERE THINGS STAND';
+
+/**
+ * A recap says only what its sources say (known-issues
+ * RECAP-STATES-WHAT-DID-NOT-HAPPEN). The long haul's third live run's four
+ * recaps held fourteen sentences the story does not support (its
+ * review-notes.md lists each); run 2's a76 held three. As read from the
+ * prompts, by cause:
+ *   - inference: "your first hint that the Spire's water shortage and the
+ *     raids might share a source" — no step links them; "it is a question you
+ *     can now answer" — the entry before says the question is still pressed;
+ *   - a gap filled in: "What you found there was the point of it all", of a
+ *     ship never boarded — the Chronicle steps from "won grudging leave to
+ *     board" to the stamp because the step between was X-Carded;
+ *   - a third-person entry turned to "you": "first pick of her hauls" — the
+ *     offer was first pick of the character's own, in all four recaps;
+ *   - an earlier state carried forward: "The compass still swings toward the
+ *     dark lane" — it swung north and stopped; the entry for that step dropped
+ *     the needle, and the recap was sent nothing else of how things stood.
+ * The role told it only to "draw only on the chronicle provided". Since issue
+ * #382 slice 2 its source is the session record (record/recapView.js): facts,
+ * the players' own words, and how things stand read live — each line an id
+ * its sentences cite.
+ */
+const RECAP_SOURCES_RULE =
+  `A recap says only what its sources say. THE RECORD in the user message is what happened, ` +
+  `session by session, as facts: who acted and the words their player wrote, the move and its ` +
+  `outcome, what changed on a sheet, what play did, what was established and still stands. ` +
+  `${STANDS_NOW_HEADING} is how things stand as play stopped, read from the sheets and tracks.\n` +
+  `- Every sentence restates what a line it cites states. Infer nothing: no cause, motive or link ` +
+  `between two things that no line gives ("your first hint that…", "which is how…"), no verdict on ` +
+  `what something meant ("the point of it all"), and no answer to a question a line leaves open.\n` +
+  `- Fill nothing in between lines. Where the record steps from one beat to a later one, the recap ` +
+  `steps with it and says nothing of what lay between: a beat may be missing because the table took ` +
+  `it out of the story. A place no line says was entered was not entered; a thing no line says was ` +
+  `found was not found.\n` +
+  `- What a player wrote is what their character said or tried. What it claims about the world is ` +
+  `the character's claim, unless an outcome or an established line supports it.\n` +
+  `- Keep whose things are whose. The record names each character; the recap may call the player ` +
+  `character "you" — and no one else. Keep a player's own words as they wrote them ("first pick of ` +
+  `whatever I haul" is the character's own haul).\n` +
+  `- How a thing stands now is ${STANDS_NOW_HEADING}'s word. Say that something still stands only ` +
+  `when ${STANDS_NOW_HEADING} says so; never carry an earlier state forward as still true.\n` +
+  `- Use each name as the record writes it, and write no other name for anyone.\n` +
+  // Known-issues RECAP-TELLS-THE-DICE (the fourth live run): 13 of the 64
+  // recap sentences named an outcome — "it landed as a weak hit", "Your search
+  // near the wreck missed" — and about a dozen read a sheet's numbers aloud.
+  // The record's lines carry them; this rule had no word against telling them
+  // as the dice do, where the move narration's role has one (OUTCOME_WORDS_RULE).
+  `- Tell what happened, not the dice or the numbers. "strong hit", "weak hit", "miss" and "match" ` +
+  `are the table's words, never the recap's: not as the roll's name ("it landed as a weak hit", ` +
+  `"on a miss"), not as a remark on the dice, and not as an image made out of the word. Nor is a ` +
+  `number from a sheet or a track — a meter, momentum, XP, ticks, boxes, "4 of 10". Say what came ` +
+  `of a line instead, as the lines state it: what the character did, found, gained, lost or failed ` +
+  `at, and how far a vow or a tie has come, in words. A rank — troublesome, dangerous, formidable, ` +
+  `extreme, epic — is how hard a vow, a tie or a fight is to see through: never a word for the ` +
+  `person or thing it is about. Nor are the record's own words for itself ("the record", "at the ` +
+  `table") the recap's.`;
+
+/** The oracle's own word for a doubled roll stays out of the prose too (NARRATION-NAMES-THE-OUTCOME). */
+const ORACLE_MATCH_RULE =
+  `A result that came with a match is the answer at its most extreme, or with a twist: ` +
+  `tell that as what happens. The word "match" is the table's and is never written.`;
+
+/**
+ * The dice's own words stay out of the prose (known-issues
+ * NARRATION-NAMES-THE-OUTCOME). The move's outcome block reads "[OUTCOME:
+ * Strong Hit with a Match [MATCH]]", and the rule against repeating it named
+ * no word: two live runs wrote them in — "Strong hit, and a match: he throws
+ * in a sealed ration crate…" (run 2, a51) and "The match flares bright on the
+ * scope" (run 3, a27), an image made from the word with nothing in the scene
+ * to be one. Nor was the narrator told what a match is for. In the move and
+ * round roles, beside that rule.
+ */
+const OUTCOME_WORDS_RULE =
+  `The outcome's own words are the table's, never the story's. "Strong hit", "weak hit", ` +
+  `"miss" and "match" never appear in the narration as such: not as the roll's name ("a ` +
+  `strong hit", "it's a miss", "and a match"), not as a remark on the dice, and not as an ` +
+  `image made out of the word (a match that flares, a hit that lands "strong"). Narrate ` +
+  `what happens instead. A match is told as its twist — on a hit, something unexpected or ` +
+  `a new opening; on a miss, the turn that makes it worse — as an event in the scene, ` +
+  `with no name for it.`;
+
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
     `narrate the mechanical consequences of move outcomes as plain, concrete prose ` +
     `that serves the story.\n\n` +
     `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
-    `Keep the player in the fiction.`,
+    `Keep the player in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   round_resolution:
     `You are the narrator for an Ironsworn: Starforged campaign played by several players ` +
@@ -1123,7 +1497,8 @@ const ROLE_DESCRIPTIONS = {
     `prose that serves the story.\n\n` +
     `Do not repeat a mechanical outcome verbatim. Transform each into narrative, in the ` +
     `order given, and keep every action with the character who took it. Keep the players ` +
-    `in the fiction.`,
+    `in the fiction.\n\n` +
+    OUTCOME_WORDS_RULE,
 
   paced_narrative:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1132,20 +1507,47 @@ const ROLE_DESCRIPTIONS = {
     `No move was rolled for this turn. Stay in narration; do not announce mechanics. ` +
     `Keep the player in the fiction.`,
 
+  // Known-issues SCENE-ANSWER-NOT-A-CAMERA (the long haul's third live run):
+  // the role said "describe only what is already established — answer the
+  // question, do not invent", the user message asked for "2–3 sentences of
+  // atmospheric description", and the permission block for sensory detail.
+  // Sixteen answers were right and each dressed its fact in scenery that
+  // invented — the compass on a table, in a coat, in a hand, in a drawer, on
+  // a belt. An answer is the fact, said plainly by a narrator who knows what
+  // this prompt holds; it is not narration, and nothing of it is recorded
+  // (narrator.js interrogateScene).
   scene_interrogation:
-    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `answer the player's question about the current scene as plain, concrete prose ` +
-    `that serves the story.\n\n` +
-    `Describe only what is already established — answer the question, do not invent.`,
+    `You are the narrator for an Ironsworn: Starforged solo campaign. The player has ` +
+    `stepped out of the story to ask you a question about it. Your role is to answer ` +
+    `it in your own voice, plainly, as the one who knows everything this prompt holds.\n\n` +
+    `Answer the question and nothing else: the fact asked for, in a sentence or two ` +
+    `(the user message gives the limit). This is an answer, not narration:\n` +
+    `- State only what this prompt holds — the world's records, the active scene, the ` +
+    `recent scene, the character. Where something is, what it looks like, how long it ` +
+    `has been so: these are facts too. If the prompt does not give one, do not supply it.\n` +
+    `- If the prompt does not hold the answer, say plainly that the story has not ` +
+    `established it. Never guess, and never fill the gap.\n` +
+    `- No scenery, no sensory detail, no mood, no comparison, nothing to close on.\n` +
+    `- Nothing happens in an answer: no one speaks or acts, no time passes, the scene ` +
+    `stays exactly as it is.\n` +
+    `- What this prompt marks FOR THE NARRATOR ONLY — a hidden plan, anything under ` +
+    `UNREVEALED — the characters do not know. Never state it; asked about it, say it ` +
+    `is not yet known.`,
 
+  // Told "the iron they touch, the words, the weight of commitment … pure
+  // sensory fiction", and given no scene, the oath was one image in all four
+  // live long hauls — a palm pressed flat to a bulkhead, the words said low
+  // (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT). It is built from what
+  // the user message gives.
   vow_swearing:
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
-    `the moment a character swears a vow — the binding ritual itself — as a brief, ` +
-    `evocative scene.\n\n` +
-    `Ground it in how the Ironsworn swear their oaths in THIS world (the Iron truth given ` +
-    `in the user message): the iron they touch, the words, the weight of commitment. ` +
-    `Write 2-3 sentences of pure sensory fiction — no game mechanics, no summary of the ` +
-    `vow's text, no "you vow to…" restatement. Just the act of swearing made vivid.`,
+    `the moment a character swears a vow as a brief scene, built from what the user ` +
+    `message gives: the vow's own words, how oaths are bound in THIS world (the Iron ` +
+    `truth), and the scene the character swears it in.\n\n` +
+    `Write 2-3 sentences, no game mechanics. The words sworn are the vow's own, or the ` +
+    `character's for them; the iron is what is at hand in this scene, as this world ` +
+    `binds an oath; the moment comes out of the scene and what the vow is about — no ` +
+    `stock gesture.`,
 
   oracle_followup:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1154,29 +1556,37 @@ const ROLE_DESCRIPTIONS = {
     `mechanical result is given to you verbatim. Render it as 2-3 sentences anchored to ` +
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
     `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
-    `the literal table text — transform it into narrative.`,
+    `the literal table text — transform it into narrative.\n\n` +
+    `${ORACLE_ANSWER_BINDS}\n\n` +
+    ORACLE_MATCH_RULE,
 
   session_vignette:
+    // Issue #381: the role named the galley, "vivid specific food or activity"
+    // and the ship as the joke, and two separate campaigns' openings came out
+    // as one scene; its closings were "the cosmic threat eating a sandwich …
+    // the bonded ally watering houseplants", and wrote them. A set-piece is
+    // built from what its user message gives — rolled material and the
+    // campaign's records — and the role names no place, no business and no
+    // example scene.
     `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
-    `a session-bookend vignette — a short atmospheric scene that brackets the play ` +
-    `session itself.\n\n` +
-    `Two flavours, distinguished by the user message:\n\n` +
-    `BEGIN — the active PCs in a quiet downtime moment aboard their ship (the galley, ` +
-    `etc.). With crewmates registered elsewhere aboard, the PCs banter about what those ` +
-    `crewmates might be up to; with none, the character is alone with the ship, and the ` +
-    `humour is the ship's and the solitude's — no crew is invented, present or absent. ` +
-    `TONE OVERRIDE for BEGIN: WRY AND ABSURD. Vivid specific food or activity, weird ` +
-    `little details of life aboard. Not cynical, not sneering — fond, observed, a little ` +
-    `odd.\n\n` +
-    `END — a single important NPC (an established connection, a recurring threat, a ` +
-    `faction figurehead) caught doing something trivial and mundane, in a place the ` +
-    `players are NOT. TONE OVERRIDE for END: WRY AND OBSERVED, slice-of-life. The ` +
-    `cosmic threat eating a sandwich; the rival captain taking inventory of spare ` +
-    `parts; the bonded ally watering houseplants. Specific, small, almost tender.\n\n` +
-    `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
-    `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
-    `the calm before / the calm after, not the start or end of the action. The user ` +
-    `message gives the vignette's length in sentences: that is a limit, not a guide — ` +
+    `a session set-piece: a short scene that brackets the play session. The user ` +
+    `message says which it is, who is in it and where, and gives its MATERIAL: results ` +
+    `rolled for this scene on the game's oracles, and what the campaign's records hold. ` +
+    `Build the scene from the material.\n\n` +
+    // "Nothing new happens in it" was a shape too: the fourth live run's
+    // openings each ended still (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+    `OPENING — the player characters whose players are at the table, in a quiet moment ` +
+    `inside the situation the last session left. No turn of the plot happens in it. With ` +
+    `crewmates registered but away, the characters speak of what those crewmates are up ` +
+    `to; with none, no crew is invented, present or absent. TONE OVERRIDE for OPENING: ` +
+    `WRY AND ABSURD — fond, observed, played straight. Not cynical, not sneering.\n\n` +
+    `CLOSING — a cutaway to someone or somewhere the table knows, away from the ` +
+    `characters, at something small: the world going on without them. TONE OVERRIDE ` +
+    `for CLOSING: WRY AND OBSERVED — specific, small, almost tender.\n\n` +
+    `SPOTLIGHT — a cutaway or a flashback the characters do not see: the Spotlight ` +
+    `Vignette result the table rolled, happening. The campaign's own tone.\n\n` +
+    `All of them: do not describe a move, do not propose a mechanical action. The user ` +
+    `message gives the scene's length in sentences: that is a limit, not a guide — ` +
     `count them, and stop at the last one.`,
 
   // A clock beat used the session-vignette role — "depict the calm before /
@@ -1247,9 +1657,10 @@ const ROLE_DESCRIPTIONS = {
     `between-sessions recap. Your role is to summarise the campaign so far as a ` +
     `concise, vivid retrospective that reminds the players where things stand.\n\n` +
     `This is a meta-summary, not a live scene: do not advance the story, stage new ` +
-    `events, introduce new entities, or propose actions. Draw only on the chronicle ` +
-    `provided and the established campaign context. Keep it tight and respectful of ` +
-    `what the players have accomplished.`,
+    `events, introduce new entities, or propose actions. Draw only on the record ` +
+    `below and the established campaign context. Keep it tight and respectful of ` +
+    `what the players have accomplished.\n\n` +
+    RECAP_SOURCES_RULE,
 };
 
 /**
@@ -1283,8 +1694,13 @@ const BEAT_ENDING_RULE =
   `a reflective or atmospheric line.\n` +
   `A recurring motif must change, or be dropped: do not repeat an image from the recent ` +
   `scene as it was.\n` +
-  `The hook is something that happens in the story, never a menu of options — it ` +
-  `follows "depict, do not offer". Keep it within the narrator permissions in this ` +
+  // Known-issues NARRATOR-REFRAINS: 23 narrations of 23 ended on the opening's
+  // hook; REFRAIN-OUTLIVES-THE-QUESTION (overhaul 2 §7.4): the fourth live run's
+  // "second hail light" — a thread of the narrator's own — ended 15 of 17.
+  `The hook is the story's answer to the player's line — a present character's next ` +
+  `word or act, the danger the result left — never a new thread of your own, and never ` +
+  `one under PLAY LET THESE GO. It is something that happens in the story, never a menu ` +
+  `of options — it follows "depict, do not offer". Keep it within the narrator permissions in this ` +
   `prompt: where only embellishment is allowed, the change is small and immediate (a ` +
   `present character's next word or act, a detail already in the scene that shifts), ` +
   `not a new plot element. Where a closing italic move-hint is asked for, it comes ` +
@@ -1522,8 +1938,13 @@ function formatEntityCardsBlock(entityCards) {
  * toggle are on. '' otherwise, or when nothing is in scope. With
  * `shipPositionOnly` (a meta mode's — the campaign recap), the ship's
  * position line alone: the scene's frame, truths and state are a scene's.
+ * `askSceneQuestion` is buildLedgerBlock's: the narrator prompt's alone, for
+ * the modes whose fact block may set the scene's question.
  */
-function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false } = {}) {
+function formatLedgerSection(campaignState, settings = {}, {
+  matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
+  nameChanges = null,
+} = {}) {
   const {
     factContinuityEnabled         = true,
     factContinuityLedgerInContext = true,
@@ -1537,6 +1958,13 @@ function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = 
     maxTokens:         factContinuityMaxLedgerTokens,
     entityNamesById,
     sceneFrameEnabled: factContinuitySceneFrame,
+    askSceneQuestion,
+    // The scene's latest narrations (overhaul 2 §5.3): a colour entry stands
+    // while one of them wrote or restated it; and how many it has had.
+    colourWindow: sceneNarrations?.window instanceof Set ? sceneNarrations.window : null,
+    sceneBeats:   Number.isInteger(sceneNarrations?.beats) ? sceneNarrations.beats : null,
+    playerLine,
+    nameChanges,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -1580,7 +2008,7 @@ export function buildSharedStorySections(campaignState, narratorSettings = {}, e
  * stays the caller's.
  */
 export const SCENE_LEDGER_FIELDS = Object.freeze(
-  ['currentSessionId', 'currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'sessionRetractions'],
+  ['currentSessionId', 'currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'sessionRetractions', 'sceneBegan'],
 );
 
 /** `campaignState` with the live scene ledger (`extras.sceneLedger`) laid over it; the state itself when there is none. */
@@ -1660,6 +2088,42 @@ const META_STANDING_ROLE =
   `CONTEXT FOR THIS SUMMARY, last, is the campaign as it stands now.`;
 
 /**
+ * What THE SCENE's Turns on line says when the frame holds none, by the mode
+ * of the narration reading it (known-issues NARRATOR-REFRAINS): the modes
+ * whose fact block may set the scene's question are asked for it — from the
+ * player's words. Since overhaul 2 (§7.2) only a beat of play the player's
+ * words prompted may set one (provenance.js QUESTION_MODES): a clock vignette,
+ * the oath scene and the inciting incident were asked to "set the one the
+ * scene turns on now" with no line to set it from, and set the narrator's own
+ * hook — they have no entry now. A session vignette (a bookend:
+ * BOOKEND_FRAME_RULE), an `@scene` answer (it writes nothing back) and the
+ * recap have none either, and are shown no such line.
+ */
+const SCENE_QUESTION_ASK = Object.freeze({
+  move_resolution:  `none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.`,
+  paced_narrative:  `none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.`,
+  round_resolution: `none stands — if the players' lines this round set out to settle something, set that, in a few words that use their own; if they do not, set none.`,
+  oracle_followup:  `none stands — if the question the player put to the oracle sets out to settle something, set that, in a few words that use the question's own; if it does not, set none.`,
+});
+
+/**
+ * What a session vignette's fact block leaves alone (known-issues
+ * NARRATOR-REFRAINS): the scene's question. A vignette is told to "end on a
+ * beat that hands the scene to the players", and the hook it closed on — "What
+ * is the speaker over the hatch about to say?" — was set as the question of the
+ * scene it opened: all 22 of that session's prompts carried it. The apply
+ * drops a vignette's question whatever it sends (narrator.js bookendFrame);
+ * this keeps it from being written. In the vignette's mode
+ * block: the standing block's sidecar instruction is the same for every mode.
+ */
+const BOOKEND_FRAME_RULE =
+  `## A VIGNETTE IS NOT THE SCENE\n\n` +
+  `This vignette brackets the session; the scene the players are in is not its to set. In its ` +
+  `"sceneFrame" give where the vignette is set, who is in it and what is happening, and no ` +
+  `"question": never set one, and never copy or mark answered one that THE SCENE shows. What ` +
+  `the session's scene turns on is decided by the players' first line, not by how this vignette ends.`;
+
+/**
  * The line that closes the per-narration context when the fact-continuity
  * sidecar is on (issue #354 P2-23). The sidecar instruction used to be the
  * prompt's last section, "the most recent guidance the model sees"; it is now
@@ -1672,6 +2136,20 @@ const RESPOND_BLOCK =
   `Write the narration, then the one fenced JSON block, exactly as RESPONSE FORMAT — ` +
   `MANDATORY SIDECAR above specifies. The block is required on every response, after ` +
   `the prose, with everything that section marks REQUIRED.`;
+
+/**
+ * What closes the context of an `@scene` answer, in RESPOND NOW's place
+ * (known-issues SCENE-ANSWER-NOT-A-CAMERA): an answer records nothing, so it
+ * is asked for no fact block. The response format stays in the standing block
+ * — that block is the same for every mode (rules/narrator-memory.md invariant
+ * 7b) — and this says it is not an answer's. A block the model writes anyway
+ * is taken off and dropped (narrator.js sceneAnswerText).
+ */
+const ANSWER_BLOCK =
+  `## ANSWER NOW\n\n` +
+  `Answer the player's question in plain words, from what is above, and stop. An answer ` +
+  `records nothing: RESPONSE FORMAT — MANDATORY SIDECAR above is for narration and does ` +
+  `not apply here. Write no JSON block.`;
 
 /**
  * Build the narrator system prompt as its three blocks (issue #354 P2-23).
@@ -1807,6 +2285,8 @@ export function buildNarratorSystemBlocks(
     sessionFocus         = null,
     progressTracks       = [],
     sceneLedger          = null,
+    sceneNarrations      = null,
+    playerLine           = '',
     pinnedChronicle      = null,
     unrevealed           = [],
     planRequests         = [],
@@ -1963,10 +2443,13 @@ export function buildNarratorSystemBlocks(
     modeParts.push(NARRATOR_PERMISSIONS[effectiveClass]);
   }
 
-  // [9m] What the mode adds to the sidecar instruction — the opening scene's.
+  // [9m] What the mode adds to the sidecar instruction — the opening scene's,
+  //      and a session set-piece's account of its material (issue #381).
   if (sidecarEnabled) {
     const addendum = sidecarModeAddendum(resolvedMode);
-    if (addendum) modeParts.push(`## THE OPENING SCENE\n\n${addendum}`);
+    if (addendum) modeParts.push(`## ${resolvedMode === 'session_vignette' ? 'THE SCENE\'S MATERIAL' : 'THE OPENING SCENE'}\n\n${addendum}`);
+    // …and what a session vignette's leaves alone: the scene's question.
+    if (factContinuitySceneFrame && resolvedMode === 'session_vignette') modeParts.push(BOOKEND_FRAME_RULE);
   }
 
   // ── The beat block ─────────────────────────────────────────────────────────
@@ -2118,18 +2601,30 @@ export function buildNarratorSystemBlocks(
   //       (`extras.sceneLedger` — buildNarratorExtras, issue #325 W05): a
   //       move narrates from a snapshot taken before its confirm dialog, and
   //       an X-Card or `!truth strike` made meanwhile is only in the store.
-  //       A meta mode gets the ship's position alone — the one line of the
-  //       block that is no scene's. A recap retells the Chronicle, and the
-  //       scene that happens to be open is not its to honour: told, as
+  //       Of this block a meta mode gets the ship's position alone — the one
+  //       line of it that is no scene's. A recap retells the Chronicle, and
+  //       the scene that happens to be open is not its to honour: told, as
   //       binding, the frame of End a Session's closing cutaway, it set the
-  //       whole campaign there (issue #374 A1).
+  //       whole campaign there (issue #374 A1). What a recap is told of how
+  //       things stand is its own section, [6.5m] below.
   // [6.4] NAMES THE TABLE CHANGED (issue #377 item 1) goes here, just above
   //       the scene's truths, once the rest of the prompt is built (below):
   //       it is told only where an old name still reaches the call.
   const namesAt = parts.length;
+  // [6.5m] A recap is told how things stand in its own user message, read
+  //        live — WHERE THINGS STAND, beside the session record it retells
+  //        (record/recapView.js, issue #382): never from a summary, and never
+  //        as a binding scene (issue #374 A1).
   const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
-  }, { matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode });
+  }, {
+    matchedEntityIds, entityNamesById, shipPositionOnly: isMetaMode,
+    // A frame with no question asks for one — of the narrations whose fact
+    // block may set it (never a vignette's, an `@scene` answer's or a recap's).
+    askSceneQuestion: sidecarEnabled && factContinuitySceneFrame ? (SCENE_QUESTION_ASK[resolvedMode] ?? '') : '',
+    sceneNarrations, playerLine,
+    nameChanges: extras?.nameChanges ?? null,
+  });
   if (ledgerBlock) parts.push(ledgerBlock);
 
   // [6.6] UNREVEALED — the narrative skeleton (issue #353): the hidden plans
@@ -2147,8 +2642,12 @@ export function buildNarratorSystemBlocks(
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
-      sidecar: factContinuityEnabled,
+      // An `@scene` answer writes nothing back: the plans in play without the
+      // lines that ask for a record of them, and nothing to decide.
+      sidecar: factContinuityEnabled && resolvedMode !== 'scene_interrogation',
       coveredIds: snapshot ? (inPlay?.coveredPlanIds ?? []) : [],
+      // The vows this beat's move fulfils (narrator.js buildNarratorExtras).
+      endingSubjectIds: Array.isArray(extras?.endingTrackIds) ? extras.endingTrackIds : [],
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
   }
@@ -2210,7 +2709,8 @@ export function buildNarratorSystemBlocks(
 
   // [9b] The pointer back to the response format — last, so it is the most
   // recent guidance the narrator reads, as the instruction itself used to be.
-  if (sidecarEnabled) parts.push(RESPOND_BLOCK);
+  //      An `@scene` answer closes on its own: it writes no fact block.
+  if (sidecarEnabled) parts.push(resolvedMode === 'scene_interrogation' ? ANSWER_BLOCK : RESPOND_BLOCK);
 
   return {
     standing: standing.join(SECTION_RULE),
@@ -2388,10 +2888,51 @@ function formatSkeletonEntry(r) {
     lines.push(withheld ? 'When the expedition is finished, record it as resolved.'
       : 'When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
   } else if (r.kind === 'vow') {
+    // A vow's end does not reveal its truth; telling it does (known-issues
+    // VOW-FULFILLED-WITH-NOBODY-NAMED: "and "truth" as revealed if it comes
+    // out" was recorded under a fulfilment whose prose told none of it).
     lines.push(withheld ? 'When the vow is fulfilled or forsaken, its story ends: record it as resolved.'
-      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
+      : 'When the vow is fulfilled or forsaken, its story ends: record it as resolved. Its truth comes out only by being told: ' +
+        'record "truth" as revealed when your prose states it, never because the vow ended.');
   }
   return lines.join('\n');
+}
+
+/**
+ * [6.6] THIS BEAT ENDS A VOW — for each decided vow plan the beat's move
+ * fulfils (`endingSubjectIds`, the vow's id on the move's `endingTrackIds`;
+ * known-issues VOW-FULFILLED-WITH-NOBODY-NAMED, the long haul's third live
+ * run, a64). "Find who is raiding the Cinder Expanse lanes" was fulfilled
+ * under UNREVEALED's standing rule — "Never state one outright" — and its
+ * narration obeyed: "The thing you swore to find has a hand and a seal, and
+ * both are named now", with no name anywhere in the story, and "truth"
+ * recorded as revealed. The fulfilment is where the vow's truth is told, so
+ * the rule is lifted for that plan, here: the prose states the truth, as far
+ * as the truth goes, and claims nothing it does not hold. '' with no such
+ * plan, and for one whose truth the X-Card withheld (truthWithheld).
+ *
+ * @param {Object[]} decided — the decided plans in play
+ * @param {Iterable<string>} endingSubjectIds
+ * @returns {string[]} lines, [] for none
+ */
+function vowEndingLines(decided, endingSubjectIds) {
+  const ending = new Set(endingSubjectIds ?? []);
+  const vows = decided.filter(r => r?.kind === 'vow' && r.subject?.id && ending.has(r.subject.id) && !truthWithheld(r));
+  if (!vows.length) return [];
+  return [
+    '',
+    '### THIS BEAT ENDS A VOW',
+    `The move this beat narrates fulfils ${vows.map(r => `${skeletonHeading(r)} (id ${r.id})`).join(' and ')}. What that vow set out`,
+    'to find, do or learn is told now, in the prose, as far as the story holds it:',
+    '- For this plan the rule against stating a truth outright is lifted. Where the fulfilment brings its',
+    '  truth out — it does when the vow was sworn to find out who, what or why, and the Truth line is the',
+    '  answer — state that truth in the narration itself, in plain words a player could repeat: who or what',
+    '  it is, where, what they want, as the Truth line gives them. Then record "truth" as revealed. A truth',
+    '  recorded as revealed that the prose did not tell is not revealed.',
+    '- The Truth line is all there is to tell. Where it gives no name, there is no name: say what was found,',
+    '  and say plainly that the rest — who, by name — is still not known.',
+    '- Never write that an answer is "known", "named", "found" or "proved" without saying what it is.',
+  ];
 }
 
 /**
@@ -2424,15 +2965,17 @@ export function formatSnapshotPlan(r) {
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
  * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
- *   coveredIds?: string[] }} [opts] —
+ *   coveredIds?: string[], endingSubjectIds?: string[] }} [opts] —
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
  *   "new" one is one of them (`sameAs`, issue #354 P2-30);
  *   `coveredIds`: the decided plans the world snapshot holds (issue #357) — each is named by its
- *   heading and id, not printed again; a decided plan not among them is printed as before
+ *   heading and id, not printed again; a decided plan not among them is printed as before;
+ *   `endingSubjectIds`: the vows the beat's move fulfils (its `endingTrackIds`) — a vow plan about one
+ *   is told now (THIS BEAT ENDS A VOW, vowEndingLines)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [] } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [] } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
   const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
@@ -2459,6 +3002,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       '  "reveals": [{ "id": "<its id>", "revealed": ["<clue id>", or "truth" when the truth itself comes',
       '  out>], "advanced": "<the escalation step id it played>", "resolved": true when its story ends }].',
       '  Only what this beat actually showed; nothing for a subject it did not touch.',
+      // VOW-FULFILLED-WITH-NOBODY-NAMED: "truth" was recorded under prose that told none of it.
+      '  "truth" only when the prose of this narration states the truth itself, naming what it names: a',
+      '  line saying that something is now known, named or proved, without saying what, reveals nothing.',
       '- Where your narration contradicts something below, your narration stands: record the change in',
       '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
       '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
@@ -2484,6 +3030,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
     );
   }
+  // The vow this beat's move fulfils is told now — with the fact block, which
+  // records it (the Private Channel narrates no move).
+  if (sidecar) lines.push(...vowEndingLines(everyDecided, endingSubjectIds));
 
   if (pending.length || requests.length) {
     lines.push(
@@ -2584,9 +3133,13 @@ export function formatRecentOraclesBlock(entries) {
     lines.push(`- ${e.name || 'Oracle'}:${q} → ${e.answer}`);
   }
   lines.push('');
+  // Which gives way (known-issues ORACLE-NO-NARRATED-AS-YES): a narration
+  // written before an answer, or beside it, may say otherwise — the answer stands.
   lines.push(
     'The dice established these outcomes. Your narration must not contradict ' +
-    'them — build on what the oracle answered.',
+    'them — build on what the oracle answered. Where earlier narration in this ' +
+    'prompt says otherwise, the answer stands and the story is brought into ' +
+    'line with it, never the answer with the story.',
   );
   return lines.join('\n');
 }
@@ -2834,25 +3387,37 @@ export function formatWorldLoreRecapBlock(recap) {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the user message for the campaign recap generation call.
- * This is passed to Claude (Sonnet) to produce a 3–5 paragraph campaign summary.
+ * Build the user message for the campaign recap generation call — the
+ * session record's source (record/recapView.js recapSource: THE RECORD, WHERE
+ * THINGS STAND, the players' own notes, the sessions from before the record),
+ * then what a recap covers and the cited reply it is asked for. Passed to
+ * Claude (Sonnet) for a 3–5 paragraph campaign recap.
  *
- * @param {string[]} chronicleEntries — formatted chronicle entries, oldest first
+ * @param {{ text: string }} source
  * @returns {string}
  */
-export function buildCampaignRecapUserMessage(chronicleEntries) {
-  const entriesText = chronicleEntries.join('\n\n');
+export function buildCampaignRecapUserMessage(source) {
   return [
-    `## CAMPAIGN CHRONICLE\n\n${entriesText}`,
+    String(source?.text ?? ''),
     `Write a campaign recap of 3–5 paragraphs covering:\n` +
     `- How the campaign began and what the inciting situation was\n` +
     `- The key relationships that have developed\n` +
     `- The vows sworn and their current status\n` +
     `- The most significant revelations\n` +
     `- Where things stand now\n\n` +
+    // RECAP-STATES-WHAT-DID-NOT-HAPPEN: the last thing it reads is what it may say.
+    `Each of these only as far as the lines above state it — and, for where things stand, ` +
+    `${STANDS_NOW_HEADING}. Nothing inferred, nothing filled in between two lines, and no "your" for ` +
+    `what a line does not make certainly the character's own. A point the lines say nothing of is ` +
+    `left out. Every beat marked LASTING is told. Tell what came of each line — never its outcome's ` +
+    `word or a number from a sheet.\n\n` +
     `Write in second person for solo campaigns, third person for multiplayer. ` +
-    `Be wry but respectful of what the player has accomplished.`,
-  ].join('\n\n');
+    `Be wry but respectful of what the player has accomplished.\n\n` +
+    `Reply with JSON only: {"paragraphs": [[{"text": "<one sentence>", "because": ["<id>", …]}, …], …]} — ` +
+    `the recap's paragraphs in order, each a list of its sentences, and with each sentence the ids ` +
+    `(the bracketed [s3-2], [now-1], [note-1], [old-1] above) of every line it rests on. A sentence ` +
+    `that rests on no line given above is left out of the recap.`,
+  ].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -2898,9 +3463,15 @@ export function sanitizePlayerText(text) {
  * Build the user message for a scene interrogation call.
  * This is uncached — it changes every call with the player's question.
  *
+ * The answer is the fact and nothing else (known-issues
+ * SCENE-ANSWER-NOT-A-CAMERA): this message asked for "N–N+1 sentences of
+ * atmospheric description" beside a role that said "do not invent", and the
+ * description is where each answer invented. The Scene Response Length setting
+ * is now the most sentences an answer runs to.
+ *
  * @param {string} question        — player's question (stripped of @scene prefix)
  * @param {string} recentContext   — recent narration cards joined as text (may be empty)
- * @param {number} sentenceTarget  — how many sentences to produce
+ * @param {number} sentenceTarget  — the most sentences the answer may run to (Scene Response Length)
  * @returns {string}
  */
 export function buildSceneUserMessage(question, recentContext, sentenceTarget, speakerName = null) {
@@ -2919,10 +3490,14 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget, s
     `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(question)}"`,
   );
 
+  const most  = Math.min(4, Math.max(1, Math.floor(Number(sentenceTarget)) || 2));
+  const limit = most === 1
+    ? 'one plain sentence'
+    : `at most ${['', 'one', 'two', 'three', 'four'][most]} plain sentences — one, if one answers it`;
   parts.push(
-    `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
-    `description. Do not introduce new plot elements. Stay grounded in what has already been ` +
-    `established. The narrator is a camera, not a writer, in this mode.` +
+    `Answer this question in ${limit}: the fact asked for and nothing else, in your own ` +
+    `voice. No description, no scenery, nothing new, and nothing happens. If this prompt does ` +
+    `not hold the answer, say that the story has not established it.` +
     (speaker ? ` The character asking is ${speaker}.` : ''),
   );
 
@@ -2939,12 +3514,20 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget, s
  * single italicized line inviting that move. The narrator may decline if the
  * fiction wouldn't carry it.
  *
+ * What the narration must tell and must not (overhaul 4, slice 1) is one
+ * block, last before the instruction (moves/contracts/obligations.js): the
+ * offered move NOT YET made, no sheet changing, no apparatus — and, when the
+ * line's move could not be made (`refusal`, the gate's), its premise NOT SO,
+ * so a Heal refused at full health is not narrated as a wound dressed
+ * (NOTHING-TO-RECOVER-UNTOLD).
+ *
  * @param {string} playerText      — raw player narration
  * @param {string} recentContext   — recent narration cards joined as text (may be empty)
  * @param {number} sentenceTarget  — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} suggestedMove
  * @param {string|null} [speakerName]
- * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
+ * @param {{ audio?: boolean, refusal?: Object|null }} [opts] — `audio`: the narration is read aloud (shorter
+ *   sentences); `refusal`: the move the line was read as could not be made (contracts/gate.js refusalOf)
  * @returns {string}
  */
 export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null, opts = {}) {
@@ -2973,11 +3556,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     parts.push(
       `## SUGGESTED MOVE\n\n` +
       `The pacing classifier nominated ${suggestedMove} as a move the player could ` +
-      `make if they want to push this moment. It has not been made, and nothing it ` +
-      `would decide has happened: narrate up to the point where it would begin and stop ` +
-      `there — a course laid in is not yet flown, a wound bared is not yet treated, a ` +
-      `question put is not yet answered. The prose never performs the move; the closing ` +
-      `sentence offers it. End your narration with ONE italicized ` +
+      `make if they want to push this moment. End your narration with ONE italicized ` +
       `sentence inviting this move, in the narrator's voice. Do not announce it ` +
       `mechanically. Examples:\n\n` +
       `  *If you want to read him for tells, this could be a Gather Information.*\n` +
@@ -2992,6 +3571,16 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     );
   }
 
+  // What the narration must tell and must not, last before the instruction:
+  // the offer not yet made, the sheet unchanged, no apparatus — a refused
+  // move's premise told as not so, and what the sheet says of a person or a
+  // fight the line touches (overhaul 4).
+  const block = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
+    mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
+    situation: opts?.situation ?? null, line: playerText ?? '', cast: opts?.cast ?? [], chosenSince: opts?.chosenSince ?? [],
+  }));
+  if (block) parts.push(block);
+
   const target = Math.max(1, Number(sentenceTarget) || 3);
   // Issue #348 PT01: "continuing the scene, not advancing it" held the story
   // still — "not yet", "twenty minutes out", an arrival pushed back on every
@@ -3005,10 +3594,8 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     `${sentenceRule(target, lengthOpts)} ` +
     `No move was rolled — stay in narration. Do not announce mechanics. Do not decide ` +
     `what a move would decide: no risky action succeeds or fails, no fight is won, no ` +
-    `danger is escaped. Nor does anything on a character's sheet change — no wound is ` +
-    `treated or healed, no harm taken, no supplies gained or spent, no damage repaired, ` +
-    `no bond or progress made: a line that sets about one of those has begun it, and the ` +
-    `move that decides it is still to be made. Within that, let the scene move: small developments, and the ` +
+    `danger is escaped. Keep to the block above: what it says is not yet decided stays undecided, and what it says is not so is never told as so. ` +
+    `Within that, let the scene move: small developments, and the ` +
     `time the player's line implies passing, are yours to narrate. When the player skips ` +
     `time ("wake me when we get there", "we wait for nightfall"), cut to the next moment ` +
     `that needs them, not to the middle of the wait.`
@@ -3044,17 +3631,6 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
-  // What the player was shown before the roll, and which of it this outcome
-  // delivers (issue #353 R1). A miss's price that is still the player's
-  // choice, or was declined for the move that replaces it (Explore a
-  // Waypoint's match), is told as it stands (issue #364
-  // EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — narrator.js settles it).
-  const priceChoice = resolution?.priceChoice ?? null;
-  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null, { priceChoice });
-  if (stakes) parts.push(stakes);
-  const priceBlock = formatPriceChoiceBlock(priceChoice);
-  if (priceBlock) parts.push(priceBlock);
-
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
     : null;
@@ -3066,12 +3642,35 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     );
   }
 
+  // What the narration must tell and must not — one block, last before the
+  // instruction (overhaul 4, moves/contracts/obligations.js): what the result
+  // is ([outcome]); the stakes the player saw and which of them it delivers
+  // ([stakes], issue #353 R1); a miss's price still the player's choice, or
+  // declined for what replaces it ([price], EXPLORE-WAYPOINT-MATCH-MISS-
+  // ADVISORY — narrator.js settles it); a cost still the player's to choose
+  // ([cost], COST-NARRATED-BEFORE-IT-IS-CHOSEN) or chosen before this
+  // narration ([chosen]); an Enter the Fray's fight not begun ([fight],
+  // FIGHT-NARRATED-BEFORE-IT-IS-BEGUN) — narrator.js reads the table's cards
+  // (unansweredCardsFor); a vow fulfilled says what it asked for ([vow],
+  // VOW-FULFILLED-WITH-NOBODY-NAMED); a match's twist ([match]); a
+  // recommit the player's ([recommit]); a soft refusal rolled at the GM's
+  // word ([overridden]); what the sheet says of a person or a fight the
+  // beat touches ([state], TRACK-TOLD-AS-A-BOND); the sheet and the
+  // apparatus. The STAKES, PRICE, FIGHT, COST and VOW blocks it replaces
+  // kept their words in it.
+  const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
+    mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
+    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [],
+  }));
+  if (obligations) parts.push(obligations);
+
   // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
   const lengthOpts = { audio: opts?.audio === true };
   parts.push(
     `Narrate the consequence in ${lengthPhrase(sentenceTarget, lengthOpts)}. ` +
     `${sentenceRule(sentenceTarget, lengthOpts)} ` +
     `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
+    (obligations ? ` Keep to the block above: what it says is not yet decided stays undecided, and what it says is not so is never told as so.` : '') +
     (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
@@ -3139,7 +3738,8 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @param {boolean} [args.audio] — the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false }) {
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false,
+  sceneObligations = [], chosenSince = [] }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -3155,19 +3755,24 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
-      // The stakes shown before this entry's roll (issue #353 R1), and where
-      // a price that is its player's choice stands (issue #364).
-      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null, { priceChoice: input.priceChoice ?? null });
-      if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
-      const priceBlock = formatPriceChoiceBlock(input.priceChoice ?? null);
-      if (priceBlock) lines.push(priceBlock.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
+      // What this entry's result obliges its telling to — the move's own
+      // block, under the entry (overhaul 4: the STAKES, PRICE, FIGHT, COST,
+      // VOW and match lines it replaces kept their words in it).
+      const block = formatObligationsBlock(obligationsFor({ mode: 'round-entry', resolution: input, speaker: name }), { heading: '####' });
+      if (block) lines.push(block);
     } else if (input.kind === 'refused') {
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}: not rolled`);
       lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);
     } else {
       lines.push(`### ${i + 1}. ${name} — no roll`);
+    }
+    // A move it could not make (the move gate, overhaul 4): its premise is
+    // not so — the round tells it as the paced narration does.
+    if (input.kind !== 'move' && input.refusal?.premise) {
+      const block = formatObligationsBlock(obligationsFor({ mode: 'round-entry', refusal: input.refusal }), { heading: '####' });
+      if (block) lines.push(block);
     }
     const said = sanitizePlayerText(e.text ?? '');
     if (said) lines.push(`${name}: "${said}"`);
@@ -3181,6 +3786,12 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
     `## THIS ROUND — ${n} character${n !== 1 ? 's' : ''} acted at once, in this order\n\n` +
     blocks.join('\n\n'),
   );
+
+  // The round's own obligations — the sheet, the apparatus (overhaul 4) — and
+  // what the scene obliges its narration to tell: TELL [scene], NOT SO
+  // [letgo] (overhaul 2 §10.3). One block for the round.
+  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round', chosenSince }), ...sceneLines(sceneObligations)]);
+  if (roundBlock) parts.push(roundBlock);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
   const lengthOpts = { audio: audio === true };
@@ -3400,11 +4011,14 @@ function buildCharacterBlock(character, pinnedEntries = []) {
   const lost = connections.filter(c => c?.lost === true);
   // A bond Item marked complete is a forged bond (setBondItemForged — the
   // vendor sheet's own reading), not a fulfilled quest (issue #342 Z57).
+  // The words are the situation's (moves/situation.js connectionStanding) —
+  // one wording for the readers, the narrator and the recap: a full track is
+  // "full, no bond forged yet", never a bond (TRACK-TOLD-AS-A-BOND, overhaul 4).
   if (held.length) {
-    lines.push(`Connections: ${held.map(c => `${c.name} (${formatTrackDetail(c, 'bonded')})`).join('; ')}`);
+    lines.push(`Connections: ${held.map(c => `${c.name} (${[c.rank, connectionStanding(c)].filter(Boolean).join(', ')})`).join('; ')}`);
   }
   if (lost.length) {
-    lines.push(`Connections lost (severed — no longer a bond): ${lost.map(c => c.name).join('; ')}`);
+    lines.push(`Connections lost — no longer a connection: ${lost.map(c => c.name).join('; ')}`);
   }
 
   // Rewards the character was granted — gear, contacts, knowledge (#241;

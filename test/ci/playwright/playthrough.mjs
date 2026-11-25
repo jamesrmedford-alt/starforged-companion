@@ -46,6 +46,7 @@ import {
   recordingProblem, scenarioRevision, stepId, validateScenario,
 } from "./lib/claude.mjs";
 import { PLAYER_NAME, installDiceScript, waitForQuietWorld, traceStateWrites, setUpWorld, restoreWorld } from "./lib/world.mjs";
+import { sessionLogSummaryProblem } from "./lib/table.mjs";
 
 const MODE          = process.env.PLAYTHROUGH_MODE === "record" ? "record" : "replay";
 const ONLY          = process.env.PLAYTHROUGH || null;
@@ -229,15 +230,26 @@ const STEPS = {
     }
   },
 
-  /** `!end-session` on the player's screen, with the foci the step names. */
+  /**
+   * `!end-session` on the player's screen, with the foci the step names.
+   * Waits for the End to finish — the session closed, and the End a Session
+   * card its presser posts once the GM's relay has done the End's work
+   * (foci, the close, the summary, the Session Log, momentum) — not for a
+   * closing cutaway: one is posted only when someone or somewhere can be
+   * shown (issue #381 D6), and a world with no connection, no named threat
+   * and no settlement but where the characters are gets none. A step that
+   * wants the cutaway says so (`closingVignette: true`); what a strict step's
+   * End narrated is its calls' declaration, waited for after every step.
+   */
   async endSession(ctx, step) {
     const actor = ctx.client(step.as);
     const before = await messageIds(ctx.gm);
     await chat(actor, "!end-session");
     await submitDialog(actor, "End a Session", { questFocus: step.questFocus ?? "", connectionFocus: step.connectionFocus ?? "" });
     await waitForState(ctx.gm, "cs.sessionActive === false", "the session to end");
-    if (step.closingVignette !== false) {
-      await waitForCard(ctx.gm, before, "f.sessionVignetteCard === true && f.vignetteKind !== 'galley_begin'", "the closing vignette");
+    await waitForCard(ctx.gm, before, "f.sessionLifecycleCard === true && f.sessionVignetteCard !== true", "the End a Session card");
+    if (step.closingVignette === true) {
+      await waitForCard(ctx.gm, before, "f.sessionVignetteCard === true && f.vignetteKind === 'npc_end'", "the closing vignette");
     }
   },
 
@@ -497,16 +509,21 @@ const CHECKS = {
     assert(!offered.length, `${c.name} was offered as a new ${offered.join(", ")}`);
   },
 
-  /** The Session Log page for session `session` exists and carries the session's summary (v1.6.1 F18). */
+  /**
+   * The Session Log page for session `session` exists and carries the
+   * session's summary (v1.6.1 F18): its record's summary view
+   * (`sessionRecord.views.summary.text` — End a Session writes no story of
+   * its own since issue #382 slice 3), shown under its "Session summary"
+   * heading (lib/table.mjs sessionLogSummaryProblem).
+   */
   async sessionLog(ctx, c) {
     const page = await ctx.gm.page.evaluate(({ MODULE_ID, session }) => {
       const journal = game.journal.find(j => j.name === "World Journal — Session Log");
       const p = journal?.pages?.contents?.find(x => x.flags?.[MODULE_ID]?.sessionLogPage?.sessionNumber === session) ?? null;
-      return p ? { content: p.text?.content ?? "", narrative: p.flags[MODULE_ID].sessionLogPage.summary?.narrative ?? "" } : null;
+      return p ? { content: p.text?.content ?? "", summary: p.flags[MODULE_ID].sessionRecord?.views?.summary?.text ?? "" } : null;
     }, { MODULE_ID, session: c.session });
-    assert(page, `no Session Log page for session ${c.session}`);
-    assert(page.narrative.trim(), `the Session Log page for session ${c.session} has no summary`);
-    assert(page.content.includes("Session summary"), `the Session Log page for session ${c.session} doesn't render its summary`);
+    const problem = sessionLogSummaryProblem(page, c.session);
+    assert(!problem, problem);
   },
 
   /** An actor's momentum — a PC-only grant never reaches an NPC card (PLAYTEST-176). */

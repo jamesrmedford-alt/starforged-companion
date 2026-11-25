@@ -78,6 +78,9 @@ describe('issue #335 Y05 — startScene runs one start at a time', () => {
 
     const first  = startScene(clockCopy,  { reason: 'clock_vignette' });
     const second = startScene(galleyCopy, { reason: 'session_vignette' });
+    // The first start reads the stores for its scene's anchor before it
+    // writes (overhaul 2 §4.1): its write is in flight once it is sent.
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
     for (let i = 0; i < 10; i++) await Promise.resolve();
     expect(sent).toHaveLength(1);                    // the second waits: it has minted nothing
 

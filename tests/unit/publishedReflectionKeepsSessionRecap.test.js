@@ -21,8 +21,11 @@
  * narration").
  *
  * Production entry points: the real Publish (publishToMainChat on the
- * player's client) and `@scene` (typed by the player, run on the keyed GM —
- * RUN_ON.CLAUDE); Claude is answered by the harness.
+ * player's client) and a line of free narration (narratePacedInput on the
+ * keyed GM, as the pacing router hands one in); Claude is answered by the
+ * harness. The narration was an `@scene` question until an `@scene` answer
+ * stopped being one (known-issues SCENE-ANSWER-NOT-A-CAMERA — the last case
+ * here): it is no narration for this gate either.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
@@ -34,8 +37,6 @@ const S2 = 'aa32-recap-s2';
 const RECAP = 'PREVIOUSLY — the crew fled Bleakhold with the Hegemony on their heels.';
 const RECAP_BLOCK = `## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`;
 const REPLY = 'The hangar is cold and quiet; frost rimes the loading arms.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-// An empty chronicle's recap key (narrator.js chronicleRecapKey over []).
-const EMPTY_CHRONICLE_KEY = { chronicleLength: 0, chronicleHash: '811c9dc5' };
 
 let table;
 const narrationCalls = () => table.claude.calls.filter(c => /SIDECAR|NARRATOR ROLE/.test(c.system ?? ''));
@@ -51,11 +52,19 @@ beforeEach(async () => {
       sessionStartedId: S2, sessionActiveStartedAt: new Date().toISOString(),
       lastSessionTimestamp: new Date().toISOString(),
       currentSceneId: 'aa32-sc', sceneTruths: [],
-      campaignRecapCache: { text: RECAP, generatedAt: new Date().toISOString(), ...EMPTY_CHRONICLE_KEY },
     },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
+  // A recap made from the source as it stands — the record, where things
+  // stand — so it is current (narrator.js campaignRecapCacheKey, issue #382).
+  const gm = table.client('gm-1');
+  const { campaignRecapCacheKey } = await gm.import('../../src/narration/narrator.js');
+  const key = await gm.run(() => campaignRecapCacheKey(table.world.campaignState()));
+  table.world.setSetting('campaignState', {
+    ...table.world.campaignState(),
+    campaignRecapCache: { text: RECAP, generatedAt: new Date().toISOString(), ...key },
+  });
   scriptClaude(table, { fallback: () => REPLY });
 });
 
@@ -67,8 +76,21 @@ async function patPublishesAReflection(content = 'Kira turns her sister\'s locke
   expect(card).toBeTruthy();
 }
 
-/** Pat asks `@scene`; the narration call it made. */
-async function patAsksTheScene(question = 'What does the hangar look like?') {
+/** A line of Pat's is narrated; the narration call it made. */
+async function patAsksTheScene(line = 'I walk the length of the hangar.') {
+  const before = narrationCalls().length;
+  const gm = table.client('gm-1');
+  const { narratePacedInput } = await gm.import('../../src/narration/narrator.js');
+  await gm.run(() => narratePacedInput(line,
+    foundry.utils.deepClone(game.settings.get('starforged-companion', 'campaignState')), { speakerActorId: 'pc-kira' }));
+  await table.settle(); await table.drain();
+  const calls = narrationCalls();
+  expect(calls).toHaveLength(before + 1);
+  return calls.at(-1);
+}
+
+/** Pat asks `@scene` (typed by the player, run on the keyed GM — RUN_ON.CLAUDE); the call it made. */
+async function patAsksAQuestion(question = 'What does the hangar look like?') {
   const before = narrationCalls().length;
   await table.client('pl-1').chat(`@scene ${question}`, { speaker: { actor: 'pc-kira' } });
   await table.settle(); await table.drain();
@@ -101,5 +123,17 @@ describe('issue #345 AA32 — a published reflection before the session\'s first
     expect((await patAsksTheScene()).system).toContain(RECAP_BLOCK);
     await patPublishesAReflection();
     expect((await patAsksTheScene('Who is on watch?')).system).not.toContain('## CAMPAIGN RECAP');
+  }, 60_000);
+});
+
+describe('SCENE-ANSWER-NOT-A-CAMERA — an `@scene` answer before the session\'s first narration', () => {
+  it('is answered with the recap in view, and does not take the first narration\'s', async () => {
+    expect((await patAsksAQuestion()).system, 'the answer may draw on the recap').toContain(RECAP_BLOCK);
+    expect(table.cards(f => f.sceneResponse && f.narratorCard)).toHaveLength(1);        // said at the table: in the flag family
+    expect((await patAsksAQuestion('Who is on watch?')).system).toContain(RECAP_BLOCK);
+    expect((await patAsksTheScene()).system, 'the session\'s first narration opens with the campaign recap').toContain(RECAP_BLOCK);
+    // …and it still comes once: a question after that narration brings none back.
+    expect((await patAsksAQuestion('Is the hatch sealed?')).system).not.toContain('## CAMPAIGN RECAP');
+    expect((await patAsksTheScene('I check the seals.')).system).not.toContain('## CAMPAIGN RECAP');
   }, 60_000);
 });

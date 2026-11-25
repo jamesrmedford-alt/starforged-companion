@@ -45,10 +45,10 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? '');
+const isInterpreter = (call) => isReaderCall(call);
 const SNEAK = 'I melt into the shadows and slip past the sentries.';
 
 let table;
@@ -95,7 +95,7 @@ describe('a forced move rolls the stat its narration fits (issue #321 U04)', () 
     const readings = table.claude.calls.filter(isInterpreter);
     expect(readings).toHaveLength(1);
     expect(readings[0].client).toBe('gm-1');
-    expect(readings[0].userText).toContain('MOVE ALREADY CHOSEN: the player chose Face Danger');
+    expect(readings[0].userText).toContain('MODE — THE MOVE IS CHOSEN: face_danger (Face Danger)');
     expect(readings[0].userText).toContain(SNEAK);
 
     expect(control.confirmed).toEqual([{ moveId: 'face_danger', statUsed: 'shadow' }]);

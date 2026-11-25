@@ -31,16 +31,17 @@ vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
+// The narration model — and, since the readers run on Sonnet 5.5, the pacing
+// classifier's and the move interpreter's too: a narration call is one on this
+// model that is no reader's.
 const NARRATION_MODEL = 'claude-sonnet-5-5';
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'Small talk — no stakes.',
-});
+const isNarration = (call) => call.model === NARRATION_MODEL && !isReaderCall(call);
+const isClassifier = (call) => isReaderCall(call);
+const NARRATIVE = readerReply({ category: 'social' });
 const MOVE = JSON.stringify({
   decision: 'MOVE', suggestedMove: null, sceneChallenge: null,
   category: 'social', confidence: 0.9, reasoning: 'Pressing for an outcome.',
@@ -73,7 +74,7 @@ async function seed(extra = {}) {
   await table.reset({ world: { settings: { chronicleAutoEntry: false, narratorSessionSummary: false, campaignState: base(extra) } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
-  script = scriptClaude(table, { fallback: (call) => (call.model === NARRATION_MODEL ? NARRATION : '{}') });
+  script = scriptClaude(table, { fallback: (call) => (isNarration(call) ? NARRATION : '{}') });
   silenceConsoleErrors();
 }
 
@@ -119,7 +120,7 @@ describe('Z02 — a NARRATIVE line is narrated on a working copy, never the GM\'
     // Its own narration states nothing new, so whatever reaches the world is
     // what the GM's client still held.
     script.when(isClassifier, MOVE);
-    script.when(c => c.model === NARRATION_MODEL, PLAIN_NARRATION, { times: 5 });
+    script.when(isNarration, PLAIN_NARRATION, { times: 5 });
     table.claude.calls.length = 0;
     await table.client('pl-1').chat('Kira leans on the dockmaster to waive the fee.', { speaker: { actor: 'pc-kira', alias: 'Kira' } });
     await table.settle(); await table.drain();
@@ -130,7 +131,7 @@ describe('Z02 — a NARRATIVE line is narrated on a working copy, never the GM\'
 
   it("with no scene open, a refused scene start leaves no scene in the GM's cache", async () => {
     await seed();   // no scene
-    script.when(c => c.model === NARRATION_MODEL, PLAIN_NARRATION);
+    script.when(isNarration, PLAIN_NARRATION);
     refuseGmCampaignStateWrites();
     await kiraChats();
 

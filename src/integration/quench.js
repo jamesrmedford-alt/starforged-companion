@@ -313,6 +313,11 @@ Hooks.on("quenchReady", (quench) => {
   // parent with its own system data still readable. Each is run on real
   // documents, through the hook index.js registers.
   registerDocumentHookAssumptionTests(quench);
+  // Session record (issue #382, decision D1) — an append to a session's
+  // record is one dotted key of its page's flag; on real documents, what goes
+  // over the socket is that event and the counter, never the session's other
+  // events (the storage rests on it; the fallback is a page a scene).
+  registerSessionRecordTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2606,35 +2611,40 @@ function registerWorldJournalTests(quench) {
             "the lore entry's text should not have been mutated");
         });
 
-        it("writeSessionLog produces a session-log page", async function () {
+        it("getOrCreateSessionLogPage makes one page a session, and finds it again (issue #382)", async function () {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const before = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
-          const page = await wj.writeSessionLog(state);
+          // A session of the test's own: the world's own pages are never written here.
+          const session = { currentSessionId: `quench-log-${Date.now()}`, sessionNumber: null };
+          const made = await wj.getOrCreateSessionLogPage(session);
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
-          if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
-          assert.isObject(page);
-          assert.isNotEmpty(page?.text?.content ?? "", "session-log page should have a body");
-          const after = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
-          // writeSessionLog now find-or-creates one running page per session (D7),
-          // so a re-run fills the summary on the existing page rather than spawning
-          // another. Assert a page exists and none were lost, not a strict +1.
-          assert.isAtLeast(after, Math.max(before, 1));
+          if (made?.page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: made.page.id });
+          assert.isObject(made?.page);
+          assert.isNotEmpty(made.page?.text?.content ?? "", "session-log page should have a body (its title)");
+          const again = await wj.getOrCreateSessionLogPage(session);
+          assert.equal(again?.page?.id, made.page.id, "one page a session");
         });
 
-        it("appendSessionLogBeat appends a scene beat to the running session page", async function () {
+        it("the Session Log page is the session record's view: a line recorded for a session is listed on its page (issue #382)", async function () {
           this.timeout(20000);
+          const { isCanonicalGM } = await import(`${MODULE_PATH}/multiplayer/gmGate.js`);
+          if (!game.user.isGM || !isCanonicalGM()) { this.skip(); return; }
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const title = `QUENCH TEST — Scene beat ${Date.now()}`;
+          const { recordEvent, recordSettled } = await import(`${MODULE_PATH}/record/record.js`);
+          const { renderSessionLog } = await import(`${MODULE_PATH}/record/sessionLogView.js`);
+          // A session of the test's own: the world's own record is never written here.
+          const session = `quench-record-${Date.now()}`;
+          const words = `QUENCH TEST — a line of play ${Date.now()}`;
 
-          const page = await wj.appendSessionLogBeat(state, { kind: "lore", title, text: "transient detail" });
+          recordEvent("line", { session, d: { via: "typed" }, text: words });
+          await recordSettled();
+          await renderSessionLog(session);
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
+          const page = slJournal?.pages?.contents?.find(p => p.flags?.[MODULE]?.sessionLogPage?.sessionId === session) ?? null;
           if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
-          assert.isObject(page, "appendSessionLogBeat should return the running page");
-          assert.include(page?.text?.content ?? "", title, "the beat should appear in the page body");
-          assert.include(page?.text?.content ?? "", "Scene log", "the running scene-log section should be present");
+          assert.isObject(page, "the record's first write made the session's page");
+          assert.include(page?.text?.content ?? "", words, "the line is listed under What happened");
+          assert.notInclude(page?.text?.content ?? "", "Scene log", "the detector's Scene log is retired (issue #382 D6)");
         });
       });
 
@@ -2761,6 +2771,40 @@ function registerSystemAssetTests(quench) {
           assert.include(block, "<canonical_move>", "the Face Danger document's text should build the block");
           assert.match(block, /something risky/i, "the block should hold Face Danger's own text");
           assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
+        });
+
+        it("the line reader's catalogue quotes each move's lists as the installed system's move text has them", async function () {
+          // The drift check for a system update (issue #384, D3): src/moves/readerCatalogue.js quotes
+          // the triggers in the module, so a reworded move would leave the
+          // reader told words the game no longer has.
+          this.timeout(30000);
+          const pack = game.packs?.get?.("foundry-ironsworn.starforgedmoves");
+          if (!pack) { this.skip(); return; }
+          const { READER_CATALOGUE } = await import(`${MODULE_PATH}/moves/readerCatalogue.js`);
+          // A move's text as the catalogue quotes it: links to their labels and
+          // tags dropped (as buildCanonicalMoveBlock reduces it), the `__`
+          // emphasis and the list bullets out, every run of whitespace one space.
+          const reduceMoveText = (text) => String(text ?? "")
+            .replace(/@\w+\[[^\]]*\]\{([^}]*)\}/g, "$1")
+            .replace(/<[^>]*>/g, "")
+            .replace(/__/g, "")
+            .replace(/(^|\n)\s*\*\s+/g, "$1")
+            .replace(/\s+/g, " ")
+            .trim();
+          const index = await pack.getIndex();
+          const entries = Array.from(index ?? []);
+          const stale = [];
+          for (const move of READER_CATALOGUE.flatMap(g => g.moves)) {
+            const entry = entries.find(e => e?.name === move.name);
+            const doc = entry ? await pack.getDocument(entry._id ?? entry.id) : null;
+            if (!doc) { stale.push(`${move.id}: no move named "${move.name}" in the pack`); continue; }
+            const text = reduceMoveText(doc.system?.Text ?? "");
+            // The trigger is the move contracts' (held to the pack by moveContracts.test.js); the lists are the catalogue's own.
+            for (const quote of move.list ?? []) {
+              if (!text.includes(reduceMoveText(quote))) stale.push(`${move.id}: "${quote}"`);
+            }
+          }
+          assert.deepEqual(stale, [], `the catalogue quotes what the system's move text does not say:\n${stale.join("\n")}`);
         });
       });
 
@@ -4656,14 +4700,14 @@ function registerPacingTests(quench) {
 
       describe("effectiveDial / scene override math", function () {
         it("base dial returned without override", async function () {
-          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/dials.js`);
           const cfg = { dials: { combat: 9, social: 3 }, sceneOverride: null };
           assert.equal(effectiveDial("combat", cfg), 9);
           assert.equal(effectiveDial("social", cfg), 3);
         });
 
         it("clamps to [0, 10] with extreme modifiers", async function () {
-          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/dials.js`);
           const hot  = { dials: { combat: 9 }, sceneOverride: { modifier:  5, label: "hot"   } };
           const cold = { dials: { downtime: 1 }, sceneOverride: { modifier: -5, label: "quiet" } };
           assert.equal(effectiveDial("combat",   hot),  10);
@@ -4972,6 +5016,26 @@ function registerPacingTests(quench) {
           assert.include(prompt, "paced narration — no move was rolled");
           assert.notInclude(prompt, "Move: paced_narrative.");
           assert.notMatch(prompt, /^Outcome:/m);
+        });
+
+        // Known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD: the detector read the
+        // narration alone, so a person the player named and the narrator did
+        // not got no card under their name.
+        it("carries the player's line beside the narration, with the naming rule — and neither without a line", async function () {
+          if (skipNotGM(this)) return;
+          const {
+            buildCombinedDetectionPrompt,
+            PACED_NARRATIVE_MOVE_ID,
+            PACED_NARRATIVE_OUTCOME,
+          } = await import(`${MODULE_PATH}/entities/entityExtractor.js`);
+          const cs = game.settings.get(MODULE, "campaignState") ?? {};
+          const line = "I greet Tamsin Vey, the salvage broker, by her full name.";
+          const narration = "A woman looks up from a slate when you say her name in full.";
+          const prompt = buildCombinedDetectionPrompt(narration, PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, cs, { playerLines: line });
+          assert.include(prompt, `PLAYER'S LINE:\n${line}\n\nNarration:\n${narration}`);
+          assert.include(prompt, "is that entity's name");
+          assert.include(prompt, "nothing: do not return it");
+          assert.notInclude(buildCombinedDetectionPrompt(narration, PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, cs), "PLAYER'S LINE");
         });
       });
 
@@ -5512,7 +5576,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds          = [];
-          state.campaignRecapCache    = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache    = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5535,7 +5599,10 @@ function registerRecapEndToEndTests(quench) {
                 } catch (err) {
                   console.warn(`${MODULE_ID} | quench: recap body capture failed:`, err);
                 }
-                return { content: [{ type: "text", text: "QUENCH recap text." }] };
+                // The recap answers in cited sentences (issue #382 D11): its one
+                // cites the first line it was sent.
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(capturedUserMessage ?? "")?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap text.", because: [id] }]] }) }] };
               },
             ]], async () => {
               return await getCampaignRecap(
@@ -5572,7 +5639,7 @@ function registerRecapEndToEndTests(quench) {
           // Force the bug condition + invalidate cache.
           const state = game.settings.get(MODULE_ID, "campaignState");
           state.characterIds       = [];
-          state.campaignRecapCache = { text: "", generatedAt: null, chronicleLength: 0 };
+          state.campaignRecapCache = { text: "", generatedAt: null, sourceHash: null };
           await game.settings.set(MODULE_ID, "campaignState", state);
 
           const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -5591,7 +5658,13 @@ function registerRecapEndToEndTests(quench) {
 
             await withStubbedFetch([[
               "api.anthropic.com",
-              () => ({ content: [{ type: "text", text: "QUENCH recap card text." }] }),
+              // A cited sentence (issue #382 D11), citing the first line it was sent.
+              (_target, init) => {
+                let user = "";
+                try { user = JSON.stringify(JSON.parse(init?.body ?? "{}")?.messages ?? []); } catch { user = ""; }
+                const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(user)?.[1] ?? "now-1";
+                return { content: [{ type: "text", text: JSON.stringify({ paragraphs: [[{ text: "QUENCH recap card text.", because: [id] }]] }) }] };
+              },
             ]], async () => {
               await postCampaignRecap(
                 game.settings.get(MODULE_ID, "campaignState"),
@@ -6350,8 +6423,8 @@ function registerFactContinuityTests(quench) {
               assert.isString(prompt, "assembled prompt present");
               assert.include(
                 prompt,
-                "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
-                "Section 6.5 header should appear in the live prompt",
+                "ACTIVE SCENE — WHAT BINDS, AND WHAT THE NARRATION DESCRIBED",
+                "Section 6.5 header should appear in the live prompt (overhaul 2 §5.5)",
               );
               assert.include(
                 prompt,
@@ -7262,7 +7335,8 @@ function registerSettingsRoundTripTests(quench) {
 // chronicleWriter fallback when characterIds is empty. Neither covers:
 //   - the !recap chat-dispatch router (session vs campaign disambiguation)
 //   - the isRecapCommand predicate matrix
-//   - postSessionRecap's empty-card vs counted-moves branches
+//   - postSessionRecap's empty-card vs counted-moves branches (a view of the
+//     session record since issue #382 slice 5: its moves are the record's)
 //   - postCampaignRecap's silent option (no card, returns text)
 //
 // This batch closes those gaps. To avoid spending Claude credit, the
@@ -7277,6 +7351,7 @@ function registerRecapModesTests(quench) {
       const { describe, it, assert, before, after } = context;
 
       const createdMessageIds = [];
+      const createdPages = [];          // Session Log pages a seeded record made (§6)
       let originalState = null;
 
       before(async function () {
@@ -7295,6 +7370,11 @@ function registerRecapModesTests(quench) {
           if (msg?.delete) await msg.delete().catch(() => {});
         }
         createdMessageIds.length = 0;
+        for (const page of createdPages) {
+          await page.delete?.().catch(err =>
+            console.warn(`${MODULE_ID} | quench recapModes: cleanup — deleting a Session Log page failed:`, err?.message ?? err));
+        }
+        createdPages.length = 0;
       });
 
       async function postChat(content) {
@@ -7421,8 +7501,10 @@ function registerRecapModesTests(quench) {
       });
 
       // ── 5: postSessionRecap — empty path ─────────────────────────────────
-      describe("postSessionRecap — empty when no narrator cards in session", function () {
-        it("posts a card with recapEmpty=true when no narratorCard messages match", async function () {
+      // The card is a view of the session record (issue #382 slice 5): a
+      // session whose record holds no move — here, one with no page — is empty.
+      describe("postSessionRecap — empty when the session record holds no move", function () {
+        it("posts a card with recapEmpty=true when the session's record has no move", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
           const { postSessionRecap } = await import(
@@ -7445,38 +7527,40 @@ function registerRecapModesTests(quench) {
             m?.flags?.[MODULE_ID]?.recapType === "session" &&
             m?.flags?.[MODULE_ID]?.recapEmpty === true);
           assert.isObject(emptyCard,
-            "no narrator cards in session → recapEmpty=true card");
+            "no move on the session's record → recapEmpty=true card");
         });
       });
 
-      // ── 6: postSessionRecap — counts a seeded narrator card ──────────────
-      describe("postSessionRecap — counts seeded narrator cards", function () {
-        it("posts a non-empty session card when a matching narratorCard exists", async function () {
+      // ── 6: postSessionRecap — counts the moves on the session's record ───
+      // Seeded with the record's own writer, as rollMove records a roll once
+      // its card is on the table (issue #382 slice 5), on a session of the
+      // test's own: the world's own record is never written here, and the
+      // page the write makes is deleted after.
+      describe("postSessionRecap — counts the moves on the session's record", function () {
+        it("posts a non-empty session card when the session's record holds a move — no narrator card in chat", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
+          const { isCanonicalGM } = await import(`/modules/${MODULE_ID}/src/multiplayer/gmGate.js`);
+          if (!isCanonicalGM()) { this.skip(); return; }
           const { postSessionRecap } = await import(
             `/modules/${MODULE_ID}/src/narration/narrator.js`);
+          const { recordEvent, recordSettled } = await import(`/modules/${MODULE_ID}/src/record/record.js`);
+          const { sessionLogJournal } = await import(`/modules/${MODULE_ID}/src/world/worldJournal.js`);
 
+          const session = `ssn-quench-counted-${Date.now()}`;
           const seed = JSON.parse(JSON.stringify(originalState ?? {}));
-          seed.currentSessionId = "ssn-quench-counted";
+          seed.currentSessionId = session;
           seed.sessionNumber    = 7;
           await game.settings.set(MODULE_ID, "campaignState", seed);
 
-          // Seed a narrator-card message in this session so the recap finds it.
-          const narratorMsg = await ChatMessage.create({
-            content: `<div class="sf-narration-card"><div class="sf-narration-prose">Quench narration probe.</div></div>`,
-            flags: {
-              [MODULE_ID]: {
-                narratorCard:  true,
-                sessionId:     "ssn-quench-counted",
-                moveId:        "face_danger",
-                outcome:       "strong_hit",
-                narrationText: "Quench narration probe.",
-              },
-            },
+          recordEvent("move.resolved", {
+            session, ref: { res: `quench-res-${Date.now()}` },
+            d: { moveId: "face_danger", moveName: "Face Danger", rollKind: "action", outcome: "strong_hit", isMatch: false },
           });
-          if (narratorMsg?.id) createdMessageIds.push(narratorMsg.id);
-          await flushMicrotasks();
+          await recordSettled();
+          const page = sessionLogJournal()?.pages?.contents?.find(p => p.flags?.[MODULE_ID]?.sessionLogPage?.sessionId === session) ?? null;
+          if (page) createdPages.push(page);
+          assert.isObject(page, "the record's write made the session's page");
 
           const beforeIds = new Set(game.messages.contents.map(m => m.id));
           await postSessionRecap(seed, null);
@@ -7492,9 +7576,10 @@ function registerRecapModesTests(quench) {
           assert.isObject(recapCard,
             "a session recap card should be posted");
           assert.notEqual(recapCard.flags[MODULE_ID].recapEmpty, true,
-            "the card should NOT be recapEmpty when a narrator card exists in the session");
+            "the card should NOT be recapEmpty when the session's record holds a move");
           assert.equal(recapCard.flags[MODULE_ID].sessionNumber, 7,
             "the card should carry the seeded sessionNumber");
+          assert.include(recapCard.content ?? "", "Face Danger → Strong Hit", "the card lists the recorded move");
         });
       });
 
@@ -11295,42 +11380,31 @@ function registerSessionPanelTests(quench) {
         if (stateAtStart) await game.settings.set(MODULE_ID, "campaignState", stateAtStart);
       });
 
-      describe("End Session NPC selection — priority (rule: bonded > active > threat > fallback)", function () {
-        it("selects a bonded connection when one exists", async function () {
-          const { selectEndSessionNPC } = await import(
+      describe("End Session closing — whom it shows (issue #381: the campaign's people by die, else a known settlement, else none)", function () {
+        it("with nobody on record and no active sector, there is no closing", async function () {
+          const { chooseClosingSubject } = await import(
             `${MODULE_PATH}/session/endSessionVignette.js`
           );
-          // Stub listConnections via the campaignState path — the real
-          // module reads via game.journal so we need to inject directly.
-          // Easiest: monkey-patch the module's collaborator with a fake
-          // state that contains a bonded connection journal. The function
-          // tolerates a thrown `listConnections` (returns [] on failure),
-          // so an inline stub is the cleanest test seam.
-          // For this batch, we exercise the public function with a
-          // hand-built state shape; downstream tests should add live
-          // foundry-ironsworn fixtures.
-          const state = { connectionIds: [], sectors: [], activeSectorId: null };
-          const npc = selectEndSessionNPC(state);
-          // With no connections / threats / sector, falls through to fallback.
-          assert.equal(npc.kind, "fallback",
-            "with no live connections or threats, the selector falls back");
-          assert.match(npc.name, /familiar adversary/i,
-            "fallback name should be the documented sentinel");
+          // A hand-built state: no connections, no sector (the World
+          // Journal's threats are the world's own — none in this batch).
+          const state = { connectionIds: [], settlementIds: [], sectors: [], activeSectorId: null };
+          assert.isNull(chooseClosingSubject(state, { messages: [] }),
+            "nobody and nowhere: no closing — the 'familiar adversary' fallback is gone");
         });
 
-        it("uses sector trouble when no connections or threats but a sector is active", async function () {
-          const { selectEndSessionNPC } = await import(
+        it("with nobody on record, a settlement of the active sector", async function () {
+          const { chooseClosingSubject } = await import(
             `${MODULE_PATH}/session/endSessionVignette.js`
           );
           const state = {
-            connectionIds: [],
-            sectors: [{ id: "s1", name: "Glimmer Reach", trouble: "An ancient warning beacon broadcasts." }],
+            connectionIds: [], settlementIds: [],
+            sectors: [{ id: "s1", name: "Glimmer Reach", trouble: "An ancient warning beacon broadcasts.",
+              settlements: [{ id: "st1", name: "Lantern Rest", trouble: "The beacon keeps them awake" }] }],
             activeSectorId: "s1",
           };
-          const npc = selectEndSessionNPC(state);
-          assert.equal(npc.kind, "sector_trouble",
-            "sector trouble should be selected when nothing else exists");
-          assert.match(npc.name, /Glimmer Reach/i, "name should reference the sector");
+          const chosen = chooseClosingSubject(state, { messages: [] });
+          assert.equal(chosen?.option?.kind, "settlement", "a place the table knows");
+          assert.equal(chosen?.option?.name, "Lantern Rest");
         });
       });
 
@@ -12391,21 +12465,41 @@ function registerPromptContractTests(quench) {
         const { narrateSessionVignette } = await narrator();
         const cs = state();
         // As Begin a Session runs it: the PCs at the table are its CHARACTER
-        // blocks (issue #345 AA31).
+        // blocks (issue #345 AA31), and the scene is composed — where the
+        // last session stopped, its rolled material — as the handler composes
+        // it (issue #381).
         const participants = galley.collectGalleyParticipants(cs);
+        const { userMessage, seeds } = await galley.composeOpeningScene(participants, cs);
         await narrateSessionVignette({
-          userMessage: galley.buildGalleyVignetteUserMessage(participants, cs),
+          userMessage,
           campaignState: cs,
           actorIds: participants.active.map(p => p.actor?.id).filter(Boolean),
+          seeds,
         });
       } };
       const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {
         const closing = await import(`${MODULE_PATH}/session/endSessionVignette.js`);
         const { narrateSessionVignette } = await narrator();
         const cs = state();
+        // As End a Session composes it (issue #381): whom it shows — the
+        // table's connection focus names the fixture's NPC, so no die decides
+        // — and its rolled material. A bare world has nobody and nowhere to
+        // show, so End a Session writes no closing there: the mode's prompt
+        // is still checked, from the message alone.
+        const scene = closing.composeClosingScene(cs, { connectionFocus: N.npc })
+          ?? { userMessage: closing.buildEndSessionVignetteUserMessage({ kind: "settlement", name: N.settlement }, cs), seeds: null };
+        await narrateSessionVignette({ userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds });
+      } };
+      const SPOTLIGHT = { name: "Begin Session spotlight vignette", marker: "SPOTLIGHT VIGNETTE", run: async () => {
+        const spotlight = await import(`${MODULE_PATH}/session/spotlightVignette.js`);
+        const { narrateSessionVignette } = await narrator();
+        const cs = state();
+        // As Begin a Session composes it (issue #381 D3): from the Begin
+        // card's d100 — 85, "Peril lies ahead", which needs no record.
+        const scene = spotlight.composeSpotlightScene(cs, { roll: 85 });
         await narrateSessionVignette({
-          userMessage: closing.buildEndSessionVignetteUserMessage(closing.selectEndSessionNPC(cs), cs),
-          campaignState: cs,
+          userMessage: scene.userMessage, campaignState: cs, seeds: scene.seeds,
+          narratorClass: scene.narratorClass, detect: true,
         });
       } };
       const CLOCK = { name: "clock vignette", marker: `The clock "${N.clock}"`, run: async () => {
@@ -12427,7 +12521,7 @@ function registerPromptContractTests(quench) {
           campaignState: state(),
         });
       } };
-      const RECAP = { name: "campaign recap", marker: "## CAMPAIGN CHRONICLE", run: async () => {
+      const RECAP = { name: "campaign recap", marker: "Write a campaign recap", run: async () => {
         const { getCampaignRecap } = await narrator();
         await getCampaignRecap(state(), { forceRefresh: true });
       } };
@@ -12565,19 +12659,24 @@ function registerPromptContractTests(quench) {
           for (const text of sent.slice(1)) assert.equal(text, sent[0], "the standing block differs between two modes");
         });
 
-        it("campaign recap: nothing is sent without a chronicle", async function () {
-          if (fx.otherPcs.length) { this.skip(); return; }   // their chronicles count
+        it("campaign recap: nothing is sent with nothing to retell", async function () {
+          // Its source is the session record (issue #382): a world whose record,
+          // notes and earlier sessions hold nothing gets no recap call.
+          const { campaignRecapSourceOf } = await import(`${MODULE_PATH}/record/recapView.js`);
+          if (!(await campaignRecapSourceOf(state())).empty) { this.skip(); return; }
           const since = stub.requests.length;
           await RECAP.run();
           assert.isFalse(stub.requests.slice(since).some(r => r.user.includes(RECAP.marker)),
-            "with no chronicle entry the recap makes no call");
+            "with nothing on the record the recap makes no call");
         });
 
         it("Private Channel: no shared story", async function () {
           const request = await capture(PRIVATE);
           carries(request, "ROLE", PRIVATE.name);
           carries(request, "CHARACTER", PRIVATE.name, [N.pcA]);
-          for (const name of ["LAST SESSION", "ENTITIES IN SCENE", "ACTIVE SCENE", "CAMPAIGN PREMISE"]) {
+          // LAST SESSION is read from the world's Session Log (issue #382), which
+          // other batches have written to: it is not this bare campaign's to lack.
+          for (const name of ["ENTITIES IN SCENE", "ACTIVE SCENE", "CAMPAIGN PREMISE"]) {
             lacks(request, name, PRIVATE.name);
           }
         });
@@ -12625,13 +12724,13 @@ function registerPromptContractTests(quench) {
           });
           await setCombatTrackPosition(fight.id, "bad_spot");
 
-          // The campaign: last session's summary (kept by the real mint), the
-          // premise, every player's safety lines, the recap's cache (so the
-          // session's first narration makes no recap call).
+          // The campaign: the premise, every player's safety lines, the
+          // recap's cache (so the session's first narration makes no recap
+          // call). Last session's summary is read from the session record
+          // (issue #382): its Session Log page's story, below.
           const cs = {
             currentSessionId: "quench-contract-s1", sessionNumber: 1, sessionActive: true,
             sessionStartedId: "quench-contract-s1",   // begun: its number is its own (issue #330 D12)
-            sessionSummary: { text: N.lastSession, sessionId: "quench-contract-s1", coveredCount: 4, updatedAt: new Date().toISOString() },
             safety: {
               lines: ["No harm to children"], veils: [],
               privateLines: [{ playerId: "quench-contract-player", lines: [N.privateLine] }],
@@ -12644,8 +12743,9 @@ function registerPromptContractTests(quench) {
               establishedAt: new Date().toISOString(),
             },
           };
-          // The recap's cache, made from the chronicle as it stands: the
-          // narrator uses one only while it matches (issue #301 B04).
+          // The recap's cache, made from its source as it stands — the
+          // session record, the sheets, the notes: the narrator uses one
+          // only while that source hashes the same (issue #382).
           const { campaignRecapCacheKey } = await import(`${MODULE_PATH}/narration/narrator.js`);
           cs.campaignRecapCache = {
             text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(),
@@ -12653,6 +12753,11 @@ function registerPromptContractTests(quench) {
           };
           mintSession(cs);
           await game.settings.set(MODULE, "campaignState", cs);
+          // LAST SESSION: session 1's story on its Session Log page, as the
+          // world load copies one a world kept before the record (issue #382
+          // section 9 — the real copy, given the summary such a world held).
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          await wj.keepPreRecordSummaries({ ...cs, previousSessionSummary: { sessionId: "quench-contract-s1", sessionNumber: 1, text: N.lastSession } });
 
           // The scene: the NPC in the frame, a fact about him in the ledger.
           await startScene(state(), { reason: "quench_contract" });
@@ -12744,9 +12849,15 @@ function registerPromptContractTests(quench) {
           assert.include(request.user, `${N.pcB} [he/him]`, "the second PC and his pronouns");
         });
 
+        it("Begin Session spotlight vignette: the Begin card's result, at the interaction latitude (issue #381 D3)", async function () {
+          const request = await capture(SPOTLIGHT);
+          assert.include(request.user, "1. What the vignette shows — Spotlight Vignette (85): Peril lies ahead or lurks just out of view");
+          assert.include(request.system, "NARRATOR PERMISSIONS — INTERACTION MODE");
+        });
+
         it("End Session vignette: the NPC, with his pronouns (PLAYTEST-1712 R)", async function () {
           const request = await capture(CLOSING);
-          assert.include(request.user, `Featured NPC (connection): ${N.npc}`);
+          assert.include(request.user, `Subject (connection): ${N.npc}`);
           assert.include(request.user, "Pronouns: he/him");
         });
 
@@ -12761,15 +12872,29 @@ function registerPromptContractTests(quench) {
           ]);
         });
 
-        it("campaign recap: the chronicle and the premise, none of the live-scene sections", async function () {
+        it("campaign recap: the record's sessions and the premise, none of the live-scene sections", async function () {
           const request = await capture(RECAP);
-          carries(request, "CAMPAIGN CHRONICLE", RECAP.name, [N.chronicle]);
+          // The fixture's automatic Chronicle entry is of a session with no
+          // record (issue #382): the recap is given it as an earlier session's.
+          carries(request, "EARLIER SESSIONS, FROM THE CHRONICLE AND THE SESSION LOG", RECAP.name, [N.chronicle]);
           carries(request, "CAMPAIGN PREMISE", RECAP.name, [N.premise]);
           carries(request, "CHARACTER", RECAP.name);
           carries(request, "PARTY", RECAP.name, [N.pcA, N.pcB]);
-          for (const name of ["LAST SESSION", "STORY SO FAR", "CLOCKS", "OPEN PROGRESS TRACKS", "NARRATOR PERMISSIONS", "RESPONSE FORMAT"]) {
+          for (const name of ["LAST SESSION", "STORY SO FAR", "CLOCKS", "OPEN PROGRESS TRACKS", "NARRATOR PERMISSIONS", "RESPONSE FORMAT", "ACTIVE SCENE"]) {
             lacks(request, name, RECAP.name);
           }
+        });
+
+        // A recap is told how things stand beside the record it retells
+        // (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN), read live from the
+        // sheets and tracks (issue #382) — never as the binding ACTIVE SCENE
+        // block issue #374 A1 took out (lacked, above).
+        it("campaign recap: where things stand — read from the sheets, under its own heading", async function () {
+          const request = await capture(RECAP);
+          const section = carries(request, "WHERE THINGS STAND", RECAP.name, [N.pcA]);
+          assert.notInclude(section.text, "binding", "nothing of it is given as binding");
+          assert.include(request.system, "A recap says only what its sources say.", "the recap's sources rule");
+          assert.include(request.user, "Nothing inferred, nothing filled in between two lines", "…said again under the record");
         });
 
         it("Private Channel: the shared story, and only its player's own Private Lines (#286 D1)", async function () {
@@ -12809,6 +12934,28 @@ function registerPromptContractTests(quench) {
           stub.prose.push("Vance's tug drifts three klicks sunward, engines dark.");
           await withSilencedNotifications(() => SCENE.run());
           carries(await capture(PACED), "RECENT SCENE", "the next narration", ["three klicks sunward"]);
+        });
+
+        // Known-issues SCENE-ANSWER-NOT-A-CAMERA: an answer is the fact, said
+        // plainly, and nothing of it is written back — a fact block its reply
+        // carries anyway is dropped.
+        it("an @scene answer is asked for no fact block and records none: the frame and the truths are as they were", async function () {
+          this.timeout(30000); // a narration and a wait for any late write; Mocha's default is 2 s
+          const ledger = () => JSON.stringify([state()?.sceneFrame ?? null, (state()?.sceneTruths ?? []).map(t => t.fact)]);
+          const before = ledger();
+          stub.prose.push("Vance's tug is three klicks sunward.");
+          stub.sidecars.push({
+            newTruths:    [{ subject: N.npc, fact: "QUENCH-SCENE-ANSWER: never recorded" }],
+            stateChanges: [],
+            sceneFrame:   { location: "QUENCH-SCENE-ANSWER", present: [N.npc], situation: "never recorded", question: "never asked?" },
+          });
+          const request = await capture(SCENE);
+          carries(request, "ANSWER NOW", SCENE.name);
+          lacks(request, "RESPOND NOW", SCENE.name);
+          lacks(request, "NARRATOR PERMISSIONS", SCENE.name);
+          assert.notInclude(request.user, "atmospheric", "an answer is asked for no description");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          assert.equal(ledger(), before, "the answer wrote nothing to the scene's frame or truths");
         });
 
         it("the inciting incident becomes the premise and enters the recent scene (v1.7.8 F7, PLAYTEST-1712 S)", async function () {
@@ -13200,13 +13347,22 @@ function registerBatchModeTests(quench) {
           const card = roundCards()[0];
           const f = card.flags[MODULE];
           assert.isTrue(!before.has(card.id), "a new card");
-          assert.equal(f.roundNumber, 1);
+          assert.equal(f.roundId, first.id, "the round's card, by the round's id");
+          assert.notProperty(f, "roundNumber", "the round's number was the `!recap session` card's reading of the chat (issue #382 slice 5)");
           assert.equal(f.sessionId, game.settings.get(MODULE, "campaignState")?.currentSessionId, "the session's card");
           assert.isString(f.narrationId);
           assert.include(f.narrationText ?? "", "QUENCH BATCH", "the narration's prose");
           assert.lengthOf(f.roundEntries ?? [], 1, "the card lists the one player who acted, and no one else");
-          assert.deepInclude(f.roundEntries[0], { userId: game.user.id, actorId: world.pc.id, playerText: TEXT, moveId: "face_danger" });
+          assert.deepInclude(f.roundEntries[0], { userId: game.user.id, actorId: world.pc.id, playerText: TEXT });
           assert.include(["strong_hit", "weak_hit", "miss"], f.roundEntries[0].outcome);
+          assert.include(card.content ?? "", "Face Danger", "the card lists the move the entry rolled");
+          // The round's roll is on the session record, where `!recap session` reads it (issue #382 slice 5).
+          const { recordSettled } = await import(`${MODULE_PATH}/record/record.js`);
+          const { readRecord } = await import(`${MODULE_PATH}/record/read.js`);
+          await recordSettled();
+          const rolled = (readRecord({ session: f.sessionId }).sessions[0]?.beats ?? []).filter(b => b.move && b.round === first.id);
+          assert.lengthOf(rolled, 1, "the round's one roll is on the session record");
+          assert.equal(rolled[0].move.moveId, "face_danger", "…its move");
 
           const result = game.messages.contents.find(m => m.flags?.[MODULE]?.moveResolution && m.flags[MODULE].roundId === first.id);
           assert.isOk(result, "the move's result card carries the round");
@@ -13613,5 +13769,70 @@ function registerDocumentHookAssumptionTests(quench) {
       });
     },
     { displayName: "STARFORGED: Document Hook Assumptions (issue #364)", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION RECORD — an append sends one event (issue #382)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSessionRecordTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sessionRecord",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      let journal = null;
+
+      before(async function () {
+        this.timeout(15000);
+        if (!game.user.isGM) { this.skip(); return; }
+        // A scratch journal: the world's own Session Log is never written here.
+        journal = await JournalEntry.create({
+          name: "Quench — session record scratch",
+          pages: [{ name: "Scratch", type: "text", text: { format: 1, content: "" } }],
+        });
+      });
+
+      after(async function () {
+        await journal?.delete().catch(err =>
+          console.warn(`${MODULE_ID} | quench sessionRecord: cleanup — deleting the scratch journal failed:`, err?.message ?? err));
+      });
+
+      describe("an append to the record is one event on the wire (store.js appendRecordEvents)", function () {
+        it("a dotted update of one key of the record's events sends that key and the counter alone", async function () {
+          this.timeout(15000);
+          const page = journal.pages.contents[0];
+          const base = `flags.${MODULE_ID}.sessionRecord`;
+          const bulky = "x".repeat(4000);
+          await page.update({
+            [`${base}.v`]: 1,
+            [`${base}.events.evFirst`]: { id: "evFirst", k: "line", text: bulky },
+            [`${base}.seq`]: 1,
+          });
+
+          const sent = [];
+          const emit = game.socket.emit;
+          game.socket.emit = function (event, ...args) {
+            if (event === "modifyDocument") sent.push(JSON.parse(JSON.stringify(args[0] ?? null)));
+            return emit.call(this, event, ...args);
+          };
+          try {
+            await page.update({ [`${base}.events.evSecond`]: { id: "evSecond", k: "line", text: "y" }, [`${base}.seq`]: 2 });
+          } finally {
+            game.socket.emit = emit;
+          }
+
+          const request = sent.find(r => r?.action === "update" && r?.type === "JournalEntryPage");
+          assert.ok(request, "the append was sent as a JournalEntryPage update");
+          const record = request.operation?.updates?.[0]?.flags?.[MODULE_ID]?.sessionRecord ?? null;
+          assert.deepEqual(Object.keys(record?.events ?? {}), ["evSecond"], "only the new event went over the socket");
+          assert.equal(record?.seq, 2);
+          assert.notInclude(JSON.stringify(request), bulky, "the session's earlier event was not resent");
+          // The world merged it: both events stand on the page.
+          assert.deepEqual(Object.keys(page.flags[MODULE_ID].sessionRecord.events).sort(), ["evFirst", "evSecond"]);
+        });
+      });
+    },
+    { displayName: "STARFORGED: Session record — an append sends one event" },
   );
 }

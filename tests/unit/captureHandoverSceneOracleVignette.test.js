@@ -13,6 +13,10 @@
  * gm-1, keyed, the lower id — is away): Gus's narration is held; Gina
  * joins and is canonical; the narration lands on Gus's client and is
  * captured there — once.
+ *
+ * An `@scene` answer has no capture to hand over any more: an answer is not
+ * mined (known-issues SCENE-ANSWER-NOT-A-CAMERA; scheduleSceneAnswerCapture
+ * is retired). Its case here holds that, across the same handover.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -102,10 +106,11 @@ describe('CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE — the capture runs where the 
     expect(draftNames()).toEqual(['Ilsa Marr']);
   }, 60_000);
 
-  it('an @scene answer: the same', async () => {
+  it('an @scene answer is mined by neither GM: an answer records nothing', async () => {
     await narratedAcrossHandover('@scene who is waiting at the hatch?');
-    expect(detections().map(c => c.client)).toEqual(['gm-2']);        // was: none
-    expect(draftNames()).toEqual(['Ilsa Marr']);
+    expect(table.cards(f => f.sceneResponse && !f.sceneFallback).length, 'the answer posted (setup)').toBe(1);
+    expect(detections()).toEqual([]);
+    expect(draftNames()).toEqual([]);
   }, 60_000);
 
   it('a clock vignette: the same', async () => {

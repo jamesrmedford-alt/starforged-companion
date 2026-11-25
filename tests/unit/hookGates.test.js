@@ -65,7 +65,7 @@ const LOCAL_ONLY = {
   'src/ui/sessionPanel.js deleteItem SessionPanelApp.onOpenThreadsChanged': 're-renders this client\'s Session Panel when a vow is removed',
   'src/ui/sessionPanel.js updateJournalEntry SessionPanelApp.onOpenThreadsChanged': 're-renders this client\'s Session Panel when the Progress Tracks journal changes',
   'src/ui/sessionPanel.js createJournalEntryPage SessionPanelApp.onOpenThreadsChanged': 're-renders this client\'s Session Panel when a plan is filed',
-  'src/ui/sessionPanel.js updateJournalEntryPage SessionPanelApp.onOpenThreadsChanged': 're-renders this client\'s Session Panel when a plan is revealed or changed',
+  'src/ui/sessionPanel.js updateJournalEntryPage SessionPanelApp.onPageChanged': 're-renders this client\'s Session Panel when a plan is revealed or changed — never for the session record\'s own appends (issue #382)',
   'src/ui/sessionPanel.js deleteJournalEntryPage SessionPanelApp.onOpenThreadsChanged': 're-renders this client\'s Session Panel when a plan is removed',
   'src/ui/entityPanel.js updateJournalEntry inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js updateJournalEntryPage inline#1': 're-renders this client\'s Entity Panel',

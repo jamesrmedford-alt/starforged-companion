@@ -25,6 +25,7 @@ import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 import { stakesShown } from '../moves/stakes.js';
+import { refusalNote } from '../moves/contracts/obligations.js';
 import { registerSpotlightDefaultSetting } from '../narration/spotlightDefault.js';
 import { defaultSalienceThreshold } from '../world/salience.js';
 
@@ -418,7 +419,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH, {
     name:    'Scene Response Length (sentences)',
-    hint:    'Target number of sentences for scene interrogation responses. Range: 1–4.',
+    hint:    'The most sentences an @scene answer runs to: it gives the fact asked for and stops. Range: 1–4.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -549,7 +550,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PACING_ENABLED, {
     name:    'Pacing Classifier Enabled',
-    hint:    'Master switch. When enabled, a Haiku pre-classifier decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
+    hint:    'Master switch. When enabled, the line reader (Claude Sonnet 5.5) reads undecorated chat input and the dials decide whether it triggers a move, is handled as narration, or is narrated with an inline move suggestion. When disabled, every input is read as a move.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -1527,7 +1528,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         <hr class="mischief-divider">
         <h4 class="mischief-section-heading">Pacing Classifier</h4>
         <p class="pacing-pane-intro">
-          When enabled, a small Haiku call decides whether each undecorated chat input should
+          When enabled, a small Claude call (Sonnet 5.5) decides whether each undecorated chat input should
           trigger a move, be handled as pure narration, or end with an inline move suggestion.
           Dials below set how move-leaning each scene type should be on a 0–10 scale.
           <strong>Combat</strong> is a fight and any other immediate physical danger —
@@ -1766,12 +1767,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="sceneQueryEnabled" ${ctx.sceneQueryEnabled ? 'checked' : ''} ${dis}>
             Enable @scene questions
           </label>
-          <span class="narrator-field-hint">A message starting with @scene asks the narrator to describe the scene, with no move.</span>
+          <span class="narrator-field-hint">A message starting with @scene asks the narrator a question about the story. It answers plainly, with no move, and nothing in the answer is recorded.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene response length (sentences)</label>
           <input class="settings-input narrator-number-input" name="sceneResponseLength"
                  type="number" min="1" max="4" value="${ctx.sceneResponseLength}" ${dis}>
+          <span class="narrator-field-hint">The most sentences an @scene answer runs to — it gives the fact and stops. Default 2.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Scene context cards</label>
@@ -2041,7 +2043,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Move AI</dt>
-            <dd>claude-haiku-5-5 (Haiku 5.5) · system prompt cached</dd>
+            <dd>claude-sonnet-5-5 (Sonnet 5.5) · reads each line: is it a move, and which · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
@@ -2577,6 +2579,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
       forced:          this.#forced,
+      // The move gate's soft refusal (overhaul 4, D2): the sheet says the
+      // move would change nothing. Accept rolls it at the GM's word.
+      softRefusal:     interp.softRefusal?.why ? interp.softRefusal : null,
     };
   }
 
@@ -2589,6 +2594,12 @@ export class MoveConfirmDialog extends ApplicationV2 {
     ` : '';
 
     const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities, context.statUsed);
+    const refusalBlock = context.softRefusal ? `
+      <div class="confirm-cannot-make">
+        <span class="confirm-field-label">The sheet says</span>
+        <p class="confirm-cannot-make-text">${escapeAttr(refusalNote(context.softRefusal))}</p>
+        <p class="sf-ability-hint">Accept rolls it anyway, at the GM's word; the move card says so.</p>
+      </div>` : '';
 
     const html = `
       <div class="sf-move-confirm">
@@ -2604,6 +2615,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <span class="confirm-field-label">Interpretation</span>
           <p class="confirm-rationale-text">${escapeAttr(context.rationale)}</p>
         </div>
+        ${refusalBlock}
         ${renderStakesBlock(context.stakes)}
         ${mischiefBlock}
         ${abilitiesBlock}
@@ -2657,6 +2669,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
         // Whose "+its health" / "+integrity" was picked, when two assets
         // offered it (COMPANION-TRIGGER-SWAP-UNCUED).
         this.#interp.appliedStatAssetId = pickedStatAssetId || null;
+        // A soft refusal accepted: the GM's word over the sheet's (D2) — the
+        // roll's gate passes it, and the move card says so.
+        if (this.#interp.softRefusal) this.#interp.gateOverride = true;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);

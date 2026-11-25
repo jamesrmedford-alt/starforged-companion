@@ -30,6 +30,18 @@ function makeVow(id, name, vowId, connectionName = "Sable") {
   return item;
 }
 
+/** Kira's connection with Sable — a bond Item on her sheet: what the won fight's 🤝 asks of (overhaul 4, the move gate's THEIR_CONNECTION). */
+function makeSableBond() {
+  const item = {
+    id: "bond-sable", name: "Sable", type: "progress",
+    system: { subtype: "bond", rank: "dangerous", current: 0, completed: false },
+    flags: { [MODULE_ID]: { connectionId: "rec-sable" } },
+    update: async (changes) => { if ("system.current" in changes) item.system.current = changes["system.current"]; return item; },
+    setFlag: async (mod, key, val) => { (item.flags[mod] ??= {})[key] = val; },
+  };
+  return item;
+}
+
 beforeAll(async () => {
   table = await simulateTable({ users: [USERS.GM, USERS.P1] });
 }, 30_000);
@@ -41,7 +53,7 @@ beforeEach(async () => {
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "sess-1", sessionNumber: 2, connectionIds: ["conn-sable"] },
   } } });
   vow = makeVow("v-crew", "Free Sable's crew", "vid-crew");
-  kira = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, items: { contents: [vow] } });
+  kira = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, items: { contents: [vow, makeSableBond()] } });
   sable = table.addActor({
     id: "conn-sable", name: "Sable", type: "character",
     flags: { [MODULE_ID]: { entityType: "connection", connection: {

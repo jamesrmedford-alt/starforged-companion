@@ -1,3 +1,4 @@
+/* global makeTestActor -- tests/setup.js */
 /**
  * STARFORGED COMPANION
  * tests/unit/campaignRecapCardEscaped.test.js
@@ -20,7 +21,9 @@ vi.mock("../../src/system/campaignTruths.js", async () => {
   return { ...actual, buildCampaignTruthsBlock: vi.fn(async () => "") };
 });
 
-import { postCampaignRecap, postSessionRecap, postNarrationCard, campaignRecapCacheKey } from "../../src/narration/narrator.js";
+import { postCampaignRecap, postSessionRecap, campaignRecapCacheKey } from "../../src/narration/narrator.js";
+import { installJournalMock } from "../helpers/fullStateFixture.js";
+import { recordedEvent, seedSessionRecord } from "../helpers/sessionRecordSeed.js";
 
 const MODULE_ID = "starforged-companion";
 const KEY = `${MODULE_ID}.campaignState`;
@@ -70,17 +73,29 @@ describe("X24 — the campaign recap card escapes the model text it renders", ()
     expect(content).not.toMatch(/npc&gt;|<npc>/);
   });
 
-  it("control: the session recap card escapes the sentence it quotes", async () => {
-    const cs = { currentSessionId: SESSION, sessionNumber: 3 };
-    game.settings._store.set(KEY, cs);
-    await postNarrationCard("<signal lost> crackles through the deck. You wait.",
-      { moveId: "face_danger", outcome: "weak_hit", _id: "res-1" }, cs, { narrationId: "nar-1" });
-    global.game.messages = { contents: ChatMessage._created.slice() };
+  // The session recap card quotes no narration since issue #382 slice 5 (it is
+  // a view of the session record: a line a move); the names it shows are text.
+  it("control: the session recap card escapes the names it shows, and quotes no narration", async () => {
+    const journals = installJournalMock();
+    try {
+      game.actors._set("pc-vex", makeTestActor({ id: "pc-vex", name: "Vex <signal lost> & Kira" }));
+      const cs = { currentSessionId: SESSION, sessionNumber: 3 };
+      game.settings._store.set(KEY, cs);
+      await seedSessionRecord(SESSION, [
+        recordedEvent(SESSION, "move.resolved", { who: { actor: "pc-vex" }, ref: { res: "res-1" }, d: { moveId: "face_danger", outcome: "weak_hit" } }),
+        recordedEvent(SESSION, "narration", { who: { actor: "pc-vex" }, ref: { nar: "nar-1", res: "res-1" }, d: { mode: "move" },
+          text: "<signal lost> crackles through the deck. You wait." }),
+      ], { number: 3 });
 
-    await postSessionRecap(cs);
+      await postSessionRecap(cs);
 
-    const card = ChatMessage._created.at(-1);
-    expect(card.flags[MODULE_ID].recapType).toBe("session");
-    expect(card.content).toContain("&lt;signal lost&gt; crackles through the deck");
+      const card = ChatMessage._created.at(-1);
+      expect(card.flags[MODULE_ID].recapType).toBe("session");
+      expect(card.content).toContain("Vex &lt;signal lost&gt; &amp; Kira — Face Danger → Weak Hit");
+      expect(card.content).not.toContain("<signal lost>");
+      expect(card.content).not.toContain("crackles through the deck");
+    } finally {
+      journals.restore();
+    }
   });
 });

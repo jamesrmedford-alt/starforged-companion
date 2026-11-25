@@ -44,6 +44,7 @@ import { isSessionActive, sessionMinutesActive, sessionNeedsMint, sessionLastSee
 import { tableVows, openThreadRows } from "../session/openThreads.js";
 import { listOpenProgressTracks } from "./progressTracks.js";
 import { plansShownToTable, TABLE_VIEW_SETTING } from "../world/secrets.js";
+import { isRecordWrite } from "../record/events.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -102,7 +103,7 @@ export class SessionPanelApp extends ApplicationV2 {
       Hooks.on("deleteItem", SessionPanelApp.onOpenThreadsChanged);
       Hooks.on("updateJournalEntry", SessionPanelApp.onOpenThreadsChanged);
       Hooks.on("createJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
-      Hooks.on("updateJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("updateJournalEntryPage", SessionPanelApp.onPageChanged);
       Hooks.on("deleteJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
     }
     SessionPanelApp.#instance.render({ force: true });
@@ -114,6 +115,16 @@ export class SessionPanelApp extends ApplicationV2 {
    * track or a plan may have changed. This client's panel only.
    */
   static onOpenThreadsChanged() {
+    SessionPanelApp.rerenderIfOpen();
+  }
+
+  /**
+   * updateJournalEntryPage: a plan's page changed — but never for the session
+   * record's own writes, which append to a Session Log page on every beat
+   * (issue #382): nothing What's open lists.
+   */
+  static onPageChanged(_page, _change, options) {
+    if (isRecordWrite(options)) return;
     SessionPanelApp.rerenderIfOpen();
   }
 

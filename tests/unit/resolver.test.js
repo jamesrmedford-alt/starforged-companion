@@ -1163,12 +1163,13 @@ describe("buildOracleSeeds", () => {
       expect(buildOracleSeeds("face_danger", "weak_hit",   false)).toBeNull();
     });
 
-    it("seeds Spotlight Vignette on begin_a_session", () => {
-      rollOracle.mockImplementation((t) =>
-        t === "spotlight_vignette" ? { result: "Flashback reveals X" } : { result: "—" }
-      );
-      const seeds = buildOracleSeeds("begin_a_session", "strong_hit", false);
-      expect(seeds.results[0]).toContain("Spotlight vignette: Flashback reveals X");
+    it("rolls no Spotlight Vignette for begin_a_session — the spotlight is the Begin a Session dialog's (issue #381)", () => {
+      // A line read as Begin a Session seeded its narration with a spotlight
+      // no card showed. The spotlight is rolled on the Begin card, and
+      // narrated from that roll as its own scene.
+      rollOracle.mockImplementation(() => ({ result: "Flashback reveals X" }));
+      expect(buildOracleSeeds("begin_a_session", "strong_hit", false)).toBeNull();
+      expect(rollOracle).not.toHaveBeenCalledWith("spotlight_vignette");
     });
 
     it("seeds Decisive Action Cost only on weak hit", () => {

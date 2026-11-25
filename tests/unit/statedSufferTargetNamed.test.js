@@ -53,12 +53,12 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { normaliseStakes, statedPrice } from "../../src/moves/stakes.js";
 import { resolveStatedSufferTarget } from "../../src/moves/statEnrichment.js";
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
+const isInterpreter = (call) => isReaderCall(call);
 const MISS = [0.55, 0.65, 0.1];   // challenge 6, 7; action die 1 — a miss (momentum 2 cannot burn it)
 const MISS_LINE = "The bike's frame cracks against the far lip of the gap.";
 const NARRATION = 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
@@ -114,8 +114,8 @@ describe("a stated vehicle price lands on the vehicle the interpreter names (iss
 
     // The interpreter was asked to name it, with the roller's vehicles listed.
     const reading = table.claude.calls.filter(isInterpreter).at(-1);
-    expect(reading.system).toContain('also give "target"');
-    expect(reading.userText).toContain(`Kira's support vehicles: "Hoverbike"`);
+    expect(reading.system).toContain('with "target" only for withstand_damage and companion_takes_a_hit');
+    expect(reading.userText).toContain('- Support vehicles: "Hoverbike"');
     // The move rolled an action stat: it has no vehicle of its own.
     expect(table.cards(f => f.moveResolution)[0].content).toContain("+edge (2)");
 

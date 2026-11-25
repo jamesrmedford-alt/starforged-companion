@@ -38,8 +38,10 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => ({
 import { registerChatHook } from '../../src/index.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 
 const MODULE_ID = 'starforged-companion';
+const KIRA = { _id: 'c-kira', name: 'Kira', rank: 'dangerous', bonded: true, active: true, relationshipTicks: 40 };
 
 beforeEach(() => {
   Hooks._handlers.clear();
@@ -49,12 +51,12 @@ beforeEach(() => {
     get: (id) => (id === 'gm-1' ? { id: 'gm-1', isGM: true, active: true } : null),
   });
   global.game.user = global.game.users[0];
-  game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash' }));
+  // Kira is Ash's connection: her NPC card, and the bond Item on Ash's sheet
+  // keyed to it (overhaul 4 — an NPC card alone is a person).
+  game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash', items: { contents: [bondItemFor(KIRA)] } }));
   game.actors._set('npc-kira', makeTestActor({
     id: 'npc-kira', name: 'Kira', hasPlayerOwner: false,
-    flags: { [MODULE_ID]: { entityType: 'connection', connection: {
-      _id: 'c-kira', name: 'Kira', rank: 'dangerous', bonded: true, active: true, relationshipTicks: 40,
-    } } },
+    flags: { [MODULE_ID]: { entityType: 'connection', connection: { ...KIRA } } },
   }));
   game.settings._store.set(`${MODULE_ID}.campaignState`, {
     ...CampaignStateSchema, sessionActive: true, pendingMove: false, connectionIds: ['npc-kira'],
@@ -85,7 +87,9 @@ describe('Test Your Relationship', () => {
 
   it('an un-bonded connection adds nothing', async () => {
     const kira = game.actors.get('npc-kira');
-    kira.flags[MODULE_ID].connection.bonded = false;
+    const unbonded = { ...KIRA, bonded: false, relationshipTicks: 8 };
+    kira.flags[MODULE_ID].connection = unbonded;
+    game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash', items: { contents: [bondItemFor(unbonded)] } }));
     control.interpret = { moveId: 'test_your_relationship', moveName: 'Test Your Relationship', statUsed: 'heart', adds: 0, moveTarget: 'Kira', rationale: 't' };
     const interp = await play('Kira finds out I sold the data; I try to win back her trust.');
     expect(interp.adds ?? 0).toBe(0);

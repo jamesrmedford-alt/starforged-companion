@@ -1,0 +1,723 @@
+/**
+ * STARFORGED COMPANION
+ * src/moves/contracts/obligations.js — what a narration must tell, and must not
+ *
+ * Overhaul 4, "moves as contracts" (decision D8). One block in a narration's
+ * user message — last before its instruction, never in a cached block
+ * (rules/narrator-memory.md invariant 7b) — in three lists, a tag a line:
+ *
+ *   TELL     this has happened
+ *   NOT YET  the table has not decided this; bring the beat to it and stop
+ *   NOT SO   never tell it as true
+ *
+ * Each line is an obligation `{ kind, list, text }`; OBLIGATION_KINDS holds
+ * one row a kind — its list and the class of check that holds a narration to
+ * it (slice 4: "certain" a regular expression, "floor" a lexical minimum,
+ * "judge" a tripwire that sends a small model call, "logged" the post-
+ * narration audit). The texts keep the words of the blocks they replace,
+ * line for line — those words were tuned in live runs:
+ *
+ *   [outcome]    MOVE OUTCOME is what happened (new)
+ *   [stakes]     what the player saw before the roll, and which of it this
+ *                outcome delivers (stakes.js formatStakesBlock, issue #353 R1)
+ *   [price]      a miss whose price is one of the player's choices, as the
+ *                choice stands (formatPriceChoiceBlock — EXPLORE-WAYPOINT-
+ *                MATCH-MISS-ADVISORY, SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE)
+ *   [cost]       a cost that is its player's to choose, not chosen yet
+ *                (formatOpenChoiceBlock — COST-NARRATED-BEFORE-IT-IS-CHOSEN)
+ *   [chosen]     the cost the player chose before this narration (new)
+ *   [fight]      an Enter the Fray whose fight is offered, or was declined
+ *                (formatFightOfferBlock — FIGHT-NARRATED-BEFORE-IT-IS-BEGUN)
+ *   [vow]        a vow fulfilled says what it asked for (narratorPrompt.js
+ *                formatVowFulfilledBlock — VOW-FULFILLED-WITH-NOBODY-NAMED)
+ *   [recommit]   a progress miss's recommit is the player's (new)
+ *   [milestone]  Reach a Milestone's headway, as the scene showed it (new)
+ *   [oracle]     a yes/no answer binds the narration (formatOracleAnswerRule —
+ *                ORACLE-NO-NARRATED-AS-YES)
+ *   [match]      a match's twist, never the word (MATCH_TOLD_AS_TWIST)
+ *   [premise]    a refusal's premise, told as not so (slice 1 —
+ *                NOTHING-TO-RECOVER-UNTOLD)
+ *   [offer]      the move offered and not made (slice 1 — OFFERED-MOVE-
+ *                NARRATED-AS-DONE; SUGGESTED MOVE's "It has not been made…")
+ *   [overridden] a soft refusal the GM rolled anyway — told as rolled (slice 1)
+ *   [state]      what the sheet says of a person, a vow or a fight the beat
+ *                touches (TRACK-TOLD-AS-A-BOND — a full relationship track
+ *                told as a bond)
+ *   [sheet]      no sheet changes in narration but what TELL names
+ *   [apparatus]  no dice, no sheet number, no outcome's or move's name
+ *
+ * The table's cards a result's obligations read (unansweredCardsFor — moved
+ * here from resultUpgrade.js withUnansweredCards): the outcome's choice card
+ * (open, or picked and which option), the threshold card (the fight offered,
+ * begun or declined); the price choice is read by resultUpgrade.js
+ * priceChoiceStatus and settled on the resolution (resolver.js
+ * settlePriceChoice) before the kinds are built.
+ */
+
+import { moveDisplayName } from "../../system/i18n.js";
+import { MOVES } from "../../schemas.js";
+import { stakesShown, stakesLine } from "../stakes.js";
+import { findThresholdCard } from "../combatThreshold.js";
+import { contractFor } from "./table.js";
+
+const MODULE_ID = "starforged-companion";
+
+/** The three lists, in the order the block renders them. */
+const OBLIGATION_LISTS = Object.freeze(["TELL", "NOT YET", "NOT SO"]);
+
+const LIST_HEADINGS = Object.freeze({
+  "TELL":    "TELL — this has happened:",
+  "NOT YET": "NOT YET — the table has not decided this; bring the beat to it and stop:",
+  "NOT SO":  "NOT SO — never tell it as true:",
+});
+
+/** A move id or a name, as the narration's lines name it. */
+const moveName = (move) => (MOVES[move] ? moveDisplayName(move) : String(move ?? "").trim()) || "The move";
+const cap = (s) => String(s ?? "").replace(/^\s*(\S)/, (m, c) => m.replace(c, c.toUpperCase()));
+const sentence = (s) => { const t = String(s ?? "").trim(); return t ? (/[.!?…]$/.test(t) ? t : `${t}.`) : ""; };
+const isHit = (outcome) => outcome === "strong_hit" || outcome === "weak_hit";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The words the old blocks held — kept line for line
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Whether a price choice is not (yet) paid: still open, or declined for what replaces it. */
+function priceChoiceOpen(priceChoice) {
+  return priceChoice?.status === "pending" || priceChoice?.status === "declined";
+}
+
+// How a price still on offer is shown, whatever stands beside it.
+const SHOW_PRICE_ARRIVING = "Show that price as the hardship or threat the miss confronts them with — arriving, about to cost them — and stop there. " +
+  "Do not show its cost as already paid, and do not resolve it: whether it lands is the player's to choose.";
+
+/**
+ * How the narrator is told a price that is one of the player's choices, by
+ * what the other choice does instead (`priceChoice.instead` — resolver.js
+ * priceChoiceOf). Each: `miss` — what [stakes] calls the miss; `offered` and
+ * `show` — the choice still open; `declined` and `after` — the price declined
+ * ("no price is paid" goes between them).
+ */
+const PRICE_ALTERNATIVES = Object.freeze({
+  // Explore a Waypoint's miss with a match: a move made instead of the price.
+  confront_chaos: Object.freeze({
+    miss:     "a miss with a match",
+    offered:  "This miss came with a match: the player may Pay the Price or Confront Chaos instead, and has not chosen yet (a card asks them).",
+    show:     SHOW_PRICE_ARRIVING,
+    declined: "This miss came with a match, and the player chose to Confront Chaos instead of paying a price",
+    after:    "Show the hardship or threat the miss confronts them with and leave it open — " +
+      "what follows is Confront Chaos's to tell: its own roll decides it, and its narration comes after this one.",
+  }),
+  // Sojourn's miss: "The community needs help, or makes a costly demand in
+  // exchange for safe harbor. If you do it, or Swear an Iron Vow to see it
+  // done, resolve this move as a strong hit" — or no relief, and the price
+  // (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE).
+  swear_an_iron_vow: Object.freeze({
+    miss:     "a miss",
+    offered:  "This miss leaves a choice, and the player has not chosen yet (a card asks them): the community needs help, or makes a costly " +
+      "demand in exchange for safe harbor, which they may do or Swear an Iron Vow to see done; or they find no relief and Pay the Price.",
+    show:     "Show the refuge withheld — what the community needs or demands, and that price as what looms if they find no relief: " +
+      "arriving, about to cost them — and stop there. Do not show its cost as already paid, do not show the vow sworn or the help given, " +
+      "and do not resolve it: which it comes to is the player's to choose.",
+    declined: "On this miss the player chose to answer the community's need — to do what it asks, or Swear an Iron Vow to see it done — instead of paying a price",
+    after:    "Show what the community needs, or the costly demand it makes in exchange for safe harbor, and the character taking it on — " +
+      "and leave it there, the refuge not yet given: a vow is Swear an Iron Vow's to tell (its own move, narrated after this one), and once the vow is sworn " +
+      "or the help is done this move is resolved as a strong hit — the refuge it wins is told then, in a narration of its own, not here.",
+  }),
+});
+
+// An alternative the table above does not name: the choice, with nothing said of what the other way is.
+const OTHER_PRICE_ALTERNATIVE = Object.freeze({
+  miss:     "a miss",
+  offered:  "This miss leaves a choice, and the player has not chosen yet (a card asks them): Pay the Price, or the other way the move offers instead.",
+  show:     SHOW_PRICE_ARRIVING,
+  declined: "On this miss the player chose the other way the move offers instead of paying a price",
+  after:    "Show the hardship or threat the miss confronts them with and leave it open — what follows is told after this narration.",
+});
+
+/** How a price choice's alternative is told (PRICE_ALTERNATIVES), whatever it names. */
+function priceAlternative(priceChoice) {
+  const instead = priceChoice?.instead;
+  return typeof instead === "string" && Object.hasOwn(PRICE_ALTERNATIVES, instead) ? PRICE_ALTERNATIVES[instead] : OTHER_PRICE_ALTERNATIVE;
+}
+
+// What no cost still to be chosen may be narrated as, whichever it turns out to be.
+const NO_COST_PAID = "nothing spent, used up, run short, lost or damaged, no harm or strain taken, and no time or ground lost";
+
+/** Whether an Enter the Fray's fight has not been begun: still offered, or declined for a way out. */
+function fightNotBegun(fightOffer) {
+  return fightOffer?.status === "offered" || fightOffer?.status === "declined";
+}
+
+/** A list carried under its line, each item on its own indented row. */
+const items = (list) => list.map(x => `\n  - ${x}`).join("");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The kinds
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One row a kind: its list (a function where the kind's list depends on what
+ * it tells — a price pending is NOT YET, declined NOT SO), its check class
+ * (slice 4), and its text builder.
+ * @type {Readonly<Object<string, { list: string|Function, check: "certain"|"floor"|"judge"|"logged", text: Function }>>}
+ */
+export const OBLIGATION_KINDS = Object.freeze({
+  outcome: Object.freeze({
+    list: "TELL", check: "logged",
+    // A round's entry has no MOVE OUTCOME heading: its outcome is on its own line, above.
+    text: ({ resolution, entry = false }) => {
+      const words = { strong_hit: "a strong hit", weak_hit: "a weak hit", miss: "a miss" }[resolution?.outcome] ?? "the roll's result";
+      return `${entry ? "The outcome above" : "MOVE OUTCOME"} is what happened: ${words}${resolution?.isMatch === true ? ", with a match" : ""}. Tell it as it fell — no better and no worse.`;
+    },
+  }),
+  stakes: Object.freeze({
+    list: "TELL", check: "logged",
+    // What the player saw before the roll (issue #353 R1), and which of it
+    // this outcome delivers. A miss whose price is one of the player's
+    // choices delivers the stated miss only once it is paid ([price]); a
+    // weak hit whose cost is still the player's to choose delivers the hit
+    // and leaves the cost ([cost]); an Enter the Fray whose fight is still
+    // only offered, or declined, delivers its hit as the opening the roll
+    // won, never a blow struck ([fight]).
+    text: ({ resolution }) => {
+      const shown = stakesShown(resolution?.stakes ?? null);
+      const outcome = resolution?.outcome ?? null;
+      const lines = shown.map(s => (s.kind === "hit" ? `On a hit: ${s.text}` : `On a miss: ${s.text}${s.cost ? ` (${s.cost})` : ""}`));
+      const hit  = shown.some(s => s.kind === "hit");
+      const miss = shown.some(s => s.kind === "miss");
+      const priceChoice = resolution?.priceChoice ?? null;
+      let deliver = "";
+      if (isHit(outcome) && hit && fightNotBegun(resolution?.fightOffer)) {
+        deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: the hit as stated is the opening this roll has won — ` +
+          "where it puts them — not a blow already struck. The [fight] line says how far the narration goes.";
+      } else if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
+      else if (outcome === "weak_hit" && hit && resolution?.openChoice) deliver = "This is a weak hit: deliver the hit as stated. Its cost is the player's choice, and is not chosen yet — the [cost] line says how to leave it.";
+      else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
+      else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the [price] line says where it stands.`;
+      else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
+      else if (outcome === "miss") deliver = "This is a miss: the hit did not come. Its cost is the move outcome's, not a stated one.";
+      return `The player saw these before rolling:${items(lines)}${deliver ? `\n  ${deliver}` : ""}`;
+    },
+  }),
+  price: Object.freeze({
+    list: ({ resolution }) => (resolution?.priceChoice?.status === "declined" ? "NOT SO" : "NOT YET"), check: "judge",
+    text: ({ resolution }) => {
+      const priceChoice = resolution.priceChoice;
+      const told  = priceAlternative(priceChoice);
+      const price = stakesLine(priceChoice.price);
+      if (priceChoice.status === "declined") {
+        return "THE PRICE WAS NOT PAID. " +
+          `${told.declined}: no price is paid${priceChoice.stated ? ", and the miss stated before the roll does not come to pass" : ""}. ` +
+          told.after;
+      }
+      return `THE PRICE IS THE PLAYER'S CHOICE. ${told.offered}${price ? ` The price it offers: ${price}` : ""} ${told.show}`;
+    },
+  }),
+  cost: Object.freeze({
+    list: "NOT YET", check: "judge",
+    text: ({ resolution }) => {
+      const openChoice = resolution.openChoice;
+      if (openChoice.kind === "any") {
+        const amount = Number.isFinite(openChoice.amount) && openChoice.amount > 0 ? ` (-${openChoice.amount})` : "";
+        const times  = Number.isFinite(openChoice.count) && openChoice.count > 1 ? `${openChoice.count} suffer moves` : "a suffer move";
+        return "THE COST IS THE PLAYER'S CHOICE. " +
+          `This result costs ${times}${amount}, and which is the player's to choose: momentum, health, spirit, supply, ` +
+          "a companion's health or the vehicle's integrity. A card asks them; they have not chosen. " +
+          "Show the trouble that brings the cost — what goes wrong, what presses on them — and stop before saying what it takes: " +
+          `${NO_COST_PAID}. Which of those it is, the player decides. Never mention the card or the choice.`;
+      }
+      const options = (Array.isArray(openChoice.options) ? openChoice.options : []).map(o => stakesLine(o)).filter(Boolean);
+      return "THE COST IS THE PLAYER'S CHOICE. Part of this result is the player's to choose, on a card they have not answered yet. It offers:" +
+        `${items(options)}\n  What every option has in common has happened: narrate it. Where they differ is the cost, and no cost has been paid: ` +
+        `narrate none of them as taken — ${NO_COST_PAID}. Bring the beat to where the cost falls due, and stop there. ` +
+        "Never mention the card or the choice.";
+    },
+  }),
+  chosen: Object.freeze({
+    list: "TELL", check: "floor",
+    text: ({ resolution, speaker }) => {
+      const who = String(speaker ?? "").trim() || "The player";
+      const labels = resolution.chosen.labels.join("; then ");
+      return `${who} chose ${labels}. Tell what it cost them.`;
+    },
+  }),
+  "chosen-since": Object.freeze({
+    list: "TELL", check: "floor",
+    text: ({ pick }) => `Since the last narration, ${pick.who} chose ${pick.labels.join("; then ")}. `
+      + "Show what it has cost them, in a sentence, before the beat goes on.",
+  }),
+  fight: Object.freeze({
+    list: ({ resolution }) => (resolution?.fightOffer?.status === "declined" ? "NOT SO" : "NOT YET"), check: "judge",
+    text: ({ resolution }) => {
+      const fightOffer = resolution.fightOffer;
+      const footing = fightOffer.position === "in_control" ? " The footing this roll gave them: the upper hand."
+        : fightOffer.position === "bad_spot" ? " The footing this roll gave them: the back foot."
+          : "";
+      if (fightOffer.status === "declined") {
+        return "THE FIGHT WAS NOT BEGUN. " +
+          "This Enter the Fray is rolled, and the player chose to look for a way out instead of beginning the fight. " +
+          "No blow is struck by either side: no shot is fired, and nothing and no one is hit, damaged or hurt. " +
+          "Show the stand-off at its edge — where each side stands, what is drawn or aimed — and leave how they get clear " +
+          `untold: the move that decides it comes after this narration.${footing}`;
+      }
+      return "THE FIGHT IS STILL ONLY OFFERED. " +
+        "This Enter the Fray is rolled, but the fight has not begun: a card asks the player whether to begin it or look " +
+        "for a way out, and they have not answered. " +
+        "Bring the scene to the moment before the first blow, and stop there: where each side stands, what is drawn, " +
+        `aimed or closing, and who has the advantage.${footing} ` +
+        "Nobody has struck yet: no shot is fired, no blow lands, nothing and no one is hit, damaged or hurt, and neither " +
+        "side breaks off or gives way. Where the stakes or the player's line have the fight opening — a first salvo, a " +
+        "first strike — show it as what they are placed to do, about to happen, never as done. Never mention the card or the choice.";
+    },
+  }),
+  vow: Object.freeze({
+    list: "TELL", check: "floor",
+    text: () => "THE VOW IS FULFILLED. " +
+      "This move fulfils a vow. Say what the vow set out to find, do or learn, and only as far as the " +
+      "story holds it: what the recent scene and your instructions state — a hidden plan's truth only " +
+      "where your instructions say this beat ends that vow. Never write that an answer is known, named, " +
+      "found or proved without stating it in this narration. Where the story holds no answer — no name, " +
+      "no face, no place — the vow ends on what was done, and the narration says plainly what is still " +
+      "not known.",
+  }),
+  recommit: Object.freeze({
+    list: "NOT YET", check: "logged",
+    text: () => "The player chooses whether to recommit or give it up; tell neither as done.",
+  }),
+  milestone: Object.freeze({
+    list: "TELL", check: "logged",
+    text: ({ resolution }) => `Tell the headway as the scene has shown it${resolution?.moveTarget ? `: ${String(resolution.moveTarget).trim()}` : ""}.`,
+  }),
+  oracle: Object.freeze({
+    list: ({ part }) => (part === "not" ? "NOT SO" : "TELL"), check: "judge",
+    text: ({ oracle, part }) => {
+      const { answer, asked } = oracle;
+      if (part === "not") {
+        const opposite = answer === "NO" ? "yes" : "no";
+        return `Nothing in the prose may say, show or imply ${opposite}, or leave it open.`;
+      }
+      return `The answer is ${answer}${asked ? `: to "${asked}", the oracle says ${answer.toLowerCase()}` : ""}. ` +
+        "It is the table's answer and it is not yours to change: narrate a scene in which it is " +
+        "true. Where RECENT NARRATION said otherwise, bring the scene into line with the answer here — what " +
+        "was seen or heard was a recording, a relay, an echo or a mistake, or it has stopped — " +
+        "and say so in the story.";
+    },
+  }),
+  match: Object.freeze({
+    list: "TELL", check: "certain",
+    text: () => "This roll came with a match: tell its twist as something that happens in the scene, " +
+      "and never write the word \"match\".",
+  }),
+  premise: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ refusal }) => {
+      const claim = refusal?.premise?.claim ? cap(refusal.premise.claim) : "What the line sets about";
+      const never = refusal?.premise?.never ? `: never ${refusal.premise.never}` : "";
+      return `${claim} is not so — ${sentence(refusal?.why ?? "the sheet says otherwise")} `
+        + `The line sets about it: narrate the attempt meeting the facts, never the premise as real${never}.`;
+    },
+  }),
+  offer: Object.freeze({
+    list: "NOT YET", check: "judge",
+    text: ({ offer }) => `${moveName(offer)} is only offered. It has not been made, and nothing it would decide has happened: `
+      + `narrate up to the point where it would begin and stop there — a course laid in is not yet flown, a wound bared is `
+      + `not yet treated, a question put is not yet answered. The prose never performs the move; the closing sentence offers it.`,
+  }),
+  overridden: Object.freeze({
+    list: "TELL", check: "logged",
+    text: ({ note }) => `The roll was made at the GM's word; the sheet says ${String(note ?? "").replace(/^rolled at the GM's word:\s*/i, "").replace(/\.$/, "")} — `
+      + `tell the result as the GM ruled it, and nothing gained beyond what the result gives.`,
+  }),
+  state: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ fact }) => fact,
+  }),
+  sheet: Object.freeze({
+    list: "NOT SO", check: "logged",
+    text: ({ mode, refused }) => (mode !== "paced"
+      ? "Nothing on a sheet changes but what TELL names."
+      : refused
+        ? `No move was rolled for this line, and none will be. Nothing on a character's sheet changes — no wound is treated or `
+          + `healed, no harm taken, no supplies gained or spent, no damage repaired, no bond or progress made.`
+        : `Nothing on a character's sheet changes — no wound is treated or healed, no harm taken, no supplies gained or spent, `
+          + `no damage repaired, no bond or progress made: a line that sets about one of those has begun it, and the move that `
+          + `decides it is still to be made.`),
+  }),
+  apparatus: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: ({ offer }) => `Never write the dice, a number off a sheet, an outcome's name, or a move's name${offer ? " — save the one closing offer line" : ""} — and never a word about how this narration is built.`,
+  }),
+});
+
+const line = (kind, input = {}) => {
+  const row = OBLIGATION_KINDS[kind];
+  const list = typeof row.list === "function" ? row.list(input) : row.list;
+  return { kind, list, text: row.text(input) };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [state] — what the sheet says of what the beat touches
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A sheet's full relationship track: ten boxes of four ticks. */
+const FULL_TRACK = 40;
+
+/** Whether `name` is said in `text` — the whole name, or a first or last name of three letters or more, as a whole word. */
+function namedIn(text, name) {
+  const t = ` ${String(text ?? "").toLowerCase().replace(/[^a-z0-9'’\s-]+/g, " ")} `;
+  const n = String(name ?? "").trim().toLowerCase();
+  if (!n || t.trim() === "") return false;
+  const words = [n, ...n.split(/\s+/).filter(w => w.length >= 3)];
+  return words.some(w => t.includes(` ${w} `));
+}
+
+// A line that reads as fighting, for "no fight is under way".
+const FIGHTING = /\b(fire|firing|fired|open(?:s|ed)? fire|shoot|shooting|shot|strike|striking|attack|attacking|swing|swings|stab|slash|lunge|salvo|broadside|charge at|ram)\b/i;
+
+/**
+ * The [state] facts of a beat: only what it touches, never the sheet entire
+ * (the CHARACTER block lists that, in the same words — situation.js
+ * connectionStanding). A connection the line, the move's target or the
+ * scene's cast names, whose relationship is full and unbonded, or that is
+ * lost; "no fight is under way" when the line reads as fighting and none is
+ * open. Bounded: at most four lines.
+ *
+ * @param {{ situation?: Object|null, line?: string, target?: string|null, cast?: string[] }} input
+ * @returns {string[]}
+ */
+function stateFacts({ situation = null, line = "", target = null, cast = [] } = {}) {
+  const roller = situation?.roller ?? null;
+  if (!roller) return [];
+  const pc = roller.name || "The character";
+  const out = [];
+  const touched = (name) => namedIn(line, name) || namedIn(target, name)
+    || (Array.isArray(cast) && cast.some(c => String(c ?? "").trim().toLowerCase() === String(name ?? "").trim().toLowerCase()));
+  for (const c of Array.isArray(roller.connections) ? roller.connections : []) {
+    if (!c?.name || !touched(c.name)) continue;
+    if (c.lost) out.push(`${c.name} is no longer ${pc}'s connection: the bond was severed.`);
+    else if (!c.bonded && Number(c.ticks ?? 0) >= FULL_TRACK) out.push(`${c.name} is ${pc}'s connection, not a bond: their relationship is full and no bond is forged.`);
+    else if (!c.bonded) out.push(`${c.name} is ${pc}'s connection, not a bond: no bond is forged.`);
+  }
+  const fights = situation?.tracks?.fights;
+  if (Array.isArray(fights) && !fights.length && FIGHTING.test(String(line ?? ""))) out.push("No fight is under way.");
+  return out.slice(0, 4);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The table's cards for a result — unansweredCardsFor
+// ─────────────────────────────────────────────────────────────────────────────
+
+const allMessages = () => globalThis.game?.messages?.contents ?? [];
+// A choice card answered: resolved, or a pick on it (resultUpgrade.js reads a
+// pick on the outcome's card the same way — consequenceChosen).
+const answered = (f) => f?.resolved === true || (Array.isArray(f?.pickedIndices) && f.pickedIndices.length > 0)
+  || (Array.isArray(f?.pickedSuffers) && f.pickedSuffers.length > 0);
+
+// The meters an option's step takes from when its number is below zero.
+const COST_METERS = Object.freeze(["momentum", "health", "spirit", "supply", "integrity", "companionHealth"]);
+
+/** Whether one step of a choice option takes something from the character: a suffer move, a loss, a price, a complication. */
+function stepCosts(step) {
+  if (!step || typeof step !== "object") return false;
+  if (typeof step.suffer === "string" && step.suffer) return true;
+  if (step.kind === "any" || step.complication === true || step.route === "pay_the_price") return true;
+  return COST_METERS.some(k => Number(step[k]) < 0);
+}
+
+/**
+ * Whether a result's choice puts a cost in the player's hands: "Make a suffer
+ * move" (`kind: "any"`), or an enumerated choice one of whose options — or a
+ * step of its `chain` — is a cost (Heal's weak hit: the recovery, "then Lose
+ * Momentum (-2)" or "then Sacrifice Resources (-2)"). A choice between gains
+ * alone (+2 momentum, or +1 on the next move) offers none.
+ */
+function promptOffersCost(prompt) {
+  if (prompt?.kind === "any") return true;
+  return (Array.isArray(prompt?.options) ? prompt.options : [])
+    .some(o => (Array.isArray(o?.chain) ? o.chain : [o]).some(stepCosts));
+}
+
+/** The outcome's choice cards for a result (an upgrade's own, or the original's). */
+function choiceCardsOf(input) {
+  const upgradeOf = typeof input.upgradeOf === "string" && input.upgradeOf ? input.upgradeOf : null;
+  const ids = [upgradeOf, input._id, input.resolutionId].filter(id => typeof id === "string" && id);
+  // The upgraded outcome's own choice card carries the original's id and
+  // `upgraded` (reconcileChoices); a price's cards are no choice of the outcome.
+  return ids.length ? allMessages().map(m => m?.flags?.[MODULE_ID]).filter(f =>
+    f?.sufferCard === true && f.sufferPrompt && ids.includes(f.resolutionId)
+    && f.superseded !== true && f.priceCard !== true && (f.upgraded === true) === !!upgradeOf) : [];
+}
+
+/**
+ * The cost of a result that is still its player's to choose when the result
+ * is narrated (known-issues COST-NARRATED-BEFORE-IT-IS-CHOSEN — the long
+ * haul's third live run, a59: a Heal weak hit's narration spent the supplies
+ * before its card asked: Lose Momentum, or Sacrifice Resources?). Open when no
+ * card of the outcome has a pick and the choice — the first such card's, else
+ * the resolution's own (`consequences.sufferPrompt`) — offers a cost. Null
+ * once a pick is made, for a choice that costs nothing, and for a miss's price
+ * that is a choice of its own (`priceChoice` — [price] tells that one).
+ */
+function openCostChoice(input, cards) {
+  if (input.priceChoice) return null;
+  if (cards.some(answered)) return null;
+  const prompt = cards[0]?.sufferPrompt ?? input.consequences?.sufferPrompt ?? null;
+  if (!prompt || !promptOffersCost(prompt)) return null;
+  return {
+    kind:    prompt.kind === "any" ? "any" : "enumerated",
+    options: (Array.isArray(prompt.options) ? prompt.options : []).map(o => String(o?.label ?? "").trim()).filter(Boolean),
+    amount:  Number.isFinite(Number(prompt.amount)) && prompt.kind === "any" ? Number(prompt.amount) : null,
+    count:   Number.isFinite(Number(prompt.count)) && prompt.kind === "any" ? Number(prompt.count) : null,
+  };
+}
+
+/**
+ * The cost the player chose on the outcome's card before this narration — a
+ * held result kept by the pick (heldResult.js keepHeldResultForChoice), a
+ * round whose entry's card was answered before the round was narrated: the
+ * options the card records (`chosenIndex`, `pickedIndices` → its prompt's
+ * labels; `pickedSuffers` for "Make a suffer move"). Null with no pick, and
+ * for a choice that costs nothing.
+ */
+function chosenCost(input, cards) {
+  if (input.priceChoice) return null;
+  const card = cards.find(answered);
+  if (!card || !promptOffersCost(card.sufferPrompt)) return null;
+  const options = Array.isArray(card.sufferPrompt.options) ? card.sufferPrompt.options : [];
+  const picked = Number.isInteger(card.chosenIndex) ? [card.chosenIndex]
+    : Array.isArray(card.pickedIndices) ? card.pickedIndices.filter(Number.isInteger) : [];
+  const labels = picked.map(i => String(options[i]?.label ?? "").trim()).filter(Boolean);
+  if (!labels.length && Array.isArray(card.pickedSuffers)) {
+    for (const s of card.pickedSuffers) if (typeof s === "string" && s.trim()) labels.push(s.replace(/_/g, " ").trim());
+  }
+  return labels.length ? { labels } : null;
+}
+
+/**
+ * Where the fight an Enter the Fray offered stands when that roll is narrated
+ * (known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — the long haul's third live
+ * run, a27). "Combat is offered, not forced" (decisions.md): the fight's card
+ * — the threshold card, posted after the roll's card and before its narration
+ * — decides whether there is a fight. Read from the card the roll posted, by
+ * its resolution's id (combatThreshold.js findThresholdCard): "offered" while
+ * it is unanswered, "declined" once the way out is taken, and null once the
+ * fight is begun — or when the roll posted no card: an open fight with that
+ * foe was resumed, and nothing was offered.
+ */
+function fightOfferOf(input) {
+  if (input?.moveId !== "enter_the_fray") return null;
+  const card = [input.upgradeOf, input._id, input.resolutionId]
+    .filter(id => typeof id === "string" && id).map(findThresholdCard).find(Boolean) ?? null;
+  const f = card?.flags?.[MODULE_ID];
+  if (!f || f.thresholdTaken === "fray") return null;
+  return {
+    status:   f.thresholdTaken === "wayOut" ? "declined" : "offered",
+    position: f.position === "in_control" || f.position === "bad_spot" ? f.position : null,
+  };
+}
+
+/**
+ * What the table has answered, and has still to answer, about a result as its
+ * narration takes it (narrator.js — beside settlePriceChoice): `openChoice`,
+ * the cost that is its player's to choose and not yet chosen; `chosen`, the
+ * cost they chose before this narration (`{ labels }`); `fightOffer`, the
+ * fight an Enter the Fray offered and no one has begun. Each only when it is
+ * so — `{}` when nothing is. Any client may ask: the cards are the table's.
+ * Never throws — a card that cannot be read leaves its line out.
+ *
+ * @param {Object|null} input — a resolution, or a round entry's narration input
+ * @returns {{ openChoice?: Object, chosen?: { labels: string[] }, fightOffer?: Object }}
+ */
+export function unansweredCardsFor(input) {
+  if (!input || typeof input !== "object") return {};
+  try {
+    const cards = choiceCardsOf(input);
+    const openChoice = openCostChoice(input, cards);
+    const chosen = openChoice ? null : chosenCost(input, cards);
+    const fightOffer = fightOfferOf(input);
+    return { ...(openChoice ? { openChoice } : {}), ...(chosen ? { chosen } : {}), ...(fightOffer ? { fightOffer } : {}) };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the table's cards could not be read for the narration:`, err?.message ?? err);
+    return {};
+  }
+}
+
+/**
+ * The costs chosen after their result's narration that no narration has told
+ * yet (design §8.4, D10): the choice cards the pick stamped
+ * `pickedAfterNarration` (sufferCard.js), answered, with no `toldBy`, not
+ * superseded or X-Carded — any roller's (in solo play it is the roller's next
+ * beat; at a table, whoever speaks next). `except`: the resolutions the
+ * narration is itself of (their own cards are [chosen]). Any client may read
+ * them; the canonical GM stamps `toldBy` once the narration's card posts
+ * (markChosenCostsTold). Never throws.
+ *
+ * @param {{ except?: string[] }} [opts]
+ * @returns {Array<{ cardId: string, resolutionId: string|null, who: string, labels: string[] }>}
+ */
+export function choicesChosenSince({ except = [] } = {}) {
+  try {
+    const skip = new Set((except ?? []).filter(Boolean));
+    const out = [];
+    for (const m of allMessages()) {
+      const f = m?.flags?.[MODULE_ID];
+      if (!f?.sufferCard || f.pickedAfterNarration !== true || f.toldBy || f.superseded === true || f.xCarded === true) continue;
+      if (!answered(f) || skip.has(f.resolutionId)) continue;
+      const picked = chosenCost({ priceChoice: null }, [f]);
+      if (!picked) continue;
+      const actor = typeof f.actorId === "string" ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+      out.push({ cardId: m.id, resolutionId: f.resolutionId ?? null, who: String(actor?.name ?? "").trim() || "The player", labels: picked.labels });
+    }
+    return out.slice(0, 4);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the costs chosen since could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Stamp each told cost's card `toldBy` — the narration that told it — once
+ * its card is on the table (canonical GM; a player's own key cannot, and the
+ * next GM narration tells them again — accepted). A stamp the world refuses
+ * is retried by the next narration. Never throws.
+ *
+ * @param {Array<{ cardId: string }>} picks
+ * @param {string|null} narrationId
+ * @returns {Promise<void>}
+ */
+export async function markChosenCostsTold(picks, narrationId) {
+  if (!Array.isArray(picks) || !picks.length || !narrationId || globalThis.game?.user?.isGM !== true) return;
+  for (const pick of picks) {
+    const message = globalThis.game?.messages?.get?.(pick.cardId) ?? null;
+    await message?.update?.({ [`flags.${MODULE_ID}.toldBy`]: narrationId })
+      .catch(err => console.warn(`${MODULE_ID} | the told cost's card ${pick.cardId} could not be stamped — the next narration tells it again:`, err?.message ?? err));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Building them
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The yes/no answer an oracle follow-up narrates, read from the card's result line ("d100 = 97 → NO"). */
+function oracleAnswerOf(oracle) {
+  if (oracle?.kind !== "oracle_yes_no") return null;
+  const answer = /→\s*(yes|no)\b/i.exec(String(oracle.rolledLine ?? ""))?.[1]?.toUpperCase() ?? null;
+  if (!answer) return null;
+  const asked = String(oracle.question ?? "").replace(/\s+/g, " ").trim().replace(/"/g, "'");
+  return { answer, asked };
+}
+
+/**
+ * The kinds a move's result carries: the generic ones, then what its contract
+ * row's `obliges` names (table.js — [vow] on a fulfilment's hit, [milestone],
+ * [recommit] on a progress move's miss, [fight] while its fight is not
+ * begun), then what the table's cards say ([chosen], [price], [cost]).
+ */
+function resultObligations(resolution, { speaker = null, entry = false } = {}) {
+  const out = [];
+  const r = resolution ?? {};
+  const obliges = new Set(contractFor(r.moveId)?.obliges ?? []);
+  if (r.outcome) out.push(line("outcome", { resolution: r, entry }));
+  if (stakesShown(r.stakes ?? null).length) out.push(line("stakes", { resolution: r }));
+  if (obliges.has("vow") && isHit(r.outcome)) out.push(line("vow", { resolution: r }));
+  if (obliges.has("milestone")) out.push(line("milestone", { resolution: r }));
+  if (r.chosen && Array.isArray(r.chosen.labels) && r.chosen.labels.length) out.push(line("chosen", { resolution: r, speaker }));
+  if (r.isMatch === true) out.push(line("match", { resolution: r }));
+  if (priceChoiceOpen(r.priceChoice)) out.push(line("price", { resolution: r }));
+  if (r.openChoice && (r.openChoice.kind === "any" || (Array.isArray(r.openChoice.options) && r.openChoice.options.some(o => stakesLine(o)))))
+    out.push(line("cost", { resolution: r }));
+  if (obliges.has("fight") && fightNotBegun(r.fightOffer)) out.push(line("fight", { resolution: r }));
+  if (obliges.has("recommit") && r.outcome === "miss") out.push(line("recommit", { resolution: r }));
+  if (r.gateNote) out.push(line("overridden", { note: r.gateNote }));
+  return out;
+}
+
+/**
+ * The obligations of a narration. Pure (the table's cards are read before,
+ * by unansweredCardsFor, and settled on the resolution).
+ *
+ * Modes:
+ *   "paced"       a line narrated with no roll — its offer, its refusal, the state, the sheet, the apparatus
+ *   "move"        a move's narration — its result's kinds (resultObligations), the state, the sheet, the apparatus
+ *   "round-entry" one entry of a Batch Mode round — a rolled move's result kinds, or a refused entry's premise
+ *   "round"       the round as a whole — the state, the sheet, the apparatus
+ *   "oracle"      an oracle follow-up — a yes/no answer told and its opposite not so
+ *
+ * @param {{ mode: "paced"|"move"|"round-entry"|"round"|"oracle", resolution?: Object|null, refusal?: Object|null,
+ *   offer?: string|null, note?: string|null, oracle?: Object|null, situation?: Object|null, line?: string,
+ *   cast?: string[], speaker?: string|null }} input
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
+  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [] } = {}) {
+  const out = [];
+  const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
+    .map(fact => line("state", { fact }));
+  // A cost chosen after its narration, told here — a beat of play (D10).
+  const since = () => (Array.isArray(chosenSince) ? chosenSince : []).filter(p => p?.labels?.length).map(pick => line("chosen-since", { pick }));
+  if (mode === "paced") {
+    out.push(...since());
+    if (refusal?.premise) out.push(line("premise", { refusal }));
+    if (offer) out.push(line("offer", { offer }));
+    out.push(...state());
+    out.push(line("sheet", { mode, refused: !!refusal }));
+    out.push(line("apparatus", { offer }));
+  } else if (mode === "move") {
+    out.push(...since());
+    out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
+    out.push(...state());
+    out.push(line("sheet", { mode }));
+    out.push(line("apparatus", {}));
+  } else if (mode === "round-entry") {
+    if (resolution && resolution.kind === "move") out.push(...resultObligations(resolution, { speaker, entry: true }));
+    else if (refusal?.premise) out.push(line("premise", { refusal }));
+  } else if (mode === "round") {
+    out.push(...since());
+    out.push(...state());
+    out.push(line("sheet", { mode }));
+    out.push(line("apparatus", {}));
+  } else if (mode === "oracle") {
+    const answer = oracleAnswerOf(oracle);
+    if (answer) {
+      out.push(line("oracle", { oracle: answer, part: "tell" }));
+      out.push(line("oracle", { oracle: answer, part: "not" }));
+    }
+  }
+  return out;
+}
+
+/**
+ * The one line a card carries for a move that could not be made (D3) — "No
+ * Heal — nothing to heal: Mira's health is 5 of 5 and no wound is marked." —
+ * on the paced card its line was narrated on, on the not-rolled notice of a
+ * forced move, on a round's refused card. The narration is told the same
+ * refusal as NOT SO [premise]; one wording for both.
+ *
+ * @param {{ moveId: string, why: string }} refusal — contracts/gate.js refusalOf
+ * @returns {string}
+ */
+export function refusalNote(refusal) {
+  const why = String(refusal?.why ?? "").trim().replace(/\.$/, "");
+  return `No ${moveName(refusal?.moveId)} — ${why || "it cannot be made now"}.`;
+}
+
+/**
+ * The block: WHAT THIS NARRATION MUST TELL, AND MUST NOT — the lists in order,
+ * a tag a line. '' for none. `heading` is the block's markdown level (a
+ * round's entries take theirs under `####`).
+ *
+ * @param {Array<{ kind: string, list: string, text: string }>} obligations
+ * @param {{ heading?: string }} [opts]
+ * @returns {string}
+ */
+export function formatObligationsBlock(obligations, { heading = "##" } = {}) {
+  const list = Array.isArray(obligations) ? obligations.filter(o => o?.kind && o.text) : [];
+  if (!list.length) return "";
+  const parts = [`${heading} WHAT THIS NARRATION MUST TELL, AND MUST NOT`];
+  for (const name of OBLIGATION_LISTS) {
+    const lines = list.filter(o => o.list === name);
+    if (!lines.length) continue;
+    parts.push([LIST_HEADINGS[name], ...lines.map(o => `- [${o.kind}] ${o.text}`)].join("\n"));
+  }
+  return parts.join("\n\n");
+}

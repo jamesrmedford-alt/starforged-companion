@@ -238,10 +238,10 @@ describe('D3 (ruling A) — the bond holder of an NPC a round introduces', () =>
     // Ruling A: the card names the round's acting PCs — not silently the first entry's.
     expect(card.flags[MODULE_ID].actorIds ?? [card.flags[MODULE_ID].actorId]).toEqual(['pc-kira', 'pc-vex']);   // was: ['pc-kira']
     expect(card.flags[MODULE_ID].actorId).toBeUndefined();
-    // …and Doss's row asks whose connection she is, a button per acting PC and No one.
-    expect(card.content).toContain('Confirm — whose connection?');
-    expect(card.content).toMatch(/data-actor-id="pc-kira">Kira</);
-    expect(card.content).toMatch(/data-actor-id="pc-vex">Vex</);
-    expect(card.content).toMatch(/data-actor-id=""[^>]*>No one</);
+    // …and Doss's row offers each acting PC 🤝 Make a Connection — its Confirm
+    // records her, no bond (overhaul 4, D4: no "whose connection?", no "No one").
+    expect(card.content).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-kira"[^>]*>🤝 Make a Connection \(Kira\)</);
+    expect(card.content).toMatch(/data-action="sf-draft-make-connection"[^>]*data-actor-id="pc-vex"[^>]*>🤝 Make a Connection \(Vex\)</);
+    expect(card.content).not.toContain('No one');
   });
 });

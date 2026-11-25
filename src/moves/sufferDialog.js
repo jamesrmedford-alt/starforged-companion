@@ -19,7 +19,6 @@
 
 import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum, markUnprepared } from "./sufferExecutor.js";
 import { findThresholdCard, stashPositionOnThresholdCard as stashOnOwnThresholdCard } from "./combatThreshold.js";
-import { UNNAMED_EXPEDITION_LABEL } from "./expedition.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -608,7 +607,7 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "combat-progress", count: call.count, trackId: fight.id };
     }
     case "expedition-progress": {
-      const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
+      const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
       const allTracks = await listProgressTracks();
       // The expedition the move explored, resolved when it was rolled
       // (Explore a Waypoint's targets): that one or nothing — never the sole
@@ -630,15 +629,16 @@ async function runSufferCall(call, actor, opts) {
         return { kind: "expedition-progress", count: call.count, trackId: open[0].id };
       }
       if (open.length === 0) {
-        // Explore a Waypoint's "mark progress" pick used to silently skip
-        // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
-        // applyExpeditionProgress's resolve-or-create: begin a default
-        // expedition and mark it, so the chosen reward always lands. Its label
-        // is the one every unnamed expedition has — the arrival and the finish
-        // read it as "no destination named" (WAYPOINT-PLACEHOLDER-LITERAL).
-        const created = await addProgressTrack({ label: UNNAMED_EXPEDITION_LABEL, type: "expedition", rank: "dangerous" });
-        for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(created.id);
-        return { kind: "expedition-progress", count: call.count, trackId: created.id, created: true };
+        // No expedition is under way: nothing to mark, and none is begun
+        // here (overhaul 4, D6). Undertake an Expedition begins one; an Explore
+        // a Waypoint with none open is refused by the move gate unless the
+        // crew is at a site (contracts/predicates.js EXPEDITION_OR_SITE), and
+        // at a site its strong hit offers no expedition progress
+        // (movePipeline.js). This made an unnamed expedition (WAYPOINT-PROGRESS-
+        // NOOP's fix), whose rank and name nothing asked. Said on the card —
+        // never a silent skip.
+        console.warn(`${MODULE_ID} | expedition-progress executor: no expedition is under way — progress not marked.`);
+        return { kind: "expedition-progress", count: call.count, skipped: true, ok: false, reason: "no-expedition" };
       }
       console.warn(`${MODULE_ID} | expedition-progress executor: ${open.length} open expeditions — ambiguous, progress not marked. Name the expedition or mark it in the Progress Tracks panel.`);
       return { kind: "expedition-progress", count: call.count, skipped: true, ok: false, reason: "ambiguous" };

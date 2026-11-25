@@ -118,6 +118,10 @@ export async function createConnection(data, campaignState, { persist = true } =
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);
+  // No `connection.made` here: the card is a person (FOLDER-002). The record
+  // tells a connection made where its bond Item is made
+  // (actorBridge.createCharacterBondItem, with what made it — overhaul 4,
+  // D12); a person recorded is `entity.confirmed` (entityExtractor.js).
   // Not awaited: a creator reads the new card in the turn this returns in
   // (whose portrait it is, with Auto-Seed NPC on), and a wait here let the
   // seed and the creator each make one.
@@ -341,7 +345,7 @@ export async function addHistoryEntry(journalEntryId, entry, sessionId = "") {
  * @param {number} [marks=1] — Number of times to mark progress (usually 1)
  * @returns {Promise<{ connection: Object, ticksAdded: number, newTicks: number }>}
  */
-export async function markRelationshipProgress(journalEntryId, marks = 1) {
+export async function markRelationshipProgress(journalEntryId, marks = 1, { by = null } = {}) {
   const connection = getConnection(journalEntryId);
   if (!connection) throw new Error(`Connection not found: ${journalEntryId}`);
 
@@ -356,6 +360,12 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
   const updated = await updateConnection(journalEntryId, {
     relationshipTicks: newTicks,
   });
+  // On the session record (issue #382), once the record took it.
+  if (newTicks !== currentTicks) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.developed", {
+      ref: { conn: journalEntryId }, d: { name: connection.name ?? "", rank: connection.rank ?? null, ticks: { from: currentTicks, to: newTicks }, ...(by ? { by } : {}) },
+    })).catch(() => {});
+  }
 
   // Mirror onto each PC's bond Item so the vendor sheet's Connections tab
   // shows the same progress (BOND-ITEM-MIRROR fix). Best-effort — the entity
@@ -396,6 +406,12 @@ export async function forgeBond(journalEntryId, options = {}) {
 
   const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, updates);
+  // On the session record (issue #382), once the record took it.
+  if (connection?.bonded !== true) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.bonded", {
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", rank: updated?.rank ?? connection?.rank ?? null, ...(options.by ? { by: options.by } : {}) },
+    })).catch(() => {});
+  }
 
   await addHistoryEntry(
     journalEntryId,
@@ -430,11 +446,17 @@ export async function forgeBond(journalEntryId, options = {}) {
  * @param {string} [sessionId]
  * @returns {Promise<Object>}
  */
-export async function loseConnection(journalEntryId, reason = "", sessionId = "") {
+export async function loseConnection(journalEntryId, reason = "", sessionId = "", { by = null } = {}) {
   const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, {
     active:        false,
   });
+  // On the session record (issue #382), once the record took it.
+  if (connection?.active !== false) {
+    void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.lost", {
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", ...(reason ? { reason } : {}), ...(by ? { by } : {}) },
+    })).catch(() => {});
+  }
 
   if (reason) {
     await addHistoryEntry(journalEntryId, `Connection lost: ${reason}`, sessionId);

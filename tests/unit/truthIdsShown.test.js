@@ -15,7 +15,7 @@ vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 import { PAGES } from "../../src/help/helpJournal.js";
 import { postNarrationCard } from "../../src/narration/narrator.js";
 import {
-  applyFactContinuityCommand, handleFactContinuityCommand, parseFactContinuityCommand,
+  applyFactContinuityCommand, parseFactContinuityCommand,
 } from "../../src/factContinuity/chatCommands.js";
 
 const MODULE_ID = "starforged-companion";
@@ -55,10 +55,10 @@ describe("a truth's id is shown where `!truth strike` needs it (issue #326 W67)"
       { id: "tr-gone0002", subject: { kind: "text", text: "Vance" }, fact: "is dead", asserter: "narrator", retracted: true },
       { id: "tr-gmgm0003", subject: { kind: "scene" }, fact: "The station is sealed", asserter: "gm", retracted: false },
     ];
-    const restore = asPlayer();
-    try {
-      await handleFactContinuityCommand({ content: "!truth list", author: { id: "test-user-player" } });
-    } finally { restore(); }
+    // Relayed to the canonical GM, which whispers the typist (the session's
+    // earlier scenes' truths are on the session record, the GM's —
+    // TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE): a player's request.
+    await applyFactContinuityCommand({ text: "!truth list" }, { requesterIsGM: false, requesterId: "test-user-player" });
     const card = ChatMessage._created.at(-1);
     expect(card.content).toContain("tr-live0");
     expect(card.content).toContain("Owes the crew a favour");

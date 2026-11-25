@@ -10,8 +10,9 @@
  * narration cards (narrator.js getRecentSceneForReading) as RECENT SCENE, and
  * the prompt names a target the line only refers to from it.
  *
- * Also: the interpreter's model is its own constant (Haiku 5.5), never the
- * copy a world stored in campaignState.api at creation.
+ * Also: the interpreter's model is its own constant (Sonnet 5.5 — decisions.md,
+ * "The readers run on Sonnet 5.5"), never the copy a world stored in
+ * campaignState.api at creation.
  */
 
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
@@ -35,15 +36,6 @@ const body = () => apiPost.mock.calls[0][2];
 describe("interpretMove() — the recent scene", () => {
   beforeEach(() => { vi.clearAllMocks(); control.calls.length = 0; });
 
-  it("sends the recent scene just before the player's line, marked as context", async () => {
-    replyJson({ moveId: "set_a_course", statUsed: "supply", moveTarget: "the gap (Vuldar Archer's coordinates)" });
-    await interpretMove("We're on our way.", { ...OPTS, recentScene: SCENE });
-    const text = body().messages[0].content;
-    expect(text).toContain("RECENT SCENE");
-    expect(text).toContain("coordinates for the gap");
-    expect(text.indexOf("RECENT SCENE")).toBeLessThan(text.indexOf('Player narration: "We\'re on our way."'));
-  });
-
   it("tells the model to name a target the line only refers to as the recent scene names it", async () => {
     replyJson({ moveId: "set_a_course", statUsed: "supply" });
     await interpretMove("We're on our way.", { ...OPTS, recentScene: SCENE });
@@ -63,12 +55,13 @@ describe("interpretMove() — the recent scene", () => {
     expect(body().messages[0].content).not.toContain("RECENT SCENE");
   });
 
-  it("runs on Haiku 5.5 with its own cap — not a world's stored api.model / api.maxTokens", async () => {
+  it("runs on Sonnet 5.5 with its own cap — not a world's stored api.model / api.maxTokens", async () => {
     replyJson({ moveId: "face_danger", statUsed: "edge" });
     await interpretMove("I dive for cover.", {
+      // A world made while the interpreter ran on Haiku holds that model still.
       ...OPTS, campaignState: { api: { model: "claude-haiku-5-5", maxTokens: 1000, promptCachingEnabled: true } },
     });
-    expect(body()).toMatchObject({ model: "claude-haiku-5-5", max_tokens: 1300 });
+    expect(body()).toMatchObject({ model: "claude-sonnet-5-5", max_tokens: 1300 });
   });
 });
 

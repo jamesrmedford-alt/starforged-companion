@@ -24,8 +24,9 @@ vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  interpretMove: vi.fn(async () => ({
+  interpretMove: vi.fn(async (narration) => ({
     moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'test', mischiefApplied: false,
+    playerNarration: narration,   // as the interpreter hands it on: the narration's ground (overhaul 2 §5.2)
   })),
 }));
 vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
@@ -76,7 +77,7 @@ beforeEach(async () => {
       sessionActive: true, currentSessionId: 'sess-7', sessionNumber: 7, currentSceneId: 'sc-1',
       sceneTruths: [{
         id: 'truth-guard-0001', subject: { kind: 'text', text: 'the guard' }, fact: 'Carries the cell keys on his belt',
-        asserter: 'narrator', sessionId: 'sess-7', sceneId: 'sc-1', narrationId: 'nar-guard', createdAt: 1,
+        asserter: 'narrator', basis: 'player', sessionId: 'sess-7', sceneId: 'sc-1', narrationId: 'nar-guard', createdAt: 1,
       }],
       sceneState: { bySubject: {}, sceneId: 'sc-1' },
     },
@@ -91,8 +92,9 @@ beforeEach(async () => {
     narrations += 1;
     if (narrations === 1) {           // Pat's move: the beat the X-Card removes
       return 'The interrogator lifts the cutting torch toward the prisoner\'s hand.\n```json\n' + JSON.stringify({
-        newTruths:    [{ subject: 'the prisoner', fact: 'His hand was burned with a cutting torch' }],
-        stateChanges: [{ subject: 'the prisoner', attribute: 'condition', value: 'burned hand' }],
+        // The player's line bears them out (overhaul 2 §5.2): they bind, and the audit reads them.
+        newTruths:    [{ subject: 'the prisoner', fact: 'His hand was burned with a cutting torch', from: 'line' }],
+        stateChanges: [{ subject: 'the prisoner', attribute: 'condition', value: 'burned hand', from: 'line' }],
         sceneFrame:   { location: 'the interrogation cell', present: ['the prisoner'], situation: 'The torch hovers over his hand' },
       }) + '\n```';
     }
@@ -106,12 +108,12 @@ const section = (prompt, from, to) => (prompt.split(from)[1] ?? '').split(to)[0]
 
 describe('issue #329 X02 (pipeline) — a move held at its confirm dialog is audited against the ledger as it stands then', () => {
   it("the audit of the post-resume narration is not handed the X-carded beat's truth, state or frame", async () => {
-    await table.client('pl-1').chat('I press the prisoner for the code.', { speaker: { actor: 'pc-pat' } });
+    await table.client('pl-1').chat('I hold the cutting torch to the prisoner\'s hand.', { speaker: { actor: 'pc-pat' } });
     await table.settle();
     expect(world().sceneTruths.map(t => t.fact)).toContain('His hand was burned with a cutting torch');
     // control: Pat's own narration is audited with the torch truth as active.
     expect(audits()).toHaveLength(1);
-    expect(section(audits()[0].system, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).toMatch(/cutting torch/);
+    expect(section(audits()[0].system, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).toMatch(/cutting torch/);
 
     // Ren types the next move; it waits at the confirm dialog.
     control.confirm = deferred();
@@ -137,8 +139,8 @@ describe('issue #329 X02 (pipeline) — a move held at its confirm dialog is aud
     expect(section(audit.system, 'NARRATION:', 'Return:')).toMatch(/corridor lights/);     // control: it is Ren's narration's audit
     // The removed beat is not the audit's binding truth, state or frame; the
     // guard's truth, which stands, is.
-    expect(section(audit.system, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).toMatch(/cell keys/);
-    expect(section(audit.system, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
+    expect(section(audit.system, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).toMatch(/cell keys/);
+    expect(section(audit.system, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
     expect(audit.system).not.toMatch(/cutting torch/);
     expect(audit.system).not.toMatch(/burned hand/);
     expect(audit.system).not.toMatch(/interrogation cell/);

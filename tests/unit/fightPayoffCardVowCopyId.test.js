@@ -46,6 +46,18 @@ const failCards   = () => table.cards(f => f.payoffFailureCard);
 const rewardCards = () => table.cards(f => f.rewardGrantCard);
 
 /** Kira's sheet vow; `vowIdFlag: false` — its createItem `vowId` stamp never landed. */
+/** Kira's connection with Sable — a bond Item on her sheet: what the won fight's 🤝 asks of (overhaul 4, the move gate's THEIR_CONNECTION). */
+function makeSableBond() {
+  const item = {
+    id: 'bond-sable', name: 'Sable', type: 'progress',
+    system: { subtype: 'bond', rank: 'dangerous', current: 0, completed: false },
+    flags: { [MODULE_ID]: { connectionId: 'rec-sable' } },
+    update: async (changes) => { if ('system.current' in changes) item.system.current = changes['system.current']; return item; },
+    setFlag: async (mod, key, val) => { (item.flags[mod] ??= {})[key] = val; },
+  };
+  return item;
+}
+
 function makeVow({ vowIdFlag }) {
   const item = {
     id: 'v-crew', name: OLD_NAME, type: 'progress',
@@ -80,7 +92,7 @@ async function setUp({ vowIdFlag = false } = {}) {
       connectionIds: ['conn-sable'], legacyTracks: { quests: { ticks: 0, cleared: false } } },
   } } });
   vow = makeVow({ vowIdFlag });
-  kira = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [vow] } });
+  kira = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [vow, makeSableBond()] } });
   kira.system.supply.value = 1;
   sable = table.addActor({
     id: 'conn-sable', name: 'Sable', type: 'character',

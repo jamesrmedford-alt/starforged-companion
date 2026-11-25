@@ -40,13 +40,12 @@ vi.mock('../../src/moves/resolver.js', async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
+const isClassifier = (call) => isReaderCall(call);
 const isNarration  = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? '');
-const nwma = (suggestedMove, sceneChallenge) => JSON.stringify({ decision: 'NARRATIVE_WITH_MOVE_AVAILABLE',
-  suggestedMove, sceneChallenge, category: 'exploration', confidence: 0.6, reasoning: 'a risk the player may want to press' });
+const nwma = (suggestedMove, sceneChallenge) => readerReply({ move: suggestedMove, risk: 'slight', category: 'exploration', sceneChallenge: sceneChallenge });
 const STRONG = [0.0, 0.15, 0.9];   // challenge 1, 2; die 6 → a strong hit
 const LINE   = 'I gun the engine and cut through the night market.';
 

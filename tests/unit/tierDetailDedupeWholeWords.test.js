@@ -27,7 +27,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn(async () => ({ content: [{ type: 'text', text: '{"contradictions":[]}' }] })) }));
 
-import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/narrator.js';
+import { postNarrationCard } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
+// The narrations' facts are the table's (overhaul 2 §5.1–5.2): what a scene's end
+// files is what binds; the narrator's own colour has its own tests (colourNotFiled).
 import { endScene } from '../../src/factContinuity/sceneLifecycle.js';
 import { appendMigratedTruthToTier, appendDetailToTier } from '../../src/entities/entityExtractor.js';
 
@@ -71,7 +74,7 @@ afterEach(() => { game.journal.getName = orig.getName; game.journal.find = orig.
 /** A narration as the narrator makes one: its sidecar applied (on the canonical GM), then its card. */
 async function narrate(narrationId, prose, facts) {
   const sidecar = { newTruths: facts.map(fact => ({ subject: 'Vex', fact })), stateChanges: [] };
-  const text = applyNarratorSidecar(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(),
+  const text = applyAsTheTable(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(),
     { narrationId, matchedEntityIds: ['npc-vex'] });
   await postNarrationCard(text, { moveId: 'compel', outcome: 'strong_hit', _id: `res-${narrationId}` }, stored(),
     { playerText: 'A line.', playerName: 'Kira', narrationId });

@@ -77,6 +77,7 @@
  */
 
 import { applyMeterChanges, setDebility, withoutSystemNotes } from "../character/actorBridge.js";
+import { recordCause } from "../record/sheetWatch.js";
 import { supplyAllies } from "../multiplayer/sharedSupply.js";
 import { MORTAL_WOUND, DESOLATION, VEHICLE_DAMAGE } from "../oracles/tables/sufferAndCombat.js";
 
@@ -85,6 +86,23 @@ const MODULE_ID = "starforged-companion";
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What caused a suffer's sheet change, for the session record (issue #382):
+ * the move whose price it is (`resolutionId`, the Pay the Price path), or the
+ * pick made on its suffer card (`sufferCardId`, with the card's move).
+ * Rides the write's options (record/sheetWatch.js).
+ *
+ * @param {Object} [opts] — the executor's opts
+ * @returns {Object} update options
+ */
+function sufferCause(opts = {}) {
+  return recordCause({
+    kind: opts.sufferCardId ? "choice" : "move",
+    res:  opts.recordRes ?? opts.resolutionId ?? null,
+    card: opts.sufferCardId ?? null,
+  });
+}
 
 /**
  * Read a meter's current numeric value off the actor, tolerating both
@@ -164,7 +182,7 @@ export async function loseMomentum(actor, amount, opts = {}) {
   // The loss is on this move's own card (or the card of the loss that
   // overflowed into it): the system's note for the same write is not posted
   // beside it (issue #354 P2-13) — here and in every executor below.
-  await withoutSystemNotes(() => applyMeterChanges(actor, { momentum: -amount }));
+  await withoutSystemNotes(() => applyMeterChanges(actor, { momentum: -amount }, sufferCause(opts)));
   const after = readMeter(actor, "momentum");
   const atMin = after <= -6;
   const remaining = Math.max(0, amount - Math.max(0, before - after));
@@ -757,7 +775,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "health");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { health: -absorbed }));
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { health: -absorbed }, sufferCause(opts)));
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -805,7 +823,7 @@ export async function endureStress(actor, amount, opts = {}) {
   }
   const before = readMeter(actor, "spirit");
   const { absorbed, overflow } = splitOverflow(amount, before);
-  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { spirit: -absorbed }));
+  if (absorbed > 0) await withoutSystemNotes(() => applyMeterChanges(actor, { spirit: -absorbed }, sufferCause(opts)));
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
   const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
@@ -1037,7 +1055,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     }
     return { before, after: before, atZero, unpreparedMarked: false, redirected: true };
   }
-  await withoutSystemNotes(() => applyMeterChanges(actor, { supply: -amount }));
+  await withoutSystemNotes(() => applyMeterChanges(actor, { supply: -amount }, sufferCause(opts)));
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
@@ -1109,7 +1127,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   // The companion the move was about (the card's targets), when the pick names none.
   companionItemId = companionItemId ?? opts.companionItemId ?? null;
   const { applyCompanionHealthChange, getCompanionAsset, companionGivenName } = await import("../character/actorBridge.js");
-  const res = await withoutSystemNotes(() => applyCompanionHealthChange(actor, -amount, { itemId: companionItemId }));
+  const res = await withoutSystemNotes(() => applyCompanionHealthChange(actor, -amount, { itemId: companionItemId, options: sufferCause(opts) }));
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
   if (!res.ok) {
     // No such companion (or several, none named) — a user-visible failure
@@ -1204,7 +1222,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   let res;
   let vehicleActorId = null;
   if (support) {
-    res = await withoutSystemNotes(() => applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId }));
+    res = await withoutSystemNotes(() => applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId, options: sufferCause(opts) }));
   } else if (vehicleItemId) {
     res = { ok: false, reason: "no-vehicle" };
   } else {

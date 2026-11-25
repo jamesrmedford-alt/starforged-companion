@@ -98,7 +98,7 @@ describe('an oracle follow-up narrated with no scene open keeps what it establis
 
     const move = table.claude.calls.find(c => c.model === NARRATION_MODEL && /Narrate the consequence/.test(c.userText));
     expect(move).toBeDefined();
-    expect(move.system).toContain('Where:   the derelict airlock');
+    expect(move.system).toContain('Where:    the derelict airlock — as the narration has it');
     // A text subject's state line renders under its lowercased ledger key.
     expect(move.system).toMatch(/Teo Varga — location: the derelict airlock/i);
   });

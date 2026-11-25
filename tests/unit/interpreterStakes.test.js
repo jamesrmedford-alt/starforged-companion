@@ -27,16 +27,6 @@ const OPTS = { campaignState: {}, mischiefLevel: 'serious', apiKey: 'sk-ant-test
 const STAKES = { hit: 'You pull the route.', miss: 'The core shocks you.', missSuffer: { move: 'endure_harm', amount: 1 } };
 
 describe('issue #353 R1 — the interpreter\'s stakes', () => {
-  it('the prompt asks for them, with the suffer moves a miss may name', async () => {
-    reply({ moveId: 'gather_information', statUsed: 'wits', rationale: 'r', stakes: STAKES });
-    await interpretMove('I pull the logs.', OPTS);
-    const system = apiPost.mock.calls[0][2].system[0].text;
-    expect(system).toContain('"stakes": {');
-    expect(system).toContain('make the most obvious negative outcome happen');
-    for (const move of ['endure_harm', 'endure_stress', 'lose_momentum', 'sacrifice_resources', 'withstand_damage', 'companion_takes_a_hit']) {
-      expect(system).toContain(`"${move}"`);
-    }
-  });
 
   it('a rolled move keeps them, its price source fixed', async () => {
     reply({ moveId: 'gather_information', statUsed: 'wits', rationale: 'r', stakes: STAKES });

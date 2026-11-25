@@ -45,6 +45,7 @@ import {
 } from '../../test/ci/playwright/lib/player.mjs';
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
+import { buildReaderSystemPrompt, buildReaderUserMessage, parseReading } from '../../src/moves/reader.js';
 import {
   annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, slipsOf, speedOf, spokenFor,
 } from '../../test/ci/playwright/lib/review.mjs';
@@ -297,14 +298,15 @@ describe('the ledger, scored layer by layer', () => {
 
   it('a probe is looked for among the lines of the beat that asks it: a short question\'s words elsewhere are not the question', () => {
     const { messages, marks } = run([
+      { who: 'player', step: 'a20', phase: 'session-2', text: '!truth set "raider cutter" is named the Cinder Wren' },
       { who: 'player', step: 'a21', phase: 'session-2', text: 'The raider cutter Ashen Wake cuts across my bow — I enter the fray.' },
       { who: 'narrator', step: 'a21', phase: 'session-2', text: 'The cutter comes about.' },
       { who: 'player', step: 'a48', phase: 'session-3', text: 'What is the raider cutter called?' },
       { who: 'narrator', step: 'a48', phase: 'session-3', text: 'The Cinder Wren.' },
     ]);
-    const loose = scoreLedger({ facts: [CUTTER], marks, messages, requests: [] });
+    const loose = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], planted: { F6: 'a20' } });
     expect(loose.facts[0].probes[0], 'two of the question\'s three words are in the line of play').toMatchObject({ asked: true, step: 'a21' });
-    const scoped = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], probeSteps: { B: ['a47', 'a48'] } });
+    const scoped = scoreLedger({ facts: [CUTTER], marks, messages, requests: [], planted: { F6: 'a20' }, probeSteps: { B: ['a47', 'a48'] } });
     expect(scoped.facts[0].probes[0]).toMatchObject({ asked: true, step: 'a48', inAnswer: true });
   });
 
@@ -712,7 +714,7 @@ describe('a long run\'s class', () => {
 
 // ── the GM's scripted dice ───────────────────────────────────────────────────
 
-describe('the six scripted rolls', () => {
+describe('the scripted rolls', () => {
   it('each gives the roll it promises, whatever the stat — by the game\'s own arithmetic', () => {
     for (const [roll, outcome] of [['miss', 'miss'], ['weak_hit', 'weak_hit'], ['strong_hit', 'strong_hit']]) {
       const { faces, queue } = scriptedDice({ roll });
@@ -884,7 +886,8 @@ describe('the player\'s bounded memory', () => {
   it('its standing instructions are the same every turn, list every beat, and are sent as a cached block', () => {
     const system = playerSystemPrompt(CHARTER);
     expect(playerSystemPrompt(CHARTER)).toBe(system);
-    for (const b of CHARTER.beats) expect(system).toContain(`${b.n}. [session ${b.session}] ${b.title}`);
+    // The title the player is shown names no move (decisions.md → "A player is never made to name a move").
+    for (const b of CHARTER.beats) expect(system).toContain(`${b.n}. [session ${b.session}] ${b.playerTitle ?? b.title}`);
     expect(system).toContain('You do not decide when a beat is done');
     expect(system.length, 'long enough to be cached at all').toBeGreaterThan(6000);
     const body = buildRequest({ model: CONFIG.player.model, effort: 'low', maxTokens: 1000, system, user: 'U', tool: ACTION_TOOL, cache: true });
@@ -934,9 +937,12 @@ describe('a rehearsal that rolls', () => {
     expect(input('[m4] Gamemaster: New vow recorded\n     buttons: (1) "⚔ Swear it (roll)"')).toMatchObject({ action: 'click', message: 'm4', button: 1 });
     expect(input('CHAT: empty', 2)).toMatchObject({ action: 'say', text: 'I work the docks.' });
     expect(input(describeScreen(SCREEN), 3)).toMatchObject({ action: 'choose', message: 'm1', button: 1, option: 'Tamsin Vey' });
-    // The optional click is never offered: one wait, then on to the next line.
+    // The optional click is never offered: one wait, then it is given up —
+    // and the next line, beat 5's, waits until beat 5 comes: said while beat 3
+    // is current it would be beat 3's line (the fourth live run, issue #383).
     expect(input('CHAT: empty', 3)).toMatchObject({ action: 'wait' });
-    expect(input('CHAT: empty', 3)).toMatchObject({ action: 'say', text: expect.stringContaining('star-compass') });
+    expect(input('CHAT: empty', 3)).toMatchObject({ action: 'wait', reason: 'waiting for beat 5: beat 3 is not over' });
+    expect(input('CHAT: empty', 5)).toMatchObject({ action: 'say', text: expect.stringContaining('star-compass') });
     expect(r.skipped).toMatchObject([{ why: '"Endure Harm" was never on screen' }]);
   });
 
@@ -946,14 +952,16 @@ describe('a rehearsal that rolls', () => {
     expect(r.skipped.map(s => s.why)).toEqual(['beat 1 was over', 'beat 1 was over', 'beat 2 was over', 'beat 3 was over', 'beat 3 was over']);
   });
 
-  it('its classifier calls a move where the script makes the line one, and its interpreter names it', () => {
+  it('its line reader reads the move where the script makes the line one — asked for, with its stat — and a line it does not as none', () => {
+    // The line reader's call (src/moves/reader.js), as the module makes it and reads the reply.
+    const reader = (text) => module(buildReaderSystemPrompt(), buildReaderUserMessage({ mode: 'open', text, situation: {} }));
     const r = createRehearsal({ charter: mini });
     r.reply(turn('CHAT: empty', 2));                                   // skips to "I work the docks."
-    expect(JSON.parse(textOf(r.reply(module('You are the pacing pre-classifier …'))))).toMatchObject({ decision: 'MOVE', suggestedMove: 'gather_information', confidence: 0.95 });
-    expect(JSON.parse(textOf(r.reply(module('You are the move interpreter …'))))).toMatchObject({ moveId: 'gather_information', moveName: 'Gather Information', statUsed: 'wits', isProgressMove: false });
+    expect(parseReading(textOf(r.reply(reader('I work the docks.'))), { narration: 'I work the docks.' }))
+      .toMatchObject({ moveId: 'gather_information', asked: true, risk: 'high', failed: null, interpretation: { moveName: 'Gather Information', statUsed: 'wits', isProgressMove: false } });
     const plain = createRehearsal({ charter: mini });
     plain.reply(turn('CHAT: empty', 1));
-    expect(JSON.parse(textOf(plain.reply(module('You are the pacing pre-classifier …')))).decision, 'a line the script does not make a move is narrated').toBe('NARRATIVE');
+    expect(parseReading(textOf(plain.reply(reader('!begin-session'))), { narration: '!begin-session' }).moveId, 'a line the script does not make a move is no move').toBeNull();
   });
 
   it('its narrator records what the player plants, answers a probe only when the fact is in front of it, and decides a plan it is asked to', () => {
@@ -962,7 +970,7 @@ describe('a rehearsal that rolls', () => {
     r.reply(turn('CHAT: empty', 5));
     const planted = textOf(r.reply(module(narrator, 'The player says it.')));
     expect(planted).toContain(CHARTER.facts[0].statement);
-    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(planted)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: CHARTER.facts[0].statement }]);
+    expect(JSON.parse(/```json\n([\s\S]*?)\n```/.exec(planted)[1]).newTruths).toEqual([{ subject: 'Mira Kestrel', fact: CHARTER.facts[0].statement, from: 'line' }]);   // the player's own words: they bind (overhaul 2, D5)
     r.reply(turn('CHAT: empty', 7));
     expect(textOf(r.reply(module(`${narrator}## WORLD SNAPSHOT\nher brass star-compass`, 'What do I still carry that belonged to my sister?')))).toContain('It comes back to you at once');
     expect(textOf(r.reply(module(narrator, 'What do I still carry that belonged to my sister?'))), 'nothing carried it').toContain('nothing comes');
@@ -1168,25 +1176,58 @@ describe('the generated layers of the review', () => {
     expect(text).toContain('| F1 | a possession | never | not-planted |');
     expect(text).toContain('## The reading');
   });
+
+  // The long haul's second review was written step by step against its own
+  // eight questions, by the session that wrote the charter and the fixes: it
+  // reported each fix holding and missed what one plain reading showed. The
+  // cold read is written first, so its place is first (rules/ci-e2e.md).
+  it('a live run\'s scorecard opens with the cold read, left to write — above its questions and its rows; a rehearsal has none', () => {
+    const live = scorecard({ charter: CHARTER, run: { ...run, questions: ['Does the correction reach the recap?'] }, beats, mechanics });
+    const at = (s) => live.indexOf(s);
+    expect(at('## The cold read')).toBeGreaterThan(-1);
+    expect(at('## The cold read')).toBeLessThan(at('## What this run was to answer'));
+    expect(at('## The cold read')).toBeLessThan(at('| Dimension |'));
+    expect(live).toContain('a reader who has seen neither the charter, this run\'s questions nor the fixes it was to verify');
+    expect(live).toContain('what the charter itself made the player do');
+    expect(scorecard({ charter: CHARTER, run: { ...run, mode: 'rehearsal' }, beats, mechanics })).not.toContain('The cold read');
+    expect(scorecard({ charter: CHARTER, run: { ...run, mode: 'replay' }, beats, mechanics })).not.toContain('The cold read');
+  });
 });
 
 // ── the charter that ships ───────────────────────────────────────────────────
 
 describe('the long-haul charter', () => {
-  it('has the issue\'s twenty-six beats over three sessions, its four interruptions and its six scripted rolls', () => {
-    expect(CHARTER.beats.map(b => b.n)).toEqual(Array.from({ length: 26 }, (_, i) => i + 1));
-    expect(CHARTER.beats.filter(b => b.session === 1).length + CHARTER.beats.filter(b => b.session === 2).length + CHARTER.beats.filter(b => b.session === 3).length).toBe(26);
-    expect(CHARTER.beats.filter(b => b.interruption).map(b => `${b.n}:${b.interruption}`)).toEqual(['12:gmReload', '14:endSessionCancelled', '15:xCard', '18:rename']);
+  it('has twenty-seven beats over three sessions — the issue\'s twenty-six and the expedition — its four interruptions and its seven scripted rolls', () => {
+    expect(CHARTER.beats.map(b => b.n)).toEqual(Array.from({ length: 27 }, (_, i) => i + 1));
+    expect(CHARTER.beats.filter(b => b.session === 1).length + CHARTER.beats.filter(b => b.session === 2).length + CHARTER.beats.filter(b => b.session === 3).length).toBe(27);
+    expect(CHARTER.beats.filter(b => b.interruption).map(b => `${b.n}:${b.interruption}`)).toEqual(['13:gmReload', '15:endSessionCancelled', '16:xCard', '19:rename']);
     expect(CHARTER.beats.filter(b => b.dice).map(b => `${b.n}:${b.dice.moves[0]}:${b.dice.roll}`))
-      .toEqual(['2:make_a_connection:strong_hit', '10:strike:miss', '11:strike:burnable', '13:take_decisive_action:strong_hit', '22:forge_a_bond:strong_hit', '24:fulfill_your_vow:strong_hit']);
+      .toEqual(['2:make_a_connection:strong_hit', '8:finish_an_expedition:strong_hit', '11:strike:miss', '12:strike:burnable', '14:take_decisive_action:strong_hit', '23:forge_a_bond:strong_hit', '25:fulfill_your_vow:strong_hit']);
     for (const b of CHARTER.beats) for (const need of b.needs ?? []) expect(CHARTER.beats.some(x => x.id === need), `beat ${b.n} needs ${need}`).toBe(true);
   });
 
+  // A beat's id is its name for good: the kept runs' beats, the facts'
+  // `plantedBy` and the beats' `needs` are told by it. Its number is where it
+  // stands now. The expedition was added eighth and took no other beat's id.
+  it('a beat keeps its id when another is added before it: the issue\'s twenty-six are b1…b26 still, in order, and the expedition is b7a', () => {
+    expect(CHARTER.beats.map(b => b.id)).toEqual([...Array.from({ length: 7 }, (_, i) => `b${i + 1}`), 'b7a', ...Array.from({ length: 19 }, (_, i) => `b${i + 8}`)]);
+    expect(new Set(CHARTER.beats.map(b => b.id)).size).toBe(27);
+    expect(CHARTER.beats.find(b => b.id === 'b7a')).toMatchObject({ n: 8, session: 2, check: { type: 'expedition', finished: true } });
+    expect(CHARTER.beats.find(b => b.id === 'b8')).toMatchObject({ n: 9, check: { type: 'arrived', settlement: 'Bleakhold Station' } });
+    expect(CHARTER.facts.filter(f => f.plantedBy).map(f => `${f.id}:${f.plantedBy}:${CHARTER.beats.find(b => b.id === f.plantedBy).check.type}`))
+      .toEqual(['F5:b8:arrived', 'F6:b16:corrected', 'F7:b18:renamed']);
+  });
+
   it('its facts are the issue\'s — a possession, a name, a handover, a promise, the ship, a correction, a rename — each with what refuses it', () => {
-    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
+    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8']);
     for (const f of CHARTER.facts) {
       expect(f.refusals?.length, `${f.id} has a refusal`).toBeGreaterThan(0);
-      expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
+      // F8, overhaul 2's (issue #386 §14 — the fourth live run's a6/a7): a thing
+      // given and then left. It is read through its refusals, the colour told as
+      // fact and the openings, never by a probe: one would change what a probe
+      // set's beat asks of the kept runs.
+      if (f.id === 'F8') expect(f.probes, 'F8 is not probed').toEqual([]);
+      else expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
       expect(f.from === 'world' ? CHARTER.beats.some(b => b.id === f.plantedBy) : true, `${f.id} is planted by a beat that exists`).toBe(true);
     }
     expect(CHARTER.baits).toHaveLength(2);
@@ -1201,7 +1242,7 @@ describe('the long-haul charter', () => {
   });
 
   it('every question of a set is in the beat that asks it, word for word — and the planted lines hold their facts', () => {
-    for (const [set, n] of [['A', 7], ['B', 20], ['C', 25]]) {
+    for (const [set, n] of [['A', 7], ['B', 21], ['C', 26]]) {
       const tell = CHARTER.beats.find(b => b.n === n).tell;
       for (const f of CHARTER.facts) for (const p of f.probes.filter(x => x.set === set)) expect(tell, `${p.id} in beat ${n}`).toContain(p.ask);
     }
@@ -1219,6 +1260,14 @@ describe('the long-haul charter', () => {
 });
 
 // ── the first live run, kept as a replay ─────────────────────────────────────
+
+/**
+ * Each beat's check by the beat's id — the current charter's held against a
+ * kept run's by the beats that run had. A beat added since (the expedition,
+ * `b7a`) is no part of a run made before it, and a beat's number is only
+ * where it stands now.
+ */
+const checksById = (beats, among = beats) => Object.fromEntries(beats.filter(b => among.some(x => x.id === b.id)).map(b => [b.id, b.check]));
 
 describe('the first live run of the long haul, kept as a replay (explorations/long-haul-live-20261123)', () => {
   const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261123');
@@ -1241,6 +1290,7 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
 
   it('expects what the corrected checks found in it: every beat done, no rule broken — and says it was scored again, and what the run first said', () => {
     expect(Object.keys(RUN.expected.beats)).toHaveLength(26);
+    expect(Object.keys(RUN.expected.beats), 'the beats it had: the expedition was added after it').toEqual(RUN.charter.beats.map(b => b.id));
     expect(Object.values(RUN.expected.beats).every(status => status === 'done')).toBe(true);
     expect(RUN.expected).toMatchObject({ violations: [], healthFailed: false, classification: 'suspected-quality-issue' });
     expect(RUN.rescored.was).toMatchObject({ classification: 'product-failure' });
@@ -1249,7 +1299,7 @@ describe('the first live run of the long haul, kept as a replay (explorations/lo
     const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
     expect(RUN.charter.facts).toEqual(now.facts);
     expect(RUN.charter.baits).toEqual(now.baits);
-    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats, RUN.charter.beats));
   });
 
   it('holds what its review says of it, in the narrator\'s own recorded words', () => {
@@ -1305,7 +1355,7 @@ describe('the second live run of the long haul, kept as a replay (explorations/l
     const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
     expect(RUN.charter.facts).toEqual(now.facts);
     expect(RUN.charter.baits).toEqual(now.baits);
-    expect(RUN.charter.beats.map(b => b.check)).toEqual(now.beats.map(b => b.check));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats, RUN.charter.beats));
   });
 
   it('holds what its review says of it, in the recorded replies', () => {

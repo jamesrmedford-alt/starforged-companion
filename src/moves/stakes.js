@@ -16,7 +16,10 @@
  * default price, the Pay the Price table the alternative — rolled when no
  * miss was stated, or with the world setting off), through the same suffer
  * executors and receipts a burn undoes; and the narrator is told the stakes
- * and delivers the one the outcome calls for.
+ * and delivers the one the outcome calls for — the [stakes] line of the
+ * narration's obligations block (contracts/obligations.js, overhaul 4: the
+ * STAKES, PRICE, COST and FIGHT blocks this file built went there, their
+ * words kept).
  *
  * Built from the scene only — never from a hidden plan: the stakes are shown
  * on the roller's screen before the roll, and the plans are the GM's.
@@ -63,7 +66,7 @@ function sufferTargetName(value) {
 }
 
 /** One stakes line: a trimmed, single-line string within STAKES_LINE_MAX, or null. */
-function stakesLine(value) {
+export function stakesLine(value) {
   if (typeof value !== "string") return null;
   const s = value.replace(/\s+/g, " ").trim();
   if (!s) return null;
@@ -251,137 +254,4 @@ export function stakesShown(stakes) {
     out.push({ kind: "miss", text: stakes.miss, cost: stakes.missSuffer ? sufferRouteLabel(stakes.missSuffer) : "" });
   }
   return out;
-}
-
-/**
- * The narrator's STAKES block (issue #353 R1): what the player saw before
- * the roll, and which of it this outcome delivers. '' with nothing shown.
- *
- * A miss whose price is one of the player's choices (`priceChoice`,
- * resolver.js settlePriceChoice — Explore a Waypoint's with a match: Confront
- * Chaos instead; Sojourn's: the community's need, taken on with a vow,
- * instead) delivers the stated miss only once it is paid: while the choice is
- * open, or once the price is declined, the block points at the price-choice
- * block that says so (formatPriceChoiceBlock). It was told "it is what this
- * miss costs" about a price nothing had charged (issue #364
- * EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; Sojourn's —
- * SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE).
- *
- * @param {Object|null} stakes — the resolution's
- * @param {string|null} outcome — "strong_hit" | "weak_hit" | "miss"
- * @param {{ priceChoice?: { status?: string, instead?: string }|null }} [opts] — the resolution's price choice, as it stands
- * @returns {string}
- */
-export function formatStakesBlock(stakes, outcome, { priceChoice = null } = {}) {
-  const shown = stakesShown(stakes);
-  if (!shown.length) return "";
-  const lines = ["## STAKES STATED BEFORE THE ROLL", "", "The player saw these before rolling:"];
-  for (const s of shown) {
-    lines.push(s.kind === "hit" ? `- On a hit: ${s.text}` : `- On a miss: ${s.text}${s.cost ? ` (${s.cost})` : ""}`);
-  }
-  const hit  = shown.some(s => s.kind === "hit");
-  const miss = shown.some(s => s.kind === "miss");
-  let deliver = "";
-  if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
-  else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
-  else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the block on the price, below, says where it stands.`;
-  else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
-  else if (outcome === "miss") deliver = "This is a miss: the hit did not come. Its cost is the move outcome's, not a stated one.";
-  if (deliver) lines.push("", deliver);
-  return lines.join("\n");
-}
-
-/** Whether a price choice is not (yet) paid: still open, or declined for what replaces it. */
-function priceChoiceOpen(priceChoice) {
-  return priceChoice?.status === "pending" || priceChoice?.status === "declined";
-}
-
-// How a price still on offer is shown, whatever stands beside it.
-const SHOW_PRICE_ARRIVING = "Show that price as the hardship or threat the miss confronts them with — arriving, about to cost them — and stop there. " +
-  "Do not show its cost as already paid, and do not resolve it: whether it lands is the player's to choose.";
-
-/**
- * How the narrator is told a price that is one of the player's choices, by
- * what the other choice does instead (`priceChoice.instead` — resolver.js
- * priceChoiceOf). Each: `miss` — what the STAKES block calls the miss;
- * `offered` and `show` — the choice still open; `declined` and `after` — the
- * price declined (the block puts "no price is paid" between them).
- */
-const PRICE_ALTERNATIVES = Object.freeze({
-  // Explore a Waypoint's miss with a match: a move made instead of the price.
-  confront_chaos: Object.freeze({
-    miss:     "a miss with a match",
-    offered:  "This miss came with a match: the player may Pay the Price or Confront Chaos instead, and has not chosen yet (a card asks them).",
-    show:     SHOW_PRICE_ARRIVING,
-    declined: "This miss came with a match, and the player chose to Confront Chaos instead of paying a price",
-    after:    "Show the hardship or threat the miss confronts them with and leave it open — " +
-      "what follows is Confront Chaos's to tell: its own roll decides it, and its narration comes after this one.",
-  }),
-  // Sojourn's miss: "The community needs help, or makes a costly demand in
-  // exchange for safe harbor. If you do it, or Swear an Iron Vow to see it
-  // done, resolve this move as a strong hit" — or no relief, and the price
-  // (issue #364 SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE).
-  swear_an_iron_vow: Object.freeze({
-    miss:     "a miss",
-    offered:  "This miss leaves a choice, and the player has not chosen yet (a card asks them): the community needs help, or makes a costly " +
-      "demand in exchange for safe harbor, which they may do or Swear an Iron Vow to see done; or they find no relief and Pay the Price.",
-    show:     "Show the refuge withheld — what the community needs or demands, and that price as what looms if they find no relief: " +
-      "arriving, about to cost them — and stop there. Do not show its cost as already paid, do not show the vow sworn or the help given, " +
-      "and do not resolve it: which it comes to is the player's to choose.",
-    declined: "On this miss the player chose to answer the community's need — to do what it asks, or Swear an Iron Vow to see it done — instead of paying a price",
-    after:    "Show what the community needs, or the costly demand it makes in exchange for safe harbor, and the character taking it on — " +
-      "and leave it there, the refuge not yet given: a vow is Swear an Iron Vow's to tell (its own move, narrated after this one), and once the vow is sworn " +
-      "or the help is done this move is resolved as a strong hit — the refuge it wins is told then, in a narration of its own, not here.",
-  }),
-});
-
-// An alternative the table above does not name: the choice, with nothing said of what the other way is.
-const OTHER_PRICE_ALTERNATIVE = Object.freeze({
-  miss:     "a miss",
-  offered:  "This miss leaves a choice, and the player has not chosen yet (a card asks them): Pay the Price, or the other way the move offers instead.",
-  show:     SHOW_PRICE_ARRIVING,
-  declined: "On this miss the player chose the other way the move offers instead of paying a price",
-  after:    "Show the hardship or threat the miss confronts them with and leave it open — what follows is told after this narration.",
-});
-
-/** How a price choice's alternative is told (PRICE_ALTERNATIVES), whatever it names. */
-function priceAlternative(priceChoice) {
-  const instead = priceChoice?.instead;
-  return typeof instead === "string" && Object.hasOwn(PRICE_ALTERNATIVES, instead) ? PRICE_ALTERNATIVES[instead] : OTHER_PRICE_ALTERNATIVE;
-}
-
-/**
- * The narrator's block for a miss whose price is one of the player's choices
- * (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY — Explore a Waypoint's
- * miss with a match: Pay the Price, or Confront Chaos instead; and
- * SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE — Sojourn's miss: no relief and
- * the price, or the community's need taken on with a vow), as the choice
- * stands when the narration is written (resolver.js settlePriceChoice): not
- * yet made — the price is shown arriving, never paid; declined — no price is
- * paid, and what was taken instead tells what comes. '' once the price is
- * paid (the seed and the stakes deliver it), and for a result with no such
- * choice.
- *
- * @param {{ price?: string, stated?: boolean, instead?: string, status?: string }|null} priceChoice
- * @returns {string}
- */
-export function formatPriceChoiceBlock(priceChoice) {
-  if (!priceChoiceOpen(priceChoice)) return "";
-  const told  = priceAlternative(priceChoice);
-  const price = stakesLine(priceChoice.price);
-  if (priceChoice.status === "declined") {
-    return [
-      "## THE PRICE WAS NOT PAID",
-      "",
-      `${told.declined}: no price is paid` +
-      `${priceChoice.stated ? ", and the miss stated before the roll does not come to pass" : ""}. ` +
-      told.after,
-    ].join("\n");
-  }
-  return [
-    "## THE PRICE IS THE PLAYER'S CHOICE",
-    "",
-    `${told.offered}${price ? ` The price it offers: ${price}` : ""}`,
-    told.show,
-  ].join("\n");
 }

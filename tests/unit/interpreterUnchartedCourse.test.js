@@ -26,13 +26,6 @@ describe("the interpreter's travel moves (PT06)", () => {
     apiPost.mockResolvedValue({ content: [{ type: "text", text: JSON.stringify({ moveId: "undertake_an_expedition", statUsed: "wits", moveTarget: "Archer's rendezvous — the gap" }) }] });
   });
 
-  it("Set a Course is a known route to a charted place; a journey anywhere else is an expedition", async () => {
-    await interpretMove("Please set a course.", { campaignState: {}, mischiefLevel: "balanced", apiKey: "k" });
-    const text = systemText();
-    expect(text).toContain("**set_a_course** — When you follow a known route to a charted, known place");
-    expect(text).toMatch(/\*\*undertake_an_expedition\*\* — [^\n]*destination that is not a charted, known place[^\n]*even when the player says "set a course"/);
-  });
-
   it("names an unnamed destination by a working label", async () => {
     const result = await interpretMove("Please set a course.", { campaignState: {}, mischiefLevel: "balanced", apiKey: "k" });
     expect(systemText()).toMatch(/working label[^\n]*\("Archer's rendezvous — the gap"\)/);

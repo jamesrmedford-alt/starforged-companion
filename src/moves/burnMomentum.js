@@ -75,6 +75,7 @@ import {
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
+import { recordEvent } from "../record/record.js";
 import { moveDisplayName }     from "../system/i18n.js";
 import {
   revertPayThePrice,
@@ -760,8 +761,14 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // penalty (issue #354 P2-14) and is not posted beside it — when momentum is
   // all the step changes; a note for another meter is kept.
   const momentumOnly = !burnChanges.health && !burnChanges.spirit && !burnChanges.supply;
-  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnChanges, ...(momentumOnly ? { quietNote: true } : {}) }, failures);
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnChanges, res: burn.resolutionId ?? null, ...(momentumOnly ? { quietNote: true } : {}) }, failures);
   const momentumNote = burnedMomentumLine(momentum.value, readMomentumState(actor).value, momentumReset);
+  // The upgraded outcome is applied: on the session record (issue #382).
+  recordEvent("move.upgraded", {
+    who: { user: game.user?.id ?? null, actor: actor.id },
+    ref: { res: burn.resolutionId ?? null },
+    d: { how: "burn", from: burn.originalOutcome ?? null, to: burnResult.outcome, momentum: { from: momentum.value, to: readMomentumState(actor).value } },
+  });
   // Aid Your Ally: the burned hit's momentum is the ally's, less what the
   // recorded hit already paid them (AID-ALLY-UPGRADE).
   // An ally gone since the move takes none of it, nor does the burner: a
@@ -913,9 +920,10 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * and frame stayed binding beside the re-narration's (issue #338 D8) — in the
  * store and on the upgrade's working copy (`campaignState`), which the
  * re-narration applies its sidecar to (resultUpgrade.js
- * retractSupersededNarrations). A rolling summary made from it is dropped
- * first, as the X-Card drops one (narrator.js dropSummaryOfSupersededCards,
- * issue #345 AA24).
+ * retractSupersededNarrations). The session summary needs no drop: it is a
+ * view of the session record, which reads a superseded narration as gone
+ * (record/read.js — issue #382; it was narrator.js
+ * dropSummaryOfSupersededCards, issue #345 AA24).
  *
  * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
  * @param {{ kind?: "burn"|"improve", campaignState?: Object|null }} [opts]
@@ -931,11 +939,6 @@ export async function supersedeOriginalNarration(burn, { kind = "burn", campaign
       && f?.burnSuperseded !== true;
   });
   if (!card) return;
-  // A rolling summary made from it goes first, while the card is still in
-  // memory: the count it is debounced on does not move (issue #345 AA24).
-  await import("../narration/narrator.js")
-    .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards([card]))
-    .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of the superseded narration could not be dropped:`, err?.message ?? err));
   await card.update({
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
     content: buildSupersededNarrationContent(card.content, kind),

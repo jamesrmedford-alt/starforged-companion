@@ -31,6 +31,8 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 
 import { apiPost } from '../../src/api-proxy.js';
 import { interrogateScene, narratePacedInput, getRollingSessionSummary } from '../../src/narration/narrator.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { seedSessionRecord, playedBeats, citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 import {
   buildNarratorSystemBlocks, buildNarratorSystemPrompt, splitNarratorSystemPrompt,
   appendSidecarInstruction, sidecarModeAddendum,
@@ -322,11 +324,12 @@ describe('P2-23 — the request carries the blocks, the first two cached for an 
   });
 
   it('the rolling summary\'s own prompt goes as one block with no breakpoint: nothing repeats it', async () => {
-    apiPost.mockResolvedValue(reply('The crew chased the signal.'));
-    game.messages = { contents: [1, 2, 3, 4, 5, 6].map(i => ({
-      flags: { [MODULE_ID]: { narratorCard: true, sessionId: 'sess-1', narrationText: `Beat ${i}.` } },
-    })) };
+    apiPost.mockResolvedValue(reply(citedSummaryReply(['The crew chased the signal.'])));
+    // The session's record: the summary is a view of it (issue #382).
+    const journals = installJournalMock();
+    await seedSessionRecord('sess-1', playedBeats('sess-1', [1, 2, 3, 4, 5, 6].map(i => `Beat ${i}.`)));
     await getRollingSessionSummary({ currentSessionId: 'sess-1' }, { forceRefresh: true });
+    journals.restore();
     const system = systemOf();
     expect(system).toHaveLength(1);
     expect(system[0].cache_control).toBeUndefined();

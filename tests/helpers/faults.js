@@ -35,6 +35,60 @@
 import { onTestFailed } from "vitest";
 import { CLAUDE_FAULT, MODULE_ID } from "./multiClient.js";
 
+/**
+ * A call made by the line reader (src/moves/reader.js readLine — by how its
+ * system prompt opens), which reads every typed line since the switch (issue
+ * #384, slice 2): the open reading decidePacing routes, and interpretMove's
+ * roll, chosen and open-retry modes. It runs on Sonnet 5.5, the narration
+ * model's default, so a test that tells a narration call by its model says it
+ * is not one of these as well.
+ */
+export const isReaderCall = (call) => /^You are the line reader\b/.test(call?.system ?? "");
+
+/** The line reader's mode for a call: "open", "roll" or "chosen" (its user message's first line), or null. */
+export function readerModeOf(call) {
+  if (!isReaderCall(call)) return null;
+  const first = String(call?.userText ?? "").split("\n", 1)[0];
+  return /^MODE — THE MOVE IS CHOSEN/.test(first) ? "chosen" : /^MODE — A ROLL WAS ASKED FOR/.test(first) ? "roll" : "open";
+}
+
+/**
+ * A line reader's reply (src/moves/reader.js THE REPLY): a move, or none
+ * (`move: null`). `asked: true` rolls a move at any dial (routeReading row
+ * 5); a move with no roll, or `risk: "slight"` below a dial of 9, is
+ * offered.
+ *
+ * @param {Object} [over]
+ * @returns {string}
+ */
+export const readerReply = (over = {}) => JSON.stringify({ move: null, category: "exploration", confidence: "high", reason: "r", ...over });
+
+/**
+ * A script written for the two readers the line reader replaced (issue #384,
+ * slice 2), answered as one: a line's open reading is the pacing
+ * classifier's decision with the move interpreter's move — a MOVE is a move
+ * at stake (risk high, the interpreter's confidence), an offer a slight one,
+ * a narration or an interpreter's "no move" none; a roll, a chosen move or
+ * an open reading's second try is the interpreter's reply as it was.
+ *
+ * @param {{ classifier?: Object|null, interpreter?: Object|null }} replies — the old scripts' reply objects
+ * @returns {(call: Object) => string}
+ */
+export function asLineReader(replies) {
+  return (call) => {
+    const { classifier = null, interpreter = null } = replies ?? {};
+    if (readerModeOf(call) !== "open" || !classifier) return JSON.stringify(interpreter ?? {});
+    const category = ["combat", "investigation", "exploration", "social", "downtime"].includes(classifier.category) ? classifier.category : "exploration";
+    const reason = classifier.reasoning ?? interpreter?.rationale ?? "r";
+    const declined = interpreter && (interpreter.noMove === true || (Object.hasOwn(interpreter, "moveId") && interpreter.moveId === null));
+    const move = declined ? null : (interpreter?.moveId ?? classifier.suggestedMove ?? null);
+    if (classifier.decision === "NARRATIVE" || !move) return readerReply({ category, reason });
+    const atStake = classifier.decision === "MOVE";
+    return JSON.stringify({ ...(interpreter ?? {}), move, asked: false, risk: atStake ? "high" : "slight", category,
+      confidence: atStake ? (interpreter?.confidence ?? "high") : "high", reason });
+  };
+}
+
 /** A promise with its resolve / reject exposed. */
 export function deferred() {
   let resolve;

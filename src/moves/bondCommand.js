@@ -84,6 +84,18 @@ export async function handleBondCommand(message) {
   // cancels a matching action die, as on every action roll (issue #311 P01).
   const rollerId      = resolveSpeakerActorId(message, campaignState);
   const roller        = rollerId ? (game.actors?.get?.(rollerId) ?? null) : null;
+  // A named bonded connection's roll is Develop Your Relationship +rank with
+  // the roller's own connection — a bond Item on their sheet (overhaul 4, the
+  // move gate's THEIR_CONNECTION): asked before the dice, a refusal told to
+  // its author and the GMs. A rank-only `!bond` names no one: the table's own
+  // roll, never asked (D7).
+  if (target) {
+    const { gatePress } = await import("./contracts/pressGate.js");
+    const gate = await gatePress("develop_your_relationship", { actorId: rollerId,
+      reading: { targetId: target.__hostId ?? null, target: target.name ?? null },
+      label: "!bond", alsoTell: [message?.author?.id ?? message?.user?.id ?? null] });
+    if (!gate.ok) return;
+  }
   const adds          = BOND_ROLL_ADDS[rank];
   const actionDie     = rollActionDie();
   const challengeDice = rollChallengeDice();
@@ -124,7 +136,13 @@ export async function handleBondCommand(message) {
     : `Develop Your Relationship (bonded, ${escapeHtml(rank)})`;
   await ChatMessage.create({
     content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${dieCancelled ? `<s>${actionDie}</s> (cancelled by momentum -${actionDie})` : actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
-    flags:   { [MODULE_ID]: { bondCommandCard: true } },
+    // The roll, as the session record takes it from the card on the canonical
+    // GM (record/cards.js, issue #382): `!bond` rolls on its author's client,
+    // and a miss sends the GM nothing else.
+    flags:   { [MODULE_ID]: { bondCommandCard: true, bondRoll: {
+      actorId: rollerId ?? null, outcome, isMatch, actionDie, actionDieCancelled: dieCancelled, adds, actionScore,
+      challengeDice, target: target ? { name: target.name ?? null, id: target.__hostId ?? null } : null,
+    } } },
   });
 
   if (!effect.ticks && !effect.momentum && !raiseRank) {

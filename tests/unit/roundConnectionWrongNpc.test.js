@@ -127,8 +127,10 @@ async function playRound(detected) {
   await table.drain();
   expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
   const card = table.cards(f => f.narratorCard && f.roundId)[0];
-  expect(card.flags[MODULE_ID].roundEntries.map(e => [e.playerName, e.moveId, e.outcome]))
-    .toEqual([['Ren', 'compel', 'strong_hit'], ['Kira', 'make_a_connection', 'strong_hit']]);
+  // Each entry's line names its move; its flags name whose it was and the outcome it told.
+  expect(card.content).toMatch(/Ren<\/strong> — Compel[\s\S]*Kira<\/strong> — Make a Connection/);
+  expect(card.flags[MODULE_ID].roundEntries.map(e => [e.playerName, e.outcome]))
+    .toEqual([['Ren', 'strong_hit'], ['Kira', 'strong_hit']]);
 }
 
 describe("CONT-6 — a round's Make a Connection", () => {

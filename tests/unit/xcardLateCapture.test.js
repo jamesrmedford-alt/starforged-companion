@@ -9,7 +9,7 @@
  * scheduleNarrationCapture) and then waits on a Claude call. The X-Card
  * undoes what was captured BEFORE it was played (retractNarrationCapture, by
  * the narration's id, issue #329 X01), but a capture still running when it was
- * played went on to write lore, a Session Log beat, a faction page, a stamped
+ * played went on to write lore, a faction page, a stamped
  * draft card, a Make a Connection's connection and tier details from the
  * removed prose — after the undo had run, so nothing took them back.
  *
@@ -176,8 +176,6 @@ async function settle(turns = 40) { for (let i = 0; i < turns; i++) await new Pr
 const loreTitles   = () => getConfirmedLore(stored()).map(e => e.title);
 const lorePages    = () => (journals.get(JOURNAL_NAMES.lore)?.pages.contents ?? []).map(p => p.name);
 const factionPages = () => (journals.get(JOURNAL_NAMES.factions)?.pages.contents ?? []).map(p => p.name);
-const logBeats     = () => (journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents ?? [])
-  .flatMap(p => p.flags[MODULE_ID]?.sessionLogPage?.beats ?? []).map(b => b.title);
 const draftCards   = () => ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.draftEntityCard);
 const vexDetails   = () => (vex.getFlag(MODULE_ID, 'connection')?.generativeTier ?? []).map(e => e.detail);
 const calloways    = () => listConnections(stored()).filter(c => c.name === 'Brother Calloway');
@@ -190,7 +188,6 @@ function expectNothingCaptured({ loreUndone = false } = {}) {
   expect(loreTitles(), 'ESTABLISHED LORE').not.toContain('The branding rite');
   if (loreUndone) expect(loreEntry('The branding rite'), 'the X-Card retracted the page that landed first').toMatchObject({ retracted: true, confirmed: false });
   else expect(lorePages(), 'a Lore page').not.toContain('The branding rite');
-  expect(logBeats(), 'a Session Log beat').toEqual([]);
   expect(factionPages(), 'a faction page').toEqual([]);
   expect(draftCards(), 'a ◈ New Entities card').toEqual([]);
   expect(vexDetails(), 'a tier detail on Vex').toEqual([]);
@@ -198,12 +195,11 @@ function expectNothingCaptured({ loreUndone = false } = {}) {
 }
 
 describe('XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing', () => {
-  it('control: with no X-Card, the paced capture records lore, a beat, a faction page, a draft card and a tier detail', async () => {
+  it('control: with no X-Card, the paced capture records lore, a faction page, a draft card and a tier detail', async () => {
     const text = await narrate('nar-1');
     await runPacedDetection(text, stored(), { narrationId: 'nar-1', actorId: null });
     await runNarrationTierUpdate(text, stored(), { narrationId: 'nar-1' });
     expect(loreTitles()).toContain('The branding rite');
-    expect(logBeats()).toContain('Choir hymns');
     expect(factionPages()).toContain('The Ember Choir');
     expect(draftCards()).toHaveLength(1);
     expect(vexDetails()).toEqual(["Burned the ledger to hide the Choir's debt"]);

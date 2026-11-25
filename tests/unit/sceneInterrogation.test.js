@@ -108,14 +108,18 @@ describe('buildSceneUserMessage()', () => {
     expect(out).toContain('"What lurks here?"');
   });
 
+  // Known-issues SCENE-ANSWER-NOT-A-CAMERA: it asked for "N–N+1 sentences of
+  // atmospheric description" beside "do not introduce new plot elements".
   it('includes the constraint instruction', () => {
     const out = buildSceneUserMessage('Anything?', '', 2);
-    expect(out).toContain('Do not introduce new plot elements');
+    expect(out).toContain('the fact asked for and nothing else');
+    expect(out).toContain('No description, no scenery, nothing new');
+    expect(out).not.toContain('atmospheric');
   });
 
-  it('includes sentence count in instruction', () => {
+  it('includes the most sentences an answer may run to', () => {
     const out = buildSceneUserMessage('Anything?', '', 3);
-    expect(out).toContain('3–4 sentences');
+    expect(out).toContain('at most three plain sentences');
   });
 
   it('includes recent context when provided', () => {

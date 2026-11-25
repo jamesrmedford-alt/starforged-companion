@@ -29,14 +29,11 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'chat, no move',
-});
+const NARRATIVE = readerReply({ category: 'social' });
 
 let table;
 const world = () => table.world.campaignState();
@@ -59,7 +56,7 @@ describe('issue #345 AA01 — the X-Card on an oracle\'s narration takes its ans
     table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
     scriptClaude(table, {
       fallback: (call) => {
-        if (/pacing pre-classifier/.test(call.system)) return NARRATIVE;
+        if (isReaderCall(call)) return NARRATIVE;
         if (call.model === NARRATION_MODEL) {
           return /The player invoked the oracle/.test(call.userText ?? '')
             ? 'The captain lies still in the wreckage, a dark stain spreading.\n```json\n{"newTruths":[],"stateChanges":[]}\n```'

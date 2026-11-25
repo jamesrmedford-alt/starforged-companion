@@ -26,7 +26,8 @@
 // What a charter says of scoring — its facts with their variants, refusals
 // and probes, its baits, each beat's check — is part of the checks: it is
 // taken from the charter as it is now (charters/<name>.json), by fact and
-// beat id, where that file is there. What the run was given to play with —
+// beat id, where that file is there (with the moves a beat wants of its lines
+// of play). What the run was given to play with —
 // persona, tells, seed, settings, cast — stays the run's own.
 //
 // The beats keep the steps they had: the player acted on the pointer as it
@@ -71,7 +72,13 @@ const charter = now ? {
   ...asRun,
   facts: asRun.facts.map(f => now.facts?.find(x => x.id === f.id) ?? f),
   baits: (asRun.baits ?? []).map(b => now.baits?.find(x => x.id === b.id) ?? b),
-  beats: asRun.beats.map(b => ({ ...b, check: now.beats?.find(x => x.id === b.id)?.check ?? b.check })),
+  // …and which moves a beat wants of its lines of play (`wants`, `setupLines`
+  // — lib/review.mjs freeformOf): scoring too, so a run made before a beat
+  // said so is measured by what the beat says now.
+  beats: asRun.beats.map((b) => {
+    const cur = now.beats?.find(x => x.id === b.id) ?? null;
+    return { ...b, check: cur?.check ?? b.check, ...(cur?.wants ? { wants: cur.wants } : {}), ...(cur?.setupLines != null ? { setupLines: cur.setupLines } : {}) };
+  }),
 } : asRun;
 
 const { marks, messages } = observer;
@@ -89,6 +96,7 @@ const rescored = {
 const { allCalls, data } = reviewDataOf({
   moduleRequests: requests.module, runnerRequests: requests.runner, actions, messages, beats: long.beats, autopilot: observer.autopilot ?? [],
   prices: run.prices?.usdPerMillionTokens ?? {}, spend: run.budget,
+  exchanges: replay.recording?.exchanges ?? [], charter, marks,
 });
 const header = { id: path.basename(dir), mode: run.mode, startedAt: run.startedAt, classification: verdict.classification, because: verdict.because, questions: run.questions ?? [], rescored };
 

@@ -57,6 +57,8 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { journalsKeepPages, tableSummaryOf } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
@@ -69,7 +71,9 @@ const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
  * later window, was counted as a second narration and took the next scripted
  * reply (TESTS-FLAKY-UNDER-LOAD).
  */
-const isNarration = (call) => call.model === NARRATION_MODEL && call.system.startsWith('## NARRATOR ROLE AND VOICE');
+// A narration of play — not the campaign recap, which shares the narrator's role (issue #382: its source is the record).
+const isRecapCall = (call) => /Write a campaign recap/.test(call.userText ?? '');
+const isNarration = (call) => call.model === NARRATION_MODEL && call.system.startsWith('## NARRATOR ROLE AND VOICE') && !isRecapCall(call);
 const EMPTY_SIDECAR = { newTruths: [], stateChanges: [] };
 
 let table;
@@ -81,10 +85,15 @@ function reply(prose, sidecar = EMPTY_SIDECAR) {
   return `${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
 }
 
+// The session record is kept on the Session Log's pages (issue #382): the
+// table's journals keep their pages, so the summary — a view of the record —
+// is made from what was played.
+let restoreJournals = () => {};
 beforeAll(async () => {
   table = await simulateTable({ users: [USERS.GM, USERS.P1] });
+  restoreJournals = journalsKeepPages(table, makeJournal);
 }, 30_000);
-afterAll(() => table?.teardown());
+afterAll(() => { restoreJournals(); return table?.teardown(); });
 
 beforeEach(async () => {
   replies.length = 0;
@@ -93,6 +102,9 @@ beforeEach(async () => {
     sessionActive: true, currentSessionId: 'sess-1', sessionStartedId: 'sess-1', sessionNumber: 3, currentSceneId: 'sc-1', sceneTruths: [],
   } } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
+  // A fresh world each test: the GM's record opens its session anew (its
+  // resumed `session.begun` — the reset world's journals are empty).
+  (await table.client('gm-1').import('../../src/record/record.js'))._resetRecordForTests();
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
   table.claude.respond((call) => {
     if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
@@ -133,11 +145,14 @@ const tier = (actorId) => table.actors.get(actorId)?.flags?.[MODULE_ID]?.connect
 describe('a recorded NPC: what the narrator records about them is kept', () => {
   it('their truth and state render on the next turn and land on their card at scene end (A1)', async () => {
     const kael = await recordNpc('Kael Dros');
+    // Facts the player's line bears out (overhaul 2 §5.2): they bind, and a
+    // scene's end files them. The narrator's own colour fades with its scene
+    // (colourNotFiled.test.js).
     replies.push(reply('Kael leans on the rail of the docking ring, rubbing the old scar on his jaw.', {
-      newTruths:    [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw' }],
-      stateChanges: [{ subject: 'Kael Dros', attribute: 'location', value: 'the docking ring' }],
+      newTruths:    [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw', from: 'line' }],
+      stateChanges: [{ subject: 'Kael Dros', attribute: 'location', value: 'the docking ring', from: 'line' }],
     }));
-    await narrateMove('I hail Kael Dros across the docking ring.');
+    await narrateMove('I hail Kael Dros across the docking ring — the man with the ragged scar along his jaw.');
 
     expect(world().sceneTruths).toMatchObject([{
       fact: 'has a ragged scar along his jaw',
@@ -147,8 +162,8 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
 
     const next = await narrateMove('I ask Kael what he wants.');
     expect(next.system).toContain('## KAEL DROS — Connection');
-    expect(next.system).toMatch(/TRUTHS:\n {2}Kael Dros — has a ragged scar along his jaw/);
-    expect(next.system).toMatch(/CURRENT STATE[^\n]*\n {2}Kael Dros — location: the docking ring/);
+    expect(next.system).toMatch(/WHAT BINDS[^\n]*\n {2}Kael Dros — has a ragged scar along his jaw \(the player\)/);
+    expect(next.system).toMatch(/STANDING NOW:\n {2}Kael Dros — location: the docking ring \(the player\)/);
 
     await type('gm-1', '!scene end');
     expect(tier(kael)).toEqual([
@@ -220,11 +235,13 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
 
 describe('a new NPC: facts the narrator recorded before their card existed follow them onto it', () => {
   it('Confirm on the draft card re-keys them to the new Actor, the next turn renders them, scene end migrates them (A3)', async () => {
+    // The player's line bears them out (overhaul 2 §5.2): they bind, and the
+    // scene's end files them on the new card.
     replies.push(reply('A woman in a quartermaster\'s coat waves you over, her hand wrapped in gauze.', {
-      newTruths:    [{ subject: 'Mira Sol', fact: 'quartermaster at Bleakhold (she/her); owes the PC a favour' }],
-      stateChanges: [{ subject: 'Mira Sol', attribute: 'condition', value: 'nursing a burned hand' }],
+      newTruths:    [{ subject: 'Mira Sol', fact: 'quartermaster at Bleakhold (she/her); owes the PC a favour', from: 'line' }],
+      stateChanges: [{ subject: 'Mira Sol', attribute: 'condition', value: 'nursing a burned hand', from: 'line' }],
     }));
-    await narrateMove('I look for whoever runs the cargo deck.');
+    await narrateMove('I look for the quartermaster of Bleakhold who owes me a favour and nurses a burned hand.');
     expect(world().sceneTruths[0].subject).toEqual({ kind: 'text', text: 'Mira Sol' });
 
     // The detection pass's draft card (its real producer), confirmed by the GM.
@@ -268,9 +285,9 @@ describe('@scene asks about the scene in progress (A4)', () => {
     await type('pl-1', '@scene what does the hatch look like up close?');
     const asked = table.claude.calls.slice(from).filter(isNarration);
     expect(asked.map(c => c.client)).toEqual(['gm-1']);
-    expect(asked[0].system).toMatch(/SCENE FRAME[^\n]*\n {2}Where: {3}the derelict's spine corridor/);
-    expect(asked[0].system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
-    expect(asked[0].system).toMatch(/CURRENT STATE[^\n]*\n {2}scene — lighting: red emergency strips/);
+    expect(asked[0].system).toMatch(/THE SCENE[^\n]*\n {2}Where: {4}the derelict's spine corridor — as the narration has it/);
+    expect(asked[0].system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}scene — the hatch is welded shut/);
+    expect(asked[0].system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}scene — lighting: red emergency strips/);
 
     expect(world().currentSceneId).toBe('sc-1');
     expect(world().sceneTruths.map(t => t.fact)).toEqual(['the hatch is welded shut']);
@@ -317,7 +334,7 @@ describe('the scene frame\'s cast keeps their card and facts on a move turn (B3)
 
     const next = await narrateMove('I lean in and try to convince him.');
     expect(next.system).toContain('## KAEL DROS — Connection');
-    expect(next.system).toMatch(/TRUTHS:\n {2}Kael Dros — wants the PC off Bleakhold by dawn/);
+    expect(next.system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}Kael Dros — wants the PC off Bleakhold by dawn/);
     expect(next.system).toMatch(/Kael Dros — location: the cargo office/);
     // The permission class still comes from the player's text alone (§8.2):
     // no name in it, so this hybrid move resolves as discovery.
@@ -334,7 +351,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
     table.claude.respond((call) => {
       if (call.system.includes('continuity scribe')) {
         summaryCalls.push(call.client);
-        return held.then(() => 'Kira bargained with the dockmaster for a berth.');
+        return held.then(() => JSON.stringify([{ text: 'Kira bargained with the dockmaster for a berth.', because: ['2'] }]));
       }
       if (call.model === NARRATION_MODEL) return reply('The deck shudders underfoot.');
       return '{}';
@@ -343,7 +360,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
     await narrateMove('I check the docking clamps one by one.');
     await narrateMove('I wave down the dockmaster for a berth.');
     expect(summaryCalls).toEqual([]);
-    await narrateMove('I offer the dockmaster half our fuel.');   // the 3rd card: the regen is due
+    await narrateMove('I offer the dockmaster half our fuel.');   // the 3rd beat: the regen is due
     expect(summaryCalls).toEqual(['gm-1']);
 
     // The regen is still waiting on Haiku; the next narration goes out anyway.
@@ -352,7 +369,7 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
 
     release();
     await table.settle();
-    expect(world().sessionSummary).toMatchObject({ text: 'Kira bargained with the dockmaster for a berth.', sessionId: 'sess-1' });
+    expect(tableSummaryOf(table, 'sess-1')).toMatchObject({ text: 'Kira bargained with the dockmaster for a berth.' });
     const after = await narrateMove('I head for the berth.');
     expect(after.system).toContain('## STORY SO FAR (THIS SESSION)');
     expect(after.system).toContain('Kira bargained with the dockmaster for a berth.');
@@ -374,7 +391,7 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
       if (call.userText.includes('SIGNIFICANT new development')) {
         return JSON.stringify({ updates: [{ entityId: kael, detail: 'Kael has a scar along his jaw.', salience: 'notable' }] });
       }
-      if (call.system.includes('continuity scribe')) return 'Kira met Kael in the cargo office.';
+      if (call.system.includes('continuity scribe')) return JSON.stringify([{ text: 'Kira met Kael in the cargo office.', because: ['1'] }]);
       return call.model === NARRATION_MODEL ? reply('The station hums.') : '{}';
     });
     await gm.run(() => appendGenerativeTierUpdates('Kael\'s jaw is scarred.', [{ journalId: kael, type: 'connection' }], 'sess-1', 3));
@@ -393,23 +410,25 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
     const next = await narrateMove('I walk the empty docking ring.');   // a new scene
     expect(next.system).toMatch(/CORRECTED[^\n]*\n[^\n]*\n {2}Kael Dros — has a ragged scar along his jaw/);
 
-    await narrateMove('I wait for the next shuttle.');   // the 3rd card: the summary regen is due
+    await narrateMove('I wait for the next shuttle.');   // the 3rd beat: the summary regen is due
     const summary = table.claude.calls.find(c => c.system.includes('continuity scribe'));
-    expect(summary.userText).toContain('## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n- Kael Dros — has a ragged scar along his jaw');
+    expect(summary.userText).toContain('## STRUCK BY THE TABLE — did not happen\n\n- Kael Dros — has a ragged scar along his jaw');
+    expect(summary.userText).not.toMatch(/established[^\n]*has a ragged scar/);
   });
 });
 
 describe('what scene end keeps reaches the next scene (C1, C2)', () => {
   it('a character\'s last location and condition are on their card in the next scene', async () => {
     await recordNpc('Kael Dros');
+    // The player's line bears them out (overhaul 2 §5.2): LAST KNOWN keeps what binds.
     replies.push(reply('Kael limps back to the cargo office.', {
       newTruths: [],
       stateChanges: [
-        { subject: 'Kael Dros', attribute: 'location',  value: 'the cargo office' },
-        { subject: 'Kael Dros', attribute: 'condition', value: 'limping on a twisted ankle' },
+        { subject: 'Kael Dros', attribute: 'location',  value: 'the cargo office', from: 'line' },
+        { subject: 'Kael Dros', attribute: 'condition', value: 'limping on a twisted ankle', from: 'line' },
       ],
     }));
-    await narrateMove('I watch Kael Dros go.');
+    await narrateMove('I watch Kael Dros limp back to the cargo office on his twisted ankle.');
     await type('gm-1', '!scene end');
     expect(world().sceneState.bySubject).toEqual({});
 
@@ -429,7 +448,7 @@ describe('what scene end keeps reaches the next scene (C1, C2)', () => {
     });
     await type('gm-1', '!at Bleakhold');
     replies.push(reply('Neon flickers over a bar wedged between two cargo locks.', {
-      newTruths:  [{ subject: 'scene', fact: 'the bar on the docking ring is called the Rusty Lantern' }],
+      newTruths:  [{ subject: 'scene', fact: 'the bar on the docking ring is called the Rusty Lantern', from: 'line' }],
       stateChanges: [],
       sceneFrame: { location: 'Bleakhold docking ring', present: [], situation: 'Looking for a drink' },
     }));
@@ -450,8 +469,12 @@ describe('a session carries into the next one (C3, C4)', () => {
 
   beforeEach(async () => {
     table.claude.respond((call) => {
-      if (call.system?.includes('continuity scribe')) return SUMMARY;
-      if (call.userText?.includes('## CAMPAIGN CHRONICLE')) return RECAP;
+      if (call.system?.includes('continuity scribe')) return JSON.stringify([{ text: SUMMARY, because: ['1'] }]);
+      // The recap answers in cited sentences (issue #382 D11), citing a line it was sent.
+      if (isRecapCall(call)) {
+        const id = /\[((?:s\d+|note|old|now)-\d+)\]/.exec(call.userText ?? '')?.[1] ?? 'now-1';
+        return JSON.stringify({ paragraphs: [[{ text: RECAP, because: [id] }]] });
+      }
       if (isNarration(call)) return replies.shift() ?? reply('The station hums. Nothing moves.');
       return '{}';
     });
@@ -471,18 +494,26 @@ describe('a session carries into the next one (C3, C4)', () => {
     await narrateMove('I pay Vex for the beacon code.');
     table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="questFocus"]': '', 'input[name="connectionFocus"]': '' }));
     await type('gm-1', '!end-session');
-    expect(world()).toMatchObject({ sessionEndedId: 'sess-1', sessionSummary: { sessionId: 'sess-1', text: SUMMARY } });
+    expect(world()).toMatchObject({ sessionEndedId: 'sess-1' });
+    // End brought the summary up to date: a view of the session's record (issue #382).
+    expect(tableSummaryOf(table, 'sess-1')?.text).toBe(SUMMARY);
 
     table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="vignette"]': false, 'input[name="galleyVignette"]': false }));
     await type('gm-1', '!begin-session');
     expect(world().currentSessionId).not.toBe('sess-1');
-    expect(world()).toMatchObject({
-      sessionActive: true, sessionNumber: 4, sessionEndedId: null,
-      previousSessionSummary: { sessionId: 'sess-1', sessionNumber: 3, text: SUMMARY },
-    });
+    expect(world()).toMatchObject({ sessionActive: true, sessionNumber: 4, sessionEndedId: null });
 
-    // The new session's first narration — a scene question, which never got
-    // the recap — carries both; the ring is the new session's own.
+    // The recap is a view of the record and of where things stand (issue
+    // #382): Begin's own start effects moved the sheets, so the recap made
+    // before it is stale — the one this session opens with is made from the
+    // source as it stands now.
+    const gm = table.client('gm-1');
+    const { campaignRecapCacheKey } = await gm.import('../../src/narration/narrator.js');
+    const key = await gm.run(() => campaignRecapCacheKey(world()));
+    table.world.setSetting('campaignState', { ...world(), campaignRecapCache: { text: RECAP, generatedAt: null, ...key } });
+
+    // A scene question asked before the new session's first narration carries
+    // both; the ring is the new session's own.
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What is the beacon doing?');
     const question = table.claude.calls.slice(from).find(isNarration);
@@ -493,9 +524,12 @@ describe('a session carries into the next one (C3, C4)', () => {
     expect(question.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
     expect(question.userText).not.toContain('I pay Vex');
 
+    // The session's first narration still opens with the recap — an answer is
+    // no narration (known-issues SCENE-ANSWER-NOT-A-CAMERA) — and it comes once.
     const move = await narrateMove('I tune the beacon.');
     expect(move.system).toContain(SUMMARY);
-    expect(move.system).not.toContain('CAMPAIGN RECAP');
+    expect(move.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
+    expect((await narrateMove('I listen to it.')).system).not.toContain('CAMPAIGN RECAP');
   });
 
   it('chat activity keeps a long session alive; once idle past four hours it is not revived', async () => {
@@ -570,7 +604,22 @@ describe('what reached no prompt now does (C5)', () => {
 });
 
 describe('a keyless-GM table keeps what a player\'s narration records (D2)', () => {
-  it('@scene on the player\'s own key: the truth it records reaches the ledger through the GM', async () => {
+  // An oracle follow-up: `@scene` runs on the player's key too, but its answer
+  // records nothing (known-issues SCENE-ANSWER-NOT-A-CAMERA) — below.
+  it('an oracle follow-up on the player\'s own key: the truth it records reaches the ledger through the GM', async () => {
+    await table.setClaudeKey('gm-1', '');
+    await table.setClaudeKey('pl-1', 'sk-ant-pat');
+    replies.push(reply('The hatch is welded shut, the seam still warm.', {
+      newTruths: [{ subject: 'scene', fact: 'the hatch is welded shut' }], stateChanges: [],
+    }));
+    const from = table.claude.calls.length;
+    await type('pl-1', '!oracle yes likely is the hatch welded shut');
+    expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
+    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(table.errors).toEqual([]);
+  });
+
+  it('@scene on the player\'s own key: the answer is the player\'s to read, and nothing of it is sent to the GM', async () => {
     await table.setClaudeKey('gm-1', '');
     await table.setClaudeKey('pl-1', 'sk-ant-pat');
     replies.push(reply('The hatch is welded shut, the seam still warm.', {
@@ -579,7 +628,8 @@ describe('a keyless-GM table keeps what a player\'s narration records (D2)', () 
     const from = table.claude.calls.length;
     await type('pl-1', '@scene What about the hatch?');
     expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
-    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(table.cards(f => f.sceneResponse && !f.sceneFallback)).toHaveLength(1);
+    expect(world().sceneTruths ?? []).toEqual([]);
     expect(table.errors).toEqual([]);
   });
 });
@@ -640,7 +690,8 @@ describe('the Private Channel reads the shared story; a published reflection is 
     expect(aside.system).toContain('The beacon at Bleakhold went dark.');
     // "him" names no one: the scene frame's cast brings Kael's card and facts.
     expect(aside.userText).toContain('## KAEL DROS — Connection');
-    expect(aside.userText).toContain('SCENE FRAME (the scene as it stands):');
+    expect(aside.userText).toContain('THE SCENE');
+    expect(aside.userText).toContain('  Where:    Bleakhold docking ring — as the narration has it');
     expect(aside.userText).toMatch(/Kael Dros — has a ragged scar along his jaw/);
   });
 

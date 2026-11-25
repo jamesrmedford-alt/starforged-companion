@@ -62,7 +62,11 @@ recorded under its name promoted to it; its bond is §2's.
   GM that narrated the move — canonical when it claimed the move lock; a
   lower-id keyed GM joining while the narration was written left the hit
   saying "Connection made" with no one made (issue #345 AA34; a round's
-  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
+  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku —
+  shown the player's line beside the narration, so a person the line names
+  and the narration only shows is detected under that name, in full:
+  known-issues PLAYER-NAMED-PERSON-GETS-NO-CARD, `narrator-context-flow.md`
+  §2) →
   `routeEntityDrafts` auto-creates one connection draft — the one the
   player's line names, else the interpreter's target names, else the first
   detected; the hit's figure is chosen before anything is made, the newly
@@ -81,7 +85,11 @@ recorded under its name promoted to it; its bond is §2's.
   then the silent portrait, started, §1 below).
   Its dedup — the detection prompt's ESTABLISHED list, the parse's and the
   route's `entityExistsAnyType` / `entityExistsForName`, the listed NPCs
-  `connectNamedFigure` matches — reads the store's entity id lists as well
+  `connectNamedFigure` matches; and against the pending draft rows, the
+  dismissed names, the records and the reply's other names, a name with or
+  without its leading article (`draftNameKey` — "The Ashen Wake" and "Ashen
+  Wake" were two pending cards for one ship, known-issues
+  DRAFT-CARDS-FOR-ONE-SHIP) — reads the store's entity id lists as well
   as the move's copy (`withStoredEntityIds`): the move holds the copy it
   read before its lock claim, and an NPC the GM confirmed from a draft card
   while the move was confirmed or narrated was in no list it read, so the
@@ -204,16 +212,25 @@ recorded under its name promoted to it; its bond is §2's.
   latest store, on the GM's campaignState write chain —
   CACHE-MUTATED-BEFORE-WRITE). The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
-  that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
-  the bond Item on that PC (issue #321 U23). A Batch Mode round's card
-  carries every acting PC instead (`actorIds`; issue #342 D3, the
-  maintainer's ruling A — it was the first entry's PC): a connection row's
-  Confirm is a button per acting PC and **No one**, the pick checked against
-  the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Since issue #354 P2-16
-  (amending D3 for free-flow) a free-flow card's person row asks the same
-  way — the narration's PC by name, and **No one** — where one Confirm
-  always bonded the person to the acting PC. A detected person is the one
+  that knows it — move, paced, `@scene`, oracle follow-up); a Batch Mode
+  round's card carries every acting PC instead (`actorIds`; issue #342 D3).
+  **A Confirm records the person — an NPC card, no bond Item on any sheet,
+  no `connection.made`** (overhaul 4, D4: a connection is what Make a
+  Connection makes; in the long haul's fourth live run the GM's Confirm "as
+  the player character's connection" made one no roll had made,
+  CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). It amends issue #321 U23 (Confirm
+  bonded the card's PC), #342 D3 and #354 P2-16 (a button per PC and **No
+  one**) and #362 D10's "offered to each player character": `draftConfirmPick`
+  and the **No one** button are gone, and `draftBondHolder` names only a Make
+  a Connection's roller. Beside Confirm — pending or confirmed — the row
+  offers **🤝 Make a Connection** to each PC the card names (`cardHolders`),
+  until that PC has pressed it (the row's `connectionMoves`): a GM's press
+  relays `draft.makeConnection` → `applyDraftMakeConnectionFromRelay` on the
+  canonical GM, which records the person first if they are not yet, stamps
+  the press on the row and posts Make a Connection as that PC with the
+  person's card as its target (`forcedMoveTargetId`, held while another move
+  resolves); its hit makes the bond by the move's own path (a listed NPC gets
+  the roller's bond Item — `connectChosenFigure`), its miss none. A detected person is the one
   already known under part of their name or a near spelling
   (`entities/nameMatch.js` `personNameMatch` — "Archer" for Vuldar Archer, a
   PC's first name; a near spelling is the same letters in another order or a
@@ -375,10 +392,22 @@ portrait block), and a tab with no marked introduction gets one at its top
 erased a promoted detail from every surface, and a Finalise on an unseeded
 card replaced what the GM had typed).
 
-`registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
-bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
-when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it
-used to go to the first PC whoever rolled (issue #321 U23). One portrait per
+`registerConnectionOnActiveCharacter(record, { actorId, actors, by })` puts the
+bond Item on each of `actors`, else on `actorId` when it is a PC, else on the
+acting user's own PC (`resolveUserActorId`); it used to go to the first PC
+whoever rolled (issue #321 U23). Every caller is a Make a Connection's hit
+now (the inciting vow's crew was the other — overhaul 4, D5), and `by` rides
+to the bond Item: **`connection.made` is recorded where the bond Item is
+made** (`actorBridge.createCharacterBondItem` — once, for an Item that did
+not exist; `d: { name, rank, actorId, by }`, `by` `{ move:
+"make_a_connection" }` or, for the starting sector's local connection and
+the quickstart's, `"setup"`), never where the NPC card is made
+(`connection.js createConnection` wrote it, so a person recorded reached the
+recap as "made a connection" — D12). `tests/unit/moveOnlyState.test.js`
+holds every caller of a bond's writer to a move or setup. The bond adds
+(`statEnrichment.enrichBondAdds`) read the roller's own bond Items: a vow
+sworn to a person, or a Test with someone the roller holds no bond for,
+adds nothing. One portrait per
 new card: with Auto-Seed NPC on, the `createActor` seed hook owns a new
 connection card's portrait (from the creator's `portraitSourceDescription`)
 and the creator's `postCreationEnrichment` skips it (`seedHookOwnsPortrait`);
@@ -396,6 +425,50 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 2. Develop (relationship progress)
 
+- **A connection's moves are made with the roller's connection** (overhaul 4,
+  "moves as contracts"): Develop Your Relationship, Test Your Relationship
+  and Forge a Bond need a live bond Item on the roller's own sheet for the
+  one the move names (`moves/contracts/predicates.js THEIR_CONNECTION` — by
+  the picker's host id, the record id the Item is keyed to
+  (`flags[MODULE].connectionId`) or the Item's id, else by name, else the
+  sole one). An NPC card alone is a person, not a connection
+  (FOLDER-002): a Develop with someone the roller has no bond Item for is
+  refused, Make a Connection offered — the typed line narrated and told why,
+  a pressed one's not-rolled notice. A full relationship track refuses a
+  Develop soft, Forge a Bond offered (`ROOM_ON_RELATIONSHIP`); a bonded one
+  is never forged again (`NOT_BONDED`); and a social move spoken to a fellow
+  player character is roleplay, not a roll (`NOT_AT_A_PC`). The same gate is
+  asked by the moves a button makes (`moves/contracts/pressGate.js`
+  `gatePress`): the won fight's 🤝 (`cardActions.applyFightVowDeepenBond`,
+  Develop Your Relationship with the card's connection — refused, nothing
+  deepened, the presser and the GMs told "Not made" and why), `!bond` with a
+  bond (named, or the table's one — refused before the dice, its author and
+  the GMs told; a rank-only `!bond` names no one and is not asked), and a
+  Forge a Bond rolled on the sheet (`index.js payNativeProgressRoll` — a
+  bond the sheet holds forged already pays nothing, the GMs whispered "No
+  payoff"). Two of the roller's connections of one name (a namesake) are a
+  connection of theirs (`namedMoreThanOnce`). Make a Connection
+  with someone already the roller's is refused soft, Develop offered
+  (`NOT_YET_THEIR_CONNECTION`).
+
+- **Something done for a connection, said in the fiction, is at least
+  *offered* Develop Your Relationship** (known-issues
+  FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A gift of value, a risk taken for
+  them, a favour that costs the character time or standing, bringing them
+  what they need: the pacing classifier's WHAT ONLY A MOVE CHANGES IS ALWAYS
+  OFFERED block names it as its third thing (`pacing/classifier.js` — the
+  speaker's connections reach it in the SITUATION block, §3), so the line is
+  never plain NARRATIVE; MOVE when the connection is bonded and the social
+  dial calls for one. Small talk, news traded, a plain question and a
+  courtesy that costs nothing stay narration, and the interpreter's rule 10
+  reads both the same way. The readers' plain-line test had "I offer to watch
+  Tamsin's counter for an hour while she rests" and a gift of salvage rights
+  narrated with nothing offered three readings of four on Haiku 5.5 ("a kind
+  offer… with no roll-worthy risk… is plain conversation") — the rule is
+  stated whatever the model. The offer's Roll (`cardActions.applyPacedRoll`)
+  forces the move with no target and asks no reader, so the connection is
+  found from the player's line — the next bullet's `enrichBondedDevelop`
+  (`favourPacedRollDevelopsNamedConnection.test.js` walks it).
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
   one name inside the other as whole words, either way — "Lorenzo" is not Ren,
@@ -404,7 +477,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
   resolves the connection before the dice — the picker's host id, else the
-  name — stamps `moveTargetId` / `moveTarget` so this branch marks the same
+  name, else, for a Develop Your Relationship that carries no target at all
+  (a paced card's Roll), the one active connection the player's line names
+  (`namedOnce`: the full name, or a first or last name no other shares —
+  with no target it took the sole bonded connection, whoever the line was
+  about, and with several known and none bonded it marked nothing) — stamps
+  `moveTargetId` / `moveTarget` so this branch marks the same
   one, and makes the rank the stat (`BOND_ROLL_ADDS`, +1 troublesome … +5
   epic; the card reads "+epic (5)" — issue #314 Q06, the pipeline rolled +0
   while `!bond` rolled +rank); the outcome pays `BONDED_DEVELOP_OUTCOMES`
@@ -425,8 +503,10 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   with their box XP, `writeLegacyTicks` — and a match's rank raise; a Test
   Your Relationship from a miss develops then): the upgrade did not re-run
   the branch, so a bonded development burned to a strong hit marked nothing
-  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named)
-  silently no-ops. `selectConnection`'s `strict` option is for an
+  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named —
+  for a Develop Your Relationship, none or two named by the line either)
+  silently no-ops; a Test Your Relationship with no target still takes the
+  sole-bonded / sole-active fallback alone. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name resolves the connection it names
   exactly, else the one connection whose name holds it as whole words (the
   typed name a fragment OF the record's name — `!sever Lyssa Chen` severed
@@ -514,29 +594,40 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   the id first (issue #301 B01 — the flags used to be missing, so forge
   scored 0 or the sole bonded connection's track, and develop marked the
   sole bonded connection). A forge picked for a connection severed, deleted
-  or bonded since the picker was posted is not rolled, and a "not rolled"
-  card says so, as for a gone fight or vow (rollMove's track-gone guard; for
-  a forge the id rung resolves no bonded connection — issue #345 AA50: it
+  or bonded since the picker was posted is not rolled, and the not-rolled
+  notice says so, as for a gone fight or vow — the move gate at the roll
+  (overhaul 4): severed or deleted, `THEIR_CONNECTION` ("Sable is not Kira's
+  connection"); bonded, `NOT_BONDED` ("Sable is already bonded — there is no
+  bond to forge", Develop Your Relationship offered) — issue #345 AA50: it
   was rolled at 0, or its card said "Legacy reward marked" over a forge that
-  marked nothing). So is a typed forge that names a bonded connection: the
-  name rungs take `unbonded` too, `enrichProgressTicks` marks the result
-  `alreadyBonded`, and the card — and a Batch Mode round's refusal, from
-  rollMove's `refusedReason` — say it is already bonded
+  marked nothing. So is a typed forge that names a bonded connection, and a
+  Batch Mode round's refusal carries the same words
   (FORGE-NAMED-BONDED-SCORED: it was scored on the bond's own track, then
-  the forge skipped it). A click with
+  the forge skipped it; `enrichProgressTicks` still scores such a forge
+  nothing, should the gate not have read the sheet). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the
   card's owner could stamp it resolved, so it could fire repeatedly.)
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 ## 3. Forge the bond
 
-The move interpreter is told the roller's connections and each one's
-relationship track (`interpreter.js rollerConnectionLines`, read from the PC's
-bond Items): a full track says Forge a Bond can be made, a bonded connection is
-marked bonded. Told nothing of it, it read "Tamsin, I ask you to forge a bond
-with me, to Forge a Bond" — her track full — as Make a Connection (the long
-haul's second live run, known-issues NAMED-MOVE-READ-AS-ANOTHER).
+Both readers of a typed line — the pacing classifier and the move interpreter
+— are told the speaker's connections and each one's relationship track, in
+the SITUATION block they share (`moves/situation.js buildSituationBlock`, read
+from the PC's bond Items through `readConnections`): its rank, its progress in
+boxes, "full, no bond forged yet" for a full track, "bonded" for a forged one;
+a severed connection is left out. The interpreter's rule 10 says a full track
+is what Forge a Bond is rolled against and a bonded connection is developed,
+not bonded again. Told nothing of it, the interpreter read "Tamsin, I ask you
+to forge a bond with me, to Forge a Bond" — her track full — as Make a
+Connection (the long haul's second live run, known-issues
+NAMED-MOVE-READ-AS-ANOTHER); the classifier was told the names alone until the
+block.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
@@ -638,11 +729,12 @@ progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The pacing
-classifier reads the same mirror for the speaker alone
-(`classifier.formatConnections` — "Kira's connections: Kael Dros, Sable
-(bonded)") and leans toward a move only for a line that presses or tests one
-of them; it was told every NPC card, and leaned toward a roll whenever a line
-addressed one (issue #354 P2-04). The vendor
+classifier and the move interpreter read the same mirror for the speaker alone
+— the Connections line of their SITUATION block (`moves/situation.js`:
+`- Connections: "Kael Dros" (dangerous, relationship 4 of 10 boxes); "Sable"
+(formidable, bonded).`) — and the classifier leans toward a move only for a
+line that presses or tests one of them; it was told every NPC card, and leaned
+toward a roll whenever a line addressed one (issue #354 P2-04). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets`, which had no production
 writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN),
@@ -655,6 +747,8 @@ The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 **The NPC's hidden agenda (issue #353 Phase 4).** Three creators file an
 `npcAgenda` plan right after `createConnection` (`secrets.planNpcAgenda`,

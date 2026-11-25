@@ -9,8 +9,14 @@
 //   - "Who are you interacting with?" is answered with the charter's named
 //     NPC when the player's line names them and the window offers them, else
 //     "No specific entity" — which is what closing it means;
-//   - a draft whose name is in the charter's cast is confirmed, as the
-//     player character's connection; every other draft is left;
+//   - a draft for someone in the charter's cast is confirmed — under their
+//     name or a whole-word part of it, and of no other cast member's
+//     ("Tamsin" for Tamsin Vey: lib/cast.mjs), once: a cast member who has a
+//     card gets no second one; every other draft is left. It is confirmed as a
+//     person recorded with no bond on anybody's sheet — "No one" where the row
+//     offers it, else the row's own Confirm, never a character's "whose
+//     connection?" button — and it is the player's Make a Connection that
+//     makes them the character's connection (`draftHolder`, below);
 //   - nothing else is typed. A window on the GM's screen these rules do not
 //     answer ends the run as `not-exercised`, naming it (explore.mjs).
 //
@@ -28,6 +34,7 @@
 import { MODULE_ID, chat, sleep } from "./foundry.mjs";
 import { uniformFor } from "./table.mjs";
 import { waitForQuietWorld } from "./world.mjs";
+import { castMembers, castMemberFor } from "./cast.mjs";
 
 /** The windows the rules answer — a prompt in one of them means the table is still moving. */
 export const GM_ANSWERS = [".move-confirm-dialog", ".sf-clarification-dialog"];
@@ -74,26 +81,125 @@ export function burnableDice(momentum, stat) {
   return { faces, queue: faces.map((f, i) => uniformFor(f, i < 2 ? 10 : 6)) };
 }
 
+/** The kind of draft that is a person: a cast member's card is made from one. */
+const PERSON_DRAFTS = ["connection"];
+
+/**
+ * The pending draft the GM's rules confirm, if any: the first one that is a
+ * cast member's — under their name, or a whole-word part of it that is no
+ * other member's — while that member has no card yet. Pure.
+ *
+ * The third live long haul: the player named "Tamsin Vey" in full, the
+ * narrator wrote "Tamsin", the module proposed "Tamsin" — and the rule, which
+ * wanted the exact name, left it. A second card for someone who has one is
+ * never confirmed: after the rename of beat 19 a draft for "Tamsin" is the
+ * same person again.
+ *
+ * @param {Array<{ messageId: string, index: number, name: string, type?: string|null }>} drafts — pending, oldest first
+ * @param {Array<{ name: string, names: string[] }>} members — castMembers'
+ * @param {string[]} [cardNames] — the names of the entity cards the world holds now
+ * @returns {{ draft: object, member: object, exact: boolean }|null}
+ */
+export function draftToConfirm(drafts, members, cardNames = []) {
+  const carded = new Set((cardNames ?? []).map(n => castMemberFor(n, members)?.name).filter(Boolean));
+  for (const draft of drafts ?? []) {
+    const member = castMemberFor(draft.name, members);
+    if (!member || carded.has(member.name)) continue;
+    const exact = member.names.some(n => n.toLowerCase() === String(draft.name ?? "").replace(/\s+/g, " ").trim().toLowerCase());
+    // A part of a name is a person's only where the draft is of a person.
+    if (!exact && draft.type && !PERSON_DRAFTS.includes(String(draft.type).toLowerCase())) continue;
+    return { draft, member, exact };
+  }
+  return null;
+}
+
+/**
+ * Whose connection the GM's rules make a cast member's draft — which of its
+ * row's Confirm buttons they press:
+ *
+ *   "none" — the rule: the person recorded with no bond on anybody's sheet,
+ *            so that the player's Make a Connection is what makes them the
+ *            character's connection. The fourth live run's GM pressed the
+ *            character's button instead: a bond Item with no Make a
+ *            Connection, so beat 2's roll could never come and every plea for
+ *            a tie was read as Develop Your Relationship (known-issues
+ *            CONNECTION-MADE-BY-CONFIRMING-A-DRAFT).
+ *   "pc"   — the rule the kept runs were made under: the player character's
+ *            button, else the row's first Confirm. A replay of one of them
+ *            presses what its run pressed, and a rehearsal may ask for it
+ *            (EXPLORE_DRAFT_HOLDER=pc) to walk the road the fourth live run
+ *            walked, for nothing — on the card before overhaul 4's D4; on
+ *            D4's card no character's button confirms a row, so "pc" presses
+ *            the row's Confirm, as "none" does. A live run never takes it.
+ */
+export const DRAFT_HOLDERS = Object.freeze(["none", "pc"]);
+
+/**
+ * The rule a run's GM confirms a cast member's draft by (DRAFT_HOLDERS). A
+ * replay plays under its own run's (`gm.draftHolder` in its replay.json),
+ * and a run kept from before the rule was written down pressed the
+ * character's button; a rehearsal takes EXPLORE_DRAFT_HOLDER, "none" unless
+ * it says; a live run takes "none", and is refused another. Pure.
+ *
+ * @param {{ mode: string, env?: Record<string, string|undefined>, earlier?: object|null }} o
+ * @returns {"none"|"pc"}
+ */
+export function draftHolderFor({ mode, env = {}, earlier = null }) {
+  if (mode === "replay") return earlier?.gm?.draftHolder ?? "pc";
+  const asked = String(env.EXPLORE_DRAFT_HOLDER ?? "").trim().toLowerCase() || "none";
+  if (!DRAFT_HOLDERS.includes(asked)) throw new Error(`EXPLORE_DRAFT_HOLDER is one of ${DRAFT_HOLDERS.join(", ")}, not "${env.EXPLORE_DRAFT_HOLDER}"`);
+  if (asked !== "none" && mode !== "rehearsal") throw new Error(`EXPLORE_DRAFT_HOLDER=${asked} is for a rehearsal: a ${mode} run's GM records a cast member with no bond`);
+  return asked;
+}
+
+/**
+ * The buttons of a draft row to press for a confirmation, in the order they
+ * are tried, as selectors to add to the row's own (`[data-action=
+ * "sf-draft-confirm"][data-index=…]`). The rule ("none") records the person
+ * with no bond: "No one" (`data-actor-id=""`) where the row offers it, else
+ * the row's own Confirm (no `data-actor-id`) — never a character's "whose
+ * connection?" button (`data-actor-id` an actor's id). Today's card offers a
+ * person's row "No one" beside a button per character who may hold them, or
+ * beside a plain Confirm that bonds the confirming user's own character
+ * (src/entities/entityExtractor.js renderDraftCardHtml, issue #354 P2-16);
+ * any other row has its one Confirm. The card the moves-as-contracts overhaul
+ * makes (decision D4) has no "No one": its Confirm records the person, and a
+ * Make a Connection button beside it rolls the move. A row that offers
+ * neither is pressed for nothing. "pc" is the rule the kept runs were made
+ * under, exactly. Pure.
+ *
+ * @param {{ pcId: string, holder?: "none"|"pc" }} o
+ * @returns {string[]}
+ */
+export function draftConfirmSelectors({ pcId, holder = "none" }) {
+  if (holder === "pc") return [`[data-actor-id="${pcId}"]`, ""];
+  return ['[data-actor-id=""]', ":not([data-actor-id])"];
+}
+
 /**
  * Start the rules on the GM's page. `state()` is asked on every pass for what
  * may have changed: `{ armed, lastLine }` — `armed` the rolls to script, the
  * current beat's first (`[{ moves, roll, kind, beat? }]`; the first one that
  * names the proposed move is used), `lastLine` the player's last line of
- * play.
+ * play. `draftHolder`: whose connection a cast member's draft is made
+ * (DRAFT_HOLDERS; draftHolderFor).
  *
  * @returns {() => void} stop
  */
-export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = console.log }) {
+export function startGmRules(gm, { cast = [], pcId, state, onAnswer, draftHolder = "none", log = console.log }) {
   let busy = false;
   let warned = false;
   const names = cast.map(c => c.name).filter(Boolean);
+  const members = castMembers(cast);
+  const pressed = new Set();     // drafts whose Confirm was pressed: not looked at again
+  const confirmed = [];          // the cast members confirmed so far: their card may still be on its way
   const timer = setInterval(async () => {
     if (busy) return;
     busy = true;
     try {
       const { armed = [], lastLine = "" } = state() ?? {};
       const specs = (armed ?? []).map(spec => ({ ...spec, fixed: scriptedDice(spec) }));
-      const answered = await gm.page.evaluate(({ MODULE_ID, names, pcId, specs, lastLine }) => {
+      const found = await gm.page.evaluate(({ MODULE_ID, names, pcId, specs, lastLine }) => {
         const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
         const pressOnce = (button) => { if (!button || button.dataset.sfcAnswered) return false; button.dataset.sfcAnswered = "1"; button.click(); return true; };
 
@@ -146,20 +252,45 @@ export function startGmRules(gm, { cast = [], pcId, state, onAnswer, log = conso
           }
         }
 
-        // A draft for someone in the charter's cast: confirmed, as the player
-        // character's connection. Every other draft is left.
+        // The drafts still pending, and the cards the world holds: which of
+        // them is a cast member's is decided outside the page (draftToConfirm).
+        const drafts = [];
         for (const m of game.messages.contents) {
           const f = m.flags?.[MODULE_ID];
           if (!f?.draftEntityCard) continue;
-          for (const d of f.drafts ?? []) {
-            if (d.status !== "pending" || !names.some(n => n.toLowerCase() === clean(d.name).toLowerCase())) continue;
-            const row = `[data-message-id="${m.id}"] [data-action="sf-draft-confirm"][data-index="${d.index}"]`;
-            const button = document.querySelector(`${row}[data-actor-id="${pcId}"]`) ?? document.querySelector(row);
-            if (pressOnce(button)) return { did: `confirmed the draft for ${d.name}${button.dataset.actorId ? ", as the player character's connection" : ""}`, note: d.type ?? null };
-          }
+          for (const d of f.drafts ?? []) if (d.status === "pending") drafts.push({ messageId: m.id, index: d.index, name: clean(d.name), type: d.type ?? null });
         }
-        return null;
+        return drafts.length ? { drafts, cards: game.actors.contents.filter(a => !!a.flags?.[MODULE_ID]?.entityType).map(a => a.name) } : null;
       }, { MODULE_ID, names, pcId, specs, lastLine });
+      // A draft for someone in the charter's cast: confirmed, recorded with no
+      // bond (draftConfirmSelectors). Every other draft is left.
+      let answered = found?.did ? found : null;
+      const pick = found?.drafts ? draftToConfirm(found.drafts.filter(d => !pressed.has(`${d.messageId}:${d.index}`)), members, [...found.cards, ...confirmed]) : null;
+      if (pick) {
+        const tried = draftConfirmSelectors({ pcId, holder: draftHolder });
+        const pressedHere = await gm.page.evaluate(({ messageId, index, tried }) => {
+          const row = `[data-message-id="${messageId}"] [data-action="sf-draft-confirm"][data-index="${index}"]`;
+          if (!document.querySelector(row)) return null;          // not rendered yet: the next pass
+          const button = tried.map(s => document.querySelector(`${row}${s}`)).find(Boolean) ?? null;
+          if (!button) return { missing: true };
+          if (button.dataset.sfcAnswered) return null;
+          button.dataset.sfcAnswered = "1";
+          button.click();
+          return { holder: button.hasAttribute("data-actor-id") ? button.dataset.actorId : null, label: String(button.textContent ?? "").replace(/\s+/g, " ").trim() };
+        }, { messageId: pick.draft.messageId, index: pick.draft.index, tried });
+        if (pressedHere) pressed.add(`${pick.draft.messageId}:${pick.draft.index}`);
+        if (pressedHere?.missing) {
+          log(`  (GM) the draft for ${pick.draft.name} offers neither "No one" nor a Confirm of its own — only a character's button, which the rules never press: left pending`);
+        } else if (pressedHere) {
+          confirmed.push(pick.member.name);
+          const whose = pressedHere.holder === "" ? `, with "${pressedHere.label || "No one"}" — recorded with no bond on anybody's sheet`
+            : pressedHere.holder ? ", as the player character's connection" : `, with its ${pressedHere.label ? `"${pressedHere.label}"` : "Confirm"}`;
+          answered = {
+            did: `confirmed the draft for ${pick.draft.name}${pick.exact ? "" : ` — ${pick.member.name}, under a part of the name`}${whose}`,
+            note: pick.draft.type ?? null, cast: { member: pick.member.name, as: pick.draft.name, holder: draftHolder },
+          };
+        }
+      }
       if (answered) onAnswer(answered);
     } catch (err) {
       // The page is navigating (a reload is one of the interruptions) or closing.
@@ -227,13 +358,23 @@ export async function playXCard(player, gm) {
   return { did: "the X-Card was played from the player's client (!x); the GM resumed (!x clear)", result: "the X-Card went up and came down" };
 }
 
-/** The GM renames a connection's card, as on its sheet. */
-export async function renameConnection(gm, from, to) {
-  const renamed = await gm.page.evaluate(async ({ MODULE_ID, from, to }) => {
-    const actor = game.actors.find(a => a.flags?.[MODULE_ID]?.entityType === "connection" && a.name === from);
-    if (!actor) return false;
+/**
+ * The GM renames a connection's card, as on its sheet. The card is the one
+ * the cast member was made as (`id`, where the runner knows it — the card may
+ * have been confirmed under a part of the name), else the one named `from`.
+ */
+export async function renameConnection(gm, from, to, { id = null } = {}) {
+  const renamed = await gm.page.evaluate(async ({ MODULE_ID, from, to, id }) => {
+    const isConnection = (a) => a?.flags?.[MODULE_ID]?.entityType === "connection";
+    const byId = id ? game.actors.get(id) : null;
+    const actor = (isConnection(byId) ? byId : null) ?? game.actors.find(a => isConnection(a) && a.name === from);
+    if (!actor) return null;
+    const was = actor.name;
     await actor.update({ name: to });
-    return true;
-  }, { MODULE_ID, from, to });
-  return { did: `the GM renamed ${from}'s card to ${to}`, result: renamed ? "renamed" : `no connection card is named ${from}` };
+    return was;
+  }, { MODULE_ID, from, to, id });
+  return {
+    did: renamed && renamed !== from ? `the GM renamed ${from}'s card — made as "${renamed}" — to ${to}` : `the GM renamed ${from}'s card to ${to}`,
+    result: renamed ? "renamed" : `no connection card is named ${from}`,
+  };
 }

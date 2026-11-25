@@ -18,7 +18,7 @@
  *   `!oracle` result card (player)          → move narration prompt (GM)
  *   `!truth set` (player, relayed)          → move narration prompt (GM)
  *   Take a Break "move on" (player)         → next action roll's adds (GM pipeline)
- *   move pipeline narrator card (GM)        → `!recap session` (GM)
+ *   move pipeline's roll, on the session record (GM) → `!recap session` (GM)
  *   Claude key entered / cleared (GM)       → CLAUDE-policy command routing (all)
  *
  * The custom-oracle hop (`!oracle-add` on the GM → `!oracle <id>` on a player)
@@ -65,6 +65,8 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { parseHTML } from '../helpers/cardDom.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { resolveMove } from '../../src/moves/resolver.js';
+import { makeJournal } from '../helpers/fullStateFixture.js';
+import { journalsKeepPages } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
@@ -157,7 +159,7 @@ describe('what a player establishes reaches the GM\'s next move narration', () =
     expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', asserter: 'player' }]);
 
     const call = await narrateMove();
-    expect(call.system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
+    expect(call.system).toMatch(/WHAT BINDS[^\n]*\n {2}scene — the hatch is welded shut \(the player\)/);
   });
 });
 
@@ -207,11 +209,34 @@ describe('Take a Break → the next action roll', () => {
 // Out of the GM's move pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('the move pipeline\'s narrator card → the session recap', () => {
+// The session recap is a view of the session record (issue #382 slice 5): the
+// match it names is the roll's own, recorded by the pipeline as the roll card
+// posts (`move.resolved`). It read a narrator-card `isMatch` flag that nothing
+// wrote (RECAP-MATCH-DEAD), then one postNarrationCard wrote; both are gone.
+describe('the move pipeline\'s roll → the session record → the session recap', () => {
+  // The record is kept on the Session Log's pages: here the table's journals keep theirs.
+  let restoreJournals = () => {};
+  beforeAll(() => { restoreJournals = journalsKeepPages(table, makeJournal); });
+  afterAll(() => restoreJournals());
+  beforeEach(async () => {
+    (await table.client('gm-1').import('../../src/record/record.js'))._resetRecordForTests();
+  });
+
+  /** The session's moves as the GM's record has them: [moveId, match] each. */
+  async function recordedMoves() {
+    const gm = table.client('gm-1');
+    const record = await gm.import('../../src/record/record.js');
+    await gm.run(() => record.recordSettled());
+    const { readRecord } = await gm.import('../../src/record/read.js');
+    return gm.run(() => (readRecord({ session: 'sess-1' }).sessions[0]?.beats ?? [])
+      .filter(b => b.move).map(b => [b.move.moveId, b.move.match]));
+  }
+
   it('a match rolled in the session is named in !recap session', async () => {
     control.dice = [0.65, 0.65, 0.9];   // challenge 7 and 7 — a match
     await narrateMove();
-    expect(table.cards(f => f.narratorCard).map(c => [c.author, c.flags[MODULE_ID].isMatch])).toEqual([['gm-1', true]]);
+    expect(await recordedMoves()).toEqual([['face_danger', true]]);
+    expect(table.cards(f => f.narratorCard).map(c => c.flags[MODULE_ID].isMatch)).toEqual([undefined]);   // the card carries none
 
     await type('gm-1', '!recap session');
     const recap = table.cards(f => f.recapCard && f.recapType === 'session');
@@ -221,9 +246,11 @@ describe('the move pipeline\'s narrator card → the session recap', () => {
 
   it('without a match the recap says nothing about one', async () => {
     await narrateMove();
+    expect(await recordedMoves()).toEqual([['face_danger', false]]);
     await type('gm-1', '!recap session');
     const recap = table.cards(f => f.recapCard && f.recapType === 'session');
     expect(recap[0].content).toContain('1 move resolved.');
+    expect(recap[0].content).toContain('Kira — Face Danger → Strong Hit');
     expect(recap[0].content).not.toContain('A match was rolled');
   });
 });

@@ -553,6 +553,20 @@ class SimChatMessageReplica {
   testUserPermission(user) { return userCanModifyMessage(user, this._source.author); }
   canUserModify(user) { return userCanModifyMessage(user, this._source.author); }
 
+  /**
+   * A change to the message as it is being created, as Foundry's
+   * `document.updateSource` makes it in a `preCreateChatMessage` hook: the
+   * creation carries it (_createMessage reads the preview's source after the
+   * hook). The scene stamp (record/cards.js, overhaul 2 §8) and the system
+   * note's reattribution (actorBridge.js) change a card this way.
+   */
+  updateSource(changes = {}) {
+    const next = jsonClone(this._source);
+    applyUpdate(next, jsonClone(changes));
+    this._applySource(next);
+    return next;
+  }
+
   async update(changes = {}, options = {}) {
     const client = requireClient("ChatMessage#update");
     assertCanModifyMessage("update", this);
@@ -1600,6 +1614,8 @@ class SimTable {
 
     const preview = new SimChatMessageReplica(creator, source);
     if (creator.hooks.call("preCreateChatMessage", [preview, data, options, user.id], true) === false) return undefined;
+    // What a preCreate hook changed with updateSource is what is created.
+    Object.assign(source, preview._source);
 
     if (this._writeInterceptors.length) {
       await this._interceptWrite({ kind: "message.create", client: user.id, data: jsonClone(source) });

@@ -142,10 +142,12 @@ describe('issue #347 AB20 — the GM resolving a round goes away while a move is
     expect(told[0].content).toMatch(/Ren's move was being rolled when the round stopped, and its result card was never posted/);
   }, 30_000);
 
-  it('gm-1 leaves after Ren\'s roll paid its price, before its result card — gm-2 must not roll Ren a second time', async () => {
-    // gm-1's page dies with Ren's result card on its way (the card is the last
-    // thing rollMove does: the dice, the outcome's effects and the miss's Pay
-    // the Price are already applied).
+  it('gm-1 leaves with Ren\'s result card on its way — gm-2 must not roll Ren a second time', async () => {
+    // gm-1's page dies with Ren's result card on its way: the dice are rolled
+    // and the outcome's effects applied. A miss no upgrade can undo pays its
+    // price once that card is up — the price's card follows the roll's
+    // (tests/unit/moveCardsFollowTheirRoll.test.js) — so Ren's is not paid yet.
+    // It was paid before the card, and a second roll paid a second one.
     const held = holdWrites(table, w => w.kind === 'message.create' && w.client === 'gm-1'
       && w.data?.flags?.[MODULE_ID]?.moveResolution === true && w.data?.flags?.[MODULE_ID]?.roundUserId === 'pl-2');
     await bothConfirm();
@@ -155,8 +157,8 @@ describe('issue #347 AB20 — the GM resolving a round goes away while a move is
     expect(round().entries['pl-2'].status).toBe('ready');
     expect(round().entries['pl-2'].rolled).toMatchObject({ resolutionId: expect.any(String), rollingAt: expect.any(String) });
     expect(resolveMove).toHaveBeenCalledTimes(2);           // Kira's, Ren's
-    const paidBefore = priceCards().length;                 // Kira's miss and Ren's miss each paid a price
-    expect(paidBefore).toBe(2);
+    const paidBefore = priceCards().length;                 // Kira's miss paid its price; Ren's follows its card
+    expect(paidBefore).toBe(1);
 
     await table.leave('gm-1');
     await table.settle();
@@ -164,7 +166,8 @@ describe('issue #347 AB20 — the GM resolving a round goes away while a move is
 
     // gm-2 resumed and finished the round.
     expect(roundNarrations().map(c => c.client)).toEqual(['gm-2']);
-    // Ren's move was rolled once, and paid its price once.
+    // Ren's move was rolled once, and no second roll paid a price: the GMs
+    // are told the move may be partly applied.
     expect({ rolls: resolveMove.mock.calls.length, pricesPaid: priceCards().length })
       .toEqual({ rolls: 2, pricesPaid: paidBefore });
     expect(table.cards(f => f.batchIncompleteNotice).some(m => /Ren's move was being rolled/.test(m.content))).toBe(true);

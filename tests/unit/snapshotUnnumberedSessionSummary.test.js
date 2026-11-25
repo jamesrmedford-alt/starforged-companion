@@ -4,111 +4,90 @@
  *
  * Issue #362 AC71 SNAPSHOT-SESSION-ZERO. A GM opens the world to prepare and
  * has the narrator answer a few `@scene` questions before any Begin a
- * Session. That session was never begun, so when the next one is minted its
- * summary is kept as `previousSessionSummary` with `sessionNumber: null`
- * (lifecycle.js mintSession: an unbegun session's number passes to the next
- * one — LAST SESSION, not "Session 4"). The world snapshot's EARLIER SESSIONS
- * read the number with `Number(null)`, which is 0 — finite — so it printed
- * "- Session 0: …", and ranked the summary as the oldest session, so with
- * three numbered sessions on the Session Log the newest summary was the one
- * the snapshot's newest three left out.
+ * Session. That session was never begun, and its number passes to the next
+ * one. The world snapshot's EARLIER SESSIONS read a missing number with
+ * `Number(null)`, which is 0 — finite — so it printed "- Session 0: …", and
+ * ranked the session as the oldest, so with three numbered sessions on the
+ * Session Log the newest one was the one the snapshot's newest three left out.
  *
  * Now a missing number is no number ("An earlier session: …", as the per-beat
  * LAST SESSION block heads it with none), and the session that closed last is
- * the newest earlier session whether or not it has a number.
+ * the newest earlier session whether or not it has a number. Since issue #382
+ * slice 3 the earlier sessions are read from the session record
+ * (record/summaryView.js earlierSessionStories): what a session nobody began
+ * played is told after LAST SESSION, as facts.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-const sessionLog = vi.hoisted(() => ({ entries: [] }));
-vi.mock('../../src/world/worldJournal.js', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    listWorldJournalEntries: (category) => (category === 'sessionLog'
-      ? sessionLog.entries.map((entry, i) => ({ pageId: `log-${i}`, entry }))
-      : actual.listWorldJournalEntries(category)),
-  };
-});
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { collectWorldUnits, renderWorldSnapshot } from '../../src/narration/worldSnapshot.js';
 import { buildNarratorSystemBlocks } from '../../src/narration/narratorPrompt.js';
-import { mintSession } from '../../src/session/lifecycle.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { seedLegacySessionPage, seedSessionRecord, playedBeats } from '../helpers/sessionRecordSeed.js';
+import { _resetSummaryViewForTests } from '../../src/record/summaryView.js';
 
-const SUMMARY = 'SENTINEL-PREP: Kira studied the charts of the Devil\'s Maw and hailed Bleakhold.';
+const PREP_LINE = 'SENTINEL-PREP: I study the charts of the Devil\'s Maw.';
 
-/** A world opened to prepare: its session was never begun, has a summary, and is closed out by the next mint. */
-function afterAPrepSession() {
-  const cs = {
-    currentSessionId: 'prep', sessionNumber: 4, sessionActive: false, sessionStartedId: null, sessionEndedId: null,
-    sessionSummary: { sessionId: 'prep', text: SUMMARY }, previousSessionSummary: null,
-  };
-  mintSession(cs);
-  return cs;
-}
-
-/** A Session Log page's record, as the World Journal stores it. */
-const logPage = (sessionId, sessionNumber, narrative) => ({ sessionId, sessionNumber, summary: { narrative } });
+/** A world opened to prepare: its session was never begun; something was played in it. */
+const prepSession = (createdAt) => seedSessionRecord('prep', playedBeats('prep', [PREP_LINE], { begun: false, number: null }), { number: null, createdAt });
 
 const memoryOf = (cs) => collectWorldUnits(cs, {}).filter(u => u.section === 'memory');
 
+let journals;
 beforeEach(() => {
   game.settings._store.clear();
-  sessionLog.entries = [];
+  journals = installJournalMock();
+  _resetSummaryViewForTests();
 });
+afterEach(() => journals.restore());
 
 describe('issue #362 AC71 — an earlier session with no number is not "Session 0" in the world snapshot', () => {
-  it('control: the mint keeps an unbegun session\'s summary with no number, passing its number on', () => {
-    const cs = afterAPrepSession();
-    expect(cs.previousSessionSummary).toMatchObject({ sessionId: 'prep', sessionNumber: null, text: SUMMARY });
-    expect(cs.sessionNumber).toBe(4);
-  });
-
   it('control: the per-beat LAST SESSION block heads it with no number', () => {
     const { beat } = buildNarratorSystemBlocks({ currentSessionId: 's-2' }, {}, null, '', {
-      mode: 'paced_narrative', previousSessionSummary: { text: SUMMARY, sessionNumber: null, isLast: true },
+      mode: 'paced_narrative', previousSessionSummary: { text: PREP_LINE, sessionNumber: null, isLast: true },
     });
     expect(beat).toMatch(/^## LAST SESSION$/m);
     expect(beat).not.toMatch(/SESSION 0/i);
   });
 
-  it('control: a begun session\'s summary keeps its number in the snapshot', () => {
-    const units = memoryOf({ currentSessionId: 's-3', previousSessionSummary: { sessionId: 's-2', sessionNumber: 2, text: 'The crew paid Vex.' } });
-    expect(units.map(u => u.text)).toEqual(['- Session 2: The crew paid Vex.']);
+  it('control: a begun session\'s summary keeps its number in the snapshot', async () => {
+    await seedLegacySessionPage('s-2', 'The crew paid Vex.', { number: 2 });
+    expect(memoryOf({ currentSessionId: 's-3' }).map(u => u.text)).toEqual(['- Session 2: The crew paid Vex.']);
   });
 
-  it('the snapshot lists the unnumbered summary as "An earlier session", not "Session 0"', () => {
-    const units = memoryOf(afterAPrepSession());
+  it('what a session nobody began played, with nothing begun before it, is "An earlier session", not "Session 0"', async () => {
+    await prepSession(Date.now() - 1000);
+    const units = memoryOf({ currentSessionId: 's-next', sessionNumber: 4 });
     expect(units).toHaveLength(1);
-    expect(units[0].text).toBe(`- An earlier session: ${SUMMARY}`);
+    expect(units[0].text).toMatch(/^- An earlier session: Played between sessions, while no session was begun: /);
+    expect(units[0].text).toContain(PREP_LINE);
     expect(renderWorldSnapshot(units).text).not.toMatch(/Session 0\b/);
   });
 
-  it('a Session Log page stored with no number is not "Session 0" either', () => {
-    sessionLog.entries = [logPage('s-old', null, 'The crew found the derelict.')];
-    const units = memoryOf({ currentSessionId: 's-9' });
-    expect(units.map(u => u.text)).toEqual(['- An earlier session: The crew found the derelict.']);
+  it('a Session Log page stored with no number is not "Session 0" either', async () => {
+    await seedLegacySessionPage('s-old', 'The crew found the derelict.', { number: null });
+    expect(memoryOf({ currentSessionId: 's-9' }).map(u => u.text)).toEqual(['- An earlier session: The crew found the derelict.']);
   });
 
-  it('the unnumbered summary of the session that closed last is among the newest three, listed after the numbered ones', () => {
-    sessionLog.entries = [
-      logPage('s-1', 1, 'Session one.'), logPage('s-2', 2, 'Session two.'), logPage('s-3', 3, 'Session three.'),
-    ];
-    const units = memoryOf(afterAPrepSession());
-    expect(units.map(u => u.text).sort()).toEqual([
-      `- An earlier session: ${SUMMARY}`, '- Session 2: Session two.', '- Session 3: Session three.',
-    ].sort());
-    const rendered = renderWorldSnapshot(units).text;
-    expect(rendered).not.toContain('Session one.');
-    expect(rendered.indexOf('Session three.')).toBeLessThan(rendered.indexOf(SUMMARY));
+  it('what a session nobody began played is told with the session that closed last, among the newest three', async () => {
+    await seedLegacySessionPage('s-1', 'Session one.', { number: 1, createdAt: 1000 });
+    await seedLegacySessionPage('s-2', 'Session two.', { number: 2, createdAt: 2000 });
+    await seedLegacySessionPage('s-3', 'Session three.', { number: 3, createdAt: 3000 });
+    await prepSession(4000);
+    const texts = memoryOf({ currentSessionId: 's-next', sessionNumber: 4 }).map(u => u.text);
+    expect(texts).toHaveLength(3);
+    const rendered = renderWorldSnapshot(memoryOf({ currentSessionId: 's-next', sessionNumber: 4 })).text;
+    expect(rendered).toContain('Session three. Played between sessions, while no session was begun:');
+    expect(rendered).toContain(PREP_LINE);
+    expect(rendered).not.toMatch(/Session 0\b/);
     expect(rendered.indexOf('Session two.')).toBeLessThan(rendered.indexOf('Session three.'));
   });
 
-  it('control: an unnumbered Session Log page that is not the last session still ranks below the numbered ones', () => {
-    sessionLog.entries = [
-      logPage('s-a', null, 'An old unnumbered one.'), logPage('s-1', 1, 'Session one.'),
-      logPage('s-2', 2, 'Session two.'), logPage('s-3', 3, 'Session three.'),
-    ];
+  it('control: an unnumbered Session Log page that is not the last session still ranks below the numbered ones', async () => {
+    await seedLegacySessionPage('s-a', 'An old unnumbered one.', { number: null, createdAt: 500 });
+    await seedLegacySessionPage('s-1', 'Session one.', { number: 1, createdAt: 1000 });
+    await seedLegacySessionPage('s-2', 'Session two.', { number: 2, createdAt: 2000 });
+    await seedLegacySessionPage('s-3', 'Session three.', { number: 3, createdAt: 3000 });
     const texts = memoryOf({ currentSessionId: 's-4' }).map(u => u.text);
     expect(texts).toHaveLength(3);
     expect(texts.join('\n')).not.toContain('An old unnumbered one.');

@@ -116,11 +116,13 @@ const CLASSIFICATION = {
   sessionNumber:          STORE,
   lastSessionTimestamp:   STORE,
   sessionEndedId:         STORE,
-  previousSessionSummary: STORE,
-  // The rolling summary — the debounced refresh and the pipeline's narration.
-  sessionSummary:         MERGED,
+  // The session summaries a world kept before the summary was a view of the
+  // session record: read once at world load and copied onto their Session Log
+  // pages (worldJournal.js keepPreRecordSummaries — issue #382 section 9),
+  // never written.
+  previousSessionSummary: UNWRITTEN,
+  sessionSummary:         UNWRITTEN,
   deletedChatMessages:    STORE,
-  unsummarisedSession:    STORE,
   sessionActive:          STORE,
   sessionActiveStartedAt: STORE,
   sessionStartedId:       STORE,
@@ -138,6 +140,8 @@ const CLASSIFICATION = {
   sceneState:             SCENE,
   sceneFrame:             SCENE,
   spotlight:              SCENE,
+  // The scene's anchor (overhaul 2 §4.1): written once at its start, cleared at its end.
+  sceneBegan:             SCENE,
   sessionRetractions:     STORE,
   recentOracles:          STORE,
   // The names the table changed (issue #377 item 1): a card's rename sync,
@@ -168,15 +172,14 @@ function scene(side, sceneId) {
     sceneState:     { bySubject: { [`${side}-subject`]: [{ attribute: 'where', value: side }] }, sceneId },
     sceneFrame:     { place: `the ${side}'s place`, sceneId },
     spotlight:      { lastActorId: `pc-${side}`, sceneId },
+    sceneBegan:     { sceneId, cause: 'first', what: `the ${side}'s scene` },
   };
 }
 
 /** The fields merged by a rule of their own, as each side holds them — the store's the newer and further along. */
 const MERGED_SIDES = {
-  store:   { artAssetIds: { 'art-store': 'Art: Store' }, legacyTracks: { bonds: { ticks: 8, cleared: false } },
-             sessionSummary: { sessionId: 's-1', text: 'the store\'s summary', updatedAt: '2026-11-19T10:00:00.000Z' } },
-  working: { artAssetIds: {}, legacyTracks: { bonds: { ticks: 2, cleared: false } },
-             sessionSummary: { sessionId: 's-1', text: 'the copy\'s summary', updatedAt: '2026-11-19T09:00:00.000Z' } },
+  store:   { artAssetIds: { 'art-store': 'Art: Store' }, legacyTracks: { bonds: { ticks: 8, cleared: false } } },
+  working: { artAssetIds: {}, legacyTracks: { bonds: { ticks: 2, cleared: false } } },
 };
 
 /** Every field holding `side`'s value. */
@@ -266,7 +269,7 @@ describe('issue #364 CAMPAIGNSTATE-KEY-CLASSIFICATION — a move\'s record treat
     const after = await recordMove(stateOf('store', 'sc-1'), stateOf('working', 'sc-1'));
     expect(after.currentSceneId).toBe('sc-1');
     expect(after.sceneTruths.map(t => t.id)).toEqual(['t-store', 't-working']);
-    for (const name of ['sceneState', 'sceneFrame', 'spotlight']) expect(after[name], name).toEqual(scene('working', 'sc-1')[name]);
+    for (const name of ['sceneState', 'sceneFrame', 'spotlight', 'sceneBegan']) expect(after[name], name).toEqual(scene('working', 'sc-1')[name]);
   });
 
   it.each(fieldsOf(MERGED))('merged: %s is not the stale working copy when the store moved on', async (name) => {

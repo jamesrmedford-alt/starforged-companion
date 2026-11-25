@@ -68,7 +68,10 @@ beforeEach(() => {
 });
 
 describe('swearing the shared inciting vow', () => {
-  it('every PC the shared vow is sworn on also gets the vow target as a connection', async () => {
+  // Overhaul 4, D5 — REVERSES issue #241 / #321 U23 (every PC got the target
+  // as a connection): the target is a person the vow is sworn to; a
+  // connection with them is Make a Connection's, offered on the sworn card.
+  it('every PC the shared vow is sworn on has it linked to the target — and no bond Item: the target is a person (D5)', async () => {
     silenceConsoleErrors();
     const kira  = pc('pc-kira', 'Kira');    // first in game.actors
     const tomas = pc('pc-tomas', 'Tomas');  // e.g. the one who clicked ⚔ Swear this vow
@@ -78,9 +81,8 @@ describe('swearing the shared inciting vow', () => {
 
     for (const a of [kira, tomas]) {
       expect(vowsOf(a).map(v => v.flags[MODULE_ID].linkedConnectionName)).toEqual(['Vance']);
+      expect(bondsOf(a)).toEqual([]);
     }
-    expect(bondsOf(kira).map(b => b.flags[MODULE_ID].connectionId)).toEqual(['conn-vance']);
-    expect(bondsOf(tomas).map(b => b.flags[MODULE_ID].connectionId)).toEqual(['conn-vance']);
   });
 
   it('the oath scene is written for the PC who rolled the swear', async () => {

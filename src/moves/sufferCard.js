@@ -227,6 +227,15 @@ function anySufferBlocked(prompt, sufferId, ctx) {
   return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
 }
 
+/** Whether a resolution's narration card is on the table already. */
+function narratedAlready(resolutionId) {
+  if (typeof resolutionId !== "string" || !resolutionId) return false;
+  return (globalThis.game?.messages?.contents ?? []).some((m) => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true && f.resolutionId === resolutionId && f.xCarded !== true;
+  });
+}
+
 /**
  * Render the choice-card HTML for the current state. `pickedIndices` tracks
  * already-applied options for a multi-select prompt so they render as
@@ -419,6 +428,8 @@ const NOT_APPLIED = {
   "way-out":      "you found another way — no fight was begun",
   "expedition-gone": "its expedition is gone",
   "expedition-over": "its expedition is over",
+  // No expedition under way: a waypoint's progress begins none (overhaul 4, D6).
+  "no-expedition": "no expedition is under way",
   "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
   "refused":      "the world did not save it",
   "no-table":     "no such table",
@@ -829,6 +840,11 @@ async function handleSufferPick(message, dataset) {
   // (resultUpgrade.js priceChoiceStatus — issue #364
   // SOJOURN-MISS-PRICE-NARRATED-BEFORE-CHOICE). Cleared when the card re-opens.
   if (done && !multi && idx != null) claim[`flags.${MODULE_ID}.chosenIndex`] = idx;
+  // Picked after its result was narrated (the free-flow case: the card posts
+  // after the narration): the next narration that is a beat of play tells the
+  // cost, once (overhaul 4, D10 — CHOSEN-COST-NEVER-TOLD: two Endure Stress
+  // costs, spirit 5 → 1, were chosen after their narration and never told).
+  if (done && narratedAlready(f.resolutionId)) claim[`flags.${MODULE_ID}.pickedAfterNarration`] = true;
   try {
     await message.update(claim);
   } catch (err) {
@@ -876,7 +892,9 @@ async function handleSufferPick(message, dataset) {
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
   // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
-  const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
+  // `recordRes`: the move this pick pays for, as the session record groups
+  // its sheet changes (issue #382) — a key of the record's alone.
+  const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null, recordRes: f.resolutionId ?? null });
   // A resist roll whose post the world refused rolled nothing: the card is
   // handed back, and its move's Burn / Improve with it, as when a posted roll
   // is then not made (cardActions.js releaseSourceCard, issue #347 AB06). It

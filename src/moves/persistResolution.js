@@ -42,6 +42,9 @@ import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 import { legacyTracksWithCopyMarks, payDeferredLegacyXp } from './legacyTracks.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { recordLedgerChanges } from '../record/ledgerDiff.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
+import { recordCause } from '../record/sheetWatch.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -105,11 +108,13 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     // a hit's momentum is the ally's (issue #325 W17).
     const ally = resolution.consequences?.beneficiary === "ally" && targets?.allyActorId
       ? getActor(targets.allyActorId) : null;
+    // What caused the change rides the write, for the session record (issue #382).
+    const cause = recordCause({ kind: 'move', res: resolution._id ?? null });
     if (ally && ally.id !== actor.id && meterChanges.momentum) {
-      await applyMetersOrNote(ally, { momentum: meterChanges.momentum }, meterFailures, { allyActorId: ally.id });
+      await applyMetersOrNote(ally, { momentum: meterChanges.momentum }, meterFailures, { allyActorId: ally.id }, cause);
       meterChanges.momentum = 0;
     }
-    await applyMetersOrNote(actor, meterChanges, meterFailures);
+    await applyMetersOrNote(actor, meterChanges, meterFailures, null, cause);
 
     // 4. Suffer prompt (F16 Phase D) — posts the non-blocking suffer-choice
     //    card that resolves the rulebook-mandated player choice into one or
@@ -133,14 +138,22 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   // landed: read inside the pause's round trip, the store-owned fields took
   // the cache's `xCardActive: false` and lifted the pause (CAMPSTATE-CHAIN-PARTIAL).
   const updated = await serialiseCampaignStateWrite(async () => {
+    const stored = game.settings.get(MODULE_ID, 'campaignState');
     const merged = mergeWithLatestState(
       foundry.utils.deepClone(campaignState ?? {}),
-      game.settings.get(MODULE_ID, 'campaignState'),
+      stored,
       campaignState,
     );
     merged.updatedAt = new Date().toISOString();
     try {
       await game.settings.set(MODULE_ID, 'campaignState', merged);
+      // The save landed: the truths it carried that the store did not hold
+      // go on the session record (issue #382; sceneLifecycle.js's twin), and
+      // the arrival it carried — a current place the store did not have.
+      recordLedgerChanges(stored, merged);
+      if (merged.currentLocationId && merged.currentLocationId !== (stored?.currentLocationId ?? null)) {
+        void recordPlaceArrival(merged, { res: resolution._id ?? null, how: 'move' });
+      }
     } catch (err) {
       // The roller's meters (written above) stand, unless they were refused
       // too; what the working copy alone holds — a legacy mark, an arrival, a
@@ -179,9 +192,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
  * @param {Object} [opts]
  * @returns {Promise<void>}
  */
-async function applyMetersOrNote(actor, changes, failures, opts = null) {
+async function applyMetersOrNote(actor, changes, failures, opts = null, cause = undefined) {
   try {
-    await applyMeterChanges(actor, changes);
+    await applyMeterChanges(actor, changes, cause);
   } catch (err) {
     console.error(`${MODULE_ID} | the world did not save ${actor?.name ?? "the roller"}'s meters:`, err);
     const error = String(err?.message ?? err);
@@ -252,12 +265,10 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //                                   among them (SUPPLY-TWO-PC-TIE)
 //       deletedChatMessages         narrator.js persistDeletedRecord (a card deleted);
 //                                   cleared by the session mint
-//       unsummarisedSession         set by the session mint, cleared by narrator.js
-//                                   catchUpUnsummarisedSession — which runs after every
-//                                   narrator card, i.e. inside the pipeline (issue #347 AB15)
 //       sessionPerspective          session/lifecycle.js beginSession (Begin relays);
 //                                   cleared by the mint (issue #348 PT03)
-//     The last four were left off the list, so a move's record put back the
+//     The last three were left off the list (with `unsummarisedSession`,
+//     since removed — issue #382 slice 3), so a move's record put back the
 //     value they had when the move began — the crew's supply its own Pay the
 //     Price had just stored among them (issue #362 AC55).
 //
@@ -267,7 +278,6 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //     union, store first.
 //   artAssetIds — the art index (asset id → journal entry name), a map both
 //     sides add to (a portrait stored during the move): every entry kept.
-//   sessionSummary — whichever record has the newer updatedAt.
 //   legacyTracks — the store's, with the ticks the working copy marked
 //     (pipeline addLegacyTicks, recorded by the copy) applied to it
 //     (legacyTracks.js legacyTracksWithCopyMarks): a concurrent `!bond` or
@@ -315,7 +325,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'sessionNumber',
   'lastSessionTimestamp',
   'sessionEndedId',
-  'previousSessionSummary',
   'customOracles',
   'recentOracles',
   'sessionRetractions',
@@ -336,7 +345,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'loreRecap',
   'crewSupply',
   'deletedChatMessages',
-  'unsummarisedSession',
   'sessionPerspective',
 ]);
 
@@ -368,10 +376,6 @@ function mergeWithLatestState(working, latestRaw, markedCopy = null) {
   // working copy's index dropped entries stored meanwhile (issue #300 F14).
   if (latest.artAssetIds || working.artAssetIds) {
     working.artAssetIds = mergeArtIndex(latest.artAssetIds, working.artAssetIds);
-  }
-
-  if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
-    working.sessionSummary = latest.sessionSummary;
   }
 
   const legacy = legacyTracksWithCopyMarks(latest.legacyTracks, working.legacyTracks, markedCopy);
@@ -410,12 +414,6 @@ function artEntryHolds(assetId, entryName) {
   if (entryName && journal?.getName?.(entryName)) return true;
   const entries = journal?.contents ?? [];
   return entries.some(e => e?.flags?.[MODULE_ID]?.entityType === 'artAsset' && e.flags[MODULE_ID].assetId === assetId);
-}
-
-function isNewerRecord(storeRec, workingRec) {
-  if (!storeRec) return false;
-  if (!workingRec) return true;
-  return String(storeRec.updatedAt ?? '') > String(workingRec.updatedAt ?? '');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -5,7 +5,10 @@
  * Correction affordance for active-scene fact-continuity ledgers
  * (fact-continuity scope §10). Renders a DialogV2 listing the truths and
  * state values in scope for a given narrator card, with per-row strike /
- * replace controls.
+ * replace controls — and, below them, the session's earlier scenes' truths
+ * that bind and stand, from the session record, each with a Strike
+ * (earlierScenes.js — TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE: once the scene
+ * had turned, a truth set in an earlier scene could be corrected nowhere).
  *
  * Permission asymmetry (scope §10.1): the GM may correct anything; a
  * player may correct anything EXCEPT a truth asserted by the GM.
@@ -17,6 +20,7 @@
 import {
   strikeTruth,
   replaceTruth,
+  confirmTruth,
   strikeStateValue,
   setStateValue,
   subjectKey,
@@ -24,9 +28,14 @@ import {
   sameStateAttribute,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
-import { propagateRetraction, markSummaryForRegen } from './retractions.js';
+import { propagateRetraction } from './retractions.js';
 import { persistSceneLedgerFields } from './sceneLifecycle.js';
-import { nameSwapOf, withNameChange } from './nameChanges.js';
+import { nameSwapOf, withNameChange, recordNameChanged } from './nameChanges.js';
+import { entryBasis } from './provenance.js';
+import { earlierSceneTruths, findEarlierSceneTruth, strikeEarlierSceneTruth } from './earlierScenes.js';
+
+/** How a truth's basis reads on its row (overhaul 2 §5.1). */
+const BASIS_NAMES = Object.freeze({ player: 'the player', dice: 'the dice', gm: 'the GM', setup: 'the premise', narrator: 'the narration\'s colour' });
 
 const MODULE_ID = 'starforged-companion';
 
@@ -109,8 +118,12 @@ function renderDialogContent(campaignState, matchedIds, ctx, flaggedId = null) {
     t && !t.retracted && (t.id === flaggedId || isSubjectInDialogScope(t.subject, matchedIds)),
   ).sort((a, b) => (b.id === flaggedId ? 1 : 0) - (a.id === flaggedId ? 1 : 0));
   const stateRows = collectInScopeState(campaignState, matchedIds);
+  // The session's earlier scenes' truths about the card's subjects (earlierScenes.js).
+  const earlier = earlierSceneTruths(campaignState)
+    .map(g => ({ ...g, truths: g.truths.filter(t => isSubjectInDialogScope(t.subject, matchedIds)) }))
+    .filter(g => g.truths.length);
 
-  if (!truths.length && !stateRows.length) {
+  if (!truths.length && !stateRows.length && !earlier.length) {
     return `<p class="sf-correct-empty">No active-scene truths or state for the subjects in this card.</p>`;
   }
 
@@ -120,8 +133,32 @@ function renderDialogContent(campaignState, matchedIds, ctx, flaggedId = null) {
   const stateHtml = stateRows.length
     ? `<h4>State</h4><ul class="sf-correct-list">${stateRows.map(s => renderStateRow(s, ctx)).join('')}</ul>`
     : '';
+  const earlierHtml = earlier.length
+    ? `<h4>Earlier this session</h4>${earlier.map(g => `<p class="sf-correct-scene">${escape(g.label)}</p><ul class="sf-correct-list">${g.truths.map(t => renderEarlierTruthRow(t, ctx)).join('')}</ul>`).join('')}`
+    : '';
 
-  return `${truthsHtml}${stateHtml}`;
+  return `${truthsHtml}${stateHtml}${earlierHtml}`;
+}
+
+/** An earlier scene's truth (earlierScenes.js): in the names the table uses now, with a Strike — it binds, so there is no Keep. */
+function renderEarlierTruthRow(truth, ctx) {
+  const canStrike = ctx.isGM || truth.asserter !== 'gm';
+  const basis     = truth.basis ?? 'narrator';
+  const lockHint  = canStrike ? '' : ` <span class="sf-correct-lock" title="GM-asserted — players cannot strike">🔒</span>`;
+  const strike    = canStrike
+    ? `<button type="button" class="sf-correct-btn" data-action="strike-earlier-truth" data-truth-id="${escape(truth.id)}">Strike</button>`
+    : '';
+  return `
+    <li class="sf-correct-row sf-correct-row--earlier">
+      <div class="sf-correct-meta">
+        <code class="sf-correct-id">${escape(String(truth.id ?? '').slice(0, 8))}</code>
+        <span class="sf-correct-subject">${escape(formatSubjectLabel(truth.shown?.subject ?? truth.subject))}</span>
+        <span class="sf-correct-asserter">(${escape(truth.asserter ?? '')})</span> <span class="sf-correct-basis">— ${escape(BASIS_NAMES[basis] ?? basis)}</span>${lockHint}
+      </div>
+      <div class="sf-correct-fact">${escape(truth.shown?.fact ?? truth.fact ?? '')}</div>
+      <div class="sf-correct-actions">${strike}</div>
+    </li>
+  `;
 }
 
 function renderTruthRow(truth, ctx, flagged = false) {
@@ -138,15 +175,21 @@ function renderTruthRow(truth, ctx, flagged = false) {
     `
     : '';
   const flagHint  = flagged ? ` <span class="sf-correct-flagged" title="The fact the Narrative Review caught">⚠ flagged by the review</span>` : '';
+  // A colour truth binds once the GM keeps it (overhaul 2 §5.3, D7).
+  const basis     = entryBasis(truth);
+  const keep      = ctx.isGM && basis === 'narrator'
+    ? `<button type="button" class="sf-correct-btn" data-action="keep-truth" data-truth-id="${escape(truth.id)}" title="Keep it: the narration described it; kept, it binds">Keep</button>`
+    : '';
+  const basisHint = ` <span class="sf-correct-basis">— ${escape(BASIS_NAMES[basis] ?? basis)}</span>`;
   return `
     <li class="sf-correct-row${flagged ? ' sf-correct-row--flagged' : ''}">
       <div class="sf-correct-meta">
         <code class="sf-correct-id">${idPrefix}</code>
         <span class="sf-correct-subject">${subjLabel}</span>
-        <span class="sf-correct-asserter">(${actor})</span>${lockHint}${flagHint}
+        <span class="sf-correct-asserter">(${actor})</span>${basisHint}${lockHint}${flagHint}
       </div>
       <div class="sf-correct-fact">${fact}</div>
-      <div class="sf-correct-actions">${buttons}</div>
+      <div class="sf-correct-actions">${keep}${buttons}</div>
     </li>
   `;
 }
@@ -217,7 +260,7 @@ async function handleRowAction(button, ctx) {
       const struck  = strikeTruth(button.dataset.truthId, working, ctx);
       if (!struck) return;
       await propagateRetraction(struck, working);   // issue #286 B6
-      await persistCorrection(working, 'sceneTruths', { regenSummary: true });
+      await persistCorrection(working, 'sceneTruths');
       return;
     }
     case 'replace-truth': {
@@ -236,9 +279,27 @@ async function handleRowAction(button, ctx) {
         : replaced.struck.subject?.kind === 'entity' ? (resolveEntityById(replaced.struck.subject.entityId)?.data?.name ?? null)
           : null;
       await persistCorrection(working, 'sceneTruths', {
-        regenSummary: true,
         nameChange: swap ? { ...swap, kind: 'corrected', about } : null,
       });
+      return;
+    }
+    case 'strike-earlier-truth': {
+      // An earlier scene's truth, struck where the session keeps it — it
+      // persists itself (earlierScenes.js strikeEarlierSceneTruth).
+      const working = workingCopy();
+      const found   = findEarlierSceneTruth(working, button.dataset.truthId);
+      if (!found?.truth) return;
+      const subject = found.truth.subject;
+      const about   = subject?.kind === 'text' ? subject.text
+        : subject?.kind === 'entity' ? (resolveEntityById(subject.entityId)?.data?.name ?? null) : null;
+      await strikeEarlierSceneTruth(found.truth, working, ctx, { about });
+      return;
+    }
+    case 'keep-truth': {
+      // The GM keeps what the narration described (overhaul 2 §5.3): it binds.
+      const working = workingCopy();
+      if (!confirmTruth(button.dataset.truthId, working, ctx)) return;
+      await persistCorrection(working, 'sceneTruths');
       return;
     }
     case 'strike-state': {
@@ -255,7 +316,7 @@ async function handleRowAction(button, ctx) {
       const next = await promptForText(`New value for "${attr}"`, String(cur?.value ?? ''));
       if (!next) return;
       const working = workingCopy();
-      if (!setStateValue(key, attr, next, working)) return;
+      if (!setStateValue(key, attr, next, working, ctx)) return;
       await persistCorrection(working, 'sceneState');
       return;
     }
@@ -357,26 +418,27 @@ function escape(s) {
 /**
  * Persist a correction's ledger field onto the latest store
  * (persistSceneLedgerFields: truths unioned by id with a retraction
- * sticking; nothing when the scene closed meanwhile) and, after a Strike or
- * Replace, the regen mark on the stored rolling summary. Failures are logged
+ * sticking; nothing when the scene closed meanwhile), with the name a Replace
+ * corrected. A strike reaches the session summary through the session record
+ * (`truth.struck`, recorded where the ledger is saved — record/ledgerDiff.js):
+ * the summary that told it is stale and made again. Failures are logged
  * there, never thrown.
  *
  * @param {Object} working — the corrected copy
  * @param {"sceneTruths"|"sceneState"} field
- * @param {{ regenSummary?: boolean }} [opts]
+ * @param {{ nameChange?: Object|null }} [opts]
  * @returns {Promise<void>}
  */
-async function persistCorrection(working, field, { regenSummary = false, nameChange = null } = {}) {
+async function persistCorrection(working, field, { nameChange = null } = {}) {
   await persistSceneLedgerFields(working, [field], 'correction dialog', {
-    onto: (regenSummary || nameChange) ? (latest) => {
-      if (regenSummary) markSummaryForRegen(latest);
+    onto: nameChange ? (latest) => {
       // The name a Replace corrected, in the same write (issue #377 item 1).
-      if (nameChange) {
-        latest.nameChanges = withNameChange(latest.nameChanges,
-          { ...nameChange, sessionId: latest.currentSessionId ?? working.currentSessionId ?? null });
-      }
+      latest.nameChanges = withNameChange(latest.nameChanges,
+        { ...nameChange, sessionId: latest.currentSessionId ?? working.currentSessionId ?? null });
     } : null,
   });
+  // The write landed: the change goes on the session record (issue #382).
+  if (nameChange) recordNameChanged(nameChange);
 }
 
 // Avoid unused-parameter lint when subjectKey is imported only for the type

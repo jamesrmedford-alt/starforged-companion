@@ -186,8 +186,12 @@ describe('issue #345 D1 — a sheet roll while Batch Mode is on is narrated with
     expect(user).toContain('[ROLL: Progress score: 1 vs Challenge: 5, 8]');
     expect(user).toContain('Kira: "Resolving: Find Chen"');
     expect(roundCards()).toHaveLength(1);
+    // The card lists the move it rolled; its entry flags whose line it was and
+    // the outcome it told (an entry's move id was the `!recap session` card's,
+    // which reads the session record now — issue #382 slice 5).
+    expect(roundCards()[0].content).toContain('Fulfill Your Vow');
     expect(roundCards()[0].flags[MODULE_ID].roundEntries).toEqual([
-      expect.objectContaining({ userId: 'pl-1', moveId: 'fulfill_your_vow', outcome: 'miss' }),
+      expect.objectContaining({ userId: 'pl-1', outcome: 'miss' }),
     ]);
     expect(ownVowNarrations()).toHaveLength(0);
     expect(table.cards(f => f.moveResolution)).toHaveLength(0);              // the round rolled nothing

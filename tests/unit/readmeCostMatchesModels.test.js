@@ -9,7 +9,9 @@
  * narrator's system prompt is rebuilt for every call, so its cache-read share
  * is near zero (docs/narrator/narrator-memory-architecture.md, "Measure
  * before re-layout"). The defaults are now Claude Sonnet 5.5 for narration
- * and Claude Haiku 5.5 for the helper calls.
+ * and for the two calls that read a typed line (the move interpreter and the
+ * pacing classifier — decisions.md, "The readers run on Sonnet 5.5"), and
+ * Claude Haiku 5.5 for the other helper calls.
  *
  * The section now names the models the code uses by default at their
  * published rates, quotes no stale dollar estimates, and says what is and is
@@ -27,10 +29,18 @@ const flat = (s) => s.replace(/\s+/g, ' ');
 const section = flat(README.split('## Cost and API usage')[1]?.split('### Narrator prompt size')[0] ?? '');
 
 describe('README-COST-FIGURES — the README\'s cost section matches the models the code uses', () => {
-  it('control: the defaults are Sonnet 5.5 for narration and Haiku 5.5 for the interpreter and classifier', () => {
+  it('control: the defaults are Sonnet 5.5 for narration, and for the line reader', () => {
     expect(source('src/ui/settingsPanel.js')).toMatch(/name:\s*'Narration Model',[\s\S]*?default:\s*'claude-sonnet-5-5'/);
-    expect(source('src/moves/interpreter.js')).toMatch(/const MODEL\s*=\s*"claude-haiku-5-5"/);
-    expect(source('src/pacing/classifier.js')).toMatch(/const MODEL\s*=\s*"claude-haiku-5-5"/);
+    expect(source('src/moves/reader.js')).toMatch(/const MODEL\s*=\s*"claude-sonnet-5-5"/);
+  });
+
+  it('says which calls run on which model: the line reader on Sonnet 5.5, the other helpers on Haiku 5.5', () => {
+    expect(section).toMatch(/the\s+line reader \(which move it sets about, if any, how much hangs on it, and its\s+stat and stakes\) — runs on \*\*Claude Sonnet 5\.5\*\* as well/);
+    expect(section).toMatch(/The detection passes after each narration, relevance, `!lore` and the Private Channel run on \*\*Claude Haiku 5\.5\*\*/);
+    // The settings panel names the readers' model where it describes them.
+    const panel = source('src/ui/settingsPanel.js');
+    expect(panel).toMatch(/<dt>Move AI<\/dt>\s*<dd>claude-sonnet-5-5 \(Sonnet 5\.5\)/);
+    expect(panel).not.toMatch(/a Haiku pre-classifier|a small Haiku call decides/);
   });
 
   it('names those models at their published rates', () => {

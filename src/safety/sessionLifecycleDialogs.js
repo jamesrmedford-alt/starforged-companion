@@ -10,7 +10,9 @@
  *     Session ("Focus from last session: …").
  *   - Offers an optional Spotlight Vignette roll (d100, 10 entries) —
  *     uses src/oracles/tables/sessionVignette.js. On roll, all players
- *     take +1 momentum.
+ *     take +1 momentum, and the narrator writes the result as a short
+ *     cutaway of its own before the opening (issue #381 D3) — or, with no
+ *     narration to follow, the card says it is the table's to envision.
  *   - Says so when no character has an open vow besides a background vow,
  *     and offers to swear one on the user's own character (issue #353 R3).
  *
@@ -25,7 +27,8 @@
  * Split: the dialog and the chat card run on the invoking client (any
  * player may type `!begin-session` / `!end-session`); every world write —
  * the session-active flip, foci, momentum, clocks, scene close, rolling
- * summary, Session Log and the narrator vignettes — runs on the canonical
+ * summary, Session Log, the narrator vignettes and the vow Begin's dialog
+ * swears (once the session is begun) — runs on the canonical
  * GM in applyBeginSession / applyEndSession (GM_ACTIONS in
  * src/multiplayer/gmRelay.js), invoked through requestGmAction. A player's
  * client cannot write world-scoped campaignState or other players' actors,
@@ -35,11 +38,14 @@
 import { settledWithin } from "../multiplayer/settleWithin.js";
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { proseToHtml } from "../audio/segments.js";
 import { reportSnapshotEvent } from "../narration/snapshotEvents.js";
 import { RANKS } from "../schemas.js";
 import { costsOwedSentence } from "../moves/sufferCard.js";
+import { recordCause } from "../record/sheetWatch.js";
+import { recordSessionEdge } from "../record/tableSnapshot.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -92,7 +98,11 @@ export async function openBeginSessionDialog() {
       </label>
       <label class="row">
         <input type="checkbox" name="galleyVignette" value="1" checked>
-        Include an opening galley vignette (narrator-written scene)
+        Include an opening scene (narrator-written)
+      </label>
+      <label class="row sf-pick-up">
+        <span>Where and when do we pick up? (optional)</span>
+        <input type="text" name="pickUp" maxlength="${PICK_UP_MAX}" placeholder="Left blank, the opening starts where the last session stopped">
       </label>
     </form>
   `;
@@ -108,7 +118,8 @@ export async function openBeginSessionDialog() {
         const includeGalley = form?.querySelector('input[name="galleyVignette"]')?.checked ?? true;
         const newVow        = String(form?.querySelector('input[name="newVow"]')?.value ?? "").trim().slice(0, VOW_NAME_MAX);
         const newVowRank    = form?.querySelector('select[name="newVowRank"]')?.value ?? "dangerous";
-        await postBeginSessionCard(rollVignette, includeGalley, { ...quest, newVow, newVowRank });
+        const pickUp        = cleanPickUp(form?.querySelector('input[name="pickUp"]')?.value);
+        await postBeginSessionCard(rollVignette, includeGalley, { ...quest, newVow, newVowRank }, pickUp);
       },
     },
   });
@@ -116,6 +127,20 @@ export async function openBeginSessionDialog() {
 
 /** The longest vow the "no vow in play" offer takes (the field's maxlength). */
 const VOW_NAME_MAX = 120;
+
+/**
+ * The longest "Where and when do we pick up?" Begin a Session takes (the
+ * field's maxlength). The move's third step is "Set the scene by envisioning
+ * your character's current situation and intent", and the dialog printed that
+ * sentence with no field under it: once an opening starts where the last
+ * session stopped, this line is how a table skips ahead (issue #381 D8).
+ */
+const PICK_UP_MAX = 200;
+
+/** Relay-payload pick-up line → one trimmed line, capped at the dialog's maxlength. */
+function cleanPickUp(value) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, PICK_UP_MAX) : "";
+}
 
 /**
  * Whether a quest is in play at Begin a Session (issue #353 R3): some
@@ -165,43 +190,88 @@ function renderNoQuestBlock(swearer) {
     + `background vow, so this session has no quest to play toward.</p>${offer}</div>`;
 }
 
-/**
- * Swear the vow Begin a Session's "no vow in play" offer was given (issue
- * #353 R3), on the user's own character's sheet, through actorBridge. The
- * canonical GM's createItem hook then posts its "🆕 New vow recorded" card —
- * the ⚔ Swear it (roll), the reward offer and the connection link
- * (session/swearVow.js registerPlayerVowHook). A vow the sheet refused is
- * said to this user, who can add it on the sheet.
- *
- * @param {string} actorId
- * @param {string} name
- * @param {string} rank
- * @returns {Promise<Object|null>} the vow Item, or null when it was not made
- */
-async function swearSessionVow(actorId, name, rank) {
-  const { getActor, createCharacterVowItem } = await import("../character/actorBridge.js");
-  const actor = getActor(actorId);
-  const item  = actor
-    ? await createCharacterVowItem(actor, { name, rank: RANKS.includes(rank) ? rank : "dangerous" })
-    : null;
-  if (!item) {
-    ui.notifications?.warn?.(`Starforged Companion: the vow "${name}" could not be saved — add it on the character sheet.`);
-  }
-  return item;
+/** Relay-payload vow name → one trimmed line, capped at the dialog's maxlength. */
+function cleanVowName(value) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, VOW_NAME_MAX) : "";
 }
 
-async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }) {
+/**
+ * Swear the vow Begin a Session's "no vow in play" offer was given (issue
+ * #353 R3) — on the canonical GM, in the Begin it belongs to, once the
+ * session is begun: on its character's sheet, through actorBridge. Its sheet
+ * watch then records the `vow.sworn` in that session (record/sheetWatch.js),
+ * and its createItem hook posts the "🆕 New vow recorded" card — the ⚔ Swear
+ * it (roll), the reward offer and the connection link
+ * (session/swearVow.js registerPlayerVowHook).
+ *
+ * The pressing client made it, right after it had sent the Begin — the relay
+ * has no answer — so on a player's client the vow reached the sheet before
+ * the GM had begun (at a world's first Begin, minted) the session: its
+ * `vow.sworn` was built for the session the store held then, none (dropped)
+ * or the one before (filed there), and the record named no vow sworn
+ * (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD, the fourth live run's a2).
+ *
+ * The payload is client-asserted (rules/reachability.md §8): the character
+ * must be a PC the requester owns (or the requester a GM), the name is cut to
+ * the dialog's maxlength and the rank is one of the game's. A vow refused —
+ * for its character, or by the sheet — is said to the requester and the GMs.
+ * Never throws.
+ *
+ * @param {{ actorId?: string, name?: string, rank?: string }|null} vow — the relay's
+ * @param {Object} [ctx] — the relay's
+ * @returns {Promise<Object|null>} the vow Item, or null when none was made
+ */
+async function swearBeginVow(vow, ctx = {}) {
+  const name = cleanVowName(vow?.name);
+  if (!name) return null;
+  try {
+    const { getActor, createCharacterVowItem, isPlayerCharacterActor } = await import("../character/actorBridge.js");
+    const { requesterOwnsActor } = await import("../moves/burnMomentum.js");
+    const actor = typeof vow?.actorId === "string" && vow.actorId ? getActor(vow.actorId) : null;
+    if (!actor || !isPlayerCharacterActor(actor) || !requesterOwnsActor(actor, ctx)) {
+      await postBeginVowNotSworn(ctx, name, actor && isPlayerCharacterActor(actor)
+        ? `only ${String(actor.name ?? "its character")}'s player or a GM can swear it for them`
+        : "the character it was for is not one of the table's player characters");
+      return null;
+    }
+    const item = await createCharacterVowItem(actor, { name, rank: RANKS.includes(vow?.rank) ? vow.rank : "dangerous" });
+    if (!item) await postBeginVowNotSworn(ctx, name, "the sheet did not save it — add it on the character sheet");
+    return item ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: the vow "${name}" was not sworn:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/** Whisper the requester and the GMs that the vow Begin's dialog was given was not sworn, and why. */
+async function postBeginVowNotSworn(ctx, name, why) {
+  const gmIds = Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Vow not sworn</strong><p>The vow <em>${escapeHtml(name)}</em> from Begin a Session was not sworn: ${escapeHtml(why)}.</p></div>`,
+    whisper: [...new Set([ctx?.requesterId ?? null, ...gmIds].filter(Boolean))],
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true, beginVowNotSworn: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the vow-not-sworn notice failed:`, err?.message ?? err));
+}
+
+async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }, pickUp = "") {
   // Read the foci before the GM handler clears them, so the card shows what
   // the table carried over from last session.
   const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
 
   let vignetteBlock  = "";
   let vignetteRolled = false;
+  let spotlightRoll  = null;
   if (rollVignette) {
     try {
       const r = rollOracle("spotlight_vignette");
-      vignetteBlock = `<p><strong>Spotlight vignette:</strong> ${escapeHtml(r.result)}</p><p>All players take <strong>+1 momentum</strong>.</p>`;
+      // The narrator writes it as a short cutaway of its own when a narration
+      // will follow (issue #381 D3): the canonical GM is sent the d100 alone
+      // and reads the result off the table itself. With none to follow, the
+      // result is the table's to envision — the move's own second way.
+      const narrated = spotlightWillBeNarrated(state);
+      vignetteBlock = `<p><strong>Spotlight vignette:</strong> ${escapeHtml(r.result)}${narrated ? "" : " — yours to envision."}</p><p>All players take <strong>+1 momentum</strong>.</p>`;
       vignetteRolled = true;
+      if (narrated) spotlightRoll = r.roll;
     } catch (err) {
       console.warn(`${MODULE_ID} | openBeginSessionDialog: vignette roll failed:`, err);
     }
@@ -215,24 +285,66 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     ? ""
     : `<p class="muted sf-not-recorded"><em>No GM is connected — the session was not started${vignetteRolled ? " and no momentum was applied" : ""}. Try again once a GM has joined.</em></p>`;
 
-  // No vow in play (issue #353 R3): said to the table. A vow sworn from the
-  // dialog is not claimed here — its own card follows once the sheet has it.
-  const noQuestBlock = quest?.inPlay === false
-    ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
+  // No vow in play (issue #353 R3): said to the table — with the vow the
+  // dialog swears, when it swears one. The card said "No character has a vow
+  // in play … swear an iron vow to give this session a quest" above the vow
+  // its own dialog swore, composed as though no vow came with it (known-issues
+  // BEGIN-CARD-BEFORE-ITS-OWN-VOW, the fourth live run's a2). The vow's own
+  // card follows once the canonical GM has sworn it (swearBeginVow); with no
+  // GM connected it is not sworn, and the card says so.
+  const swearing = quest?.inPlay === false && quest.newVow && quest.swearer?.id ? quest : null;
+  const vowRank = swearing && RANKS.includes(swearing.newVowRank) ? ` (${escapeHtml(swearing.newVowRank)})` : "";
+  const noQuestBlock = quest?.inPlay !== false ? ""
+    : !swearing
+      ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
+      : gmOnline
+        ? `<p class="sf-no-vow"><em>No vow was in play besides a background vow: ${escapeHtml(swearing.swearer.name)} swears one — <strong>${escapeHtml(swearing.newVow)}</strong>${vowRank}. Its card follows.</em></p>`
+        : `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — the vow <strong>${escapeHtml(swearing.newVow)}</strong> is not sworn until a GM has joined.</em></p>`;
+
+  // The table's own word on where and when the session picks up (issue #381
+  // D8), said to the table: the opening scene is set there.
+  const pickUpBlock = pickUp
+    ? `<p class="sf-pick-up"><strong>Picking up:</strong> ${escapeHtml(pickUp)}</p>`
     : "";
 
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${pickUpBlock}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
-  await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false });
+  // The vow the "no vow in play" offer was given rides the Begin: the
+  // canonical GM swears it on the user's own character once the session is
+  // begun (swearBeginVow — VOW-SWORN-UNNAMED-IN-THE-RECORD).
+  const vow = quest?.inPlay === false && quest.newVow && quest.swearer?.id
+    ? { actorId: quest.swearer.id, name: quest.newVow, rank: quest.newVowRank }
+    : null;
+  await requestGmActionSafely("session.begin", {
+    vignetteRolled, includeGalley: includeGalley !== false, pickUp, ...(spotlightRoll ? { spotlightRoll } : {}),
+    ...(vow ? { vow } : {}),
+  });
+}
 
-  // The vow the "no vow in play" offer was given, after the session's start
-  // (so its swear roll meets a begun session): on the user's own character.
-  if (quest?.inPlay === false && quest.newVow && quest.swearer?.id) {
-    await swearSessionVow(quest.swearer.id, quest.newVow, quest.newVowRank);
+/**
+ * Whether the Spotlight Vignette will be narrated (issue #381 D3), read where
+ * Begin was pressed from what every client can read: narration switched on
+ * (a world setting), a GM with a Claude key connected (the keyed-GM
+ * registry), the X-Card down. The canonical GM narrates only a roll it is
+ * sent. Fail-closed: a check that cannot be made says the table envisions it.
+ *
+ * @param {Object} state — campaignState
+ * @returns {boolean}
+ */
+function spotlightWillBeNarrated(state) {
+  try {
+    return game.settings.get(MODULE_ID, "narrationEnabled") !== false && hasKeyedActiveGM() && state?.xCardActive !== true;
+  } catch {
+    return false;
   }
+}
+
+/** Relay-payload d100 → a face of the table's die, else null (it crossed the socket). */
+function cleanD100(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
 }
 
 /** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
@@ -270,7 +382,8 @@ const SESSION_CHAIN_WAIT_MS = 5 * 60_000;
 
 /**
  * How long Begin's galley vignette waits for its clock vignettes (issue #335
- * Y05): each is a bounded Claude call, so this only passes one that hangs.
+ * Y05), and each of them for the spotlight vignette (issue #381): each is a
+ * bounded Claude call, so this only passes one that hangs.
  */
 const OPENING_VIGNETTE_WAIT_MS = 60_000;
 
@@ -300,20 +413,31 @@ async function warmNarratorCacheAfterBegin() {
  * vignette. The start effects run once per session: Begin again on a session
  * already begun posts a note and changes nothing (issue #300 F11).
  *
- * @param {{ vignetteRolled?: boolean, includeGalley?: boolean }} payload
- * @param {Object} [_ctx]
+ * @param {{ vignetteRolled?: boolean, includeGalley?: boolean, pickUp?: string, spotlightRoll?: number,
+ *   vow?: { actorId: string, name: string, rank?: string } }} payload —
+ *   `pickUp`: the table's own word on where and when the session picks up;
+ *   `spotlightRoll`: the Begin card's Spotlight Vignette d100, sent when a
+ *   narration of it will follow; `vow`: the vow the dialog's "no vow in play"
+ *   offer was given, sworn here once the session is begun (swearBeginVow)
+ * @param {Object} [ctx] — the relay's: who pressed Begin
  * @returns {Promise<void>}
  */
-export function applyBeginSession(payload = {}, _ctx = {}) {
+export function applyBeginSession(payload = {}, ctx = {}) {
   const run = settledWithin(_beginChain, SESSION_CHAIN_WAIT_MS, "Begin a Session (the Begin ahead of it)")
-    .then(() => beginSessionOnce(payload));
+    .then(() => beginSessionOnce(payload, ctx));
   _beginChain = run.catch(() => {});
   return run;
 }
 
-async function beginSessionOnce(payload) {
+async function beginSessionOnce(payload, ctx = {}) {
   const vignetteRolled = payload.vignetteRolled === true;
   const includeGalley  = payload.includeGalley !== false;
+  // The table's own word on where and when the session picks up (issue #381
+  // D8): cleaned again here — it crossed the socket from the pressing client.
+  const pickUp         = cleanPickUp(payload.pickUp);
+  // The Begin card's Spotlight Vignette d100 (issue #381 D3): the number
+  // alone crosses the socket — the result is read off the table here.
+  const spotlightRoll  = vignetteRolled ? cleanD100(payload.spotlightRoll) : null;
 
   // Start a new session when the last one is over — End a Session closed it,
   // or it went idle (issue #286 C4: End → Begin used to keep the same session
@@ -345,6 +469,8 @@ async function beginSessionOnce(payload) {
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
       console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
       await postSessionAlreadyBegunCard(cs.currentSessionId);
+      // The dialog's vow is no start effect: sworn into the session under way.
+      await swearBeginVow(payload.vow, ctx);
       return;
     }
     beginSession(cs);
@@ -364,6 +490,14 @@ async function beginSessionOnce(payload) {
     noteSessionReplaced();
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
+    // The session's first event on its record: the table as play begins
+    // (issue #382), before the start effects below change it — its sheets are
+    // read as this call is made; the record's write never holds up Begin.
+    void recordSessionEdge("session.begun", cs, {
+      number:      cs.sessionNumber ?? null,
+      perspective: cs.sessionPerspective?.sessionId === sessionId ? (cs.sessionPerspective.perspective ?? null) : null,
+      focus:       { quest, connection },
+    });
     // The session's first narrator call takes a new world snapshot (issue #357).
     reportSnapshotEvent("session_begin");
   } catch (err) {
@@ -375,9 +509,21 @@ async function beginSessionOnce(payload) {
   }
   if (!begun) return;
 
+  // The vow the dialog swore, now the session it is sworn in is begun —
+  // before the start effects, as its card followed the Begin card when the
+  // pressing client made it (swearBeginVow).
+  await swearBeginVow(payload.vow, ctx);
+
   if (vignetteRolled) {
     await applyMomentumToAllPlayers(1, { sessionId, award: "Begin a Session — the Spotlight Vignette" });
   }
+
+  // The spotlight vignette — its own short cutaway, first of Begin's
+  // narrations (issue #381 D3): after the clock card, which the clocks' roll
+  // below posts, or at once with no clock card. The clock vignettes and the
+  // opening each wait for it, bounded.
+  let spotlight = null;
+  const startSpotlight = () => { if (spotlightRoll && !spotlight) spotlight = narrateSpotlightAtBegin(spotlightRoll); };
 
   // Campaign clocks — roll Ask the Oracle for each at session start (play
   // kit: campaign clocks advance at Begin a Session via the clock's
@@ -403,6 +549,7 @@ async function beginSessionOnce(payload) {
         content: `<div class="sf-clock-card"><strong>⏳ Campaign clocks — Begin a Session</strong><ul>${rows}</ul></div>`,
         flags:   { [MODULE_ID]: { clockCard: true, beginSessionAdvance: true } },
       });
+      startSpotlight();
       const unsaved = clockResults.filter(r => r.advanced && r.saved === false);
       if (unsaved.length) {
         try {
@@ -424,6 +571,8 @@ async function beginSessionOnce(payload) {
       if (advanced.length) {
         clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
+            // After the spotlight vignette, whose scene ends before theirs opens.
+            if (spotlight) await settledWithin(spotlight, OPENING_VIGNETTE_WAIT_MS, "spotlight vignette");
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
             const { clockStillTriggered } = await import("../clocks/payThePriceClocks.js");
             // A working copy — each vignette applies its sidecar on it (issue #329 X09).
@@ -467,22 +616,23 @@ async function beginSessionOnce(payload) {
   } catch (err) {
     console.warn(`${MODULE_ID} | campaign clock session-start roll failed:`, err?.message ?? err);
   }
+  startSpotlight();
 
-  // Fire-and-forget galley vignette — narrator-generated 4-6 sentence
-  // opening scene describing the active PCs in the ship's galley
-  // bantering about the absent ones. Silent skip when the Claude key
-  // is unset or narration is disabled. Gated on the dialog's "Include an
-  // opening galley vignette" checkbox (default on) so unchecking it
+  // Fire-and-forget opening scene — narrator-generated, four to six
+  // sentences: the PCs at the table in a quiet moment where the last session
+  // stopped, built from rolled material (issue #381). Silent skip when the
+  // Claude key is unset or narration is disabled. Gated on the dialog's
+  // "Include an opening scene" checkbox (default on) so unchecking it
   // suppresses the scene (playtest finding: it ran regardless). Runs here,
   // on the canonical GM, because that is the client holding the Claude key.
   if (!includeGalley) {
-    console.debug?.(`${MODULE_ID} | Begin a Session: galley vignette unchecked — skipped.`);
+    console.debug?.(`${MODULE_ID} | Begin a Session: opening scene unchecked — skipped.`);
     // With no opening narration to follow — the galley unchecked, no clock
     // vignette — the narrator's cached prefix (its rules and the world
     // snapshot) is written now, so the session's first narration reads it and
     // is not the slow one (issue #357). An opening narration writes it itself.
     // Not awaited: Begin a Session does not wait on a Claude round trip.
-    if (!clockVignettes) warmNarratorCacheAfterBegin();
+    if (!clockVignettes && !spotlight) warmNarratorCacheAfterBegin();
     return;
   }
   setTimeout(async () => {
@@ -490,31 +640,122 @@ async function beginSessionOnce(payload) {
     // continues the scene they opened with their beat in it. Together, each
     // minted a scene on its own copy and the one on the losing scene lost its
     // facts (issue #335 Y05). A vignette is a Claude call — the wait is bounded.
+    // The spotlight vignette is first of all (issue #381 D3).
+    if (spotlight) await settledWithin(spotlight, OPENING_VIGNETTE_WAIT_MS, "spotlight vignette");
     if (clockVignettes) await settledWithin(clockVignettes, OPENING_VIGNETTE_WAIT_MS, "galley vignette");
     try {
-      const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
+      const { collectGalleyParticipants, composeOpeningScene, postGalleyVignetteCard }
         = await import("../session/galleyVignette.js");
-      const { narrateSessionVignette } = await import("../narration/narrator.js");
+      const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
       // A working copy — the narration starts its scene and applies its
       // sidecar on it, and a refused write must leave this client's cache as
       // the world has it (issue #335 Y04, the clock vignette's X09 copy).
       const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+      // The scene's dice are the table's: rolled once, here on the canonical
+      // GM, and only for a scene that will be narrated (issue #381) — with
+      // narration off, no key here or the X-Card up, nothing is rolled.
+      if (!sessionVignetteWillRun(cs)) return;
       const participants = collectGalleyParticipants(cs);
-      const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
+      const { userMessage, seeds } = await composeOpeningScene(participants, cs, { pickUp });
       const narrationId  = newNarrationId();
-      // The PCs in the galley are the vignette's CHARACTER blocks — never a
+      // The PCs in the scene are the vignette's CHARACTER blocks — never a
       // first PC whose player is away (issue #345 AA31).
       const actorIds = participants.active.map(p => p.actor?.id).filter(Boolean);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds, seeds });
       if (text) {
-        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId });
+        // The seeds were marked by the narration's own account of them; the
+        // card keeps them (`builtFrom`) and shows them to the table.
+        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId, seeds });
       }
     } catch (err) {
-      console.warn(`${MODULE_ID} | galley vignette generation failed:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | opening scene generation failed:`, err?.message ?? err);
     }
   }, 0);
 }
 
+
+/**
+ * Begin a Session's spotlight vignette (issue #381 D3), in the background:
+ * settled once it is written — or found it cannot be — and never rejected.
+ *
+ * @param {number} roll — the Begin card's d100
+ * @returns {Promise<void>}
+ */
+function narrateSpotlightAtBegin(roll) {
+  return new Promise(resolve => setTimeout(() => {
+    writeSpotlightVignette(roll).catch(err => {
+      console.warn(`${MODULE_ID} | Begin a Session: the spotlight vignette failed:`, err?.message ?? err);
+    }).finally(resolve);
+  }, 0));
+}
+
+/**
+ * The spotlight vignette, on the canonical GM: built from the Begin card's
+ * Spotlight Vignette roll and rolled material (session/spotlightVignette.js),
+ * narrated, and posted as its own card; then its scene — the cutaway's own —
+ * is ended, as the closing's is, so the opening starts the session's scene
+ * clean. A scene that was already open is the table's, and is left as it
+ * was. A narration that was due and was not written leaves a line saying the
+ * result is the table's to envision — no narrator card. A named function:
+ * the playthrough harness names a Claude call by its two nearest callers.
+ *
+ * @param {number} roll
+ * @returns {Promise<void>}
+ */
+async function writeSpotlightVignette(roll) {
+  let cs = null;
+  let sceneBefore = null;
+  let narrated = false;
+  try {
+    const { composeSpotlightScene, postSpotlightVignetteCard } = await import("../session/spotlightVignette.js");
+    const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+    const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
+    // A working copy, as the opening's (issue #335 Y04).
+    cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+    sceneBefore = cs.currentSceneId ?? null;
+    // Its dice are the table's: rolled once, here, for a scene that will be narrated.
+    const scene = sessionVignetteWillRun(cs) ? composeSpotlightScene(cs, { roll }) : null;
+    if (scene) {
+      const narrationId = newNarrationId();
+      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({
+        userMessage: scene.userMessage, campaignState: cs, narrationId, actorIds, seeds: scene.seeds,
+        narratorClass: scene.narratorClass, detect: true,
+      });
+      if (text) {
+        await postSpotlightVignetteCard({ text, sessionId: cs.currentSessionId ?? "", narrationId, seeds: scene.seeds });
+        narrated = true;
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: the spotlight vignette was not written:`, err?.message ?? err);
+  }
+  if (!narrated) await postSpotlightUnwrittenCard(roll);
+  try {
+    if (cs?.currentSceneId && !sceneBefore) {
+      const { endScene } = await import("../factContinuity/sceneLifecycle.js");
+      await endScene(cs, { reason: "spotlight_vignette" });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the spotlight vignette's scene was not ended:`, err?.message ?? err);
+  }
+}
+
+/**
+ * The Begin card promised a narration of its Spotlight Vignette and none was
+ * written: one line says the result is the table's to envision. A Begin a
+ * Session note, not a narrator card — nothing of it is story.
+ *
+ * @param {number} roll
+ */
+async function postSpotlightUnwrittenCard(roll) {
+  let result = "";
+  try { result = rollOracle("spotlight_vignette", { roll }).result; } catch { result = ""; }
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Spotlight vignette</strong><p>${result ? `${escapeHtml(result)} — ` : ""}the narrator did not write it: yours to envision.</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the spotlight note failed:`, err?.message ?? err));
+}
 
 /**
  * Begin a Session's start write was refused: nothing began. Posted where the
@@ -714,7 +955,8 @@ let _endChain = Promise.resolve();
  * close the active scene → finalise the rolling session summary → persist
  * End's own fields onto the latest campaignState (+ sessionStateChanged) →
  * Session Log write → +1 momentum to all players when a focus was set →
- * closing NPC vignette, then a campaign-recap refresh.
+ * closing cutaway (endSessionVignette.js — none with nobody and nowhere to
+ * show), then a campaign-recap refresh.
  *
  * A session ends once (issue #309 N08 — every End paid the party momentum
  * again, and closed the session, wrote its log and scheduled its vignette
@@ -801,6 +1043,11 @@ async function endSessionOnce(payload, ctx = {}) {
   }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
+  // The session's last event on its record: the table as it stands at the
+  // end (issue #382), before a noted focus's momentum — its sheets are read as
+  // this call is made; the record's write never holds up End (it never throws).
+  void recordSessionEdge("session.ended", state, { reason: "end", focus: { quest: questFocus, connection: connectionFocus } });
+
   // The +1 momentum a noted focus earns, as soon as the gate write says the
   // session ended with one — never after the scene close and the summary's
   // Claude call, which it does not need: a GM who left during those seconds
@@ -810,6 +1057,11 @@ async function endSessionOnce(payload, ctx = {}) {
   if (questFocus || connectionFocus) {
     await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
   }
+
+  // The frame of the scene the session ended in, before it is closed: whom
+  // it had with the characters, and where they are — the closing cutaway
+  // shows someone, or somewhere, they are not (issue #381).
+  const endedFrame = state.sceneFrame ? foundry.utils.deepClone(state.sceneFrame) : null;
 
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
@@ -824,9 +1076,9 @@ async function endSessionOnce(payload, ctx = {}) {
     console.warn(`${MODULE_ID} | endSession scene close failed:`, err?.message ?? err);
   }
 
-  // Finalise the rolling session summary (architecture §8.6) before the
-  // Session Log write, so the log captures the tail since the last debounced
-  // regen. Self-gates on narratorSessionSummary; fail-open.
+  // Bring the session summary up to date (a view of the session record,
+  // issue #382): it is the Session Log page's "Session summary" and the next
+  // session's LAST SESSION. Self-gates on narratorSessionSummary; fail-open.
   try {
     const { getRollingSessionSummary } = await import("../narration/narrator.js");
     await getRollingSessionSummary(state, { forceRefresh: true });
@@ -834,46 +1086,41 @@ async function endSessionOnce(payload, ctx = {}) {
     console.warn(`${MODULE_ID} | rolling session summary finalise failed:`, err?.message ?? err);
   }
 
-  // The session as the store holds it now: the scene fields endScene
-  // persisted, the summary getRollingSessionSummary did, End's own fields.
-  const ended = game.settings.get(MODULE_ID, "campaignState") ?? state;
+  // Its Session Log page is the record's view, rendered as the record and the
+  // summary land (record/sessionLogView.js) — nothing is written to it here.
 
-  // Write the session log on End (F18). writeSessionLog was implemented but
-  // never called from production, so the Session Log journal stayed blank.
-  if (game.settings.get(MODULE_ID, "sessionLogAutoWrite") !== false) {
-    try {
-      const { writeSessionLog } = await import("../world/worldJournal.js");
-      await writeSessionLog(ended);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
-    }
-  }
-
-  // Fire-and-forget closing vignette — narrator-generated slice-of-life
-  // featuring a currently-important NPC (bonded connection → recurring
-  // threat → fallback) doing something trivial and mundane. Silent skip
-  // when the Claude key is unset or narration is disabled. Runs here, on
-  // the canonical GM, because that is the client holding the Claude key.
+  // Fire-and-forget closing cutaway — narrator-generated, three to five
+  // sentences: someone the campaign has, chosen by a die and never the same
+  // twice running, or with nobody a settlement the table knows, at something
+  // small, built from rolled material (issue #381). Silent skip when the
+  // Claude key is unset or narration is disabled; none with nobody and
+  // nowhere to show. Runs here, on the canonical GM, because that is the
+  // client holding the Claude key.
   setTimeout(async () => {
     let cs = null;
     try {
-      const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
-        = await import("../session/endSessionVignette.js");
-      const { narrateSessionVignette } = await import("../narration/narrator.js");
-      // A working copy, as the galley's (issue #335 Y04): its scene opens on
+      const { composeClosingScene, postEndSessionVignetteCard } = await import("../session/endSessionVignette.js");
+      const { narrateSessionVignette, sessionVignetteWillRun } = await import("../narration/narrator.js");
+      // A working copy, as the opening's (issue #335 Y04): its scene opens on
       // the copy, never on the cache after End closed the real one.
       cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-      const npc = selectEndSessionNPC(cs);
-      const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
-      const narrationId = newNarrationId();
-      // Its CHARACTER blocks are the PCs at the table, as the galley's — it
-      // took the campaign's first PC, whoever was there (known-issues
-      // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
-      const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
-      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
-      if (text) {
-        await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "", narrationId });
+      // The closing's dice are the table's: rolled once, here on the
+      // canonical GM, and only for a scene that will be narrated.
+      const scene = sessionVignetteWillRun(cs) ? composeClosingScene(cs, { connectionFocus, frame: endedFrame }) : null;
+      if (scene) {
+        const narrationId = newNarrationId();
+        // Its CHARACTER blocks are the PCs at the table, as the opening's —
+        // it took the campaign's first PC, whoever was there (known-issues
+        // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
+        const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+        const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+        const text = await narrateSessionVignette({ userMessage: scene.userMessage, campaignState: cs, narrationId, actorIds, seeds: scene.seeds });
+        if (text) {
+          // The seeds were marked by the narration's own account of them; the
+          // card keeps them (`builtFrom`) — and the next closing reads whom
+          // this one showed from it.
+          await postEndSessionVignetteCard({ text, npcName: scene.subject.name, sessionId: cs.currentSessionId ?? "", narrationId, seeds: scene.seeds });
+        }
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);
@@ -1085,7 +1332,7 @@ async function applyMomentumToAllPlayers(delta, { sessionId = null, award = null
   const failures = [];
   for (const a of getPlayerActors()) {
     try {
-      await applyMeterChanges(a, { momentum: delta });
+      await applyMeterChanges(a, { momentum: delta }, recordCause({ kind: "session" }));
     } catch (err) {
       console.warn(`${MODULE_ID} | momentum delta failed for ${a.name}:`, err?.message ?? err);
       failures.push({ step: "momentum", pcId: a.id, amount: delta, sessionId, award,

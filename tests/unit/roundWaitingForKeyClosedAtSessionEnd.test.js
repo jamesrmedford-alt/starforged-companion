@@ -153,7 +153,7 @@ describe('issue #347 ROUND-WAITS-FOR-ABSENT-KEYED-GM — the session ends while 
     expect(round()).toMatchObject({ id: 'round-4', phase: 'closed' });
     const cards = roundCards('round-4');
     expect(cards).toHaveLength(1);
-    expect(cards[0].flags['starforged-companion']).toMatchObject({ narrationFallback: true, sessionId: 'live-s1', roundNumber: 4 });
+    expect(cards[0].flags['starforged-companion']).toMatchObject({ narrationFallback: true, sessionId: 'live-s1', roundId: 'round-4' });
     expect(cards[0].content).toMatch(/Kira — Face Danger: Strong Hit — narration unavailable/);
     expect(roundNarrations()).toHaveLength(0);
 

@@ -11,7 +11,7 @@
 // Read from the GM's page because the GM's world is the whole world: the
 // Secrets journal and the whispered cards are not on a player's.
 
-import { MODULE_ID } from "./foundry.mjs";
+import { MODULE_ID, MODULE_SRC } from "./foundry.mjs";
 
 /**
  * The dice of a move card, from the card's own text (the `.sf-move-dice`
@@ -63,13 +63,93 @@ export function parsePriceLine(text) {
 export const uniformFor = (face, faces) => (face - 0.5) / faces;
 export const faceOf = (uniform, faces) => Math.floor(uniform * faces) + 1;
 
+const cleanText = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+const stripHtml = (html) => cleanText(String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+
+/**
+ * A Session Log page's own words — what the module wrote on it, which is what
+ * the ledger holds against the facts for refusals (lib/ledger.mjs) — or null
+ * for a page from before the session record, which is read whole. Pure.
+ *
+ * Since issue #382 the page is rendered from the record
+ * (src/record/sessionLogView.js renderSessionLogBody). Under "What happened"
+ * each beat's line quotes its player's own words, and a question put to the
+ * narrator is quoted as one; under "Corrected by the table" a struck fact is
+ * shown struck through. None of those is the page saying so: a player's "Do
+ * you still have the manifest, Tamsin?", quoted, is no refusal of the
+ * manifest left with Tamsin, and a fact struck as not having happened is no
+ * claim that it did. The page's own words are the rest — who acted, the move
+ * and its outcome, what changed, what play did, what stands, the story — and
+ * a name the table changed is written there as its new one, so an old one
+ * there is the page's. (What the page keeps of a fact is read from the whole
+ * page: the record keeps the player's words, and the recap is given them.)
+ *
+ * @param {string} html — the page's body
+ * @param {string} [narrative] — its story (the flag's `summary.narrative`)
+ * @returns {string|null}
+ */
+export function sessionLogOwnText(html, narrative = "") {
+  const s = String(html ?? "");
+  const from = s.search(/<h3>\s*What happened\s*<\/h3>/i);
+  if (from < 0) return null;
+  const next = s.slice(from + 4).search(/<h3>/i);
+  const to = next < 0 ? s.length : from + 4 + next;
+  const happened = s.slice(from, to)
+    .replace(/<li>\s*<em>\s*Asked of the narrator:\s*<\/em>[\s\S]*?<\/li>/gi, " ")
+    .replace(/“[^”]*”/g, " ");
+  const own = `${s.slice(0, from)}${happened}${s.slice(to)}`.replace(/<s>[\s\S]*?<\/s>/gi, " ");
+  return cleanText(`${stripHtml(own)} ${narrative ?? ""}`);
+}
+
+/** The words of a text, lower case, its markup and entities gone. */
+const wordsOf = (text) => (String(text ?? "").replace(/<[^>]*>/g, " ")
+  .replace(/&(?:amp|lt|gt|quot|#0?39|apos|nbsp);/g, (e) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#039;": "'", "&apos;": "'", "&nbsp;": " " })[e] ?? " ")
+  .toLowerCase().match(/[a-z0-9]+/g) ?? []);
+
+/**
+ * What is wrong with a session's Session Log page for the scripted
+ * playthroughs' `sessionLog` check (v1.6.1 F18), or null. Since the session
+ * summary is a view of the record (issue #382 slice 3), End a Session writes
+ * no story of its own (`sessionLogPage.summary.narrative`): the summary is the
+ * page record's view (`sessionRecord.views.summary.text`), and the page
+ * renders it under its "Session summary" heading. Pure.
+ *
+ * @param {{ content: string, summary: string }|null} page — the page's body, and its record's summary view's text
+ * @param {number} session
+ * @returns {string|null}
+ */
+export function sessionLogSummaryProblem(page, session) {
+  if (!page) return `no Session Log page for session ${session}`;
+  const summary = wordsOf(page.summary);
+  if (!summary.length) return `the Session Log page for session ${session} has no summary — its record's summary view is empty`;
+  const content = String(page.content ?? "");
+  const at = content.indexOf("Session summary");
+  if (at < 0) return `the Session Log page for session ${session} doesn't render its summary`;
+  const opening = summary.slice(0, 8).join(" ");
+  if (!` ${wordsOf(content.slice(at)).join(" ")} `.includes(` ${opening} `)) {
+    return `the Session Log page for session ${session} doesn't show its summary under its "Session summary" heading`;
+  }
+  return null;
+}
+
 /**
  * The table, as data.
  *
  * @returns {Promise<object>} see the fields below
  */
-export function readTable(gm) {
-  return gm.page.evaluate((MODULE_ID) => {
+export async function readTable(gm) {
+  const table = await readTableOnPage(gm);
+  // A Session Log page's body goes no further than this: its own words are
+  // kept beside its text (`own`), for the ledger's refusals.
+  table.helpers.sessionLog = table.helpers.sessionLog.map(({ html, narrative, ...p }) => {
+    const own = sessionLogOwnText(html, narrative);
+    return own === null ? p : { ...p, own };
+  });
+  return table;
+}
+
+function readTableOnPage(gm) {
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC }) => {
     const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
     const strip = (html) => clean(String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -124,25 +204,77 @@ export function readTable(gm) {
       id: t.id, label: t.label, type: t.type, rank: t.rank, ticks: num(t.ticks) ?? 0, completed: t.completed === true,
       linkedVowName: t.linkedVowName ?? null, linkedVowId: t.linkedVowId ?? null, combatState: t.combatState ?? null,
       objective: t.objective ?? null,
+      // An expedition's destination, where the table recorded one (the site it charts when it is finished).
+      siteId: t.siteId ?? null,
     }));
     const legacyOf = (t) => ({ ticks: num(cs.legacyTracks?.[t]?.ticks) ?? 0, cleared: cs.legacyTracks?.[t]?.cleared === true, cycles: num(cs.legacyTracks?.[t]?.cycles) ?? 0 });
     const sectorScene = game.scenes.contents.find(sc => flagsOf(sc).sectorScene);
     const shipToken = sectorScene?.tokens.find(t => flagsOf(t).commandVehicle) ?? null;
+    // The command vehicle's record, as the readers' SITUATION block reads it
+    // (src/entities/ship.js getCommandVehicle: the ship flagged so, else the
+    // one tracked ship that is not someone else's): its integrity and whether
+    // it is battered — what a Repair has to mend (lib/beats.mjs sheetSpent).
+    const shipRecords = (cs.shipIds ?? []).map(id => flagsOf(game.actors.get(id)).ship ?? null).filter(Boolean);
+    const vehicle = shipRecords.find(s => s.isCommandVehicle) ?? (shipRecords.filter(s => s.npcShip !== true).length === 1 ? shipRecords.find(s => s.npcShip !== true) : null);
+    // Where the ship is, in the words the narrator is told it (the module's
+    // own line — factContinuity/shipPosition.js — so a run reads the record
+    // as THE SCENE's Ship line does, overhaul 2 §6.1). Null with no record.
+    let shipPosition = null;
+    if (vehicle?.position && typeof vehicle.position === "object") {
+      try {
+        const { formatShipPositionLine } = await import(`${MODULE_SRC}/factContinuity/shipPosition.js`);
+        shipPosition = clean(String(formatShipPositionLine(vehicle.position, cs, vehicle.name ?? "") ?? "").replace(/^SHIP POSITION:\s*/, "")) || null;
+      } catch (err) {
+        console.warn("explore table: the ship's position line could not be read", err);
+      }
+    }
     const notes = (sectorScene?.notes.contents ?? []).map(n => ({ name: n.text, x: n.x, y: n.y }));
     const at = shipToken ? notes.find(n => n.x === shipToken.x && n.y === shipToken.y) ?? null : null;
     const here = cs.currentLocationId ? game.actors.get(cs.currentLocationId) : null;
 
     // ── the scene's ledger ───────────────────────────────────────────────────
     const subjectOf = (s) => (typeof s === "string" ? s : s?.kind === "entity" ? (game.actors.get(s.entityId)?.name ?? s.entityId) : s?.text ?? "");
+    // Each with what it rests on (overhaul 2 §5.1): `basis` — player, dice, gm
+    // and setup bind; narrator is the narration's colour — and the narrations
+    // that said it (`said`, newest first).
     const truths = (cs.sceneTruths ?? []).map(t => ({
       id: t.id, subject: clean(subjectOf(t.subject)), fact: clean(t.fact), retracted: t.retracted === true, retractedBy: t.retractedBy ?? null,
       narrationId: t.narrationId ?? null, asserter: t.asserter ?? null,
+      basis: typeof t.basis === "string" ? t.basis : null, said: Array.isArray(t.said) ? t.said.filter(id => typeof id === "string") : [],
     }));
+    // Why the scene began (overhaul 2 §4.1, its anchor — `sceneBegan`), and
+    // what play let go in it (§7.3, the frame's code-kept list).
+    const anchor = cs.sceneBegan && typeof cs.sceneBegan === "object" ? cs.sceneBegan : null;
+    const began = anchor ? {
+      sceneId: anchor.sceneId ?? null, cause: anchor.cause ?? null, what: clean(anchor.what ?? ""),
+      place: clean(anchor.place?.name ?? "") || null, ship: clean(anchor.ship?.line ?? "") || null,
+    } : null;
+    const letGo = (Array.isArray(cs.sceneFrame?.letGo) ? cs.sceneFrame.letGo : [])
+      .filter(e => e && typeof e.text === "string" && e.text.trim())
+      .map(e => ({ text: clean(e.text), stems: Array.isArray(e.stems) ? e.stems.filter(s => typeof s === "string") : [] }));
+
+    // What a scene's end filed (overhaul 2 §5.6 — only what binds is): the
+    // World Journal's Lore entries and the entity tiers' migrated details,
+    // each with the narration that asserted it.
+    const filed = [];
+    const tierOf = (where, data) => {
+      for (const t of Array.isArray(data?.generativeTier) ? data.generativeTier : []) {
+        if (t?.source === "scene_truth_migration") filed.push({ where, fact: clean(t.detail), narrationId: t.narrationId ?? null });
+      }
+    };
+    for (const a of game.actors.contents) {
+      const type = flagsOf(a).entityType;
+      if (type) tierOf(`the ${type} ${a.name}`, flagsOf(a)[type]);
+    }
+    for (const j of game.journal.contents) {
+      for (const p of j.pages?.contents ?? []) {
+        const lore = flagsOf(p).loreEntry;
+        if (lore && typeof lore.fact === "string") filed.push({ where: `Lore: ${p.name}`, fact: clean(lore.fact), narrationId: lore.narrationId ?? null });
+        for (const [key, value] of Object.entries(flagsOf(p))) if (key !== "loreEntry") tierOf(`${key} ${j.name}`, value);
+      }
+    }
 
     // ── what the helpers wrote ───────────────────────────────────────────────
-    const summaries = [];
-    if (cs.previousSessionSummary?.text) summaries.push({ session: cs.previousSessionSummary.sessionId ?? "previous", text: clean(cs.previousSessionSummary.text) });
-    if (cs.sessionSummary?.text) summaries.push({ session: cs.sessionSummary.sessionId ?? "current", text: clean(cs.sessionSummary.text) });
     const chronicle = [];
     for (const j of game.journal.contents) {
       if (!flagsOf(j).chronicleActorId) continue;
@@ -152,12 +284,26 @@ export function readTable(gm) {
         }
       }
     }
+    // A session's summary (STORY SO FAR, LAST SESSION) is a view of its
+    // record, kept on its Session Log page (`sessionRecord.views.summary`,
+    // issue #382 slice 3) — campaignState holds none since. Each page's
+    // record is measured where it is read: its size as JSON
+    // (RECORD-SIZES-UNMEASURED; lib/review.mjs recordSizesOf).
+    const summaries = [];
+    const records = [];
     const sessionLog = [];
     for (const j of game.journal.contents) {
       if (!/Session Log/i.test(j.name)) continue;
       for (const p of j.pages?.contents ?? []) {
         const log = flagsOf(p).sessionLogPage ?? null;
-        sessionLog.push({ name: p.name, text: clean(`${strip(p.text?.content)} ${log?.summary?.narrative ?? ""}`) });
+        const record = flagsOf(p).sessionRecord ?? null;
+        const summary = record?.views?.summary ?? null;
+        if (typeof summary?.text === "string" && summary.text.trim()) summaries.push({ session: log?.sessionId ?? p.name, text: clean(summary.text) });
+        if (record) records.push({ name: p.name, sessionId: log?.sessionId ?? null, chars: JSON.stringify(record).length });
+        sessionLog.push({
+          name: p.name, text: clean(`${strip(p.text?.content)} ${log?.summary?.narrative ?? ""}`),
+          html: String(p.text?.content ?? ""), narrative: String(log?.summary?.narrative ?? ""),
+        });
       }
     }
 
@@ -182,16 +328,28 @@ export function readTable(gm) {
         xCardActive: cs.xCardActive === true, questFocus: cs.questFocus ?? "", connectionFocus: cs.connectionFocus ?? "",
       },
       location: { id: cs.currentLocationId ?? null, type: cs.currentLocationType ?? null, name: here?.name ?? null },
-      ship: { token: shipToken ? { x: shipToken.x, y: shipToken.y } : null, tokenAt: at?.name ?? null },
+      ship: {
+        token: shipToken ? { x: shipToken.x, y: shipToken.y } : null, tokenAt: at?.name ?? null,
+        ...(vehicle ? { name: vehicle.name ?? null, integrity: num(vehicle.integrity), integrityMax: num(vehicle.integrityMax), battered: vehicle.battered === true, position: shipPosition } : {}),
+      },
       pcs, connections, entityCards, tracks,
       legacy: { quests: legacyOf("quests"), bonds: legacyOf("bonds"), discoveries: legacyOf("discoveries") },
-      scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths },
+      scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths, began, letGo },
+      filed,
       xCardedNarrationIds: [...(cs.xCardedNarrationIds ?? [])],
-      helpers: { summaries, chronicle, recap: clean(cs.campaignRecapCache?.text ?? ""), sessionLog },
+      // The recap's text, and — for its review (lib/review.mjs recapCitesOf)
+      // — as stored: its paragraphs, each sentence's cited ids, when it was made.
+      helpers: {
+        summaries, chronicle, recap: clean(cs.campaignRecapCache?.text ?? ""), sessionLog,
+        recapCache: typeof cs.campaignRecapCache?.text === "string" && cs.campaignRecapCache.text.trim()
+          ? { text: cs.campaignRecapCache.text, cites: Array.isArray(cs.campaignRecapCache.cites) ? cs.campaignRecapCache.cites : null, madeAt: cs.campaignRecapCache.generatedAt ?? null }
+          : null,
+      },
+      records,
       plans,
       recentOracles: (cs.recentOracles ?? []).map(o => ({ name: o.name ?? null, question: o.question ?? null, answer: o.answer ?? null })),
     };
-  }, MODULE_ID);
+  }, { MODULE_ID, MODULE_SRC });
 }
 
 /**
@@ -224,7 +382,9 @@ export function readCards(gm) {
         };
       }
       if (f.narratorCard) {
-        card.narration = pick(f, ["moveId", "outcome", "isMatch", "resolutionId", "narrationId", "upgradeOf", "burnSuperseded", "xCarded", "playerText", "pacedNarrative", "oracleNarrationCard", "sessionNumber"]);
+        // `suggestedMove`: the move a paced narration's "Roll …" button
+        // offers; `sceneResponse`: an @scene question's answer.
+        card.narration = pick(f, ["moveId", "outcome", "isMatch", "resolutionId", "narrationId", "upgradeOf", "burnSuperseded", "xCarded", "playerText", "pacedNarrative", "oracleNarrationCard", "sessionNumber", "suggestedMove", "sceneResponse"]);
       }
       // Two cards carry `sufferCard`: one that asks the player to choose a
       // cost (or what a recovery gives), and one that says what a cost took
@@ -238,16 +398,24 @@ export function readCards(gm) {
       if (f.payThePriceCard) card.price = { text: clean(doc.body?.textContent ?? "").slice(0, 300), actorId: f.actorId ?? null, resolutionId: f.resolutionId ?? null };
       if (f.fightVowCard) card.victory = pick(f, ["vowName", "vowId", "marks", "connectionName", "connectionId", "actorId", "resolvedActions", "fulfilAttempted", "deepenRetired"]);
       if (f.connectionPicker) card.picker = pick(f, ["pickAction", "resolved", "choices", "actorId"]);
+      // "⚑ Reach a Milestone — Which vow advances?": the vows to pick from, and
+      // whether one was picked (lib/beats.mjs cardsWaiting tells the player).
+      if (f.milestonePicker) card.milestonePicker = pick(f, ["resolved", "choices"]);
       if (f.playerVowCard) card.vowCard = { ...pick(f, ["vowName", "vowId", "actorId", "swearRolled", "linkedConnection", "vowGone"]), hasLinkRow: !!doc.querySelector(".sf-vow-connection") };
       if (f.vowLinkedCard) card.vowLinked = true;
       if (f.combatThresholdCard) card.threshold = pick(f, ["label", "position", "actorId", "thresholdTaken"]);
       if (f.combatTrackCard) card.trackCard = pick(f, ["created", "trackId", "trackLabel"]);
       if (f.setACourseFeedback) card.course = pick(f, ["outcome", "destination", "tokenMoved"]);
+      // An expedition's cards: progress marked (and, where `created`, the
+      // track begun), its end, the recommit a missed finish offers.
+      if (f.expeditionProgressCard) card.expedition = pick(f, ["created", "trackId", "trackLabel", "actorId", "expeditionFinishAttempted"]);
+      if (f.expeditionFinishCard) card.expeditionFinished = pick(f, ["legacyTicks"]);
+      if (f.recommitOfferCard) card.recommit = pick(f, ["trackId", "trackLabel", "recommitted"]);
       if (f.legacyXpCard) card.legacyXp = pick(f, ["track", "boxes", "xp", "cleared"]);
       if (f.forgeABondCard) card.forged = pick(f, ["connectionName", "legacyTicks"]);
       if (f.reachMilestoneCard) card.milestone = true;
       if (f.oracleCommandCard) card.oracle = { answer: f.oracleMemory?.answer ?? null, question: f.oracleMemory?.question ?? null };
-      if (f.recapCard) card.recap = pick(f, ["recapType", "sessionNumber"]);
+      if (f.recapCard) card.recap = pick(f, ["recapType", "sessionNumber", "recapEmpty"]);
       if (f.draftEntityCard) card.drafts = (f.drafts ?? []).map(d => pick(d, ["name", "type", "status", "index"]));
       if (f.xcardCard || f.type === "xcard") card.xcard = true;
       if (f.xcardClearedCard) card.xcardCleared = true;

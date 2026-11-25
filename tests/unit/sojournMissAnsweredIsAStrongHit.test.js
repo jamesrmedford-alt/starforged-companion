@@ -65,7 +65,12 @@ import { CampaignStateSchema } from "../../src/schemas.js";
 import { mapConsequences, buildLoremasterContext } from "../../src/moves/resolver.js";
 import { resolveSufferSelection } from "../../src/moves/sufferDialog.js";
 import { summarizeSufferCalls } from "../../src/moves/sufferCard.js";
-import { formatPriceChoiceBlock } from "../../src/moves/stakes.js";
+import { obligationsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatPriceChoiceBlock = (priceChoice) => lineFor("price", { outcome: "miss", priceChoice });
 
 // challenge 7 and 8; action die 1 (+heart 2) — a miss, no match; then the price's d100 = 71.
 const MISS = [0.65, 0.75, 0, 0.705];
@@ -442,7 +447,7 @@ describe("Sojourn — a held miss whose need is picked is told the refuge comes 
     await click(choice(), NEED);
     expect(narrations()).toHaveLength(1);
     const miss = narrations()[0].userText;
-    expect(miss).toContain("## THE PRICE WAS NOT PAID");
+    expect(miss).toContain("[price] THE PRICE WAS NOT PAID.");
     expect(miss).toContain("once the vow is sworn or the help is done this move is resolved as a strong hit");
     expect(miss).toContain("the refuge it wins is told then, in a narration of its own, not here");
     expect(miss).not.toContain("resolved at the table");

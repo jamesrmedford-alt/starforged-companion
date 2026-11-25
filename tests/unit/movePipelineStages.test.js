@@ -199,15 +199,19 @@ describe('readMove', () => {
 });
 
 describe('rollMove', () => {
-  it('refuses a move whose track, named by id, has ended — the track-gone card goes up, nothing is rolled or taken', async () => {
+  it('refuses a move whose track, named by id, has ended — the move gate says why, nothing is rolled or taken', async () => {
     const fight = await gm().run(() => store.addProgressTrack({ label: 'Archive guards', type: 'combat', rank: 'dangerous' }));
     await gm().run(() => store.completeProgressTrack(fight.id));
     control.interpretation = { moveId: 'take_decisive_action', moveName: 'Take Decisive Action', statUsed: null, adds: 0,
       isProgressMove: true, moveTarget: 'Archive guards', moveTargetId: fight.id, rationale: 'test', mischiefApplied: false };
-    const { rolled } = await runStages('I end it.');
+    const { read, rolled } = await runStages('I end it.');
     await table.settle();
-    expect(rolled.refused).toBe('track-gone');
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    // Read as no move it can make (overhaul 4), and refused again at the dice:
+    // the gate's reason rides back to the caller, who tells it (free-flow's
+    // not-rolled notice, a round's refused card) — rollMove posts nothing.
+    expect(read.noMove?.refused).toMatchObject({ moveId: 'take_decisive_action', code: 'open-fight', hard: true });
+    expect(rolled.refused).toBe('open-fight');
+    expect(rolled.refusal).toMatchObject({ moveId: 'take_decisive_action', why: '"Archive guards" was finished or deleted before the roll' });
     expect(resultCards()).toEqual([]);
   }, 30_000);
 });

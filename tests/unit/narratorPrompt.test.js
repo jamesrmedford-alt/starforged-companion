@@ -414,13 +414,16 @@ describe('buildNarratorSystemPrompt()', () => {
       expect(prompt).toContain('No move was rolled');
     });
 
-    it('scene_interrogation mode frames the narrator as a camera', () => {
+    // Known-issues SCENE-ANSWER-NOT-A-CAMERA: "a camera, not a writer" came
+    // with a request for atmospheric description; an answer is the fact.
+    it('scene_interrogation mode frames the narrator as answering a question, plainly', () => {
       const prompt = buildNarratorSystemPrompt(
         makeCampaignState(), makeNarratorSettings(), null, '',
         { mode: 'scene_interrogation' },
       );
       expect(prompt).not.toContain('mechanical consequences of move outcomes');
-      expect(prompt).toContain('camera');
+      expect(prompt).not.toContain('camera');
+      expect(prompt).toContain('This is an answer, not narration');
       expect(prompt).toContain("player's question");
     });
 
@@ -826,7 +829,7 @@ describe('formatEntityCard', () => {
         mood:      { value: 'not a whereabouts attribute' },
       },
     }), 'connection');
-    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — this scene's CURRENT STATE wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
+    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — what this scene says of them now wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
     expect(card).not.toContain('not a whereabouts attribute');
     expect(formatEntityCard(makeConnection(), 'connection')).not.toContain('LAST KNOWN');
   });
@@ -1396,12 +1399,18 @@ describe('uniform permission class per mode', () => {
     expect(promptFor('paced_narrative')).toContain('INTERACTION MODE');
   });
 
-  it.each(['scene_interrogation', 'oracle_followup', 'session_vignette'])(
+  it.each(['oracle_followup', 'session_vignette'])(
     '%s defaults to the EMBELLISHMENT block',
     (mode) => {
       expect(promptFor(mode)).toContain('EMBELLISHMENT MODE');
     },
   );
+
+  // Known-issues SCENE-ANSWER-NOT-A-CAMERA: the embellishment block's "focus
+  // on concrete sensory and emotional detail" is not an answer's.
+  it('scene_interrogation carries no latitude block: its role is its whole rule', () => {
+    expect(promptFor('scene_interrogation')).not.toContain('NARRATOR PERMISSIONS');
+  });
 
   it('inciting_incident defaults to the DISCOVERY block', () => {
     expect(promptFor('inciting_incident')).toContain('DISCOVERY MODE');
@@ -1687,7 +1696,8 @@ describe('clocks, vow progress, rewards, connection standing and the session foc
     });
     expect(prompt).toContain('Background vow: Avenge my sister (extreme, progress 3/10, clock 2/6)');
     expect(prompt).toContain('Other vows: Find the relay (dangerous, progress 8/10)');
-    expect(prompt).toContain('Connections: Dr Chen (dangerous, progress 4/10)');
+    // In the situation's words (moves/situation.js connectionStanding — overhaul 4, TRACK-TOLD-AS-A-BOND).
+    expect(prompt).toContain('Connections: Dr Chen (dangerous, relationship 4 of 10 boxes)');
     expect(prompt).toContain('Rewards received: a Hegemony access key (gear); the dockmaster owes us (contact)');
   });
 

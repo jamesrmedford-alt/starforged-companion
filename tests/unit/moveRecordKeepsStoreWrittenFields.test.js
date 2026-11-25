@@ -12,8 +12,6 @@
  *
  *   crewSupply           sharedSupply.js persistCrewSupply — each sync pass (SUPPLY-TWO-PC-TIE)
  *   deletedChatMessages  narrator.js persistDeletedRecord — a card deleted
- *   unsummarisedSession  narrator.js catchUpUnsummarisedSession clears the mint's mark —
- *                        after every narrator card, i.e. inside the move pipeline
  *   sessionPerspective   lifecycle.js beginSession (issue #348 PT03)
  *
  * The crewSupply case: two PCs share the supply; a move is in flight; the
@@ -100,23 +98,20 @@ describe('issue #362 AC55 — a move\'s record keeps what other writers stored w
     expect(table.world.campaignState().xCardActive).toBe(true);
   }, 30_000);
 
-  it('a value the store took for deletedChatMessages / unsummarisedSession / sessionPerspective mid-move survives that move\'s record', async () => {
+  it('a value the store took for deletedChatMessages / sessionPerspective mid-move survives that move\'s record', async () => {
     await table.client('gm-1').run(() => game.settings.set(MODULE, 'campaignState', {
       ...game.settings.get(MODULE, 'campaignState'),
-      // The session was minted with its predecessor still unsummarised (issue #347 AB15's mark).
-      unsummarisedSession: { sessionId: 'pipe-s0', sessionNumber: 0 }, deletedChatMessages: [], sessionPerspective: null,
+      deletedChatMessages: [], sessionPerspective: null,
     }));
     await moveRecordedAcross({
-      // While the move runs, three other writers land on the store.
+      // While the move runs, two other writers land on the store.
       change: () => table.client('gm-1').run(() => game.settings.set(MODULE, 'campaignState', {
         ...game.settings.get(MODULE, 'campaignState'),
-        unsummarisedSession: null,                                                       // the catch-up made LAST SESSION
         deletedChatMessages: [{ id: 'msg-9', deleted: true, flags: {}, whisper: [] }],   // a GM deleted a card
         sessionPerspective:  { sessionId: 'pipe-s1', perspective: 'third_person' },      // Begin a Session decided it
       })),
     });
     const after = table.world.campaignState();
-    expect(after.unsummarisedSession, 'the cleared mark is not put back').toBeNull();
     expect(after.deletedChatMessages, 'the deleted card\'s record is kept').toEqual([expect.objectContaining({ id: 'msg-9' })]);
     expect(after.sessionPerspective, 'the session\'s perspective is kept').toEqual({ sessionId: 'pipe-s1', perspective: 'third_person' });
   }, 30_000);

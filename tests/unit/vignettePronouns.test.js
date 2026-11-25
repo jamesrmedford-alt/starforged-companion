@@ -22,18 +22,21 @@ vi.mock("../../src/world/worldJournal.js", () => ({
 }));
 
 import { listConnections } from "../../src/entities/connection.js";
-import { selectEndSessionNPC } from "../../src/session/endSessionVignette.js";
+import { chooseClosingSubject } from "../../src/session/endSessionVignette.js";
+
+/** The closing's subject — one connection on record, so no die. */
+const selectSubject = () => chooseClosingSubject({}, { messages: [] }).option;
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("selectEndSessionNPC — connection hint carries pronouns (finding R)", () => {
+describe("the closing cutaway's subject — a connection's context carries pronouns (finding R)", () => {
   it("includes the bonded connection's pronouns in the hint", () => {
     listConnections.mockReturnValue([
       { name: "Nova Petrov", bonded: true, pronouns: "she/her", role: "broker", motivation: "leverage" },
     ]);
-    const npc = selectEndSessionNPC({});
+    const npc = selectSubject();
     expect(npc.name).toBe("Nova Petrov");
     expect(npc.hint).toContain("Pronouns: she/her");
     expect(npc.hint).toContain("Role: broker");
@@ -44,7 +47,7 @@ describe("selectEndSessionNPC — connection hint carries pronouns (finding R)",
     listConnections.mockReturnValue([
       { name: "Vex", bonded: true, pronouns: "they/them", description: longDesc },
     ]);
-    const npc = selectEndSessionNPC({});
+    const npc = selectSubject();
     expect(npc.hint.startsWith("Pronouns: they/them")).toBe(true);
     expect(npc.hint.length).toBeLessThanOrEqual(220);
   });
@@ -53,7 +56,7 @@ describe("selectEndSessionNPC — connection hint carries pronouns (finding R)",
     listConnections.mockReturnValue([
       { name: "Old Hand", bonded: true, role: "mechanic" },
     ]);
-    const npc = selectEndSessionNPC({});
+    const npc = selectSubject();
     expect(npc.hint).not.toContain("Pronouns:");
     expect(npc.hint).toContain("Role: mechanic");
   });
@@ -62,7 +65,7 @@ describe("selectEndSessionNPC — connection hint carries pronouns (finding R)",
     listConnections.mockReturnValue([
       { name: "Mira Kade", bonded: true, pronouns: "she/her", role: "courier", goal: "pay off her debt" },
     ]);
-    const npc = selectEndSessionNPC({});
+    const npc = selectSubject();
     expect(npc.hint).toContain("Goal: pay off her debt");
   });
 
@@ -70,7 +73,7 @@ describe("selectEndSessionNPC — connection hint carries pronouns (finding R)",
     listConnections.mockReturnValue([
       { name: "Kade", bonded: false, active: true, rank: "formidable", pronouns: "he/him", role: "enforcer" },
     ]);
-    const npc = selectEndSessionNPC({});
+    const npc = selectSubject();
     expect(npc.name).toBe("Kade");
     expect(npc.hint).toContain("Pronouns: he/him");
   });

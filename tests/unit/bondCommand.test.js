@@ -51,8 +51,13 @@ beforeEach(() => {
   updateConnection.mockClear();
   rollActionDie.mockReturnValue(6);
   rollChallengeDice.mockReturnValue([1, 2]);
-  pcA = makeTestActor({ id: 'pc-a', name: 'Ash' });
-  pcB = makeTestActor({ id: 'pc-b', name: 'Bex' });
+  // Sable is both PCs' bonded connection — a bond Item on each sheet: `!bond`
+  // with a named connection is the roller's own connection's roll (overhaul 4,
+  // the move gate's THEIR_CONNECTION).
+  const sableBond = () => ({ id: 'bond-sable', name: 'Sable', type: 'progress',
+    system: { subtype: 'bond', rank: 2, progress: 40, completed: true }, flags: { [MODULE_ID]: { connectionId: 'rec-sable' } } });
+  pcA = makeTestActor({ id: 'pc-a', name: 'Ash', items: { contents: [sableBond()] } });
+  pcB = makeTestActor({ id: 'pc-b', name: 'Bex', items: { contents: [sableBond()] } });
   game.actors._setAll([pcA, pcB]);
   getConnection.mockImplementation((hostId) => hostId === 'conn-1'
     ? { _id: 'rec-sable', name: 'Sable', rank: 'dangerous', bonded: true, active: true }
@@ -167,6 +172,22 @@ describe('handleBondCommand — author client', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  // Overhaul 4: the roll is Develop Your Relationship with the roller's own
+  // connection — a bond Item on their sheet (the move gate's THEIR_CONNECTION).
+  it("a bond that is not the roller's own: nothing rolled — its author and the GMs are told why", async () => {
+    setUsers([GM, P1], 'pl-1');
+    rollActionDie.mockClear();
+    pcB.items.contents.splice(0);
+    await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' }, speaker: { actor: 'pc-b' } });
+
+    expect(rollActionDie).not.toHaveBeenCalled();
+    expect(ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard)).toBeUndefined();
+    expect(game.socket._emitted ?? []).toHaveLength(0);
+    const notice = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.cannotMake);
+    expect(notice.content).toContain("No Develop Your Relationship — Sable is not Bex's connection.");
+    expect([...notice.whisper].sort()).toEqual(['gm-1', 'pl-1']);
   });
 
   it('control: a name part of the bond\'s own still finds it', async () => {

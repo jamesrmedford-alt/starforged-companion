@@ -21,6 +21,7 @@ vi.mock('../../src/index.js', () => ({
   markFightVowMilestoneOnce: vi.fn(async () => ({ ok: true })),
   deepenLinkedConnection: vi.fn(async () => ({ ok: true })),
   deepenVowConnectionOnce: vi.fn(async () => ({ ok: true })),
+  vowConnectionLinkOf:    vi.fn(() => null),
   postPayoffFailureCard:  vi.fn(async () => {}),
   retryPayoffSteps:       vi.fn(async () => []),
   performRecommit:        vi.fn(async () => ({ ok: true })),
@@ -83,7 +84,14 @@ beforeEach(() => {
   postPayoffFailureCard.mockClear();
   retryPayoffSteps.mockClear();
   pcA = makeTestActor({ id: 'pc-a', name: 'Ash' });
-  pcB = makeTestActor({ id: 'pc-b', name: 'Bex' });
+  // The won fight's ⚑ and 🤝 are moves made by a button (overhaul 4): Bex's
+  // sheet holds the vow the card marks and her connection with Kira, which
+  // the move gate asks of a Reach a Milestone and a Develop Your Relationship.
+  pcB = makeTestActor({ id: 'pc-b', name: 'Bex', items: { contents: [
+    { id: 'vow-archive', name: 'Find the Archive', type: 'progress', system: { subtype: 'vow', rank: 3, current: 8, completed: false } },
+    { id: 'bond-kira', name: 'Kira', type: 'progress', system: { subtype: 'bond', rank: 2, current: 4, completed: false },
+      flags: { [MODULE_ID]: { connectionId: 'rec-kira' } } },
+  ] } });
   pcB.ownership = { 'pl-1': 3 };
   const npc = makeTestActor({ id: 'npc-1', name: 'Kira', flags: { [MODULE_ID]: { entityType: 'connection' } } });
   game.actors._setAll([pcA, pcB, npc]);
@@ -447,7 +455,8 @@ describe('applyWaypointOraclePick', () => {
       content: 'I follow what the waypoint revealed — making a discovery.',
       speaker: { actor: 'pc-b' },
     });
-    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true,
+    // `fromWaypoint`: made from the waypoint's own alternative — what the move gate asks of a discovery (overhaul 4).
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true, fromWaypoint: true,
       sourceCard: { messageId: 'wp-1', claim: 'waypointRewardClaimed', value: 'alternative', release: null,
         reopenRetired: { resolutionId: waypoint.flags[MODULE_ID].resolutionId ?? null, kind: 'discovery' } } });
     expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');

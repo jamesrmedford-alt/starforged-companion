@@ -121,7 +121,7 @@ describe('Z42 — a struck fact after a scene boundary in the same session', () 
 
     const block = buildLedgerBlock(stored(), { matchedEntityIds: [], currentLocationId: null, maxTokens: Infinity });
     expect.soft(block.corrections ?? '', 'CORRECTED names the strike').toContain(DEAD);
-    expect.soft(block.truths ?? '', 'the binding truths do not state it').not.toContain(DEAD);
+    expect.soft(`${block.binds ?? ''}\n${block.described ?? ''}`, 'neither what binds nor the described colour states it').not.toContain(DEAD);
     expect(liveVanceDead().map(t => t.narrationId), 'live "Vance — Is dead" in the new scene').toEqual([]);
   });
 

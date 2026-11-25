@@ -103,10 +103,21 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`src/session/swearVow.js`), which: creates the vow **item on every PC**
 (`createCharacterVowItem` — idempotent by `vowId`, carries
 `sharedVow`/`linkedConnectionName`/optional deadline clock), creates the
-immediate-crisis **tension clock** when the meta has one, creates the **target
-NPC connection** — a bond Item on every PC the vow was sworn on
-(`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
-alone; only for a **person** target: the target line carries its kind
+immediate-crisis **tension clock** when the meta has one, records the
+**target as a person** — an NPC card the vow is linked to, **no bond Item on
+any sheet** (overhaul 4, D5; this **reverses the settled decision of issue
+#241 and issue #321 U23**, which made the target a connection on every PC
+who swore so the swear could take its +1 — by the rules a vow is sworn +1
+only to someone already a connection, and a connection is what Make a
+Connection makes; D5 is the design's first decision to take back if the
+opening reads worse for it). The sworn card says they are recorded and not
+yet anyone's connection, and offers **🤝 Make a Connection** to each PC who
+swore (flags `vowTarget: { name, hostId }`, `swornActorIds`; a press relays
+`vow.makeConnection` → `swearVow.applyVowTargetMakeConnection`: the move
+posted as that PC with the target's card as its target, once a PC — its
+player's press or a GM's). The inciting swear's roll adds nothing for its
+target now (`enrichBondAdds` reads the roller's bond Items). Only for a
+**person** target: the target line carries its kind
 (`[person|creature|faction|vessel]`, read from the description's head when it
 has none — `vowTargetKind`), and a faction, creature or vessel is neither made
 a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
@@ -294,6 +305,39 @@ All real progress lands on **item ticks** (`system.current`) via
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced
   `reach_a_milestone` move instead (next bullet).
+- **A step said in the fiction** is at least *offered* Reach a Milestone
+  (known-issues VOW-STEP-SAID-IN-FICTION-NOT-READ). A typed line that states
+  a real step toward one of the speaker's open vows — proof found, an
+  obstacle overcome, a lead run to ground — attempts nothing and puts nothing
+  at stake, and the pacing classifier narrated it with nothing offered
+  (twelve readings of twelve in the readers' plain-line test: "the player
+  states a conclusion… no action is attempted"). Its WHAT ONLY A MOVE CHANGES
+  IS ALWAYS OFFERED block now names it beside recovery (`pacing/classifier.js`
+  — the vows reach it in the SITUATION block, §3), and the interpreter's rule
+  10 reads such a line as `reach_a_milestone`, with no roll. The hops after
+  the classifier's answer:
+  - **offered** (NARRATIVE_WITH_MOVE_AVAILABLE) → `router.routePacedInput` →
+    `narratePacedInput` posts the paced card with `suggestedMove:
+    "reach_a_milestone"` and its Roll button (the narrator's own closing hint,
+    when it names another move, takes the button instead —
+    `reconcileSuggestedMove`) → the press relays `paced.roll` →
+    `cardActions.applyPacedRoll` posts the line again as its speaker with
+    `forcedMoveId` → `readMove`'s forced interpretation (the move has no
+    stat, so no model is asked) → the confirm dialog → the pipeline branch
+    above: the roller's sole open vow is marked by its rank, several ask on
+    the picker (`vowStepPacedRollMarksVow.test.js` walks it);
+  - **a MOVE** (the dial and the line's commitment) → the interpreter: its
+    `reach_a_milestone` reaches the same confirm dialog; its NO MOVE narrates
+    the line with the classifier's milestone offered (`readMove`'s
+    `noMove.offeredMove`);
+  - **in an open fight** an offer is a MOVE (the router's combat backstop),
+    so the interpreter reads the line.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
+  A line that also attempts something with stakes is that action's move —
+  whose hit carries ⚑ Mark Progress on Vow (next bullet); a line that says
+  outright the vow is done is Fulfill Your Vow (§4).
 - **Move-card suggestion buttons** ("⚑ Mark Progress on Vow" / "🏁 Attempt to
   Fulfill Vow") on eligible adventure/exploration hits — these post forced
   moves so the GM-side pipeline does the work. "⚑ Mark Progress on Vow"
@@ -407,8 +451,28 @@ issue #321 U62) and the CAMPAIGN PREMISE block
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
 paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
-records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+records its facts in a scene (`ensureCurrentScene`, issue #321 U34). It is
+built from material — the vow's own words, the Iron truth and the recent
+narration (`buildVowSwearingUserMessage`, `getRecentNarrationContext`), the
+`vow_swearing` role naming no gesture: given the vow's name, "vows are sworn
+upon iron" and "pure sensory fiction", with "the iron they touch" in the
+role, the oath was one image in all four live long hauls (known-issues
+SET-PIECES-SHAPED-BY-THEIR-PROMPT). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
+
+**What the two readers of a typed line are told.** The pacing classifier and
+the move interpreter are both given the speaker's open vows in their
+SITUATION block (`moves/situation.js buildSituationBlock`, through
+`readVows`): `- Open vows: "Find who is raiding the Cinder Expanse lanes"
+(dangerous, 2 of 10 boxes; sworn to Tamsin Okoro).` — the name, the rank, the
+progress in boxes (ticks past a box said too) and the connection the vow is
+linked to (`readVows`' `linkedConnectionName`, the flag
+`setVowLinkedConnection` writes). A fulfilled or forsaken vow is left out.
+Before the block the classifier was told no vow at all, and the interpreter
+the names alone; at a table of several the interpreter is still told the
+other characters' open vows by name, a shared vow once.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 **The vow this scene serves** (issue #353 R3 — the vow as the spine). Of
 those three places only THE TABLE'S FOCUS THIS SESSION came with an
@@ -443,12 +507,25 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **Begin a Session** (`openBeginSessionDialog`, the invoking client): when no
   PC holds a quest, its dialog and card say so ("No vow in play"), and the
   dialog offers Swear an Iron Vow for the user's own PC (`resolveUserActorId`)
-  — a vow and its rank. After the session's start is requested it is written
-  on that PC's sheet (`actorBridge.createCharacterVowItem`, no `vowId`), so the
-  canonical GM's `registerPlayerVowHook` posts its "🆕 New vow recorded" card
-  — ⚔ Swear it (roll), the reward offer, the 🤝 link: §1's player-authored
-  path. A vow the sheet refused is said to the user; the Begin card claims no
-  vow.
+  — a vow and its rank. The vow rides the `session.begin` relay (`vow: {
+  actorId, name, rank }`), and the canonical GM writes it on that PC's sheet
+  once the session is begun (`sessionLifecycleDialogs.js` `swearBeginVow` →
+  `actorBridge.createCharacterVowItem`, no `vowId`; the requester must own the
+  PC or be a GM — the payload is client-asserted), so the sheet watch records
+  its `vow.sworn` in the session it is sworn in, and `registerPlayerVowHook`
+  posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward offer,
+  the 🤝 link: §1's player-authored path. Made on the pressing client right
+  after the Begin was sent (the relay has no answer), a player's vow reached
+  the sheet before the GM had begun — at a world's first Begin, minted — the
+  session: its `vow.sworn` went to no session, or to the one before, and the
+  record named no vow sworn (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD). A
+  vow refused — for its character, or by the sheet — is whispered to the
+  requester and the GMs. The Begin card names the vow its dialog swears — "No
+  vow was in play besides a background vow: Kira swears one — *the vow*
+  (rank). Its card follows." — never "No character has a vow in play … swear
+  an iron vow" above it (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW: composed
+  as though no vow came with it); with no GM connected, that the vow is not
+  sworn until one has joined.
 - **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
   add form's vow select links any track it creates (a fight added by hand too
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
@@ -509,6 +586,31 @@ resolves it once no copy of the vow is open, its last copy deleted retires it
 narration still has it in play to reveal its end (`skeletons.planInPlay` by
 its `endingTrackIds`).
 
+**A fulfilment says what the vow asked for, or says it is not yet known**
+(known-issues VOW-FULFILLED-WITH-NOBODY-NAMED — the long haul's third live
+run, a64: "Find who is raiding the Cinder Expanse lanes" was fulfilled with
+"The thing you swore to find has a hand and a seal, and both are named now";
+no name is anywhere in the story, and the narration's fact block recorded the
+plan's truth as revealed). Three parts:
+- the beat that fulfils a vow with a decided plan carries **THIS BEAT ENDS A
+  VOW** under UNREVEALED (`narratorPrompt.formatUnrevealedBlock`'s
+  `endingSubjectIds`, the move's `endingTrackIds` on the extras): the standing
+  rule against stating a truth outright is lifted for that plan, its truth is
+  stated in the prose in plain words, and nothing the truth does not hold is
+  claimed — where it gives no name there is none, and the narration says what
+  is still not known. The vow plan's own line no longer ties "truth" to the
+  vow's end: it is revealed by being told;
+- every Fulfill Your Vow hit's user message carries **THE VOW IS FULFILLED** (the obligations block's TELL [vow] line, `moves/contracts/obligations.js` — the row's `obliges`, overhaul 4 slice 2)
+  (`buildNarratorUserMessage`, a round's entry too; a sheet-rolled hit goes
+  the same way): never write that an answer is known, named, found or proved
+  without stating it — with no plan in play, and no answer in the story, the
+  vow ends on what was done;
+- **a truth is not marked revealed by a narration that told none of it**
+  (`secrets.withoutUntoldTruths` → `skeletons.proseTellsTruth`, in
+  `applyNarratorSidecar`): "truth" comes off the reveal, which still ends the
+  plan's story; the truth is no scene fact and no lore, its rolls stay hidden,
+  and a GM can Reveal now from the Secrets panel.
+
 ## 4. Fulfilment
 
 Scoring: `fulfill_your_vow` is a progress move; `enrichProgressTicks` fills
@@ -530,7 +632,27 @@ which checks the pick is one of the card's choices and that the requester
 owns the roller's PC (or is a GM), claims the card (`resolved`) and posts the
 forced fulfil with the copy as `forcedMoveTargetId`, spoken as the roller; a
 failed post releases the claim. A picked vow fulfilled or deleted before the
-roll resolves gets the "not rolled" card (`postTrackGoneCard`).
+roll resolves is refused by the move gate at the roll (`OPEN_VOW` by id —
+"\"Rescue Dani\" is fulfilled", "… was deleted before the roll"), the
+not-rolled notice (overhaul 4; the track-gone guard it replaces). A typed
+Fulfill naming a vow already closed by name is still the "vow-gone" card
+(`postTrackGoneCard`) — a name resolved, not a precondition.
+
+**The moves a button makes ask the gate too** (overhaul 4, design §6.2 —
+`moves/contracts/pressGate.js` `gatePress`, `checkMove` at the roll stage):
+a "Which vow?" pick (`milestonePicker.applyMilestonePick`, after its
+fulfilled / gone checks, before the claim) and the won fight's ⚑
+(`cardActions.applyFightVowMarkMilestone`) are Reach a Milestone — a full vow
+refuses a player's press (`ROOM_ON_VOW`, soft: a GM's press is the GM's
+word), a closed one any press (`OPEN_VOW`). A refusal marks nothing, and the
+presser and the GMs are told in its one line ("Not made", gmRelay
+`refusePress` "cannot", the notice carrying `cannotMake`). A vow's progress
+roll made **on the sheet** asks the gate before its payoff
+(`index.js registerNativeFulfilConsequenceHook` → `payNativeProgressRoll`):
+with no open vow, nothing is paid, and the GMs are whispered "No payoff" and
+why (it was a debug line; the roll on the sheet stands). The sheet's own
+ticks and the Progress Tracks panel are the table's hand and are never asked
+(D7).
 
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):
@@ -562,6 +684,21 @@ or improved to a strong hit is paid the difference once —
 `upgradeLinkedVowReward`, issue #362 D7; its claim refused, it is a
 `rewardUpgrade` step on the GMs' payoff card, whose Retry runs it again —
 issue #364 WON-FIGHT-REWARD-UPGRADE-NO-RETRY).
+**What the fulfilment posts follows its roll card** (`movePipeline.rollMove`'s
+`afterMoveCard`; `combat-flow.md`, "A move's cards follow its roll card"). The
+vow closes before the roll card is built — its suggestions read the open vows
+— and what says so is posted after it, in the order it always was: the
+ironsworn system's own "… marked completed" for each copy, which the close's
+write posts, so it is held for the span of that write and posted then
+(`actorBridge.holdingSystemNotes` → `postSystemNotes`: re-spoken as any
+system note for a module write is, by no Actor, the PC's name leading); the
+payoff with its cards (the deepen, "🎁 Reward earned" or the note that no
+reward was chosen), run then; and "⚑ Vow Fulfilled". They stood above the
+Fulfill Your Vow that caused them (the long haul's third live run, a64). The
+Quests legacy is still marked on the pipeline's working copy before the card.
+A roll card the world refuses loses none of it: the list is run on the
+stage's way out. The miss's recommit offer, Forsake Your Vow's card and Reach
+a Milestone's are not on the list — posted before their roll card still.
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**

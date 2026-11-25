@@ -56,6 +56,7 @@ import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { upgradeStampOwed, upgradeClosedByRound, isResolving } from "../batch/round.js";
+import { recordCause } from "../record/sheetWatch.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -287,7 +288,9 @@ async function runUpgradeStep(step) {
       if (!pc) return { ok: false, reason: "no-pc" };
       // `quietNote`: the caller's card says the change itself (a burn's
       // momentum), so the system's change note is not posted beside it.
-      await (step.quietNote ? withoutSystemNotes(() => applyMeterChanges(pc, step.changes)) : applyMeterChanges(pc, step.changes));
+      // What caused it rides the write, for the session record (issue #382).
+      const cause = recordCause({ kind: "upgrade", res: step.res ?? null });
+      await (step.quietNote ? withoutSystemNotes(() => applyMeterChanges(pc, step.changes, cause)) : applyMeterChanges(pc, step.changes, cause));
       return { ok: true };
     }
     case "tensionClocks": {
@@ -1077,6 +1080,10 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return false;
+    // On the session record (issue #382): every view drops what a superseded
+    // narration told and wrote; the re-narration stands in its beat.
+    const { recordNarrationsRemoved } = await import("../record/record.js");
+    await recordNarrationsRemoved(ids, { by: "superseded" });
     // What the narration planned goes with it (issue #353): a new enemy its
     // price revealed, a reveal, an escalation step a rewound trigger
     // vignette played — and the countdown clocks it started. The price, the
@@ -1422,11 +1429,6 @@ export async function strikeTriggerVignetteCards(cards, kind, resolutionId = nul
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
-    // A rolling summary made from them goes first, while they are still in
-    // memory (issue #345 AA24 — the move narration's supersede does the same).
-    await import("../narration/narrator.js")
-      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(list))
-      .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
     const narrationIds = [];
     for (const card of list) {
       await card.update({

@@ -8,8 +8,9 @@
 // asking a model for the result.
 //
 // A beat that is not reached is `not-exercised` and the run goes on: eight
-// actions on a beat that makes no progress (`STALL_ACTIONS`), or a beat that
-// needs one that was never done. A beat with several parts (four facts to
+// actions on a beat that makes no progress (`STALL_ACTIONS`), a beat that
+// needs one that was never done, or one that requires of the world what it
+// does not hold when it comes (`requires`). A beat with several parts (four facts to
 // plant, a track to fill) reports its progress, and the eight actions are
 // counted from the last time it moved. Nothing here calls a beat that was
 // never reached a pass.
@@ -24,19 +25,53 @@ import { factIn } from "./observer.mjs";
 import { factHeld, isProbeLine } from "./ledger.mjs";
 import { cardsAt } from "./mechanics.mjs";
 import { parseDiceLine, parsePriceLine } from "./table.mjs";
-import { rankOf } from "../../../../tests/helpers/sequence/rules.js";
+import { castMembers, castMemberFor } from "./cast.mjs";
+import { movesNamedIn } from "./moveNames.mjs";
+import { METER_MAX, TICKS_PER_BOX, rankOf } from "../../../../tests/helpers/sequence/rules.js";
 
 /** Actions on a beat with no progress before it is given up as not exercised. */
 export const STALL_ACTIONS = 8;
+/** Plain lines that bring nothing about before a beat's `lastResort` is told to the player. */
+export const LAST_RESORT_AFTER = 2;
+/** Waits in a row, on a beat that has not moved, before the player is told that waiting will not finish it. */
+export const WAITS_BEFORE_TOLD = 2;
+/** A scene question (`@scene …`): asked of the narrator, not a line of play. */
+export const isSceneQuestion = (text) => /^@scene\b/i.test(String(text ?? "").trim());
 
 const slug = (name) => String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const same = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+/** A move's id as the table writes it: "gain_ground" → "Gain Ground". */
+const moveTitle = (id) => String(id ?? "").split("_").filter(Boolean).map((w, i) => (i > 0 && /^(?:a|an|the|of)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(" ");
+const OUTCOME = { strong_hit: "a strong hit", weak_hit: "a weak hit", miss: "a miss" };
+
+/**
+ * The card a cast member was made as, by its id: the first connection card
+ * the run saw under one of their names, or under a whole-word part of one
+ * that is no other member's (lib/cast.mjs — the third live run's "Tamsin" for
+ * Tamsin Vey). The card is then followed by that id, whatever it is called
+ * later. Pure.
+ *
+ * @param {Array<{ table?: { connections?: object[] } }>} marks
+ * @param {object} cast — the charter's
+ * @param {string} name — one of the member's names
+ * @returns {string|null}
+ */
+export function castCardId(marks, cast, name) {
+  const members = castMembers(cast);
+  const member = castMemberFor(name, members);
+  if (!member) return null;
+  // The first card the run saw that was theirs: a card given one of their
+  // names later is another card.
+  const card = (marks ?? []).flatMap(k => k.table?.connections ?? []).find(c => !c.missing && castMemberFor(c.name, members)?.name === member.name);
+  return card?.hostId ?? null;
+}
 
 /**
  * What a check sees: the marks from the step the beat became current at
- * (`from`) to now, and the run so far.
+ * (`from`) to now, and the run so far — and, where it is given, the beat
+ * itself (`wants`: the moves it wants, wantsOf).
  */
-export function beatView({ marks, messages, actions, charter, from }) {
+export function beatView({ marks, messages, actions, charter, from, beat = null }) {
   // `from` is the step the beat became current at: the world as that step
   // left it is where the beat starts (`entered`), and what happened in that
   // step belongs to the beat before — a roll that finished one beat is not
@@ -63,22 +98,176 @@ export function beatView({ marks, messages, actions, charter, from }) {
   });
   const pc = now?.pcs?.[0] ?? null;
   const lines = messages.filter(m => m.fromPlayer && !m.text.startsWith("!"));
+  const live = () => (now?.connections ?? []).filter(c => !c.missing);
+  const members = castMembers(charter.cast);
+  const memberOf = (name) => castMemberFor(name, members)?.name ?? null;
+  // A vow the charter's seed put on the sheet is the character's background
+  // vow, not the quest a beat swears, marks or fulfils.
+  const seeded = new Set((charter.seed?.pc?.vows ?? []).map(x => String(x?.name ?? "").trim().toLowerCase()).filter(Boolean));
+  const questVows = () => (pc?.vows ?? []).filter(x => !seeded.has(String(x.name ?? "").trim().toLowerCase()));
   return {
-    marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions,
+    marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions, from,
+    wants: beat ? wantsOf(beat) : [],
     lines, linesInWindow: lines.filter(m => steps.has(m.step)),
     messagesInWindow: messages.filter(m => steps.has(m.step)),
     cast: charter.cast ?? {},
-    connection: (name) => (now?.connections ?? []).filter(c => !c.missing && same(c.name, name)),
+    /** The connection cards called exactly this. */
+    connectionNamed: (name) => live().filter(c => same(c.name, name)),
+    // A connection by name: the card called that — else, for a name of the
+    // cast's, the card that cast member was made as (the third live run's
+    // card for Tamsin Vey was "Tamsin": lib/cast.mjs), followed by its id.
+    connection: (name) => {
+      const exact = live().filter(c => same(c.name, name));
+      if (exact.length) return exact;
+      const id = castCardId(marks, charter.cast, name);
+      return id ? live().filter(c => c.hostId === id) : [];
+    },
+    /** The id of the card the cast member of that name was made as, or null. */
+    castCardId: (name) => castCardId(marks, charter.cast, name),
+    /** Whether two names are one cast member's. */
+    sameCastMember: (a, b) => !!memberOf(a) && memberOf(a) === memberOf(b),
     // The cast's connection is one card, whatever it is called by now: found
-    // by the name it was made under, then followed by its id (a rename in
-    // beat 18 left beats 22 and 23 looking for a name nobody had).
+    // by the name it was made under — or a part of it — then followed by its
+    // id (a rename in beat 18 left beats 22 and 23 looking for a name nobody
+    // had).
     castConnection: () => {
       const made = charter.cast?.connection?.name ?? null;
-      const hostId = marks.flatMap(k => k.table?.connections ?? []).find(c => !c.missing && same(c.name, made))?.hostId ?? null;
-      return (now?.connections ?? []).find(c => !c.missing && (hostId ? c.hostId === hostId : same(c.name, made))) ?? null;
+      const hostId = castCardId(marks, charter.cast, made);
+      return live().find(c => (hostId ? c.hostId === hostId : same(c.name, made))) ?? null;
     },
     openVows: () => (pc?.vows ?? []).filter(v => !v.completed),
+    questVows,
   };
+}
+
+/**
+ * A beat that asks for an attack in a fight (Strike, Clash) takes any of the
+ * fight's attack moves: which one a plain line is depends on the position and
+ * the reader. The third live run's "I press my advantage and drive in close"
+ * was Gain Ground — the rules' own gloss for it, in control — its miss was
+ * paid through Withstand Damage, and the check, wanting Strike or Clash,
+ * called the beat not exercised while the player waited six turns.
+ */
+export const ATTACK_MOVES = ["strike", "clash", "gain_ground", "react_under_fire"];
+const attacks = (moves) => (moves.some(m => m === "strike" || m === "clash") ? [...new Set([...moves, ...ATTACK_MOVES])] : moves);
+
+/** The moves a beat wants rolled: its `wants`, and the moves its check names. */
+export const wantsOf = (beat) => attacks([...new Set([...(beat?.wants ?? []), ...(beat?.check?.moves ?? []), ...(beat?.check?.move ? [beat.check.move] : [])])]);
+
+/** The game's recover moves (the play kit: Sojourn, Heal, Hearten, Resupply, Repair). */
+export const RECOVER_MOVES = ["sojourn", "heal", "hearten", "resupply", "repair"];
+/** The impact each meter's recovery clears. */
+const IMPACT_OF = { health: "wounded", spirit: "shaken", supply: "unprepared" };
+
+/**
+ * The sheet as a recovery beat's player is told it: each meter with the
+ * impact its recovery clears, the command vehicle's integrity — and what of
+ * it is spent, which is all a recover move has to mend. The fourth live run's
+ * beat 22 asked for the medkit or the market with spirit at 1 of 5 and the
+ * hull at 4 of 5 and nothing else spent: eight lines tended wounds the sheet
+ * did not hold, and the narrator wrote the wounds in (known-issues
+ * NOTHING-TO-RECOVER-UNTOLD). Pure.
+ *
+ * @param {object|null} table — a mark's table (lib/table.mjs readTable)
+ * @returns {{ text: string, spent: string[] }} `spent`: "health", "spirit",
+ *   "supply", "integrity" — each below its maximum or its impact marked
+ */
+export function sheetSpent(table) {
+  const pc = table?.pcs?.[0] ?? null;
+  if (!pc) return { text: "", spent: [] };
+  const marked = new Set(pc.debilities ?? []);
+  const spent = [];
+  const meters = ["health", "spirit", "supply"].map((m) => {
+    if (!Number.isFinite(pc[m])) return `${m} unknown`;
+    if (pc[m] < METER_MAX || marked.has(IMPACT_OF[m])) spent.push(m);
+    return `${m} ${pc[m]} of ${METER_MAX}${marked.has(IMPACT_OF[m]) ? ` (${IMPACT_OF[m]})` : ""}`;
+  });
+  const ship = table?.ship ?? {};
+  let hull = "";
+  if (Number.isFinite(ship.integrity)) {
+    const max = Number.isFinite(ship.integrityMax) ? ship.integrityMax : METER_MAX;
+    if (ship.integrity < max || ship.battered === true) spent.push("integrity");
+    hull = `; ${ship.name ? `the ${ship.name}'s` : "the ship's"} integrity ${ship.integrity} of ${max}${ship.battered === true ? " (battered)" : ""}`;
+  }
+  const said = { health: "health", spirit: "spirit", supply: "supply", integrity: "the ship's integrity" };
+  return {
+    spent,
+    text: `${pc.name}'s ${meters.join(", ")}${hull} — ${spent.length ? `spent: ${spent.map(s => said[s]).join(", ")}` : "nothing on the sheet is spent"}`,
+  };
+}
+
+/**
+ * What of the world a beat needs that is not another beat — `requires`: the
+ * checks of BEAT_CHECKS that must hold when it comes (`{ "type":
+ * "connectionMade", "name": "Tamsin Vey" }`: she is the character's
+ * connection, whichever road made her one). The fourth live run lost beats 3,
+ * 19, 23 and 24 to `needs: ["b2"]`: the GM's rule had made Tamsin a connection
+ * from her draft card, so beat 2's roll never came — while the vow's Link and
+ * a full track were on the table all along (known-issues
+ * CONNECTION-MADE-BY-CONFIRMING-A-DRAFT). One road's miss does not cost the
+ * beats that need only what either road makes. Pure.
+ *
+ * @param {object} beat
+ * @param {ReturnType<typeof beatView>} view — the world as the beat comes
+ * @returns {string[]} each requirement the world does not hold, with what its check sees
+ */
+export function unmetRequirements(beat, view) {
+  const out = [];
+  for (const req of beat?.requires ?? []) {
+    const check = BEAT_CHECKS[req?.type];
+    const result = check ? check(view, req) : { done: false, detail: `no check the observer knows (${req?.type})` };
+    if (!result.done || result.failed) out.push(`${requirementOf(req, view)}, which the world does not hold (${result.detail})`);
+  }
+  return out;
+}
+/** A requirement in words. */
+function requirementOf(req, view) {
+  if (req?.type === "connectionMade") return `${req.name ?? view.cast.connection?.name ?? "the cast's connection"} to be ${view.pc?.name ?? "the character"}'s connection`;
+  return `the world to hold what a ${req?.type} check sees`;
+}
+
+/**
+ * The cards on the table that wait on the player — what it is to press before
+ * it types anything else: a result held for Keep or Burn (wherever it was
+ * rolled: the roller's next line keeps it), and, posted since the beat came,
+ * the milestone's vow picker ("⚑ Reach a Milestone — Which vow advances?",
+ * `milestonePicker`), a connection picker ("Which connection?", `picker`),
+ * a cost or a recovery to choose (`suffer`). The fourth live run's player
+ * skipped Keep (a38) and typed past "Which vow advances?" (a71): the held miss
+ * was then narrated after its next line, and the milestone was never marked
+ * from its own offer. ("Which vow?" of a move is asked in the GM's confirm
+ * window, not on a card: the GM's rules answer it.) Pure.
+ *
+ * @param {ReturnType<typeof beatView>} view
+ * @returns {Array<{ kind: "held"|"milestone"|"connection"|"cost", id: string, step: string, move?: string, outcome?: string|null }>}
+ */
+export function cardsWaiting(view) {
+  // Posted since the beat came: in its window, or in the step that brought it
+  // (what finished the beat before — a roll's cost card among them).
+  const since = (card) => view.inWindow(card) || view.firstSeen.get(card.id) === view.from;
+  const out = [];
+  for (const c of view.allCards) {
+    const step = view.firstSeen.get(c.id);
+    if (c.move?.held?.open) out.push({ kind: "held", id: c.id, step, move: c.move.name || moveTitle(c.move.held.resolution?.moveId), outcome: c.move.held.resolution?.outcome ?? c.move.shown ?? null });
+    else if (!since(c)) continue;
+    else if (c.milestonePicker && !c.milestonePicker.resolved) out.push({ kind: "milestone", id: c.id, step });
+    else if (c.picker && !c.picker.resolved) out.push({ kind: "connection", id: c.id, step });
+    else if (c.suffer && !c.suffer.resolved && c.suffer.options?.length) out.push({ kind: "cost", id: c.id, step });
+  }
+  return out;
+}
+/** What the player is told of the cards waiting on it, in one line; "" for none. */
+function waitingText(cards) {
+  if (!cards?.length) return "";
+  const said = cards.map((c) => {
+    switch (c.kind) {
+      case "held": return `the result of ${c.move}${c.outcome ? ` (${OUTCOME[c.outcome] ?? c.outcome})` : ""} is held on its card, and nothing comes of it until you choose: press "Keep the result" on it — or "🔥 Burn Momentum", where this beat tells you to burn`;
+      case "milestone": return `"⚑ Reach a Milestone — Which vow advances?" asks which of your vows: press the one this beat is about`;
+      case "connection": return `a card asks which connection: press the one this beat is about`;
+      default: return `a card asks you to choose what you pay or what you take: press one of its buttons`;
+    }
+  });
+  return `${said.join("; ")}. Answer ${cards.length === 1 ? "it" : "them"} before you type anything else.`;
 }
 
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
@@ -92,7 +281,7 @@ export const BEAT_CHECKS = {
     const sessions = new Set(v.marks.filter(k => k.table?.session?.active && k.table.session.id).map(k => k.table.session.id));
     if (!v.now?.session.active || sessions.size < (c.n ?? 1)) return notYet(`session ${c.n ?? 1} is not open (${sessions.size} begun so far)`);
     if (!c.vow) return done(`session ${c.n ?? 1} is open`);
-    const vow = (v.pc?.vows ?? []).find(x => rankOf(x.rank) === c.vow.rank);
+    const vow = v.questVows().find(x => rankOf(x.rank) === c.vow.rank);
     if (!vow) return notYet(`the session is open; no ${c.vow.rank} vow is on ${v.pc?.name ?? "the character"}'s sheet`, 1);
     if (c.sworn && !v.allCards.some(k => k.vowCard?.swearRolled)) return notYet(`the ${rankOf(vow.rank)} vow "${vow.name}" is on the sheet and has not been sworn with a roll`, 2);
     return done(`session ${c.n ?? 1} is open; the ${rankOf(vow.rank)} vow "${vow.name}" is on the sheet at ${vow.ticks} ticks`);
@@ -102,9 +291,11 @@ export const BEAT_CHECKS = {
   connectionMade(v, c) {
     const name = c.name ?? v.cast.connection?.name;
     const conns = v.connection(name);
-    const cards = (v.now?.entityCards ?? []).filter(e => same(e.name, name));
-    if (cards.length > 1) return failed(`${cards.length} cards are named ${name}`);
+    // One person, one card — under the name, or under a part of it.
+    const cards = (v.now?.entityCards ?? []).filter(e => same(e.name, name) || (e.entityType === "connection" && v.sameCastMember(e.name, name)));
+    if (cards.length > 1) return failed(cards.every(e => same(e.name, name)) ? `${cards.length} cards are named ${name}` : `${cards.length} cards are ${name}'s: ${cards.map(e => `"${e.name}"`).join(", ")}`);
     if (conns.length !== 1 || !conns[0].active) return notYet(`${name} has no connection card yet`);
+    const who = same(conns[0].name, name) ? name : `${name} — the card was made as "${conns[0].name}" —`;
     const bond = (v.pc?.bonds ?? []).find(b => b.connectionId && b.connectionId === conns[0].recordId);
     if (!bond) return notYet(`${name} has a card; ${v.pc?.name ?? "the character"} holds no bond Item for it`, 1);
     // Where the beat asks for the move too: Make a Connection rolled, and still one card.
@@ -113,7 +304,7 @@ export const BEAT_CHECKS = {
       if (!roll) return notYet(`${name} has a card and a bond Item; ${c.move} has not been rolled`, 2);
       if (roll.outcome === "miss") return notYet(`${name} has a card; ${c.move} missed`, 3);
     }
-    return done(`${name} is a ${conns[0].rank} connection held by ${v.pc?.name}; its bond Item reads ${bond.ticks} ticks${c.move ? `; ${c.move} was rolled and there is still one card` : ""}`);
+    return done(`${who} is a ${conns[0].rank} connection held by ${v.pc?.name}; its bond Item reads ${bond.ticks} ticks${c.move ? `; ${c.move} was rolled and there is still one card` : ""}`);
   },
 
   /** The vow is linked to that connection's card, by its id. */
@@ -153,7 +344,13 @@ export const BEAT_CHECKS = {
     return done(`session ${c.n ?? 1} is closed${v.now.session.questFocus ? `; the focus noted: "${v.now.session.questFocus}"` : ""}`);
   },
 
-  /** Every probe of the set has been asked, in the charter's words. */
+  /**
+   * Every probe of the set has been asked, in the charter's words — and, with
+   * `recap`, the campaign recap posted with something in it: a card that says
+   * "No campaign history available yet" is no recap (the module posts one
+   * when the recap comes back empty, as it does when the reply was not the
+   * cited JSON it asks for — issue #382).
+   */
   probesAsked(v, c) {
     if (c.session) {
       const begun = new Set(v.marks.filter(k => k.table?.session?.active && k.table.session.id).map(k => k.table.session.id));
@@ -163,8 +360,10 @@ export const BEAT_CHECKS = {
     const baits = (v.charter.baits ?? []).filter(b => (c.baits ?? []).includes(b.id));
     const asked = [...probes, ...baits].filter(p => v.linesInWindow.some(m => isProbeLine(m.text, p)));
     const total = probes.length + baits.length;
-    const recap = c.recap ? v.allCards.some(k => k.recap && v.inWindow(k)) : true;
-    if (asked.length < total || !recap) return notYet(`${c.session ? `session ${c.session} is open; ` : ""}${asked.length} of ${total} asked${c.recap && !recap ? "; no recap card yet" : ""}`, 1 + asked.length + (c.recap && recap ? 1 : 0));
+    const recaps = c.recap ? v.allCards.filter(k => k.recap && v.inWindow(k)) : [];
+    const recap = c.recap ? recaps.some(k => k.recap.recapEmpty !== true) : true;
+    const noRecap = recaps.length ? "; the recap card came up empty" : "; no recap card yet";
+    if (asked.length < total || !recap) return notYet(`${c.session ? `session ${c.session} is open; ` : ""}${asked.length} of ${total} asked${c.recap && !recap ? noRecap : ""}`, 1 + asked.length + (c.recap && recap ? 1 : 0));
     return done(`probe set ${c.set}: ${probes.length} question(s) asked${baits.length ? `, ${baits.length} bait(s)` : ""}${c.recap ? "; the recap was posted" : ""}`);
   },
 
@@ -184,6 +383,55 @@ export const BEAT_CHECKS = {
     return done(`the ship is at ${c.settlement}${v.now.ship.token ? ", its token on the pin" : ""}`);
   },
 
+  /**
+   * An expedition into uncharted space: a track begun while the beat was
+   * current, progress marked on it, a waypoint explored — and, where the beat
+   * ends it (`finished`), the track complete.
+   *
+   * What the table does (docs/flows/exploration-flow.md): a hit on Undertake
+   * an Expedition begins the track under the destination's working label, at
+   * the rank the move reader inferred (dangerous unless it says), and marks
+   * it once; its card ("Expedition") carries "🗺 Finish the Expedition". A
+   * strong hit on Explore a Waypoint posts a choice — "Mark expedition
+   * progress" or "+2 momentum" — a weak hit gives +1 momentum, a miss pays
+   * the price. Finish an Expedition is a progress roll: a hit completes the
+   * track and docks the ship at the place it was for; a miss leaves it open.
+   * An expedition left open is told to every later narration as under way,
+   * its hidden plan in play — so a beat that is followed by a course for a
+   * charted station ends it.
+   */
+  expedition(v, c) {
+    const before = new Set((v.entered?.tracks ?? []).filter(t => t.type === "expedition").map(t => t.id));
+    const begun = (v.now?.tracks ?? []).filter(t => t.type === "expedition" && !before.has(t.id));
+    const set = v.rolls.filter(r => r.moveId === "undertake_an_expedition" && r.rolled);
+    if (!begun.length) return notYet(set.length ? `Undertake an Expedition came up ${OUTCOME[set.at(-1).outcome] ?? set.at(-1).outcome} at ${set.at(-1).step}; no expedition is under way` : "no expedition is under way", set.length ? 1 : 0);
+    if (begun.length > 1) return failed(`${begun.length} expeditions were begun for one journey: ${begun.map(t => `"${t.label}"`).join(", ")}`);
+    const track = begun[0];
+    const boxes = Math.floor(track.ticks / TICKS_PER_BOX);
+    const what = `the ${rankOf(track.rank) ?? track.rank} expedition "${track.label}"`;
+    if (!track.ticks) return notYet(`${what} is begun and no progress is marked on it`, 2);
+    const looks = v.rolls.filter(r => r.moveId === "explore_a_waypoint" && r.rolled);
+    if (!looks.length) return notYet(`${what} stands at ${boxes} of 10 boxes; no waypoint has been explored`, 3);
+    const look = looks.at(-1);
+    if (look.card.move.held?.open) return notYet(`${what} stands at ${boxes} of 10 boxes; the waypoint's result is held — nothing comes of it until it is kept`, 4);
+    // What the waypoint offers is a card of its own: a strong hit's choice, a matched miss's.
+    const offered = v.allCards.filter(k => k.suffer && v.inWindow(k) && (k.suffer.moveId === "explore_a_waypoint" || (k.suffer.resolutionId && k.suffer.resolutionId === look.card.move.resolutionId)));
+    if (offered.length && !offered.some(k => k.suffer.resolved)) return notYet(`${what} stands at ${boxes} of 10 boxes; a waypoint was explored (${OUTCOME[look.outcome] ?? look.outcome}) and its choice is not made`, 4);
+    const explored = `a waypoint explored at ${look.step} (${OUTCOME[look.outcome] ?? look.outcome})`;
+    const end = v.rolls.filter(r => r.moveId === "finish_an_expedition" && r.rolled).at(-1) ?? null;
+    if (c.finished && !track.completed) {
+      // The track's own cards: the one whose Finish is pressed, and what a missed finish offers.
+      const pressed = v.allCards.some(k => k.expedition?.trackId === track.id && k.expedition.expeditionFinishAttempted);
+      const recommit = v.allCards.some(k => k.recommit?.trackId === track.id && !k.recommit.recommitted);
+      const why = end ? `Finish an Expedition came up ${OUTCOME[end.outcome] ?? end.outcome} and the expedition is still open${recommit ? " — a recommit is offered" : ""}`
+        : pressed ? "its Finish was pressed and has not been rolled" : "the expedition is still open";
+      return notYet(`${what} stands at ${boxes} of 10 boxes, ${explored}; ${why}`, end ? 6 : 5);
+    }
+    // Where it ended: the place the table recorded for it, where it recorded one.
+    const where = track.siteId ? `the ship at ${v.now?.location?.name ?? "no tracked place"}` : "its destination no place on the map";
+    return done(`${what} was begun${set.length ? ` at ${set[0].step}` : " by the waypoint's own mark"} and marked to ${boxes} of 10 boxes, ${explored}${track.completed ? ` — and finished${end ? ` (${OUTCOME[end.outcome] ?? end.outcome})` : ""}, ${where}` : ""}`);
+  },
+
   /** An open fight, linked to the vow. */
   fightBegun(v) {
     const fight = (v.now?.tracks ?? []).find(t => t.type === "combat" && !t.completed);
@@ -198,7 +446,7 @@ export const BEAT_CHECKS = {
    * and the table took it, or a suffer card was offered and answered.
    */
   sufferPaid(v, c) {
-    const miss = v.rolls.find(r => (c.moves ?? ["strike", "clash"]).includes(r.moveId) && r.outcome === "miss");
+    const miss = v.rolls.find(r => attacks(c.moves ?? ["strike", "clash"]).includes(r.moveId) && r.outcome === "miss");
     if (!miss) return notYet("no miss in the fight yet");
     if (miss.card.move.held?.open) return notYet(`${miss.moveId} missed at ${miss.step}; its result is held — nothing is paid until it is kept`, 1);
     const prices = v.allCards.filter(k => k.price && v.inWindow(k)).map(k => ({ step: v.firstSeen.get(k.id), ...parsePriceLine(k.price.text) }));
@@ -222,7 +470,7 @@ export const BEAT_CHECKS = {
 
   /** Momentum was burned on a roll made while the beat was current. */
   burned(v, c) {
-    const roll = v.rolls.find(r => r.rolled && (!c.moves || c.moves.includes(r.moveId)) && (!c.outcome || r.outcome === c.outcome));
+    const roll = v.rolls.find(r => r.rolled && (!c.moves || attacks(c.moves).includes(r.moveId)) && (!c.outcome || r.outcome === c.outcome));
     if (!roll) return notYet("no such roll yet");
     if (!roll.card.move.burn) return notYet(`${roll.moveId} came up ${roll.outcome}; its card offers no burn`, 1);
     if (!roll.card.move.burn.consumed) return notYet(`${roll.moveId} came up ${roll.outcome}; momentum has not been burned`, 2);
@@ -269,18 +517,120 @@ export const BEAT_CHECKS = {
     return done(`the oracle answered ${cards[0].oracle.answer ?? "?"}`);
   },
 
-  /** A recover move was made and what it offers was taken. */
+  /**
+   * A recover move was made and what it offers was taken. The moves are the
+   * check's and any recover move the beat's `wants` adds: the fourth live
+   * run's beat 22 came with spirit and the hull spent, and its list had no
+   * Repair. Until one is made the player is told what the sheet holds spent
+   * — the only things a recover move can mend.
+   */
   recovered(v, c) {
+    const moves = [...new Set([...(c.moves ?? ["heal", "resupply", "sojourn", "hearten"]), ...(v.wants ?? []).filter(m => RECOVER_MOVES.includes(m))])];
     // Any recover move's hit, not the first roll's: the second live run's Heal
     // missed and its Resupply came up a strong hit, and the beat was read off
     // the miss alone (issue #377 round 2).
-    const rolls = v.rolls.filter(r => (c.moves ?? ["heal", "resupply", "sojourn", "hearten"]).includes(r.moveId) && r.rolled);
-    if (!rolls.length) return notYet("no recover move yet");
+    const rolls = v.rolls.filter(r => moves.includes(r.moveId) && r.rolled);
+    const sheet = sheetSpent(v.now).text;
+    if (!rolls.length) return notYet(`no recover move yet${sheet ? ` — ${sheet}` : ""}`);
     const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
     const offered = v.allCards.filter(k => k.suffer && v.inWindow(k) && k.suffer.moveId === roll.moveId);
     if (offered.length && !offered.some(k => k.suffer.resolved)) return notYet(`${roll.moveId} came up ${roll.outcome}; its choice is not made`, 2);
     return done(`${roll.moveId} came up ${roll.outcome} at ${roll.step}`);
+  },
+
+  /**
+   * One of the named moves was offered — a narration's "Roll …" button — or
+   * rolled while the beat was current. With `offered: false` the opposite: a
+   * line of play was answered and none of them was offered or rolled — a
+   * recovery move with nothing to recover (known-issues
+   * HEAL-ROLLED-AT-FULL-HEALTH: the third live run's "I treat my wounds" was
+   * offered Heal at 5 health of 5, pressed and rolled). An offer or a roll
+   * then is the beat brought about wrongly.
+   */
+  moveOffered(v, c) {
+    const moves = c.moves ?? [];
+    const sheet = v.pc ? `${v.pc.name} at health ${v.pc.health}, spirit ${v.pc.spirit}, supply ${v.pc.supply}${v.pc.debilities?.length ? `, ${v.pc.debilities.join(", ")}` : ", no impact marked"}` : "";
+    const offers = v.allCards.filter(k => k.narration?.suggestedMove && v.inWindow(k) && moves.includes(k.narration.suggestedMove))
+      .map(k => ({ step: v.firstSeen.get(k.id), moveId: k.narration.suggestedMove, how: "offered on the narration's Roll button" }));
+    const made = v.rolls.filter(r => moves.includes(r.moveId)).map(r => ({ step: r.step, moveId: r.moveId, how: r.rolled ? `rolled (${OUTCOME[r.outcome] ?? r.outcome})` : "made" }));
+    const seen = [...offers, ...made].sort((a, b) => v.marks.findIndex(k => k.step === a.step) - v.marks.findIndex(k => k.step === b.step));
+    if (c.offered === false) {
+      if (seen.length) return failed(`${moveTitle(seen[0].moveId)} was ${seen[0].how} at ${seen[0].step}, with ${sheet || "the sheet as it was"}`);
+      const answered = v.linesInWindow.filter(m => !isSceneQuestion(m.text)).find(l => v.messagesInWindow.some(m => m.narrator && m.step === l.step && !m.vignette));
+      if (!answered) return notYet("no line of play has been answered yet");
+      return done(`the line at ${answered.step} was narrated with nothing of ${moves.map(moveTitle).join(" / ")} offered or rolled — ${sheet}`);
+    }
+    if (!seen.length) return notYet(`none of ${moves.map(moveTitle).join(" / ")} has been offered or rolled${sheet ? ` (${sheet})` : ""}`);
+    return done(`${moveTitle(seen[0].moveId)} was ${seen[0].how} at ${seen[0].step}${sheet ? `, with ${sheet}` : ""}`);
+  },
+
+  /**
+   * Progress was marked on a quest vow while the beat was current — a step
+   * toward it said in the fiction, offered as the milestone it is (known-issues
+   * VOW-STEP-SAID-IN-FICTION-NOT-READ: "I now have proof…" was narrated with
+   * nothing offered, twelve readings of twelve). The size of the mark is the
+   * mechanical checks' (`progress-per-mark`, `milestone-once`).
+   */
+  milestoneMarked(v) {
+    const before = new Map(((v.entered?.pcs?.[0]?.vows) ?? []).map(x => [x.id, x.ticks]));
+    const gained = v.questVows().filter(x => !x.completed && x.ticks > (before.get(x.id) ?? 0));
+    const offer = v.allCards.find(k => k.narration?.suggestedMove === "reach_a_milestone" && v.inWindow(k)) ?? null;
+    if (!gained.length) {
+      const open = v.questVows().find(x => !x.completed);
+      return notYet(`${open ? `the vow "${open.name}" stands at ${open.ticks} ticks` : "no quest vow is open"}${offer ? `; the milestone was offered at ${v.firstSeen.get(offer.id)} and is not marked` : "; no milestone has been offered or marked"}`, offer ? 1 : 0);
+    }
+    const vow = gained[0];
+    return done(`the vow "${vow.name}" went from ${before.get(vow.id) ?? 0} to ${vow.ticks} ticks${offer ? `, the milestone offered at ${v.firstSeen.get(offer.id)}` : ""}`);
+  },
+
+  /**
+   * The relationship with the cast's connection (or the one named) moved
+   * forward while the beat was current — Develop Your Relationship, which
+   * marks progress and rolls nothing while the two are not bonded. A favour
+   * done for them is at least offered it (known-issues
+   * FAVOUR-TO-A-CONNECTION-READ-AS-TALK).
+   */
+  relationshipDeveloped(v, c) {
+    const conn = c.name ? v.connection(c.name)[0] : v.castConnection();
+    if (!conn) return notYet("no such connection");
+    const was = (v.entered?.connections ?? []).find(x => x.hostId === conn.hostId)?.ticks ?? 0;
+    const offer = v.allCards.find(k => k.narration?.suggestedMove === "develop_your_relationship" && v.inWindow(k)) ?? null;
+    if (conn.ticks <= was) return notYet(`the relationship with ${conn.name} stands at ${conn.ticks} of 40 ticks${offer ? `; Develop Your Relationship was offered at ${v.firstSeen.get(offer.id)}` : ""}`, offer ? 1 : 0);
+    return done(`the relationship with ${conn.name} went from ${was} to ${conn.ticks} of 40 ticks`);
+  },
+
+  /**
+   * A scene question (`@scene …`) was answered, and nothing of the answer was
+   * written back: no truth of its narration, no draft card, no hidden plan,
+   * the scene's frame as it was (known-issues SCENE-ANSWER-NOT-A-CAMERA: each
+   * of the third live run's answers added scenery that invented, and each was
+   * applied to the scene's record — frame, truths, lore, draft cards). The
+   * answer's words are quoted, and how many sentences it ran to: whether it
+   * is plain is for the reading.
+   */
+  sceneAnswered(v) {
+    const asked = [...v.linesInWindow].reverse().find(m => isSceneQuestion(m.text)) ?? null;
+    if (!asked) return notYet("no scene question has been asked");
+    const answer = v.messagesInWindow.find(m => m.step === asked.step && m.narrator && (m.card ?? []).includes("sceneResponse")) ?? null;
+    if (!answer) return notYet(`the scene question at ${asked.step} has had no answer`, 1);
+    const i = v.marks.findIndex(k => k.step === asked.step);
+    const was = v.marks[i - 1]?.table ?? v.entered;
+    const then = v.marks[i]?.table ?? v.now;
+    const card = v.allCards.find(k => k.id === answer.id);
+    const narrationId = card?.narration?.narrationId ?? null;
+    const problems = [];
+    const truths = (then?.scene?.truths ?? []).filter(t => narrationId && t.narrationId === narrationId);
+    if (truths.length) problems.push(`${truths.length} truth(s) of it stand ("${truths[0].fact.slice(0, 80)}")`);
+    const drafts = v.allCards.filter(k => k.drafts?.length && v.firstSeen.get(k.id) === asked.step);
+    if (drafts.length) problems.push(`a draft card was raised from it (${drafts.flatMap(k => k.drafts.map(d => `"${d.name}"`)).join(", ")})`);
+    const plansWas = new Set((was?.plans ?? []).map(p => p.id));
+    const plans = (then?.plans ?? []).filter(p => !plansWas.has(p.id));
+    if (plans.length) problems.push(`a hidden plan was decided in its step ("${plans[0].subject}")`);
+    if (JSON.stringify(was?.scene?.frame ?? null) !== JSON.stringify(then?.scene?.frame ?? null)) problems.push("the scene's frame changed");
+    const sentences = String(answer.text ?? "").split(/(?<=[.!?])\s+/).filter(s => s.trim()).length;
+    if (problems.length) return failed(`the scene question at ${asked.step} was answered and written back: ${problems.join("; ")}`);
+    return done(`the scene question at ${asked.step} was answered in ${sentences} sentence(s), and nothing of the answer was written back: "${String(answer.text ?? "").slice(0, 160)}"`);
   },
 
   /** The relationship's track is full and the bond is forged. */
@@ -303,12 +653,32 @@ export const BEAT_CHECKS = {
     return done(`the bonded Develop Your Relationship was rolled at ${roll.step} (${roll.outcome}); no progress was marked`);
   },
 
-  /** The vow is fulfilled; a bonded connection's track is untouched and its bonded roll offered once. */
+  /**
+   * The vow is fulfilled; a bonded connection's track is untouched and its
+   * bonded roll offered once. With `told`, its truth is told too: the hidden
+   * plan the table decided for the vow — what it was sworn to find — is
+   * revealed by the fulfilment's narration (known-issues
+   * VOW-FULFILLED-WITH-NOBODY-NAMED: the third live run's vow ended on "both
+   * are named now", with no name anywhere, and its truth was recorded as
+   * revealed). The module marks a plan's truth revealed only where the prose
+   * states it, so the mark is the check; the narration is quoted, to be read.
+   */
   vowFulfilled(v, c) {
-    const vow = (v.pc?.vows ?? []).find(x => x.completed) ?? null;
-    const open = v.openVows()[0] ?? null;
+    const vow = v.questVows().find(x => x.completed) ?? null;
+    const open = v.questVows().find(x => !x.completed) ?? null;
     if (!vow) return notYet(open ? `the vow "${open.name}" stands at ${open.ticks} ticks` : "no vow on the sheet", open?.ticks ?? 0);
     const roll = v.rolls.find(r => r.moveId === "fulfill_your_vow");
+    let told = "";
+    if (c.told) {
+      if (!roll) return notYet(`the vow "${vow.name}" is complete and no Fulfill Your Vow was rolled for it`, 1);
+      const narrated = v.allCards.find(k => k.narration?.resolutionId && k.narration.resolutionId === roll.card.move.resolutionId && !k.narration.upgradeOf);
+      if (!narrated) return notYet(`the vow "${vow.name}" is fulfilled (${roll.outcome}); its narration has not come`, 2);
+      const plan = (v.now?.plans ?? []).find(p => p.kind === "vow" && same(p.subject, vow.name)) ?? null;
+      const prose = v.messagesInWindow.find(m => m.id === narrated.id)?.text ?? "";
+      if (!plan) return failed(`the vow "${vow.name}" is fulfilled (${roll.outcome}) and no plan was ever decided for it: there was no truth to tell`);
+      if (!plan.truthRevealed) return failed(`the vow "${vow.name}" is fulfilled (${roll.outcome}) and its truth was not told — "${plan.truth.slice(0, 120)}" is not revealed; the narration: "${prose.slice(0, 160)}"`);
+      told = `; its truth is told ("${plan.truth.slice(0, 120)}") — the narration: "${prose.slice(0, 160)}"`;
+    }
     const conn = vow.linkedConnectionId ? (v.now.connections ?? []).find(x => x.hostId === vow.linkedConnectionId) : null;
     if (conn?.bonded && roll && c.bondedPayoff !== false) {
       const i = v.marks.findIndex(k => k.step === roll.step);
@@ -316,9 +686,9 @@ export const BEAT_CHECKS = {
       if (before && before.bonded && before.ticks !== conn.ticks) return failed(`the fulfilment marked the bonded connection's track: ${before.ticks} → ${conn.ticks} ticks`);
       const offers = v.allCards.filter(k => k.picker && v.inWindow(k) && k.picker.pickAction === "develop" && k.picker.choices?.length === 1 && k.picker.choices[0].hostId === conn.hostId);
       if (offers.length !== 1) return failed(`the vow was fulfilled for the bonded ${conn.name}; ${offers.length} bonded roll(s) offered, not one`);
-      return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered`);
+      return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered${told}`);
     }
-    return done(`the vow "${vow.name}" is fulfilled${roll ? ` (${roll.outcome})` : ""}`);
+    return done(`the vow "${vow.name}" is fulfilled${roll ? ` (${roll.outcome})` : ""}${told}`);
   },
 
   // ── the interruptions: the runner acts, the world is compared ──────────────
@@ -369,9 +739,14 @@ export const BEAT_CHECKS = {
 
   /** After the GM renamed the connection's card: one card, the new name on the vow's link. */
   renamed(v, c) {
-    const conns = v.connection(c.to);
+    const conns = v.connectionNamed(c.to);
     if (conns.length !== 1) return notYet(`no connection is named ${c.to}`);
-    if ((v.now.entityCards ?? []).some(e => same(e.name, c.from))) return failed(`a card is still named ${c.from}: two people`);
+    // The card renamed is the one the cast member was made as, whatever it
+    // was called — and no other card is still theirs.
+    const made = v.castCardId(c.from);
+    if (made && conns[0].hostId !== made) return failed(`${c.to} is another card: the one ${c.from} was made as was not renamed`);
+    const others = (v.now.entityCards ?? []).filter(e => e.id !== conns[0].hostId && (same(e.name, c.from) || (e.entityType === "connection" && v.sameCastMember(e.name, c.from))));
+    if (others.length) return failed(`a card is still named ${others[0].name}: two people`);
     const vow = (v.pc?.vows ?? []).find(x => x.linkedConnectionId === conns[0].hostId);
     if (vow && !same(vow.linkedConnectionName, c.to)) return failed(`the vow "${vow.name}" still shows its link as "${vow.linkedConnectionName}"`);
     return done(`${c.from} is now ${c.to}${vow ? `; the vow "${vow.name}" shows the new name` : "; no vow is linked to that card"}`);
@@ -382,10 +757,23 @@ export const BEAT_CHECKS = {
  * The pointer over a charter's beats.
  *
  * @param {Array<{ id: string, n: number, session: number, title: string, tell?: string, check: object,
- *   needs?: string[], stall?: number, interruption?: string }>} beats
+ *   needs?: string[], requires?: object[], stall?: number, interruption?: string }>} beats
  */
 export function createPointer(beats) {
-  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0 }));
+  // `lines` / `linesAtProgress`: the lines of play typed on the beat, and how
+  // many of them had been typed when it last moved — the difference is the
+  // plain lines that brought nothing about (`lastResort`, below).
+  // `waits`: the waits in a row on a beat that has not moved since; `rolled`:
+  // the moves made while the beat was current — a no-roll move among them
+  // (`noRoll`: Develop Your Relationship before a bond, Reach a Milestone) —
+  // and `rolledAtProgress` how many of them there were when it last moved:
+  // what `brief` tells the player a move was, when it was not the beat's and
+  // nothing has moved since. `named`: the lines that named a move, by their
+  // place among the beat's lines (lib/moveNames.mjs); `lastResortGivenAt`:
+  // how many lines had been typed when the last resort was last told, and
+  // `lastResortSpent` the steps of the named lines that spent it. `waiting`:
+  // the cards on the table that wait on the player (cardsWaiting).
+  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false, lastResortGivenAt: null, lastResortSpent: [], named: [], waits: 0, rolled: [], rolledAtProgress: 0, waiting: [] }));
   let at = 0;
   const byId = (id) => state.find(s => s.id === id);
 
@@ -395,12 +783,13 @@ export function createPointer(beats) {
     current() { return at < beats.length ? { beat: beats[at], state: state[at] } : null; },
     finished() { return at >= beats.length; },
 
-    /** A player action was taken on the current beat, at `step`. */
-    record(step) {
+    /** A player action was taken on the current beat, at `step` — `action` says whether it was a wait. */
+    record(step, action = null) {
       const cur = state[at];
       if (!cur) return;
       cur.actions += 1;
       cur.sinceProgress += 1;
+      cur.waits = action?.action === "wait" ? cur.waits + 1 : 0;
       if (!cur.steps.includes(step)) cur.steps.push(step);
     },
 
@@ -426,14 +815,28 @@ export function createPointer(beats) {
             at += 1;
             continue;
           }
+          // What it needs of the world, whichever beat brought it about.
+          const unmet = unmetRequirements(beat, beatView({ ...run, from: step, beat }));
+          if (unmet.length) {
+            Object.assign(cur, { status: "not-exercised", doneAt: step, detail: `it needs ${unmet.join("; and ")}` });
+            changes.push({ ...cur });
+            at += 1;
+            continue;
+          }
         }
         // An interruption is the runner's to make before it can be checked.
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const result = check(beatView({ ...run, from: cur.enteredAt }), beat.check);
+        const view = beatView({ ...run, from: cur.enteredAt, beat });
+        const result = check(view, beat.check);
         cur.detail = result.detail;
-        if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; }
+        const lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text));
+        cur.lines = lines.length;
+        cur.named = lines.flatMap((m, i) => (movesNamedIn(m.text).length ? [{ at: i + 1, step: m.step }] : []));
+        cur.rolled = view.rolls.map(r => ({ step: r.step, moveId: r.moveId, outcome: r.outcome, ...(r.rolled ? {} : { noRoll: true }) }));
+        cur.waiting = beat.interruption ? [] : cardsWaiting(view);
+        if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; cur.linesAtProgress = cur.lines; cur.waits = 0; cur.rolledAtProgress = cur.rolled.length; }
         if (result.done) {
           Object.assign(cur, { status: result.failed ? "failed" : "done", doneAt: step });
           changes.push({ ...cur });
@@ -464,12 +867,75 @@ export function createPointer(beats) {
       at += 1;
     },
 
-    /** What the player is told about the beat it is on. */
+    /**
+     * What the player is told about the beat it is on. A player never names a
+     * move in what it types (decisions.md → "A player is never made to name a
+     * move"), so a beat's `tell` does not name one and the player is shown
+     * `playerTitle` where the beat's own title does. A beat that needs a roll
+     * says how to name it under `lastResort` — told to the player only once
+     * plain lines have brought nothing about, so that the beats after it can
+     * still be reached. The beat keeps that it was (`state.lastResort`): its
+     * move was not had from plain lines.
+     *
+     * And the player is never left to take a roll for the end of a beat. The
+     * third live run's player rolled a move that was not the beat's, twice —
+     * a Compel where a connection was to be made, a Gain Ground the check
+     * did not then count — and each time waited six turns for the observer
+     * to move it on ("Beat appears done; wait for observer"). So when the
+     * last roll made on the beat is not one the beat wants, or the player has
+     * waited twice running on a beat that has not moved, `alert` says so
+     * plainly: what was rolled, that the beat is NOT done, that waiting will
+     * not finish it — and the last resort is unlocked then too, not only
+     * after `lastResortAfter` plain lines (two unless the beat says). Not on
+     * a beat that is the table's (an interruption): there waiting is right.
+     *
+     * A move with no roll is a move all the same (Develop Your Relationship
+     * before a bond, Reach a Milestone): the fourth live run's Develop at
+     * a5–a7, on a beat that wanted a connection made, raised no alert — the
+     * check saw only rolls with dice.
+     *
+     * The last resort is told once and is spent by the line that names the
+     * move: it is not told again until the beat has moved — the next time the
+     * beat needs a roll, the player starts from a plain line again. The
+     * fourth live run told it every turn once it was unlocked, and its player
+     * named three moves in beat 22 alone (a64, a66, a68).
+     *
+     * And a card that waits on the player — a result held for Keep or Burn,
+     * a vow or connection to pick, a cost to choose — is said on a line of
+     * its own (`waiting`): the fourth live run's player skipped Keep (a38)
+     * and typed past "Which vow advances?" (a71).
+     */
     brief() {
       const cur = this.current();
       if (!cur) return null;
-      return { n: cur.beat.n, of: beats.length, session: cur.beat.session, title: cur.beat.title, tell: cur.beat.tell ?? "", actions: cur.state.actions,
-        note: cur.state.detail ? `the observer sees: ${cur.state.detail}` : "" };
+      const { beat, state: st } = cur;
+      const unread = st.lines - st.linesAtProgress;
+      const tables = !!beat.interruption;
+      const wanted = wantsOf(beat);
+      // The last move, where the beat has not moved since it was made.
+      const last = st.rolled.length > st.rolledAtProgress ? st.rolled.at(-1) : null;
+      const stray = !tables && wanted.length && last && !wanted.includes(last.moveId) ? last : null;
+      const idle = !tables && st.waits >= WAITS_BEFORE_TOLD;
+      const unreadLines = unread >= (beat.lastResortAfter ?? LAST_RESORT_AFTER);
+      // Spent: a line named a move after the last resort was told, and the beat has not moved since.
+      const spentBy = st.lastResortGivenAt != null && st.linesAtProgress <= st.lastResortGivenAt
+        ? (st.named ?? []).find(x => x.at > st.lastResortGivenAt) ?? null : null;
+      if (spentBy && !st.lastResortSpent.includes(spentBy.step)) st.lastResortSpent.push(spentBy.step);
+      const resort = !!beat.lastResort && !spentBy && (unreadLines || !!stray || idle);
+      if (resort) { st.lastResort = true; st.lastResortGivenAt = st.lines; }
+      const strayWhat = stray ? (stray.noRoll ? `A MOVE WAS MADE — ${moveTitle(stray.moveId)}, with no roll —` : `A ROLL WAS MADE — ${moveTitle(stray.moveId)}, ${OUTCOME[stray.outcome] ?? stray.outcome} —`) : "";
+      const alert = [
+        stray ? `${strayWhat} AND IT IS NOT WHAT THIS BEAT NEEDS. The beat is NOT done, and waiting will not finish it: do what the beat asks again, in other words.` : "",
+        idle ? `YOU HAVE WAITED ${st.waits} TIMES RUNNING AND NOTHING HAS CHANGED. The beat is NOT done, and waiting will not finish it: act.` : "",
+      ].filter(Boolean).join(" ");
+      const why = unreadLines ? `${unread} plain lines have brought nothing about` : stray ? `a ${stray.noRoll ? "move" : "roll"} came that is not this beat's` : "waiting has brought nothing about";
+      const note = [
+        st.detail ? `the observer sees: ${st.detail}` : "",
+        resort ? `LAST RESORT — ${why}: this once you may name the move — ${beat.lastResort}` : "",
+        spentBy && beat.lastResort ? `the last resort was spent on your line at ${spentBy.step}: say what you do in plain lines again` : "",
+      ].filter(Boolean).join("; ");
+      const waiting = tables ? "" : waitingText(st.waiting ?? []);
+      return { n: beat.n, of: beats.length, session: beat.session, title: beat.playerTitle ?? beat.title, tell: beat.tell ?? "", actions: st.actions, note, alert, waiting };
     },
 
     summary() {

@@ -5,7 +5,8 @@
  * XCARD-CHRONICLE — an X-carded narration's Chronicle entry leaves with it.
  *
  * The scribe (scheduleChronicleEntry, ~2 s after a move, paced or Batch Mode
- * round narration) writes one entry from the prose to a PC's Chronicle. The
+ * round narration reaches the session record — record/chronicleView.js)
+ * writes one entry from its beat to a PC's Chronicle. The
  * Chronicle feeds the campaign recap and, pinned, every narration's CHARACTER
  * block (issue #345 AA07), and the X-Card never touched it: the removed beat
  * came back at the next session start. Now the entry carries the narration's
@@ -27,7 +28,9 @@ import {
   addChronicleEntry, getChronicleEntries, setChronicleEntryPinned, applyChronicleEditFromRelay,
 } from '../../src/character/chronicle.js';
 import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
-import { readFileSync } from 'node:fs';
+import { scribeArgsFor } from '../../src/record/chronicleView.js';
+import { readRecord } from '../../src/record/read.js';
+import { playedBeats, recordSourceOf } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -156,10 +159,10 @@ describe('XCARD-CHRONICLE — the X-Card takes the narration\'s Chronicle entry 
     expect((await getChronicleEntries('pc-1'))[0]).toMatchObject({ text: 'Kept.', narrationId: 'nar-kept' });
   });
 
-  it('every narration path hands the scribe its narration id', () => {
-    const src = readFileSync('src/narration/narrator.js', 'utf8');
-    const calls = src.split('scheduleChronicleEntry(').slice(1).map(c => c.slice(0, c.indexOf(');')));
-    expect(calls.length).toBe(5);
-    for (const call of calls) expect(call).toMatch(/narrationId/);
+  it('the scribe is handed its narration\'s id — from the record\'s narration event, its one trigger (issue #382 slice 4)', () => {
+    const events = playedBeats(SESSION, [{ said: 'I hold the line.', told: 'You hold.', actor: 'pc-1' }]);
+    const narration = events.find(e => e.k === 'narration');
+    const args = scribeArgsFor(narration, readRecord({ session: SESSION }, recordSourceOf(SESSION, events)));
+    expect(args).toMatchObject({ narrationId: `nar-${SESSION}-1`, eventId: narration.id });
   });
 });

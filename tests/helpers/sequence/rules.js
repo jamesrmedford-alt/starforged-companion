@@ -288,6 +288,10 @@ export const MOVE_MOMENTUM = Object.freeze({
   react_under_fire:     Object.freeze({ strong_hit: 1 }),
   check_your_gear:      Object.freeze({ strong_hit: 1 }),
   swear_an_iron_vow:    Object.freeze({ strong_hit: 2, weak_hit: 1 }),
+  // "On a weak hit, you uncover something interesting … Then, take +1
+  // momentum." A strong hit's momentum is a choice (WAYPOINT_CHOICE), so it
+  // is not here.
+  explore_a_waypoint:   Object.freeze({ weak_hit: 1 }),
 });
 
 /** Marks of progress on the fight's track, by move and outcome. */
@@ -312,3 +316,41 @@ export function sufferCost(value, amount, floor = METER_MIN) {
 
 /** A meter after a gain: never above its ceiling. */
 export const recover = (value, amount, ceiling = METER_MAX) => Math.min(ceiling, value + amount);
+
+// ── An expedition (the long haul's exploration beat) ────────────────────────
+//
+// In the moves' own words, as the game system ships them (Starforged →
+// Exploration), and docs/rules-reference/playkit-rules-and-coverage.md §1.3:
+//
+//   - Undertake an Expedition: "On a strong hit, you reach a waypoint.
+//     Envision the location and mark progress per the rank of the expedition.
+//     On a weak hit, as above, but this progress costs you. … On a miss, you
+//     are waylaid by a crisis … Do not mark progress, and Pay the Price."
+//   - Explore a Waypoint: "On a strong hit, choose one. … Find an
+//     opportunity: … take +2 momentum. Gain progress: Mark progress on your
+//     expedition, per its rank. On a weak hit, you uncover something
+//     interesting, but it is bound up in a peril … Then, take +1 momentum. On
+//     a miss, you encounter an immediate hardship or threat, and must Pay the
+//     Price."
+//   - Finish an Expedition: "roll the challenge dice and compare to your
+//     progress. On a strong hit, … Mark a reward on your discoveries legacy
+//     track per expedition's rank: troublesome=1 tick; dangerous=2 ticks;
+//     formidable=1 box; extreme=2 boxes; epic=3 boxes. … On a weak hit, as
+//     above, but … Make the legacy reward one rank lower". A miss completes
+//     nothing: the expedition is abandoned or returned to.
+
+/** Marks of progress Undertake an Expedition puts on the expedition, by outcome. */
+export const EXPEDITION_MARKS = Object.freeze({ strong_hit: 1, weak_hit: 1, miss: 0 });
+
+/** What a strong hit on Explore a Waypoint lets its roller choose between: one mark of progress, or this much momentum. */
+export const WAYPOINT_CHOICE = Object.freeze({ marks: 1, momentum: 2 });
+
+/** Discoveries legacy ticks for a finished expedition: its rank on a strong hit, one rank lower on a weak hit, none on a miss. */
+export function expeditionReward(rank, outcome) {
+  if (outcome === "strong_hit") return LEGACY_REWARD_TICKS[rank];
+  if (outcome === "weak_hit") return LEGACY_REWARD_TICKS[rankBelow(rank)] ?? 0;
+  return 0;
+}
+
+/** Whether a Finish an Expedition completes the expedition: any hit does, a miss leaves it open. */
+export const expeditionFinished = (outcome) => outcome === "strong_hit" || outcome === "weak_hit";

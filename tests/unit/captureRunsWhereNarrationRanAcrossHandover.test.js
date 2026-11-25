@@ -174,7 +174,7 @@ describe('issue #345 AA34 — the Batch Mode sibling: the round\'s narration lan
     await table.drain();
     await relay('pl-1', 'batch.confirm', { roundId: round().id, submissionId: 'k1', choices: {} });
     await table.drain();
-    expect(table.cards(f => f.roundNumber === 1 && f.narratorCard)).toHaveLength(1);
+    expect(table.cards(f => !!f.roundId && f.narratorCard)).toHaveLength(1);
     expect({ card: !!sable(), bonds: bondNames('pc-kira') }).toEqual({ card: true, bonds: ['Sable Ortiz'] });
   }, 60_000);
 
@@ -193,7 +193,7 @@ describe('issue #345 AA34 — the Batch Mode sibling: the round\'s narration lan
 
     held.release();
     await table.settle(); await table.drain();
-    expect(table.cards(f => f.roundNumber === 1 && f.narratorCard), 'the round was narrated').toHaveLength(1);
+    expect(table.cards(f => !!f.roundId && f.narratorCard), 'the round was narrated').toHaveLength(1);
     expect({ card: !!sable(), bonds: bondNames('pc-kira') }, 'the connection the round\'s hit made')
       .toEqual({ card: true, bonds: ['Sable Ortiz'] });
     expect(sables(), 'made once').toHaveLength(1);

@@ -22,14 +22,16 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 
 **Single seam holds.** Every narrator call builds context through
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
-paced_narrative, scene_interrogation, oracle_followup, session_vignette
-(galley and end-session vignettes), clock_advance (a clock's advance or
+paced_narrative, scene_interrogation (an `@scene` question — answered, not
+narrated: see "An `@scene` answer" below), oracle_followup, session_vignette
+(the session's set-pieces: its opening, its closing cutaway and the spotlight vignette), clock_advance (a clock's advance or
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
 sidecar/latitude, and of the scene ledger [6.5] the ship's position alone —
-issue #374 A1), round_resolution (a Batch Mode round, issue #340 — see
-below). The `!ship
+issue #374 A1; its source — the session record, and how things stand read
+live — is its user message, below), round_resolution (a Batch Mode round, issue
+#340 — see below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
 read the ledger).
@@ -41,11 +43,17 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
   `src/multiplayer/gmGate.js`). Its user message (`buildNarratorUserMessage`)
-  is RECENT SCENE, MOVE OUTCOME, then STAKES STATED BEFORE THE ROLL — the
-  interpreter's hit and miss lines the Confirm dialog showed
-  (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
-  this outcome delivers (issue #353 R1; a burn's or an improvement's
-  re-narration carries them) — then the player's line. The miss line is
+  is RECENT SCENE, MOVE OUTCOME, the player's line, then **one block of what
+  the result obliges its telling to** — WHAT THIS NARRATION MUST TELL, AND
+  MUST NOT (`moves/contracts/obligations.js` `obligationsFor` /
+  `formatObligationsBlock`, overhaul 4 slice 2; three lists — TELL, NOT YET,
+  NOT SO — a tag a line; it replaced the STAKES, PRICE, COST, FIGHT and VOW
+  blocks and the match line, their words kept) — and the instruction, which
+  says to keep to it. Its lines: [outcome]; [stakes] — the interpreter's hit
+  and miss lines the Confirm dialog showed (`resolution.stakes`,
+  `moves/stakes.js` `stakesShown`) and which one this outcome delivers
+  (issue #353 R1; a burn's or an improvement's re-narration carries them).
+  The miss line is
   shown, and narrated as "what this miss costs", only when it is the price:
   `priceStated`, false for a move whose miss pays no price — Enter the
   Fray's, Swear an Iron Vow's, the resist rolls' (`resolver.missPaysPrice`,
@@ -61,10 +69,52 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   narration is written (`resultUpgrade.priceChoiceStatus`, read from the
   table's cards — the waypoint's claim, and the option the choice card was
   resolved by, `chosenIndex` → `resolver.settlePriceChoice`): paid, it is delivered as
-  above; still open, or declined, the stakes point at a block of its own
-  after them (`formatPriceChoiceBlock` — THE PRICE IS THE PLAYER'S CHOICE /
-  THE PRICE WAS NOT PAID), and a declined price's seed lines are dropped
-  (issue #364 EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
+  above; still open, or declined, the stakes point at the [price] line (NOT
+  YET "THE PRICE IS THE PLAYER'S CHOICE." / NOT SO "THE PRICE WAS NOT
+  PAID."), and a declined price's seed lines are dropped (issue #364
+  EXPLORE-WAYPOINT-MATCH-MISS-ADVISORY; a round's entry too).
+  **What the table has answered, and has still to answer,** is read the same
+  way, from the table's cards, beside that settle
+  (`obligations.unansweredCardsFor`, moved from `resultUpgrade.js`, through
+  `narrator.js` `withCardsAnswered` in `movePlanRequests` and for each of a
+  round's move entries; the long haul's third live run): a **cost that is
+  the player's choice and not chosen yet** (`openChoice` — the outcome's own
+  choice card has no pick, or is not posted yet: a free-flow result is
+  narrated before its card; the choice is `consequences.sufferPrompt` or the
+  card's, and counts only when an option costs something — a suffer move, a
+  loss, a price, a complication) gets NOT YET [cost] "THE COST IS THE
+  PLAYER'S CHOICE." (what every option has in common is narrated, the cost
+  is not — a Heal weak hit's narration had spent the supplies before the
+  card asked "Lose Momentum, or Sacrifice Resources?", known-issues
+  COST-NARRATED-BEFORE-IT-IS-CHOSEN), and the stakes' weak-hit line points
+  at it instead of asking for "the cost … the move outcome names"; **a cost
+  picked before the narration** (a held result kept by its pick, a round
+  whose entry's card was answered first — `chosen`, the option's label from
+  the card's `chosenIndex` / `pickedIndices` / `pickedSuffers`) gets TELL
+  [chosen] "‹PC› chose ‹option›. Tell what it cost them." An **Enter the
+  Fray whose fight no one has begun** (`fightOffer` — its threshold card,
+  found by the resolution's id, is unanswered, or the way out was taken)
+  gets [fight] — NOT YET "THE FIGHT IS STILL ONLY OFFERED." / NOT SO "THE
+  FIGHT WAS NOT BEGUN." (`combat-flow.md` §1). A **Fulfill Your Vow hit**
+  carries TELL [vow] "THE VOW IS FULFILLED." (never claim an answer the
+  narration does not state — `vow-flow.md` §3); a **progress move's miss**
+  with a recommit card (Fulfill Your Vow, Finish an Expedition, Forge a
+  Bond) NOT YET [recommit]; **Reach a Milestone** TELL [milestone]; a roll
+  **with a match** TELL [match] — tell the twist and never write the word;
+  a soft refusal **rolled at the GM's word** TELL [overridden]. Which of
+  these a move's result carries beyond the generic ones is its contract
+  row's `obliges` (`moves/contracts/table.js`). NOT SO [state] says what the
+  sheet holds of a person or a fight the beat touches — a connection the
+  line, the move's target or the scene frame's cast names, whose
+  relationship is full and unbonded ("‹person› is ‹PC›'s connection, not a
+  bond: their relationship is full and no bond is forged."), or that is
+  lost; "No fight is under way." for a line that reads as fighting with
+  none open (`narrator.js` `beatSituation` reads the speaker's situation for
+  it — TRACK-TOLD-AS-A-BOND); NOT SO [sheet] and [apparatus] close every
+  block. The
+  move and round roles name the outcome's own words — strong hit, weak hit,
+  miss, match — as never to appear as such (known-issues
+  NARRATION-NAMES-THE-OUTCOME).
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -143,6 +193,21 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is
   skipped with a debug line (the raw card already carries the result).
+  **An oracle's answer binds the narration that tells it** (known-issues
+  ORACLE-NO-NARRATED-AS-YES — "Is anyone left alive aboard the wreck?" rolled
+  NO, and the follow-up wrote "which means someone is aboard", keeping the
+  voice it had made over three beats): the `oracle_followup` role says the
+  answer is the table's — never narrated as its opposite, as doubtful or as
+  still to be found out — and that where the scene so far said otherwise the
+  scene gives way (what was heard was a recording, a relay, a mistake, or has
+  stopped); the user message says a yes/no answer back in plain words with its
+  question, after the recent scene and before the ask
+  (its obligations block — TELL [oracle] the answer, NOT SO [oracle] its
+  opposite — `obligationsFor({ mode: "oracle" })`, read by `buildOracleUserMessage`;
+  nothing for a table roll, a price or a complication); and RECENT ORACLE
+  RESULTS ([3b]) tells every later narration that the answer stands over
+  earlier narration. A table's result keeps its latitude, and is never turned
+  into its reverse.
 - **Session vignettes** (galley, closing) run in the Begin / End a Session
   relay handlers on the canonical GM (`applyBeginSession` /
   `applyEndSession`), so they need a keyed GM; at a keyless-GM table they are
@@ -156,14 +221,138 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   vignette (every post site) and the inciting incident, which no one PC's
   line or roll starts (`partyBlocksAtTable` → `partyBlocksFor`, the galley's
   rule — issue #362 AC75).
-  The galley's user message (`buildGalleyVignetteUserMessage`) sends no stat
+  The opening's user message (`buildGalleyVignetteUserMessage` — the file and
+  the card kind `galley_begin` keep their names; the scene is no longer set in
+  the galley) sends no stat
   line, and with no other PC registered says nobody else is aboard — no crew is
   invented, present or absent (issue #377 item 4: told to "invent generic
   absurd crew", it gave a solo pilot three crewmates, and a helper recorded her
   as a crew member of her own ship). Each bookend's message lists the earlier
   ones of its kind as already used — the newest three, read from the chat's
   cards (`vignetteHistory.js earlierVignettes`; a closing's card names whom it
-  featured, `vignetteNpc`) — issue #377 item 5.
+  featured, `vignetteNpc`) — issue #377 item 5 — each one **whole**: shown its
+  first 700 characters, a fourth opening ended on the first one's own last
+  sentence, which the cut had taken out of the list (the long haul's third
+  live run, a78 against a2), and both rules now name how a scene ends as used.
+  **The opening is set where the last session stopped** (issue #381 D1/D2) —
+  WHERE THE LAST SESSION STOPPED: the summary of the session before
+  (LAST SESSION, read from the session record — `lifecycle.lastSessionToTell`,
+  issue #382) and the last narration the table read, word
+  for word (`narrator.getLastStoryNarration`: the newest story card's session,
+  its newest two story cards by the ring's own rule — no session or clock
+  vignette — so it adds no store). Both are read in one call,
+  `galleyVignette.whereLastSessionStopped`, made once, by
+  `composeOpeningScene`; nothing is said with neither (a campaign's first
+  session, a world whose chat is gone and whose summary is off). Since
+  overhaul 2 slice 6 (§9; OPENING-CONTRADICTS-WHERE-IT-STOPPED) a session
+  with a record is told by its record instead of its summary (internal
+  `recordedStop` — `readRecord({ session })` of the session
+  `lastSessionToTell` names, else of the newest earlier session the record
+  says a table began, as a summary never made leaves it to the record): its
+  last scene's place (`scene.started`'s, else
+  the session's end's), who was with them at the end (its last frame's
+  `present`), what binds there (the truths its beats established — the
+  player's, the dice's, the GM's, the premise's, labelled; never colour), the
+  question still open (the last frame's, unanswered) and what play let go,
+  the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
+  N's record, the table's facts" — then the last narration "as the table read
+  it — the narration's own words; what binds is above". The rule after it:
+  nothing in this scene contradicts what binds; the narration's details may
+  be left out. The ending stays the material's (SET-PIECES-SHAPED-BY-THEIR-
+  PROMPT) and never ends on anything under Let go. The summary paragraph is
+  not in the user message then (LAST
+  SESSION stays in the system prompt as narrative texture); a session from
+  before the record (`legacy`) is told by its summary, as before. It picks the
+  story up there: the scene is set where that leaves them, aboard or not —
+  nobody is moved "back aboard" — nothing still going on is over or behind
+  them, and no more time has passed than it allows (the third opening soaked
+  apricots "for the third time this week" beside a raider's open boarding
+  lock; the fourth wrote "since the Wren" of a ship still grappled
+  alongside). The table's own word — Begin a Session's "Where and when do we
+  pick up?" (D8: the `pickUp` payload, cleaned on both clients, shown on the
+  Begin card) — is told above it and outranks it. **The opening is built from
+  rolled material** (`session/sceneSeeds.js`, the one draw site, `drawDie`):
+  Action + Theme for what the characters are doing in this lull, Descriptor +
+  Focus for what the scene's eye rests on, each with a second result drawn at
+  once; a place aboard (Derelict Zone (Starship), then that zone's area table —
+  an instruction row drawn again, up to three times) only when nothing says
+  where the scene is set; and each absent crewmate's business (Action + Theme,
+  three at most). The MATERIAL block (`formatMaterial`) numbers them, says
+  each is in the scene and that the scene has no business of its own, and asks
+  for the fact block's `builtFrom` (§2). Rolled on the canonical GM, after the
+  clock vignettes, and only when the scene will be narrated
+  (`sessionVignetteWillRun` — narration on, the X-Card down, a key here); per
+  call, so in the user message, never in a cached block. The role
+  (`ROLE_DESCRIPTIONS.session_vignette`) names no place, food, talking ship or
+  example scene: the fixed stock that made two separate campaigns' openings
+  one scene is deleted (the galley, "pick a specific food or drink", the ship
+  as the joke, "a line of dialogue, a question, or a small interruption",
+  "the calm before / the calm after").
+  **The closing cutaway shows someone the campaign has, never the same
+  twice running** (issue #381 D6; `endSessionVignette.composeClosingScene`,
+  on the canonical GM, only when the scene will be narrated): End a
+  Session's connection focus when it names a connection in play; else a die
+  among the connections in play and the named threats (`sceneRecords.js`;
+  weighted bonded 3, rank dangerous or above 2, a threat 2, else 1) — not
+  the one the last closing card's `builtFrom` subject names (by its stable
+  `ref`; a card from before it by `vignetteNpc`), and not one the frame of
+  the scene the session ended in had Present, each while there is another;
+  with nobody, a die among the active sector's settlements (their records,
+  else the sector's own list) other than the one the characters are at; with
+  none, no closing — no call, no card, no dice. The frame is kept before End
+  closes the scene (`endedFrame`), and its Where is told as where the
+  characters are. Its material (`sceneSeeds.rollClosingSeeds`): their card's
+  LAST KNOWN location (else a settlement zone and its area — rolled too when
+  the ended scene had them with the characters), Action + Theme for what they
+  are busy with, Descriptor + Focus for the thing in hand. Its user message
+  names whom it shows as "Subject (<kind>): <name>." (the runner's scene
+  counts read that line). Deleted: the "architect of" the sector's trouble
+  and "familiar adversary" tiers, the list of mundane tasks, the list of
+  gestures, the role's three example closings, `selectEndSessionNPC`. Kept
+  (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **How a set-piece ends is its material's** (known-issues
+  SET-PIECES-SHAPED-BY-THEIR-PROMPT): no shape is given. Told "It stops when
+  the small thing is done, or put down", every closing of the fourth live run
+  ended on a thing put down; told "Its last sentence returns to what that
+  leaves open … Nothing new happens", and given "for the third time this week"
+  as the time not to let pass, every opening handled a counted object and
+  ended still. Both now end where the scene reaches its last result ("How it
+  ends is the material's"); the opening — and the role's OPENING — holds back
+  only the plot ("No turn of the plot happens in it: the first move is the
+  players'"). The MATERIAL says a result's words are the oracle's, never the
+  prose's (a record's name or place is written as it is): told "Never the
+  words themselves", six results were written as their own word.
+  **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
+  pressed the d100 is rolled for the Begin card as before, and — when a
+  narration will follow (`narrationEnabled`, a keyed GM connected, the
+  X-Card down — `spotlightWillBeNarrated`) — sent to the canonical GM as a
+  number alone (`spotlightRoll`); otherwise the card says the result is the
+  table's to envision. The GM reads the result off `spotlight_vignette`
+  itself and writes a short cutaway (`spotlightVignette.composeSpotlightScene`
+  → `narrateSessionVignette` → `postSpotlightVignetteCard`, kind
+  `spotlight_begin`) first of Begin's narrations — after the clock card,
+  before the clock vignettes and the opening, each of which waits for it,
+  bounded. Its material: the card's result (never rolled again), a die among
+  the records its row names (the PCs at the table, connections, settlements,
+  factions, open quest vows, named threats, the table's clocks — no hidden
+  plan's — `sceneRecords.js`; two of them for a row that connects two
+  situations; none for "peril lies ahead"), Action + Theme, Descriptor +
+  Focus. It runs at the interaction latitude (`narratorClass`), discovery
+  when its row introduces someone and nobody is on record; its capture runs
+  detection (`detect`, as a clock vignette's). Its scene is its own: ended
+  with its card (`spotlight_vignette`), unless the table already had one
+  open. In the ring and the summary's source its entry is headed as a
+  cutaway the characters did not see (`ringEntryText`); it is no part of the
+  last narration the next opening is told. A narration due and not written
+  leaves one line, no narrator card. The move narration's unshown spotlight
+  seed for a line read as Begin a Session (`buildOracleSeeds`
+  `begin_a_session`) is removed.
+  A vignette is a bookend, not a
+  beat of play: its mode block says its fact block sets no scene question (`A
+  VIGNETTE IS NOT THE SCENE`), and its sidecar is applied with `bookend: true`
+  — the frame's where / present / now are written, the question never (§2;
+  known-issues NARRATOR-REFRAINS: the galley's closing hook was its session's
+  question in every prompt).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -176,11 +365,12 @@ GM (GM relay `narrator.sidecar` → `applyRelayedNarratorSidecar`, issue #286
 D2), tagged with the scene it was written in: the GM drops it if that scene
 has ended, or if the X-Card has since removed the narration it came with (its
 `narrationId`, issue #321 U07), and starts a scene if none is active. It used to be
-discarded. With no GM connected nothing can be recorded (debug-logged). The
-post-narration capture (§2) does not run off the canonical GM: an `@scene`
-answered on a player's client used to run the detection and tier passes,
-whose World Journal, draft-card and NPC-card writes were refused there
-(issue #321 U36). A move's or a Batch Mode round's capture runs on the GM
+discarded. With no GM connected nothing can be recorded (debug-logged). An
+`@scene` answer is the exception: it has no side-data — nothing of it is
+recorded, on the GM or relayed (known-issues SCENE-ANSWER-NOT-A-CAMERA). The
+post-narration capture (§2) does not run off the canonical GM (an `@scene`
+answered on a player's client used to run the detection and tier passes
+there, issue #321 U36; an answer now runs neither, anywhere). A move's or a Batch Mode round's capture runs on the GM
 that narrated it (`runPostNarrationPasses` / `runRoundNarrationPasses` — a
 GM's client, never a player's), canonical when it claimed the move: they
 re-checked canonicity when the narration landed, so a lower-id keyed GM
@@ -300,6 +490,8 @@ the GM's console only, and the line sat in chat with no answer. Neither
 notice is a narrator card, so neither reaches the ring, the summary or the
 chronicle.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 **The X-Card removes the narration it answers** (issue #321 U07 — full
 exclusion, a maintainer decision). In the same write as the pause,
 `suppressScene` (`src/context/safety.js`, on the canonical GM) calls
@@ -364,18 +556,11 @@ the result card it narrated, `oracleCardId`, and each ring entry carries
 its card's id; a move narration's — or a round card's entries' —
 `resolutionId` names its Pay the Price; RECENT ORACLE RESULTS told every
 later narration the removed answer was established — issue #345 AA01),
-drops a rolling summary that covered them
-(text emptied, a regen due — stamped with a fresh `updatedAt` and
-`xCardedAt`, so a move in flight cannot merge its working copy's older
-summary back over it, and a regen whose Haiku call was out when the card was
-played discards its reply; issue #325 W06 — checked again by the play count
-at the write's turn on the GM's write chain, so a card played while the
-write waited behind another, which jumps the chain and lands first, discards
-it too: issue #345 AA25; a pause still standing from an earlier play does
-not — its cards are out of the source — unless the source still holds a
-narration the pause's write names, `xCardedNarrationIds`, before its card
-is flagged: the next session's mint, or End a Session pressed while paused,
-kept no summary of the session just played, issue #345 AA57) and sets
+leaves every session summary to the session record — its
+`narration.removed` (recorded first, `finishXCardRemoval`) makes a summary
+that told them stale, never shown and made again from what remains, and a
+summary whose call was out when it landed is discarded at its reply (issue
+#382 slice 3; issue #325 W06, #345 AA25 / AA57) — and sets
 `xCardRedirect` — on
 every play. A ship move the narration made is undone too: the sidecar's
 `ship / position` change is written to the command vehicle stamped with the
@@ -404,8 +589,8 @@ the id its card carries since issue #335 Y03 — the inciting capture) hands the
 `routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
 auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
 each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the
-versions before as `previous`, newest first, up to three), Session Log beat,
-tier detail and placeholder rename (`renamedBy` on the card — the X-Card puts
+versions before as `previous`, newest first, up to three), tier detail and
+placeholder rename (`renamedBy` on the card — the X-Card puts
 the placeholder name back unless the card was renamed since), and on the
 ◈ New Entities card it queues (its rows still pending are withdrawn —
 `xCarded`, no Confirm / Dismiss, out of PENDING DRAFTS and the
@@ -422,22 +607,20 @@ deleted card go back to its name: MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED); th
 finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
-threat, faction or place page, takes the beats off the Session Log page and
-drops the tier details — a detail the GM had promoted takes the line its ⤴
+threat, faction or place page and drops the tier details — a detail the GM had promoted takes the line its ⤴
 Promote appended with it (the entry keeps `promotedText` beside its
 `narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
 of the record's notes (issue #338 D7); a Promote never promotes an X-carded
 narration's detail, and one whose Notes write the X-Card overtook takes its
 own line back off the tab (issue #342 Z44) — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. Last, the summary End a Session
-wrote on the session's Session Log page (`retractSessionLogSummary`): its
-"Story so far" goes when the pause dropped the rolling summary it was
-written from, and "Lore this session" loses the titles whose lore the undo
-or the propagation retracted — an X-Card played after End left the page
-telling the removed beat (issue #345 AA27); the story is rebuilt from the
-summary the next mint regenerates without the beat (`restoreSessionLogStory`
-at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
-SESSION-LOG-STORY-NOT-REBUILT). A capture still running when the
+`propagateRetraction` never reached them. First of all, the finish puts the
+removal on the session record (`recordNarrationsRemoved`, issue #382 —
+docs/flows/session-record-flow.md), awaited: the removed narration's prose
+and what it established are blanked in the stored record (decision D3), and
+every view of the record — the Session Log page among them — reads without
+them. The session's Session Log page is the record's view: its "Session
+summary" is the summary view, stale with the removal and rendered again
+without it (issue #345 AA27). A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED
 `xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
@@ -482,11 +665,13 @@ canonical stance, `recordStance` before → after) is put back too, where the
 record still holds what the narration set (known-issues
 XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
-`propagateRetraction`. Readers: the ring and the rolling summary skip
-`xCarded` cards (`sessionNarratorCards`), the session recap keeps the move
-but quotes none of its prose, the audio hook shows no Play button and
+`propagateRetraction`. Readers: the ring skips
+`xCarded` cards (`sessionNarratorCards`); the session summary reads the
+record, where the removal applies (issue #382); the `!recap session` card,
+a view of the record too (issue #382 slice 5), keeps the move and shows no
+telling at all, the audio hook shows no Play button and
 stops the card's narration where it is playing or loading (XCARD-AUDIO-PLAYING), the
-CORRECTED block and the summary's leave-out list never name an X-Card
+CORRECTED block and the summary's STRUCK list never name an X-Card
 retraction (it still blocks re-assertion in the ledger),
 `mergeSceneLedgers` strips an X-carded narration's entries from a stale
 working copy (its frame yields to the store's), and a relayed sidecar of an
@@ -513,12 +698,11 @@ Z46) — the clock's newest live trigger vignette of the session, found by the
 rewind the world refused (`retryUpgradeStep`: the step keeps the upgrade's
 kind and each vow copy's vow id; its vignette stayed live beside a clock no
 longer full, UPGRADE-RETRY-REWIND-NO-SUPERSEDE); `sessionNarratorCards`
-leaves both out of the ring, the rolling summary's source and the recap. A
-rolling summary already made from either is dropped first, while the card
-is still in memory — the X-Card's covered-index rule, text emptied and a
-regen due (`narrator.js` `dropSummaryOfSupersededCards`): one card left the
-source and the re-narration joined it, so the count the summary is debounced
-on did not move, and STORY SO FAR told the replaced outcome for up to
+leaves both out of the ring, and the record's supersede
+(`narration.removed` by `superseded`) leaves them out of the session summary
+and the `!recap session` card (the move once, at its upgraded outcome):
+a summary made from the replaced telling is stale and made again with the
+re-narration — STORY SO FAR told the replaced outcome for up to
 round(1.5 × Context Cards) narrations (issue #345 AA24). Their ledger entries are
 retracted by `narrationId` through the X-Card's `retractNarrations`, with
 `{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
@@ -586,10 +770,11 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   (`mergeFactionLandscape`, uncapped), every World Journal threat not
   resolved, all confirmed lore with the Locations journal's places and
   `campaignState.loreRecap`, the newest three earlier sessions' summaries
-  (`previousSessionSummary`, and each Session Log page's story — one with no
-  number, an unbegun session's, reads "An earlier session", not "Session 0",
-  and the session that closed last is the newest numbered or not, issue #362
-  AC71) with the open
+  (read from the session record — `summaryView.js` `earlierSessionStories`:
+  each begun session's summary view, or the story its page held, LAST
+  SESSION's with what a session nobody began played after it; one with no
+  number reads "An earlier session", not "Session 0", and the session that
+  closed last is the newest numbered or not, issue #362 AC71) with the open
   vows and tracks by name, and every active plan of the Secrets journal
   (`listSkeletons` → `formatSnapshotPlan`). The World Journal's per-section
   context settings and the rolling summary's setting leave their sections
@@ -676,8 +861,13 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
 Sections: [0] role/style per mode (the role in `this narration`, the voice
 rules in `standing`) · [0b]
 campaign recap (a session's first narration in any prose mode, from
-`campaignRecapCache` while it matches the chronicle — issue #286 C3, #301
-B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
+`campaignRecapCache` while it matches its source — issue #286 C3, #301
+B04, #382; only for a session with one before it — the record holds an
+earlier session with a beat, or one from before the record, or the session
+is numbered past the first: a campaign's first session is given no recap of
+its own Begin beats, known-issues RECAP-AT-THE-FIRST-BEGIN; the session-start
+recap — `sessionStart`: the session under way left out of its source, so the
+last session before it is the one given in full) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
 Battle Stations · **[2.6] THE VOW THIS SCENE SERVES** (issue #353 R3 — the
@@ -716,8 +906,9 @@ and `!lore` read one
 save: issue #322 V34; each truth's rolled sub-table detail after its title —
 who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
-SESSION (`previousSessionSummary`, kept at the mint — issue #286 C3), then the
-rolling session summary, each prefixed with a **ledger-wins caveat** — a
+SESSION (the session record's — `lifecycle.lastSessionToTell`, issue #382;
+issue #286 C3), then the session summary (STORY SO FAR — the current
+session's summary view), each prefixed with a **ledger-wins caveat** — a
 summary is texture, not a fact store · **[4d] active threats · [4e]
 faction landscape · [4f] established lore** (chosen per turn since issue
 #286 C2 — `selectLoreForContext`: up to 5 confirmed lore / recorded-location
@@ -744,23 +935,48 @@ shows its goal, a lost or forged bond and its last three `history` events —
 C5) · **[6.4] NAMES THE TABLE CHANGED** (issue #377 item 1: the changes on
 `campaignState.nameChanges` — a GM's rename of a card, a table's correction of a
 name by `!truth` strike + set or a Replace (`factContinuity/nameChanges.js`) —
-each told while it is this session's or while its old name, whole or the part
-the new one does not share, is in what the call sends: the cached blocks, the
-context, a recap's Chronicle (`extras.nameChangeTexts`). Every mode, the recap's
-included; per-beat. It says the old name is no alias, and that the change is
+each told while it is this session's or while its old name, whole, the part
+the new one does not share, or cut short to one word of it used on its own
+("the Wake" for the Ashen Wake), is in what the call sends: the cached blocks,
+the context, a recap's Chronicle (`extras.nameChangeTexts`) — never as part
+of a name as it stands now: "Tamsin Okoro" holds no "Tamsin" (known-issues
+NEW-NAME-WRITTEN-TWICE). Every mode, the
+recap's included; per-beat. Its line names each such short form the call's text
+uses and what to write for it — never a word the new name keeps or another
+name in play holds (known-issues CORRECTED-NAME-SHORT-FORM;
+`narrator-consistency-flow.md` §2). It says the old name is no alias, and that the change is
 the table's correction, not something that happened in the story (the long
 haul's second run made it a story of a crossed-out name — known-issues
 NAME-CHANGE-TOLD-AS-A-STORY). Nothing in the stores is rewritten — the note is what says
-which name is current; the session summary's source carries the same note,
-`formatNameChangesForSource`; and a call whose user message alone names an old
-name — a player's line, the recent scene, a bookend's EARLIER list — has it
-added at that message's end, `narrator.js callNarratorAPI` →
-`withNameChangesNoted`) · [6.5] active-scene ledger
-(SCENE FRAME — with the scene's question, kept for the scene and marked
-when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
-`maxLedgerTokens` sheds state only, line by line with location / vessel /
-condition last — frame/truths/corrections/ship are
-never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
+which name is current; the session summary's source is the session record's read, which writes
+every changed name as the new one (issue #382 slice 3); and every change a call's user message names —
+a player's line, the recent scene, a bookend's EARLIER list, the opening's
+last narration quoted word for word — that this note does not tell, or whose
+short form there its line does not name, is added at that message's end,
+`narrator.js callNarratorAPI` → `withNameChangesNoted` (known-issues
+NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
+there at all)) · [6.5] active-scene ledger — ACTIVE SCENE — WHAT BINDS,
+AND WHAT THE NARRATION DESCRIBED (overhaul 2 §5.5): THE SCENE (why it began
+and how many beats ago — its anchor; Place and Ship by the table's record;
+Where / Present / Now "as the narration has it"; Turns on — the scene's
+question, from the player's line, shown while it stands, marked when
+answered (issue #353 R2), let go when play has left it unanswered for
+`SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
+one from the player's words, or none if they set out to settle nothing
+(`askSceneQuestion`; only the move, paced, round and oracle follow-up modes —
+overhaul 2 §7.2: never in a vignette's, a clock vignette's, the oath scene's,
+the inciting incident's, an `@scene` answer's or the recap's prompt —
+known-issues NARRATOR-REFRAINS)) → WHAT BINDS (the player's, the dice's, the
+GM's and the premise's truths, each labelled) → **CORRECTED** → STANDING NOW
+(binding state) → WHAT THE NARRATION HAS DESCRIBED (its colour, while one of
+the scene's latest `COLOUR_BEATS` narrations said it) → **PLAY LET THESE
+GO** (the frame's `letGo`, at most four: hooks the narration posed that play
+did not take up — not to end on, restate or set again; REFRAIN-OUTLIVES-THE-QUESTION)
+→ COMMAND VEHICLE; `maxLedgerTokens` sheds the described colour first —
+state, then truths, the oldest first — then standing state, line by line
+with location / vessel / condition last (overhaul 2 D8) — THE SCENE, WHAT
+BINDS, CORRECTED, PLAY LET THESE GO and the command vehicle are never
+dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 `buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
 Secrets journal whose subject is in play — made in this scene, its entity
 matched or in the frame's cast, its name in the frame or the player's line,
@@ -775,7 +991,11 @@ closes an expedition's plan with its track, a vow's with its vow, and an
 ended scene's unanswered mysteries with their clocks — `closePlansAbout`,
 `retireSceneMysteries`, issue #362 D4); the plan of the vow the scene serves
 (`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
-(its `vowId` on `endingTrackIds`), Phase 4 —
+(its `vowId` on `endingTrackIds`), Phase 4 — for that plan the block adds
+THIS BEAT ENDS A VOW (`extras.endingTrackIds` → `formatUnrevealedBlock`'s
+`endingSubjectIds`): the standing rule "Never state one outright" is lifted
+for it, its truth is stated in the prose, and nothing the truth does not hold
+is claimed (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED; `vow-flow.md` §3) —
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
 the plans this narration's seeds ask it to decide: a price that revealed a
 new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
@@ -865,12 +1085,35 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). The interpreter is also told who is speaking (`buildContextSummary`'s
-speaker line, in the narrator's words), the roller's connections with each
-one's relationship track — a full one says Forge a Bond can be made (the long
-haul's second live run: told nothing of it, the interpreter read "…, to Forge a
-Bond", her track full, as Make a Connection; known-issues
-NAMED-MOVE-READ-AS-ANOTHER) and what the classifier made of the line
+playtest). Since overhaul 2 slice 5 (§8) the ring turns with the scene: the
+move, round, oracle follow-up and paced narrations read the open scene's
+cards (by their `sceneId` stamp — `ringSceneOf` / internal `sceneRingText`),
+the newest of their limit, and before them, while there is room, the last two
+told before the scene began, under `THE SCENE BEFORE — it ended when ‹what›.
+How it ended:` (`SCENE_BEFORE_ENTRIES`); the reader's recent scene is the
+scene's last three, with fewer the one before, headed. `@scene` and the
+Private Channel read the session's ring, as does every beat with the session
+summary off or no card of the session stamped. Both are told the speaker's **situation**, in one block built once
+(`moves/situation.js buildSituationBlock` — the classifier's CHARACTER
+section, `buildContextSummary` for the interpreter): the sheet's health,
+spirit and supply, each beside the impact its recovery move clears (wounded,
+shaken, unprepared — `readCharacterSnapshot`); the command vehicle's
+integrity and whether it is battered (`entities/ship.js getCommandVehicle`:
+the STARSHIP asset's track, the starship's native impact); each open vow
+with its rank, its progress in boxes and the connection it is sworn to
+(`readVows`, its `linkedConnectionName`); each live connection with its rank
+and relationship track — "full, no bond forged yet" or "bonded"
+(`readConnections`). The same words to both, so the two cannot be told
+different things of one sheet; a speaker with no character of their own is
+told as "no character sheet is known". Until the long haul's third live run
+neither was told a meter and the classifier was told no vow: Heal was offered
+and rolled at 5 health of 5, and a step toward a vow said in the fiction was
+narrated with nothing offered (known-issues HEAL-ROLLED-AT-FULL-HEALTH,
+VOW-STEP-SAID-IN-FICTION-NOT-READ). The interpreter is also told who is
+speaking (`buildContextSummary`'s speaker line, in the narrator's words), the
+other characters' open vows by name at a table of several, the open progress
+tracks, the roller's support vehicles and companions, and what the classifier
+made of the line
 (`readMove`'s `classifier` → a PACING READ hint — only for a MOVE decision the
 classifier made, `router.classifierReadingOf`: never for pacing switched off,
 a `!roll`, the classifier's fallback for a failed call or an unreadable reply,
@@ -890,12 +1133,20 @@ null ("Player") — never as the campaign's first PC (issue #342 Z50); so are
 their `@scene` question and their `!oracle` follow-up, whose captures carry no
 PC either (issue #345 AA30 — `interrogateScene` and `narrateOracleFollowup`
 took `getActiveCharacter`'s first-PC fallback).
-The rolling summary reads the same entries (`ringEntryText`), so what a
-player wrote reaches it too. Both read the session's cards through
+The session summary reads the session record (issue #382 slice 3 —
+`summaryView.js` `summarySource`): each beat's facts, the player's own words
+among them, and TOLD AS its narration; a beat that changed something for good
+— a vow sworn, fulfilled or forsaken, an expedition finished, a fight decided —
+is marked LASTING (read.js, `chronicleKeeps.lastingChangeOf`). Its prompt says
+every LASTING beat is told and nothing found only in TOLD AS is an event: the
+prose of a vow's fulfilment said "the weight of the vow lifts off you", one passage of
+twenty-three, and that session's summary left the fulfilment out (the long
+haul's third live run, a76). Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card
-(`narrationFallback` — it keeps the flag family so the session recap still
-counts the move, but was fed back as story and counted as the session's first
-narration, cancelling the campaign recap; issue #321 U35) and a card the
+(`narrationFallback` — it keeps the flag family, kept so the session recap
+counted the move before that card read the session record, where the move is
+its roll's (issue #382 slice 5); it was fed back as story and counted as the
+session's first narration, cancelling the campaign recap; issue #321 U35) and a card the
 X-Card removed (`xCarded`, U07). Its regen runs after a narrator card posts, on
 the canonical GM (`registerRollingSummaryRefreshHook`, B7) — at a table whose
 GMs hold no Claude key, on the keyed client that wrote the card, which relays
@@ -903,6 +1154,148 @@ the summary to the canonical GM to store (`narrator.summary` →
 `applyRelayedSessionSummary`: this session's, covering more than the stored
 one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
 the cached text.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
+**What a typed line is read as** (decisions.md → "A player is never made to
+name a move"). Both readers run on Sonnet 5.5, thinking off (their own
+constants; `api-proxy.js` sends the model's form). The classifier's rules hold
+one block for what narration can never do — WHAT ONLY A MOVE CHANGES IS ALWAYS
+OFFERED: a line that sets about it is never plain NARRATIVE, at any dial, but
+at least NARRATIVE_WITH_MOVE_AVAILABLE with the move on the card's Roll. It
+names recovery (heal, resupply, repair, hearten, sojourn — issue #377 item 3),
+a step toward one of the speaker's open vows said in the fiction
+(reach_a_milestone — `vow-flow.md` §2 has the hops to the vow's track) and
+something done for one of the speaker's connections — a gift of value, a risk
+taken for them, a favour that costs time or standing, bringing them what they
+need (develop_your_relationship — `connection-flow.md` §2; small talk, news
+traded and plain questions stay narration). The
+interpreter's rules 7 and 10 say the same of a line it is handed. What the
+classifier reads the line against is the SITUATION above.
+
+The block's one exception is **a recovery move with nothing to recover**
+(known-issues HEAL-ROLLED-AT-FULL-HEALTH — a Heal offered, pressed and rolled
+at 5 health of 5, "0 health (now 5)" for 2 supply, twice in live play): heal
+with health full and not wounded, hearten with spirit full and not shaken,
+resupply with supply full and not unprepared, repair with the command
+vehicle's integrity full and it not battered are plain NARRATIVE with nothing
+offered, and the interpreter's rule 10 answers NO MOVE for them — each unless
+the line is plainly about something the meters do not show (care for an ally
+or a companion; one particular item; a support vehicle, a module, a companion
+or a device).
+
+**What the sheet settles, the move gate decides** (overhaul 4, "moves as
+contracts"). Every move has a row (`moves/contracts/table.js`
+`MOVE_CONTRACTS`: its trigger, its target, its preconditions —
+`moves/contracts/predicates.js`), and one gate (`moves/contracts/gate.js`
+`checkMove`) runs them over the situation read live
+(`moves/situation.js readMoveSituation`: the roller's sheet, the other PCs,
+the recorded people, the open tracks, the scene's site), where a move is
+offered and where it is made — the roll is the authority:
+- `router.decidePacing` asks it of the classifier's MOVE or offer: a move that
+  cannot be made — a recovery move with nothing to recover (`RECOVERABLE`,
+  `PARTY_HAS_SOMETHING_TO_RECOVER`), a social move spoken to a fellow player
+  character (`NOT_AT_A_PC`), a combat move with no fight (`OPEN_FIGHT`), a
+  connection's move with someone who is no connection of the speaker's
+  (`THEIR_CONNECTION`) — is NARRATIVE, or an offer of the move the refusal
+  names (Enter the Fray for a Strike with no fight; Make a Connection for a
+  Develop with a stranger); its reasoning says why (`[cannot be made: <code>
+  — <why>]`, in the Pacing Telemetry journal), and the decision carries the
+  refusal to the narration (`refused` → `narratePacedInput`'s `refusal`);
+- `movePipeline.readMove` asks it of the line's reading: a typed line whose
+  move cannot be made is narrated as a paced line, told why (`noMove.refused`
+  → `index.js narrateLineWithoutMove`), and nothing the gate refuses is offered
+  on that card; a forced move's or an asked-for roll's hard refusal is not
+  rolled (`refused` → the not-rolled notice, "No Strike — no fight is under
+  way. Nothing was rolled.", flag `cannotMake`), and a soft one goes to the
+  confirm dialog with the sheet's words (`interpretation.softRefusal`), whose
+  Accept rolls it at the GM's word;
+- `rollAndApply` asks it again before the dice (the forced moves, a card's
+  button, a Batch Mode round's entry — `driver.refusalFor` at resolution):
+  refused, nothing is rolled and the notice says why — a soft refusal of a
+  forced move with a **Roll anyway (GM)** button (`notRolled.rollAnyway` →
+  `cardActions.applyNotRolledRollAnyway`, the move re-posted with
+  `gateOverride`); rolled at the GM's word, the move card says "⚖ rolled at
+  the GM's word: …" and its narration is told so (`resolution.gateNote`).
+A hard refusal (nothing for the move to act on — no fight, no vow, no
+connection) is never overridden; a soft one (the sheet says the move would
+change nothing) is told on a typed line and rolled at a GM's word on a
+pressed one. Soft ones are not applied in a fight — there the dice decide —
+and the ones the sheet cannot see whole (Resupply's one particular item,
+Repair's device: `readerSettled`) only where no reader read the line as the
+move. An unknown is never a refusal: a meter or a list not read holds. Sojourn
+is held to the party as a whole, not one meter.
+
+**A cost chosen after its narration is told by the next beat** (overhaul 4,
+slice 5; D10 — CHOSEN-COST-NEVER-TOLD: two Endure Stress costs chosen after
+the roll's narration were never told). The pick stamps its choice card
+`pickedAfterNarration` when its result's narration card is on the table
+(`sufferCard.js`); the next narration that is a beat of play — a move's, a
+paced line's, a round's — carries TELL [chosen-since] for each such pick no
+narration has told (`obligations.choicesChosenSince`, any roller's, never
+its own result's), and once its card posts the canonical GM stamps the
+card `toldBy` (`markChosenCostsTold`) — told once; a refused stamp is told
+again, a player's own key cannot stamp, an X-Carded card is not carried.
+
+**The narration is checked against its block before it posts** (overhaul 4,
+slice 4 — `moves/contracts/checks.js`, D9): `narrateKeepingObligations`
+wraps every beat's narrator call — the move's (`narrateResolution` — so a
+held result's and an upgrade's re-narration too), the paced line's
+(`narratePacedInput`), the round's (`narrateRound` — every entry's block and
+the round's own, `roundObligationsFor`) and the oracle follow-up's
+(`narrateOracleFollowup` — its answer's TELL / NOT SO [oracle],
+`oracleObligationsFor`), each rate-limit retry too. For the scripted
+playthroughs' strict replay (a call's kind is the two named module frames
+above apiPost) the harness looks through the check and a local `ask`
+(`lib/claude.mjs` `PASS_THROUGH`), so the narration and its re-ask keep the
+narrator function's kind (`callNarratorAPI>narrateRound`, …) and the judge is
+`judgeNarration>` the narration it judges; the round's and the oracle's call
+is a named `ask` (an inline arrow takes a name V8 infers from the statement
+around it). `first-session.json` / `batch-round.json` declare each narrating
+step's own kind optional, for a re-ask. A re-ask that throws keeps the first
+draft.
+The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
+block is applied) and held to its lines by class: **certain** —
+[apparatus] (an outcome's name, a sheet number, a two-word move's name
+outside the closing offer line) and [match] (the word); **floor** — [vow]
+(a word of the vow's name, or what is still not known) and [chosen]
+(logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
+in the prose ([premise] by its refusal's code — "starts on the cuts" under
+a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
+[oracle], [state]) sends one Haiku call (`api-proxy.js`, label
+`obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
+consistency check on). A failure is asked once more — the same prompt plus
+YOUR DRAFT — NOT POSTED and the line it broke (labels
+`narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
+`narrateOracleFollowup:reask`); the second reply is
+held to the certain checks only and posted whatever it says. At most one
+judge call and one re-ask a narration. Each verdict is a row on the
+Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
+`paced` / `round` / `oracle`). The lines the check does not hold a narration
+to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
+(`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
+`obligation`).
+
+**The refusal is told** — in the user message, never the system prompt
+(`rules/narrator-memory.md` invariant 7b): the paced message ends with a
+**WHAT THIS NARRATION MUST TELL, AND MUST NOT** block
+(`moves/contracts/obligations.js` `obligationsFor` /
+`formatObligationsBlock`) before its instruction — NOT SO `[premise]`: what
+the line took for granted is not so, with the refusal's reason ("A fight under
+way is not so — no fight is under way. The line sets about it: narrate the
+attempt meeting the facts, never the premise as real: never a blow struck, a
+shot fired or a foe engaged in a fight."); NOT YET `[offer]`: the move offered
+is only offered (SUGGESTED MOVE's "It has not been made…" half, moved here);
+NOT SO `[sheet]`: no sheet changes in narration (the instruction's "Nor does
+anything…" sentence, moved here — for a refused line, "No move was rolled for
+this line, and none will be"); NOT SO `[apparatus]`: no dice, no sheet number,
+no outcome's or move's name. A move rolled at the GM's word carries TELL
+`[overridden]` in its move message; a
+round's entry refused at the roll carries its `[premise]` block in the
+round's message (`####`, under the entry). The paced card says it too
+(`<p class="sf-cannot-make">`, flag `cannotMake` — the runner's check reads
+it), and a round's window shows the refused entry's note
+(`roundView.cannotMake`).
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
@@ -921,53 +1314,25 @@ narrated under the closing session's id, as End a Session does, which a
 session over by idleness never got (`keepEveryHeldResult`; the mint's working
 copy then takes the store's value for each field the keep changed — issue
 #364 HELD-RESULT-IDLE-SESSION) —
-the closing session's summary is brought up to date
-(`finalizeSessionSummary`, no call when it covers every card) — an ended
-one's too: End a Session refreshes its own, but that refresh can fail or
-never land, a Batch Mode round resolving at End or a move narrated while End
-runs posts into the ended session after it (issue #345 AA21), and an X-Card
-on End's closing vignette empties a summary that covered the beat it removed
-(issue #342 Z41); End's own closing vignette, posted after its refresh, is
-the one card that check leaves out (its scene is closed already: End a
-Session ends it once the vignette's card is posted — `closing_vignette`,
-issue #374 A1) — a scene left open closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary` (a finalise that
-could not cover the session — no key on that client yet, a failed call —
-marks it `unsummarisedSession`, and the canonical GM summarises its cards into
-`previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
-after each narrator card, at the load and when its key is set — issue #347
-AB15; a narration posted into the session LAST SESSION names after the mint —
-a Batch Mode round narrated late, filed under its own session — marks it
-again, `bringLastSessionUpToDate`, so the catch-up makes LAST SESSION's own
-text again from that session's cards, one summary call per late card, what a
-mint folded onto it from a session nobody began kept
-(`lifecycle.js` `lastSessionTextParts`), and that session's Session Log
-"Story so far" — the snapshot's memory of it once a later mint moves LAST
-SESSION on — is rewritten with the same text when it was written before the
-newest card the summary was made from (`worldJournal.js`
-`restoreSessionLogStory`'s `through` against the page's `writtenAt`, stamped
-so the same cards never rewrite it twice; End a Session's closing vignette
-left out — issue #364 LATE-ROUND-NOT-IN-SESSION-LOG-STORY: End's story stood,
-without the round; the mint rebuilds the closing session's story the same way
-from the summary it finalises, for a round narrated after End but before the
-mint — `sessionStoryThrough`, issue #364 LATE-ROUND-SESSION-LOG-BEFORE-MINT);
-an X-Card on such a narration drops
-that text and marks the session the same way, `dropLastSessionTelling`; when
-the mint carried no summary for the card's session, LAST SESSION is left as
-it is — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION — unless that session's
-Batch Mode round was still to be narrated at the mint (`sessionRoundUnnarrated`):
-a begun session with no summary of its own is then recorded as LAST SESSION's
-session with no text, the record LAST SESSION told kept behind it
-(`displaced`) and still what the narrator is told until the session's own
-summary is written (`lastSessionToTell`), and it is marked owed — the
-catch-up leaves the mark while nothing of it is narrated and the round still
-waits, and once nothing more can come (the round closed unnarrated, or the
-X-Card took back all of it) the displaced record is LAST SESSION again, at
-the catch-up or before the next mint (`lastSessionSettled`) —
-LATE-ROUND-NO-LAST-SESSION-RECORD; a later mint keeps the
-mark while LAST SESSION goes on naming that session, so a summary an X-Card
-emptied or a keyless GM closed out short is still made once the next session
-is minted — LAST-SESSION-OWED-LOST-AT-MINT) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
+the closing session's summary is brought up to date from its record (issue
+#382 slice 3: `getRollingSessionSummary`, forced, for a begun session; no call
+when it tells every beat — End's closing vignette is a cutaway, no beat): End
+a Session makes its own, but that call can fail, and a Batch Mode round
+resolving at End or a move narrated while End runs lands in the ended session
+after it (issue #345 AA21) — a scene left open closes under its own id, and
+`mintSession` carries nothing of a summary. LAST SESSION is read from the
+session record (`lifecycle.js` `lastSessionToTell` → `summaryView.js`
+`lastSessionStory`): the newest earlier begun session's summary view while it
+stands — a correction since (an X-Card after End, a strike, a changed name)
+makes it stale: not told until made again (issue #342 Z41, #345 AA57) — else
+the story its page held before slice 3, followed, as facts, by what was
+played in any session nobody began since (issue #331 X65). A summary owed — a
+session closed on a browser with no key, a call that failed, a round narrated
+after its session closed (issue #347 AB15, #364 LATE-ROUND-*) — is not a mark:
+the record says it is owed (`summariesOwed`), and the keyed canonical GM makes
+it again after each narrator card, at the load and when its key is set
+(`refreshStaleSummaries`); the Session Log page's "Session summary" is that
+view, re-rendered when it is stored — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65), a LAST
@@ -995,31 +1360,78 @@ the stored value, so a refused save leaves the GM's cache unbegun and a retry
 starts the session (issue #309 N09) — and the table is told: the GM posts "The
 session was not started … No momentum was applied … Try Begin a Session
 again" where the Begin card is (issue #329 X13). End a Session's effects (scene close,
-summary, Session Log, the focus momentum, the closing vignette) run once per
+summary, the focus momentum, the closing vignette) run once per
 session id too: `applyEndSession` runs one End at a time on the canonical GM,
 and an End on a session already ended only replaces the focus for next
 session and posts a note — its momentum is paid for the first focus noted,
 once (issue #309 N08). What carries over to the new session's prompts: LAST SESSION ([4c], every
 prose mode), the campaign recap ([0b], the session's first narration — no
-narrator card of the session yet, a reflection published from the Private
+narrator card of the session yet, and a session before it (`recapSource`'s
+`before`, or a session number past the first), a reflection published from the Private
 Channel aside: it is canon, not a narration, and published first it took the
 narration's recap (issue #345 AA32) — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
 LAST KNOWN, established lore and the campaign premise. The recap cache stores
-the chronicle it was made from (`chronicleLength` + `chronicleHash`, over
-each entry's text, timestamp and session number — `campaignRecapCacheKey`);
-`getCampaignRecap` and the session-opening read use it only while that still
-matches, so a corrected entry is never recapped in its old form, and with no
-key to regenerate there is no recap rather than a stale one (issue #301 B04 —
-the check was the entry count alone, and the session-opening read had none).
-With no Chronicle entry there is no recap at all: what the Chronicle keeps is
-the scribe's rating against the floor, and — whatever the rating — a resolved
-move that changed something lasting (`chronicleKeeps.js`, issue #374 A5; a
-live session of four rolls had kept none and opened the next with no recap).
+the hash of the source it was made from (`sourceHash` — `campaignRecapCacheKey`,
+issue #382; it was the Chronicle's text, issue #301 B04); `getCampaignRecap`
+and the session-opening read use it only while that still matches, so a
+correction anywhere in the record, or a change to where things stand, makes it
+again, and with no key to regenerate there is no recap rather than a stale
+one. With nothing to retell — no beat on the record, no player's note, no
+session from before the record — there is no recap at all.
+
+**What a recap is told** (known-issues RECAP-STATES-WHAT-DID-NOT-HAPPEN — the
+long haul's third live run's four recaps held fourteen sentences the story
+does not support; issue #382 slice 2 — docs/flows/session-record-flow.md). Its
+source is the session record (`record/recapView.js`, read through
+`readRecord` with the table's corrections), in the user message
+(`buildCampaignRecapUserMessage`): THE RECORD — each session's turning points
+(its lasting beats: a move's lasting change, `chronicleKeeps.lastingChangeOf`,
+or what play did — a vow sworn, fulfilled or forsaken, a bond forged, an
+arrival…) and the latest session in full, each beat a line with an id: who
+acted and the words their player wrote, the move and its outcome, what changed
+on a sheet, what play did, what was established and stands, and what the table
+struck. Facts only — no narration (decision D4). Which session is the latest
+depends on who asks: End a Session's, `!recap`'s and its Refresh's recap tell
+the session under way in full; the recap a session's start is told — the
+session's first narration (`sessionStartRecap`) and the world load's "Previously
+On" with its cache refresh (`getCampaignRecap(…, { sessionStart: true })`) —
+leaves the session under way out, so the session just played is the one in
+full. Its own first beats (Begin's vow, a clock, the spotlight's momentum)
+were "the latest session", and the session just played was cut to its
+turning points: its lines of play, a sister's compass or a promise made at
+the dock among them, reached no session's opening. End's recap, made while
+the session it ends is under way, is the same source, so its cache opens the
+next session when nothing else has changed. Then WHERE THINGS STAND, read
+live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
+the vows and their progress, the connections, the open tracks, the current
+place, the open scene's state and its question, answered or not); THE PLAYERS'
+OWN NOTES (their Chronicle entries — written, edited or pinned by a player);
+and EARLIER SESSIONS, a session from before the record as its Session Log story
+and Chronicle entries had it, labelled. The role says a recap says only what
+its sources say: nothing inferred, nothing filled in between two lines (a beat
+may be missing because the table took it out), what a player wrote is the
+character's claim, whose things are whose, how a thing stands is WHERE THINGS
+STAND's word, one name for everyone — and what happened is told, never the
+dice or the numbers: "strong hit", "weak hit", "miss" and "match" never as
+such, no number from a sheet or a track, a rank as how hard a vow, a tie or a
+fight is, never a word for someone (`RECAP_SOURCES_RULE`, the move
+narration's outcome-word rule worded for a recap; its user message ends on
+it — known-issues RECAP-TELLS-THE-DICE: 13 of the fourth live run's 64 recap
+sentences named an outcome; the record's lines keep theirs, which the
+sentences cite). The reply is cited sentences (decision
+D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
+no sentence cites sends it back once, a reply that is not the JSON is asked
+for once more before the recap that stood stays, and the text kept has every
+changed name written as the new one (`recapText`). Nothing of the open scene
+is in the recap's system prompt — no binding ACTIVE SCENE block (issue #374
+A1), and no section built from the session summary (the WHERE THINGS STAND NOW
+section, `formatStandsNowBlock` / `recapSummaryFor`, is retired).
 
 **Ledger scope** ([6.5]; a meta mode — the campaign recap — gets the ship's
-position line alone, never the frame, truths, corrections or state: it
-retells the Chronicle, whatever scene is open — issue #374 A1): scene
+position line alone of this block, never the frame, truths, corrections or
+state as binding: it retells the Chronicle, whatever scene is open — issue
+#374 A1; what it is told of the scene is [6.5m], above): scene
 subjects and free-text subjects (unrecorded
 figures and places — the ledger holds only this scene) are always in scope
 (B4: they used to need their exact phrase in the player text or the frame);
@@ -1059,6 +1471,12 @@ reads, present and absent. **A section added to the prompt, or a new mode,
 gets a check there.**
 
 ## 2. Write-back side — how output becomes memory
+
+What happened at the table — lines, moves, sheet changes, narrations, truths
+set and struck, names changed, removals — is also kept as one record a
+session on the session's Session Log page, read with the table's corrections
+(issue #382): `docs/flows/session-record-flow.md`. The Session Log page is its
+view; the summaries below do not read it yet.
 
 Prose + fenced JSON sidecar → `extractSidecar`
 (`src/factContinuity/sidecarParser.js`: the sidecar's fence is ```` ```json ````,
@@ -1100,7 +1518,17 @@ with its id, and still marks the step it was made to play
 shown by id, turns a posed question into a mystery whose answer it rolls,
 and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
-for its decision changes nothing, issue #362 AC16), which becomes a ledger truth of the narration's own
+for its decision changes nothing, issue #362 AC16 — and only when the prose
+told it: `secrets.withoutUntoldTruths`, run in `applyNarratorSidecar` on the
+narration's own reveals before the ledger and the plans read them, takes
+"truth" off a reveal whose prose has none of the truth's own words
+(`skeletons.proseTellsTruth`, the plan's subject and question left out; the
+reveal's clues, step and ending stand, and the GM's console names the plan).
+A fulfilment that said "both are named now" recorded its vow's truth as
+revealed, and the truth became a binding scene fact and confirmed lore with
+none of it told — known-issues VOW-FULFILLED-WITH-NOBODY-NAMED. A floor, not
+a judgement: whether a truth is stated is asked of the narrator in UNREVEALED;
+a step the code forced is not checked), which becomes a ledger truth of the narration's own
 (`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
 correction or decision of the same id is laid on first, so a truth changed or
 decided and revealed in one beat is the one the ledger and Lore both state,
@@ -1246,8 +1674,35 @@ through in its own shape — `entityId` is the host document id; entity state
 keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
 the active sector's, as `!at` resolves it: the older sector's "Derelict
 Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
-`position` stateChanges routed to the §20 ship record, `applySceneFrame`
-full-replacement snapshot — each truth, state value and the frame stamped
+`position` stateChanges routed to the §20 ship record — a beat of play's only
+(overhaul 2 §6.3: a move's, a paced line's, a round's, an oracle follow-up's,
+and the inciting incident's starting position; a bookend's, a clock
+vignette's and the oath scene's are dropped and logged) — `applySceneFrame`
+full-replacement snapshot — a session vignette's with its question taken off
+(`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
+play — it sets no question and changes none); every beat's frame is first
+read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
+`ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
+line, a round's lines, the oracle's typed question — and `ctx.mode`): a
+question the frame does not already hold stands only when the mode may set
+one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
+and the command vehicle's names are no evidence — `namesNoEvidence`) and it
+is no let-go question again (`playersQuestion`); a Now line that carries a
+let-go question is stored empty (`touchesLetGo`). A beat of play whose frame
+names exactly one recorded place that is not the current location, and whose
+player words name it too, walks the characters there: the current location
+moves in the frame's persist (`persistSceneLedgerFields`' `onto`, while the
+store is on the scene it was read in) and on the caller's copy, the arrival is
+recorded (`place.arrived`, `how: "line"`), and the next beat turns the scene
+(`sceneLifecycle.js placeWalkedTo` — overhaul 2 §6.4; the ship stays, D17).
+Every beat is then counted
+against the question the frame keeps (`countSceneQuestionBeat` →
+`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
+onto the frame's code-kept `letGo` list — its text and telling stems — and
+the frame's Now line with it — known-issues NARRATOR-REFRAINS: an opening
+vignette's hook was its session's question in 22 prompts;
+REFRAIN-OUTLIVES-THE-QUESTION: a released question was set again in other
+words four times in one session) — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the
 X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
@@ -1268,6 +1723,61 @@ stands only as the canonical GM would force it for that cause
 (`standingForcedReveals` — the clock still full, its plan's next step; the
 scene's complication step), so a co-GM's vignette still paces its clock.
 
+**A session set-piece's account of its material** (issue #381): `builtFrom`,
+the one key the `session_vignette` mode adds to the fact block
+(`sidecarModeAddendum`, in the cached mode block — the material itself is
+per call, in the user message). `[{ n, words, second }]`: for each numbered
+MATERIAL result, the words of the prose that are it, and whether the second
+result was taken — normalised by `sidecarParser.normaliseBuiltFrom` (garbage
+is no account; twelve entries at most), and applied by
+`applyNarratorSidecar` with the scene's seeds in `ctx.seeds`
+(`sceneSeeds.markSeedsUsed`): each seed is marked `used` with its words when
+the prose holds them, `false` (with what was `claimed`) when it does not, and
+left `null` when no fact block was read. Nothing is retried on it; the card
+keeps the marked seeds in its `builtFrom` flag — the one store of the
+scene's rolls, which "Rolled for this scene" is rendered from at every
+render (`renderSceneRolls`, the chat render hook, every client) — and shows
+a seed the narration did not account for as "not used". The rolls never
+enter `campaignState.recentOracles`: that ring tells every later narration
+to build on what it holds, which is how one scene's prop becomes the
+session's refrain.
+
+**An `@scene` answer is not written back** (known-issues
+SCENE-ANSWER-NOT-A-CAMERA; `narrator.js interrogateScene` → `sceneAnswerText`).
+The long haul's third live run asked sixteen questions through `@scene`: each
+answer was right, each added scenery that invented (the mode's system text
+said "do not invent", its user message asked for "2–3 sentences of
+atmospheric description", and its permission block for sensory detail), and
+each was then applied to the scene's record — the frame's situation rewritten,
+the scenery filed as lore and a draft location. Now:
+
+- **What it is asked.** Its role (`ROLE_DESCRIPTIONS.scene_interrogation`) is
+  an answer, not narration: the fact asked for, from what the prompt holds —
+  "the story has not established it" when the prompt does not hold it — with
+  no scenery and nothing happening. It has no latitude block
+  (`DEFAULT_PERMISSION_CLASS_BY_MODE.scene_interrogation` is null), and its
+  user message (`buildSceneUserMessage`) asks for at most Scene Response
+  Length plain sentences (`sceneResponseLength`, default 2 — "one, if one
+  answers it"). Its context closes on ANSWER NOW — "write no JSON block" — in
+  RESPOND NOW's place; the standing block, the response format in it, is
+  every mode's. UNREVEALED is shown without the lines that ask for a record,
+  and nothing is put under DECIDE NOW.
+- **What is recorded: nothing.** `sceneAnswerText` takes any fact block off
+  the reply and drops it — no frame, truth, state or plan, applied or relayed
+  — and no capture runs (no detection, no tier pass). There was never a
+  Chronicle entry. It still starts a scene when none is open, and is still
+  read against the ledger (the consistency check: it writes no fact).
+- **What it still feeds, deliberately** — the A1 decision kept: its card
+  carries the narrator flag family, so the **recent-narration ring** holds
+  the question and what was said in reply (`PLAYER — Kira asked: "…"`), and
+  the session summary's source lists it under QUESTIONS (the record's
+  `question`, issue #382); a later beat must not contradict an answer
+  the table has just read. It is **no narration** where one is meant: the
+  session's first-narration campaign recap (`sessionStartRecap` — a question
+  asked first took the first beat's recap) and the X-Card's redirect
+  (`registerXCardRedirectHook` — an answer steers nothing away, so it does
+  not use the redirect up); it already counted for no beat shape.
+
 **Post-narration capture** (the combined detection pass — World Journal lore,
 threats, new-entity drafts — and the generative-tier pass): discovery-class
 moves run detection (make_a_connection auto-creates on a hit); interaction-
@@ -1279,9 +1789,9 @@ entities they name (`scheduleNarrationCapture`; a clock vignette's from
 `narrateClockAdvancement` itself, so all three post sites, and only once its
 "still triggered" check stands — issue #345 AA33: it ran none; its detection —
 it is written at interaction latitude, issue #322 V23 —
-CLOCK-VIGNETTE-NO-DETECTION). `@scene` answers run detection and the
-tier pass too, on a GM's client only (`scheduleSceneAnswerCapture`, issue
-#321 U36). These captures run on the GM whose client narrated them — not
+CLOCK-VIGNETTE-NO-DETECTION). An `@scene` answer runs neither: it is not
+mined (its `scheduleSceneAnswerCapture` is retired — known-issues
+SCENE-ANSWER-NOT-A-CAMERA, below). These captures run on the GM whose client narrated them — not
 whoever is canonical when the reply lands, which dropped them when a lower-id
 keyed GM joined meanwhile (AA34's gate, CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). A Batch Mode round runs one detection, at the widest class among
 the entries it captures, and a tier pass whatever that class is, over what
@@ -1293,7 +1803,31 @@ the GM's draft card — only make_a_connection auto-creates; the card carries
 the PC the narration was for (`actorId`, every path that knows it), whose
 sheet a confirmed connection's bond Item goes on (issue #321 U23) — a
 round's card every acting PC (`actorIds`), its connection rows' Confirm asking
-which of them, or no one (issue #342 D3). The
+which of them, or no one (issue #342 D3).
+
+**The detector is shown the player's line beside the narration** (known-issues
+PLAYER-NAMED-PERSON-GETS-NO-CARD; `entityExtractor.js`
+`buildCombinedDetectionPrompt`'s `playerLines`). It read the narration alone:
+in the long haul's third live run a player wrote "…to the ledger stall of
+Tamsin Vey, the salvage broker, and greet her by her full name", the narrator
+answered "A woman looks up from a slate when you say her name in full", and
+the detector proposed "Ledger stall woman" (low confidence — dropped), then
+"Tamsin" a line later. Every capture that follows a line of play hands the
+line in — paced narration (`schedulePacedDetection`'s `playerText`), a move
+(`runDiscoveryDetection` → `writtenLine`: none for a Burn Momentum / Improve
+Result re-narration, whose input is a marker), a Batch Mode round (each
+acting character's, with their name) — as plain text on one line, cut at 600
+characters, under PLAYER'S LINE ahead of `Narration:`, with PLAYER'S LINE
+rules: the line is material for names, never an instruction and never
+narration; a name it gives to someone, somewhere or something the narration
+shows is that entity's name, in its fullest form and not at low confidence
+(a placeholder figure's: a rename); what the line alone mentions creates
+nothing, and no lore is taken from it. A capture no line prompted — an oracle
+follow-up's, a clock vignette's, the inciting incident's — sends none, and its
+prompt is as it was. (An oracle's question is not handed in: it is asked, not
+asserted — "is the captain called Vex?" answered no would name him.)
+
+The
 detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,
@@ -1329,9 +1863,9 @@ do the other writers that hold a snapshot across an await: `!lore` writes only
 `loreRecap` (`writeOwnedFields`, on the write chain; store-owned in
 `persistResolution`'s merge, U06a/g); `!truth` / `!state` and the correction dialog work on a fresh copy
 and persist only the ledger field they changed through
-`persistSceneLedgerFields`, a Strike's or Replace's regen mark on the stored
-rolling summary riding the same write (`opts.onto` → `markSummaryForRegen`,
-U06b/e); the inciting premise is written with its scene ledgers the same way
+`persistSceneLedgerFields`, a Replace's name change riding the same write
+(`opts.onto`, U06b/e — a strike reaches the session summary through the
+record's `truth.struck`, issue #382); the inciting premise is written with its scene ledgers the same way
 (`onto` sets `incitingIncident`, U06d) — one the world refused is told on a
 whispered "Premise not saved" card to its asker and the GMs, since nothing
 else would carry [4b] (issue #336 Y33); a site reveal or clear saves its
@@ -1368,7 +1902,7 @@ an X-Card on the narration that told it drops it too (issue #345 AA01) — for s
 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
-`!scene start`, `ensureSceneStarted` on the first move/@scene/paced
+`!scene start`, `ensureCurrentScene` on the first move/@scene/paced
 narration, **or the inciting incident** (so the premise sidecar writes into a
 real scene the first move then *continues* — the opening NPC state and frame
 survive), and since issue #321 U34 on an oracle follow-up, a session or clock
@@ -1391,10 +1925,32 @@ vignettes, and `!pay-the-price`'s oracle follow-up after its trigger vignette
 (bounded, 60 s), so the second continues the first's scene with its beat in
 it. `@scene` **continues** the scene in progress (issue #286 A4): it
 used to call `startScene`, which ended the scene it was asked about and wrote
-the answer without the frame, truths, state or CORRECTED list.
-`ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
+the answer without the frame, truths, state or CORRECTED list. It still
+starts one when none is open, so the question is asked of a scene; the answer
+adds nothing to it.
+`ensureCurrentScene` starts a scene on the **canonical GM only** — a scene
 boundary is a world write, so a keyed player's client narrating `@scene` /
-`!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
+`!incite` with no keyed GM online leaves it to the GM (debug-logged).
+**Scenes turn** (overhaul 2 slice 2, D1 — reverses issue #353 R2's "scenes
+stay manual"): every start writes the scene's anchor (`sceneBegan`: `cause`,
+`what`, the place, the ship's line and place key, the open combat /
+expedition / scene-challenge tracks — `sceneTurns.js sceneAnchorOf`, from the
+stores as `sceneStoresNow` reads them), and at a beat of play
+(`ensureCurrentScene`'s move, paced, round and oracle follow-up sites)
+`turnSceneIfDue` turns the scene when the stores moved off it
+(`sceneTurnDue`: place → ship → fight → expedition → challenge → time;
+begun before the narration, ended after the beat whose `endingTrackIds`
+name the track) — `endScene({ turn: true })`, which keeps the unanswered
+mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`
+override (D16, amending #362 D4), then a start with the cause in words and
+the frame's cast, let-go questions and the spotlight's last actor carried
+(`carriedFrame`); the summary is made (fire-and-forget), no snapshot taken.
+A copy on another scene than the store's turns nothing. The scene's opening
+beat is told so in overhaul 4's obligations block of its user message — TELL
+[scene] (`sceneTurns.js sceneObligations` → `sceneOpeningOf`: the anchor's
+`what`, while no narration has written in the scene), beside NOT SO [letgo]
+for each question play let go — rendered by `moves/contracts/obligations.js
+formatObligationsBlock`, which this slice does not edit. `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands); scene-kind truths → the tier of the
@@ -1436,12 +1992,13 @@ still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
 passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
-(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
+(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`,
+`sceneBegan`)
 onto the latest stored campaignState (`persistCampaignStateFields`;
 `endScene`'s own `persistEndedScene`, on the same write chain; a scene the
 store holds that is not the one ended — started on another client during its
 awaits — is left open, its fields and pacing standing: END-SCENE-NEXT-SCENE) — when
-`ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
+`ensureCurrentScene` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
 X-Card retractions, Replace originals and live narration truths for the session (B6;
 `sessionRetractions` — below), added at that write's turn onto the session's
@@ -1490,6 +2047,20 @@ ring, and the closing scene's truths keep the closing session's number.
   (`!truth strike` says "already retracted"), and no correction made on a
   copy older than the X-Card relabels its retraction or files a replacement
   (issue #336 Y30).
+- **A truth of an earlier scene is corrected where the session keeps it**
+  (TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE — since scenes turn in code, a
+  scene's end clears its ledger, and `!truth list` said "No truths are
+  recorded in this scene" for a truth two scenes back): `!truth list` is
+  relayed to the canonical GM, which whispers the typist the active scene's
+  truths and then the session's earlier scenes' that bind and stand, by
+  scene, from the session record (`earlierScenes.js earlierSceneTruths`);
+  `!truth strike <id>` on one, and the correction dialog's Earlier this
+  session Strike, keep it with the session's strikes (`sessionRetractions` —
+  CORRECTED names it, a restatement is blocked, a set after it reads as the
+  name swap, `nameCorrectionOf`), record `truth.struck` against its own
+  recorded id (read.js drops it from Established and standing), and take its
+  copies back (`propagateRetraction`, below; a scene fact's on the place it
+  was filed on).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the
@@ -1513,11 +2084,11 @@ ring, and the closing scene's truths keep the closing session's number.
   lifting that one restores it, an X-Card retraction — the active scene's or
   an earlier scene's kept block — or an earlier scene's kept strike, issue
   #336 Y32), and the
-  rolling summary regenerates on the next refresh with a "RETRACTED BY THE
-  TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
-  `campaignState.sessionRetractions`, so CORRECTED and that list hold for the
-  rest of the session — the ring and the summary's source prose still state
-  the fact after the scene closes. Strikes are told apart by subject and
+  session summary that told it is stale by the record's `truth.struck`, and
+  is made again with it under "STRUCK BY THE TABLE — did not happen" (issue
+  #382). `endScene` keeps the scene's bare strikes on
+  `campaignState.sessionRetractions`, so CORRECTED holds for the rest of the
+  session — the ring's prose still states the fact after the scene closes. Strikes are told apart by subject and
   fact together, so two characters' identical struck facts are both kept
   (U39). A kept strike keeps its truth's id, subject key and who struck it —
   and, for a scene fact, the place it was asserted at (`place`, the truth's

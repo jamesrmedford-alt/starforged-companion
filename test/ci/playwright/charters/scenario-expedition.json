@@ -1,0 +1,220 @@
+{
+  "name": "scenario-expedition",
+  "flow": "an expedition: undertaken off the charted lanes, a waypoint looked over, finished",
+  "description": "A scenario of the suite (suites/scenarios.json): the long haul's expedition beat (b7a) on its own. The character leaves the charted lane after a clipped distress call (Undertake an Expedition), looks over what she finds (Explore a Waypoint, whose strong hit offers a mark or momentum) and ends the journey with the card's Finish (a scripted progress roll). The seed's sector has map data, so the place she sets out for becomes a place, and the finish docks her there.",
+  "caps": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play one short scene by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type, use exactly those words.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides.",
+    "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
+    "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line.",
+    "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
+    "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
+    "Mira has her background vow on her sheet, to find the lost colony ship Verity's Hope, which no beat touches. Wherever a card or a dropdown asks which vow, choose the one this scene is about, not that one.",
+    "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "If the narrator has not answered yet, wait rather than repeat yourself."
+  ],
+  "cast": {},
+  "facts": [],
+  "beats": [
+    {
+      "id": "e1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session",
+      "tell": "Type !begin-session. In the window that opens leave vignette unticked and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1
+      }
+    },
+    {
+      "id": "e2",
+      "title": "Undertake an Expedition; Explore a Waypoint; Finish the Expedition",
+      "needs": [
+        "e1"
+      ],
+      "tell": "A distress call is repeating from somewhere off the charted lanes — a hauler's, clipped short each time — and you mean to find where it comes from. Three things, in order. (1) In a line of play, take the Kobayashi IV off the charted lane and out into uncharted space along the call's bearing — a short run, to the source of the distress call. A roll should follow, and a card headed Expedition says a journey is begun and its progress marked. If the roll costs you, settle the card it gives you (choose one of its buttons); if it misses and no journey is begun, make the crossing again. (2) In another line of play, look over what you have come to out there: say how you go over the place, and what you are looking for. A roll should follow: if a card then offers \"Mark expedition progress\", press it; if it offers nothing to choose, there is nothing to press; if it costs you, settle its card. (3) Press \"🗺 Finish the Expedition\" on the newest Expedition card: you have reached the source of the call. The beat is done when the observer's note says the expedition is finished.",
+      "check": {
+        "type": "expedition",
+        "finished": true
+      },
+      "dice": {
+        "moves": [
+          "finish_an_expedition"
+        ],
+        "roll": "strong_hit",
+        "kind": "progress"
+      },
+      "playerTitle": "Follow a distress call off the charts, look over what you find, and come to the end of it",
+      "lastResort": "say that you undertake an expedition to the source of the distress call — or, once one is under way, that you explore the waypoint you have reached",
+      "wants": [
+        "undertake_an_expedition",
+        "explore_a_waypoint",
+        "finish_an_expedition"
+      ],
+      "n": 2,
+      "session": 1
+    },
+    {
+      "id": "e3",
+      "title": "Where the journey ended",
+      "needs": [
+        "e2"
+      ],
+      "tell": "@scene Where is the Kobayashi IV now? — type it exactly so. The narrator answers plainly.",
+      "check": {
+        "type": "sceneAnswered"
+      },
+      "playerTitle": "Ask where the ship is now",
+      "n": 3,
+      "session": 1
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      },
+      "vows": [
+        {
+          "name": "Find the lost colony ship Verity's Hope",
+          "rank": "epic"
+        }
+      ]
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes",
+      "mapData": {
+        "settlements": [],
+        "discoveries": []
+      }
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [
+    {
+      "moves": [
+        "undertake_an_expedition",
+        "explore_a_waypoint"
+      ],
+      "roll": "strong_hit"
+    }
+  ],
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "false"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I take the Kobayashi IV off the charted lane and follow the clipped distress call's bearing out into the dark, a short run to wherever it is coming from.",
+      "move": {
+        "id": "undertake_an_expedition",
+        "stat": "wits",
+        "target": "the source of the distress call"
+      }
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I bring her in slow and go over the place the call is coming from, looking for whoever sent it.",
+      "move": {
+        "id": "explore_a_waypoint",
+        "stat": "wits"
+      }
+    },
+    {
+      "beat": 2,
+      "action": "click",
+      "label": "Mark expedition progress"
+    },
+    {
+      "beat": 2,
+      "action": "click",
+      "label": "Finish the Expedition",
+      "move": {
+        "id": "finish_an_expedition",
+        "progress": true
+      }
+    },
+    {
+      "beat": 3,
+      "action": "say",
+      "text": "@scene Where is the Kobayashi IV now?"
+    }
+  ]
+}

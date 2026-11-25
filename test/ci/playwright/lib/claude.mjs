@@ -16,7 +16,8 @@
 //
 // Which call is which. The stack names the module function that made the call:
 // the two named frames above apiPost, e.g. `callNarratorAPI>narrateResolution`
-// or `callHaiku>defaultCallDetectionAPI`. That is the call's `kind`. The runner
+// or `callHaiku>defaultCallDetectionAPI`. That is the call's `kind` (a wrapper
+// that makes a call for its caller is looked through: `PASS_THROUGH`). The runner
 // tells the harness which scenario step is running (setStep), and each call is
 // filed under the step during which it started; a recording run stores that
 // step on every exchange. A request is answered, in order of preference, by
@@ -51,6 +52,13 @@
 // name (appendGenerativeTierUpdates).
 
 import { createHash } from "node:crypto";
+// The module's thinking-off form (src/narration/thinking.js), loaded only where
+// a call is sent to another model (readers.mjs, recording): the e2e container
+// mounts test/ci/playwright alone (at /pw), so a static import of src/ failed
+// there before any scenario ran ("Cannot find module '/src/narration/thinking.js'",
+// PR #387's first e2e run). The scripted playthroughs never swap a model.
+let thinkingModule = null;
+const loadThinkingOff = async () => (thinkingModule ??= import("../../../../src/narration/thinking.js")).then(m => m.thinkingOffFor);
 
 const ANTHROPIC_HOST = "api.anthropic.com";
 const SIDECAR_SECTION = "## RESPONSE FORMAT — MANDATORY SIDECAR";
@@ -229,11 +237,29 @@ function parseFrame(line) {
   return { name, file: url.split("?")[0].split("/").pop(), module: url.includes("/modules/starforged-companion/") };
 }
 
-/** The call's kind: the first two named module frames above apiPost. */
+// Wrappers that make a call on their caller's behalf, so the caller names the
+// call: the obligations check (overhaul 4, src/moves/contracts/checks.js) asks
+// the narrator for narrateResolution and narratePacedInput — and may judge the
+// reply or ask again. Its frame is looked through, and so is the arrow handed
+// to it — each call site hands it a local `ask`; an inline arrow V8 names by
+// its guess ("narrateKeepingObligations.apiKey.apiKey", looked through too):
+// the narration stays `callNarratorAPI>narrateResolution`, and the judge's call
+// is `judgeNarration>narrateResolution`. And `ask`, the local helper the
+// campaign recap and the session summary make their calls through — the
+// first ask and, when the reply is not a cited list or leaves out a LASTING
+// beat, the ask again (issue #382): they stay `callNarratorAPI>getCampaignRecap`
+// and `callNarratorAPI>getRollingSessionSummary`.
+const PASS_THROUGH = ["narrateKeepingObligations", "ask"];
+
+function passesThrough(name) {
+  return PASS_THROUGH.some(w => name === w || name.startsWith(`${w}.`));
+}
+
+/** The call's kind: the first two named module frames above apiPost, wrappers that pass a call through looked past. */
 export function callerKind(stack) {
   const frames = String(stack ?? "").split("\n").slice(1).map(parseFrame).filter(Boolean);
   const proxy  = frames.findIndex(f => f.file === "api-proxy.js");
-  const above  = (proxy >= 0 ? frames.slice(proxy + 1) : frames).filter(f => f.module && f.name);
+  const above  = (proxy >= 0 ? frames.slice(proxy + 1) : frames).filter(f => f.module && f.name && !passesThrough(f.name));
   return above.slice(0, 2).map(f => f.name).join(">") || "unknown";
 }
 
@@ -273,6 +299,31 @@ function stubText({ system, user }) {
   return /json/i.test(system) || /json/i.test(user) ? "{}" : STUB_PROSE;
 }
 
+/**
+ * A request body addressed to another model, or null when there is no model
+ * to put or the body is not JSON. Its `model` is replaced — and its
+ * thinking-off form with it: the module sends every body with the form of the
+ * model it names (src/api-proxy.js, src/narration/thinking.js), and the form
+ * is per model. Haiku 5.5's `{ type: "disabled" }` is a 400 on Sonnet 5.5,
+ * whose own `{ type: "between_tools" }` is a 400 on every other model. A body
+ * that carries the asked model's form is given the new model's (none, for a
+ * model that has none); a `thinking` the caller set otherwise is left as it is.
+ */
+function swapModel(body, model, thinkingOffFor) {
+  if (typeof model !== "string" || !model) return null;
+  let asked = null;
+  try { asked = JSON.parse(body); } catch { return null; }
+  if (!asked || typeof asked !== "object" || Array.isArray(asked)) return null;
+  const formOf = (id) => thinkingOffFor(id).thinking ?? null;
+  const next = { ...asked, model };
+  if (JSON.stringify(asked.thinking ?? null) === JSON.stringify(formOf(asked.model))) {
+    const form = formOf(model);
+    if (form) next.thinking = form;
+    else delete next.thinking;
+  }
+  return { model, body: JSON.stringify(next) };
+}
+
 function messageJson(text, model, n) {
   return JSON.stringify({
     id: `msg_playthrough_${n}`, type: "message", role: "assistant", model: model ?? "playthrough-stub",
@@ -285,9 +336,13 @@ function messageJson(text, model, n) {
 
 /**
  * @param {{ mode: "replay"|"record", recording?: object, apiKey?: string, strict?: boolean, log?: Function,
- *   gate?: { before: (call: object) => Promise<{ ok: boolean, id?: number, reason?: string }>|object, after: (id: number, result: object) => void } }} options
+ *   gate?: { before: (call: object) => Promise<{ ok: boolean, id?: number, reason?: string }>|object, after: (id: number, result: object) => void },
+ *   model?: (kind: string, liveModel: string|null) => string|null }} options — `model`: a run that compares
+ *   models (readers.mjs) names the model a call of `kind` is sent to in place of the one the page asked for,
+ *   or null to leave the call as it is; it applies to calls that are forwarded (record mode), whose body is
+ *   given the new model and that model's thinking-off form (swapModel)
  */
-export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log, gate = null }) {
+export function createClaudeHarness({ mode, recording = null, apiKey = null, strict = false, log = console.log, gate = null, model = null }) {
   if (mode === "record" && !apiKey) throw new Error("record mode needs ANTHROPIC_API_KEY");
   const exchanges = Array.isArray(recording?.exchanges) ? recording.exchanges : [];
   const used      = new Set();
@@ -336,6 +391,17 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
   }
 
   async function forward({ url, headers, body }, live, entry) {
+    // A run that compares models sends this call to another one: the body is
+    // rewritten, and the entry, the gate and the recording carry the model
+    // the call goes to — the one it is priced at. The entry keeps the model
+    // the page asked for beside it.
+    const swapped = typeof model === "function" ? swapModel(body, model(entry.kind, live.model), await loadThinkingOff()) : null;
+    if (swapped && swapped.model !== live.model) {
+      entry.modelAsked = live.model;
+      entry.model = swapped.model;
+      body = swapped.body;
+      live = { ...live, model: swapped.model };
+    }
     // A run with a spending cap (explore.mjs) passes a gate: it reserves the
     // call's worst cost before the request leaves, and is told what the call
     // used. A call it refuses is not sent — the page gets the neutral stub, so

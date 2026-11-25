@@ -31,17 +31,6 @@ describe("interpretMove() — a move already chosen (expectedMoveSlug)", () => {
     vi.clearAllMocks();
   });
 
-  it("tells the model the move is fixed and which stats it lists, with no mischief and no position steer", async () => {
-    replyJson({ moveId: "face_danger", statUsed: "shadow" });
-    await interpretMove(SNEAK, { ...OPTS, expectedMoveSlug: "face_danger", combatPosition: "bad_spot" });
-
-    const text = userMessage();
-    expect(text).toContain('MOVE ALREADY CHOSEN: the player chose Face Danger. Return moveId "face_danger"');
-    expect(text).toContain("Choose statUsed from edge, heart, iron, shadow, wits");
-    expect(text).not.toContain("INTERPRETATION NOTE");   // the chaotic mischief framing
-    expect(text).not.toContain("COMBAT POSITION");
-  });
-
   it("control: a reading for the chosen move, with a stat it lists, comes back as read", async () => {
     replyJson({ moveId: "face_danger", statUsed: "shadow" });
     const result = await interpretMove(SNEAK, { ...OPTS, expectedMoveSlug: "face_danger" });

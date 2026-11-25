@@ -66,11 +66,16 @@ import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMom
 import { consequenceChosen, laterMoveFollows, openRecordedUpgrades, closeRoundCard } from "../moves/resultUpgrade.js";
 import { keepHeldResultsOf, keepEveryHeldResult } from "../moves/heldResult.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
+import { readMoveSituation } from "../moves/situation.js";
+import { checkMove, refusalOf } from "../moves/contracts/gate.js";
+import { refusalNote } from "../moves/contracts/obligations.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { checkedTokenDragCourse } from "../sectors/sectorSceneHooks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
+import { recordEvent } from "../record/record.js";
+import { recordedSessionNumber } from "../record/summaryView.js";
 import {
   ROUND_PHASE,
   ENTRY_STATUS,
@@ -410,15 +415,13 @@ function roundSessionOver(round, cs = campaignStateNow()) {
 /**
  * The number of a round's session: the one the round opened with, else — a
  * round opened before rounds kept it — the one that session's narrator cards
- * carry, else the one its summary was carried forward under (LAST SESSION, or
- * the mark of a session closed without its summary). Null when nothing names
- * it: unknown, never another session's.
+ * carry, else the one the session record gives it (issue #382). Null when
+ * nothing names it: unknown, never another session's.
  *
  * @param {Object} round
- * @param {Object} cs — campaignState as stored
  * @returns {number|null}
  */
-function roundSessionNumber(round, cs) {
+function roundSessionNumber(round) {
   const numbered = (n) => (Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null);
   if (numbered(round?.sessionNumber)) return numbered(round.sessionNumber);
   const card = (game.messages?.contents ?? []).findLast?.((m) => {
@@ -426,10 +429,8 @@ function roundSessionNumber(round, cs) {
     return f?.narratorCard === true && f.sessionId === round.sessionId && numbered(f.sessionNumber) !== null;
   });
   if (card) return numbered(card.flags[MODULE_ID].sessionNumber);
-  for (const kept of [cs?.previousSessionSummary, cs?.unsummarisedSession]) {
-    if (kept?.sessionId === round.sessionId && numbered(kept.sessionNumber)) return numbered(kept.sessionNumber);
-  }
-  return null;
+  // The session record numbers every session a table began (issue #382).
+  return numbered(recordedSessionNumber(round.sessionId));
 }
 
 /**
@@ -454,7 +455,7 @@ function roundNarrationState(round) {
   const cs = workingCopy();
   const own = round?.sessionId ?? null;
   if (!own || (cs.currentSessionId ?? null) === own) return cs;
-  const sessionNumber = roundSessionNumber(round, cs);
+  const sessionNumber = roundSessionNumber(round);
   cs.currentSessionId = own;
   cs.sessionNumber = sessionNumber;
   return cs;
@@ -1129,6 +1130,18 @@ async function rollRound(claim) {
       round = getStoredRound();
       const entry = round?.entries?.[userId];
       if (!entry || entry.status === ENTRY_STATUS.RECORDED || entry.status === ENTRY_STATUS.REFUSED) continue;
+      // The acting player's line goes on the session record as the round
+      // takes it (issue #382) — rolled or told with no roll alike. Not again
+      // for an entry whose roll had begun before the round stopped.
+      if (!rollBegun(entry) && !entry.rolled?.cardId && typeof entry.text === "string" && entry.text.trim()) {
+        recordEvent("line", {
+          ...(round.sessionId ? { session: round.sessionId } : {}),
+          who:  { user: userId, actor: entry.actorId ?? null },
+          ref:  { round: round.id },
+          d:    { via: "round" },
+          text: entry.text,
+        });
+      }
       await rollEntry(round, entry);
     }
 
@@ -1212,17 +1225,22 @@ async function rollEntry(round, entry) {
   }
 
   if (!reading || reading.kind !== READING_KIND.MOVE) {
-    await queueRoundWrite(r => markRecorded(r, { userId, recordedAt: nowIso(), narrationInput: { kind: "narrative" } }));
+    // A move the line was read as that could not be made (the move gate, at
+    // Submit): the round's narration is told its premise is not so.
+    const refused = reading?.refused?.premise
+      ? { refusal: { moveId: reading.refused.moveId, why: reading.refused.why, premise: reading.refused.premise } } : {};
+    await queueRoundWrite(r => markRecorded(r, { userId, recordedAt: nowIso(), narrationInput: { kind: "narrative", ...refused } }));
     return;
   }
 
   const choices = entry.status === ENTRY_STATUS.READY && entry.choices ? entry.choices : defaultChoices(reading);
-  const refusal = await refusalFor(reading, choices);
-  if (refusal) {
-    await postRefusedCard(round, entry, reading, refusal);
+  const refused = await refusalFor(reading, choices, { actorId: entry.actorId ?? null });
+  if (refused) {
+    await postRefusedCard(round, entry, reading, refused.reason);
     await queueRoundWrite(r => markRefused(r, {
-      userId, reason: refusal, recordedAt: nowIso(),
-      narrationInput: { kind: "refused", moveId: reading.moveId, moveName: reading.moveName, reason: refusal },
+      userId, reason: refused.reason, recordedAt: nowIso(),
+      narrationInput: { kind: "refused", moveId: reading.moveId, moveName: reading.moveName, reason: refused.reason,
+        ...(refused.refusal?.premise ? { refusal: { moveId: refused.refusal.moveId, why: refused.refusal.why, premise: refused.refusal.premise } } : {}) },
     }));
     return;
   }
@@ -1261,13 +1279,17 @@ async function rollEntry(round, entry) {
     onDiceRolled: () => queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() })),
   });
   if (rolled.refused) {
-    // rollMove posted the track-gone card ("not rolled — it was deleted or
-    // finished"; a forge's connection severed, removed or already bonded),
-    // and says why (FORGE-NAMED-BONDED-SCORED).
-    const reason = rolled.refusedReason ?? "The track it named was deleted or finished before the roll.";
+    // The move gate at the dice refused it (overhaul 4) — an earlier entry
+    // ended its track, healed its patient, bonded its connection: its refused
+    // card says why, in the gate's words, and the round's narration is told
+    // its premise is not so (obligations.js NOT SO [premise]).
+    const refusal = rolled.refusal ?? null;
+    const reason = refusal ? refusalNote(refusal) : (rolled.refusedReason ?? "It could not be rolled.");
+    await postRefusedCard(round, entry, reading, reason);
     await queueRoundWrite(r => markRefused(r, {
       userId, reason, recordedAt: nowIso(),
-      narrationInput: { kind: "refused", moveId: reading.moveId, moveName: reading.moveName, reason },
+      narrationInput: { kind: "refused", moveId: reading.moveId, moveName: reading.moveName, reason,
+        ...(refusal?.premise ? { refusal: { moveId: refusal.moveId, why: refusal.why, premise: refusal.premise } } : {}) },
     }));
     return;
   }
@@ -1326,21 +1348,38 @@ async function openOwedStamps(round) {
 /**
  * Why an entry can't be rolled as read, or null: a reading the roll could not
  * use (a vow already fulfilled), a target pick a reading not confirmed never
- * made, or the fight or expedition it acts on ended earlier in the round.
+ * made — the round's own half — or the fight, expedition or scene challenge
+ * it acts on ended earlier in the round: the move gate's (contracts/gate.js
+ * checkMove), in its words, with the refusal the round's narration is told
+ * (`refusal`). rollMove asks the gate again at the dice.
+ *
+ * @param {Object} reading
+ * @param {Object|null} choices
+ * @param {{ actorId?: string|null }} [opts] — the entry's roller
+ * @returns {Promise<{ reason: string, refusal: Object|null }|null>}
  */
-async function refusalFor(reading, choices) {
-  if (reading.blocked === "vow-gone") return "The vow it named is already fulfilled.";
-  if (reading.blocked === "vow-forsaken") return "The vow it named was forsaken.";
+async function refusalFor(reading, choices, { actorId = null } = {}) {
+  if (reading.blocked === "vow-gone") return { reason: "The vow it named is already fulfilled.", refusal: null };
+  if (reading.blocked === "vow-forsaken") return { reason: "The vow it named was forsaken.", refusal: null };
   const options = reading.targetChoices?.options ?? [];
   if (options.length && !choices?.targetId) {
-    return `${reading.targetChoices.prompt ?? "Which one?"} — nothing was chosen before the round was sent.`;
+    return { reason: `${reading.targetChoices.prompt ?? "Which one?"} — nothing was chosen before the round was sent.`, refusal: null };
   }
   const trackId = (reading.targetChoices?.kind === "track" && choices?.targetId) ? choices.targetId : (reading.trackId ?? null);
   if (!trackId) return null;
-  const track = (await listProgressTracks().catch(() => [])).find(t => t.id === trackId) ?? null;
+  const tracks = await listProgressTracks().catch(() => []);
+  const track = tracks.find(t => t.id === trackId) ?? null;
+  // The contract's half, the move gate's (overhaul 4): the fight, expedition
+  // or scene challenge it was read against, by id — ended earlier in the
+  // round, it has nothing to act on.
+  const label = track?.label ?? reading.trackLabel ?? null;
+  const situation = await readMoveSituation(actorId, { campaignState: workingCopy() }).catch(() => null);
+  const verdict = checkMove(reading.moveId, situation, { targetId: trackId, target: label }, { stage: "roll" });
+  if (!verdict.ok) return { reason: refusalNote(verdict), refusal: refusalOf(verdict) };
+  // The round's own half: a move whose contract names no such track (an
+  // Undertake an Expedition continuing the one it was read against).
   if (track && !track.completed) return null;
-  const label = track?.label ?? reading.trackLabel ?? "Its track";
-  return `${label} ended earlier in this round.`;
+  return { reason: `${label ?? "Its track"} ended earlier in this round.`, refusal: null };
 }
 
 /** The card an entry the roll stage refused gets instead of a result card. */
@@ -2206,6 +2245,9 @@ function forcedFromFlags(f) {
     incitingSwearMessageId: typeof f.incitingSwearMessageId === "string" ? f.incitingSwearMessageId : null,
     // A move the card owes (the resist roll at 0): the roller's entry, never an offer (issue #342 D2).
     ...(f.owedMove === true ? { owed: true } : {}),
+    // Made from a waypoint card's 🔭 / 🌀 alternative — what the move gate asks
+    // of a discovery or a chaos (overhaul 4's FROM_A_WAYPOINT).
+    ...(f.fromWaypoint === true ? { fromWaypoint: true } : {}),
   };
 }
 

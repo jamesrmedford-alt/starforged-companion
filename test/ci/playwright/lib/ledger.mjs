@@ -38,7 +38,8 @@
 import { variantPattern, factIn, excerptOf, sectionsHolding, LAYERS } from "./observer.mjs";
 
 /** The module calls that narrate in answer to a player's line. */
-const NARRATION_KIND = /^callNarratorAPI>narrate(?!SessionVignette)/;
+// A scene question (`@scene …`) is answered by the narrator too: its call is `interrogateScene`.
+const NARRATION_KIND = /^callNarratorAPI>(?:narrate(?!SessionVignette)|interrogateScene)/;
 /** Any narrator call — a scene's own prompt, a vignette's included. */
 const NARRATOR_KIND = /^callNarratorAPI>/;
 
@@ -87,8 +88,11 @@ export function heldExcerpt(text, fact, width = 90) {
  */
 // …and since issue #377 item 1 the module's NAMES THE TABLE CHANGED note
 // ("\"Ashen Wake\" is now \"Cinder Wren\" … corrected by the table"), in the
-// narrator's context and in the summary's source.
-const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED/;
+// narrator's context and in the summary's source; and since the summary and
+// the recap are views of the session record (issue #382) their sources' STRUCK
+// BY THE TABLE — "these did not happen" in the recap's, "did not happen" in the
+// summary's (record/summaryView.js summarySource).
+const CORRECTION_MARK = /\b(?:CORRECTED|RETRACTED)\b|retracted by the table|these did not happen|NAMES THE TABLE CHANGED|STRUCK BY THE TABLE/;
 
 /**
  * Whether a prompt that holds `word` says it was corrected: the word stands
@@ -227,7 +231,10 @@ export const isProbeLine = (line, probe) => containment(probe.ask, line) >= PROB
  * The helpers' writing, as the run's marks hold it: every distinct text a
  * helper wrote, with the step it was first seen at. A mark's `helpers` is
  * `{ summaries: [{ session, text }], chronicle: [{ id, text, … }], recap:
- * string, sessionLog: [{ name, text }] }` (lib/table.mjs).
+ * string, sessionLog: [{ name, text, own? }] }` (lib/table.mjs). A Session
+ * Log page rendered from the session record has `own` — its words without
+ * the player's quoted lines and questions or a struck fact
+ * (table.mjs sessionLogOwnText) — and its refusals are read there.
  */
 export function helperWritings(marks) {
   const seen = new Set();
@@ -243,7 +250,7 @@ export function helperWritings(marks) {
     for (const s of h.summaries ?? []) note("summary", `session ${s.session ?? "?"}`, s.text, mark.step, { session: s.session ?? null });
     for (const c of h.chronicle ?? []) note("chronicle", c.id ?? c.text, c.text, mark.step, { salience: c.salience ?? null, type: c.type ?? null });
     if (h.recap) note("recap", "campaign recap", h.recap, mark.step);
-    for (const p of h.sessionLog ?? []) note("sessionLog", p.name ?? "page", p.text, mark.step);
+    for (const p of h.sessionLog ?? []) note("sessionLog", p.name ?? "page", p.text, mark.step, typeof p.own === "string" ? { own: p.own } : {});
   }
   return out;
 }
@@ -284,7 +291,7 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
     // What contradicts it, anywhere after it was planted: the narrator's
     // prose, and what the helpers wrote.
     const narrated = plantStep ? narrations.filter(after).flatMap(m => refusalsIn(m.text, fact).map(r => ({ ...r, step: m.step, where: m.vignette ? `narration (${m.vignette})` : "narration" }))) : [];
-    const written = plantStep ? helpers.filter(h => stepAfter(h.step)).flatMap(h => refusalsIn(h.text, fact).map(r => ({ ...r, step: h.step, where: `${h.kind} (${h.key})` }))) : [];
+    const written = plantStep ? helpers.filter(h => stepAfter(h.step)).flatMap(h => refusalsIn(h.own ?? h.text, fact).map(r => ({ ...r, step: h.step, where: `${h.kind} (${h.key})` }))) : [];
     // A corrected fact's old value in a later prompt. The module names a
     // corrected value to the narrator so that it is not asserted again
     // ("CORRECTED (retracted by the table — do NOT re-assert these…)"), and a
@@ -319,6 +326,21 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
       const at = order.get(line);
       const next = messages.findIndex((m, i) => i > at && m.fromPlayer);
       const answers = messages.slice(at + 1, next < 0 ? undefined : next).filter(m => m.narrator && !m.vignette);
+      // A fact that was never planted cannot be recalled, lost or refused:
+      // its question was asked of a table that was never told. It is shown
+      // as asked, with what was answered, and counted for nothing — the
+      // third live run's rename was never made (its beat was not exercised),
+      // and "Her name is Tamsin Vey", which was right, was scored a refusal
+      // of the name she never took.
+      if (!plantStep) {
+        return {
+          id: probe.id, set: probe.set ?? null, ask: probe.ask, asked: true, step: line.step, phase: line.phase, line: line.text,
+          distance: null, band: null, answered: answers.length > 0,
+          stored: false, stores: [], inPrompt: false, promptSections: [], inAnswer: false, answerExcerpt: answers[0]?.text.slice(0, 200) ?? null,
+          refused: false, refusals: [], named: false, primedBy: null,
+          counted: false, notPlanted: true, failingLayer: null,
+        };
+      }
       const named = factIn(line.text, fact) && !fact.anchor?.length;
       // Was the fact on the table again before the question — in this phase,
       // by the narrator or by the player?
@@ -375,7 +397,7 @@ export function scoreLedger({ facts, marks, messages, requests, planted = {}, pr
     const counted = asked.filter(p => p.counted);
     // Recall is earned only by a counted question; it is lost by any that
     // was answered without the fact (a line nothing answered is no answer).
-    const missed = asked.filter(p => p.answered && !p.inAnswer);
+    const missed = asked.filter(p => !p.notPlanted && p.answered && !p.inAnswer);
     const refusedAnywhere = [...narrated, ...written, ...sent, ...asked.flatMap(p => p.refusals.map(r => ({ ...r, step: p.step, where: `the answer to probe ${p.id}` })))];
     const seenRefusals = new Set();
     const refusals = refusedAnywhere.filter(r => { const k = `${r.step}|${r.sentence}`; if (seenRefusals.has(k)) return false; seenRefusals.add(k); return true; });

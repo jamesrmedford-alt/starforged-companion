@@ -89,7 +89,14 @@ async function seed(connections) {
   } } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   actors = {};
-  actors.bex = table.addActor({ id: 'pc-bex', name: 'Bex', ownership: { 'pl-1': 3 } });
+  // Bex's connections are her bond Items, keyed to each record as
+  // actorBridge.createCharacterBondItem keys them: an NPC card alone is a
+  // person, not a connection (overhaul 4 — the move gate's THEIR_CONNECTION).
+  actors.bex = table.addActor({ id: 'pc-bex', name: 'Bex', ownership: { 'pl-1': 3 }, items: { contents: connections.map(c => ({
+    id: `bond-${c.id}`, name: c.name, type: 'progress',
+    system: { subtype: 'bond', rank: c.rank ?? 'dangerous', progress: c.ticks ?? 0, completed: !!c.bonded },
+    flags: { [MODULE_ID]: { connectionId: `rec-${c.id}` } },
+  })) } });
   for (const c of connections) {
     actors[c.id] = table.addActor({
       id: c.id, name: c.name, type: 'character',

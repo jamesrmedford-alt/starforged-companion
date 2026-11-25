@@ -44,7 +44,7 @@ beforeEach(() => {
     sceneTruths: [{
       id: 'tr-old00001', subject: { kind: 'text', text: 'the dockmaster' }, fact: 'Owes the crew a favour',
       sessionId: 'sess-5', sessionNum: 5, sceneId: 'sc-1', moveId: null, source: 'narrator_sidecar',
-      asserter: 'narrator', createdAt: 1, retracted: false, retractedBy: null, retractedAt: null,
+      asserter: 'narrator', basis: 'player', createdAt: 1, retracted: false, retractedBy: null, retractedAt: null,
       correctedTo: null, migratedTo: null,
     }],
     sceneState: { bySubject: {}, sceneId: 'sc-1' }, sceneFrame: null,
@@ -57,7 +57,7 @@ async function narrationLands() {
   applySidecar({
     newTruths: [{ subject: 'the courier', fact: 'Must reach Ironway before the gate seals at dawn' }],
     stateChanges: [],
-  }, { campaignState: working, narrationId: 'nar-late' });
+  }, { campaignState: working, narrationId: 'nar-late', basisOf: () => 'player' });
   await persistSceneLedgerFields(working, ['sceneTruths', 'sceneState', 'sceneFrame'], 'narrator sidecar');
 }
 
@@ -94,7 +94,7 @@ describe('a fact that reaches the scene while it is being closed is not lost', (
       game.settings._store.set(KEY, { ...cs, currentSceneId: 'sc-2', sceneTruths: [{
         id: 'tr-new00001', subject: { kind: 'text', text: 'the warden' }, fact: 'Locked the outer gate',
         sessionId: 'sess-5', sessionNum: 5, sceneId: 'sc-2', moveId: null, source: 'narrator_sidecar',
-        asserter: 'narrator', createdAt: 2, retracted: false, retractedBy: null, retractedAt: null,
+        asserter: 'narrator', basis: 'player', createdAt: 2, retracted: false, retractedBy: null, retractedAt: null,
         correctedTo: null, migratedTo: null,
       }] });
     };

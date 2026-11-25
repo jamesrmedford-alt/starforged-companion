@@ -346,8 +346,17 @@ function removeXCardedNarration(narrator, cs) {
  */
 async function finishXCardRemoval(narrator, removal) {
   if (!removal.cards.length) return;
-  await narrator.flagXCardedCards(removal.cards);
   const ids = removal.cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === "string" && id);
+  // First, the session record (issue #382): the removal is recorded and what
+  // the narrations wrote there is blanked — awaited, so no view of the record
+  // is made again from what the table removed.
+  try {
+    const { recordNarrationsRemoved } = await import("../record/record.js");
+    await recordNarrationsRemoved(ids, { by: "xcard", session: removal.sessionId ?? null });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the removal could not be put on the session record:`, err?.message ?? err);
+  }
+  await narrator.flagXCardedCards(removal.cards);
   // A ship move the removed narration made is undone with its ledger facts
   // (issue #325 W07): the position record carries the narration's id.
   if (typeof narrator.restoreShipPositionAfterXCard === "function") {
@@ -428,20 +437,10 @@ async function finishXCardRemoval(narrator, removal) {
       console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
     }
   }
-  // An X-Card played after End a Session: the Session Log's "Story so far"
-  // End wrote kept telling the removed beat (issue #345 AA27). After the
-  // undo and the propagation, so the lore they retracted leaves its list.
-  try {
-    const { retractSessionLogSummary } = await import("../world/worldJournal.js");
-    await retractSessionLogSummary(removal.sessionId ?? null, { narrative: removal.summaryDropped === true });
-    // LAST SESSION told a removed narration posted late into the session it
-    // names, and was dropped with it: that session's page goes the same way,
-    // and its story is written back when LAST SESSION is made again
-    // (restoreSessionLogStory — issue #364 LATE-ROUND-NOT-IN-LAST-SESSION).
-    if (removal.lastSessionDropped) await retractSessionLogSummary(removal.lastSessionDropped, { narrative: true });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | X-Card: revising the Session Log's summary failed:`, err?.message ?? err);
-  }
+  // The Session Log's pages, and every session summary that told the removed
+  // beats, reach the removal through the session record (recorded first,
+  // above): a summary is stale and made again, a page rendered again
+  // (issue #382; issue #345 AA27's story End wrote is now that view).
 }
 
 /**

@@ -14,7 +14,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../src/narration/narrator.js", async (orig) => ({
-  ...(await orig()), finalizeSessionSummary: vi.fn(async () => {}),
+  ...(await orig()), getRollingSessionSummary: vi.fn(async () => ''),
 }));
 
 import { rollSessionIfDue, mintSession } from "../../src/session/lifecycle.js";
@@ -43,13 +43,12 @@ describe("issue #331 X64 — a session ended at the table is never renumbered", 
     expect(cs.sessionNumber).toBe(6);
   });
 
-  it("its summary keeps its number as LAST SESSION", () => {
-    const cs = {
-      currentSessionId: "S1", sessionNumber: 1, sessionStartedId: null, sessionEndedId: "S1", sessionActive: false,
-      sessionSummary: { sessionId: "S1", text: "The crew left Bleakhold.", updatedAt: null },
-    };
+  // Its LAST SESSION carries the number its record gives it (issue #382 —
+  // record/summaryView.js; tests/unit/summaryView.test.js).
+  it("is followed by the next number", () => {
+    const cs = { currentSessionId: "S1", sessionNumber: 1, sessionStartedId: null, sessionEndedId: "S1", sessionActive: false };
     mintSession(cs, T0);
-    expect(cs.previousSessionSummary).toMatchObject({ sessionId: "S1", sessionNumber: 1 });
+    expect(cs.sessionNumber).toBe(2);
   });
 
   it("control: a session nobody began or ended still hands its number on (issue #330 D12)", () => {

@@ -8,10 +8,11 @@
  *
  * A short stretch of play is written out as the run records it — the table
  * after each step, the cards that changed in it — in which every check is
- * made and none is violated: a session begun, a strong hit, a weak hit burned
- * to a strong one, a miss paid for, a fight finished and its milestone marked,
+ * made and none is violated: a session begun, a strong hit, an expedition
+ * undertaken, a waypoint explored and the expedition finished, a weak hit
+ * burned to a strong one, a miss paid for, a fight finished and its milestone marked,
  * a wound healed, a relationship developed, a bond forged, a vow fulfilled, a
- * session ended. Then, one at a time, the table is made to do what a defect
+ * weak hit held and kept with "Keep the result", a session ended. Then, one at a time, the table is made to do what a defect
  * in the module would have it do — pay momentum twice, mark a milestone
  * twice, keep the first outcome's marks under a burn, lag a mirror — and the
  * check that should catch it is shown to catch it, and to be the only kind
@@ -25,8 +26,8 @@ import { describe, it, expect } from 'vitest';
 import { CHECKS, cardsAt, checkMechanics } from '../../test/ci/playwright/lib/mechanics.mjs';
 import { parsePriceLine, uniformFor } from '../../test/ci/playwright/lib/table.mjs';
 import {
-  BONDED_DEVELOP, FIGHT_MARKS, MOVE_MOMENTUM, burnedOutcome, canBurn, decisiveOutcome, dieCancelled, momentumMaxFor, momentumResetFor,
-  recover, rolledScore, sufferCost, xpForBoxes, boxesFilled,
+  BONDED_DEVELOP, EXPEDITION_MARKS, FIGHT_MARKS, MOVE_MOMENTUM, RANKS, WAYPOINT_CHOICE, burnedOutcome, canBurn, decisiveOutcome, dieCancelled,
+  expeditionFinished, expeditionReward, momentumMaxFor, momentumResetFor, recover, rolledScore, sufferCost, xpForBoxes, boxesFilled,
 } from '../helpers/sequence/rules.js';
 
 // ── a stretch of play, as a run records it ───────────────────────────────────
@@ -52,7 +53,10 @@ function story() {
     entityCards: [{ id: 'A1', name: 'Tamsin Vey', entityType: 'connection' }],
     tracks: [{ id: 't1', label: 'Ashen Wake', type: 'combat', rank: 'dangerous', ticks: 0, completed: false, combatState: 'in_control', linkedVowName: 'Find the raiders' }],
     legacy: { quests: { ticks: 2, cleared: false, cycles: 0 }, bonds: { ticks: 0, cleared: false, cycles: 0 }, discoveries: { ticks: 0, cleared: false, cycles: 0 } },
-    scene: { truths: [] }, helpers: {}, plans: [],
+    // Overhaul 2's records (lib/table.mjs): the scene with why it began, what
+    // play let go in it, and what a scene's end filed.
+    scene: { id: 'sc1', truths: [], frame: null, letGo: [], began: { sceneId: 'sc1', cause: 'session', what: 'the session began', place: 'Bleakhold Station', ship: null } },
+    filed: [], helpers: {}, plans: [],
   };
   const pc = table.pcs[0];
   const fight = table.tracks[0];
@@ -66,8 +70,28 @@ function story() {
 
   step('(setup)', null, () => {});
   step('a1', { action: 'dialog', title: 'Begin a Session', fields: [{ name: 'vignette', value: 'true' }], press: 'Begin' }, () => { table.session.active = true; table.session.id = 's1'; pc.momentum = 3; });
-  step('a2', say('I work the docks for who saw the raiders.'), () => { pc.momentum = 5; rolled([2, 5], 4); },
+  step('a2', say('I work the docks for who saw the raiders.'), () => {
+    pc.momentum = 5; rolled([2, 5], 4);
+    // The narration's own colour (basis narrator): it leaves with its scene.
+    table.scene.truths.push({ id: 'tc1', subject: 'scene', fact: 'the dock lamps burn amber', basis: 'narrator', said: ['n-n2'], narrationId: 'n-n2', retracted: false });
+  },
     [moveCard('m2', 'Gather Information', 'Action: 4 + 3 = 7 | Challenge: 2, 5', 'strong_hit'), narrated('n2', 'm2', 'gather_information', 'strong_hit')]);
+  // An expedition: a hit begins its track and marks it once; a waypoint's
+  // strong hit offers a mark or momentum, and the mark is taken; the finish
+  // is scored by its four boxes and pays the discoveries legacy by rank.
+  const journey = { id: 't2', label: 'the source of the distress call', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false, siteId: null };
+  step('a2a', say('I take her off the charted lane, along the call\'s bearing.'), () => { table.tracks.push(journey); rolled([3, 6], 5); },
+    [moveCard('m2a', 'Undertake an Expedition', 'Action: 5 + 3 = 8 | Challenge: 3, 6', 'strong_hit'), narrated('n2a', 'm2a', 'undertake_an_expedition', 'strong_hit'),
+      { id: 'e2a', expedition: { created: true, trackId: 't2', trackLabel: 'the source of the distress call', actorId: 'pc' } }]);
+  step('a2b', say('I go over the place the call is coming from.'), () => { rolled([2, 4], 3); },
+    [moveCard('m2b', 'Explore a Waypoint', 'Action: 3 + 3 = 6 | Challenge: 2, 4', 'strong_hit'), narrated('n2b', 'm2b', 'explore_a_waypoint', 'strong_hit'),
+      { id: 's2b', suffer: { resolved: false, picked: [], moveId: 'explore_a_waypoint', resolutionId: 'm2b', actorId: 'pc', options: [{ label: 'Mark expedition progress' }, { label: '+2 momentum' }] } }]);
+  step('a2c', click('Mark expedition progress'), () => { table.tracks.find(t => t.id === 't2').ticks = 16; },
+    [{ id: 's2b', suffer: { resolved: true, picked: [0], moveId: 'explore_a_waypoint', resolutionId: 'm2b', actorId: 'pc', options: [{ label: 'Mark expedition progress' }, { label: '+2 momentum' }] } },
+      { id: 'e2c', expedition: { created: false, trackId: 't2', trackLabel: 'the source of the distress call', actorId: 'pc' } }]);
+  step('a2d', click('🗺 Finish the Expedition (4/10)'), () => { table.tracks.find(t => t.id === 't2').completed = true; table.legacy.discoveries.ticks = 2; rolled([1, 2]); },
+    [moveCard('m2d', 'Finish an Expedition', 'Progress: 4 | Challenge: 1, 2', 'strong_hit'), narrated('n2d', 'm2d', 'finish_an_expedition', 'strong_hit'),
+      { id: 'f2d', expeditionFinished: { legacyTicks: 2 } }]);
   // A weak hit momentum would improve: held until it is kept or burned.
   const weak = moveCard('m3', 'Strike', 'Action: 1 + 2 = 3 | Challenge: 1, 4', 'weak_hit',
     { combatTrackId: 't1', burn: { canBurn: true, momentum: 5, originalOutcome: 'weak_hit', previewOutcome: 'strong_hit', moveId: 'strike' }, held: { open: true, resolvedBy: null, resolution: { moveId: 'strike', outcome: 'weak_hit' } } });
@@ -85,12 +109,18 @@ function story() {
       { id: 'v7', victory: { vowName: 'Find the raiders', vowId: 'v1', marks: 1, actorId: 'pc', resolvedActions: {} } }]);
   step('a8', click('⚑ Mark milestone (×1)'), () => { vow.ticks = 24; },
     [{ id: 'v7', victory: { vowName: 'Find the raiders', vowId: 'v1', marks: 1, actorId: 'pc', resolvedActions: { markMilestone: true } } }]);
-  step('a9', say('I treat the gash in my arm.'), () => { rolled([2, 3], 5); },
+  // The fight ended at a7: the beat of play after it is told in a new scene,
+  // begun for the fight — and what play let go goes on into it.
+  step('a9', say('I treat the gash in my arm.'), () => {
+    rolled([2, 3], 5);
+    table.scene = { id: 'sc2', truths: [], frame: null, letGo: [{ text: 'What is the amber light above the stall?', stems: ['amber', 'light', 'stall'] }],
+      began: { sceneId: 'sc2', cause: 'fight', what: 'the fight with the Ashen Wake ended', place: 'Bleakhold Station', ship: null } };
+  },
     [moveCard('m9', 'Heal', 'Action: 5 + 1 = 6 | Challenge: 2, 3', 'strong_hit'), narrated('n9', 'm9', 'heal', 'strong_hit'),
       { id: 's9', suffer: { resolved: false, picked: [], moveId: 'heal', resolutionId: 'm9', actorId: 'pc', options: [{ label: 'Take/give +3 health' }] } }]);
   step('a10', click('Take/give +3 health'), () => { pc.health = 5; },
     [{ id: 's9', suffer: { resolved: true, picked: [0], moveId: 'heal', resolutionId: 'm9', actorId: 'pc', options: [{ label: 'Take/give +3 health' }] } }]);
-  step('a11', say('I trade news with Tamsin.'), () => { conn.ticks = 40; bond.ticks = 40; },
+  step('a11', say('I trade news with Tamsin.'), () => { conn.ticks = 40; bond.ticks = 40; table.scene.frame = { question: 'Will Tamsin trust Mira with the ledger?' }; },
     [moveCard('m11', 'Develop Your Relationship', '', null), narrated('n11', 'm11', 'develop_your_relationship', 'strong_hit')]);
   step('a12', say('I ask Tamsin to forge a bond.'), () => { conn.bonded = true; bond.completed = true; table.legacy.bonds.ticks = 2; rolled([3, 4]); },
     [moveCard('m12', 'Forge a Bond', 'Progress: 10 | Challenge: 3, 4', 'strong_hit'), narrated('n12', 'm12', 'forge_a_bond', 'strong_hit')]);
@@ -102,6 +132,14 @@ function story() {
     [moveCard('m13b', 'Face Danger', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss'), narrated('n13b', 'm13b', 'face_danger', 'miss'),
       { id: 'p13b', price: { text: 'Pay the Price Face Danger d100 = 78 · You are harmed Routes to Endure Harm (-1).', actorId: 'pc' } },
       { id: 't13b', sufferTaken: { move: 'endure_harm', amount: 1, before: 5, after: 4, actorId: 'pc' } }]);
+  // A weak hit momentum would improve, held — and kept with its button: its
+  // narration comes with the press, before any other line.
+  const heldGather = { open: true, resolvedBy: null, resolution: { moveId: 'gather_information', outcome: 'weak_hit' } };
+  const lean = moveCard('m13c', 'Gather Information', 'Action: 3 + 3 = 6 | Challenge: 1, 8', 'weak_hit',
+    { burn: { canBurn: true, momentum: 3, originalOutcome: 'weak_hit', previewOutcome: 'strong_hit', moveId: 'gather_information' }, held: heldGather });
+  step('a13c', say('I lean on the clerk for the name.'), () => { rolled([1, 8], 3); }, [lean]);
+  step('a13d', click('Keep the result'), () => {},
+    [{ ...lean, move: { ...lean.move, held: { ...heldGather, open: false, resolvedBy: 'keep' } } }, narrated('n13d', 'm13c', 'gather_information', 'weak_hit')]);
   step('a14', { action: 'dialog', title: 'End a Session', fields: [{ name: 'questFocus', value: 'What the paymaster does next' }], press: 'End Session' },
     () => { table.session.active = false; table.session.questFocus = 'What the paymaster does next'; pc.momentum = 4; });
 
@@ -137,8 +175,9 @@ describe('the stretch of play, as the module should play it', () => {
 
   it('lists each roll with its own dice', () => {
     expect(result.rolls.map(r => `${r.step} ${r.moveId} ${r.outcome}`)).toEqual([
-      'a2 gather_information strong_hit', 'a3 strike weak_hit', 'a5 strike miss', 'a7 take_decisive_action strong_hit', 'a9 heal strong_hit',
-      'a12 forge_a_bond strong_hit', 'a13 fulfill_your_vow strong_hit', 'a13b face_danger miss',
+      'a2 gather_information strong_hit', 'a2a undertake_an_expedition strong_hit', 'a2b explore_a_waypoint strong_hit', 'a2d finish_an_expedition strong_hit',
+      'a3 strike weak_hit', 'a5 strike miss', 'a7 take_decisive_action strong_hit', 'a9 heal strong_hit',
+      'a12 forge_a_bond strong_hit', 'a13 fulfill_your_vow strong_hit', 'a13b face_danger miss', 'a13c gather_information weak_hit',
     ]);
     expect(result.rolls[0]).toMatchObject({ dice: 'Action: 4 + 3 = 7 | Challenge: 2, 5', kind: 'action', scripted: false });
   });
@@ -148,6 +187,29 @@ describe('the stretch of play, as the module should play it', () => {
     const i = marks.findIndex(k => k.step === 'a4');
     expect(cardsAt(marks, i - 1).get('m3').move.burn.consumed).toBeUndefined();
     expect(cardsAt(marks, i).get('m3').move.burn.consumed).toBe(true);
+  });
+});
+
+// The first rehearsal with the expedition crashed at a70 (the machine out of
+// memory): its dice were never read from the GM's page, the run kept the
+// empty list the runner then started with, and it was scored with fifteen
+// rolls "not among the dice that fell" — every roll it made. A record never
+// read is no record: explore.mjs keeps the dice null until it reads them, and
+// the check is then not made. A record that is there and lacks a card's dice
+// is still a violation.
+describe('the dice as they fell, where the run kept no record of them', () => {
+  it('is not made with no record — the same story is held to its dice when they were read', () => {
+    const run = story();
+    const rolls = checkMechanics(run).rolls.length;
+    expect(checkMechanics({ ...run, dice: null }).byCheck['dice-as-they-fell']).toEqual({ made: 0, violated: 0 });
+    expect(checkMechanics({ ...run, dice: null }).violations).toEqual([]);
+    expect(checkMechanics(run).byCheck['dice-as-they-fell']).toEqual({ made: rolls, violated: 0 });
+  });
+
+  it('a record that is there and holds none of a card\'s dice is a violation, roll by roll', () => {
+    const result = checkMechanics({ ...story(), dice: [] });
+    expect(result.byCheck['dice-as-they-fell'].violated).toBe(result.byCheck['dice-as-they-fell'].made);
+    expect(result.violations[0]).toMatchObject({ step: 'a2', check: 'dice-as-they-fell', detail: 'gather_information: the card\'s dice (Action: 4 + 3 = 7 | Challenge: 2, 5) are not among the dice that fell' });
   });
 });
 
@@ -164,6 +226,14 @@ describe('each check catches the defect it is for', () => {
     ['meter-bounds', 'momentum past its own maximum', ({ from }) => from('a14', (t) => { t.pcs[0].momentumMax = 3; }), 'its maximum is 3'],
     ['track-bounds', 'a track past its tenth box', ({ from }) => from('a11', (t) => { t.connections[0].ticks = 44; t.pcs[0].bonds[0].ticks = 44; }), '44 ticks'],
     ['progress-per-mark', 'a mark of the wrong size for its rank', ({ from }) => from('a8', (t) => { t.pcs[0].vows[0].ticks = 20; }), 'a mark at that rank is 8'],
+    ['expedition-progress', 'an expedition marked twice for one hit', ({ from }) => from('a2a', (t) => { const e = t.tracks.find(x => x.id === 't2'); if (e.ticks === 8) e.ticks = 16; }), 'marks progress once: the dangerous expedition "the source of the distress call" gained 16 ticks'],
+    ['expedition-progress', 'a hit that began no expedition and marked none', ({ at }) => { at('a2a').table.tracks = at('a2a').table.tracks.filter(x => x.id !== 't2'); }, 'no expedition gained any'],
+    ['expedition-progress', 'a crossing that missed and began a journey all the same', ({ card }) => { card('a2a', 'm2a').move.diceLine = 'Action: 1 + 3 = 4 | Challenge: 9, 6'; card('a2a', 'm2a').move.shown = 'miss'; card('a2a', 'n2a').narration.outcome = 'miss'; }, 'undertake_an_expedition missed, and "the source of the distress call" was begun'],
+    ['expedition-progress', 'a waypoint\'s mark that marked nothing', ({ at }) => { at('a2c').table.tracks.find(x => x.id === 't2').ticks = 8; }, '"Mark expedition progress" marks progress once: no expedition gained any'],
+    ['progress-score', 'an expedition finished on a score that is not its boxes', ({ card }) => { card('a2d', 'm2d').move.diceLine = 'Progress: 6 | Challenge: 1, 2'; }, 'the expedition "the source of the distress call" had 16 ticks (4 boxes)'],
+    ['legacy-reward', 'an expedition finished that paid the discoveries legacy nothing', ({ from }) => from('a2d', (t) => { t.legacy.discoveries.ticks = 0; }), 'the discoveries legacy gained 0 ticks, not 2'],
+    ['legacy-reward', 'an expedition\'s card that says other than the legacy track', ({ card }) => { card('a2d', 'f2d').expeditionFinished.legacyTicks = 4; }, 'the discoveries legacy gained 2 ticks — and its card says 4'],
+    ['legacy-reward', 'a finish that hit and left its expedition open', ({ from }) => from('a2d', (t) => { t.tracks.find(x => x.id === 't2').completed = false; }), '0 expeditions were completed, not one'],
     ['bond-mirror', 'the bond Item left behind the card', ({ at }) => { at('a11').table.pcs[0].bonds[0].ticks = 32; }, 'bond Item for Tamsin Vey says 32 ticks'],
     ['link-mirror', 'a renamed card whose vow still shows the old name', ({ from }) => from('a9', (t) => { t.connections[0].name = 'Tamsin Okoro'; t.pcs[0].bonds[0].name = 'Tamsin Okoro'; }), 'shows the name "Tamsin Vey"'],
     ['legacy-reward', 'a forged bond paid at the wrong rank', ({ from }) => from('a12', (t) => { t.legacy.bonds.ticks = 4; }), 'the bonds legacy gained 4 ticks, not 2'],
@@ -185,10 +255,61 @@ describe('each check catches the defect it is for', () => {
     ['lock-free', 'the move lock held after the table settled', ({ at }) => { at('a9').table.session.pendingMove = true; }, 'the move lock was held'],
     ['answered-once', 'a line narrated twice', ({ at }) => { at('a2').cards.push(narrated('n2b', 'other', 'gather_information', 'strong_hit')); }, 'narrated 2 times'],
     ['answered-once', 'a line nobody answered', ({ at }) => { at('a11').cards.length = 0; }, 'no narration and no card that asks for a choice'],
+    // Overhaul 2 (issue #386 §14).
+    ['let-go-stays', 'a scene question set on what play let go', ({ at }) => { at('a11').table.scene.frame = { question: 'What does the amber light above the stall mean?' }; },
+      'on "What is the amber light above the stall?", which play let go, and the line did not take it up'],
+    ['scene-turned', 'a fight ended, and the next beat told in the same scene', ({ from }) => from('a9', (t) => {
+      t.scene = { ...t.scene, id: 'sc1', began: { ...t.scene.began, sceneId: 'sc1', cause: 'session' } };
+    }), 'the fight "Ashen Wake" ended, and the beat of play after it (a9) was told in the same scene, not one begun for fight'],
+    ['colour-not-filed', 'the narration\'s colour filed when its scene ended', ({ from }) => from('a9', (t) => {
+      t.filed = [{ where: 'Lore: scene: the dock lamps burn amber', fact: 'the dock lamps burn amber', narrationId: 'n-n2' }];
+    }), '"the dock lamps burn amber", the narration\'s own colour, was filed when its scene ended: Lore: scene: the dock lamps burn amber'],
+    ['held-narrated-in-turn', 'a held result kept by the next line, and narrated after it', ({ run, at }) => {
+      run.actions.find(a => a.step === 'a13d').action = say('I take the name and go.');
+      at('a13d').cards.push(narrated('n13e', 'own-13d', 'face_danger', 'strong_hit'));
+    }, 'gather_information (a weak hit), rolled at a13c and held for Keep or Burn, was kept by the next line and narrated after the next line (a13d)'],
   ])('%s — %s', (check, _what, change, says) => {
     const result = withDefect(change);
     expect(violated(result), JSON.stringify(result.violations)).toContain(check);
     expect(result.violations.find(v => v.check === check).detail).toContain(says);
+  });
+
+  // The fourth live run's a38–a41 (explorations/long-haul-live-20261124-213912):
+  // Enter the Fray missed and was held; "⚔ Begin the fight" kept nothing; the
+  // attack at a41 kept it, so a38's narration came after a41's line — and then
+  // the Clash's own. The run's own check counted that as a line narrated twice.
+  it('held-narrated-in-turn — the fourth live run\'s a38–a41: one answer to the line, and the held result told after it', () => {
+    const t = (over = {}) => ({ session: { active: true, id: 's2', pendingMove: false }, pcs: [{ id: 'pc', name: 'Mira', health: 5, spirit: 1, supply: 5, momentum: 9, momentumMax: 10, momentumReset: 2, debilities: [], vows: [], bonds: [], legacies: {} }], connections: [], tracks: [], legacy: {}, ...over });
+    const held = { open: true, resolvedBy: null, resolution: { moveId: 'enter_the_fray', outcome: 'miss' } };
+    const fray = moveCard('m38', 'Enter the Fray', 'Action: 3 + 1 = 4 | Challenge: 6, 7', 'miss', { held, burn: { canBurn: true, momentum: 9, originalOutcome: 'miss', previewOutcome: 'strong_hit', moveId: 'enter_the_fray' } });
+    const fight = { id: 'f1', label: 'The Ashen Wake', type: 'combat', rank: 'dangerous', ticks: 0, completed: false, combatState: 'bad_spot' };
+    const marks = [
+      { step: 'a37', table: t(), cards: [], settled: true },
+      { step: 'a38', table: t(), cards: [fray, { id: 'th38', threshold: { label: 'The Ashen Wake', position: 'bad_spot' } }], settled: true },
+      { step: 'a40', table: t({ tracks: [fight] }), cards: [{ id: 'tc40', trackCard: { created: true, trackId: 'f1' } }], settled: true },
+      { step: 'a41', table: t({ tracks: [fight] }), settled: true, cards: [
+        { ...fray, move: { ...fray.move, held: { ...held, open: false, resolvedBy: 'later' } } },
+        narrated('n41a', 'm38', 'enter_the_fray', 'miss'),
+        moveCard('m41', 'Clash', 'Action: 1 + 2 = 3 | Challenge: 10, 9', 'miss', { combatTrackId: 'f1' }),
+        narrated('n41b', 'm41', 'clash', 'miss'),
+      ] },
+    ];
+    const actions = [
+      { step: 'a38', action: say('The Ashen Wake drops out of the dark off Bleakhold\'s ring. I spin the Kobayashi IV to face her and bring the guns to bear.') },
+      { step: 'a40', action: click('⚔ Begin the fight') },
+      { step: 'a41', action: say('I\'m in a bad spot, so I fight back hard, throwing the Kobayashi IV into a tight turn and hammering the Ashen Wake\'s flank with everything the guns have.') },
+    ];
+    const result = checkMechanics({ marks, actions, messages: [] });
+    expect(result.byCheck['answered-once'], 'a38 held its result on a card; a41 had one answer of its own').toEqual({ made: 2, violated: 0 });
+    expect(result.byCheck['held-narrated-in-turn']).toEqual({ made: 1, violated: 1 });
+    expect(result.violations).toEqual([{ step: 'a41', check: 'held-narrated-in-turn', detail: 'enter_the_fray (a miss), rolled at a38 and held for Keep or Burn, was kept by the next line and narrated after the next line (a41): the player read it as this line\'s answer' }]);
+    // Kept with its own button instead, at a39: told in turn, before the attack.
+    const pressed = [...marks.slice(0, 2),
+      { step: 'a39', table: t(), settled: true, cards: [{ ...fray, move: { ...fray.move, held: { ...held, open: false, resolvedBy: 'keep' } } }, narrated('n39', 'm38', 'enter_the_fray', 'miss')] },
+      { ...marks[2] }, { ...marks[3], cards: marks[3].cards.slice(2) }];
+    const inTurn = checkMechanics({ marks: pressed, actions: [actions[0], { step: 'a39', action: click('Keep the result') }, ...actions.slice(1)], messages: [] });
+    expect(inTurn.byCheck['held-narrated-in-turn']).toEqual({ made: 1, violated: 0 });
+    expect(inTurn.violations).toEqual([]);
   });
 
   it('dice-as-they-fell — a card whose dice are not the dice that fell', () => {
@@ -256,6 +377,21 @@ describe('the rules the checks hold the table to (tests/helpers/sequence/rules.j
     expect(sufferCost(1, 3)).toEqual({ after: 0, remainder: 2 });
     expect(sufferCost(-5, 3, -6)).toEqual({ after: -6, remainder: 2 });
     expect([recover(3, 3), recover(1, 3), recover(9, 2, 10)]).toEqual([5, 4, 10]);
+  });
+
+  // The expedition moves, in their own words (the header of rules.js quotes
+  // them): one mark for a hit that undertakes it and none for a miss; a
+  // waypoint's strong hit a choice of one mark or +2 momentum, its weak hit
+  // +1; a finish paid on the discoveries legacy by rank, one rank lower on a
+  // weak hit — and a miss finishes nothing.
+  it('an expedition: a mark for a hit, a waypoint\'s choice, the discoveries legacy by rank', () => {
+    expect(EXPEDITION_MARKS).toEqual({ strong_hit: 1, weak_hit: 1, miss: 0 });
+    expect(WAYPOINT_CHOICE).toEqual({ marks: 1, momentum: 2 });
+    expect(MOVE_MOMENTUM.explore_a_waypoint).toEqual({ weak_hit: 1 });
+    expect(RANKS.map(r => expeditionReward(r, 'strong_hit'))).toEqual([1, 2, 4, 8, 12]);
+    expect(RANKS.map(r => expeditionReward(r, 'weak_hit')), 'one rank lower; none under troublesome').toEqual([0, 1, 2, 4, 8]);
+    expect(RANKS.map(r => expeditionReward(r, 'miss'))).toEqual([0, 0, 0, 0, 0]);
+    expect([expeditionFinished('strong_hit'), expeditionFinished('weak_hit'), expeditionFinished('miss')]).toEqual([true, true, false]);
   });
 
   it('the tables are the play kit\'s: momentum by outcome, marks in a fight, the bonded roll', () => {

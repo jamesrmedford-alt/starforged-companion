@@ -8,14 +8,17 @@ the owning function; line numbers drift, so search by symbol. Sibling docs:
 Cross-cutting: consequence writes are GM-gated per branch; expedition state
 lives in the Starforged Progress Tracks journal flag (`type:"expedition"`).
 The move interpreter learns the open tracks from the same live stores
-(`buildContextSummary`, `src/moves/interpreter.js`): the open vow Items on the
-PCs (owner-tagged when there is more than one PC) and the open non-vow tracks
-in the Progress Tracks journal, so an open expedition is named to it for
-`finish_an_expedition` targeting. (It once read
+(`buildContextSummary`, `src/moves/interpreter.js`): the roller's open vows in
+their SITUATION block (`moves/situation.js`, with rank and progress — the
+other characters' by name, owner-tagged, at a table of several) and the open
+non-vow tracks in the Progress Tracks journal, so an open expedition is named
+to it for `finish_an_expedition` targeting. (It once read
 `campaignState.progressTrackIds`, which nothing wrote, so it was never told
 about any track; that field and the dead `consequences.progressTrackId`
 mark-progress route in `persistResolution` were deleted in the 2026-10
 audit.)
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 ## 0. World seeding — sites exist before any travel
 
@@ -171,6 +174,8 @@ finish docks there and charts nothing.
   the words around it, §3 — a finish's names lose their journey words as at
   the start) and the GM's `!at`.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 ## 1. Setting out
 
 - **`set_a_course`** (a known route to a charted place — §0.5): strong hit +1
@@ -256,7 +261,19 @@ finish docks there and charts nothing.
   **"🗺 Finish the Expedition (n/10)"** button — labelled with the progress
   it rolls with, and shown muted (`sf-followup-btn--early`) under
   `EXPEDITION_FINISH_READY_BOXES` (4), where a finish misses more often than
-  not (issue #354 P2-14) — its forced move names the track by
+  not (issue #354 P2-14). The button follows its track: the canonical GM
+  redraws it on every Expedition card still to be pressed, from the track by
+  its id, whenever the Progress Tracks journal's tracks change — a waypoint's
+  mark (§2), a later Undertake, the panel's + and −, a cleared mark, a
+  recommit, a GM's Retry — and at its load (`index.js`
+  `redrawExpeditionFinishButtons` / `registerExpeditionCardSync`, the
+  journal's `updateJournalEntry` hook, gated `isCanonicalGM()`). It was drawn
+  once, at the post, so after a waypoint's mark the one Finish on the table
+  read "(2/10)", muted as early, while the track held 4/10 (known-issues
+  EXPEDITION-FINISH-COUNT-STALE); the card's content changes, so every client
+  and a reload show the count. A card whose track is over or gone, or whose
+  Finish was pressed, is left as it is, and its line about the mark it
+  reported stays as written — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`
   (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the
@@ -325,10 +342,25 @@ finish docks there and charts nothing.
   target names, else the sole open one — and carried on the choice card as
   `expeditionTrackId` (`movePipeline` `waypointExpedition`): that one, or
   nothing once it is over or gone, never the sole open one at click time
-  (DELAYED-CHOICE-IDENTITY); a card that names none resolve-or-creates at
-  click time: with no open expedition it begins a default dangerous one and
-  marks it, WAYPOINT-PROGRESS-NOOP fix; several open → visible warn); weak
-  hit +1 momentum; miss routes Pay the Price
+  (DELAYED-CHOICE-IDENTITY); a card that names none reads the open ones at
+  click time: the sole one is marked; with none open nothing is marked and
+  none begun (`reason: "no-expedition"`, said on the card — overhaul 4, D6:
+  it began a default dangerous "Expedition" whose name and rank nothing asked,
+  WAYPOINT-PROGRESS-NOOP's fix); several open → visible warn). The move
+  itself is made from an expedition, or at a site (a vault, a derelict): the
+  move gate refuses an Explore a Waypoint with neither (`EXPEDITION_OR_SITE`,
+  Undertake an Expedition offered — "When you divert from an expedition…"),
+  and at a site with no expedition under way its strong hit's choice offers
+  no expedition progress, only the +2 momentum (`movePipeline.js`
+  `withoutExpeditionProgressWithNoExpedition` — still a pick, which a match's
+  Make a Discovery can be taken instead of). Make a Discovery and Confront
+  Chaos are made from a waypoint's match — the card's 🔭 / 🌀 alternative,
+  whose forced move carries `fromWaypoint` (`FROM_A_WAYPOINT`, soft: typed
+  alone, the line is narrated and told why; a GM may roll it anyway). The
+  mark posts no card of its own: the expedition's card's 🗺 Finish is redrawn
+  with the track's new count (§1, EXPEDITION-FINISH-COUNT-STALE) — a track
+  with no card (made in the panel) has the panel's Roll.
+  Weak hit +1 momentum; miss routes Pay the Price
   (`routePayThePrice` — the card, its suffer route, the tension clocks; it
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the
@@ -350,7 +382,9 @@ finish docks there and charts nothing.
   offered. The resolution carries the choice (`priceChoice`: the price, and
   what may replace it), and its narration is told where it stands **when it
   is written** (`narrator.js` → `resultUpgrade.priceChoiceStatus` →
-  `resolver.settlePriceChoice`; `stakes.js` `formatPriceChoiceBlock`): a
+  `resolver.settlePriceChoice`; the obligations block's [price] line,
+  `moves/contracts/obligations.js` — it replaced `stakes.js`
+  `formatPriceChoiceBlock`, its words kept): a
   free-flow miss is narrated before its card is picked — *pending*: the
   price is offered, shown arriving, never "what this miss costs"; a held
   result's (and a Batch Mode round's) card posts before its narration —
@@ -444,6 +478,14 @@ finish docks there and charts nothing.
   as the site ladder does (U48): generated site names repeat across sectors,
   and the older sector's derelict became the current location, the ship's
   position and its token's place on that sector's map (issue #342 Z15).
+  Since overhaul 2 (§6.4) a narration of play is a current-location writer
+  too, the current location alone: a beat whose frame names exactly one
+  recorded settlement, planet or location and whose player words name it
+  ("I take the lift down to Hollow Spire") moves it there with the frame
+  (`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`) — the
+  ship stays where its record says (D17). A Set a Course's beat walks
+  nowhere: its arrival is the move's own (above). And only a beat of play's
+  ship/position moves the ship (§6.3).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
   `SHIP POSITION` lines — every arrival recorder writes only after arrival,
   so those sources read as stationary ("docked at" / "in orbit of";
@@ -476,7 +518,9 @@ progress card's Finish button — which since the EXPEDITION-FINISH-TARGET fix
 forwards the card's own `trackLabel` as the target, and since issue #306 R06
 its `trackId` too, so the right expedition finishes even with several open,
 same-named ones included. A track deleted or finished before the roll resolves
-rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes the
+rolls nothing — the move gate's `OPEN_TRACK("expedition")` by id, the
+not-rolled notice; with no expedition open at all it is refused the same way,
+Undertake an Expedition offered. Strong hit → `finishExpedition` completes the
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. The legacy ticks, the
 arrival's current location and the site reveal ride on the pipeline's working
@@ -581,6 +625,10 @@ summary lives in the `known-issues.md` table and the code.
    (WAYPOINT-PROGRESS-NOOP): the suffer executor marks progress only when
    exactly one open expedition exists and never creates one — pick "mark
    progress" with zero (or several) open expeditions and nothing happens.
+   *Fixed, then retired (overhaul 4, D6):* the fix began a default
+   expedition; now the gate makes the move only on an expedition or at a
+   site, the strong hit at a site offers no progress pick, and a pick with
+   none open says so (`no-expedition`) and begins nothing.
 4. **The Finish-the-Expedition card button loses the destination**
    (EXPEDITION-FINISH-TARGET): it posts no `forcedMoveTarget`, so with more
    than one open expedition the selector returns null → tick enrichment warns

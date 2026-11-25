@@ -25,11 +25,14 @@
 /* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
+// The narration model — and, since the readers run on Sonnet 5.5, the pacing
+// classifier's too: a narration call is one on this model that is no reader's.
 const NARRATION_MODEL = 'claude-sonnet-5-5';
+const isNarration = (call) => call.model === NARRATION_MODEL && !isReaderCall(call);
 
 const SIDECAR = {
   newTruths:    [{ subject: 'the dockmaster', fact: 'Owes the crew a favour' }],
@@ -37,10 +40,7 @@ const SIDECAR = {
   sceneFrame:   { location: 'the loading bay', present: ['the dockmaster'], situation: 'Haggling over berth fees' },
 };
 const NARRATION = 'The dockmaster scratches his chin and lets you pass.\n```json\n' + JSON.stringify(SIDECAR) + '\n```';
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'conversation, no move',
-});
+const NARRATIVE = readerReply({ category: 'social' });
 
 let table;
 
@@ -62,8 +62,8 @@ async function seed(extra = {}) {
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
   scriptClaude(table, {
     fallback: (call) => {
-      if (call.model === NARRATION_MODEL) return NARRATION;
-      if (/pacing pre-classifier/.test(call.system)) return NARRATIVE;
+      if (isNarration(call)) return NARRATION;
+      if (isReaderCall(call)) return NARRATIVE;
       return '{}';
     },
   });
@@ -96,7 +96,7 @@ describe('Z02 — the paced narration applies its facts on a working copy, never
     refuseGmCampaignStateWrites();
     await playerSaysNarrativeLine();
 
-    const narration = table.claude.calls.find(c => c.model === NARRATION_MODEL);
+    const narration = table.claude.calls.find(isNarration);
     expect(narration?.client).toBe('gm-1');                         // narrated on the keyed canonical GM
     expect(pacedCards()).toHaveLength(1);                           // the paced card posted
     expect(world().sceneTruths ?? []).toEqual([]);                  // the world refused the facts

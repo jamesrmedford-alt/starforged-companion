@@ -1,42 +1,89 @@
 // tests/unit/sessionLogLoreRetracted.test.js
-// The Session Log's "Lore this session" leaves struck lore out (issue #326
-// W64). writeSessionLog listed every lore entry carrying the session's id,
-// retracted ones included: a fact the table struck or X-carded was recorded
-// as the session's lore beside the summary that was rebuilt to leave it out.
+// The Session Log page lists no struck fact as the session's (issue #326 W64).
+// writeSessionLog listed every lore entry carrying the session's id, retracted
+// ones included: a fact the table struck was recorded as the session's beside
+// the summary rebuilt to leave it out. Since issue #382 (decision D6) the page
+// holds no copied lore list at all: its "Established and standing" is the
+// session record's view — the truths set and not struck, read with the
+// table's corrections — and a strike is named under "Corrected by the table".
+// Through the real `!truth` command and the real page render.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  recordLoreDiscovery, retractSessionLore, writeSessionLog, getConfirmedLore, JOURNAL_NAMES,
-} from '../../src/world/worldJournal.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
+import { renderSessionLog } from '../../src/record/sessionLogView.js';
+import { recordSettled, _resetRecordForTests } from '../../src/record/record.js';
+import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
+import { getRollingSessionSummary } from '../../src/narration/narrator.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { citedSummaryReply } from '../helpers/sessionRecordSeed.js';
 
 const MODULE_ID = 'starforged-companion';
-const cs = { currentSessionId: 'sess-9', sessionNumber: 9 };
+const KEY = `${MODULE_ID}.campaignState`;
+const SESSION = 'sess-9';
 
 let journals;
-beforeEach(() => { journals = installJournalMock(); });
-afterEach(() => journals.restore());
-
-const sessionLogSummary = () => journals.journals.get(JOURNAL_NAMES.sessionLog)
-  .pages.contents[0].flags[MODULE_ID].sessionLogPage.summary;
-
-describe("the End-Session log's lore list leaves struck lore out (issue #326 W64)", () => {
-  it('a lore entry the table struck this session is not listed under "Lore this session"', async () => {
-    await recordLoreDiscovery('The Iron Gate', { text: 'The gate opens at dawn', confirmed: true, narratorAsserted: true }, cs);
-    await recordLoreDiscovery('Vance is dead', { text: 'Vance died in the reactor fire', confirmed: true, narratorAsserted: true }, cs);
-    // `!truth strike` (or the X-Card) on "Vance — is dead" reaches its lore copy:
-    expect(await retractSessionLore('sess-9', (e) => e.title === 'Vance is dead')).toBe(1);
-    expect(getConfirmedLore(cs).map(e => e.title)).toEqual(['The Iron Gate']);   // control: out of canon
-
-    await writeSessionLog(cs);
-
-    // It listed ['The Iron Gate', 'Vance is dead'].
-    expect(sessionLogSummary().lore).toEqual(['The Iron Gate']);
+beforeEach(() => {
+  journals = installJournalMock();
+  _resetRecordForTests();
+  game.user = { isGM: true, id: 'test-user-gm' };
+  game.users._set([{ id: 'test-user-gm', isGM: true, active: true }]);
+  game.settings._store.set(KEY, {
+    currentSessionId: SESSION, sessionNumber: 9, currentSceneId: 'sc-1',
+    sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc-1' },
   });
-  it('control: a rumour recorded this session is listed; another session\'s lore is not', async () => {
-    await recordLoreDiscovery('Whispers in the vents', { text: 'Something moves in the ducts', confirmed: false }, cs);
-    await recordLoreDiscovery('Old news', { text: 'From last session', confirmed: true }, { ...cs, currentSessionId: 'sess-8' });
-    await writeSessionLog(cs);
-    expect(sessionLogSummary().lore).toEqual(['Whispers in the vents']);
+});
+afterEach(() => {
+  journals.restore();
+  game.settings._store.delete(KEY);
+});
+
+const page = () => journals.journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents
+  .find(p => p.flags?.[MODULE_ID]?.sessionLogPage?.sessionId === SESSION) ?? null;
+const section = (html, heading) => {
+  const at = html.indexOf(`<h3>${heading}</h3>`);
+  if (at < 0) return '';
+  const next = html.indexOf('<h3>', at + 1);
+  return html.slice(at, next < 0 ? undefined : next);
+};
+
+async function settledPage() {
+  await recordSettled();
+  await renderSessionLog(SESSION);
+  return page()?.text?.content ?? '';
+}
+
+describe('the Session Log lists no struck fact as the session\'s (issue #326 W64)', () => {
+  it('a truth the table struck this session is not "Established and standing" — it is named as struck', async () => {
+    await applyFactContinuityCommand({ text: '!truth set "The Iron Gate" opens at dawn' }, { requesterIsGM: true });
+    await applyFactContinuityCommand({ text: '!truth set Vance is dead' }, { requesterIsGM: true });
+    const vance = game.settings.get(MODULE_ID, 'campaignState').sceneTruths.find(t => /dead/.test(t.fact));
+    await applyFactContinuityCommand({ text: `!truth strike ${vance.id}` }, { requesterIsGM: true });
+
+    const html = await settledPage();
+    expect(section(html, 'Established and standing')).toContain('opens at dawn');
+    expect(section(html, 'Established and standing')).not.toContain('is dead');
+    expect(section(html, 'Corrected by the table')).toMatch(/Struck: .*<s>is dead<\/s>/);
+  });
+
+  it('the page\'s "Session summary" is the session summary — a view of the record — and copies no lore list (decision D6)', async () => {
+    await applyFactContinuityCommand({ text: '!truth set "The Iron Gate" opens at dawn' }, { requesterIsGM: true });
+    await settledPage();
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => ({ content: [{ type: 'text', text: citedSummaryReply(['The crew waited for dawn at the Iron Gate.']) }], usage: {} }),
+    }));
+    try {
+      await getRollingSessionSummary(game.settings.get(MODULE_ID, 'campaignState'), { forceRefresh: true });
+    } finally {
+      fetch.mockRestore();
+      game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    }
+    const html = await settledPage();
+
+    expect(page().flags[MODULE_ID].sessionLogPage.summary ?? null).toBeNull();   // nothing is copied onto the page's flag
+    expect(page().flags[MODULE_ID].sessionRecord.views.summary.text).toBe('The crew waited for dawn at the Iron Gate.');
+    expect(section(html, 'Session summary')).toContain('waited for dawn');
+    expect(section(html, 'Established and standing')).toContain('opens at dawn');
   });
 });

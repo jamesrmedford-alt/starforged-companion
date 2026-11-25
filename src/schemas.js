@@ -541,14 +541,6 @@ export const CampaignStateSchema = {
   // The session End a Session closed (issue #286 C4). The next world load or
   // Begin a Session mints a new session while this equals currentSessionId.
   sessionEndedId:       null,
-  // The rolling summary of the session before this one, kept when the new
-  // session is minted (issue #286 C3) and shown to the narrator as LAST
-  // SESSION. Written by mintSession (src/session/lifecycle.js), from
-  // sessionSummary — the canonical, live record — and by the catch-up of a
-  // session the mint closed out without its summary (narrator.js
-  // catchUpUnsummarisedSession, issue #347 AB15).
-  //   { sessionId, sessionNumber, text, updatedAt }
-  previousSessionSummary: null,
   // The newest deleted chat messages the X-Card's pick reads — narration and
   // X-Card cards, and the lines that end a beat, without their text — so a
   // narration whose card a GM deleted is still the one the next X-Card removes
@@ -556,12 +548,6 @@ export const CampaignStateSchema = {
   // AB22 and its residual). Canonical GM; the newest 20, newest last.
   //   [{ id, timestamp, whisper, flags: { [MODULE_ID]: { narratorCard, sessionId, narrationId, … } } | {}, deleted: true }]
   deletedChatMessages: [],
-  // The session the last mint closed out before its summary could be brought
-  // up to date — no Claude key on the minting GM's client yet, or the one
-  // summary call failed (issue #347 AB15). LAST SESSION is summarised from its
-  // cards the next time a keyed canonical GM can, and this cleared.
-  //   { sessionId, sessionNumber } | null
-  unsummarisedSession: null,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin
@@ -600,14 +586,16 @@ export const CampaignStateSchema = {
   //   { sessionId, quest, connection }
   sessionFocus:         null,
 
-  // The chronicle a recap was made from — getCampaignRecap and the session's
-  // first narration use the text only while the chronicle still matches
-  // (narrator.js campaignRecapCacheKey, issue #301 B04).
+  // The campaign recap, a view of the session record (issue #382): getCampaignRecap
+  // and the session's first narration use the text only while the source it
+  // was made from hashes the same (narrator.js campaignRecapCacheKey). `cites`
+  // is each paragraph's sentences' beat ids. A cache from before the record
+  // (`chronicleLength` / `chronicleHash`, issue #301 B04) is made again once.
   campaignRecapCache: {
-    text:            "",
-    generatedAt:     null,
-    chronicleLength: 0,
-    chronicleHash:   null,
+    text:        "",
+    cites:       [],
+    generatedAt: null,
+    sourceHash:  null,
   },
 
   // Pacing classifier state (see issue #220 (Pacing))
@@ -630,7 +618,7 @@ export const CampaignStateSchema = {
   //   sceneState     — supersede-on-attribute state ledger
   //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt, subjectText? }] }, sceneId }
   //                    (subjectText: a text subject as the narrator wrote it — its key is lowercased;
-  //                    the CURRENT STATE label reads it, TEXT-SUBJECT-LOWERCASE)
+  //                    the ledger block's state label reads it, TEXT-SUBJECT-LOWERCASE)
   currentSceneId: null,
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },

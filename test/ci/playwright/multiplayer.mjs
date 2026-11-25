@@ -231,10 +231,11 @@ async function main() {
               ? m.content : (m.content ?? []).map(c => c?.text ?? "").join(""))).join("\n\n");
             calls.push({ system: system.slice(0, 120), user });
             let text;
-            if (system.startsWith("You are the pacing pre-classifier")) {
-              text = JSON.stringify({ decision: "MOVE", suggestedMove: "face_danger", category: "exploration", confidence: 0.9, reasoning: "E2E" });
-            } else if (system.startsWith("You are the move interpreter")) {
-              text = JSON.stringify({ moveId: "face_danger", statUsed: "edge", rationale: "E2E: a dash under fire.", mischiefApplied: false, confidence: "high" });
+            // The line reader (src/moves/reader.js), the one call that reads a
+            // round's line: Face Danger +edge at risk high, which the table
+            // rolls at any dial (a round has no density window).
+            if (system.startsWith("You are the line reader")) {
+              text = JSON.stringify({ move: "face_danger", risk: "high", category: "exploration", confidence: "high", reason: "E2E: a dash under fire.", stat: "edge" });
             } else if (system.includes("## RESPONSE FORMAT — MANDATORY SIDECAR")) {
               text = "E2E: the round turns.\n\n```json\n{\"newTruths\":[],\"stateChanges\":[]}\n```";
             } else {

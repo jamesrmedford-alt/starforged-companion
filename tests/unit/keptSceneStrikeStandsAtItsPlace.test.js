@@ -146,7 +146,7 @@ describe('issue #345 AA28 — a scene fact struck at one place stands struck at 
     await bleakholdSceneWithStrike();
     await narrateAt('Vantage Station', DARK, 'nar-2');
     const block = ledger();
-    expect(block.truths).toContain(`scene — ${DARK}`);
+    expect(block.described).toContain(`scene — ${DARK}`);
     expect(block.corrections).not.toContain(DARK);
     // The summary covers the whole session, Bleakhold's scene included: its leave-out list still names the strike.
     expect(sessionRetractedFacts(stored()).map(f => `${f.label} — ${f.fact}`)).toEqual([`scene — ${DARK}`]);

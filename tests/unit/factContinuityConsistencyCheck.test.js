@@ -60,6 +60,10 @@ function withSetting(value, fn) {
 // parseAuditResponse
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The table's facts (overhaul 2 §5.1): what a scene's end files, and the block's
+// WHAT BINDS. The narrator's own colour fades with its scene (colourNotFiled.test.js).
+const BOUND = () => 'player';
+
 describe('parseAuditResponse', () => {
   it('parses a clean JSON object', () => {
     const out = parseAuditResponse(JSON.stringify({
@@ -126,20 +130,20 @@ describe('parseAuditResponse', () => {
 describe('buildAuditPrompt', () => {
   it('embeds the truths, state, and narration in the prompt body', () => {
     const prompt = buildAuditPrompt(
-      'TRUTHS:\n  scene — wind has died',
-      'CURRENT STATE (right now in this scene):\n  scene — lighting: dim',
+      'WHAT BINDS — …:\n  scene — wind has died (the GM)',
+      'STANDING NOW:\n  scene — lighting: dim (the GM)',
       'Vance sprints up the ramp.',
     );
-    expect(prompt).toMatch(/ACTIVE SCENE TRUTHS:\n.*wind has died/s);
-    expect(prompt).toMatch(/ACTIVE SCENE STATE:\n.*lighting: dim/s);
+    expect(prompt).toMatch(/WHAT BINDS \(what the player said, the dice decided or the GM set\):\n.*wind has died/s);
+    expect(prompt).toMatch(/STANDING NOW:\n.*lighting: dim/s);
     expect(prompt).toMatch(/NARRATION:\nVance sprints up the ramp\./);
     expect(prompt).toMatch(/"contradictions":/);
   });
 
   it('renders "(none)" when a ledger section is empty', () => {
     const prompt = buildAuditPrompt('', '', 'prose');
-    expect(prompt).toMatch(/ACTIVE SCENE TRUTHS:\n\(none\)/);
-    expect(prompt).toMatch(/ACTIVE SCENE STATE:\n\(none\)/);
+    expect(prompt).toMatch(/WHAT BINDS \(what the player said, the dice decided or the GM set\):\n\(none\)/);
+    expect(prompt).toMatch(/STANDING NOW:\n\(none\)/);
   });
 });
 
@@ -160,7 +164,7 @@ describe('runConsistencyCheck', () => {
       const cs = makeCampaignState();
       applySidecar(
         { newTruths: [{ subject: 'scene', fact: 'a' }], stateChanges: [] },
-        { campaignState: cs },
+        { campaignState: cs, basisOf: BOUND },
       );
       const out = await runConsistencyCheck('prose', cs);
       expect(out).toEqual({ contradictions: [], dispatched: false });
@@ -183,7 +187,7 @@ describe('runConsistencyCheck', () => {
       const cs = makeCampaignState();
       applySidecar(
         { newTruths: [{ subject: 'scene', fact: 'wind has died' }], stateChanges: [] },
-        { campaignState: cs },
+        { campaignState: cs, basisOf: BOUND },
       );
       const out = await runConsistencyCheck('prose', cs);
       expect(apiPost).toHaveBeenCalledTimes(1);
@@ -212,7 +216,7 @@ describe('runConsistencyCheck', () => {
       const cs = makeCampaignState();
       applySidecar(
         { newTruths: [{ subject: 'scene', fact: 'wind has died' }], stateChanges: [] },
-        { campaignState: cs },
+        { campaignState: cs, basisOf: BOUND },
       );
       const out = await runConsistencyCheck('prose', cs, { matchedEntityIds: ['JE.x7'] });
       expect(applyStateTransition).toHaveBeenCalledTimes(1);
@@ -244,7 +248,7 @@ describe('runConsistencyCheck', () => {
       const cs = makeCampaignState();
       applySidecar(
         { newTruths: [{ subject: 'scene', fact: 'x' }], stateChanges: [] },
-        { campaignState: cs },
+        { campaignState: cs, basisOf: BOUND },
       );
       const out = await runConsistencyCheck('prose', cs);
       expect(applyStateTransition).not.toHaveBeenCalled();
@@ -259,7 +263,7 @@ describe('runConsistencyCheck', () => {
       const cs = makeCampaignState();
       applySidecar(
         { newTruths: [{ subject: 'scene', fact: 'x' }], stateChanges: [] },
-        { campaignState: cs },
+        { campaignState: cs, basisOf: BOUND },
       );
       const out = await runConsistencyCheck('prose', cs);
       expect(out).toEqual({ contradictions: [], dispatched: false });
@@ -272,30 +276,30 @@ describe('runConsistencyCheck', () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Broadened audit scope (narrator-context audit 2026-07): frame, retracted
-// facts, and ship position join truths + state in the audit prompt.
+// Broadened audit scope (narrator-context audit 2026-07): retracted facts and
+// the ship join truths + state; since overhaul 2 (§5.8, D15) what binds
+// alone — THE PLACE (THE SCENE's Place and Ship lines), never the frame.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('buildAuditPrompt — broadened sections', () => {
-  it('includes frame, corrections, and ship position when provided', () => {
-    const prompt = buildAuditPrompt('TRUTHS:\n  scene — x', 'STATE', 'Some prose.', {
-      frame:        'SCENE FRAME (the scene as it stands):\n  Where: the docks',
+  it('includes the place, the corrections and what binds when provided — never the frame', () => {
+    const prompt = buildAuditPrompt('WHAT BINDS — …:\n  scene — x (the GM)', 'STANDING NOW:', 'Some prose.', {
+      place:        '  Place:    Bleakhold — where the characters are, by the table\'s record\n  Ship:     Kobayashi IV docked at Bleakhold',
       corrections:  'CORRECTED …:\n  Vance — Betrayed the crew',
-      shipPosition: 'SHIP POSITION: docked at Bleakhold',
     });
-    expect(prompt).toMatch(/SCENE FRAME \(where the scene is set/);
-    expect(prompt).toMatch(/Where: the docks/);
+    expect(prompt).toMatch(/THE PLACE \(where the characters are and where their ship is, by the table's record\):/);
+    expect(prompt).toMatch(/Ship: {5}Kobayashi IV docked at Bleakhold/);
     expect(prompt).toMatch(/RETRACTED FACTS/);
     expect(prompt).toMatch(/Betrayed the crew/);
-    expect(prompt).toMatch(/SHIP POSITION:/);
-    expect(prompt).toMatch(/docked at Bleakhold/);
+    expect(prompt).not.toMatch(/SCENE FRAME/);
     expect(prompt).toMatch(/"retraction"/);
+    expect(prompt).toMatch(/"place"/);
   });
 
   it('renders (none) for absent sections', () => {
     const prompt = buildAuditPrompt('', '', 'Prose.');
     const noneCount = (prompt.match(/\(none\)/g) ?? []).length;
-    expect(noneCount).toBe(6); // frame, identities, truths, corrections, state, ship
+    expect(noneCount).toBe(6); // place, identities, what binds, corrections, standing, obligations (overhaul 4)
   });
 
   it('includes recorded identities when provided', () => {
@@ -310,7 +314,7 @@ describe('buildAuditPrompt — broadened sections', () => {
 });
 
 describe('parseAuditResponse — broadened kinds', () => {
-  it('preserves frame / ship / retraction kinds and defaults unknown to truth', () => {
+  it('reads frame / ship as place (overhaul 2 §5.8), keeps retraction, and defaults unknown to truth', () => {
     const raw = JSON.stringify({
       contradictions: [
         { subject: 'a', violated: 'v', kind: 'frame',      confidence: 'high' },
@@ -320,7 +324,7 @@ describe('parseAuditResponse — broadened kinds', () => {
       ],
     });
     const out = parseAuditResponse(raw);
-    expect(out.map(c => c.kind)).toEqual(['frame', 'ship', 'retraction', 'truth']);
+    expect(out.map(c => c.kind)).toEqual(['place', 'place', 'retraction', 'truth']);
     const idOut = parseAuditResponse(JSON.stringify({
       contradictions: [{ subject: 'x', violated: 'v', kind: 'identity', confidence: 'high' }],
     }));

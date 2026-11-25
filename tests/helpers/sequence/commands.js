@@ -269,12 +269,15 @@ export class TakeBondRoll extends Command {
     const vow = this.#vow(model);
     const connection = M.swornConnection(model, vow);
     const rank = connection.rank;
-    const { outcome, raised } = M.takeBondRoll(model, vow, this.actionDie, this.challenge);
-    this.described = `TakeBondRoll(${vow.ref} "${vow.name}" of ${vow.pc}, for ${connection.ref} "${connection.name}"${twice(this.doubled)}, ${this.actionDie} +${BOND_ROLL_ADDS[rank]} (${rank}) vs ${dice(this.challenge)} → ${outcome}${raised ? `, raised to ${connection.rank}` : ""})`;
-    model.pressed = true;
-    await world.takeBondRoll(connection.ref, { pc: vow.pc, actionDie: this.actionDie, challenge: this.challenge, doubled: this.doubled });
+    const { outcome, raised, refused } = M.takeBondRoll(model, vow, this.actionDie, this.challenge);
+    this.described = refused
+      ? `TakeBondRoll(${vow.ref} "${vow.name}" of ${vow.pc}, for ${connection.ref} "${connection.name}"${twice(this.doubled)} — not ${vow.pc}'s connection: refused, the offer kept)`
+      : `TakeBondRoll(${vow.ref} "${vow.name}" of ${vow.pc}, for ${connection.ref} "${connection.name}"${twice(this.doubled)}, ${this.actionDie} +${BOND_ROLL_ADDS[rank]} (${rank}) vs ${dice(this.challenge)} → ${outcome}${raised ? `, raised to ${connection.rank}` : ""})`;
+    model.pressed = !refused;
+    await world.takeBondRoll(connection.ref, { pc: vow.pc, actionDie: this.actionDie, challenge: refused ? [] : this.challenge, doubled: this.doubled, refused });
     await this.finish(model, world, outcome, this.doubled);
     if (raised) count("TakeBondRoll:raised its rank");
+    if (refused) count("TakeBondRoll:refused — not the roller's connection");
   }
 }
 

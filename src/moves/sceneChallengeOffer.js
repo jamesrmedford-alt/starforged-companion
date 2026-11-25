@@ -95,6 +95,14 @@ export async function applySceneChallengeOffer(payload = {}, ctx = {}) {
     return { applied: false, reason: "not-gm" };
   }
   if (message.flags?.[MODULE_ID]?.sceneChallengeBegun) return { applied: false, reason: "already-resolved" };
+  // The press is Begin the Scene, a move made by a button (overhaul 4,
+  // design §6.2 and 7.2): the move gate is asked before the claim. Its row
+  // requires nothing, so it passes by construction; a precondition put on
+  // the row binds this button too.
+  const { gatePress } = await import("./contracts/pressGate.js");
+  const gate = await gatePress("begin_the_scene", { reading: { target: offer.label ?? null }, ctx, label: "scene challenge offer" });
+  if (!gate.ok) return { applied: false, reason: "cannot" };
+  if (globalThis.game?.messages?.get?.(messageId)?.flags?.[MODULE_ID]?.sceneChallengeBegun) return { applied: false, reason: "already-resolved" };
   try {
     await message.update({ [`flags.${MODULE_ID}.sceneChallengeBegun`]: true });
   } catch (err) {
@@ -112,7 +120,7 @@ export async function applySceneChallengeOffer(payload = {}, ctx = {}) {
     const track = await addProgressTrack({
       label: offer.label, type: "scene_challenge", rank: "dangerous",
       ...(clock ? { tensionClockId: clock._id } : {}),
-    });
+    }, { by: { move: "begin_the_scene", res: null } });
     await message.update({
       content: closedContent(offer.label, `Scene challenge begun: <strong>${escapeHtml(offer.label)}</strong> (dangerous — re-rank it in the Progress Tracks panel). ${clock ? "The countdown is its tension clock." : "The countdown had ended; it has a clock of its own."}`),
     }).catch(err => console.warn(`${MODULE_ID} | scene challenge offer: card ${messageId} could not be closed:`, err?.message ?? err));

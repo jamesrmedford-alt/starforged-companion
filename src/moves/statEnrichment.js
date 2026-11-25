@@ -208,6 +208,17 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
  * develop branch after the roll marks the same connection. An un-bonded
  * connection changes nothing: its development is no roll, a mark of progress.
  *
+ * A move that carries no target at all — a paced card's "Roll Develop Your
+ * Relationship" forces the move with none, and a forced move asks no reader —
+ * is for the one active connection its player's line names (as an Aid Your
+ * Ally's ally is found, namedOnce). selectConnection's fallback for no
+ * target is the sole bonded connection, else the sole active one: "I offer
+ * to watch Tamsin's counter" developed the one bonded connection, whoever
+ * that was, and at a table that knows several people and has bonded none it
+ * marked nothing — so the favour the pacing reader offered led nowhere
+ * (known-issues FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A line that names
+ * none, or two, falls back as before.
+ *
  * @param {Object} interpretation — mutated: `statUsed` / `statValue` when
  *   bonded; `moveTargetId` / `moveTarget` when a connection resolves
  * @param {{ listConnections: () => Promise<Array<Object>> }} deps — the active
@@ -218,7 +229,11 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 export async function enrichBondedDevelop(interpretation, { listConnections }) {
   if (interpretation?.moveId !== "develop_your_relationship") return null;
   const connections = await listConnections();
-  const target = selectConnection(connections, interpretation.moveTarget ?? null,
+  const untargeted = !interpretation.moveTarget && !interpretation.moveTargetId;
+  const named = untargeted
+    ? namedOnce((connections ?? []).filter(c => c && c.active !== false), interpretation.playerNarration)
+    : null;
+  const target = named ?? selectConnection(connections, interpretation.moveTarget ?? null,
     { hostId: interpretation.moveTargetId ?? null });
   if (!target) return { connection: null, bonded: false, adds: 0 };
   if (target.__hostId) interpretation.moveTargetId = target.__hostId;
@@ -307,17 +322,24 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
  * Test Your Relationship's connection resolves as its develop branch does (a
  * picker's host id, else the named one — selectConnection), and is stamped on
  * the interpretation so that branch develops the same one. A swear's
- * connection is the one its card names (`swearToConnection` — the inciting
- * vow's target, or the connection a sheet-made vow is linked to), matched by
- * name among the active connections; a vow sworn to nobody the crew knows adds
- * nothing.
+ * connection is the one its card names (`swearToConnection` — the connection
+ * a sheet-made vow is linked to), matched by name among the active
+ * connections; a vow sworn to nobody the crew knows adds nothing.
+ *
+ * Either way the add is the roller's: a connection is the bond Item on the
+ * roller's own sheet (FOLDER-002; overhaul 4 — the gate's THEIR_CONNECTION).
+ * An NPC card alone is a person, and a vow sworn to a person adds nothing:
+ * it gave every inciting vow its +1, its target made a connection first to
+ * earn it (D5). `rollerConnections` — the roller's bond Items
+ * (actorBridge.readConnections); unread (null), the record alone decides, as
+ * before.
  *
  * @param {Object} interpretation — mutated: `bondAdd` (and the Test's
  *   `moveTargetId` / `moveTarget` when its connection resolves)
- * @param {{ listConnections: () => Promise<Array<Object>> }} deps
+ * @param {{ listConnections: () => Promise<Array<Object>>, rollerConnections?: Array<Object>|null }} deps
  * @returns {Promise<number>} the add (0 when none applies)
  */
-export async function enrichBondAdds(interpretation, { listConnections }) {
+export async function enrichBondAdds(interpretation, { listConnections, rollerConnections = null }) {
   const moveId = interpretation?.moveId;
   if (moveId !== "test_your_relationship" && moveId !== "swear_an_iron_vow") return 0;
   const connections = (await listConnections()) ?? [];
@@ -327,15 +349,35 @@ export async function enrichBondAdds(interpretation, { listConnections }) {
       { hostId: interpretation.moveTargetId ?? null });
     if (target?.__hostId) interpretation.moveTargetId = target.__hostId;
     if (target?.name)     interpretation.moveTarget   = target.name;
-    add = target?.bonded ? 1 : 0;
+    const own = rollersBondFor(target, rollerConnections);
+    add = own === false ? 0 : (target?.bonded ? 1 : 0);
   } else {
     const name = typeof interpretation.swearToConnection === "string" ? interpretation.swearToConnection.trim() : "";
     const norm = (s) => String(s ?? "").trim().toLowerCase();
     const sworn = name ? connections.find(c => c && c.active !== false && norm(c.name) === norm(name)) : null;
-    add = sworn ? (sworn.bonded ? 2 : 1) : 0;
+    const own = rollersBondFor(sworn, rollerConnections);
+    add = sworn && own !== false ? (sworn.bonded ? 2 : 1) : 0;
   }
   interpretation.bondAdd = add;
   return add;
+}
+
+/**
+ * Whether the roller holds a live bond Item for the connection record: true,
+ * false, or null when the roller's bond Items were not read (the record alone
+ * decides then). Matched by the record's id the Item is keyed to, else by
+ * name for an unkeyed Item.
+ *
+ * @param {Object|null} record — a connection record (`_id`, `name`)
+ * @param {Array<Object>|null} rollerConnections — actorBridge.readConnections rows
+ * @returns {boolean|null}
+ */
+function rollersBondFor(record, rollerConnections) {
+  if (!Array.isArray(rollerConnections)) return null;
+  if (!record) return false;
+  const name = String(record.name ?? "").trim().toLowerCase();
+  return rollerConnections.some(c => !c?.lost && (c.connectionId ? c.connectionId === record._id
+    : String(c?.name ?? "").trim().toLowerCase() === name));
 }
 
 /**
@@ -912,15 +954,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
       };
     } else if (moveId === "forge_a_bond" && (hostId || target)) {
       // A forge naming a connection already bonded (by its picker's id or by
-      // name) resolves nothing: rollMove's "not rolled" card says it was
-      // bonded (FORGE-NAMED-BONDED-SCORED — a typed name scored the bond's
-      // own track, then the forge skipped it).
+      // name) resolves nothing — never the bond's own track
+      // (FORGE-NAMED-BONDED-SCORED: a typed name scored it, then the forge
+      // skipped it). The move gate refuses such a forge before the dice
+      // (contracts/predicates.js NOT_BONDED, overhaul 4 — the "not rolled"
+      // guard that read an `alreadyBonded` mark here went with it); this
+      // keeps the score at nothing where the gate could not read the sheet.
       const named = selectConnection(connections, target, { hostId, strict: true });
       if (named?.bonded) {
         console.warn(`${MODULE_ID} | enrichProgressTicks: ${named.name ?? "that connection"} is already bonded — Forge a Bond scores nothing.`);
         interpretation.statValue     = 0;
         interpretation.progressTicks = 0;
-        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null, alreadyBonded: true };
+        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null };
       }
     }
   }

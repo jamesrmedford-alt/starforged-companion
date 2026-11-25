@@ -27,7 +27,7 @@ vi.mock('../../src/art/openRouterImage.js', () => ({ generateOpenRouterImage: vi
 import { generateOpenRouterImage } from '../../src/art/openRouterImage.js';
 import { getConnection } from '../../src/entities/connection.js';
 import { resolveNpcVoiceForCard } from '../../src/audio/index.js';
-import { selectEndSessionNPC } from '../../src/session/endSessionVignette.js';
+import { chooseClosingSubject } from '../../src/session/endSessionVignette.js';
 
 let table;
 
@@ -164,7 +164,7 @@ describe('the voice, the end-session vignette and the portrait follow the sheet 
   });
 
   it('the end-session vignette\'s NPC hint leads with the sheet\'s pronouns', () => {
-    const npc = selectEndSessionNPC(game.settings.get(MODULE_ID, 'campaignState'));
+    const npc = chooseClosingSubject(game.settings.get(MODULE_ID, 'campaignState'), { messages: [] }).option;
     expect(npc).toMatchObject({ kind: 'bonded_connection', name: 'Sol' });
     expect(npc.hint.startsWith('Pronouns: they/them')).toBe(true);
   });

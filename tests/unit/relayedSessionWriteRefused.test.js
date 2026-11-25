@@ -28,7 +28,6 @@ vi.mock('../../src/narration/narrator.js', async (orig) => ({
   narrateSessionVignette:   vi.fn(async () => null),
   narrateClockAdvancement:  vi.fn(async () => null),
   getRollingSessionSummary: vi.fn(async () => null),
-  finalizeSessionSummary:   vi.fn(async () => null),
   getCampaignRecap:         vi.fn(async () => ''),
 }));
 vi.mock('../../src/character/actorBridge.js', async (orig) => ({

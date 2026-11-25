@@ -192,7 +192,7 @@ describe('a second Finish the Scene in the round, after the first ended the chal
     const refused = table.cards(f => f.roundRefusedCard).map(c => c.content ?? '');
     expect(refused).toHaveLength(1);
     expect(refused[0]).toMatch(/Ren — Finish the Scene: not rolled/);
-    expect(refused[0]).toMatch(/The Escape ended earlier in this round/);
+    expect(refused[0]).toMatch(/(&quot;|")The Escape(&quot;|") was finished or deleted before the roll/);
   }, 30_000);
 
   it('two typed "we finish the scene" lines (no row id): the second is refused the same way', async () => {
@@ -212,6 +212,6 @@ describe('a second Finish the Scene in the round, after the first ended the chal
     expect(cardsOf('pl-1')).toHaveLength(1);
     expect(cardsOf('pl-2')).toEqual([]);
     expect(ptpCards()).toEqual([]);
-    expect(table.cards(f => f.roundRefusedCard).map(c => c.content).join()).toMatch(/The Escape ended earlier in this round/);
+    expect(table.cards(f => f.roundRefusedCard).map(c => c.content).join()).toMatch(/&quot;The Escape&quot; was finished or deleted before the roll|"The Escape" was finished or deleted before the roll/);
   }, 30_000);
 });

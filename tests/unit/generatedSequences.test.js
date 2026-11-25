@@ -311,14 +311,30 @@ describe('the sequences the properties are about, written out', () => {
       new RepeatLastPress(),                         // the offer is spent
     ], {
       vows: [[{ name: 'Find Kade', rank: 'formidable', boxes: 10, swornTo: 0 }], []],
-      connections: [{ name: 'Sable', rank: 'dangerous', boxes: 6, holderPick: 1, bonded: true }],
+      connections: [{ name: 'Sable', rank: 'dangerous', boxes: 6, holderPick: 0, bonded: true }],
     });
     const seen = world.observe();
     expect(seen.connections, 'no progress; a rank for the match').toEqual([{ ref: 'c2', name: 'Sable', rank: 'formidable', ticks: 24, bonded: true }]);
-    expect(seen.pcs['pc-ash'].bonds, 'her bond on Ash\'s sheet follows').toEqual([{ connection: 'c2', name: 'Sable', rank: 'formidable', ticks: 24, forged: true }]);
+    expect(seen.pcs['pc-kira'].bonds, 'her bond on Kira\'s sheet follows').toEqual([{ connection: 'c2', name: 'Sable', rank: 'formidable', ticks: 24, forged: true }]);
     expect(seen.legacy, 'the vow\'s box on quests, the roll\'s two ticks on bonds').toEqual({ quests: 4, bonds: 2 });
     expect(seen.rollOffers).toEqual([]);
     expect(world.card(f => f.payoffFailureCard), 'no "Vow payoff incomplete" card').toBe(null);
+  });
+
+  it('a vow sworn to a crewmate\'s connection: the roll its fulfilment offers is not its roller\'s to take — refused, nothing paid, the offer kept (overhaul 4)', async () => {
+    const { world } = await play([
+      new FulfilVow(0, 0, [3, 9]),                   // v1, Kira's, sworn to Sable — Ash's connection, bonded: the roll is offered to Kira
+      new TakeBondRoll(0, 5, [4, 4]),                // Kira presses it: Sable is no connection of hers — refused
+    ], {
+      vows: [[{ name: 'Find Kade', rank: 'formidable', boxes: 10, swornTo: 0 }], []],
+      connections: [{ name: 'Sable', rank: 'dangerous', boxes: 6, holderPick: 1, bonded: true }],
+    });
+    const seen = world.observe();
+    expect(seen.connections, 'nothing paid').toEqual([{ ref: 'c2', name: 'Sable', rank: 'dangerous', ticks: 24, bonded: true }]);
+    expect(seen.legacy, 'the vow\'s box on quests, nothing on bonds').toEqual({ quests: 4, bonds: 0 });
+    expect(seen.rollOffers, 'the offer is handed back').toEqual([{ connection: 'c2', to: 'pc-kira' }]);
+    const notice = world.card(f => f.moveNotRolledNotice === 'cannot');
+    expect(String(notice?.content ?? '')).toContain("No Develop Your Relationship — Sable is not Kira's connection.");
   });
 
   it('a connection bonded in play: developed again it is a roll +her rank — a weak hit is momentum to its roller, a miss nothing, and no progress either way', async () => {

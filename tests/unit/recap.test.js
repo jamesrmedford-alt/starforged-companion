@@ -1,20 +1,30 @@
 // tests/unit/recap.test.js
 // Coverage for the Previously On / recap feature:
-//   postSessionRecap()           — src/narration/narrator.js
+//   postSessionRecap()           — src/narration/narrator.js (a view of the session record)
 //   getCampaignRecap()           — src/narration/narrator.js (cache behaviour)
 //   buildCampaignRecapUserMessage() — src/narration/narratorPrompt.js
 //   isRecapCommand()             — src/index.js
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { isRecapCommand } from '../../src/index.js';
-import { postSessionRecap, getCampaignRecap, postNarrationCard, campaignRecapCacheKey } from '../../src/narration/narrator.js';
+import { postSessionRecap, getCampaignRecap, campaignRecapCacheKey } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
+import { installJournalMock } from '../helpers/fullStateFixture.js';
+import { recordedEvent, seedSessionRecord } from '../helpers/sessionRecordSeed.js';
 import {
   addChronicleEntry, getChronicleEntries, updateChronicleEntry,
   deleteChronicleEntry, setChronicleEntryPinned, setChronicleEntryType,
 } from '../../src/character/chronicle.js';
 
 const MODULE_ID = 'starforged-companion';
+
+/**
+ * A recap reply as the model is asked for it since issue #382 slice 2: cited
+ * sentences. Its one sentence cites the source's first own note — every
+ * Chronicle entry below is a player's (not the automatic scribe's), so the
+ * recap is given it as THE PLAYERS' OWN NOTES, [note-1] first.
+ */
+const cited = (text, because = ['note-1']) => JSON.stringify({ paragraphs: [[{ text, because }]] });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,25 +39,6 @@ function makeCampaignState(overrides = {}) {
     characterIds: [],
     connectionIds: [],
     ...overrides,
-  };
-}
-
-function makeNarratorCard(overrides = {}) {
-  return {
-    flags: {
-      [MODULE_ID]: {
-        narratorCard:  true,
-        narrationText: overrides.narrationText ?? 'The ship shuddered.',
-        sessionId:     overrides.sessionId     ?? 'test-session',
-        sessionNumber: overrides.sessionNumber ?? 3,
-        moveId:        overrides.moveId        ?? 'face_danger',
-        outcome:       overrides.outcome       ?? 'strong_hit',
-        isMatch:       overrides.isMatch       ?? false,
-        timestamp:     new Date().toISOString(),
-        ...overrides.extraFlags,
-      },
-    },
-    content: overrides.content ?? '',
   };
 }
 
@@ -111,115 +102,94 @@ describe('isRecapCommand()', () => {
 
 
 // ---------------------------------------------------------------------------
-// 3. postSessionRecap() — data assembly
+// 3. postSessionRecap() — the `!recap session` card, a view of the session
+//    record (issue #382 slice 5, record/sessionCardView.js). It read the
+//    session's narrator cards in chat; it reads the moves the record holds —
+//    seeded here on the session's page as rollMove records them
+//    (tests/helpers/sessionRecordSeed.js). The real producer → card hop is
+//    multiplayerComposition.test.js's; tests/unit/sessionCardView.test.js
+//    has the corrections (a burn, an X-Card, a fallback) and `!recap session N`.
 // ---------------------------------------------------------------------------
 
 describe('postSessionRecap()', () => {
+  let journals;
   beforeEach(() => {
     ChatMessage._reset();
-  });
-
-  it('posts an empty recap card when no messages match the session', async () => {
+    journals = installJournalMock();
     global.game.messages = { contents: [] };
+  });
+  afterEach(() => journals.restore());
+
+  /** A session's rolled moves on its page — `[moveId, outcome, isMatch?]` each — and a telling of the first. */
+  const recorded = (sessionId, moves, { number = 3, told = null } = {}) => seedSessionRecord(sessionId, [
+    recordedEvent(sessionId, 'session.begun', { d: { number } }),
+    ...moves.map(([moveId, outcome, isMatch = false], i) => recordedEvent(sessionId, 'move.resolved', {
+      ref: { res: `res-${sessionId}-${i}` }, d: { moveId, outcome, isMatch, rollKind: 'action' } })),
+    ...(told ? [recordedEvent(sessionId, 'narration', { ref: { nar: `nar-${sessionId}`, res: `res-${sessionId}-0` }, d: { mode: 'move' }, text: told })] : []),
+  ], { number });
+
+  it('posts an empty recap card when the session record holds no move', async () => {
     const state = makeCampaignState();
     await postSessionRecap(state);
     expect(ChatMessage._created).toHaveLength(1);
     expect(ChatMessage._created[0].content).toContain('sf-recap-session-card');
-    expect(ChatMessage._created[0].content).toContain('No narrated moves');
+    expect(ChatMessage._created[0].content).toContain('No moves are recorded for this session.');
+    expect(ChatMessage._created[0].flags[MODULE_ID]).toMatchObject({ recapEmpty: true, sessionNumber: 3 });
   });
 
-  it('formats move cards with name and outcome', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ moveId: 'face_danger', outcome: 'strong_hit', narrationText: 'You dodge the blast with ease.' }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+  it('formats each move with its name and outcome', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
-    expect(card.content).toContain('Face Danger');
-    expect(card.content).toContain('Strong Hit');
+    expect(card.content).toContain('• Face Danger → Strong Hit');
   });
 
-  it('extracts the first sentence from narration text', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({
-          narrationText: 'You dodge the blast with ease. The corridor is clear.',
-          outcome: 'strong_hit',
-          moveId: 'face_danger',
-        }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+  it('quotes nothing of a narration — the chat holds the telling', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit']], { told: 'You dodge the blast with ease. The corridor is clear.' });
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
-    expect(card.content).toContain('You dodge the blast with ease');
-    expect(card.content).not.toContain('The corridor is clear');
+    expect(card.content).toContain('• Face Danger → Strong Hit');
+    expect(card.content).not.toContain('You dodge the blast');
   });
 
   it('counts strong hits in the summary', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ outcome: 'strong_hit', moveId: 'face_danger' }),
-        makeNarratorCard({ outcome: 'strong_hit', moveId: 'strike' }),
-        makeNarratorCard({ outcome: 'miss',        moveId: 'clash' }),
-      ],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+    await recorded('test-session', [['face_danger', 'strong_hit'], ['strike', 'strong_hit'], ['clash', 'miss']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
     expect(card.content).toContain('2 strong hits');
     expect(card.content).toContain('3 moves resolved');
   });
 
-  // The match line reads the narrator card's `isMatch` flag. Its old test
-  // hand-set that flag on a fixture card while postNarrationCard never wrote
-  // it, so the line never appeared in play (found by the issue-#282 audit of
-  // hand-set fixture state). The cards here come from the real producer.
-  it('notes a match rolled in the session — from the narrator card the narration posted', async () => {
-    const state = makeCampaignState();
-    await postNarrationCard('You slip past the guards.',
-      { moveId: 'face_danger', outcome: 'strong_hit', isMatch: true, _id: 'r1' }, state);
-    await postNarrationCard('The door holds.',
-      { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
-    global.game.messages = { contents: ChatMessage._created.slice() };
-    ChatMessage._reset();
-
-    await postSessionRecap(state);
+  // The match line read a narrator-card `isMatch` flag that no code wrote
+  // (RECAP-MATCH-DEAD, issue #282). It is the roll's own now: rollMove
+  // records the match on `move.resolved` (multiplayerComposition.test.js runs
+  // the real pipeline to the card).
+  it('notes a match rolled in the session — the roll\'s match, on the record', async () => {
+    await recorded('test-session', [['face_danger', 'strong_hit', true], ['clash', 'miss', false]]);
+    await postSessionRecap(makeCampaignState());
     expect(ChatMessage._created[0].content).toContain('A match was rolled — Face Danger.');
   });
 
   it('says nothing about a match when none was rolled', async () => {
-    const state = makeCampaignState();
-    await postNarrationCard('The door holds.', { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
-    global.game.messages = { contents: ChatMessage._created.slice() };
-    ChatMessage._reset();
-
-    await postSessionRecap(state);
+    await recorded('test-session', [['clash', 'miss']]);
+    await postSessionRecap(makeCampaignState());
     expect(ChatMessage._created[0].content).not.toContain('match');
   });
 
   it('filters by sessionId when provided', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ sessionId: 'session-a', moveId: 'face_danger', outcome: 'strong_hit' }),
-        makeNarratorCard({ sessionId: 'session-b', moveId: 'strike',      outcome: 'miss' }),
-      ],
-    };
-    const state = makeCampaignState({ currentSessionId: 'session-a' });
+    await recorded('session-a', [['face_danger', 'strong_hit']], { number: 2 });
+    await recorded('session-b', [['strike', 'miss']], { number: 3 });
+    const state = makeCampaignState({ currentSessionId: 'session-b' });
     await postSessionRecap(state, 'session-a');
     const card = ChatMessage._created[0];
     expect(card.content).toContain('Face Danger');
     expect(card.content).not.toContain('Strike');
+    expect(card.flags[MODULE_ID]).toMatchObject({ sessionId: 'session-a', sessionNumber: 2 });
   });
 
   it('stamps recapCard and recapType flags on the posted card', async () => {
-    global.game.messages = {
-      contents: [makeNarratorCard()],
-    };
-    const state = makeCampaignState();
-    await postSessionRecap(state);
+    await recorded('test-session', [['face_danger', 'strong_hit']]);
+    await postSessionRecap(makeCampaignState());
     const card = ChatMessage._created[0];
     expect(card.flags?.[MODULE_ID]?.recapCard).toBe(true);
     expect(card.flags?.[MODULE_ID]?.recapType).toBe('session');
@@ -266,7 +236,7 @@ describe('getCampaignRecap() — cache', () => {
       campaignRecapCache: {
         text:            'Old cached text',
         generatedAt:     new Date().toISOString(),
-        chronicleLength: 0,
+        ...(await campaignRecapCacheKey(makeCampaignState())),
       },
     });
     const result = await getCampaignRecap(state, { forceRefresh: true });
@@ -274,16 +244,16 @@ describe('getCampaignRecap() — cache', () => {
     expect(result).toBe('');
   });
 
-  it('ignores cache when chronicle has grown (chronicleLength mismatch)', async () => {
+  it('ignores a cache made from another source (its sourceHash does not match)', async () => {
     const state = makeCampaignState({
       campaignRecapCache: {
-        text:            'Stale cache',
-        generatedAt:     new Date().toISOString(),
-        chronicleLength: 5,
+        text:        'Stale cache',
+        generatedAt: new Date().toISOString(),
+        sourceHash:  'feedface',
       },
       characterIds: [],
     });
-    // chronicle length is 0 (no character journal) — different from cached 5
+    // The source as it stands hashes otherwise: the cache is not used.
     const result = await getCampaignRecap(state);
     // No API key → '' (not the stale cache)
     expect(result).toBe('');
@@ -346,31 +316,33 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
     game.actors._reset();
   });
 
-  it('_getChronicleLength returns the entry count when chronicle is populated', async () => {
+  it('a populated Chronicle reaches the source, so a cache made without it is not used', async () => {
     const actor = makeTestActor({ id: 'pc-1', name: 'Kira' });
     game.actors._set('pc-1', actor);
+    // The key of the source as it was before the Chronicle could be read (the
+    // v1.2.3 bug read none: its helper returned 0, and a cache for 0 passed).
+    const unread = await campaignRecapCacheKey(makeCampaignState({ characterIds: ['pc-1'] }));
     const installed = installChronicleJournal('Kira', [
       { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'Set out from the station.' },
       { id: 'e2', timestamp: '2026-01-02T00:00:00Z', text: 'Found the derelict.' },
       { id: 'e3', timestamp: '2026-01-03T00:00:00Z', text: 'Lost the trail.' },
     ]);
 
-    // No API key → getCampaignRecap returns '' even when chronicle is
-    // populated, but the chronicleLength mismatch should bypass the cached
-    // 'Stale cache' string. This shape of test would have caught the bug:
-    // the broken helper returned 0, so the cache was treated as fresh.
+    // No API key → getCampaignRecap returns '' even when the Chronicle is
+    // populated. The entries are read into the source, so its hash moved and
+    // the cache made without them is not used.
     const state = makeCampaignState({
       characterIds: ['pc-1'],
       campaignRecapCache: {
-        text:            'Stale cache',
-        generatedAt:     new Date().toISOString(),
-        chronicleLength: 0,   // pre-fix the helper would return 0 too — match
+        text:        'Stale cache',
+        generatedAt: new Date().toISOString(),
+        ...unread,
       },
     });
+    expect((await campaignRecapCacheKey(state)).sourceHash).not.toBe(unread.sourceHash);
     const result = await getCampaignRecap(state);
-    // With the bug, chronicleLength would equal cache.chronicleLength (both 0)
-    // and the test would receive 'Stale cache' verbatim. With the fix, the
-    // chronicle has 3 entries → mismatch → no API key → '' (not the stale text).
+    // Were the Chronicle unread, the source would hash the same and the test
+    // would receive 'Stale cache' verbatim: mismatch → no API key → ''.
     expect(result).not.toBe('Stale cache');
     expect(result).toBe('');
     installed.restore();
@@ -402,7 +374,7 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }),
         text: async () => '',
       };
     });
@@ -450,7 +422,7 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }),
         text: async () => '',
       };
     });
@@ -514,7 +486,7 @@ describe('getCampaignRecap() — same-named characters (issue #301 B03)', () => 
     global.fetch = vi.fn(async (_url, init) => {
       const body = JSON.parse(init.body);
       captured = body.messages?.[body.messages.length - 1]?.content ?? '';
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: cited('recap ok') }] }), text: async () => '' };
     });
 
     const result = await getCampaignRecap(makeCampaignState({ characterIds: ['pc-a', 'pc-b'] }));
@@ -560,7 +532,7 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
     global.fetch = vi.fn(async (_url, init) => {
       const body = JSON.parse(init.body);
       requests.push(body.messages?.[body.messages.length - 1]?.content ?? '');
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Fresh recap.' }] }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: cited('Fresh recap.') }] }), text: async () => '' };
     });
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, '');
     game.settings._store.delete(`${MODULE_ID}.campaignState`);
@@ -654,25 +626,24 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
 // ---------------------------------------------------------------------------
 
 describe('buildCampaignRecapUserMessage()', () => {
-  it('includes all chronicle entries in the user message', () => {
-    const entries = [
-      '[Session 1 — Jan 1]\nWe set out from the station.',
-      '[Session 2 — Jan 8]\nWe found the derelict.',
-    ];
-    const msg = buildCampaignRecapUserMessage(entries);
-    expect(msg).toContain('We set out from the station');
-    expect(msg).toContain('We found the derelict');
+  const source = { text: '## THE RECORD\n\n### Session 1 — the latest session, in full\n[s1-1] Kira — the player wrote “We set out from the station.”' };
+
+  it('carries the record\'s source as it was built', () => {
+    expect(buildCampaignRecapUserMessage(source)).toContain('[s1-1] Kira — the player wrote “We set out from the station.”');
   });
 
   it('contains the recap instructions', () => {
-    const msg = buildCampaignRecapUserMessage(['One entry.']);
+    const msg = buildCampaignRecapUserMessage(source);
     expect(msg).toContain('3–5 paragraphs');
     expect(msg).toContain('vows sworn');
     expect(msg).toContain('second person');
+    expect(msg).toContain('Every beat marked LASTING is told');
   });
 
-  it('includes the campaign chronicle header', () => {
-    const msg = buildCampaignRecapUserMessage(['entry']);
-    expect(msg).toContain('CAMPAIGN CHRONICLE');
+  it('asks for cited sentences, and says a sentence that rests on nothing is left out (decision D11)', () => {
+    const msg = buildCampaignRecapUserMessage(source);
+    expect(msg).toMatch(/Reply with JSON only: \{"paragraphs": \[\[\{"text": "<one sentence>", "because": \["<id>", …\]\}/);
+    expect(msg).toMatch(/A sentence that rests on no line given above is left out of the recap/);
+    expect(msg).not.toContain('CAMPAIGN CHRONICLE');
   });
 });

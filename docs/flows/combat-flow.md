@@ -5,7 +5,7 @@ verified against source. File references name the owning function; line numbers
 drift, so search by symbol. Sibling docs: `vow-flow.md`, `connection-flow.md`,
 `exploration-flow.md` (same treatment for the other lifecycles).
 
-Two cross-cutting facts to hold onto:
+Three cross-cutting facts to hold onto:
 
 - **The move pipeline runs only on the canonical GM client** (`isCanonicalGM()`
   gate at the top of the narration handler in `src/index.js`, whose stages —
@@ -197,13 +197,47 @@ Two cross-cutting facts to hold onto:
   canonical GM, each credited to its own PC (`rollMove` → `recordMove`), so an
   Aid Your Ally helps an ally's move only if it was confirmed first. A fight
   move whose fight an earlier entry of the same round ended (a Take Decisive
-  Action that won it) is not rolled: the roll stage refuses it
-  (`{ refused: "track-gone" }`), its card says why, and the round's narration
-  tells it as an action with no roll. Burn Momentum / Improve Result are
+  Action that won it) is not rolled: the roll stage's move gate refuses it
+  (`OPEN_FIGHT` — the fight it names by id is over: `{ refused:
+  "open-fight", refusal }`), its card says why, and the round's narration
+  tells it as an action with no roll, its premise told (a `[premise]` block
+  under the entry). Burn Momentum / Improve Result are
   decided before the one narration; the won-fight card and its payoff are the
   same as a typed move's. A card button's fight move pressed during a round —
   ⚔ Attempt to Finish the Fight, a Which-fight pick — becomes its roller's
   entry (or waits for the next round while one resolves).
+- **A move's cards follow its roll card.** What a roll caused is posted below
+  the roll's own card (`movePipeline.rollMove`'s `afterMoveCard` — a list the
+  stage owns, hands to `applyOutcomeEffects`, and runs once `postMoveResult`
+  has posted, in the order it was filled, each entry once). Posted as each
+  effect landed, they stood above it, and a reader takes the top card for the
+  cause — the long haul's third live run: "Pay the Price" over the Gather
+  Information miss it was the price of (a12), "Combat progress" over the Clash
+  (a38), "Fight over" and the victory card over the Take Decisive Action
+  (a40), a vow's "marked completed", reward note and "⚑ Vow Fulfilled" over
+  the Fulfill Your Vow (a64; `vow-flow.md` §4). On the list: the Set a Course
+  card (issue #348 PT10), the fight's threshold card (§1), **Combat progress**
+  (§2), **Fight over** and the **won fight's payoff** — its victory card, the
+  promised reward and its card (§3, §4) — **Take Decisive Action's cost** (§3),
+  and a miss's **Pay the Price** when the result offers no upgrade (below). The
+  effects land where they always did (the marks, the track's end, the vow's
+  close); what moved is the posting, and with it a payoff or price whose own
+  function posts its cards. The list is run in the same stage, before it
+  returns — nothing on it waits on a person, a held result's wait or a
+  narration — and on the way out when anything stops the roll before or at
+  its card (a roll card the world refuses, a throw: `rollMove`'s `finally`),
+  so what the effects owe is still posted and paid. An upgrade's cards post at
+  once: its roll card is on the table. **Not on it** (posted before the roll
+  card still): the price of a result that offers Burn Momentum or Improve
+  Result and is *not* held — a Batch Mode round's entry, or free-flow with
+  `holdResultForUpgrade` off: the card's `burn` / `improve` state must carry
+  the price's receipts (`ptpReversals`) from its first write, or an upgrade
+  pressed on it would keep the price beside the upgraded outcome; and the
+  cards of the other per-move branches, which were not part of this change —
+  expedition progress, a legacy mark, the scene-challenge card, Develop Your
+  Relationship, Reach a Milestone, a sworn vow's oath scene, Forge a Bond,
+  Finish an Expedition and its site, Finish the Scene, the recommit offers,
+  Forsake Your Vow.
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -285,6 +319,52 @@ press it (`cardRollerPc`; the clicker's PC only on a card that names none).
 It spoke as the clicker's PC, so a GM's press rolled the first PC's Face
 Danger for a fight another PC had entered (issue #335 Y11).
 
+**⚔ Begin the fight is Enter the Fray's commit, asked of the move gate**
+(overhaul 4, design §6.2 — `moves/contracts/pressGate.js`): before the card
+is claimed. Enter the Fray's row requires nothing, so the press passes by
+construction — a precondition put on the row binds the button too. 🚪 Find
+another way is no move of its own (its off-ramp is a forced move, gated at
+its roll). The Progress Tracks panel's Add of a fight is the table's own
+hand and is never asked (D7); its Add of a scene challenge, and the
+scene-challenge offer's Begin, are Begin the Scene and are (it too requires
+nothing).
+
+**⚔ Begin the fight keeps a held Enter the Fray first** (overhaul 4, slice 5;
+D11, amending issue #362 D5 — who goes on keeps it): an Enter the Fray held
+for Burn / Improve / Keep was not kept by the press, and the player's next
+attack line kept it — the roll was narrated after that line
+(HELD-RESULT-NARRATED-AFTER-THE-NEXT-LINE, a38–a41). `cardActions.js`
+`applyCombatThresholdChoice` claims the card, then keeps the held result
+(`keepHeldRollOf` → `heldResult.keepHeldResultForChoice` — its narration
+told the fight begun, the claim read by `fightOfferOf`), then makes the
+fight; 🚪 Find another way keeps it before the way-out card. The move card's
+own suggestion buttons (⚑ Mark progress, 🏁 Attempt to Fulfill, 🤝 the
+connection suggestion) keep their held roll the same way.
+
+**The roll's narration stops before the first blow while the fight is only
+offered** (known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — the long haul's
+third live run, a27: under the card above, the Enter the Fray's narration
+already had "Your first salvo takes her forward plating"; had the player taken
+the way out, the salvo would have stood). The threshold card is on the table
+before the roll is narrated (`out.afterMoveCard`), so the narration reads it:
+`obligations.unansweredCardsFor` (moved from `resultUpgrade.js`; called through `narrator.js` `withCardsAnswered` where `narrator.js` settles a
+price choice, for a move and for a round's entries) finds the card by the
+resolution's id (`findThresholdCard`) and puts `fightOffer` on the result —
+`"offered"` while the card has no `thresholdTaken`, `"declined"` once it is
+`"wayOut"`, with the card's carried `position`; nothing once it is `"fray"`,
+or when the roll posted no card (an open fight resumed). The move's user
+message's obligations block then carries NOT YET [fight] "THE FIGHT IS STILL
+ONLY OFFERED." (`moves/contracts/obligations.js`, overhaul 4 slice 2 — the
+words of the block it replaced, `stakes.formatFightOfferBlock`): the scene is brought to the moment before
+the first blow — where each side stands, the footing the roll gave — and no
+further; no shot is fired, nothing and no one is hit; a first salvo in the
+stakes or the player's line is shown as about to happen, never as done.
+Declined, NOT SO [fight] "THE FIGHT WAS NOT BEGUN.": no blow is struck at all. The [stakes]
+line calls the stated hit "the opening this roll has won" instead
+of "deliver the hit as stated" (the interpreter's stated hit for a27 was "open
+with a clean salvo"). No flag from the pipeline is involved, and the track is
+still made only on the card.
+
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
 §4). Combat tracks also get no clock (only scene challenges auto-clock).
@@ -297,12 +377,30 @@ and for what an upgrade adds over it): Strike hits mark 2; Clash marks 2 (strong
 Ground marks only when the player picks that option in its choose-one; React
 Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 8
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
-A move's marks create a fight only when none is open (`applyCombatProgress`):
-with fights open and none selected — or the fight named by id over — it marks
-nothing and says why (`reason: "ambiguous" | "gone"`; the applier warns and
-lists it as not applied). It used to begin a phantom "Combat" fight that took
-the marks and the position; an unnamed Strike or Clash with two or more open
-now gets the **Which fight?** card before rolling (§3; issue #321 U16).
+The marks land before the move's roll card is built; the "Combat progress"
+card that says so is posted after it (`afterMoveCard`, above) — for a held
+result too: the marks are the roll's, only its price and narration wait.
+A move's marks never begin a fight (overhaul 4, D6 — "Combat is offered, not
+forced"): only Enter the Fray's commit, ⚔ Begin the fight on its threshold
+card, makes a combat track (`createCombatTrackFromThreshold` →
+`applyCombatProgress`'s `beginsFight`). A Strike, Clash, Gain Ground, React
+Under Fire, Take Decisive Action or Face Defeat with no fight open is refused
+before its dice by the move gate (`moves/contracts/gate.js` `checkMove`,
+`OPEN_FIGHT` — at the pacing router's offer, at `readMove` and again at
+`rollAndApply`): a typed line is narrated and told why ("No Strike — no fight
+is under way.", its card's Roll is Enter the Fray; while a threshold card of
+the roller's waits, the reason names its ⚔ Begin the fight instead), a forced
+move gets the not-rolled notice. Their marks with no fight open made a combat
+track whose rank, vow and objective were never asked — the create path is
+gone: `applyCombatProgress` marks nothing then (`reason: "none"`). With fights
+open and none selected — or the fight named by id over — it marks nothing and
+says why (`reason: "ambiguous" | "gone"`; the applier warns and lists it as
+not applied). It used to begin a phantom "Combat" fight that took the marks
+and the position; an unnamed Strike or Clash with two or more open gets the
+**Which fight?** card before rolling (§3; issue #321 U16). A Strike or Gain
+Ground made in a bad spot is made as a Clash / React Under Fire (and back) by
+the gate's `POSITION` reroute, a forced move's too — the interpreter's own
+remap (`constrainMoveToPosition`) holds a typed reading the same way.
 Gain Ground's pick is made later, on its suffer-choice card: the card carries
 the move's own fight (`moveFight`, below — `executorOpts.combatTrackId`, via
 `persistResolution`'s targets), and the `combat-progress` call marks that
@@ -379,6 +477,8 @@ fight that card began (the card's `frayTrackId`, stamped by
 none, and the card says so. It resolved the sole open fight, or the newest
 threshold card, at click time; a card naming neither still does.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 **Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
 TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
 `src/ui/progressTracks.js`): each open fight's label, rank, filled boxes,
@@ -392,8 +492,9 @@ Stations guidance (`src/moves/battleStations.js`).
 ## 3. Ending a fight
 
 `endCombat` fires on Take Decisive Action strong/weak, any `battle` outcome,
-or Face Defeat (always). The branch completes the track, posts the finish
-card, and deletes the Combat doc.
+or Face Defeat (always). The branch completes the track and deletes the Combat
+doc; its "Fight over" card, and the won fight's payoff with its cards (§4),
+are posted after the move's roll card (`afterMoveCard`, above).
 
 **Take Decisive Action** is a progress move: `enrichProgressTicks`
 (`src/moves/statEnrichment.js`) copies the resolved combat track's live ticks
@@ -443,7 +544,9 @@ open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
 `exploration-flow.md` §1). A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
-pick) — once: the card's cost seeds the move's narration
+pick) — once, and once the roll card is on the table (`afterMoveCard`; a
+progress roll is never held or upgraded, so nothing reads the cost before
+then): the card's cost seeds the move's narration
 (`withDecisiveActionCostSeed`), and `buildOracleSeeds` rolls none of its own
 (`rollsDecisiveActionCost`; the narration depicted one cost and the card
 another — TDA-COST-DOUBLE-ROLL, the U03 shape). A TDA **miss** does not end the fight — it routes Pay the Price.
@@ -459,11 +562,13 @@ threshold card's, stamped on the combat-track card
 `createCombatTrackFromThreshold` posts; their player or a GM may press it,
 and the clicker's PC stands in only on a card that names none (issue #335
 Y11: a GM's press rolled the first PC's Battle); and the
-pipeline does not roll a Battle naming a finished fight by id — the "not
-rolled" card, as Take Decisive Action. The button was disabled only in the
+pipeline does not roll a Battle naming a finished fight by id — the move
+gate's refusal at the roll (`OPEN_TRACK("combat", { onlyNamed })`: a Battle in
+a blur names no fight and needs none), the not-rolled notice, as Take
+Decisive Action. The button was disabled only in the
 clicker's DOM, so a re-render or another client rolled Battle again on a
 finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
-The "not rolled" guards run before the pipeline takes Take a Break's +1 or
+The move gate runs before the pipeline takes Take a Break's +1 or
 the roller's next-move bonus, so a Battle that is not rolled leaves both
 pending for the next action roll made (issue #331 X17). Both are claimed on
 the store before they are added (`consumeNextMoveAdd`, `consumeNextMoveBonus`):
@@ -477,7 +582,11 @@ trip erased the answer).
 
 **One price per result.** A routed Pay the Price (`routePayThePrice` — Face
 Defeat on every outcome, the misses above) is rolled once, for its card
-(`postMovePayThePriceCard`, which every routed price posts through), and
+(`postMovePayThePriceCard`, which every routed price posts through) — paid
+under the move that paid it: once its roll card is on the table when the
+result offers no upgrade (`afterMoveCard`), at its keep when it is held, and
+before the card only for a result that offers an upgrade and is not held (the
+card's Burn / Improve state carries the price's receipts) — and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 price at all (its "advisory" roll for a miss that neither routed nor offered
@@ -583,7 +692,8 @@ a vow — by its id (`linkedVowId`, the panel's add: found among the PCs' vow
 copies, under the name it carries now — `fightLinkedVow`; by the name it was
 linked under, a vow renamed mid-fight left the victory card naming a vow
 nobody held, issue #362 AC46), else by `linkedVowName` (a threshold link) —
-the pipeline posts the **victory card**
+the pipeline posts the **victory card** — after the winning move's roll card,
+and after "Fight over" (`afterMoveCard`, above) —
 (`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
 `marks`, `connectionName`, `vowRank` and the roller's `actorId`):
 **⚑ Mark milestone (×N)** — N scales with the *fight's* rank
@@ -719,8 +829,10 @@ narrates, and applies consequences. The id rides as
 `interpretation.moveTargetId`: tick enrichment, the position, the completion
 and the recommit offer all take that track (`selectCombatTrack` /
 `selectExpeditionTrack` `{ trackId }`), never a same-named sibling, and a row
-deleted or finished before the roll resolves rolls nothing — a "not rolled"
-card (`trackGoneCard`) instead (issue #306 R06).
+deleted or finished before the roll resolves rolls nothing — the move gate's
+refusal at the roll (`OPEN_FIGHT` / `OPEN_TRACK` by id), the not-rolled notice
+("No Strike — "Corsairs" was finished or deleted before the roll. Nothing was
+rolled.") instead (issue #306 R06; the `trackGoneCard` guard it replaces).
 A `scene_challenge` row rolls Finish the Scene (issue #326 D6): scored from
 the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
 `sceneChallenge.selectSceneChallengeTrack`), it finishes the scene on every
@@ -729,8 +841,9 @@ outcome — the pipeline's `finishScene` consequence completes the track
 clock before the track write), before a weak hit's or miss's Pay the Price
 is routed, so the ended scene's clock does not tick. A row whose challenge
 was finished or deleted before the roll — a stale render, another player's
-Finish the Scene landing first — rolls nothing: the "not rolled" guard covers
-the `scene_challenge` source by id, as it does a fight's (issue #342 Z07); a
+Finish the Scene landing first — rolls nothing: the move gate's
+`OPEN_TRACK("scene_challenge")` covers it by id, as `OPEN_FIGHT` does a
+fight's (issue #342 Z07); a
 score of 0 was a certain miss paying a price for a scene already over. In a
 Batch Mode round the driver notes Finish the Scene's challenge as read
 (`noteReadTrack`), so a second Finish the Scene — pressed or typed — is
@@ -801,6 +914,8 @@ clock fill was (`targets.sceneChallenge`: `trackId`, `clockId`,
 Improve Result scores the same challenge, marks what its outcome adds and
 leaves the clock as the upgraded outcome would have (a miss's segment
 burned to a strong hit is taken back, never more than it filled).
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
 the canonical GM for every user (gmRelay `progressTrack.edit` →
