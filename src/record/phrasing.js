@@ -74,6 +74,15 @@ const trackKind = (type) => TRACK_KINDS[type] ?? String(type ?? 'track').replace
  * @returns {string}
  */
 export function didText(d) {
+  const said = deedText(d);
+  // A change the table made by its own hand (`by: "hand"` — the sheet, the
+  // Progress Tracks panel, `!sever`) is said as one, never as a deed of the
+  // story (overhaul 4, D7 and D12).
+  return said && d?.by === 'hand' ? `${said} (set by hand)` : said;
+}
+
+/** didText's words for what play did, before who made it is said. */
+function deedText(d) {
   switch (d?.kind) {
     case 'vow.sworn':        return `swore the vow ${q(d.name)}${d.rank ? ` (${d.rank})` : ''}${d.shared ? ', shared by the crew' : ''}`;
     case 'vow.linked':       return `tied the vow ${q(d.name)} to ${d.connectionName ?? 'a connection'}`;

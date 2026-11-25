@@ -299,7 +299,7 @@ describe('buildAuditPrompt — broadened sections', () => {
   it('renders (none) for absent sections', () => {
     const prompt = buildAuditPrompt('', '', 'Prose.');
     const noneCount = (prompt.match(/\(none\)/g) ?? []).length;
-    expect(noneCount).toBe(5); // place, identities, what binds, corrections, standing
+    expect(noneCount).toBe(6); // place, identities, what binds, corrections, standing, obligations (overhaul 4)
   });
 
   it('includes recorded identities when provided', () => {

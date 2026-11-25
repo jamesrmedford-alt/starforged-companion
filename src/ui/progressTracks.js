@@ -219,10 +219,15 @@ let _writeTail = Promise.resolve();
  * lock was held for good. A save not answered in time rejects, as a refused
  * one does; if it lands later, the cache takes it then.
  *
+ * `by`: what made the write, for the session record's track events
+ * (overhaul 4, D12) — a move's `{ move, res }`, `"hand"` for the panel's
+ * edits; omitted, the events say nothing of it.
+ *
  * @param {(tracks: object[]) => (object[]|null|Promise<object[]|null>)} change
+ * @param {{ by?: Object|string|null }} [opts]
  * @returns {Promise<void>}
  */
-function writeTracks(change) {
+function writeTracks(change, { by = null } = {}) {
   const run = settledWithin(_writeTail, WORLD_WRITE_WAIT_MS, 'a Progress Tracks write ahead of this one').then(async () => {
     const journal = await answeredWithin(getOrCreateJournal(), "the Progress Tracks journal's creation");
     const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
@@ -233,7 +238,7 @@ function writeTracks(change) {
       // The save landed: what it began, marked, moved or ended goes on the
       // session record (issue #382) — every track write comes through here.
       const { recordTrackChanges } = await import('../record/trackDiff.js');
-      recordTrackChanges(before, next);
+      recordTrackChanges(before, next, { by });
     }
   });
   _writeTail = run.catch(() => {});
@@ -299,14 +304,14 @@ export async function mergeTracksIntoLive(tracks) {
  * @param {(track: object) => (boolean|void|Promise<boolean|void>)} change
  * @returns {Promise<object|null>}
  */
-async function updateTrack(trackId, change) {
+async function updateTrack(trackId, change, { by = null } = {}) {
   let updated = null;
   await writeTracks(async (tracks) => {
     const track = tracks.find(t => t.id === trackId);
     if (!track || (await change(track)) === false) return null;
     updated = track;
     return tracks;
-  });
+  }, { by });
   return updated;
 }
 
@@ -1278,7 +1283,7 @@ export async function setCombatTrackPosition(trackId, position, actorId = null) 
  * @param {string|null} [data.entityId]
  * @returns {Promise<object>}  The created track record
  */
-export async function addProgressTrack(data) {
+export async function addProgressTrack(data, { by = null } = {}) {
   const track = createTrack(data);
 
   // Scene Challenge auto-creates a paired 4-segment tension clock per
@@ -1294,7 +1299,7 @@ export async function addProgressTrack(data) {
   }
 
   try {
-    await writeTracks(tracks => [...tracks, track]);
+    await writeTracks(tracks => [...tracks, track], { by });
   } catch (err) {
     // A refused track write leaves the clock created for it with no track,
     // and each retry would add another (SCENE-CHALLENGE-ADD-ORPHAN-CLOCK):
@@ -1372,7 +1377,7 @@ export async function getProgressTrack(trackId) {
  * @param {string} trackId
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function completeProgressTrack(trackId) {
+export async function completeProgressTrack(trackId, { by = null } = {}) {
   const completed = await updateTrack(trackId, async (track) => {
     await retirePairedClock(track);
     track.completed   = true;
@@ -1390,8 +1395,8 @@ export async function completeProgressTrack(trackId) {
  * @param {number} [times=1]  Number of rank-based marks to apply (clamped ≥1)
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function markProgressById(trackId, times = 1) {
-  return adjustProgressById(trackId, Math.max(1, Math.floor(times) || 1));
+export async function markProgressById(trackId, times = 1, { by = null } = {}) {
+  return adjustProgressById(trackId, Math.max(1, Math.floor(times) || 1), { by });
 }
 
 /**
@@ -1404,7 +1409,7 @@ export async function markProgressById(trackId, times = 1) {
  * @param {number} marks  a whole number of marks, either sign
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function adjustProgressById(trackId, marks) {
+export async function adjustProgressById(trackId, marks, { by = null } = {}) {
   return updateTrack(trackId, (track) => {
     track.ticks = Math.max(0, Math.min(track.ticks + ticksPerMark(track) * Math.trunc(marks), MAX_TICKS));
   });
@@ -1466,6 +1471,9 @@ function rowVowChoices(content) {
   return chosen;
 }
 
+/** The panel's edits are the table's own hand (overhaul 4, D7): so recorded (`by`, D12). */
+const HAND = Object.freeze({ by: 'hand' });
+
 /** Position toggle cycle: neutral → in control → in a bad spot → neutral. */
 const NEXT_POSITION = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
 
@@ -1521,7 +1529,18 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       const vowId = typeof payload.vowId === 'string' ? payload.vowId.trim() : '';
       const link  = vowId ? resolveVowChoice(vowId) : null;
       if (vowId && !link) return refusedEdit('no-vow', payload);
-      const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank, ...(link ?? {}) });
+      // A scene challenge added here is Begin the Scene, a move made by a
+      // button (overhaul 4, D7(a)): the move gate is asked — its row requires
+      // nothing, so it passes by construction. A fight or an expedition added
+      // here is the table's own hand, never asked (D7: a GM mends a lost
+      // track; Ironsworn trusts the table with its sheet).
+      if (payload.type === 'scene_challenge') {
+        const { gatePress } = await import('../moves/contracts/pressGate.js');
+        const gate = await gatePress('begin_the_scene', { reading: { target: label }, ctx, label: 'panel add' });
+        if (!gate.ok) return refusedEdit('cannot', payload);
+      }
+      const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank, ...(link ?? {}) },
+        { by: payload.type === 'scene_challenge' ? { move: 'begin_the_scene', res: null } : 'hand' });
       return { applied: true, trackId: track.id };
     }
     case 'linkVow': {
@@ -1546,12 +1565,12 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       return editOutcome(await updateTrack(trackId, (track) => {
         if (!isOpenPanelTrack(track)) return false;
         track.ticks = Math.min(track.ticks + ticksPerMark(track), MAX_TICKS);
-      }), payload);
+      }, HAND), payload);
     case 'clear':
       return editOutcome(await updateTrack(trackId, (track) => {
         if (!isOpenPanelTrack(track)) return false;
         track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
-      }), payload);
+      }, HAND), payload);
     case 'position': {
       // Cycled from the stored position, read once every earlier write has
       // landed, then written everywhere a fight's position lives: the track,
@@ -1584,7 +1603,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         }
         t.completed   = true;
         t.completedAt = Date.now();
-      });
+      }, HAND);
       if (clockError) {
         warnPairedClock('completeTrack', clockError);
         return refusedEdit('clock', payload);
@@ -1606,7 +1625,7 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
         }
         removed = track;
         return tracks.filter(t => t.id !== trackId);
-      });
+      }, HAND);
       if (clockError) {
         warnPairedClock('removeTrack', clockError);
         return refusedEdit('clock', payload);

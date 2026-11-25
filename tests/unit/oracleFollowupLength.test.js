@@ -49,7 +49,10 @@ describe('X28 — the oracle follow-up states one sentence count', () => {
       kind: 'oracle_yes_no', oracleName: 'Ask the Oracle (50/50)', question: 'Is the hatch sealed?',
       rolledLine: 'd100 = 47 → Yes', campaignState: game.settings.get(MODULE_ID, 'campaignState'), speakerActorId: null,
     });
-    expect(apiPost).toHaveBeenCalledTimes(1);
+    // The narration is the first call; the obligations judge may follow it
+    // (the question's words trip its NOT SO [oracle] line — overhaul 4).
+    expect(apiPost.mock.calls[0][3]?.label).toBe('narrator:narrateOracleFollowup');
+    expect(apiPost.mock.calls.slice(1).every(c => c[3]?.label === 'obligationJudge')).toBe(true);
     const body = apiPost.mock.calls[0][2];
     const system = body.system.map(b => b.text).join('\n');
     const user   = String(body.messages[0].content);

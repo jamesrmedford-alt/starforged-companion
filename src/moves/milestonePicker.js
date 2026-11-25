@@ -20,6 +20,7 @@ import { milestoneTicks } from "./milestone.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { parseCardButtons } from "./cardActions.js";
 import { refusePress } from "../multiplayer/gmRelay.js";
+import { gatePress } from "./contracts/pressGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -136,6 +137,13 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
       return { marked: false, reason: "no-vow" };
     }
 
+    // The pick is a Reach a Milestone made by a button: the move gate is
+    // asked first (overhaul 4, design §6.2) — a refusal marks nothing and
+    // leaves the picker open, its reason told.
+    const gate = await gatePress("reach_a_milestone", { actorId: actor.id ?? null, reading: { targetId: vow.id ?? null, target: vow.name ?? null },
+      ctx, label: "milestone pick" });
+    if (!gate.ok) return { marked: false, reason: "cannot" };
+
     // Claimed before the mark (issue #336 Y24; decisions #309 "claims before
     // effects"): the vow was marked first and the stamp's refusal swallowed,
     // so the picker stayed live and the next press marked the vow again. A
@@ -151,7 +159,10 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     // Reach a Milestone's picker marks once.
     const ticks = milestoneTicks(vow.rank) * choice.marks;
     try {
-      await markVowProgress(actor, vow.id, ticks);
+      // Made by Reach a Milestone, for the session record's `by` (D12).
+      const { recordCause } = await import("../record/sheetWatch.js");
+      await markVowProgress(actor, vow.id, ticks, recordCause({ kind: "move", move: "reach_a_milestone",
+        res: message.flags?.[MODULE_ID]?.resolutionId ?? null }));
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone pick: the mark on "${vow.name}" was refused — the claim is released:`, err?.message ?? err);
       await message.update({ [`flags.${MODULE_ID}.resolved`]: false })

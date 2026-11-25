@@ -270,7 +270,9 @@ export function redraftBlock(draft, violations, obligations) {
  * ask once more. `call(addendum)` makes the narrator call — with `addendum`
  * (the re-ask's block) appended to its user message when given — and returns
  * the raw reply (prose and fact block). Only the reply returned is the one
- * whose fact block is applied.
+ * whose fact block is applied. A re-ask that throws (a rate limit, a dropped
+ * connection) keeps the first draft: it was a narration, and only its check
+ * failed — it threw out to the narrator's catch and the beat was not told.
  *
  * @param {(addendum: string|null) => Promise<string|null>} call
  * @param {Array<Object>} obligations
@@ -301,7 +303,12 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
     return { raw, reasked: false, verdicts, stillBroken: [] };
   }
   verdicts.push(...broken.map(v => ({ ...v, action: "reask" })));
-  const again = await call(redraftBlock(prose, broken, obligations));
+  let again = null;
+  try {
+    again = await call(redraftBlock(prose, broken, obligations));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | obligations: the re-ask failed — the first draft stands:`, err?.message ?? err);
+  }
   if (typeof again !== "string" || !again.trim()) {
     // The re-ask failed: the first draft stands, its breach logged.
     onVerdict?.({ verdicts, reasked: true, stillBroken: broken });

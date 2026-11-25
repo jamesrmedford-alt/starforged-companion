@@ -586,22 +586,30 @@ const _refusedPresses = new WeakMap();
  * 15 s later with nothing said. runGmAction tells the requester
  * — and the GMs, as the module's refusal notices do — once, when the handler
  * returns; a helper's record and its caller's are the one refusal (the last
- * stands).
+ * stands). "cannot" — the move the button makes cannot be made now: the move
+ * gate's refusal (overhaul 4, contracts/pressGate.js gatePress), told in its
+ * one line (`note`) and carried on the notice as `cannotMake`.
  *
  * @param {Object} ctx — the handler's relay context
- * @param {"not-owner"|"no-actor"|"not-a-pc"} reason
+ * @param {"not-owner"|"no-actor"|"not-a-pc"|"cannot"} reason
  * @param {{ name?: string }|null} [actor] — the character the press was for
+ * @param {{ note?: string|null, refusal?: Object|null }} [why] — "cannot"'s:
+ *   gate.js refusalOf's refusal and obligations.js refusalNote's line
  */
-export function refusePress(ctx, reason, actor = null) {
+export function refusePress(ctx, reason, actor = null, { note = null, refusal = null } = {}) {
   if (!ctx || typeof ctx !== "object") return;
   const name = typeof actor?.name === "string" && actor.name.trim() ? actor.name.trim() : null;
-  _refusedPresses.set(ctx, { reason, name });
+  _refusedPresses.set(ctx, { reason, name, note, refusal });
 }
 
 /** Whisper the requester and the GMs why their press changed nothing (refusePress). Never throws. */
-async function tellRefusedPress(ctx, { reason, name }) {
+async function tellRefusedPress(ctx, { reason, name, note = null, refusal = null }) {
   const presser = typeof ctx?.requester?.name === "string" && ctx.requester.name ? ctx.requester.name : null;
-  const [title, why] = reason !== "not-owner"
+  // "cannot": the move gate refused the move the button makes (overhaul 4 —
+  // contracts/pressGate.js), told in the line every refusal carries.
+  const [title, why] = reason === "cannot"
+    ? ["Not made", escapeHtml(note ?? "That move cannot be made now.")]
+    : reason !== "not-owner"
     ? ["Character gone", "The character that button was for is no longer one of the table&rsquo;s player characters."]
     : name
       ? ["Not your button", `That button is ${escapeHtml(name)}&rsquo;s: only ${escapeHtml(name)}&rsquo;s player or a GM can press it.`]
@@ -612,7 +620,8 @@ async function tellRefusedPress(ctx, { reason, name }) {
     await globalThis.ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>${title}</strong><p>${why} ${outcome}</p></div>`,
       whisper: [...new Set([ctx?.requesterId, ...gmIds].filter(Boolean))],
-      flags:   { [MODULE_ID]: { pressRefusedNotice: true } },
+      flags:   { [MODULE_ID]: { pressRefusedNotice: true,
+        ...(reason === "cannot" && refusal?.moveId ? { cannotMake: { moveId: refusal.moveId, code: refusal.code ?? null, why: refusal.why ?? "", hard: refusal.hard === true } } : {}) } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | gmRelay: telling ${ctx?.requesterId ?? "?"} their press was refused failed:`, err?.message ?? err);

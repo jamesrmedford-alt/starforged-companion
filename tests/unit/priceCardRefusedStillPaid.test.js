@@ -66,7 +66,8 @@ const priceCards = () => table.cards(f => f.payThePriceCard);
 const costCards  = () => table.cards(f => f.decisiveActionCostCard);
 const pickers    = () => table.cards(f => f.sufferCard && f.sufferPrompt && !f.suffer);
 const breach     = () => (table.world.campaignState()?.clocks ?? []).find(c => c._id === 'clk-breach');
-const moveNarration = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence/.test(`${c.system}\n${c.userText}`)).at(-1);
+// Not the post-narration audit, whose prompt quotes the narration's obligation lines (overhaul 4).
+const moveNarration = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence/.test(`${c.system}\n${c.userText}`) && !/^You are auditing/.test(String(c.system ?? ''))).at(-1);
 const promptOf = (call) => `${call?.system ?? ''}\n${call?.userText ?? ''}`;
 const gmWarnings = () => table.client('gm-1').notifications.filter(n => n.level === 'warn').map(n => n.message);
 const cardPost = (flag) => (w) => w.kind === 'message.create' && w.data?.flags?.[MODULE_ID]?.[flag] === true;

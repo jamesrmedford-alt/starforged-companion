@@ -634,6 +634,22 @@ not-rolled notice (overhaul 4; the track-gone guard it replaces). A typed
 Fulfill naming a vow already closed by name is still the "vow-gone" card
 (`postTrackGoneCard`) — a name resolved, not a precondition.
 
+**The moves a button makes ask the gate too** (overhaul 4, design §6.2 —
+`moves/contracts/pressGate.js` `gatePress`, `checkMove` at the roll stage):
+a "Which vow?" pick (`milestonePicker.applyMilestonePick`, after its
+fulfilled / gone checks, before the claim) and the won fight's ⚑
+(`cardActions.applyFightVowMarkMilestone`) are Reach a Milestone — a full vow
+refuses a player's press (`ROOM_ON_VOW`, soft: a GM's press is the GM's
+word), a closed one any press (`OPEN_VOW`). A refusal marks nothing, and the
+presser and the GMs are told in its one line ("Not made", gmRelay
+`refusePress` "cannot", the notice carrying `cannotMake`). A vow's progress
+roll made **on the sheet** asks the gate before its payoff
+(`index.js registerNativeFulfilConsequenceHook` → `payNativeProgressRoll`):
+with no open vow, nothing is paid, and the GMs are whispered "No payoff" and
+why (it was a debug line; the roll on the sheet stands). The sheet's own
+ticks and the Progress Tracks panel are the table's hand and are never asked
+(D7).
+
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):
 `finishVow` closes the journal twin if one exists — by the name of the vow

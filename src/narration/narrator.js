@@ -1440,15 +1440,18 @@ export async function narrateResolution(resolution, campaignState, options = {},
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
     // contracts/checks.js): a failure is asked once more, with the draft and
     // the line it broke; only the reply returned has its fact block applied.
+    // Its call a local `ask`, which the playthrough harness looks through
+    // (lib/claude.mjs PASS_THROUGH) — an inline arrow is named by V8's guess.
+    const ask = (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
+      label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
+      apiKey,
+      systemPrompt,
+      userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+    }));
     const kept = await narrateKeepingObligations(
-      (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
-        label: addendum ? 'narrateResolution:reask' : 'narrateResolution',
-        apiKey,
-        systemPrompt,
-        userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
-        model:     settings.narrationModel,
-        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-      })),
+      ask,
       moveObligations,
       { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
@@ -1461,7 +1464,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       await postNarrationPausedCard(resolution, campaignState);
       return null;
     }
-    const narration = applyNarratorSidecar(raw, campaignState, {
+    const narration = applyNarratorSidecar(raw, campaignState, { obligations: moveObligations,
       moveId:           resolution?.moveId,
       matchedEntityIds: extras.matchedEntityIds ?? [],
       narrationId,
@@ -1494,18 +1497,24 @@ export async function narrateResolution(resolution, campaignState, options = {},
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narrateResolution',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-        });
+        // Checked as the first try is (overhaul 4), its call a local `ask`
+        // the playthrough harness looks through (lib/claude.mjs PASS_THROUGH).
+        const ask = (addendum) => (addendum && xCard.interrupted('narrateResolution') ? null : callNarratorAPI({
+          label: addendum ? 'narrateResolution:reask' : 'narrateResolution', apiKey, systemPrompt,
+          userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+          model: settings.narrationModel, maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+        }));
+        const raw = (await narrateKeepingObligations(ask,
+          moveObligations,
+          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null },
+            onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
+        )).raw;
         if (xCard.interrupted('narrateResolution')) {
           filePausedPlanRequests(() => extras.planRequests, campaignState, { moveId: resolution?.moveId ?? null });
           await postNarrationPausedCard(resolution, campaignState);
           return null;
         }
-        const narration = applyNarratorSidecar(raw, campaignState, {
+        const narration = applyNarratorSidecar(raw, campaignState, { obligations: moveObligations,
           moveId:           resolution?.moveId,
           matchedEntityIds: extras.matchedEntityIds ?? [],
           narrationId,
@@ -1921,6 +1930,10 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
+  // What the round's narration must tell and must not — every entry's block
+  // and the round's own, as buildRoundUserMessage puts them under it — for
+  // the check before it posts (overhaul 4: checks.js narrateKeepingObligations).
+  const roundObligations = [...roundObligationsFor(entries, roundChosenSince), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   // Asked after the call's long wait: is this narration still the round's?
   const superseded = () => {
     if (typeof stillNarrating !== 'function' || stillNarrating()) return false;
@@ -1930,7 +1943,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
 
   // One call, and one retry after a rate limit. The call is made here, not in
   // a helper, so its caller is narrateRound (the playthrough harness files a
-  // call under the two module functions above the proxy).
+  // call under the two module functions above the proxy, looking through the
+  // obligations check — lib/claude.mjs PASS_THROUGH).
   let failure = claudeFailureReason(null);   // the fallback card's cause (ERROR-TEXT-BLAMES-KEY)
   // Whether the side-data was applied, the entries' plan requests with it
   // (issue #362 AC07; narrateResolution's rule).
@@ -1938,15 +1952,28 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await delay(RETRY_DELAY_MS);
-      const raw = await callNarratorAPI({
-        label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
-      });
+      // Checked against its obligations before it posts (overhaul 4): a
+      // failure is asked once more, unless the round was taken over meanwhile.
+      // The narrator call the check makes is a local `ask`: the playthrough
+      // harness files a call by the two named module frames above apiPost and
+      // looks through `ask` and the check (lib/claude.mjs PASS_THROUGH) — an
+      // arrow handed to the check inline takes a name V8 infers from the
+      // statement around it ("raw.apiKey.apiKey"), which it does not.
+      const ask = (addendum) => (addendum && (xCard.interrupted('narrateRound') || superseded()) ? null : callNarratorAPI({
+        label: addendum ? 'narrateRound:reask' : 'narrateRound', apiKey, systemPrompt,
+        userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage, model: settings.narrationModel, maxTokens,
+      }));
+      const raw = (await narrateKeepingObligations(ask,
+        roundObligations,
+        { apiKey, judge: obligationJudgeOn(), ctx: roundCheckContext(entries),
+          onVerdict: (v) => logObligationVerdict('round', v, campaignState, narrationId) },
+      )).raw;
       if (superseded()) return { posted: null, superseded: true };
       if (xCard.interrupted('narrateRound')) {
         filePausedPlanRequests(() => extras.planRequests, campaignState);
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
-      const narration = applyNarratorSidecar(raw, campaignState, {
+      const narration = applyNarratorSidecar(raw, campaignState, { obligations: roundObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
         endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
           decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])) }),
@@ -4315,15 +4342,22 @@ export async function narrateOracleFollowup({
   // (issue #362 AC07; narrateResolution's rule).
   let sideDataApplied = false;
 
+  // Checked against its obligations before it posts — the answer told, its
+  // opposite not (overhaul 4: checks.js narrateKeepingObligations).
+  const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
+  const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? '') },
+    onVerdict: (v) => logObligationVerdict('oracle', v, campaignState, narrationId) };
+  // A local `ask`, so the playthrough harness files the call as this
+  // function's (lib/claude.mjs PASS_THROUGH looks through it and the check).
+  const ask = (addendum) => (addendum && xCard.interrupted('narrateOracleFollowup') ? null : callNarratorAPI({
+    label: addendum ? 'narrateOracleFollowup:reask' : 'narrateOracleFollowup', apiKey, systemPrompt,
+    userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+    model: settings.narrationModel, maxTokens: maxTokensWithSidecar(16000),
+  }));
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateOracleFollowup',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
-    });
+    const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4340,14 +4374,10 @@ export async function narrateOracleFollowup({
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narrateOracleFollowup',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(16000),
-        });
+        // Checked as the first try is.
+        const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4462,9 +4492,7 @@ function buildOracleUserMessage({
   // back after the recent scene, which may say otherwise, and before the ask
   // — its obligations block, TELL [oracle] the answer, NOT SO its opposite
   // (overhaul 4).
-  const binds = formatObligationsBlock([...obligationsFor({
-    mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine },
-  }), ...sceneOwed]);
+  const binds = formatObligationsBlock([...oracleObligationsFor({ kind, question, rolledLine }), ...sceneOwed]);
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
@@ -5169,13 +5197,15 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
     try {
       // Checked against its obligations before it posts (overhaul 4, slice 4).
+      // Its call a local `ask`, which the playthrough harness looks through.
+      const ask = (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
+        label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
+        apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      }));
       const kept = await narrateKeepingObligations(
-        (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
-          label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput',
-          apiKey, systemPrompt, userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-        })),
+        ask,
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
           ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
@@ -5188,7 +5218,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         await postPacedNarrationPausedCard(campaignState);
         return null;
       }
-      const text = applyNarratorSidecar(raw, campaignState, {
+      const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         mode: 'paced_narrative', ground: groundOf({ line: playerText }),
       });
@@ -5211,17 +5241,24 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       if (isRateLimit(err)) {
         try {
           await delay(RETRY_DELAY_MS);
-          const raw = await callNarratorAPI({
-        label: 'narratePacedInput',
-            apiKey, systemPrompt, userMessage,
-            model:     settings.narrationModel,
-            maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-          });
+          // Checked as the first try is (overhaul 4), its call a local `ask`
+          // the playthrough harness looks through (lib/claude.mjs PASS_THROUGH).
+          const ask = (addendum) => (addendum && xCard.interrupted('narratePacedInput') ? null : callNarratorAPI({
+            label: addendum ? 'narratePacedInput:reask' : 'narratePacedInput', apiKey, systemPrompt,
+            userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+            model: settings.narrationModel, maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+          }));
+          const raw = (await narrateKeepingObligations(ask,
+            pacedObligations,
+            { apiKey, judge: obligationJudgeOn(),
+              ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null },
+              onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
+          )).raw;
           if (xCard.interrupted('narratePacedInput')) {
             await postPacedNarrationPausedCard(campaignState);
             return null;
           }
-          const text = applyNarratorSidecar(raw, campaignState, {
+          const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
             moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
             mode: 'paced_narrative', ground: groundOf({ line: playerText }),
           });
@@ -6379,6 +6416,51 @@ function obligationJudgeOn() {
 }
 
 /**
+ * What a round's narration must tell and must not, as one list for its check
+ * (overhaul 4: checks.js narrateKeepingObligations) — the blocks
+ * narratorPrompt.js buildRoundUserMessage puts in its message: each acting
+ * entry's own (a move's result, a refused move's premise) and the round's.
+ *
+ * @param {Array<Object>} entries — the round's entries
+ * @param {Array<Object>} chosenSince — choicesChosenSince's
+ * @returns {Array<Object>}
+ */
+function roundObligationsFor(entries, chosenSince) {
+  const out = [];
+  for (const e of entries ?? []) {
+    const name = typeof e?.actorName === 'string' ? e.actorName.trim() : '';
+    if (!name) continue;
+    const input = e.input ?? {};
+    if (input.kind === 'move') out.push(...obligationsFor({ mode: 'round-entry', resolution: input, speaker: name }));
+    else if (input.refusal?.premise) out.push(...obligationsFor({ mode: 'round-entry', refusal: input.refusal }));
+  }
+  out.push(...obligationsFor({ mode: 'round', chosenSince }));
+  return out;
+}
+
+/** The round's check's context: the vow a fulfilment in it names, the code of a move it could not make. */
+function roundCheckContext(entries) {
+  const inputs = (entries ?? []).map(e => e?.input ?? {});
+  const fulfil = inputs.find(i => i.kind === 'move' && i.moveId === 'fulfill_your_vow');
+  const refused = inputs.find(i => i.kind !== 'move' && i.refusal?.code);
+  return { vowName: fulfil?.moveTarget ?? null, refusalCode: refused?.refusal?.code ?? null };
+}
+
+/**
+ * What an oracle's narration must tell and must not (overhaul 4): a yes/no
+ * answer told, its opposite not — the block buildOracleUserMessage puts in
+ * its message, and the list its check reads. A complication delivered as a
+ * cost has none.
+ *
+ * @param {{ kind: string, question?: string|null, rolledLine?: string|null }} oracle
+ * @returns {Array<Object>}
+ */
+function oracleObligationsFor({ kind, question = null, rolledLine = null }) {
+  if (kind === 'complication') return [];
+  return obligationsFor({ mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine } });
+}
+
+/**
  * A narration's obligation verdicts, a row on the Consistency Check
  * telemetry page (overhaul 4, slice 4): each judged, re-asked or still-broken
  * line, by tag and class — what the next live run counts. GM-gated and
@@ -6583,6 +6665,9 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
       narrationId:       typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
+      // What the narration was told it must tell and must not (overhaul 4):
+      // audited too, kind `obligation`.
+      obligations:       Array.isArray(ctx.obligations) ? ctx.obligations : [],
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

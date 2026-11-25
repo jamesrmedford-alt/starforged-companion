@@ -148,7 +148,8 @@ async function relay(userId, kind, payload) {
   return res;
 }
 
-const narratorCalls = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence|THIS ROUND/.test(`${c.system}\n${c.userText}`));
+// Not the post-narration audit, whose prompt quotes the narration's obligation lines (overhaul 4).
+const narratorCalls = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence|THIS ROUND/.test(`${c.system}\n${c.userText}`) && !/^You are auditing/.test(String(c.system ?? '')));
 const lastCallText  = () => { const c = narratorCalls().at(-1); return c ? `${c.system}\n${c.userText}` : ""; };
 const narrations    = () => table.cards(f => f.narratorCard && f.resolutionId);
 const courseCards   = () => table.cards(f => f.setACourseFeedback === true);

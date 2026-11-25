@@ -48,6 +48,12 @@ function vowItem(id, name, linked) {
   return item;
 }
 
+/** Kira's connection with them — a bond Item on her sheet, keyed to their record: what the move gate asks of the 🤝 (overhaul 4). */
+function bondItem(id, name, recordId) {
+  return { id, name, type: 'progress', system: { subtype: 'bond', rank: 'dangerous', current: 0, completed: false },
+    flags: { [MODULE_ID]: { connectionId: recordId } } };
+}
+
 function npc(id, name, recordId) {
   return table.addActor({
     id, name, type: 'character',
@@ -69,6 +75,8 @@ beforeEach(async () => {
   kira = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [
     vowItem('v-crew', VOW, 'Sable'),
     vowItem('v-debt', 'Repay Dace', 'Dace'),
+    bondItem('b-sable', 'Sable', 'rec-sable'),
+    bondItem('b-dace', 'Dace', 'rec-dace'),
   ] } });
   sable = npc('conn-sable', 'Sable', 'rec-sable');
   npc('conn-dace', 'Dace', 'rec-dace');
@@ -172,6 +180,7 @@ describe('issue #364 WON-FIGHT-CARD-DELETED-NPC — a victory card already in ch
 
   it('a namesake is left: the name still means someone, so the button stays and deepens their bond', async () => {
     const namesake = npc('conn-sable-2', 'Sable', 'rec-sable-2');
+    kira.items.contents.push(bondItem('b-sable-2', 'Sable', 'rec-sable-2'));
     await table.client('gm-1').run(() => game.settings.set(MODULE_ID, 'campaignState',
       { ...game.settings.get(MODULE_ID, 'campaignState'), connectionIds: ['conn-sable', 'conn-dace', 'conn-sable-2'] }));
     await table.settle();
