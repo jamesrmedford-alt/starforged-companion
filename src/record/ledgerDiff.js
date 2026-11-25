@@ -8,7 +8,10 @@
  * held with the ledger written, by truth id. Every ledger writer saves through
  * one of the two: the narrator's fact block, `!truth` / `!state`, the
  * correction dialog, the inciting premise, an upgrade's retraction. So no
- * writer reports a truth, and a new one cannot forget to.
+ * writer reports a truth, and a new one cannot forget to. The one strike no
+ * ledger save holds is of a truth an earlier scene of the session set — its
+ * scene's end cleared it from the ledger — and that strike records its own
+ * `truth.struck` (factContinuity/earlierScenes.js).
  *
  *   - a truth id the store did not hold is `truth.set` (a replacement names
  *     the truth it replaces);

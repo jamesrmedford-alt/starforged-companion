@@ -2047,6 +2047,20 @@ ring, and the closing scene's truths keep the closing session's number.
   (`!truth strike` says "already retracted"), and no correction made on a
   copy older than the X-Card relabels its retraction or files a replacement
   (issue #336 Y30).
+- **A truth of an earlier scene is corrected where the session keeps it**
+  (TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE — since scenes turn in code, a
+  scene's end clears its ledger, and `!truth list` said "No truths are
+  recorded in this scene" for a truth two scenes back): `!truth list` is
+  relayed to the canonical GM, which whispers the typist the active scene's
+  truths and then the session's earlier scenes' that bind and stand, by
+  scene, from the session record (`earlierScenes.js earlierSceneTruths`);
+  `!truth strike <id>` on one, and the correction dialog's Earlier this
+  session Strike, keep it with the session's strikes (`sessionRetractions` —
+  CORRECTED names it, a restatement is blocked, a set after it reads as the
+  name swap, `nameCorrectionOf`), record `truth.struck` against its own
+  recorded id (read.js drops it from Established and standing), and take its
+  copies back (`propagateRetraction`, below; a scene fact's on the place it
+  was filed on).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the

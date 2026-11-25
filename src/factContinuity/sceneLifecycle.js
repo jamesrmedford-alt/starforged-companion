@@ -888,13 +888,15 @@ function resolveScenePlace(campaignState) {
 
 /**
  * The recorded place a frame location names (rungs 1–2 of resolveScenePlace's
- * ladder) — or null: an unrecorded place gets none.
+ * ladder) — or null: an unrecorded place gets none. Also where a strike of an
+ * earlier scene's scene fact finds the place that scene's end filed it on
+ * (earlierScenes.js).
  *
  * @param {string} where — a scene frame's location
  * @param {Object} campaignState
  * @returns {{ id: string, type: string }|null}
  */
-function placeNamedBy(where, campaignState) {
+export function placeNamedBy(where, campaignState) {
   const places = collectAllEntities(campaignState).filter(e => PLACE_TYPES.has(e.entityType));
   const named  = resolveEntityName(where, places, campaignState.dismissedEntities ?? []);
   if (named) return { id: named.journalId ?? named._id, type: named.entityType };

@@ -130,6 +130,35 @@ export function narrationsOfTruths(truthIds, source = recordSource()) {
 }
 
 /**
+ * A session's truths that bind and stand, in the words they were recorded in
+ * — no changed name written new — each with the scene it was established in
+ * and the narration that set it: what a correction of an earlier scene's
+ * truth finds it by, and takes back with (factContinuity/earlierScenes.js —
+ * the stores its scene's end filed it in hold these words). The corrections
+ * a read makes otherwise all stand: a struck truth, and one the X-Card or an
+ * upgrade removed, is not here. Pure but for its default source.
+ *
+ * @param {string} sessionId
+ * @param {Object} [source]
+ * @returns {Array<{ truthId: string, subject: Object|null, fact: string, by: string, basis: string, place: string|null,
+ *   scene: string|null, narrationId: string|null }>}
+ */
+export function sessionTruthsAsRecorded(sessionId, source = recordSource()) {
+  const pages = Array.isArray(source?.pages) ? source.pages : [];
+  const page = pages.find(p => p.sessionId === sessionId);
+  if (!sessionId || !page?.record) return [];
+  const events = eventsOf(page.record);
+  const narrationOf = new Map();
+  for (const e of events) {
+    if (e.k === 'truth.set' && typeof e.ref?.truth === 'string' && !narrationOf.has(e.ref.truth)) narrationOf.set(e.ref.truth, e.ref?.nar ?? null);
+  }
+  const read = sessionBeats(events, campaignCorrections(pages));
+  return read.beats.filter(b => !b.removed).flatMap(b => b.established
+    .filter(t => typeof t.truthId === 'string' && t.truthId)
+    .map(t => ({ ...t, scene: b.scene ?? null, narrationId: narrationOf.get(t.truthId) ?? null })));
+}
+
+/**
  * The changed names the record holds, folded (uncapped), and the names in
  * play — what a text written before a correction is read with
  * (character/chronicle.js getChronicleEntries). Pure but for its default source.
@@ -603,8 +632,18 @@ function correctNames(session, { names, nameOf, otherNames }) {
   } : s);
   const whereAnew = (w) => ({ ...w, location: fix(w.location), situation: fix(w.situation), question: fix(w.question),
     present: (w.present ?? []).map(fix) });
-  // Where each scene began, as its label is shown (sessionLogView.js).
-  for (const sc of session.scenes ?? []) if (sc.where) sc.where = whereAnew(sc.where);
+  // Each scene as its label is shown (sessionLogView.js): where it began, and
+  // why — its cause in words (overhaul 2 §4.6), which names what began it ("a
+  // fight has begun: Ashen Wake"); and where it stopped, as a session's
+  // opening is told (galleyVignette.js recordedStop) — its last frame, its
+  // place and the ship's line.
+  for (const sc of session.scenes ?? []) {
+    if (sc.where) sc.where = whereAnew(sc.where);
+    if (sc.last) sc.last = whereAnew(sc.last);
+    sc.what = fix(sc.what);
+    if (typeof sc.place?.name === 'string') sc.place = { ...sc.place, name: fix(sc.place.name) };
+    sc.ship = fix(sc.ship);
+  }
   for (const beat of session.beats) {
     beat.who.name = actorName(beat.who.actor);
     if (beat.line) beat.line.text = fix(beat.line.text);

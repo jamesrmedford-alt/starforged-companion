@@ -38,10 +38,13 @@ const SITES = {
   'sheet.changed':     ['src/record/sheetWatch.js'],
   'narration':         ['src/record/cards.js'],
   'truth.set':         ['src/record/ledgerDiff.js'],
-  'truth.struck':      ['src/record/ledgerDiff.js'],
+  // …and a strike of an earlier scene's truth, which is in no ledger now
+  // (TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE): recorded by its strike.
+  'truth.struck':      ['src/record/ledgerDiff.js', 'src/factContinuity/earlierScenes.js'],
   // Overhaul 2 §5.7: a truth whose basis rose to bind, seen by the same differ.
   'truth.confirmed':   ['src/record/ledgerDiff.js'],
-  'name.changed':      ['src/factContinuity/nameChanges.js', 'src/factContinuity/chatCommands.js', 'src/factContinuity/correctionDialog.js'],
+  'name.changed':      ['src/factContinuity/nameChanges.js', 'src/factContinuity/chatCommands.js', 'src/factContinuity/correctionDialog.js',
+    'src/factContinuity/earlierScenes.js'],
   'narration.removed': ['src/record/record.js', 'src/context/safety.js', 'src/moves/resultUpgrade.js'],
   // Slice 2
   'scene.started':     ['src/factContinuity/sceneLifecycle.js'],
