@@ -227,17 +227,21 @@ Three cross-cutting facts to hold onto:
   narration — and on the way out when anything stops the roll before or at
   its card (a roll card the world refuses, a throw: `rollMove`'s `finally`),
   so what the effects owe is still posted and paid. An upgrade's cards post at
-  once: its roll card is on the table. **Not on it** (posted before the roll
-  card still): the price of a result that offers Burn Momentum or Improve
-  Result and is *not* held — a Batch Mode round's entry, or free-flow with
-  `holdResultForUpgrade` off: the card's `burn` / `improve` state must carry
-  the price's receipts (`ptpReversals`) from its first write, or an upgrade
-  pressed on it would keep the price beside the upgraded outcome; and the
-  cards of the other per-move branches, which were not part of this change —
-  expedition progress, a legacy mark, the scene-challenge card, Develop Your
-  Relationship, Reach a Milestone, a sworn vow's oath scene, Forge a Bond,
-  Finish an Expedition and its site, Finish the Scene, the recommit offers,
-  Forsake Your Vow.
+  once: its roll card is on the table (`applyOutcomeEffects`' `followsTheRoll`
+  chooses). **Also on it** (CARDS-STILL-ABOVE-THEIR-ROLL, 2026-11-25): every
+  other per-move branch's cards — expedition progress, a legacy mark, the
+  scene-challenge card, Develop Your Relationship, Reach a Milestone (its card
+  or its picker), Forge a Bond, Finish an Expedition and its site, Finish the
+  Scene, the recommit offers, Forsake Your Vow — and the system's own notes of
+  a bond's, a vow's or a milestone's write, held for them
+  (`holdingSystemNotes`). The price of a result that offers Burn Momentum or
+  Improve Result and is *not* held — a Batch Mode round's entry, or free-flow
+  with `holdResultForUpgrade` off — is still *paid* before the roll card (the
+  card's `burn` / `improve` state must carry its receipts, `ptpReversals`,
+  from its first write, or an upgrade pressed on it would keep the price
+  beside the upgraded outcome); only its card is posted after
+  (`postMovePayThePriceCard`'s `deferCard`). **Not on it:** a sworn vow's
+  oath scene, which is the swearing itself — the roll follows it.
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted

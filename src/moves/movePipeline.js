@@ -1333,10 +1333,14 @@ async function rollAndApply({
   // Result, which apply what their upgraded outcome adds
   // (applyDevelopRelationship — BOND-DEVELOP-UPGRADE).
   if (resolution.consequences?.developRelationship && game.user.isGM) {
-    await applyDevelopRelationship({
-      resolution, interpretation, campaignState, rollerActor,
+    // Its card, and the system's own notes of the bond's marks, follow the
+    // roll card (CARDS-STILL-ABOVE-THEIR-ROLL) — the notes first, as posted.
+    const at = afterMoveCard.length;
+    const { notes } = await holdingSystemNotes(() => applyDevelopRelationship({
+      resolution, interpretation, campaignState, rollerActor, afterMoveCard,
       markBonds: (ticks) => addLegacyTicks(campaignState, "bonds", ticks),
-    }).catch(err => console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err));
+    }).catch(err => console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err)));
+    if (notes.length) afterMoveCard.splice(at, 0, () => postSystemNotes(notes));
   }
 
   // Reach a Milestone (no-roll quest move) — mark progress on the target vow
@@ -1345,8 +1349,13 @@ async function rollAndApply({
   // "successes are not granting progress on this Vow"). Now GM-gated and
   // driven by planReachMilestone (sole open vow → auto-mark; several → picker).
   if (resolution.consequences?.reachMilestone && game.user.isGM) {
-    await applyReachMilestone(rollerActor, interpretation.moveTarget ?? null, 1, { res: resolution._id ?? null })
-      .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
+    // Its card — or the "Which vow?" picker — and the system's notes of the
+    // mark follow the roll card (the long haul's third live run, a63).
+    const at = afterMoveCard.length;
+    const { notes } = await holdingSystemNotes(() => applyReachMilestone(rollerActor, interpretation.moveTarget ?? null, 1,
+      { res: resolution._id ?? null, post: (card) => afterMoveCard.push(card) })
+      .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err)));
+    if (notes.length) afterMoveCard.splice(at, 0, () => postSystemNotes(notes));
   }
 
   // Swear an Iron Vow — the vow is sworn regardless of outcome; the resolver
@@ -1396,13 +1405,17 @@ async function rollAndApply({
       const target = selectConnection(connections, interpretation.moveTarget ?? null,
         { hostId: interpretation.moveTargetId ?? null, unbonded: true });
       if (target?.__hostId && !target.bonded) {
-        await conn.forgeBond(target.__hostId, { by: { move: "forge_a_bond", res: resolution._id ?? null } }).catch(err =>
-          console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
+        // The bond's "… marked completed" and "⚑ Bond Forged" follow the roll
+        // card: they stood above the Forge a Bond that caused them (the long
+        // haul's fifth live run, a71; CARDS-STILL-ABOVE-THEIR-ROLL).
+        const { notes } = await holdingSystemNotes(() => conn.forgeBond(target.__hostId, { by: { move: "forge_a_bond", res: resolution._id ?? null } }).catch(err =>
+          console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err)));
+        if (notes.length) afterMoveCard.push(() => postSystemNotes(notes));
         // Same rank ladder as vow/expedition completion rewards.
         const ticks = legacyRewardTicks(target.rank, 0);
         if (ticks > 0) addLegacyTicks(campaignState, "bonds", ticks);
-        await postForgeABondCard(target, ticks).catch(err =>
-          console.warn(`${MODULE_ID} | forge bond card failed:`, err?.message ?? err));
+        afterMoveCard.push(() => postForgeABondCard(target, ticks).catch(err =>
+          console.warn(`${MODULE_ID} | forge bond card failed:`, err?.message ?? err)));
       } else if (target?.bonded) {
         console.debug(`${MODULE_ID} | forge bond: "${target.name}" is already bonded — payoff already made.`);
       } else {
@@ -1432,8 +1445,11 @@ async function rollAndApply({
         // Its plan's ending comes out in this narration (issue #353 Phase 3).
         resolution.endingTrackIds = [fin.track.id];
         if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "discoveries", fin.legacyTicks);
-        await postExpeditionFinishCard(fin).catch(err =>
-          console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
+        // "Expedition complete" and its "◈ Site Discovered" follow the roll
+        // card (the fifth live run, a26; CARDS-STILL-ABOVE-THEIR-ROLL); the
+        // site is charted here, with the move's other writes.
+        afterMoveCard.push(() => postExpeditionFinishCard(fin).catch(err =>
+          console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err)));
 
         // Reaching the end of an expedition discovers the unexplored sector
         // site it led to (precursor vault / derelict): the one its track
@@ -1469,7 +1485,7 @@ async function rollAndApply({
           if (revealed) {
             noteUnsavedOnCopy(campaignState, { step: "site", sectorId: revealed.sector?.id ?? null,
               siteId: revealed.site?.id ?? null, name: revealed.site?.name ?? null });
-            await postSiteDiscoveryCard(revealed);
+            afterMoveCard.push(() => postSiteDiscoveryCard(revealed));
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | site reveal on finish-expedition failed:`, err?.message ?? err);
@@ -1499,8 +1515,8 @@ async function rollAndApply({
         // The challenge this move settled: its narration is that scene's last
         // beat, and the next beat turns the scene (overhaul 2 §4.3).
         resolution.endingTrackIds = [...(Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : []), fin.track.id];
-        await postSceneFinishCard(fin.track).catch(err =>
-          console.warn(`${MODULE_ID} | scene finish card failed:`, err?.message ?? err));
+        afterMoveCard.push(() => postSceneFinishCard(fin.track).catch(err =>
+          console.warn(`${MODULE_ID} | scene finish card failed:`, err?.message ?? err)));
       } else {
         console.warn(`${MODULE_ID} | finish the scene: no open scene challenge matched "${interpretation.moveTarget ?? "?"}" — nothing finished.`);
       }
@@ -1518,8 +1534,9 @@ async function rollAndApply({
       const track = selectExpeditionTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
         { trackId: interpretation.moveTargetId ?? null });
       if (track) {
-        await postRecommitOfferCard(track).catch(err =>
-          console.warn(`${MODULE_ID} | recommit offer card failed:`, err?.message ?? err));
+        // Under the miss it is offered for, as every card a roll causes.
+        afterMoveCard.push(() => postRecommitOfferCard(track).catch(err =>
+          console.warn(`${MODULE_ID} | recommit offer card failed:`, err?.message ?? err)));
       } else {
         console.debug(`${MODULE_ID} | recommit offer skipped — no open expedition matched "${interpretation.moveTarget ?? "?"}".`);
       }
@@ -1540,7 +1557,7 @@ async function rollAndApply({
       if (resolution.moveId === "fulfill_your_vow") {
         const vowName = (tickInfo?.source === "vow" ? tickInfo.label : null) ?? interpretation.moveTarget ?? null;
         const itemId  = tickInfo?.source === "vow" ? (tickInfo.trackId ?? null) : null;
-        if (vowName) await postVowRecommitOfferCard({ vowName, itemId, actorId: rollerActor?.id ?? null });
+        if (vowName) afterMoveCard.push(() => postVowRecommitOfferCard({ vowName, itemId, actorId: rollerActor?.id ?? null }));
         else console.debug(`${MODULE_ID} | vow recommit offer skipped — no vow was scored.`);
       } else {
         const conn = await import("../entities/connection.js");
@@ -1549,7 +1566,7 @@ async function rollAndApply({
           .filter(Boolean);
         const target = selectConnection(connections, interpretation.moveTarget ?? null,
           { hostId: interpretation.moveTargetId ?? null, unbonded: true });
-        if (target?.__hostId && !target.bonded) await postBondRecommitOfferCard(target, rollerActor?.id ?? null);
+        if (target?.__hostId && !target.bonded) afterMoveCard.push(() => postBondRecommitOfferCard(target, rollerActor?.id ?? null));
         else console.debug(`${MODULE_ID} | bond recommit offer skipped — no un-bonded connection matched "${interpretation.moveTarget ?? "?"}".`);
       }
     } catch (err) {
@@ -1669,15 +1686,20 @@ async function rollAndApply({
             completeTrack: (id) => completeProgressTrack(id, { by: { move: resolution.moveId ?? null, res: resolution._id ?? null } }),
           },
         ).catch(() => null); // journal twin close — legacyTicks deliberately unused
-        for (const { actor, item } of copies) {
-          if (item.system?.completed !== true) {
-            // Closed by Forsake Your Vow — the session record's `by` (overhaul 4, D12).
-            const { recordCause } = await import("../record/sheetWatch.js");
-            await completeVowItem(actor, item.id, recordCause({ kind: "move", move: "forsake_your_vow", res: resolution._id ?? null })).catch(err =>
-              console.warn(`${MODULE_ID} | forsake: complete failed:`, err?.message ?? err));
+        // The system's "… marked completed" for each copy follows the roll
+        // card with "Vow Forsaken" (CARDS-STILL-ABOVE-THEIR-ROLL).
+        const { notes: forsakeNotes } = await holdingSystemNotes(async () => {
+          for (const { actor, item } of copies) {
+            if (item.system?.completed !== true) {
+              // Closed by Forsake Your Vow — the session record's `by` (overhaul 4, D12).
+              const { recordCause } = await import("../record/sheetWatch.js");
+              await completeVowItem(actor, item.id, recordCause({ kind: "move", move: "forsake_your_vow", res: resolution._id ?? null })).catch(err =>
+                console.warn(`${MODULE_ID} | forsake: complete failed:`, err?.message ?? err));
+            }
+            await item.setFlag?.(MODULE_ID, "forsaken", true).catch(() => {});
           }
-          await item.setFlag?.(MODULE_ID, "forsaken", true).catch(() => {});
-        }
+        });
+        if (forsakeNotes.length) afterMoveCard.push(() => postSystemNotes(forsakeNotes));
         const rewardCopy = copies.find(({ item }) =>
           item.flags?.[MODULE_ID]?.reward?.status === "promised");
         if (rewardCopy) {
@@ -1687,8 +1709,8 @@ async function rollAndApply({
           const f = rewardCopy.item.flags[MODULE_ID];
           await setSharedVowReward(vowCopyId(rewardCopy.item), { ...f.reward, status: "lost" }).catch(() => {});
         }
-        await postForsakeVowCard(primary.item.name).catch(err =>
-          console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
+        afterMoveCard.push(() => postForsakeVowCard(primary.item.name).catch(err =>
+          console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err)));
       }
       // No open vow of the roller's: never rolled — the move gate refuses a
       // Forsake Your Vow with none (OPEN_VOW of the roller's, read and rolled),
@@ -1752,8 +1774,8 @@ async function rollAndApply({
     // Pay it: its card, its suffer routes, the clocks. The move's narration
     // depicts this card's price — the one the table pays; the resolver rolled
     // none for it (issue #321 U03).
-    const payPrice = async () => {
-      const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated }).catch(err => {
+    const payPrice = async ({ deferCard = null } = {}) => {
+      const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds, stated, deferCard }).catch(err => {
         console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
         return null;
       });
@@ -1772,8 +1794,10 @@ async function rollAndApply({
       // upgrade pressed on a card without them would keep the price beside
       // the upgraded outcome — and a resist roll its harm owes, the roller's
       // next move, which closes the card's upgrades, says to take them first
-      // (issue #336 Y18).
-      ptpReversals = (await payPrice())?.reversals ?? null;
+      // (issue #336 Y18). Its own card follows the roll card all the same: the
+      // price is paid here, its card posted once the roll card is up
+      // (`deferCard`; CARDS-STILL-ABOVE-THEIR-ROLL).
+      ptpReversals = (await payPrice({ deferCard: (post) => afterMoveCard.push(post) }))?.reversals ?? null;
     } else {
       // No upgrade can undo it, so nothing on the roll card reads it: the
       // price is paid once that card is on the table, and its card stands
@@ -2034,9 +2058,10 @@ function rollBondedDevelop(connection, rollerActor) {
  * @param {Actor|null} args.rollerActor
  * @param {{ outcome: string, consequences: Object }|null} [args.against] — the recorded outcome an upgrade replaces
  * @param {Function} args.markBonds — (ticks) => void|Promise: marks the bonds legacy
+ * @param {Array<Function>|null} [args.afterMoveCard] — the pipeline's list of what follows the roll card: the card goes on it
  * @returns {Promise<Object|null>} the plan applied; null when nothing was
  */
-export async function applyDevelopRelationship({ resolution, interpretation, campaignState, rollerActor, against = null, markBonds }) {
+export async function applyDevelopRelationship({ resolution, interpretation, campaignState, rollerActor, against = null, markBonds, afterMoveCard = null }) {
   const { postDevelopRelationshipCard } = pipelineHost();
   const isTest = resolution.moveId === "test_your_relationship";
   if (against && isTest && against.consequences?.developRelationship) return null;   // developed by the recorded hit
@@ -2097,8 +2122,13 @@ export async function applyDevelopRelationship({ resolution, interpretation, cam
   } else {
     return null;
   }
-  await postDevelopRelationshipCard(roll ? { ...plan, roll } : plan).catch(err =>
+  // The pipeline's card follows the move's roll card (`afterMoveCard`,
+  // CARDS-STILL-ABOVE-THEIR-ROLL); an upgrade's roll card is on the table
+  // already, so its card posts now.
+  const postCard = () => postDevelopRelationshipCard(roll ? { ...plan, roll } : plan).catch(err =>
     console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+  if (Array.isArray(afterMoveCard)) afterMoveCard.push(postCard);
+  else await postCard();
   return plan;
 }
 

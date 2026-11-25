@@ -2366,6 +2366,14 @@ async function applyOutcomeEffects({
   const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied,
     afterMoveCard: Array.isArray(afterMoveCard) ? afterMoveCard : [], failures: [] };
   if (!game.user?.isGM) return out;
+  // A card that says what this roll caused: the pipeline's goes on its list,
+  // posted once the roll card is up; an upgrade's roll card is on the table
+  // already, and one given no list has nobody to run it — both post now
+  // (CARDS-STILL-ABOVE-THEIR-ROLL).
+  const followsTheRoll = async (postCard) => {
+    if (against === null && Array.isArray(afterMoveCard)) out.afterMoveCard.push(postCard);
+    else await postCard();
+  };
 
   const next       = resolution.consequences ?? {};
   // What the move's track writes were made by (the session record's `by`,
@@ -2528,10 +2536,8 @@ async function applyOutcomeEffects({
     // roll card, so the pipeline posts it after that card (issue #348 PT10);
     // an upgrade's roll card is already on the table.
     if (resolution.moveId === "set_a_course" && positioning) {
-      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
-        .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
-      if (upgrade) await postCard();
-      else out.afterMoveCard.push(postCard);
+      await followsTheRoll(() => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
+        .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err)));
     }
     applied.push(placeName ? `arrived at ${placeName}` : "arrived (no destination named)");
   } else if (arrivalMove && upgrade && resolution.outcome !== "miss") {
@@ -2655,8 +2661,8 @@ async function applyOutcomeEffects({
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
           }
         }
-        await postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
-          console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
+        await followsTheRoll(() => postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
+          console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err)));
         applied.push(`progress marked on the ${result.track.label ?? "expedition"} expedition`);
       }
     } catch (err) {
@@ -2683,8 +2689,8 @@ async function applyOutcomeEffects({
       } else {
         addLegacyTicks(campaignState, track, ticks);
       }
-      await postLegacyMarkCard(track, ticks).catch(err =>
-        console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
+      await followsTheRoll(() => postLegacyMarkCard(track, ticks).catch(err =>
+        console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err)));
       applied.push(`${ticks} tick${ticks === 1 ? "" : "s"} on the ${label} legacy`);
     } catch (err) {
       console.warn(`${MODULE_ID} | legacy mark failed:`, err?.message ?? err);
@@ -2806,15 +2812,15 @@ async function applyOutcomeEffects({
         const changed = scored.clock?.changed ?? 0;
         if (changed) applied.push(`${label}'s clock ${changed > 0 ? "filled" : "rewound"} ${Math.abs(changed)} segment${Math.abs(changed) === 1 ? "" : "s"}`);
         if (scored.marked || changed) {
-          await postSceneChallengeCard(scored).catch(err =>
-            console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+          await followsTheRoll(() => postSceneChallengeCard(scored).catch(err =>
+            console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err)));
         }
       } else {
         const why = { none: "no scene challenge is open", ambiguous: "which scene challenge? — mark it in the Progress Tracks panel", gone: "its scene challenge is over" }[scored.reason] ?? scored.reason;
         console.warn(`${MODULE_ID} | ${resolution.moveId}: ${why} — progress and clock not changed.`);
         notApplied.push(`the scene challenge's progress and clock — ${why}`);
-        await postSceneChallengeCard({ track: null, reason: why }).catch(err =>
-          console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+        await followsTheRoll(() => postSceneChallengeCard({ track: null, reason: why }).catch(err =>
+          console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err)));
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | scene challenge scoring failed:`, err?.message ?? err);
@@ -2890,8 +2896,8 @@ async function applyOutcomeEffects({
             if (updated) { track = updated; marksApplied++; }
           }
           combatProgressTrack = track;
-          await postCombatProgressCard({ track, marksApplied }).catch(err =>
-            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          await followsTheRoll(() => postCombatProgressCard({ track, marksApplied }).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err)));
           applied.push(`progress marked ${times} on ${track.label ?? "the fight"}`);
         } else {
           console.warn(`${MODULE_ID} | combat progress: the move's fight ${stampedId} is over or gone — ×${marks} not marked.`);
@@ -2921,10 +2927,8 @@ async function applyOutcomeEffects({
           combatProgressTrack = result.track;
           // The pipeline's follows the move's roll card; an upgrade's roll
           // card is on the table already.
-          const postCard = () => postCombatProgressCard(result).catch(err =>
-            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
-          if (upgrade) await postCard();
-          else out.afterMoveCard.push(postCard);
+          await followsTheRoll(() => postCombatProgressCard(result).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err)));
           applied.push(`progress marked ${times} on ${result.track.label ?? "the fight"}`);
         }
       }
@@ -8373,12 +8377,13 @@ async function postDevelopRelationshipCard(plan) {
  * @param {Actor|null} actor
  * @param {string|null} target
  * @param {number} [marks]
- * @param {{ itemId?: string|null, askUnnamed?: boolean }} [opts]
+ * @param {{ itemId?: string|null, askUnnamed?: boolean, post?: Function|null }} [opts] — `post`: what
+ *   schedules its card after the move's roll card (the pipeline's), else it posts at once
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false, res = null } = {}) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false, res = null, post = null } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -8388,6 +8393,10 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null, as
     console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
     return null;
   }
+  // The move's card follows its roll card (`post`: the pipeline's list —
+  // CARDS-STILL-ABOVE-THEIR-ROLL, the third live run's a63); a card's press
+  // has no roll card, and posts at once.
+  const show = (card) => (typeof post === "function" ? post(card) : card());
   // A vow named by its Item (a won-fight card's, resolved by its vow id —
   // issue #345 AA17): that open vow, else nothing — never another by name.
   const vows = readVows(actor);
@@ -8399,11 +8408,11 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null, as
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     // Made by Reach a Milestone — the session record's `by` (overhaul 4, D12).
     await markVowProgress(actor, plan.vow.id, ticks, recordCause({ kind: "move", move: "reach_a_milestone", res }));
-    await postReachMilestoneCard(plan.vow, ticks);
+    await show(() => postReachMilestoneCard(plan.vow, ticks));
   } else if (plan.action === "pick") {
     // The marks ride the picker: a won fight's ×2 that falls to the picker
     // (its vow renamed since) marked the picked vow once (issue #326 W43).
-    await postMilestonePickerCard(plan.vows, actor.id, marks);
+    await show(() => postMilestonePickerCard(plan.vows, actor.id, marks));
   }
   // action "none" → no open vow to mark; the move card's otherEffect already
   // tells the player Reach a Milestone marks vow progress.
@@ -8586,7 +8595,7 @@ function priceCardRefusedNotice(card, paidFor) {
  *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
+export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null, deferCard = null } = {}) {
   // The miss stated before the roll is the price, when there is one (issue
   // #353 R1, stakes.js statedPrice): nothing is rolled, and its suffer move —
   // the one route — is dispatched as a rolled route is.
@@ -8616,23 +8625,30 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
   // — as payChosenPrice's is): a refused card dropped the suffer routes, the
   // clocks and the narration's seed, and with the result held its wait had
   // already closed, so nothing could pay it later.
-  try {
-    await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
-      flags:   {
-        [MODULE_ID]: {
-          payThePriceCard: true,
-          sufferRoutes:    result.sufferRoutes,
-          // Its move's resolution: a burn or improvement that reverts the
-          // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
-          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
+  const postCard = async () => {
+    try {
+      await ChatMessage.create({
+        content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+        flags:   {
+          [MODULE_ID]: {
+            payThePriceCard: true,
+            sufferRoutes:    result.sufferRoutes,
+            // Its move's resolution: a burn or improvement that reverts the
+            // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
+            oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
+          },
         },
-      },
-    });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
-    priceCardRefusedNotice("Pay the Price", paidFor);
-  }
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+      priceCardRefusedNotice("Pay the Price", paidFor);
+    }
+  };
+  // `deferCard`: the price is paid now, and its card posted when the caller
+  // says — once the roll card it is the price of is on the table (the
+  // pipeline's list; CARDS-STILL-ABOVE-THEIR-ROLL).
+  if (typeof deferCard === "function") deferCard(postCard);
+  else await postCard();
 
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
