@@ -1336,7 +1336,7 @@ async function rollAndApply({
   // "successes are not granting progress on this Vow"). Now GM-gated and
   // driven by planReachMilestone (sole open vow → auto-mark; several → picker).
   if (resolution.consequences?.reachMilestone && game.user.isGM) {
-    await applyReachMilestone(rollerActor, interpretation.moveTarget ?? null)
+    await applyReachMilestone(rollerActor, interpretation.moveTarget ?? null, 1, { res: resolution._id ?? null })
       .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
   }
 
@@ -1387,7 +1387,7 @@ async function rollAndApply({
       const target = selectConnection(connections, interpretation.moveTarget ?? null,
         { hostId: interpretation.moveTargetId ?? null, unbonded: true });
       if (target?.__hostId && !target.bonded) {
-        await conn.forgeBond(target.__hostId).catch(err =>
+        await conn.forgeBond(target.__hostId, { by: { move: "forge_a_bond", res: resolution._id ?? null } }).catch(err =>
           console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
         // Same rank ladder as vow/expedition completion rewards.
         const ticks = legacyRewardTicks(target.rank, 0);
@@ -1416,7 +1416,7 @@ async function rollAndApply({
         },
         {
           listTracks:   () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
+          completeTrack: (id) => completeProgressTrack(id, { by: { move: resolution.moveId ?? null, res: resolution._id ?? null } }),
         },
       );
       if (fin?.track) {
@@ -1483,7 +1483,7 @@ async function rollAndApply({
         { moveTarget: interpretation.moveTarget ?? null, moveTargetId: interpretation.moveTargetId ?? null },
         {
           listTracks:    () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
+          completeTrack: (id) => completeProgressTrack(id, { by: { move: resolution.moveId ?? null, res: resolution._id ?? null } }),
         },
       );
       if (fin?.track) {
@@ -1569,7 +1569,7 @@ async function rollAndApply({
         { moveTarget: scoredVowName ?? interpretation.moveTarget, ranksDown },
         {
           listTracks:    () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
+          completeTrack: (id) => completeProgressTrack(id, { by: { move: resolution.moveId ?? null, res: resolution._id ?? null } }),
         },
       );
       // The enriched vow name — the exact item the roll scored against —
@@ -1606,7 +1606,7 @@ async function rollAndApply({
       // deepen, the reward or the note that none was chosen), and "⚑ Vow
       // Fulfilled". They stood above the Fulfill Your Vow that caused them
       // (the long haul's third live run, a64).
-      const { result: itemDone, notes: closeNotes } = await holdingSystemNotes(() => completeVowItemByName(vowName, vowKey));
+      const { result: itemDone, notes: closeNotes } = await holdingSystemNotes(() => completeVowItemByName(vowName, { ...vowKey, res: resolution._id ?? null }));
       if (closeNotes.length) afterMoveCard.push(() => postSystemNotes(closeNotes));
       const payoff = () => payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey }).catch(err =>
         console.warn(`${MODULE_ID} | fulfill vow payoff failed:`, err?.message ?? err));
@@ -1657,12 +1657,14 @@ async function rollAndApply({
           { moveTarget: primary.item?.name ?? interpretation.moveTarget ?? null, ranksDown: 0 },
           {
             listTracks:    () => listProgressTracks(),
-            completeTrack: (id) => completeProgressTrack(id),
+            completeTrack: (id) => completeProgressTrack(id, { by: { move: resolution.moveId ?? null, res: resolution._id ?? null } }),
           },
         ).catch(() => null); // journal twin close — legacyTicks deliberately unused
         for (const { actor, item } of copies) {
           if (item.system?.completed !== true) {
-            await completeVowItem(actor, item.id).catch(err =>
+            // Closed by Forsake Your Vow — the session record's `by` (overhaul 4, D12).
+            const { recordCause } = await import("../record/sheetWatch.js");
+            await completeVowItem(actor, item.id, recordCause({ kind: "move", move: "forsake_your_vow", res: resolution._id ?? null })).catch(err =>
               console.warn(`${MODULE_ID} | forsake: complete failed:`, err?.message ?? err));
           }
           await item.setFlag?.(MODULE_ID, "forsaken", true).catch(() => {});
@@ -2080,7 +2082,8 @@ export async function applyDevelopRelationship({ resolution, interpretation, cam
         console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
     }
   } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
-    await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
+    await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks,
+      { by: { move: "develop_your_relationship", res: resolution?._id ?? null } }).catch(err =>
       console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
   } else {
     return null;

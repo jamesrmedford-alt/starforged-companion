@@ -319,6 +319,16 @@ press it (`cardRollerPc`; the clicker's PC only on a card that names none).
 It spoke as the clicker's PC, so a GM's press rolled the first PC's Face
 Danger for a fight another PC had entered (issue #335 Y11).
 
+**⚔ Begin the fight is Enter the Fray's commit, asked of the move gate**
+(overhaul 4, design §6.2 — `moves/contracts/pressGate.js`): before the card
+is claimed. Enter the Fray's row requires nothing, so the press passes by
+construction — a precondition put on the row binds the button too. 🚪 Find
+another way is no move of its own (its off-ramp is a forced move, gated at
+its roll). The Progress Tracks panel's Add of a fight is the table's own
+hand and is never asked (D7); its Add of a scene challenge, and the
+scene-challenge offer's Begin, are Begin the Scene and are (it too requires
+nothing).
+
 **⚔ Begin the fight keeps a held Enter the Fray first** (overhaul 4, slice 5;
 D11, amending issue #362 D5 — who goes on keeps it): an Enter the Fray held
 for Burn / Improve / Keep was not kept by the press, and the player's next

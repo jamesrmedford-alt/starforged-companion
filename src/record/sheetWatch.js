@@ -60,7 +60,9 @@ const CAUSE_KINDS = new Set(['move', 'choice', 'upgrade', 'session']);
  * that knows: pass them to the bridge's write (`applyMeterChanges(actor,
  * changes, recordCause({ kind: "move", res }))`).
  *
- * @param {{ kind: "move"|"choice"|"upgrade"|"session", res?: string|null, card?: string|null }} cause
+ * @param {{ kind: "move"|"choice"|"upgrade"|"session", move?: string|null, res?: string|null, card?: string|null }} cause
+ *   — `move`: the move's id, for the `by` of a move-only state change (a
+ *   vow's progress, its close — overhaul 4, D12)
  * @returns {Object}
  */
 export function recordCause(cause) {
@@ -69,6 +71,7 @@ export function recordCause(cause) {
     [MODULE_ID]: {
       [CAUSE_OPTION]: {
         kind,
+        ...(typeof cause?.move === 'string' && cause.move ? { move: cause.move } : {}),
         ...(typeof cause?.res === 'string' && cause.res ? { res: cause.res } : {}),
         ...(typeof cause?.card === 'string' && cause.card ? { card: cause.card } : {}),
       },
@@ -83,6 +86,20 @@ function causeOf(options) {
   if (given && CAUSE_KINDS.has(given.kind)) return given;
   if (MIRROR_OPTIONS.some(key => ours[key] === true)) return { kind: 'mirror' };
   return { kind: ours[BEFORE_OPTION]?.module === true ? 'module' : 'sheet' };
+}
+
+/**
+ * What made a move-only state change, for its event's `by` (overhaul 4, D12):
+ * a move's (`{ move, res }` — the cause a module writer passed), the table's
+ * own hand (`"hand"` — the sheet's edit), or null when nothing says (a module
+ * write that passed no cause, a mirror).
+ */
+function byOfCause(cause) {
+  if (cause?.kind === 'sheet') return 'hand';
+  if (cause?.kind === 'move' || cause?.kind === 'choice' || cause?.kind === 'upgrade') {
+    return { move: typeof cause.move === 'string' && cause.move ? cause.move : null, res: cause.res ?? null };
+  }
+  return null;
 }
 
 /** Stamp a value into an update's options, beside whatever the module already put there. */
@@ -184,13 +201,16 @@ function recordVowChanges(item, before, after, options, userId) {
     who: { user: userId ?? null, actor: actor.id },
     ref: { vow: after.vowId ?? item.id, res: cause.res ?? null },
   };
+  // What made it (overhaul 4, D12): a move, or the sheet's own hand.
+  const by = byOfCause(cause);
+  const made = by ? { by } : {};
   if (after.ticks !== before.ticks) {
-    recordEvent('progress.marked', { ...base, d: { label: after.name, rank: after.rank, from: before.ticks, to: after.ticks } });
+    recordEvent('progress.marked', { ...base, d: { label: after.name, rank: after.rank, from: before.ticks, to: after.ticks, ...made } });
   }
   if (after.completed && !before.completed) {
-    recordEvent('vow.closed', { ...base, d: { name: after.name, how: after.forsaken ? 'forsaken' : 'fulfilled' } });
+    recordEvent('vow.closed', { ...base, d: { name: after.name, how: after.forsaken ? 'forsaken' : 'fulfilled', ...made } });
   } else if (after.completed && after.forsaken && !before.forsaken) {
-    recordEvent('vow.closed', { ...base, d: { name: after.name, how: 'forsaken' } });
+    recordEvent('vow.closed', { ...base, d: { name: after.name, how: 'forsaken', ...made } });
   }
   if (after.linkedConnectionName && after.linkedConnectionName !== before.linkedConnectionName) {
     recordEvent('vow.linked', { ...base, ref: { ...base.ref, conn: after.linkedConnectionId ?? null },

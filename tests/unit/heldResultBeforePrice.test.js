@@ -69,7 +69,8 @@ const narrations = () => table.cards(f => f.narratorCard && f.resolutionId);
 const priceCards = () => table.cards(f => f.payThePriceCard);
 const suffers    = () => table.cards(f => f.sufferCard && f.suffer).map(c => c.flags[MODULE_ID]);
 const choices    = () => table.cards(f => f.sufferCard && f.sufferPrompt && !f.suffer);
-const narratorCalls = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence/.test(`${c.system}\n${c.userText}`));
+// Not the post-narration audit, whose prompt quotes the narration's obligation lines (overhaul 4).
+const narratorCalls = () => table.claude.calls.filter(c => /MOVE OUTCOME|Narrate the consequence/.test(`${c.system}\n${c.userText}`) && !/^You are auditing/.test(String(c.system ?? '')));
 
 // [challenge, challenge, action] Math.random values.
 const MISS   = [0.55, 0.65, 0.1];   // challenge 6, 7; action die 1 — wits 2 misses; momentum 9 burns to a strong hit

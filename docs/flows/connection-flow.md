@@ -437,7 +437,17 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   a pressed one's not-rolled notice. A full relationship track refuses a
   Develop soft, Forge a Bond offered (`ROOM_ON_RELATIONSHIP`); a bonded one
   is never forged again (`NOT_BONDED`); and a social move spoken to a fellow
-  player character is roleplay, not a roll (`NOT_AT_A_PC`). Make a Connection
+  player character is roleplay, not a roll (`NOT_AT_A_PC`). The same gate is
+  asked by the moves a button makes (`moves/contracts/pressGate.js`
+  `gatePress`): the won fight's 🤝 (`cardActions.applyFightVowDeepenBond`,
+  Develop Your Relationship with the card's connection — refused, nothing
+  deepened, the presser and the GMs told "Not made" and why), `!bond` with a
+  bond (named, or the table's one — refused before the dice, its author and
+  the GMs told; a rank-only `!bond` names no one and is not asked), and a
+  Forge a Bond rolled on the sheet (`index.js payNativeProgressRoll` — a
+  bond the sheet holds forged already pays nothing, the GMs whispered "No
+  payoff"). Two of the roller's connections of one name (a namesake) are a
+  connection of theirs (`namedMoreThanOnce`). Make a Connection
   with someone already the roller's is refused soft, Develop offered
   (`NOT_YET_THEIR_CONNECTION`).
 

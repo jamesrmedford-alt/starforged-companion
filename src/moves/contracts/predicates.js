@@ -101,6 +101,12 @@ function byName(list, name) {
   return parts.length === 1 ? parts[0] : null;
 }
 
+/** More than one of the list has exactly this name — byName's "none" that is not "no one". */
+function namedMoreThanOnce(list, name) {
+  const wanted = lower(name).replace(/^the\s+/, "");
+  return !!wanted && Array.isArray(list) && list.filter(x => lower(x?.name).replace(/^the\s+/, "") === wanted).length > 1;
+}
+
 /** The roller's connections that are live (a bond Item not severed). */
 const liveConnections = (s) => (Array.isArray(s?.roller?.connections) ? s.roller.connections.filter(c => !c.lost) : null);
 
@@ -112,13 +118,15 @@ const liveConnections = (s) => (Array.isArray(s?.roller?.connections) ? s.roller
  */
 function namedConnection(s, r) {
   const live = liveConnections(s);
-  if (!live) return { live: null, found: null, named: false };
+  if (!live) return { live: null, found: null, named: false, several: false };
   if (r?.targetId) {
     const found = live.find(c => c.hostId === r.targetId || c.connectionId === r.targetId || c.itemId === r.targetId) ?? null;
-    return { live, found, named: true };
+    return { live, found, named: true, several: false };
   }
-  if (lower(r?.target)) return { live, found: byName(live, r.target), named: true };
-  return { live, found: live.length === 1 ? live[0] : null, named: false };
+  // Two of their connections share the name (a namesake): it names a
+  // connection of theirs, not which — the move's own resolution picks.
+  if (lower(r?.target)) return { live, found: byName(live, r.target), named: true, several: namedMoreThanOnce(live, r.target) };
+  return { live, found: live.length === 1 ? live[0] : null, named: false, several: false };
 }
 
 /** Who the reading names, by name, for a reason: its target, else a known person's card. */
@@ -354,9 +362,9 @@ export const ROOM_ON_VOW = pre({
 export const THEIR_CONNECTION = pre({
   id: "their-connection", scope: "sheet", hard: true,
   test: (s, r) => {
-    const { live, found, named } = namedConnection(s, r);
+    const { live, found, named, several } = namedConnection(s, r);
     if (!live) return null;
-    if (found) return true;
+    if (found || several) return true;
     if (named) return false;
     return live.length > 0;
   },
@@ -374,9 +382,9 @@ export const NOT_YET_THEIR_CONNECTION = pre({
   id: "not-yet-their-connection", scope: "sheet",
   test: (s, r) => {
     if (!r?.targetId && !lower(r?.target)) return true;
-    const { live, found } = namedConnection(s, r);
+    const { live, found, several } = namedConnection(s, r);
     if (!live) return null;
-    return !found;
+    return !found && !several;
   },
   why: (s, r) => `${personNamed(s, r)} is already ${nameOf(s)}'s connection`,
   premise: () => ({ claim: "a new tie", never: "a connection made with someone who already is one" }),

@@ -345,7 +345,7 @@ export async function addHistoryEntry(journalEntryId, entry, sessionId = "") {
  * @param {number} [marks=1] — Number of times to mark progress (usually 1)
  * @returns {Promise<{ connection: Object, ticksAdded: number, newTicks: number }>}
  */
-export async function markRelationshipProgress(journalEntryId, marks = 1) {
+export async function markRelationshipProgress(journalEntryId, marks = 1, { by = null } = {}) {
   const connection = getConnection(journalEntryId);
   if (!connection) throw new Error(`Connection not found: ${journalEntryId}`);
 
@@ -363,7 +363,7 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
   // On the session record (issue #382), once the record took it.
   if (newTicks !== currentTicks) {
     void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.developed", {
-      ref: { conn: journalEntryId }, d: { name: connection.name ?? "", rank: connection.rank ?? null, ticks: { from: currentTicks, to: newTicks } },
+      ref: { conn: journalEntryId }, d: { name: connection.name ?? "", rank: connection.rank ?? null, ticks: { from: currentTicks, to: newTicks }, ...(by ? { by } : {}) },
     })).catch(() => {});
   }
 
@@ -409,7 +409,7 @@ export async function forgeBond(journalEntryId, options = {}) {
   // On the session record (issue #382), once the record took it.
   if (connection?.bonded !== true) {
     void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.bonded", {
-      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", rank: updated?.rank ?? connection?.rank ?? null },
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", rank: updated?.rank ?? connection?.rank ?? null, ...(options.by ? { by: options.by } : {}) },
     })).catch(() => {});
   }
 
@@ -446,7 +446,7 @@ export async function forgeBond(journalEntryId, options = {}) {
  * @param {string} [sessionId]
  * @returns {Promise<Object>}
  */
-export async function loseConnection(journalEntryId, reason = "", sessionId = "") {
+export async function loseConnection(journalEntryId, reason = "", sessionId = "", { by = null } = {}) {
   const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, {
     active:        false,
@@ -454,7 +454,7 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
   // On the session record (issue #382), once the record took it.
   if (connection?.active !== false) {
     void import("../record/record.js").then(({ recordEvent }) => recordEvent("connection.lost", {
-      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", ...(reason ? { reason } : {}) },
+      ref: { conn: journalEntryId }, d: { name: updated?.name ?? connection?.name ?? "", ...(reason ? { reason } : {}), ...(by ? { by } : {}) },
     })).catch(() => {});
   }
 

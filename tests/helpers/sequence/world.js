@@ -273,8 +273,13 @@ export class SequenceWorld {
   /** Reach a Milestone, the target named — or not named, which marks the one open vow or asks which. */
   async reachMilestone(ref, { pc, name, byName, doubled = false }) {
     const item = this.vowItem(ref);
+    // The picker this move posts — never one an earlier pick left open: a
+    // pick the move gate refused (a vow already full, overhaul 4) marks
+    // nothing and leaves its picker open.
+    const before = this.table.cards(f => f.milestonePicker).length;
     await this.forcedMove(pc, "reach_a_milestone", "We make headway on the quest.", byName ? { target: name } : {});
-    const picker = this.card(f => f.milestonePicker && !f.resolved);
+    const picker = this.table.cards(f => f.milestonePicker).slice(before)
+      .filter(m => m?.flags?.[MODULE_ID]?.resolved !== true).at(-1) ?? null;
     if (picker) await this.press(playerOf(pc), picker._id, `[data-action="sf-milestone-pick"][data-vow-id="${item.id}"]`, { also: doubled ? GM : null });
   }
 

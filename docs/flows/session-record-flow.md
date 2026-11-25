@@ -70,13 +70,31 @@ kind or a view updates this file in the same commit.
 | `fight.offered` | `postCombatThresholdCard` (`src/index.js`), once its card posted | explicit |
 | `vow.sworn`, `vow.linked`, `vow.closed`, vow `progress.marked` | the sheet watch on a PC's vow Items (`sheetWatch.js`, `readVowFact`): created (sworn), its track moved, completed (closed — forsaken when the forsake flags it), tied to a connection (`linkedConnectionName`). A shared vow's copies each fire; the read counts them once by `vowId`. The event goes to the session the store holds as the Item lands: Begin a Session's dialog vow is written by the canonical GM once its session is begun (`swearBeginVow` — VOW-SWORN-UNNAMED-IN-THE-RECORD). A vow move's record line names its vow (`phrasing.js moveText`) | observed |
 | `connection.made` | `actorBridge.createCharacterBondItem` — where the bond Item is made, once (`d.actorId`, and `d.by`: `{ move: "make_a_connection" }` or `"setup"`; the NPC card's making is `entity.confirmed` — overhaul 4, D12) | explicit |
-| `connection.developed` / `.bonded` / `.lost` | `markRelationshipProgress`, `forgeBond`, `loseConnection` (`src/entities/connection.js`), once the record took it | explicit |
+| `connection.developed` / `.bonded` / `.lost` | `markRelationshipProgress`, `forgeBond`, `loseConnection` (`src/entities/connection.js`), once the record took it — each with `d.by` its caller passes (overhaul 4, D12): Develop Your Relationship's (the pipeline's, the won fight's 🤝), Fulfill Your Vow's deepen, Forge a Bond's (the pipeline's, the sheet roll's), `"hand"` for `!sever` | explicit |
 | `entity.confirmed` | `confirmDraft` (`src/entities/entityExtractor.js`), once its draft row is confirmed — a draft is the detector's guess, never recorded | explicit |
 | `place.arrived` | the current place set anew: a move's arrival saved with its record (`persistResolution.js`) or after its upgrade (`index.js`), `!at` (`index.js`), the Entities panel's toggle (`entityPanel.js`) — `tableSnapshot.js` `recordPlaceArrival` names the place. A ship token dropped on a pin posts a Set a Course: its arrival is a move's. A token moved by hand changes no current place and records none. A narration of play whose frame and player words name another recorded place moves the current place and records it `how: "line"` (`narrator.js` `applySidecarSideData` → `recordPlaceArrival`, overhaul 2 §6.4) | explicit |
 | `oracle.asked` | `captureOracleResult` (`src/index.js`), once the ring took it | explicit |
 | `clock.advanced` | `writeState` (`src/clocks/clocks.js`), every clock save diffed: a clock whose fill rose. A hidden plan's clock (`planId`) is never recorded | observed |
 | `reward.granted` | `recordGrantedReward` (`src/character/actorBridge.js`), once the sheet took it | explicit |
 | `narration.removed` | the X-Card's finish (`finishXCardRemoval`, `src/context/safety.js`), first thing, awaited — `recordNarrationsRemoved(ids, { by: "xcard" })` records it and blanks, on every page, what the removed narrations told (their `narration` text, their truths' words — the row's `blank` fields); a Burn / Improve supersede (`retractSupersededNarrations`, `src/moves/resultUpgrade.js`, `by: "superseded"`) — hidden at read, not blanked | explicit |
+
+
+**What made a move-only state change** (overhaul 4, D12 — `d.by`): `{ move,
+res }` for a move, `"setup"` (a starting connection), or `"hand"` for the
+table's own (D7 — never told as a deed: a view says "(set by hand)",
+`phrasing.js didText`). A vow's `progress.marked` / `vow.closed`: the cause
+the module writer passed with the write (`sheetWatch.js recordCause({ kind:
+"move", move, res })` — Reach a Milestone's mark from the pipeline, the "Which
+vow?" pick and the won fight's ⚑; Fulfill Your Vow's and Forsake Your Vow's
+close), `"hand"` for the sheet's own edit (`cause.kind: "sheet"`), none for a
+module write that passed no cause or a mirror. A track's `track.begun` /
+`progress.marked` / `track.ended`: the save's `by` (`writeTracks(change, {
+by })`) — the pipeline's own writes its move's (`applyOutcomeEffects`,
+`rollAndApply`), Begin the fight's Enter the Fray, Begin the Scene's (the
+offer, the panel's Add of a scene challenge), `"hand"` for the panel's other
+edits; `position.changed` carries none. Not yet given one: the suffer
+dialog's choice marks (`sufferDialog.js`), the payoff Retry's deepen, an
+asset rider's track adjust.
 
 Not recorded (traced, issue #382 slices 1 and 2): the system sheet's **action**
 rolls (the module does not read them); a recommit's challenge dice (no move,

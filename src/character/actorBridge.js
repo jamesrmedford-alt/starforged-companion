@@ -1352,7 +1352,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null, 
  * @param {number} ticks
  * @returns {Promise<void>}
  */
-export async function markVowProgress(actor, vowItemId, ticks) {
+export async function markVowProgress(actor, vowItemId, ticks, options = undefined) {
   if (!actor || ticks <= 0) return;
 
   const item = actor.items?.find(i => i.id === vowItemId);
@@ -1377,7 +1377,8 @@ export async function markVowProgress(actor, vowItemId, ticks) {
 
   if (next !== current) {
     refuseStaleActorWrite('markVowProgress');
-    await moduleUpdate(item, { 'system.current': next });
+    // `options`: what made the mark, for the session record (record/sheetWatch.js recordCause).
+    await moduleUpdate(item, { 'system.current': next }, options);
     invalidateActorCache(actor.id);
   }
 }
@@ -1426,7 +1427,7 @@ export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
  * @param {string} vowItemId
  * @returns {Promise<boolean>} true when the item was newly marked completed
  */
-export async function completeVowItem(actor, vowItemId) {
+export async function completeVowItem(actor, vowItemId, options = undefined) {
   if (!actor || !vowItemId) return false;
 
   const item = actor.items?.find(i => i.id === vowItemId);
@@ -1437,7 +1438,8 @@ export async function completeVowItem(actor, vowItemId) {
   if (item.system?.completed === true) return false; // already closed
 
   refuseStaleActorWrite('completeVowItem');
-  await moduleUpdate(item, { 'system.completed': true });
+  // `options`: what closed it, for the session record (record/sheetWatch.js recordCause).
+  await moduleUpdate(item, { 'system.completed': true }, options);
   invalidateActorCache(actor.id);
   return true;
 }

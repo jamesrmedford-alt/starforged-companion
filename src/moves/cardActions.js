@@ -46,6 +46,7 @@ import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank, selectFulfilVow } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
+import { gatePress } from "./contracts/pressGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1672,7 +1673,7 @@ function thresholdVowOptions(content) {
  * @param {Object} [_ctx] — relay context (anyone at the table may press)
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
-export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
+export async function applyCombatThresholdChoice(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1699,6 +1700,16 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
   const release = () => message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: null })
     .catch(err => console.warn(`${MODULE_ID} | fight threshold: releasing the claim failed:`, err?.message ?? err));
   try {
+    // Begin the fight is Enter the Fray's commit, a move made by a button:
+    // the move gate is asked before the claim (overhaul 4, design §6.2). The
+    // row requires nothing today, so the press passes by construction — and
+    // a precondition put on the row binds this button too. The way out is no
+    // move of its own (its off-ramp is rolled, and gated, as a forced move).
+    if (choice === "fray") {
+      const gate = await gatePress("enter_the_fray", { actorId: typeof f.actorId === "string" && f.actorId ? f.actorId : null,
+        reading: { target: typeof f.label === "string" && f.label ? f.label : null }, ctx, label: "fight threshold" });
+      if (!gate.ok) return { applied: false, reason: "cannot" };
+    }
     try {
       await message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: choice });
     } catch (err) {
@@ -1922,6 +1933,11 @@ export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
  */
 export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
+    // The won fight's ⚑ is a Reach a Milestone made by a button: the move
+    // gate is asked first (overhaul 4, design §6.2).
+    const gate = await gatePress("reach_a_milestone", { actorId: typeof f.actorId === "string" ? f.actorId : null,
+      reading: { targetId: typeof f.vowId === "string" ? f.vowId : null, target: f.vowName ?? null }, ctx, label: "fight-vow milestone" });
+    if (!gate.ok) return false;
     // Once per card on the vow's payoff ledger too (issue #336 Y24): the
     // stamp follows the mark (R04), and a refused stamp left the button live
     // for a second mark.
@@ -1960,15 +1976,27 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       console.debug(`${MODULE_ID} | fight-vow deepen: ${f.connectionName}'s card was deleted — nothing deepened.`);
       return false;
     }
+    // The deepen is the connection's progress, the roller's own connection's
+    // (overhaul 4: THEIR_CONNECTION — a bond Item on their sheet): asked as
+    // Develop Your Relationship, made by a button (design §6.2) — of the card
+    // the deepen resolves (the card's id, else the vow's link), else the name.
+    const { deepenVowConnectionOnce, vowConnectionLinkOf } = await import("../index.js");
+    const linkId = (typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null)
+      ?? vowConnectionLinkOf({ vowId: typeof f.vowId === "string" ? f.vowId : null, vowName: f.vowName ?? null,
+        actorId: typeof f.actorId === "string" ? f.actorId : null });
+    const gate = await gatePress("develop_your_relationship", { actorId: typeof f.actorId === "string" ? f.actorId : null,
+      reading: { targetId: linkId, target: f.connectionName }, ctx, label: "fight-vow deepen" });
+    if (!gate.ok) return false;
     // Once per vow (issue #326 D1): this press and the vow's fulfilment share
     // one deepen — whichever lands first pays, recorded on the vow.
-    const { deepenVowConnectionOnce } = await import("../index.js");
     const marks = marksForSourceRank(f.vowRank);
     const res = await deepenVowConnectionOnce({
       vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
       actorId: typeof f.actorId === "string" ? f.actorId : null,
       connectionName: f.connectionName,
       connectionId: typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null, marks,
+      // Made by a button as Develop Your Relationship (the session record's `by`, D12).
+      by: { move: "develop_your_relationship", res: null },
     });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });

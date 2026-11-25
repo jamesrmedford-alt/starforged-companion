@@ -56,13 +56,21 @@ characters and their ship are by the table's record), RECORDED IDENTITIES
 the GM's, the premise's truths), RETRACTED FACTS (this scene's strikes and,
 since issue #286 B6, the session's earlier scenes' — never a truth the
 X-Card retracted, which `sessionRetractedFacts` leaves out so the removed
-content is not handed back; issue #321 U07), STANDING NOW (binding state) —
+content is not handed back; issue #321 U07), STANDING NOW (binding state),
+and WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (overhaul 4,
+D9's logged class — the narration's obligation lines, one a line with its
+list and tag, handed in by the narrator through `applyNarratorSidecar`'s
+`obligations`: the move's, the paced line's, the round's, the oracle
+follow-up's; they ride an audit the ledger calls for and make no call of
+their own) —
 via one Haiku call (`claude-haiku-4-5`, `max_tokens: 1000` since 2026-07,
 with a `stop_reason` truncation warning, through `api-proxy.js`). What the
 narration described — its colour, and the frame's Where and Now — is not
 audited: a narration that changes it is no contradiction. Response kinds:
-`truth | state | place | retraction | identity` (a `frame` or `ship` reply
-reads as `place`), each with confidence high/medium/low; parsing is
+`truth | state | place | retraction | identity | obligation` (a `frame` or
+`ship` reply reads as `place`; `obligation`: a TELL line left untold, a NOT
+YET told as done, a NOT SO told as true — its subject the line's tag), each
+with confidence high/medium/low; parsing is
 fence-and-preamble tolerant and never throws.
 
 **Who passes matched entities:** the move path, `@scene`, and paced all
@@ -84,7 +92,7 @@ longer special-cases them).
   given, the subject by its proper name; it showed a pointer to the fact —
   issue #354 P2-19), on the card and in the World Journal panel's row.
   Truth/state kinds carry the "Retract the offending fact" button;
-  place / identity / retraction kinds carry a **targeted remedy hint**
+  place / identity / retraction / obligation kinds carry a **targeted remedy hint**
   instead (the dialog cannot address them — NARRCHK-REMEDY-MISMATCH fix; a
   place catch points at `!at` or the command-vehicle token, overhaul 2
   §5.8). The correction dialog marks each truth with what it rests on, and a
