@@ -449,7 +449,13 @@ issue #321 U62) and the CAMPAIGN PREMISE block
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
 paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
-records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+records its facts in a scene (`ensureSceneStarted`, issue #321 U34). It is
+built from material — the vow's own words, the Iron truth and the recent
+narration (`buildVowSwearingUserMessage`, `getRecentNarrationContext`), the
+`vow_swearing` role naming no gesture: given the vow's name, "vows are sworn
+upon iron" and "pure sensory fiction", with "the iron they touch" in the
+role, the oath was one image in all four live long hauls (known-issues
+SET-PIECES-SHAPED-BY-THEIR-PROMPT). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
 **What the two readers of a typed line are told.** The pacing classifier and
@@ -497,12 +503,25 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **Begin a Session** (`openBeginSessionDialog`, the invoking client): when no
   PC holds a quest, its dialog and card say so ("No vow in play"), and the
   dialog offers Swear an Iron Vow for the user's own PC (`resolveUserActorId`)
-  — a vow and its rank. After the session's start is requested it is written
-  on that PC's sheet (`actorBridge.createCharacterVowItem`, no `vowId`), so the
-  canonical GM's `registerPlayerVowHook` posts its "🆕 New vow recorded" card
-  — ⚔ Swear it (roll), the reward offer, the 🤝 link: §1's player-authored
-  path. A vow the sheet refused is said to the user; the Begin card claims no
-  vow.
+  — a vow and its rank. The vow rides the `session.begin` relay (`vow: {
+  actorId, name, rank }`), and the canonical GM writes it on that PC's sheet
+  once the session is begun (`sessionLifecycleDialogs.js` `swearBeginVow` →
+  `actorBridge.createCharacterVowItem`, no `vowId`; the requester must own the
+  PC or be a GM — the payload is client-asserted), so the sheet watch records
+  its `vow.sworn` in the session it is sworn in, and `registerPlayerVowHook`
+  posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward offer,
+  the 🤝 link: §1's player-authored path. Made on the pressing client right
+  after the Begin was sent (the relay has no answer), a player's vow reached
+  the sheet before the GM had begun — at a world's first Begin, minted — the
+  session: its `vow.sworn` went to no session, or to the one before, and the
+  record named no vow sworn (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD). A
+  vow refused — for its character, or by the sheet — is whispered to the
+  requester and the GMs. The Begin card names the vow its dialog swears — "No
+  vow was in play besides a background vow: Kira swears one — *the vow*
+  (rank). Its card follows." — never "No character has a vow in play … swear
+  an iron vow" above it (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW: composed
+  as though no vow came with it); with no GM connected, that the vow is not
+  sworn until one has joined.
 - **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
   add form's vow select links any track it creates (a fight added by hand too
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an

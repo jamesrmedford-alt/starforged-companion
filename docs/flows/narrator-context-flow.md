@@ -291,6 +291,18 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and "familiar adversary" tiers, the list of mundane tasks, the list of
   gestures, the role's three example closings, `selectEndSessionNPC`. Kept
   (D4): EARLIER CLOSINGS and `vignetteNpc`.
+  **How a set-piece ends is its material's** (known-issues
+  SET-PIECES-SHAPED-BY-THEIR-PROMPT): no shape is given. Told "It stops when
+  the small thing is done, or put down", every closing of the fourth live run
+  ended on a thing put down; told "Its last sentence returns to what that
+  leaves open … Nothing new happens", and given "for the third time this week"
+  as the time not to let pass, every opening handled a counted object and
+  ended still. Both now end where the scene reaches its last result ("How it
+  ends is the material's"); the opening — and the role's OPENING — holds back
+  only the plot ("No turn of the plot happens in it: the first move is the
+  players'"). The MATERIAL says a result's words are the oracle's, never the
+  prose's (a record's name or place is written as it is): told "Never the
+  words themselves", six results were written as their own word.
   **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
   pressed the d100 is rolled for the Begin card as before, and — when a
   narration will follow (`narrationEnabled`, a keyed GM connected, the
@@ -1340,7 +1352,14 @@ and Chronicle entries had it, labelled. The role says a recap says only what
 its sources say: nothing inferred, nothing filled in between two lines (a beat
 may be missing because the table took it out), what a player wrote is the
 character's claim, whose things are whose, how a thing stands is WHERE THINGS
-STAND's word, one name for everyone. The reply is cited sentences (decision
+STAND's word, one name for everyone — and what happened is told, never the
+dice or the numbers: "strong hit", "weak hit", "miss" and "match" never as
+such, no number from a sheet or a track, a rank as how hard a vow, a tie or a
+fight is, never a word for someone (`RECAP_SOURCES_RULE`, the move
+narration's outcome-word rule worded for a recap; its user message ends on
+it — known-issues RECAP-TELLS-THE-DICE: 13 of the fourth live run's 64 recap
+sentences named an outcome; the record's lines keep theirs, which the
+sentences cite). The reply is cited sentences (decision
 D11): `citedRecap` drops a sentence citing nothing it was sent, a lasting beat
 no sentence cites sends it back once, a reply that is not the JSON is asked
 for once more before the recap that stood stays, and the text kept has every

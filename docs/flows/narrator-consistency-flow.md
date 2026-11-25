@@ -149,12 +149,21 @@ longer special-cases them).
   docs/flows/session-record-flow.md), as the ledger saves put the set and the
   struck truth there (`truth.set` / `truth.struck`): every view of the record
   — the Session Log page — writes the new name, its short form too, at read
-  (`writeNewNames`), never where the old name already stands inside a name
+  (`writeNewNames`) — save a strike's own words, kept as struck with the new
+  name beside them ("Struck: raider cutter — is named the Ashen Wake (now:
+  Cinder Wren)"; written as the new name, the struck truth read as the one
+  that stands — known-issues STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME) —, never where the old name already stands inside a name
   as it is now — its own new one, another change's, another record's, in any
   case — and each place once, from the text as stored: for "Tamsin" →
   "Tamsin Okoro" it wrote "tied the vow to Tamsin Okoro Okoro" on the pages
   and in the recap (known-issues NEW-NAME-WRITTEN-TWICE). The stored list
-  (capped) still tells the narrator. CORRECTED is
+  (capped) still tells the narrator. A ◈ New Entities Detected row still
+  pending under the old name takes the new one in the same call
+  (`recordNameChanged` → `entityExtractor.js`
+  `carryNameChangeToPendingDrafts`, its card rendered again): the narrator's
+  next use of the new name is no new ship to the detector, and a Confirm makes
+  the record under it (known-issues DRAFT-CARDS-FOR-ONE-SHIP — "Cinder Wren"
+  was offered beside the pending "The Ashen Wake"). CORRECTED is
   its scene's (and its place's); the change is told past both — NAMES THE TABLE
   CHANGED in the narrator's context, every mode, and in the session summary's
   source — wherever the old name still reaches a prompt. In the long haul's

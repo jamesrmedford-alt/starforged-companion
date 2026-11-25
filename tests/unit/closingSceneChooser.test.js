@@ -246,7 +246,9 @@ describe('what the closing is built from — and its message', () => {
       expect(msg).not.toMatch(/a shrug, a half-smile|switching a light\s+off|looking out a window/);
       expect(msg).not.toMatch(/cosmic threat|ordinary person finishing an ordinary minute/);
       expect(msg).not.toMatch(/architect of|familiar adversary/);
-      expect(msg).toMatch(/It stops when the small thing is done, or put down\./);
+      // How it ends is its material's (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT).
+      expect(msg).not.toMatch(/put down/);
+      expect(msg).toMatch(/How it ends is the material's: its last sentence stays with whichever result the scene reaches last/);
     }
   });
 });

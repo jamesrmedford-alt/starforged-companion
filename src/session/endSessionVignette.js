@@ -264,10 +264,13 @@ export function buildEndSessionVignetteUserMessage(subject, campaignState, { ear
     ...(material ? ["", material] : []),
     ...(earlierBlock ? ["", earlierBlock] : []),
     "",
-    // How it stops: on the material, not on a gesture from a list — told
-    // "end on a small private gesture — a shrug, a half-smile, switching a
-    // light off", the closings ended on a lamp put out and a nod.
-    "It stops when the small thing is done, or put down. Do not describe a move, do not propose a mechanical action.",
+    // How it ends: where its material takes it, in no shape the prompt gives
+    // (known-issues SET-PIECES-SHAPED-BY-THEIR-PROMPT). Told "end on a small
+    // private gesture — a shrug, a half-smile, switching a light off", the
+    // closings ended on a lamp put out and a nod; told "It stops when the
+    // small thing is done, or put down", every closing of the fourth live run
+    // ended on a thing put down (a18, a52, a87).
+    "How it ends is the material's: its last sentence stays with whichever result the scene reaches last, as it stands then. No closing gesture, and nothing finished or set aside to end it. Do not describe a move, do not propose a mechanical action.",
     "",
     // Issue #354 P2-26: asked for 3-5 sentences in its opening line only, the
     // vignette ran to about eight. The limit is the last thing it reads.

@@ -47,6 +47,7 @@ import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern, namesOneWordName } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
 import { recordEvent }                     from "../record/record.js";
+import { writeNewNames }                   from "../factContinuity/nameChanges.js";
 import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
 import {
@@ -140,6 +141,21 @@ export function normalizeEntityName(name) {
   if (m && (HONORIFIC_PREFIXES.has(m[1]) || roleTitleFromName(m[1]))) n = m[2];
   return n.trim();
 }
+
+/**
+ * A detected name as the detector's drafts are matched by — against the
+ * pending rows, the records, the dismissed names and each other in one reply:
+ * normalizeEntityName's, and without a leading article. "The Ashen Wake" and
+ * "Ashen Wake" are one ship: the long haul's fourth live run offered it on
+ * two pending cards (a41, a46 — known-issues DRAFT-CARDS-FOR-ONE-SHIP), as a
+ * faction already is one whatever its article (faction.js factionNameKey).
+ */
+function draftNameKey(name) {
+  return normalizeEntityName(name).replace(/^(?:the|a|an) (?=\S)/, "");
+}
+
+/** Whether a draft row is still pending — no status, or "pending" (collectPendingDraftNames' rule). */
+const isPendingDraftRow = (d) => !d?.status || d.status === "pending";
 
 /**
  * Heuristic: does this look like an auto-generated placeholder name for an
@@ -660,19 +676,21 @@ function detectionFromParsed(parsed, campaignState) {
     ? parsed.worldJournal
     : {};
 
+  // Matched as drafts are, a leading article aside (draftNameKey —
+  // DRAFT-CARDS-FOR-ONE-SHIP).
   const dismissed = new Set(
     (campaignState?.dismissedEntities ?? [])
       .filter(n => typeof n === "string")
-      .map(normalizeEntityName)
+      .map(draftNameKey)
       .filter(Boolean),
   );
   const established = new Set(
     collectEstablishedEntityNames(withStoredEntityIds(campaignState))
-      .map(normalizeEntityName)
+      .map(draftNameKey)
       .filter(Boolean),
   );
   const pending = new Set(
-    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
+    collectPendingDraftNames().map(draftNameKey).filter(Boolean),
   );
   // A person the table knows — or one waiting on a draft card — under part of
   // their name or a near spelling is that person, not a new one (issue #354
@@ -700,7 +718,7 @@ function detectionFromParsed(parsed, campaignState) {
   // `to` as well lost the newly named NPC entirely (issue #321 U27).
   const renameTargets = new Set(renames
     .filter(r => findPlaceholderConnection(r.from, campaignState))
-    .map(r => normalizeEntityName(r.to))
+    .map(r => draftNameKey(r.to))
     .filter(Boolean));
 
   // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
@@ -715,13 +733,19 @@ function detectionFromParsed(parsed, campaignState) {
   });
   const filteredEntities = [];
   const readAs = [];
+  // One reply's names, matched as drafts are: a name it gives twice — "The
+  // Ashen Wake" and "Ashen Wake" — is one entity, the first (DRAFT-CARDS-FOR-ONE-SHIP).
+  const seen = new Set();
   for (const e of entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
     .filter(e => (e.confidence ?? "high") !== "low")
-    .filter(e => !dismissed.has(normalizeEntityName(e.name)))
-    .filter(e => !established.has(normalizeEntityName(e.name)))
-    .filter(e => !pending.has(normalizeEntityName(e.name)))
-    .filter(e => !renameTargets.has(normalizeEntityName(e.name)))) {
+    .filter(e => !dismissed.has(draftNameKey(e.name)))
+    .filter(e => !established.has(draftNameKey(e.name)))
+    .filter(e => !pending.has(draftNameKey(e.name)))
+    .filter(e => !renameTargets.has(draftNameKey(e.name)))) {
+    const key = draftNameKey(e.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const known = knownPerson(e);
     if (known) readAs.push({ ...sanitised(e), readAs: known.name, readAsPc: known.pc });
     else filteredEntities.push(sanitised(e));
@@ -816,8 +840,9 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   // them, not offered (issue #362 D10) — the parse's (`options.readAs`) and
   // this pass's own.
   const readAs  = [];
+  // The pending rows' names as drafts are matched (draftNameKey).
   const pendingNormalized = new Set(
-    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
+    collectPendingDraftNames().map(draftNameKey).filter(Boolean),
   );
   const pendingPeople = collectPendingDraftNames("connection");
   const slots = connectionSlots(options);
@@ -869,8 +894,13 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // duplicates through. entityExistsAnyType catches the cross-type case.
     if (entityExistsAnyType(entity.name, campaignState)) continue;
     // Skip names already sitting in an unresolved draft card — the GM is
-    // already reviewing them; re-flagging causes the suggestion loop.
-    if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
+    // already reviewing them; re-flagging causes the suggestion loop. With
+    // or without its article (draftNameKey): "Ashen Wake" beside a pending
+    // "The Ashen Wake" was a second card for one ship (DRAFT-CARDS-FOR-ONE-SHIP),
+    // and so is a name this reply already queued.
+    const draftKey = draftNameKey(entity.name);
+    if (pendingNormalized.has(draftKey)) continue;
+    if (queued.some(q => draftNameKey(q.name) === draftKey)) continue;
     // A person known under part of the name or a near spelling — a PC, a
     // listed NPC, one waiting on a draft card, or one this reply already
     // queued ("Archer" beside "Vuldar Archer" in one reply) — is that person
@@ -3558,7 +3588,7 @@ function namesWholeName(text, name) {
  *
  * @param {Array} entities — the detection's entities
  * @param {Object} campaignState
- * @param {Set<string>} pendingNormalized — the pending draft rows' names (normalizeEntityName)
+ * @param {Set<string>} pendingNormalized — the pending draft rows' names (draftNameKey)
  * @param {string[]} pendingPeople — the pending connection rows' names
  * @returns {Array<{ kind: "detected", key: string, name: string }>}
  */
@@ -3568,7 +3598,7 @@ function freshDetectedPeople(entities, campaignState, pendingNormalized, pending
     if (detected?.type !== "connection" || typeof detected?.name !== "string" || !detected.name.trim()) continue;
     const name = generatedName(detected.name);
     const key = normalizeEntityName(name);
-    if (!key || out.some(f => f.key === key) || pendingNormalized.has(key)) continue;
+    if (!key || out.some(f => f.key === key) || pendingNormalized.has(draftNameKey(name))) continue;
     // Nor one this reply already names under a fuller name ("Archer" after
     // "Vuldar Archer"): routeEntityDrafts lists them as read as that person.
     if (entityExistsAnyType(name, campaignState, { type: "connection" })
@@ -3935,6 +3965,57 @@ export async function withdrawNarrationDrafts(narrationIds) {
     }
   }
   return withdrawn;
+}
+
+/**
+ * Carry a table's change of a name to the draft rows still pending under the
+ * old one (known-issues DRAFT-CARDS-FOR-ONE-SHIP). The long haul's fourth
+ * live run corrected "Ashen Wake" to "Cinder Wren" (`!truth`, a49); the
+ * narrator then wrote the new name, which no record and no pending row had,
+ * and the cutter was offered a third time — "Cinder Wren" beside the pending
+ * "The Ashen Wake" and "Ashen Wake" (a60, a65). A pending row the old name
+ * names, its article aside (draftNameKey), takes the new name as the record's
+ * views write it (nameChanges.js writeNewNames: "The Ashen Wake" → "The
+ * Cinder Wren"), in its name and its description, and its card is rendered
+ * again — so the detector reads the new name as pending, and a Confirm makes
+ * the record under it. A row confirmed, dismissed, withdrawn or read as
+ * someone known stands. Called on a GM by every writer of a changed name,
+ * once the store holds it (nameChanges.js recordNameChanged); fail-open per card.
+ *
+ * @param {{ from: string, to: string }} change
+ * @returns {Promise<number>} how many rows took the new name
+ */
+export async function carryNameChangeToPendingDrafts(change) {
+  const from = draftNameKey(change?.from);
+  const to   = typeof change?.to === "string" ? change.to.replace(/\s+/g, " ").trim() : "";
+  if (!from || !to || from === draftNameKey(to) || globalThis.game?.user?.isGM !== true) return 0;
+  const renamed = (text) => writeNewNames(text, [{ from: change.from, to }]);
+  let carried = 0;
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])]) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard) continue;
+    if (!(Array.isArray(f.drafts) ? f.drafts : []).some(d => isPendingDraftRow(d) && draftNameKey(d?.name) === from)) continue;
+    try {
+      let rows = 0;
+      await changeDraftRows(message, (drafts) => {
+        const next = drafts.map((d) => {
+          if (!isPendingDraftRow(d) || draftNameKey(d?.name) !== from) return d;
+          rows += 1;
+          const name = renamed(d.name);
+          return {
+            ...d,
+            name: name !== d.name ? name : to,
+            ...(typeof d.description === "string" && d.description ? { description: renamed(d.description) } : {}),
+          };
+        });
+        return rows ? next : null;
+      });
+      carried += rows;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | name change: the draft rows on card ${message?.id} were not given the new name:`, err?.message ?? err);
+    }
+  }
+  return carried;
 }
 
 /**

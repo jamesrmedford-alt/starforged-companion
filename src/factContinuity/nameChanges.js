@@ -662,6 +662,11 @@ export function formatNameChangesBlock(changes, opts = {}) {
  * recorded. tests/unit/sessionRecordEvents.test.js fails on a `withNameChange`
  * writer that does not call this.
  *
+ * A draft row still pending under the old name takes the new one here too
+ * (entityExtractor.js carryNameChangeToPendingDrafts — known-issues
+ * DRAFT-CARDS-FOR-ONE-SHIP: the new name, written by the narrator next, was
+ * offered as a new ship beside the pending old one). Started, not awaited.
+ *
  * @param {Object} change — { from, to, kind?, about?, entityId? }
  * @returns {boolean} whether it was recorded
  */
@@ -671,10 +676,19 @@ export function recordNameChanged(change) {
   let stored = [];
   try { stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState')?.nameChanges ?? []; } catch { stored = []; }
   if (!(Array.isArray(stored) ? stored : []).some(e => same(e?.from, c.from) && same(e?.to, c.to))) return false;
+  carryToPendingDrafts(c);
   return recordEvent('name.changed', {
     ref: { entity: c.entityId },
     d: { from: c.from, to: c.to, how: c.kind, about: c.about },
   });
+}
+
+/** A changed name to the draft rows pending under the old one, on a GM (recordNameChanged). Never throws. */
+function carryToPendingDrafts(change) {
+  if (globalThis.game?.user?.isGM !== true) return;
+  import('../entities/entityExtractor.js')
+    .then(({ carryNameChangeToPendingDrafts }) => carryNameChangeToPendingDrafts(change))
+    .catch(err => console.warn(`${MODULE_ID} | name change: the draft rows under "${change.from}" were not given the new name:`, err?.message ?? err));
 }
 
 /**

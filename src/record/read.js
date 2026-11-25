@@ -25,7 +25,8 @@
  *      B → C makes A → C; a change undone drops), uncapped, and written as the
  *      new one in every words, label and prose field (nameChanges.js
  *      writeNewNames) — and a field with an actor id is written with that
- *      actor's current name.
+ *      actor's current name. Save a strike's words: a strike stays as struck,
+ *      the new names its words hold beside it (`now`).
  *   4. Cutaways. A closing vignette and Begin's Spotlight Vignette are beats
  *      of kind `cutaway`: a scene elsewhere, hidden from the characters — not
  *      something they did.
@@ -361,8 +362,12 @@ function sessionBeats(events, { xcarded, superseded }) {
         if (viaXCard) continue;
         where = { location: d.location ?? null, present: Array.isArray(d.present) ? d.present : [], situation: d.situation ?? null,
           question: d.question ?? null, questionAnswered: d.questionAnswered === true };
+        // A scene is where it began: its first frame. Each later frame gave it
+        // its Where, so session 2's opening in the cockpit was labelled "A new
+        // scene — Bleakhold Station docking ring", where it ended (known-issues
+        // RECORD-VIEW-SMALLER); a move within it is its beats' (`where`).
         const scene = scenes.findLast(x => x.sceneId === (e.scene ?? null));
-        if (scene) scene.where = where;
+        if (scene && !scene.where?.location) scene.where = where;
         continue;
       }
       case 'question': {
@@ -530,6 +535,23 @@ function sessionBeats(events, { xcarded, superseded }) {
   return { begun, ended, beats: kept, strikes, renames, removed, scenes };
 }
 
+/**
+ * The new names of the changes whose old name a text holds — each a change
+ * the text reads otherwise without (writeNewNames, with every change) — once
+ * each, in the order of the changes. [] for a text no change reaches.
+ */
+function namesNowIn(text, names, otherNames) {
+  if (typeof text !== 'string' || !text) return [];
+  const all = writeNewNames(text, names, { otherNames });
+  if (all === text) return [];
+  const now = [];
+  for (const c of names) {
+    if (!c?.to || now.includes(c.to)) continue;
+    if (writeNewNames(text, names.filter(o => o !== c), { otherNames }) !== all) now.push(c.to);
+  }
+  return now;
+}
+
 /** Write a session's names anew: every words, label and prose field, and each actor's current name. */
 function correctNames(session, { names, nameOf, otherNames }) {
   const fix = (text) => (typeof text === 'string' && text ? writeNewNames(text, names, { otherNames }) : text);
@@ -541,6 +563,10 @@ function correctNames(session, { names, nameOf, otherNames }) {
     ...(typeof s.text === 'string' ? { text: fix(s.text) } : {}),
     ...(s.kind === 'entity' && s.entityId && !s.text ? { name: actorName(s.entityId) ?? fix(s.name) } : {}),
   } : s);
+  const whereAnew = (w) => ({ ...w, location: fix(w.location), situation: fix(w.situation), question: fix(w.question),
+    present: (w.present ?? []).map(fix) });
+  // Where each scene began, as its label is shown (sessionLogView.js).
+  for (const sc of session.scenes ?? []) if (sc.where) sc.where = whereAnew(sc.where);
   for (const beat of session.beats) {
     beat.who.name = actorName(beat.who.actor);
     if (beat.line) beat.line.text = fix(beat.line.text);
@@ -550,10 +576,7 @@ function correctNames(session, { names, nameOf, otherNames }) {
       }
       if (d.actorId && d.kind === 'position.changed') d.name = actorName(d.actorId) ?? fix(d.name);
     }
-    if (beat.where) {
-      beat.where = { ...beat.where, location: fix(beat.where.location), situation: fix(beat.where.situation), question: fix(beat.where.question),
-        present: (beat.where.present ?? []).map(fix) };
-    }
+    if (beat.where) beat.where = whereAnew(beat.where);
     if (beat.told) beat.told.text = fix(beat.told.text);
     if (beat.move?.target?.name) beat.move.target = { ...beat.move.target, name: fix(beat.move.target.name) };
     for (const c of beat.changes) c.name = actorName(c.actor) ?? fix(c.name);
@@ -561,13 +584,21 @@ function correctNames(session, { names, nameOf, otherNames }) {
       t.fact = fix(t.fact);
       t.subject = subject(t.subject);
     }
-    beat.leaveOut = beat.leaveOut.map(fix);
+    // What a beat leaves out is a struck fact: as struck (below).
   }
+  // A strike stays as struck: its words are what the table took back. Written
+  // with the new name, "raider cutter — is named the Ashen Wake", struck
+  // before "… is named the Cinder Wren" was set, read "Struck: raider cutter —
+  // is named the Cinder Wren" — the truth that stands, said not to have
+  // happened, on the Session Log page and in every summary's and recap's
+  // source (known-issues STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME). The names in
+  // its words that have changed since go beside it (`now`), unless a
+  // replacement stands — it is written with the new names, and says what is so.
   for (const s of session.corrections) {
     if (s.kind !== 'strike') continue;
-    s.fact = fix(s.fact);
     s.replacedBy = fix(s.replacedBy);
     s.subject = subject(s.subject);
+    s.now = s.replacedBy ? [] : namesNowIn(s.fact, names, otherNames);
   }
   const snapshot = (snap) => {
     if (!snap) return;
