@@ -192,7 +192,7 @@ describe('NARRATOR-REFRAINS — what the narrator is told', () => {
     expect(text).toContain('not bring it back in your prose');
     // What issue #353 R2 asked for stands.
     expect(text).toContain('"questionAnswered": true and end the beat on a');
-    expect(text).toContain('Never end the scene: the table ends scenes.');
+    expect(text).toContain('your fact block\n  never ends one.');
   });
 
   it('a beat ends on the story\'s answer to the player\'s line — never a thread of the narrator\'s own, never a let-go one', () => {

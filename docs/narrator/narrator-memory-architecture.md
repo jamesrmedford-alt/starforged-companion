@@ -411,8 +411,41 @@ move pipeline's snapshot predates its confirm dialog, and a second scene was
 minted over the live one's ledgers, which were neither kept nor archived.
 Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
-(`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
+(`ensureCurrentScene`, canonical GM — issue #321 U34; their facts landed
 under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
+
+**Scene turns** (overhaul 2, slice 2 — D1 reverses issue #353 R2's "scenes
+stay manual"). A session was one scene unless someone typed `!scene` (the
+long haul's third and fourth live runs), so the scene's question, its colour
+and its hooks were the session's. Each scene now has an anchor —
+`campaignState.sceneBegan = { sceneId, at, cause, what, place, ship, tracks }`,
+written once at its start from the stores (`sceneLifecycle.js openScene`,
+`sceneTurns.js sceneAnchorOf`) — and at the start of every beat of play's
+narration (`narrator.js ensureCurrentScene` at the move, paced, round and
+oracle follow-up sites; start-only elsewhere) `sceneLifecycle.js
+turnSceneIfDue` compares the stores with it (`sceneTurnDue`): the characters'
+place, the ship's place key, a fight / an expedition / a scene challenge
+begun or ended, time the player's line skips (`TIME_SKIP` — phrases, never a
+bare word) or a Sojourn. Begins before, ends after: an arrival's narration
+opens the new place; the beat whose resolution ended a fight
+(`endingTrackIds` — `index.js applyOutcomeEffects`, and Finish the Scene in
+`movePipeline.js`) is the fight's last, and the next beat turns. Several
+causes are one turn, the first in that order. A turn is `endScene(…, { turn:
+true })` then `startScene(…, { cause, what, carry })`: today's end — what
+binds migrated, LAST KNOWN kept, the strikes kept — less what is the
+session's (D16, amending #362 D4): the unanswered mysteries go on in the new
+scene (`secrets.js carrySceneMysteries`) and the `!pace` override stands. The
+frame's cast and let-go questions and the spotlight's last actor are carried
+into the new scene's first frame; no world snapshot is taken; the session
+summary is made. The beat that opens a scene is told so in overhaul 4's
+obligations block (WHAT THIS NARRATION MUST TELL, AND MUST NOT — "[scene] This
+beat opens a new scene: ‹what›…", TELL; each question play let go, NOT SO
+[letgo]; `sceneTurns.js sceneObligations`), and the record's
+`scene.started` carries the cause in words, which the Session Log heads the
+scene with ("A new scene — ‹what›"). A slot the scene began without (no
+place, no ship position — the inciting incident sets the first) is filled
+from the first store that records it, without turning; a scene open when
+this shipped takes its anchor at its first check.
 Scene starts run one at a time on the GM: a start waits for the one in
 flight, then adopts it — two narrations one command fires, each on its own
 working copy, minted two scenes inside the first start's write round trip,
@@ -469,7 +502,8 @@ latest line sets out to settle. While the frame holds one, `applySceneFrame`
 (`sceneQuestion`) keeps it — a later snapshot cannot reword it — until a beat
 marks it answered (`questionAnswered`), after which the next beat's question
 is the scene's. The answering beat is told to end on a cut forward; no beat
-ends a scene (scenes stay manual — decisions.md). Applied
+ends a scene — the stores turn it (overhaul 2 D1, reversing issue #353 R2's
+"scenes stay manual"; §3 "Scene turns"). Applied
 by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
 replaces as a bounded `previous` chain (never rendered), so an X-Card on a
 narration puts back the frame its narration replaced (issue #345 D3);

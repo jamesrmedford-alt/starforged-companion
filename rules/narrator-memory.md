@@ -127,9 +127,30 @@ layers. This file is the never-break list.
    permission class.
 
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
-   are cleared/migrated by `startScene`/`endScene` only — the frame's scene
-   question with it (issue #353 R2: never carried into the next scene; no
-   narration ends a scene; within its scene it stands until a beat answers
+   (and the scene's anchor, `sceneBegan`) are cleared/migrated by
+   `startScene`/`endScene` only. **Scenes turn in code** (overhaul 2 D1 —
+   this reverses issue #353 R2's "scenes stay manual"): at the start of a
+   beat of play's narration (a move's, a paced line's, a round's, an oracle
+   follow-up's — `narrator.js ensureCurrentScene` → `sceneLifecycle.js
+   turnSceneIfDue`) the stores are compared with the anchor the scene began
+   with (`sceneTurns.js sceneTurnDue`): the characters' place, the ship's
+   place, a fight / an expedition / a scene challenge begun or ended, time
+   the player's line skips or a Sojourn. Begins before, ends after: a change
+   that brings the characters somewhere new turns the scene before the
+   narration that tells it; a track the beat's own resolution ended
+   (`endingTrackIds`, a fight's and a challenge's included) turns it at the
+   next beat. Never on the narration's word: **no narration ends a scene**,
+   and a bookend, a clock vignette, the oath scene, the inciting incident, an
+   `@scene` question and a relayed block start one when none is open and
+   never turn one. A turn is a scene end **less what is the session's**
+   (D16 — amends issue #362 D4): the scene's unanswered mysteries go on in
+   the next scene (`secrets.js carrySceneMysteries`) and the `!pace`
+   override stands; both end at the GM's `!scene end`, a `!scene start` over
+   the scene, End a Session and the mint. A turn carries the frame's cast, its
+   let-go questions and the spotlight's last actor into the new scene, takes
+   no world snapshot, and makes the session summary. The frame's scene
+   question goes with the scene (issue #353 R2: never carried into the next
+   scene; within its scene it stands until a beat answers
    it or play has left it unanswered for `SCENE_QUESTION_BEATS` beats, when
    it is let go — the frame keeps none, the question goes onto the frame's
    `letGo` list and the frame's Now line goes with it — and the next beat's
@@ -183,7 +204,7 @@ layers. This file is the never-break list.
    scene (issue #335 Y05) — and every
    sidecar-applying narration — oracle follow-ups, session and clock
    vignettes and vow scenes included — starts a scene when none is active
-   (`ensureSceneStarted`, canonical GM, issue #321 U34).
+   (`ensureCurrentScene`, canonical GM, issue #321 U34).
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
@@ -411,7 +432,9 @@ layers. This file is the never-break list.
    fail-open: a summary error returns what stood and never blocks a
    narration. It is made after a narrator card posts
    (`registerRollingSummaryRefreshHook`, which also makes an earlier
-   session's owed one — `refreshStaleSummaries`), at End a Session and at the
+   session's owed one — `refreshStaleSummaries`), at every scene end — a
+   turn, `!scene end` (overhaul 2 §4.4: the scenes before this one are told
+   by it) — at End a Session and at the
    closing session's mint, never inside `buildNarratorExtras`, which only
    reads the view. A move that settles something for good is a LASTING beat
    in its source (`chronicleKeeps.lastingChangeOf`), and every LASTING beat is
@@ -431,7 +454,9 @@ layers. This file is the never-break list.
    in `record/cards.js`), a sheet change in the update hooks (a module writer
    that knows the cause passes `recordCause` in the update's options), a
    truth set or struck by diffing the two ledger saves (and the frame — its
-   `letGo` too, overhaul 2 §7.3). It is read through
+   `letGo` too, overhaul 2 §7.3); a scene's start carries why it began, in
+   words, and its place and ship (`scene.started` `cause` / `what` / `place`
+   / `ship`), its end whether it turned (`scene.ended.turn` — §4.6). It is read through
    `readRecord` alone, with the corrections applied at read — an X-Carded or
    superseded narration and all it set gone, a strike gone, every changed name
    written as the new one — and nothing stored is rewritten but by the

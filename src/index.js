@@ -3006,6 +3006,10 @@ async function applyOutcomeEffects({
         // The fight this move ended, for its card's upgrades: a Battle burned
         // from a miss to a hit wins it (below).
         out.moveFight ??= fin.track;
+        // …and for its narration: the finishing blow is the fight's scene's
+        // last beat, and the next beat turns the scene (overhaul 2 §4.3 —
+        // begins before, ends after).
+        resolution.endingTrackIds = [...(Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : []), fin.track.id];
         // "Fight over" follows the roll that ended the fight (afterMoveCard).
         out.afterMoveCard.push(() => postCombatFinishCard(fin).catch(err =>
           console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err)));
@@ -4670,7 +4674,7 @@ async function handleSceneCommand(message) {
   let resultLine = "";
   try {
     if (verb === "start") {
-      const id = await startScene(campaignState, { reason: "scene_command" });
+      const id = await startScene(campaignState, { reason: "scene_command", cause: "gm" });
       // The card says what the world holds: the write's refusal is only
       // logged by the scene lifecycle.
       resultLine = !id ? "Scene start failed."
@@ -4687,6 +4691,13 @@ async function handleSceneCommand(message) {
         : `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
           `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
       if (saved) reportSnapshotEvent("scene_ended");
+      // The summary is made at every scene end (overhaul 2 §4.4): the scenes
+      // before this one are told by it. Fire-and-forget; it self-gates.
+      if (saved) {
+        import("./narration/narrator.js")
+          .then(({ getRollingSessionSummary }) => getRollingSessionSummary(campaignState, { forceRefresh: true }))
+          .catch(err => console.warn(`${MODULE_ID} | !scene end: the session summary was not made:`, err?.message ?? err));
+      }
     }
   } catch (err) {
     console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);

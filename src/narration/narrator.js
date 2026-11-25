@@ -40,11 +40,12 @@ import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracle
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
+import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES } from '../factContinuity/provenance.js';
-import { refusalNote } from '../moves/contracts/obligations.js';
+import { refusalNote, formatObligationsBlock } from '../moves/contracts/obligations.js';
+import { sceneObligations } from '../factContinuity/sceneTurns.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -1306,9 +1307,14 @@ export async function narrateResolution(resolution, campaignState, options = {},
 
   const character    = getActiveCharacter(campaignState, options?.speakerActorId);
 
-  // First narration of a session implicitly starts a scene if none is active.
-  // See issue #227 (Fact Continuity) §9.1.
-  await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
+  // First narration of a session implicitly starts a scene if none is active
+  // (issue #227 §9.1); one whose place or situation changed turns it, before
+  // this narration tells it (overhaul 2 §4.3 — an arrival, a fight begun; a
+  // fight this move ended turns it at the next beat).
+  await ensureCurrentScene(campaignState, {
+    mode: 'move_resolution', reason: 'first_narration_move_resolution', line: writtenLine(resolution),
+    moveId: resolution?.moveId ?? null, endingTrackIds: Array.isArray(resolution?.endingTrackIds) ? resolution.endingTrackIds : [],
+  });
 
   // Phase 2 — relevance resolver runs before the narrator call:
   //   - Picks the narrator-permission block (discovery / interaction / embellishment)
@@ -1377,7 +1383,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
     ),
-    { audio: extras.audioMarkupEnabled === true },
+    // What the scene obliges it to tell (overhaul 2 §10.3): TELL [scene] on
+    // the beat that opens one, NOT SO [letgo] — in overhaul 4's block.
+    { audio: extras.audioMarkupEnabled === true, sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState) },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1768,7 +1776,11 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, noKeyReason || NO_CLAUDE_KEY_REASON) };
   }
 
-  await ensureSceneStarted(campaignState, 'first_narration_round_resolution');
+  await ensureCurrentScene(campaignState, {
+    mode: 'round_resolution', reason: 'first_narration_round_resolution', line: entries.map(e => e.text).filter(Boolean).join('\n'),
+    moveIds: entries.map(e => e.input?.moveId).filter(Boolean),
+    endingTrackIds: entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : [])),
+  });
 
   // Each move entry's relevance, unioned, at the widest class among them.
   const widest = widestRoundClass(entries);
@@ -1820,6 +1832,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     entries,
     sentenceTarget,
     audio: extras.audioMarkupEnabled === true,
+    sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState),
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
   // Asked after the call's long wait: is this narration still the round's?
@@ -3885,7 +3898,8 @@ export async function interrogateScene(question, campaignState, options = {}) {
   // @scene continues the scene in progress (issue #286 A4) — this starts one
   // only when none is active, so the question is asked of the frame, truths,
   // state and CORRECTED list as they stand. The answer adds nothing to them.
-  await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
+  // A question is no beat: it starts a scene when none is open, never turns one.
+  await ensureCurrentScene(campaignState, { mode: 'scene_interrogation', reason: 'first_narration_scene_interrogation' });
   const extras = await buildNarratorExtras('scene_interrogation', campaignState, {
     playerNarration: question,
     character,
@@ -4066,7 +4080,7 @@ export async function narrateOracleFollowup({
   // (issue #321 U34 — NARR-INCITING-SCENE on every sidecar-writing path).
   // Written under no scene, the next move's scene start ended them as a
   // phantom scene, discarding the state and the frame.
-  await ensureSceneStarted(campaignState, 'oracle_followup');
+  await ensureCurrentScene(campaignState, { mode: 'oracle_followup', reason: 'oracle_followup', line: question });
 
   // The roller's own PC, or no one: the router names none for a player with
   // no PC of their own (oracleFollowup.js), and getActiveCharacter's first-PC
@@ -4096,6 +4110,7 @@ export async function narrateOracleFollowup({
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
     kind, oracleName, question, rolledLine, recentContext, seedLines,
+    sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState),
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
@@ -4214,8 +4229,11 @@ async function complicationStep(campaignState, scope, trackId = null) {
 }
 
 function buildOracleUserMessage({
-  kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [], stepLine = '',
+  kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [], stepLine = '', sceneObligations: lines = [],
 }) {
+  // What the scene obliges it to tell (overhaul 2 §10.3), in overhaul 4's block.
+  const obligations = formatObligationsBlock(Array.isArray(lines) ? lines : []);
+  const owed = obligations ? `${obligations}\n\n` : '';
   // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
   // the scene/paced builders. Use it directly — calling .join here threw
   // "recentContext.join is not a function" and silently killed every oracle
@@ -4237,6 +4255,7 @@ function buildOracleUserMessage({
       (rolledLine ? `Oracle: ${rolledLine}\n` : '') +
       (stepLine ? `${stepLine}\n` : '') +
       `${recent}\n\n` +
+      owed +
       `Render the complication arriving now, as 2-3 sentences of in-fiction prose anchored to ` +
       `the current scene: it happens, concretely, and it costs or threatens the characters. ` +
       `Do not resolve it. Do not repeat the dice number or the literal table text — transform ` +
@@ -4254,6 +4273,7 @@ function buildOracleUserMessage({
     seedBlock +
     `${recent}\n\n` +
     (binds ? `${binds}\n\n` : '') +
+    owed +
     `Render this result as 2-3 sentences of in-fiction prose anchored to ` +
     `the current scene. Do not repeat the dice number or the literal table text — transform ` +
     `it into narrative.`
@@ -4394,7 +4414,12 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   const apiKey = getApiKey();
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'session_vignette');
+  // A bookend starts one, never turns one: Begin's opening is the session's
+  // ("the session begins"), a closing or spotlight cutaway its own scene.
+  await ensureCurrentScene(campaignState, {
+    mode: 'session_vignette', reason: 'session_vignette',
+    cause: /^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? '')) ? 'session' : 'cutaway',
+  });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
   const { character, roundCharacters } = Array.isArray(actorIds)
@@ -4499,7 +4524,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     if (!apiKey) return null;
 
     // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-    await ensureSceneStarted(campaignState, 'clock_vignette');
+    await ensureCurrentScene(campaignState, { mode: 'clock_advance', reason: 'clock_vignette' });
 
     // Its own role (a threat tightening, or arriving), not the session
     // vignette's "calm before / after" (issue #322 V23). The PCs at the table
@@ -4663,7 +4688,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   if (!apiKey) return null;
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'vow_swearing');
+  await ensureCurrentScene(campaignState, { mode: 'vow_swearing', reason: 'vow_swearing' });
 
   const character    = getActiveCharacter(campaignState, speakerActorId);
   const ironTruth    = getTruth(campaignState, 'iron');
@@ -4774,7 +4799,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
   // ended that phantom scene — discarding the target NPC's opening
   // location/condition (state never migrates) and clearing the opening frame.
   // Starting the scene HERE means the first move continues it instead.
-  await ensureSceneStarted(campaignState, 'inciting_incident');
+  await ensureCurrentScene(campaignState, { mode: 'inciting_incident', reason: 'inciting_incident', cause: 'campaign' });
 
   // The PCs at the table, not the campaign's first PC (issue #362 AC75).
   const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
@@ -4886,7 +4911,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
     let suggestedMove, extras, systemPrompt, userMessage;
     try {
-      await ensureSceneStarted(campaignState, 'first_narration_paced');
+      await ensureCurrentScene(campaignState, { mode: 'paced_narrative', reason: 'first_narration_paced', line: playerText });
 
       // Don't suggest a social move against a fellow player character (finding G):
       // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
@@ -4910,7 +4935,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       const sentenceTarget = settings.narrationLength ?? 3;
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null },
+        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
+          sceneObligations: sceneObligations(extras.sceneLedger ?? campaignState) },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
@@ -6055,33 +6081,51 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
 }
 
 /**
- * Ensure an active fact-continuity scene exists before a narrator call.
- * If `currentSceneId` is null, assigns one by calling startScene with the
- * given reason — on the canonical GM only (a world write); elsewhere it
- * debug-logs and returns. A persist failure is logged, never thrown.
+ * Ensure the narration is told in the right scene (overhaul 2 §4.3, in place
+ * of ensureSceneStarted). With none open, one starts (`cause`: why — Begin's
+ * opening "session", the inciting incident "campaign", else "first"). At a
+ * beat of play — a move's, a paced line's, a round's, an oracle follow-up's
+ * narration — the open scene turns when the stores say its place or its
+ * situation changed (sceneLifecycle.js turnSceneIfDue; D1 reverses issue #353
+ * R2's "scenes stay manual"), before this narration tells it: an arrival, the
+ * ship moved, a fight / an expedition / a scene challenge begun, a fight
+ * ended the beat before, time the line skips. On the canonical GM only (a
+ * world write); elsewhere it debug-logs and returns. Fail-open: a turn that
+ * fails leaves the scene as it was; nothing is thrown into the narration.
  *
- * @param {Object} campaignState
- * @param {string} reason — diagnostic only ("first_narration", "paced_narrative", …)
+ * @param {Object} campaignState — the narration's working copy
+ * @param {{ mode?: string|null, reason?: string, cause?: string, line?: string, moveId?: string|null,
+ *   moveIds?: string[], endingTrackIds?: string[] }} [beat] — `reason`: diagnostic only;
+ *   `line`: the beat's player words; `endingTrackIds`: the tracks its own resolution ended
+ * @returns {Promise<{ cause: string, what: string }|null>} the turn, when the scene turned
  */
-async function ensureSceneStarted(campaignState, reason) {
-  if (!campaignState) return;
-  let enabled = true;
-  try {
-    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
-  } catch (err) {
-    console.debug?.(`${MODULE_ID} | ensureSceneStarted: setting lookup failed; defaulting to enabled:`, err);
-  }
-  if (!enabled) return;
-  if (campaignState.currentSceneId) return;
+async function ensureCurrentScene(campaignState, {
+  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [],
+} = {}) {
+  if (!campaignState || !factContinuityEnabled()) return null;
   // A scene boundary is a world write (campaignState, WJ Lore pages, entity
   // tiers) — single-emitter, like the sidecar apply. A RUN_ON.CLAUDE command
   // or oracle follow-up narrating on a keyed author's client (no keyed GM
   // online) leaves it to the GM's next narration.
   if (!isCanonicalGM()) {
-    console.debug?.(`${MODULE_ID} | ensureSceneStarted (${reason}): not the canonical GM — scene start left to the GM.`);
-    return;
+    console.debug?.(`${MODULE_ID} | ensureCurrentScene (${reason}): not the canonical GM — the scene is left to the GM.`);
+    return null;
   }
-  await startScene(campaignState, { reason });
+  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause });
+  // Only a beat of play turns a scene (overhaul 2 §4.3): a move's, a paced
+  // line's, a round's, an oracle follow-up's narration — the beat sites,
+  // provenance.js QUESTION_MODES. A bookend, a clock vignette, the oath scene,
+  // the inciting incident, an `@scene` question and a relayed block start one
+  // when none is open and never turn one.
+  if (!QUESTION_MODES.has(mode) || !campaignState.currentSceneId) return null;
+  const turned = await turnSceneIfDue(campaignState, { line, moveId, moveIds, endingIds: endingTrackIds });
+  // STORY SO FAR is made at every scene end (overhaul 2 §4.4, §8): the ring
+  // turns with the scene, and the summary is what tells the scenes before.
+  if (turned) {
+    void getRollingSessionSummary(campaignState, { forceRefresh: true }).catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: the session summary was not made at the scene's turn:`, err?.message ?? err));
+  }
+  return turned;
 }
 
 /** Whether fact continuity is switched on — on when the setting cannot be read (unit tests, very early init). */
@@ -6409,7 +6453,9 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     });
     return;
   }
-  await ensureSceneStarted(campaignState, 'relayed_narration');
+  // A relayed fact block is applied to the scene it was written in or dropped
+  // (above): it starts one when none is open, and never turns one.
+  await ensureCurrentScene(campaignState, { mode: 'relayed', reason: 'relayed_narration' });
   sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
     moveId: payload.moveId ?? null, narrationId, planRequests, relayed: true,

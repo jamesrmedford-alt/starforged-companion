@@ -350,12 +350,16 @@ function sessionBeats(events, { xcarded, superseded }) {
         continue;
 
       case 'scene.started':
-        scenes.push({ sceneId: d.sceneId ?? e.scene ?? null, startedAt: e.at, endedAt: null, reason: d.reason ?? null, where: null });
+        scenes.push({ sceneId: d.sceneId ?? e.scene ?? null, startedAt: e.at, endedAt: null, reason: d.reason ?? null, where: null,
+          cause: d.cause ?? null, what: typeof d.what === 'string' ? d.what : '', place: d.place ?? null, ship: d.ship ?? null });
         where = null;
         continue;
       case 'scene.ended': {
         const scene = scenes.findLast(x => x.sceneId === (d.sceneId ?? e.scene ?? null) && !x.endedAt);
-        if (scene) scene.endedAt = e.at;
+        if (scene) {
+          scene.endedAt = e.at;
+          scene.turned = d.turn === true;
+        }
         continue;
       }
       case 'frame': {

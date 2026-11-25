@@ -1760,7 +1760,7 @@ an X-Card on the narration that told it drops it too (issue #345 AA01) — for s
 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
-`!scene start`, `ensureSceneStarted` on the first move/@scene/paced
+`!scene start`, `ensureCurrentScene` on the first move/@scene/paced
 narration, **or the inciting incident** (so the premise sidecar writes into a
 real scene the first move then *continues* — the opening NPC state and frame
 survive), and since issue #321 U34 on an oracle follow-up, a session or clock
@@ -1786,9 +1786,29 @@ used to call `startScene`, which ended the scene it was asked about and wrote
 the answer without the frame, truths, state or CORRECTED list. It still
 starts one when none is open, so the question is asked of a scene; the answer
 adds nothing to it.
-`ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
+`ensureCurrentScene` starts a scene on the **canonical GM only** — a scene
 boundary is a world write, so a keyed player's client narrating `@scene` /
-`!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
+`!incite` with no keyed GM online leaves it to the GM (debug-logged).
+**Scenes turn** (overhaul 2 slice 2, D1 — reverses issue #353 R2's "scenes
+stay manual"): every start writes the scene's anchor (`sceneBegan`: `cause`,
+`what`, the place, the ship's line and place key, the open combat /
+expedition / scene-challenge tracks — `sceneTurns.js sceneAnchorOf`, from the
+stores as `sceneStoresNow` reads them), and at a beat of play
+(`ensureCurrentScene`'s move, paced, round and oracle follow-up sites)
+`turnSceneIfDue` turns the scene when the stores moved off it
+(`sceneTurnDue`: place → ship → fight → expedition → challenge → time;
+begun before the narration, ended after the beat whose `endingTrackIds`
+name the track) — `endScene({ turn: true })`, which keeps the unanswered
+mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`
+override (D16, amending #362 D4), then a start with the cause in words and
+the frame's cast, let-go questions and the spotlight's last actor carried
+(`carriedFrame`); the summary is made (fire-and-forget), no snapshot taken.
+A copy on another scene than the store's turns nothing. The scene's opening
+beat is told so in overhaul 4's obligations block of its user message — TELL
+[scene] (`sceneTurns.js sceneObligations` → `sceneOpeningOf`: the anchor's
+`what`, while no narration has written in the scene), beside NOT SO [letgo]
+for each question play let go — rendered by `moves/contracts/obligations.js
+formatObligationsBlock`, which this slice does not edit. `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands); scene-kind truths → the tier of the
@@ -1830,12 +1850,13 @@ still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
 passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
-(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
+(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`,
+`sceneBegan`)
 onto the latest stored campaignState (`persistCampaignStateFields`;
 `endScene`'s own `persistEndedScene`, on the same write chain; a scene the
 store holds that is not the one ended — started on another client during its
 awaits — is left open, its fields and pacing standing: END-SCENE-NEXT-SCENE) — when
-`ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
+`ensureCurrentScene` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
 X-Card retractions, Replace originals and live narration truths for the session (B6;
 `sessionRetractions` — below), added at that write's turn onto the session's

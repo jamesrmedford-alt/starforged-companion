@@ -150,7 +150,9 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
   const lines = [`<h2>${escapeHtml(session?.name || 'Session')}</h2>`];
   if (!enabled || !session) return lines.join('');
 
-  // A new scene where one began this session, before its first beat.
+  // A new scene where one began this session, before its first beat — and
+  // why it began (overhaul 2 §4.6). It used to be headed with where the
+  // scene's frame stood when it ended (known-issues #383 finding 15(b)).
   const begun = new Map((session.scenes ?? []).map(sc => [sc.sceneId, sc]));
   const beats = [];
   let scene = undefined;
@@ -158,8 +160,8 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
     const line = beatLine(beat);
     if (!line) continue;
     if (beat.scene !== scene && begun.has(beat.scene)) {
-      const where = begun.get(beat.scene)?.where?.location ?? beat.where?.location ?? null;
-      beats.push(`<li><em>A new scene${where ? ` — ${escapeHtml(where)}` : ''}.</em></li>`);
+      const what = begun.get(beat.scene)?.what || '';
+      beats.push(`<li><em>A new scene${what ? ` — ${escapeHtml(what)}` : ''}.</em></li>`);
     }
     scene = beat.scene;
     beats.push(line);

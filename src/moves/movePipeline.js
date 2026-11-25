@@ -1456,6 +1456,9 @@ async function rollAndApply({
         },
       );
       if (fin?.track) {
+        // The challenge this move settled: its narration is that scene's last
+        // beat, and the next beat turns the scene (overhaul 2 §4.3).
+        resolution.endingTrackIds = [...(Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : []), fin.track.id];
         await postSceneFinishCard(fin.track).catch(err =>
           console.warn(`${MODULE_ID} | scene finish card failed:`, err?.message ?? err));
       } else {

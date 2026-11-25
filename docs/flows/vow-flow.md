@@ -438,7 +438,7 @@ issue #321 U62) and the CAMPAIGN PREMISE block
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
 paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
-records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+records its facts in a scene (`ensureCurrentScene`, issue #321 U34). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
 **What the two readers of a typed line are told.** The pacing classifier and

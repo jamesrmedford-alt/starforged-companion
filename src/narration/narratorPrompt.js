@@ -18,6 +18,20 @@ import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 
+/**
+ * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
+ * TELL [scene], NOT SO [letgo]; factContinuity/sceneTurns.js
+ * sceneObligations), as the narration's caller hands them in: well-formed
+ * `{ kind, list, text }` lines only.
+ *
+ * @param {unknown} lines
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+function sceneLines(lines) {
+  return (Array.isArray(lines) ? lines : []).filter(o => o && typeof o.kind === 'string' && typeof o.list === 'string'
+    && typeof o.text === 'string' && o.text.trim());
+}
+
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
 // ---------------------------------------------------------------------------
@@ -206,7 +220,10 @@ export function appendSidecarInstruction(options = {}) {
       '  another exchange in the same room. A question play left unanswered is',
       '  listed under PLAY LET THESE GO: do not set it again, in any words, and do',
       '  not bring it back in your prose, unless the player\'s line takes it up.',
-      '  Never end the scene: the table ends scenes.',
+      // Overhaul 2 §4.5 (D1, reversing issue #353 R2's "scenes stay manual"):
+      // the stores turn the scene; the narration's word never does.
+      '  The scene turns when the place or the situation changes; your fact block',
+      '  never ends one.',
     );
   }
 
@@ -1779,7 +1796,7 @@ export function buildSharedStorySections(campaignState, narratorSettings = {}, e
  * stays the caller's.
  */
 export const SCENE_LEDGER_FIELDS = Object.freeze(
-  ['currentSessionId', 'currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'sessionRetractions'],
+  ['currentSessionId', 'currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'sessionRetractions', 'sceneBegan'],
 );
 
 /** `campaignState` with the live scene ledger (`extras.sceneLedger`) laid over it; the state itself when there is none. */
@@ -3369,9 +3386,9 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   // What the narration must tell and must not, last before the instruction:
   // the offer not yet made, the sheet unchanged, no apparatus — and a refused
   // move's premise told as not so (overhaul 4).
-  const block = formatObligationsBlock(obligationsFor({
+  const block = formatObligationsBlock([...obligationsFor({
     mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
-  }));
+  }), ...sceneLines(opts?.sceneObligations)]);
   if (block) parts.push(block);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
@@ -3465,7 +3482,8 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // What the narration must tell and must not, last before the instruction
   // (overhaul 4): a move the sheet said would change nothing, rolled at the
   // GM's word, is told as the GM ruled it (TELL [overridden]).
-  const obligations = formatObligationsBlock(obligationsFor({ mode: 'move', note: resolution?.gateNote ?? null }));
+  const obligations = formatObligationsBlock([...obligationsFor({ mode: 'move', note: resolution?.gateNote ?? null }),
+    ...sceneLines(opts?.sceneObligations)]);
   if (obligations) parts.push(obligations);
 
   // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
@@ -3581,7 +3599,7 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @param {boolean} [args.audio] — the narration is read aloud (shorter sentences)
  * @returns {string}
  */
-export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false }) {
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false, sceneObligations = [] }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -3640,6 +3658,10 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
     `## THIS ROUND — ${n} character${n !== 1 ? 's' : ''} acted at once, in this order\n\n` +
     blocks.join('\n\n'),
   );
+  // What the scene obliges the round's narration to tell (overhaul 2 §10.3):
+  // one block for the round, overhaul 4's.
+  const owed = formatObligationsBlock(sceneLines(sceneObligations));
+  if (owed) parts.push(owed);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
   const lengthOpts = { audio: audio === true };

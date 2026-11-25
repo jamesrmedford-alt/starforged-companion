@@ -6,12 +6,19 @@
  * See issue #227 (Fact Continuity) §9.
  *
  * Exports:
- *   - startScene(campaignState, { reason }) — assign a fresh scene ID; if a
- *       prior scene wasn't cleanly ended, flush it first via endScene. A
- *       caller holding no scene adopts the store's active scene instead.
- *   - endScene(campaignState, { reason }) — migrate entity-scoped truths to
- *       entity generative tiers, archive free-text and scene-scoped truths
- *       to the WJ Lore journal, then discard active ledgers.
+ *   - startScene(campaignState, { reason, cause, what, carry }) — assign a
+ *       fresh scene ID and write the scene's anchor (`sceneBegan`: why it
+ *       began, in words, and the place, ship and open tracks it began with —
+ *       overhaul 2 §4.1); if a prior scene wasn't cleanly ended, flush it
+ *       first via endScene. A caller holding no scene adopts the store's
+ *       active scene instead.
+ *   - endScene(campaignState, { reason, turn }) — migrate entity-scoped
+ *       truths to entity generative tiers, archive free-text and
+ *       scene-scoped truths to the WJ Lore journal, then discard active
+ *       ledgers. A turn (overhaul 2 §4.4) keeps what is the session's.
+ *   - turnSceneIfDue(campaignState, beat) — the scene turns when the stores
+ *       say its place or its situation changed (sceneTurns.js; overhaul 2 D1,
+ *       which reverses issue #353 R2's "scenes stay manual").
  *   - mergeOwnedFields / writeOwnedFields / persistCampaignStateFields —
  *       write only the fields a caller owns onto the latest stored
  *       campaignState, on the client's campaignState write chain
@@ -40,6 +47,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { isNarrationXCarded } from '../context/safety.js';
 import { recordLedgerChanges } from '../record/ledgerDiff.js';
 import { recordEvent } from '../record/record.js';
+import { sceneStores, sceneAnchorOf, anchorFilled, sceneTurnDue, shipPlaceKey, causeText } from './sceneTurns.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -78,23 +86,156 @@ let _sceneStartTail = Promise.resolve();
  * round trip: each minted a scene, and the narration on the losing one had
  * its truths, state and frame dropped as "the scene changed meanwhile".
  *
+ * The new scene's anchor (`campaignState.sceneBegan`, overhaul 2 §4.1) is
+ * written with it: `cause` and `what` say why it began ("gm" — "the GM began
+ * a new scene"; "session" — "the session begins"; a turn's own), and the
+ * place, the ship's position and the open tracks are read from the stores as
+ * they stand. `carry` is what a turn brings into the new scene (§4.4).
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("@scene_intercept",
  *   "first_narration", "scene_command")
+ * @param {string|null} [opts.cause] — why it began (sceneTurns.js causes; "first" when none is given)
+ * @param {string} [opts.what] — the same, in words (causeText's, when omitted)
+ * @param {{ present?: string[], letGo?: Object[], lastActorId?: string|null }|null} [opts.carry]
  * @returns {Promise<string>} the new (or adopted) scene ID
  */
-export async function startScene(campaignState, { reason = 'unknown' } = {}) {
+export async function startScene(campaignState, { reason = 'unknown', cause = null, what = null, carry = null } = {}) {
   if (!campaignState) return null;
   const ahead = _sceneStartTail;
   let release;
   _sceneStartTail = new Promise(resolve => { release = resolve; });
   try {
     await waitForSceneStartAhead(ahead, reason);
-    return await openScene(campaignState, reason);
+    return await openScene(campaignState, reason, { cause, what, carry });
   } finally {
     release();   // the next start goes, whatever this one did
   }
+}
+
+/**
+ * Turn the open scene when the stores say its place or its situation changed
+ * (overhaul 2 §4.2–4.4, D1 — reverses issue #353 R2's "scenes stay manual";
+ * D2: one check at the start of a beat's narration, which sees every writer).
+ * The stores are read live (sceneStoresNow) and compared with the scene's
+ * anchor (`sceneBegan`; sceneTurns.js sceneTurnDue): a change of the
+ * characters' place, the ship's place, a fight, an expedition or a scene
+ * challenge begun or ended, time the player's words skip or a Sojourn. Due,
+ * the scene ends as a turn — what is the session's kept — and the next one
+ * starts with the cause in words and what the turn carries: the frame's cast
+ * and let-go questions, the spotlight's last actor, and the scene's unanswered
+ * mysteries (secrets.js carrySceneMysteries).
+ *
+ * A scene that began with no place or no ship position takes the first one
+ * recorded, without turning; one open when this shipped, with no anchor, takes
+ * one. A caller whose copy is on another scene than the store's — a narration
+ * another turned the scene under — turns nothing: the scene stands as the
+ * store has it. One at a time with scene starts, on the canonical GM (the
+ * caller's gate). Fail-open: a turn that fails leaves the scene as it was, and
+ * nothing is thrown into the narration.
+ *
+ * @param {Object} campaignState — the narration's working copy (mutated: the new scene)
+ * @param {{ line?: string, moveId?: string|null, moveIds?: string[], endingIds?: string[] }} [beat]
+ * @returns {Promise<{ cause: string, what: string }|null>} the turn, or null
+ */
+export async function turnSceneIfDue(campaignState, beat = {}) {
+  if (!campaignState?.currentSceneId) return null;
+  const ahead = _sceneStartTail;
+  let release;
+  _sceneStartTail = new Promise(resolve => { release = resolve; });
+  try {
+    await waitForSceneStartAhead(ahead, 'scene turn');
+    return await turnIfDue(campaignState, beat);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: the scene turn check failed; the scene stands:`, err?.message ?? err);
+    return null;
+  } finally {
+    release();
+  }
+}
+
+/** turnSceneIfDue's work, one start at a time. */
+async function turnIfDue(campaignState, beat) {
+  const sceneId = campaignState.currentSceneId ?? null;
+  let storedScene = null;
+  try { storedScene = game.settings.get(MODULE_ID, 'campaignState')?.currentSceneId ?? null; } catch { storedScene = null; }
+  if (!sceneId || (storedScene && storedScene !== sceneId)) return null;
+
+  const live = await sceneStoresNow(campaignState);
+  const filled = anchorFilled(campaignState.sceneBegan ?? null, live, { sceneId });
+  if (filled) {
+    campaignState.sceneBegan = filled;
+    await persistCampaignStateFields(campaignState, ['sceneBegan'], 'scene anchor');
+  }
+  const due = sceneTurnDue(campaignState.sceneBegan, live, beat);
+  if (!due) return null;
+
+  // What the session keeps across the turn (§4.4): the people who walk with
+  // the characters keep their cards in scope until the new scene's first
+  // narration writes its own frame; what play let go stays let go; the
+  // spotlight remembers who acted last (issue #232 restarted it per scene).
+  const frame = campaignState.sceneFrame && typeof campaignState.sceneFrame === 'object' ? campaignState.sceneFrame : null;
+  const carry = {
+    present: Array.isArray(frame?.present) ? frame.present : [],
+    letGo: Array.isArray(frame?.letGo) ? frame.letGo : [],
+    lastActorId: campaignState.spotlight?.lastActorId ?? null,
+  };
+  await endScene(campaignState, { reason: due.cause, turn: true });
+  const next = await openScene(campaignState, `turn_${due.cause}`, { cause: due.cause, what: due.what, carry });
+  // The scene's unanswered mysteries are the session's (D16): they go on in
+  // the new scene, and retire at the GM's `!scene end` or the session's end.
+  if (next && next !== sceneId) {
+    try {
+      const { carrySceneMysteries } = await import('../world/secrets.js');
+      await carrySceneMysteries(sceneId, next);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sceneLifecycle: the scene's mysteries were not carried into the next:`, err?.message ?? err);
+    }
+  }
+  return due;
+}
+
+/**
+ * The stores a scene's place and situation are read from, now (overhaul 2
+ * §4.3): the characters' recorded place (the caller's copy's
+ * `currentLocationId` — an arrival sets it on the move's working copy before
+ * the narration), the command vehicle's position record, the open progress
+ * tracks. Never throws; what cannot be read reads as nothing.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<Object>} sceneTurns.js sceneStores'
+ */
+async function sceneStoresNow(campaignState) {
+  let place = null;
+  const placeId = typeof campaignState?.currentLocationId === 'string' ? campaignState.currentLocationId : '';
+  if (placeId) {
+    let name = null;
+    try { name = resolveEntityById(placeId)?.data?.name ?? null; } catch { name = null; }
+    place = { id: placeId, type: campaignState.currentLocationType ?? null, name };
+  }
+  let ship = null;
+  try {
+    const { getCommandVehicleActorId, getShip } = await import('../entities/ship.js');
+    const { formatShipPositionLine } = await import('./shipPosition.js');
+    const actorId = getCommandVehicleActorId(campaignState);
+    const record = actorId ? getShip(actorId) : null;
+    const key = shipPlaceKey(record?.position);
+    if (key) {
+      const name = game.actors?.get?.(actorId)?.name ?? record?.name ?? '';
+      ship = { key, line: formatShipPositionLine(record.position, campaignState, name), name };
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: the ship's position was not read for the scene:`, err?.message ?? err);
+  }
+  let openTracks = [];
+  try {
+    const { listOpenProgressTracks } = await import('../ui/progressTracks.js');
+    openTracks = listOpenProgressTracks();
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: the open tracks were not read for the scene:`, err?.message ?? err);
+  }
+  return sceneStores({ place, ship, openTracks });
 }
 
 async function waitForSceneStartAhead(ahead, reason) {
@@ -110,7 +251,7 @@ async function waitForSceneStartAhead(ahead, reason) {
 }
 
 /** startScene's work, one start at a time: adopt the store's active scene, or open one. */
-async function openScene(campaignState, reason) {
+async function openScene(campaignState, reason, { cause = null, what = null, carry = null } = {}) {
   if (!campaignState.currentSceneId && adoptStoredScene(campaignState)) {
     console.debug(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — scene ${campaignState.currentSceneId} is already active; continuing it.`);
     return campaignState.currentSceneId;
@@ -133,8 +274,20 @@ async function openScene(campaignState, reason) {
   ensureSceneStateShape(campaignState);
   campaignState.sceneState.sceneId = id;
   ensureSceneTruthsShape(campaignState);
-  campaignState.sceneFrame = null;   // A4 — frame is scene-scoped; new scene starts frameless
-  campaignState.spotlight = { lastActorId: null, sceneId: id }; // #232 — rotation restarts per scene
+  // A4 — frame is scene-scoped; a new scene starts frameless, save what a turn
+  // carries into it (overhaul 2 §4.4): the cast walking with the characters —
+  // their cards stay in scope until the scene's first narration writes its
+  // own frame — and what play let go, which stays let go.
+  campaignState.sceneFrame = carriedFrame(carry, id);
+  // #232 — rotation restarts per scene; a turn remembers who acted last.
+  campaignState.spotlight = { lastActorId: typeof carry?.lastActorId === 'string' ? carry.lastActorId : null, sceneId: id };
+  // The scene's anchor (overhaul 2 §4.1): why it began, and what it began
+  // with, from the stores as they stand. Written once; the place is always
+  // read live.
+  const began = typeof cause === 'string' && cause ? cause : 'first';
+  campaignState.sceneBegan = sceneAnchorOf(await sceneStoresNow(campaignState), {
+    sceneId: id, cause: began, what: typeof what === 'string' ? what : causeText(began),
+  });
 
   // An empty scene replaced by this one ended too (endScene ran only for a
   // scene with entries): its pacing override goes with it (issue #322 V21).
@@ -143,10 +296,16 @@ async function openScene(campaignState, reason) {
   if (replacing && !ended && clearPacingOverride(campaignState)) fields.push('pacing');
 
   await persistCampaignStateFields(campaignState, fields, `startScene (${reason})`);
-  // The start landed: on the session record (issue #382).
+  // The start landed: on the session record (issue #382) — with why it began
+  // and where (overhaul 2 §4.6).
   try {
     if (game.settings.get(MODULE_ID, 'campaignState')?.currentSceneId === id) {
-      recordEvent('scene.started', { scene: id, d: { sceneId: id, reason } });
+      const anchor = campaignState.sceneBegan;
+      recordEvent('scene.started', { scene: id, d: {
+        sceneId: id, reason, cause: anchor.cause, what: anchor.what,
+        place: anchor.place ? { id: anchor.place.id, type: anchor.place.type ?? null, name: anchor.place.name ?? null } : null,
+        ship: anchor.ship?.line || null,
+      } });
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: the scene's start was not put on the session record:`, err?.message ?? err);
@@ -170,13 +329,22 @@ async function openScene(campaignState, reason) {
  *      truths for the session — added, at the write's turn, onto the session's
  *      list as the store has it then (persistEndedScene)
  *
+ * A turn (`turn`, overhaul 2 §4.4 — turnSceneIfDue) is this end less what is
+ * the session's: the scene's unanswered mysteries are not retired, and the
+ * `!pace` override is not cleared — they last until the GM's `!scene end`, a
+ * `!scene start` that replaces the scene, or the session's end (D16, which
+ * amends issue #362 D4 and #322 V21: a fight's start would end the
+ * `!pace hot` set for it, and a walk from the market to the dock would retire
+ * the mystery just posed).
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("scene_command",
- *   "implicit_due_to_new_scene", "session_close")
+ *   "implicit_due_to_new_scene", "session_close"; a turn's cause)
+ * @param {boolean} [opts.turn] — a scene turn: the session's mysteries and pacing override stay
  * @returns {Promise<{ migrated: number, archived: number, skipped: number }>}
  */
-export async function endScene(campaignState, { reason = 'unknown' } = {}) {
+export async function endScene(campaignState, { reason = 'unknown', turn = false } = {}) {
   if (!campaignState) return { migrated: 0, archived: 0, skipped: 0 };
 
   const counts = { migrated: 0, archived: 0, skipped: 0 };
@@ -217,15 +385,17 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.sceneFrame  = null;
   campaignState.currentSceneId = null;
   campaignState.spotlight = { lastActorId: null, sceneId: null }; // #232 — clear rotation with the scene
+  campaignState.sceneBegan = null;   // its anchor ends with it (overhaul 2 §4.1)
 
   // `!pace hot` / `!pace quiet` last "for the current scene" (the help), and
   // only `!pace clear` cleared them (issue #322 V21): the override ends with
-  // the scene.
+  // the scene — the scene the GM ends, or the session's; a scene that turns
+  // keeps it (overhaul 2 D16).
   const fields = [...SCENE_FIELDS];
-  if (clearPacingOverride(campaignState)) fields.push('pacing');
+  if (!turn && clearPacingOverride(campaignState)) fields.push('pacing');
 
-  await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed, sceneId);
-  await retireEndedSceneMysteries(sceneId);
+  await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed, sceneId, { turn });
+  if (!turn) await retireEndedSceneMysteries(sceneId);
 
   return { ...counts };
 }
@@ -233,9 +403,11 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 /**
  * The mysteries an ended scene posed and never answered leave play with it,
  * their clocks too (issue #362 D4, decided A; secrets.js retireSceneMysteries)
- * — every scene end: `!scene end`, End a Session, a new session's close-out,
- * a scene a new one replaced. Canonical GM, as the scene lifecycle is.
- * Fail-open: the scene end stands.
+ * — every scene end that is no turn: `!scene end`, End a Session, a new
+ * session's close-out, a scene a new one replaced, a cutaway's own scene. A
+ * turn carries them into the next scene instead (overhaul 2 D16, amending
+ * #362 D4 — the ends it named, read as the session's). Canonical GM, as the
+ * scene lifecycle is. Fail-open: the scene end stands.
  *
  * @param {string|null} sceneId
  */
@@ -268,9 +440,10 @@ async function retireEndedSceneMysteries(sceneId) {
  * @param {string}   label
  * @param {Object[]} closed        — the truths it closed
  * @param {string|null} sceneId    — the scene it ended
+ * @param {{ turn?: boolean }} [opts] — a scene turn (recorded so: overhaul 2 §4.6)
  * @returns {Promise<void>}
  */
-async function persistEndedScene(campaignState, fields, label, closed, sceneId) {
+async function persistEndedScene(campaignState, fields, label, closed, sceneId, { turn = false } = {}) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return;
     await serialiseCampaignStateWrite(async () => {
@@ -284,7 +457,7 @@ async function persistEndedScene(campaignState, fields, label, closed, sceneId) 
       await game.settings.set(MODULE_ID, 'campaignState', target);
       campaignState.sessionRetractions = target.sessionRetractions;
       // The end landed: on the session record (issue #382).
-      if (sceneId && !another) recordEvent('scene.ended', { scene: sceneId, d: { sceneId, reason: label } });
+      if (sceneId && !another) recordEvent('scene.ended', { scene: sceneId, d: { sceneId, reason: label, ...(turn ? { turn: true } : {}) } });
     }, label);
   } catch (err) {
     // Player clients can't write world settings; tolerate.
@@ -570,6 +743,22 @@ function adoptStoredScene(campaignState) {
     else campaignState[key] = foundry.utils.deepClone(latest[key]);
   }
   return true;
+}
+
+/**
+ * The first frame of a scene a turn opened (overhaul 2 §4.4): no where and no
+ * now of its own — the narration writes those — the old frame's cast, and the
+ * session's let-go questions. null with nothing to carry.
+ *
+ * @param {{ present?: string[], letGo?: Object[] }|null} carry
+ * @param {string} sceneId
+ * @returns {Object|null}
+ */
+function carriedFrame(carry, sceneId) {
+  const present = Array.isArray(carry?.present) ? carry.present.filter(p => typeof p === 'string' && p.trim()) : [];
+  const letGo = Array.isArray(carry?.letGo) ? carry.letGo.filter(e => e && typeof e.text === 'string' && e.text) : [];
+  if (!present.length && !letGo.length) return null;
+  return { location: '', present, situation: '', ...(letGo.length ? { letGo } : {}), sceneId, updatedAt: Date.now() };
 }
 
 function hasActiveStateEntries(campaignState) {
@@ -904,7 +1093,7 @@ function lastKnownValue(entry, sessionNum, superseded) {
 }
 
 /** campaignState fields the scene lifecycle owns (written by startScene / endScene). */
-const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight']);
+const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight', 'sceneBegan']);
 
 /**
  * The latest stored campaignState with only `fields` taken from the caller's

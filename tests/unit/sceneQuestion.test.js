@@ -48,12 +48,14 @@ describe('issue #353 R2 — the sidecar\'s scene question', () => {
     expect(none).not.toHaveProperty('questionAnswered');
   });
 
-  it('the narrator is asked for it, told to keep it, to cut forward when it is answered, and never to end the scene', () => {
+  it('the narrator is asked for it, told to keep it, to cut forward when it is answered, and that its fact block never ends a scene', () => {
     const text = appendSidecarInstruction({ mode: 'move_resolution' });
     expect(text).toContain('"question":  "Will Vance let them board?"');
     expect(text).toContain('While SCENE FRAME shows a question, copy it unchanged.');
     expect(text).toContain('"questionAnswered": true and end the beat on a');
-    expect(text).toContain('Never end the scene: the table ends');
+    // Overhaul 2 D1: the stores turn a scene (sceneTurns.js); the narration's word never does.
+    expect(text).toContain('The scene turns when the place or the situation changes; your fact block\n  never ends one.');
+    expect(text).not.toContain('Never end the scene: the table ends');
     expect(appendSidecarInstruction({ mode: 'move_resolution', sceneFrameEnabled: false })).not.toContain('"question"');
   });
 });
