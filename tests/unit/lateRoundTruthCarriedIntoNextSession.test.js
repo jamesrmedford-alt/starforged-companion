@@ -225,7 +225,7 @@ describe('issue #364 LATE-ROUND-SCENE-AFTER-MINT — the scene and the fact of a
     const gm = table.client('gm-1');
     const prompt = await gm.import('../../src/narration/narratorPrompt.js');
     const ledger = await gm.run(() => prompt.buildLedgerBlock(world(), { matchedEntityIds: [], currentLocationId: null, maxTokens: Infinity }));
-    expect(ledger.truths, 'the session\'s next narration is told it as a fact of the scene').toContain(`vent — ${VENT_FACT}`);
+    expect(ledger.described, 'the session\'s next narration is told it as the scene\'s (the narration\'s own)').toContain(`vent — ${VENT_FACT}`);
   }, 60_000);
 
   it('after Begin a Session the X-Card still answers the late narration: its fact in the session\'s scene is retracted', async () => {

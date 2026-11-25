@@ -83,7 +83,7 @@ const A62_QUESTION = 'What will the voice trade to take its slip back?';
 const A62_SITUATION = "The stamp, registry and the voice's slip point to one broker's seal at Hollow Spire; the voice wants to retract its words.";
 
 const frame = (over = {}) => ({ location: GALLEY, present: ['Mira Kestrel'], situation: BEATS[0].situation, ...over });
-const ASK = "  Question: none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.";
+const ASK = "  Turns on: none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.";
 /** A line that takes the hook up — the question is the player's (overhaul 2 §7.2): it shares the hook's words. */
 const HOOK_LINE = 'I wait in the galley for the speaker over the hatch.';
 
@@ -208,14 +208,14 @@ describe('NARRATOR-REFRAINS — what the narrator is told', () => {
     expect(blocks('paced_narrative', noQuestion).beat).toContain(ASK);
     expect(blocks('move_resolution', noQuestion).beat).toContain(ASK);
     expect(blocks('round_resolution', noQuestion).beat).toContain("if the players' lines this round set out to settle something");
-    expect(blocks('oracle_followup', noQuestion).beat).toContain('  Question: none stands — if the question the player put to the oracle sets out to settle something');
+    expect(blocks('oracle_followup', noQuestion).beat).toContain('  Turns on: none stands — if the question the player put to the oracle sets out to settle something');
     // A clock vignette, the oath scene and the inciting incident have no player's words to set one from (§7.2).
     for (const mode of ['clock_advance', 'vow_swearing', 'inciting_incident']) {
       expect(blocks(mode, noQuestion).beat, mode).not.toContain('none stands');
     }
     // A frame that has one shows it, and nothing is asked.
     const standing = blocks('paced_narrative', { ...noQuestion, question: HOOK }).beat;
-    expect(standing).toContain(`  Question: ${HOOK}`);
+    expect(standing).toContain(`  Turns on: ${HOOK}`);
     expect(standing).not.toContain('none stands');
   });
 
@@ -226,7 +226,7 @@ describe('NARRATOR-REFRAINS — what the narrator is told', () => {
     expect(blocks('paced_narrative', noQuestion, { factContinuityEnabled: false }).beat).not.toContain('none stands');
     expect(blocks('paced_narrative', noQuestion, { factContinuitySceneFrame: false }).beat).not.toContain('none stands');
     // The audit and the Private Channel read the block as it was: no line.
-    expect(buildLedgerBlock(STATE(noQuestion)).frame).not.toContain('Question');
+    expect(buildLedgerBlock(STATE(noQuestion)).scene).not.toContain('Turns on');
   });
 
   it('a session vignette is told its fact block sets no question — in its own mode block, the standing rules unchanged', () => {
@@ -281,14 +281,14 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
     expect(opened).not.toHaveProperty('question');
     expect(narrationCallsOf(table).at(-1).system).toContain('## A VIGNETTE IS NOT THE SCENE');
 
-    // a56 — the first line of play: no hook in its SCENE FRAME, and it is asked for the scene's question —
+    // a56 — the first line of play: no hook in THE SCENE, and it is asked for the scene's question —
     // which is the player's: the line asks the cutter's name, and that is what the scene turns on.
     table.replies = reply('The speaker over the hatch clicks, and a dry voice reads the name off like a line from a ledger.',
       frame({ question: 'What is the raider cutter called?' }));
     await narrateLine(BEATS[0].line);
-    expect(lastSystem()).toContain(`  Where:   ${GALLEY}`);
+    expect(lastSystem()).toContain(`  Where:    ${GALLEY} — as the narration has it`);
     expect(lastSystem()).toContain(ASK);
-    expect(lastSystem()).not.toContain(`Question: ${HOOK}`);
+    expect(lastSystem()).not.toContain(`Turns on: ${HOOK}`);
     expect(stored().sceneFrame).toMatchObject({ question: 'What is the raider cutter called?', questionBeats: 0 });
   }, 60_000);
 
@@ -324,7 +324,7 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
       const b = BEATS[i % BEATS.length];
       table.replies = reply('The drawer slides open its inch again.', frame({ question: HOOK, situation: b.situation }));
       await narrateLine(b.line);
-      expect(lastSystem(), `beat ${i + 1} is shown the question`).toContain(`  Question: ${HOOK}`);
+      expect(lastSystem(), `beat ${i + 1} is shown the question`).toContain(`  Turns on: ${HOOK}`);
       // The count is in the world's stored frame after every beat: a reload reads it back.
       if (i + 1 < SCENE_QUESTION_BEATS) expect(table.world.campaignState().sceneFrame).toMatchObject({ question: HOOK, questionBeats: i + 1 });
     }
@@ -339,7 +339,7 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
     await narrateMoveOn(table, moveResolution({ moveId: 'gather_information', moveName: 'Gather Information',
       outcome: 'strong_hit', outcomeLabel: 'Strong Hit', playerNarration: BEATS[2].line }));
     expect(lastSystem()).toContain(ASK);
-    expect(lastSystem()).not.toContain(`Question: ${HOOK}`);
+    expect(lastSystem()).not.toContain(`Turns on: ${HOOK}`);
     // …and is told the hook was let go.
     expect(lastSystem()).toContain('PLAY LET THESE GO');
     expect(lastSystem()).toContain(`  "${HOOK}"`);

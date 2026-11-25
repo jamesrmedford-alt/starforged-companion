@@ -6389,8 +6389,8 @@ function registerFactContinuityTests(quench) {
               assert.isString(prompt, "assembled prompt present");
               assert.include(
                 prompt,
-                "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
-                "Section 6.5 header should appear in the live prompt",
+                "ACTIVE SCENE — WHAT BINDS, AND WHAT THE NARRATION DESCRIBED",
+                "Section 6.5 header should appear in the live prompt (overhaul 2 §5.5)",
               );
               assert.include(
                 prompt,

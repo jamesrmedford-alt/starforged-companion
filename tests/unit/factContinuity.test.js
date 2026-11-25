@@ -487,7 +487,7 @@ describe('promoteTextSubject', () => {
 
     // State entries migrated to the new entity key.
     expect(cs.sceneState.bySubject['entity:JournalEntry.cov1'])
-      .toEqual([{ attribute: 'posture', value: 'leaning', updatedAt: expect.any(Number) }]);
+      .toEqual([{ attribute: 'posture', value: 'leaning', basis: 'narrator', updatedAt: expect.any(Number) }]);
     expect(cs.sceneState.bySubject['covenant officer']).toBeUndefined();
   });
 

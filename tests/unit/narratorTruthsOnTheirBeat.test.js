@@ -47,7 +47,9 @@ const FACT = 'carries a brass star-compass that belonged to her sister Ilse';
 const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
 const isNarration  = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? '');
 const NARRATIVE = JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'exploration', confidence: 0.9, reasoning: 'test' });
-const told = (prose, truths) => `${prose}\n\`\`\`json\n${JSON.stringify({ newTruths: truths, stateChanges: [] })}\n\`\`\``;
+// The narration's truths are tagged from the player's line, which bears them out
+// (overhaul 2 §5.2): they bind, so the record's read establishes them.
+const told = (prose, truths) => `${prose}\n\`\`\`json\n${JSON.stringify({ newTruths: truths.map(t => ({ ...t, from: 'line' })), stateChanges: [] })}\n\`\`\``;
 
 // ─── through the real save order, on a booted table ──────────────────────────
 
@@ -116,7 +118,7 @@ describe('a paced narration\'s truth is on its beat — through the real save or
     const lines = session.beats.map(beatFacts).filter(Boolean);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain(`the player wrote “${LINE}”`);
-    expect(lines[0]).toContain(`established (by the narrator): Mira Kestrel — ${FACT}`);
+    expect(lines[0]).toContain(`established (said by the player): Mira Kestrel — ${FACT}`);
     expect(lines.join('\n')).not.toContain('At the table');
   }, 30_000);
 
@@ -149,8 +151,9 @@ describe('an event a narration wrote joins its beat, whichever was recorded firs
   const names = { 'pc-mira': 'Mira Kestrel' };
   const line = () => recordedEvent(SESSION, 'line', { who, d: { via: 'typed' }, text: LINE });
   const narration = (nar = 'nar-1') => recordedEvent(SESSION, 'narration', { who, ref: { nar }, d: { mode: 'paced', actorId: 'pc-mira' }, text: PROSE });
+  // A narration's truth as the floor leaves it when the player's line bears it out (overhaul 2 §5.2).
   const truth = (id, nar, fact = FACT, by = 'narrator') => recordedEvent(SESSION, 'truth.set', {
-    ref: { truth: id, ...(nar ? { nar } : {}) }, d: { subject: { kind: 'text', text: 'Mira Kestrel' }, fact, by },
+    ref: { truth: id, ...(nar ? { nar } : {}) }, d: { subject: { kind: 'text', text: 'Mira Kestrel' }, fact, by, ...(by === 'narrator' ? { basis: 'player' } : {}) },
   });
   const read = (events) => readRecord({ session: SESSION }, recordSourceOf(SESSION, events, { names })).sessions[0];
 

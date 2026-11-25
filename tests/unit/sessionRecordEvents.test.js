@@ -39,6 +39,8 @@ const SITES = {
   'narration':         ['src/record/cards.js'],
   'truth.set':         ['src/record/ledgerDiff.js'],
   'truth.struck':      ['src/record/ledgerDiff.js'],
+  // Overhaul 2 §5.7: a truth whose basis rose to bind, seen by the same differ.
+  'truth.confirmed':   ['src/record/ledgerDiff.js'],
   'name.changed':      ['src/factContinuity/nameChanges.js', 'src/factContinuity/chatCommands.js', 'src/factContinuity/correctionDialog.js'],
   'narration.removed': ['src/record/record.js', 'src/context/safety.js', 'src/moves/resultUpgrade.js'],
   // Slice 2

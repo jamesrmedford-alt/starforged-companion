@@ -159,7 +159,7 @@ describe('what a player establishes reaches the GM\'s next move narration', () =
     expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', asserter: 'player' }]);
 
     const call = await narrateMove();
-    expect(call.system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
+    expect(call.system).toMatch(/WHAT BINDS[^\n]*\n {2}scene — the hatch is welded shut \(the player\)/);
   });
 });
 

@@ -48,6 +48,7 @@ import { isNarrationXCarded } from '../context/safety.js';
 import { recordLedgerChanges } from '../record/ledgerDiff.js';
 import { recordEvent } from '../record/record.js';
 import { sceneStores, sceneAnchorOf, anchorFilled, sceneTurnDue, shipPlaceKey, causeText } from './sceneTurns.js';
+import { entryBasis, raisedBasis, binds } from './provenance.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -342,12 +343,13 @@ async function openScene(campaignState, reason, { cause = null, what = null, car
  * @param {string} [opts.reason] — diagnostic only ("scene_command",
  *   "implicit_due_to_new_scene", "session_close"; a turn's cause)
  * @param {boolean} [opts.turn] — a scene turn: the session's mysteries and pacing override stay
- * @returns {Promise<{ migrated: number, archived: number, skipped: number }>}
+ * @returns {Promise<{ migrated: number, archived: number, skipped: number, faded: number }>} — `faded`:
+ *   the narration's colour let go with the scene (overhaul 2 §5.6)
  */
 export async function endScene(campaignState, { reason = 'unknown', turn = false } = {}) {
-  if (!campaignState) return { migrated: 0, archived: 0, skipped: 0 };
+  if (!campaignState) return { migrated: 0, archived: 0, skipped: 0, faded: 0 };
 
-  const counts = { migrated: 0, archived: 0, skipped: 0 };
+  const counts = { migrated: 0, archived: 0, skipped: 0, faded: 0 };
   const sceneId = campaignState.currentSceneId ?? null;
 
   const truths = Array.isArray(campaignState.sceneTruths) ? campaignState.sceneTruths : [];
@@ -526,6 +528,12 @@ async function migrateSceneTruth(truth, campaignState, placeOf, sceneId = null) 
   if (!truth || truth.retracted || truth.migratedTo) return 'skipped';
   const subject = truth.subject;
   if (!subject) return 'skipped';
+  // Only what binds is filed (overhaul 2 §5.6): the narration's own colour —
+  // no tier detail "NARRATOR-ADDED (honour and build on these)", no Lore
+  // archived as confirmed — leaves with its scene. Every narrator truth used
+  // to become canon at its scene's end (the fourth live run's dock-fee slip,
+  // filed on Tamsin's card from a6's own invention). The record keeps it.
+  if (!binds(truth)) return 'faded';
   // Nothing from a narration the X-Card removed — checked right before each
   // write, since the copy may predate the card, and a copy that landed with
   // the card already played is taken back (XCARD-DURING-SCENE-END-MIGRATES;
@@ -977,9 +985,12 @@ async function keepLastKnownWhereabouts(campaignState, { sceneId = null, bases =
       for (let pass = 0; pass < LAST_KNOWN_REKEEP_PASSES; pass++) {
         const entries = storedStateEntries(key, sceneId) ?? own;
         const read = JSON.stringify(entries);
+        // Only whereabouts that bind (overhaul 2 §5.6): the narration's own
+        // placement of a character is no LAST KNOWN — the next scene may
+        // place them again; the player's, the dice's or the GM's stand.
         const kept = withoutXCardedValues(key, entries).filter(e =>
           WHEREABOUTS_ATTRIBUTES.includes(String(e?.attribute ?? '').trim().toLowerCase())
-          && String(e?.value ?? '').trim());
+          && String(e?.value ?? '').trim() && binds(e));
         const resolved = resolveEntityById(subject.entityId);
         if (!resolved) break;
         if (!bases.has(subject.entityId)) bases.set(subject.entityId, { ...(resolved.data.lastKnown ?? {}) });
@@ -1229,7 +1240,11 @@ export function mergeSceneLedgers(working, latest) {
     // and so is the link a correction adds to it — a Replace's, or a
     // `!truth set` re-establishing a struck fact (issue #326 W60).
     if (w?.retracted && !t?.retracted) return w;
-    return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
+    if (w?.retracted && w.correctedTo && !t?.correctedTo) return w;
+    // What a restatement or a Keep made of it on the working copy rides onto
+    // the store's entry (overhaul 2 §5.3): a basis raised to bind, and the
+    // narrations that said it again. Neither is ever lowered or lost.
+    return w && !t?.retracted && !w.retracted ? withRestatement(t, w) : t;
   });
   // What the working copy adds is re-checked against the store as this write
   // finds it: applySidecar read the store's ledgers when the sidecar was
@@ -1247,6 +1262,26 @@ export function mergeSceneLedgers(working, latest) {
   }
   working.sceneTruths = merged;
   return true;
+}
+
+/**
+ * The store's truth with what the working copy's restatement or Keep added
+ * (overhaul 2 §5.3): its basis raised (provenance.js raisedBasis — colour to
+ * binding, never down), and the narrations that said it, newest first. The
+ * store's own entry when nothing differs.
+ *
+ * @param {Object} stored
+ * @param {Object} working
+ * @returns {Object}
+ */
+function withRestatement(stored, working) {
+  const basis = raisedBasis(entryBasis(stored), entryBasis(working));
+  const said = [...new Set([...(working.said ?? []), ...(stored.said ?? [])])].slice(0, 3);
+  const raised = basis !== entryBasis(stored);
+  const moreSaid = said.length !== (stored.said ?? []).length || said.some((id, i) => id !== (stored.said ?? [])[i]);
+  if (!raised && !moreSaid) return stored;
+  return { ...stored, ...(raised ? { basis, ...(working.confirmedAt ? { confirmedAt: working.confirmedAt } : {}) } : {}),
+    ...(said.length ? { said } : {}) };
 }
 
 /**

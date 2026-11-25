@@ -58,7 +58,7 @@ const SCENE = {
     { id: 't1', subject: { kind: 'text', text: 'Ilse\'s brass star-compass' }, fact: NEEDLE_TRUTH, sceneId: 'sc-3', sessionId: 's-3' },
   ],
   sceneState: { sceneId: 'sc-3', bySubject: {
-    'ilse\'s brass star-compass': [{ attribute: 'needle', value: 'settled on north, no longer leaning toward the dark lane', subjectText: 'Ilse\'s brass star-compass', updatedAt: 2 }],
+    'ilse\'s brass star-compass': [{ attribute: 'needle', value: 'settled on north, no longer leaning toward the dark lane', subjectText: 'Ilse\'s brass star-compass', updatedAt: 2, basis: 'player' }],
   } },
 };
 
@@ -125,7 +125,7 @@ describe('a recap is told how things stand now — read live, in its own user me
 
   it('never as the campaign\'s scene (issue #374 A1 holds): the system prompt has no binding scene and no section of its own on how things stand', () => {
     const system = recapPrompt(SCENE);
-    expect(system).not.toMatch(/ACTIVE SCENE — BINDING/);
+    expect(system).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(system).not.toMatch(/SCENE FRAME/);
     expect(system).not.toContain('WHERE THINGS STAND NOW');
     expect(system).not.toContain(NEEDLE_TRUTH);
@@ -133,7 +133,7 @@ describe('a recap is told how things stand now — read live, in its own user me
 
   it('control: a narration of that scene still has it as its binding scene, and no recap section', () => {
     const paced = buildNarratorSystemPrompt({ currentSessionId: 's-3', ...SCENE }, {}, null, '', { mode: 'paced_narrative' });
-    expect(paced).toMatch(/ACTIVE SCENE — BINDING/);
+    expect(paced).toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(paced).not.toContain(HEADING);
   });
 });

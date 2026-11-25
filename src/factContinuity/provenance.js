@@ -56,27 +56,33 @@ export const QUESTION_MODES = Object.freeze(new Set([
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 /**
- * The ground a narration's fact block is checked against: the beat's player
- * words. Each narration's caller builds it from what it has — the move's
- * written line, the paced line, a round's lines, the oracle's typed question.
+ * The ground a narration's fact block is checked against (overhaul 2 §5.2):
+ * the beat's player words (`line` — the move's written line, the paced line,
+ * a round's lines, the oracle's typed question, the words a vow was sworn
+ * in), and what the dice decided (`decided` — the stakes line the outcome
+ * delivered, the move's target, the chosen option, the oracle's question and
+ * answer, a clock's name on its trigger, a track the beat began or ended).
+ * Each narration's caller builds it from what it has.
  *
- * @param {{ line?: string, lines?: string[] }} [words]
- * @returns {{ line: string }}
+ * @param {{ line?: string, lines?: string[], decided?: string[] }} [words]
+ * @returns {{ line: string, decided: string }}
  */
-export function groundOf({ line = '', lines = [] } = {}) {
+export function groundOf({ line = '', lines = [], decided = [] } = {}) {
   const all = [line, ...(Array.isArray(lines) ? lines : [])].map(clean).filter(Boolean).join('\n');
-  return { line: all.slice(0, GROUND_MAX_CHARS) };
+  const dice = (Array.isArray(decided) ? decided : [decided]).map(clean).filter(Boolean).join('\n');
+  return { line: all.slice(0, GROUND_MAX_CHARS), decided: dice.slice(0, GROUND_MAX_CHARS) };
 }
 
 /**
  * A ground as it crossed a socket (a relayed fact block): bounded, strings only.
  *
  * @param {unknown} ground
- * @returns {{ line: string }}
+ * @returns {{ line: string, decided: string }}
  */
 export function normaliseGround(ground) {
   const line = ground && typeof ground === 'object' && typeof ground.line === 'string' ? ground.line : '';
-  return groundOf({ line });
+  const decided = ground && typeof ground === 'object' && typeof ground.decided === 'string' ? ground.decided : '';
+  return groundOf({ line, decided: [decided] });
 }
 
 /** The telling stems of `text` that are not the stems of a name it is about. */
@@ -190,4 +196,127 @@ export function playersQuestion(question, line, letGo, { about = [] } = {}) {
   if (!sharesTellingWord(line, q, { about })) return '';
   if (touchesLetGo(q, line, letGo)) return '';
   return q;
+}
+
+// ── Slice 3: where a fact comes from, and what binds (overhaul 2 §5) ─────────
+
+/**
+ * A fact's bases (overhaul 2 §5.1): the player's line, the dice (a move's
+ * result, an oracle's answer), the GM's word (a command, a correction, a
+ * Keep), the campaign's opening premise — and the narrator's own colour. The
+ * first four bind; colour is shown as what the narration described, fades by
+ * beats and with its scene, and is never filed.
+ */
+export const BASES = Object.freeze(['player', 'dice', 'gm', 'setup', 'narrator']);
+const BINDING = new Set(['player', 'dice', 'gm', 'setup']);
+
+/** How many of the scene's latest narrations keep a colour entry in the prompt (overhaul 2 §5.3, D6). */
+export const COLOUR_BEATS = 6;
+
+/** The most narrations a colour entry's `said` list keeps, the newest first. */
+const SAID_MAX = 3;
+
+/**
+ * A ledger entry's basis: its own, else — an entry written before bases —
+ * its asserter's: the GM's and a player's as theirs, the narrator's colour
+ * (overhaul 2 D13: no migration).
+ *
+ * @param {Object|null} entry — a scene truth or a state entry
+ * @returns {"player"|"dice"|"gm"|"setup"|"narrator"}
+ */
+export function entryBasis(entry) {
+  const own = typeof entry?.basis === 'string' ? entry.basis : '';
+  if (BASES.includes(own)) return own;
+  return entry?.asserter === 'gm' || entry?.asserter === 'player' ? entry.asserter : 'narrator';
+}
+
+/**
+ * Whether a ledger entry binds later narration: the player's, the dice's, the
+ * GM's or the premise's. The narrator's own colour does not.
+ *
+ * @param {Object|null} entry
+ * @returns {boolean}
+ */
+export function binds(entry) {
+  return BINDING.has(entryBasis(entry));
+}
+
+/**
+ * The basis a narrator fact earns (overhaul 2 §5.2, D5): its tag, checked
+ * against the beat's own words — a `line` fact binds as the player's when one
+ * of its own telling words is in the beat's player words, a `result` fact as
+ * the dice's when one is in what the dice decided; a name is no evidence (the
+ * fact's subject, the PCs, the ship). Anything else — no tag, a tag the words
+ * do not bear out, a beat with no such ground — is the narrator's colour.
+ *
+ * @param {"line"|"result"|null} from — the parser's normalised tag
+ * @param {string} text — the fact's own words (a truth's fact, a state change's value)
+ * @param {{ line?: string, decided?: string }} ground
+ * @param {{ about?: string[] }} [opts]
+ * @returns {"player"|"dice"|"narrator"}
+ */
+export function factBasis(from, text, ground, { about = [] } = {}) {
+  if (from === 'line' && sharesTellingWord(ground?.line ?? '', text, { about })) return 'player';
+  if (from === 'result' && sharesTellingWord(ground?.decided ?? '', text, { about })) return 'dice';
+  return 'narrator';
+}
+
+/**
+ * The basis a restatement leaves an entry with: a binding one raises colour;
+ * nothing lowers a binding basis (overhaul 2 §5.3 "Raised").
+ *
+ * @param {string} held — the entry's basis
+ * @param {string} offered — the restatement's
+ * @returns {string}
+ */
+export function raisedBasis(held, offered) {
+  return !BINDING.has(held) && BINDING.has(offered) ? offered : held;
+}
+
+/**
+ * A colour entry's `said` list with `narrationId` first — who stated it, the
+ * newest first, SAID_MAX at most.
+ *
+ * @param {unknown} said
+ * @param {string|null} narrationId
+ * @returns {string[]}
+ */
+export function saidBy(said, narrationId) {
+  const list = (Array.isArray(said) ? said : []).filter(id => typeof id === 'string' && id && id !== narrationId);
+  return (typeof narrationId === 'string' && narrationId ? [narrationId, ...list] : list).slice(0, SAID_MAX);
+}
+
+/**
+ * Whether a colour entry is still in the prompt (overhaul 2 §5.3): one of the
+ * scene's latest COLOUR_BEATS narrations wrote or restated it. With no window
+ * to read — the scene's cards are not stamped (a scene from before this) —
+ * it stands, as everything did.
+ *
+ * @param {Object} entry
+ * @param {Set<string>|null} window — the scene's latest narrations' ids
+ * @returns {boolean}
+ */
+export function inColourWindow(entry, window) {
+  if (!(window instanceof Set)) return true;
+  const said = Array.isArray(entry?.said) && entry.said.length ? entry.said
+    : (typeof entry?.narrationId === 'string' && entry.narrationId ? [entry.narrationId] : []);
+  if (!said.length) return true;
+  return said.some(id => window.has(id));
+}
+
+/**
+ * What a move's dice decided, for its narration's ground (overhaul 2 §5.2):
+ * the stakes line its outcome delivered — the hit stated before the roll on a
+ * hit, the miss on a miss (moves/stakes.js) — and the move's target. A
+ * `result` fact binds as the dice's when one of its own words is here.
+ *
+ * @param {Object|null} resolution — a move's (or a round entry's input)
+ * @param {{ moveTarget?: string|null }} [opts]
+ * @returns {string[]}
+ */
+export function decidedOfMove(resolution, { moveTarget = null } = {}) {
+  const outcome = resolution?.outcome ?? null;
+  const stakes = resolution?.stakes && typeof resolution.stakes === 'object' ? resolution.stakes : null;
+  const delivered = outcome === 'strong_hit' || outcome === 'weak_hit' ? stakes?.hit : (outcome === 'miss' ? stakes?.miss : null);
+  return [delivered, moveTarget, resolution?.moveTarget].filter(v => typeof v === 'string' && v.trim());
 }

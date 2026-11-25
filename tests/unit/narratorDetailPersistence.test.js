@@ -145,11 +145,14 @@ const tier = (actorId) => table.actors.get(actorId)?.flags?.[MODULE_ID]?.connect
 describe('a recorded NPC: what the narrator records about them is kept', () => {
   it('their truth and state render on the next turn and land on their card at scene end (A1)', async () => {
     const kael = await recordNpc('Kael Dros');
+    // Facts the player's line bears out (overhaul 2 §5.2): they bind, and a
+    // scene's end files them. The narrator's own colour fades with its scene
+    // (colourNotFiled.test.js).
     replies.push(reply('Kael leans on the rail of the docking ring, rubbing the old scar on his jaw.', {
-      newTruths:    [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw' }],
-      stateChanges: [{ subject: 'Kael Dros', attribute: 'location', value: 'the docking ring' }],
+      newTruths:    [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw', from: 'line' }],
+      stateChanges: [{ subject: 'Kael Dros', attribute: 'location', value: 'the docking ring', from: 'line' }],
     }));
-    await narrateMove('I hail Kael Dros across the docking ring.');
+    await narrateMove('I hail Kael Dros across the docking ring — the man with the ragged scar along his jaw.');
 
     expect(world().sceneTruths).toMatchObject([{
       fact: 'has a ragged scar along his jaw',
@@ -159,8 +162,8 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
 
     const next = await narrateMove('I ask Kael what he wants.');
     expect(next.system).toContain('## KAEL DROS — Connection');
-    expect(next.system).toMatch(/TRUTHS:\n {2}Kael Dros — has a ragged scar along his jaw/);
-    expect(next.system).toMatch(/CURRENT STATE[^\n]*\n {2}Kael Dros — location: the docking ring/);
+    expect(next.system).toMatch(/WHAT BINDS[^\n]*\n {2}Kael Dros — has a ragged scar along his jaw \(the player\)/);
+    expect(next.system).toMatch(/STANDING NOW:\n {2}Kael Dros — location: the docking ring \(the player\)/);
 
     await type('gm-1', '!scene end');
     expect(tier(kael)).toEqual([
@@ -232,11 +235,13 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
 
 describe('a new NPC: facts the narrator recorded before their card existed follow them onto it', () => {
   it('Confirm on the draft card re-keys them to the new Actor, the next turn renders them, scene end migrates them (A3)', async () => {
+    // The player's line bears them out (overhaul 2 §5.2): they bind, and the
+    // scene's end files them on the new card.
     replies.push(reply('A woman in a quartermaster\'s coat waves you over, her hand wrapped in gauze.', {
-      newTruths:    [{ subject: 'Mira Sol', fact: 'quartermaster at Bleakhold (she/her); owes the PC a favour' }],
-      stateChanges: [{ subject: 'Mira Sol', attribute: 'condition', value: 'nursing a burned hand' }],
+      newTruths:    [{ subject: 'Mira Sol', fact: 'quartermaster at Bleakhold (she/her); owes the PC a favour', from: 'line' }],
+      stateChanges: [{ subject: 'Mira Sol', attribute: 'condition', value: 'nursing a burned hand', from: 'line' }],
     }));
-    await narrateMove('I look for whoever runs the cargo deck.');
+    await narrateMove('I look for the quartermaster of Bleakhold who owes me a favour and nurses a burned hand.');
     expect(world().sceneTruths[0].subject).toEqual({ kind: 'text', text: 'Mira Sol' });
 
     // The detection pass's draft card (its real producer), confirmed by the GM.
@@ -280,9 +285,9 @@ describe('@scene asks about the scene in progress (A4)', () => {
     await type('pl-1', '@scene what does the hatch look like up close?');
     const asked = table.claude.calls.slice(from).filter(isNarration);
     expect(asked.map(c => c.client)).toEqual(['gm-1']);
-    expect(asked[0].system).toMatch(/SCENE FRAME[^\n]*\n {2}Where: {3}the derelict's spine corridor/);
-    expect(asked[0].system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
-    expect(asked[0].system).toMatch(/CURRENT STATE[^\n]*\n {2}scene — lighting: red emergency strips/);
+    expect(asked[0].system).toMatch(/THE SCENE[^\n]*\n {2}Where: {4}the derelict's spine corridor — as the narration has it/);
+    expect(asked[0].system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}scene — the hatch is welded shut/);
+    expect(asked[0].system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}scene — lighting: red emergency strips/);
 
     expect(world().currentSceneId).toBe('sc-1');
     expect(world().sceneTruths.map(t => t.fact)).toEqual(['the hatch is welded shut']);
@@ -329,7 +334,7 @@ describe('the scene frame\'s cast keeps their card and facts on a move turn (B3)
 
     const next = await narrateMove('I lean in and try to convince him.');
     expect(next.system).toContain('## KAEL DROS — Connection');
-    expect(next.system).toMatch(/TRUTHS:\n {2}Kael Dros — wants the PC off Bleakhold by dawn/);
+    expect(next.system).toMatch(/WHAT THE NARRATION HAS DESCRIBED[\s\S]*\n {2}Kael Dros — wants the PC off Bleakhold by dawn/);
     expect(next.system).toMatch(/Kael Dros — location: the cargo office/);
     // The permission class still comes from the player's text alone (§8.2):
     // no name in it, so this hybrid move resolves as discovery.
@@ -415,14 +420,15 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
 describe('what scene end keeps reaches the next scene (C1, C2)', () => {
   it('a character\'s last location and condition are on their card in the next scene', async () => {
     await recordNpc('Kael Dros');
+    // The player's line bears them out (overhaul 2 §5.2): LAST KNOWN keeps what binds.
     replies.push(reply('Kael limps back to the cargo office.', {
       newTruths: [],
       stateChanges: [
-        { subject: 'Kael Dros', attribute: 'location',  value: 'the cargo office' },
-        { subject: 'Kael Dros', attribute: 'condition', value: 'limping on a twisted ankle' },
+        { subject: 'Kael Dros', attribute: 'location',  value: 'the cargo office', from: 'line' },
+        { subject: 'Kael Dros', attribute: 'condition', value: 'limping on a twisted ankle', from: 'line' },
       ],
     }));
-    await narrateMove('I watch Kael Dros go.');
+    await narrateMove('I watch Kael Dros limp back to the cargo office on his twisted ankle.');
     await type('gm-1', '!scene end');
     expect(world().sceneState.bySubject).toEqual({});
 
@@ -442,7 +448,7 @@ describe('what scene end keeps reaches the next scene (C1, C2)', () => {
     });
     await type('gm-1', '!at Bleakhold');
     replies.push(reply('Neon flickers over a bar wedged between two cargo locks.', {
-      newTruths:  [{ subject: 'scene', fact: 'the bar on the docking ring is called the Rusty Lantern' }],
+      newTruths:  [{ subject: 'scene', fact: 'the bar on the docking ring is called the Rusty Lantern', from: 'line' }],
       stateChanges: [],
       sceneFrame: { location: 'Bleakhold docking ring', present: [], situation: 'Looking for a drink' },
     }));
@@ -684,7 +690,8 @@ describe('the Private Channel reads the shared story; a published reflection is 
     expect(aside.system).toContain('The beacon at Bleakhold went dark.');
     // "him" names no one: the scene frame's cast brings Kael's card and facts.
     expect(aside.userText).toContain('## KAEL DROS — Connection');
-    expect(aside.userText).toContain('SCENE FRAME (the scene as it stands):');
+    expect(aside.userText).toContain('THE SCENE');
+    expect(aside.userText).toContain('  Where:    Bleakhold docking ring — as the narration has it');
     expect(aside.userText).toMatch(/Kael Dros — has a ragged scar along his jaw/);
   });
 

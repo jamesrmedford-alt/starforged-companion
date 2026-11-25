@@ -53,7 +53,8 @@ function a5(later = () => []) {
       d: { moveId: 'compel', moveName: 'Compel', statUsed: 'heart', statValue: 2, actionDie: 5, challengeDice: [3, 6], actionScore: 7, outcome: 'strong_hit', target: { name: 'Tamsin', id: null } } }),
     ev('sheet.changed', { who: { actor: 'pc-mira' }, ref: { res: 'r1' }, d: { actorId: 'pc-mira', what: 'momentum', from: 2, to: 3, cause: { kind: 'move', res: 'r1' } } }),
     ev('narration', { who: { actor: 'pc-mira' }, ref: { nar: 'n1', res: 'r1', card: 'c1' }, d: { mode: 'move' }, text: '“First pick, and a fair cut,” Tamsin says.' }),
-    ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { subject: { kind: 'text', text: 'dark beacon\'s haulers' }, fact: 'carry water and medical stores', by: 'narrator' } }),
+    // What the Compel's hit decided (overhaul 2 §5.2): the dice's — it binds, and the read establishes it.
+    ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { subject: { kind: 'text', text: 'dark beacon\'s haulers' }, fact: 'carry water and medical stores', by: 'narrator', basis: 'dice' } }),
   ];
   return [...base, ...later()];
 }
@@ -167,7 +168,7 @@ describe('corrections, in order — the stored events never change', () => {
   });
 
   it('one truth is set once — a save that carried it back is no second truth', () => {
-    const events = a5(() => [ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { fact: 'carry water and medical stores', by: 'narrator' } })]);
+    const events = a5(() => [ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { fact: 'carry water and medical stores', by: 'narrator', basis: 'dice' } })]);
     expect(read([page(S1, events)]).sessions[0].open.established).toHaveLength(1);
   });
 
@@ -175,7 +176,7 @@ describe('corrections, in order — the stored events never change', () => {
     const events = [
       ev('line', { who: { actor: 'pc-mira' }, ref: { line: 'm1' }, d: { via: 'typed' }, text: 'I check beside the Wake\'s registry.' }),
       ev('narration', { who: { actor: 'pc-mira' }, ref: { nar: 'n1' }, d: { mode: 'paced', actorId: 'pc-mira' }, text: 'The Ashen Wake\'s crew watches you.' }),
-      ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { subject: { kind: 'text', text: 'the Ashen Wake' }, fact: 'is a salvage hauler', by: 'narrator' } }),
+      ev('truth.set', { ref: { truth: 'tr-1', nar: 'n1' }, d: { subject: { kind: 'text', text: 'the Ashen Wake' }, fact: 'is a salvage hauler', by: 'narrator', basis: 'player' } }),
     ];
     const later = [ev('name.changed', { s: S2, d: { from: 'Ashen Wake', to: 'Cinder Wren', how: 'corrected', about: 'the ship' } })];
     const result = read([page(S1, events), page(S2, later, { number: 2, createdAt: 2 })], { session: 'campaign' });

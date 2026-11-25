@@ -922,21 +922,28 @@ last narration quoted word for word — that this note does not tell, or whose
 short form there its line does not name, is added at that message's end,
 `narrator.js callNarratorAPI` → `withNameChangesNoted` (known-issues
 NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
-there at all)) · [6.5] active-scene ledger
-(SCENE FRAME — with the scene's question, shown while it stands, marked
-when answered (issue #353 R2), let go when play has left it unanswered for
+there at all)) · [6.5] active-scene ledger — ACTIVE SCENE — WHAT BINDS,
+AND WHAT THE NARRATION DESCRIBED (overhaul 2 §5.5): THE SCENE (why it began
+and how many beats ago — its anchor; Place and Ship by the table's record;
+Where / Present / Now "as the narration has it"; Turns on — the scene's
+question, from the player's line, shown while it stands, marked when
+answered (issue #353 R2), let go when play has left it unanswered for
 `SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
 one from the player's words, or none if they set out to settle nothing
 (`askSceneQuestion`; only the move, paced, round and oracle follow-up modes —
 overhaul 2 §7.2: never in a vignette's, a clock vignette's, the oath scene's,
 the inciting incident's, an `@scene` answer's or the recap's prompt —
-known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → **PLAY LET THESE
+known-issues NARRATOR-REFRAINS)) → WHAT BINDS (the player's, the dice's, the
+GM's and the premise's truths, each labelled) → **CORRECTED** → STANDING NOW
+(binding state) → WHAT THE NARRATION HAS DESCRIBED (its colour, while one of
+the scene's latest `COLOUR_BEATS` narrations said it) → **PLAY LET THESE
 GO** (the frame's `letGo`, at most four: hooks the narration posed that play
 did not take up — not to end on, restate or set again; REFRAIN-OUTLIVES-THE-QUESTION)
-→ STATE → SHIP POSITION;
-`maxLedgerTokens` sheds state only, line by line with location / vessel /
-condition last — frame/truths/corrections/let-go/ship are
-never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
+→ COMMAND VEHICLE; `maxLedgerTokens` sheds the described colour first —
+state, then truths, the oldest first — then standing state, line by line
+with location / vessel / condition last (overhaul 2 D8) — THE SCENE, WHAT
+BINDS, CORRECTED, PLAY LET THESE GO and the command vehicle are never
+dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 `buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
 Secrets journal whose subject is in play — made in this scene, its entity
 matched or in the frame's cast, its name in the frame or the player's line,

@@ -160,7 +160,7 @@ describe('overhaul 2 §7.3 — the narrator is told, and the record keeps it', (
     expect(block.letGo).toContain('PLAY LET THESE GO — hooks the narration posed that play did not take up.');
     expect(block.letGo).toContain(`  "${LET_GO}"`);
     expect(block.combined).toContain(block.letGo);
-    expect(block.state).toBe('');                       // state shed; the list stands
+    expect(block.described).toBe('');                   // the colour shed; the list stands
     expect(buildLedgerBlock(state()).letGo).toBe('');
   });
 

@@ -41,6 +41,7 @@
  * world through its own modules' readers (actorBridge.js for every actor).
  */
 
+import { binds } from '../factContinuity/provenance.js';
 import { readRecord, recordHash } from './read.js';
 import { didText, changeText, moveText, OWN_WORDS } from './phrasing.js';
 import { writeNewNames } from '../factContinuity/nameChanges.js';
@@ -52,7 +53,8 @@ const SOURCE_MAX_CHARS = 24_000;
 /** The most turning points one earlier session is given. */
 const TURNING_POINTS_PER_SESSION = 24;
 
-const BY = { narrator: 'the narrator', gm: 'the GM', player: 'a player' };
+/** What a truth rests on, as a view says it (overhaul 2 §5.7): only what binds is told. */
+const BASIS = { player: 'said by the player', dice: 'the dice', gm: 'the GM', setup: 'the premise' };
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const quote = (s) => `“${clean(s)}”`;
@@ -85,7 +87,7 @@ export function beatFacts(beat) {
   }
   for (const t of beat.established) {
     const subject = subjectText(t.subject);
-    parts.push(`established${t.by && BY[t.by] ? ` (by ${BY[t.by]})` : ''}: ${subject ? `${subject} — ` : ''}${clean(t.fact)}`);
+    parts.push(`established${BASIS[t.basis] ? ` (${BASIS[t.basis]})` : ''}: ${subject ? `${subject} — ` : ''}${clean(t.fact)}`);
   }
   if (!parts.length) return '';
   const who = clean(beat.who.name) || (beat.kind === 'table' ? 'At the table' : '');
@@ -384,14 +386,16 @@ export async function standingLines(campaignState) {
   }
   // The open scene's state as it stands — where someone is, the state a
   // thing is in, which way it points: the a65 recap said the compass "still
-  // swings toward the dark lane" after it had settled on north.
+  // swings toward the dark lane" after it had settled on north. What binds
+  // alone (overhaul 2 §5.7): the narration's own placements and colour are
+  // no part of how things stand.
   const state = campaignState?.sceneState;
   if (state?.bySubject && typeof state.bySubject === 'object'
       && (!state.sceneId || state.sceneId === (campaignState?.currentSceneId ?? null))) {
     for (const [key, entries] of Object.entries(state.bySubject)) {
       for (const e of Array.isArray(entries) ? entries : []) {
         const value = clean(typeof e?.value === 'string' ? e.value : (e?.value ?? ''));
-        if (!clean(e?.attribute) || !value) continue;
+        if (!clean(e?.attribute) || !value || !binds(e)) continue;
         lines.push(`${clean(e.subjectText) || subjectName(key, bridge.getActor)} — ${clean(e.attribute)}: ${value}.`);
       }
     }

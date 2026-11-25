@@ -234,7 +234,7 @@ import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import { recordEvent } from "./record/record.js";
 import { recordPlaceArrival } from "./record/tableSnapshot.js";
-import { registerRecordCardHook } from "./record/cards.js";
+import { registerRecordCardHook, registerSceneStampHook } from "./record/cards.js";
 import { registerSheetWatch } from "./record/sheetWatch.js";
 import { registerSessionLogView } from "./record/sessionLogView.js";
 import { registerChronicleScribe } from "./record/chronicleView.js";
@@ -4690,7 +4690,9 @@ async function handleSceneCommand(message) {
       resultLine = !saved
         ? notSaved("end")
         : `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
-          `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+          `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}` +
+          // The narration's own colour is filed nowhere (overhaul 2 §5.6).
+          (summary.faded ? `, let go ${summary.faded} the narration described` : "") + `.`;
       if (saved) reportSnapshotEvent("scene_ended");
       // The summary is made at every scene end (overhaul 2 §4.4): the scenes
       // before this one are told by it. Fire-and-forget; it self-gates.
@@ -10610,6 +10612,8 @@ Hooks.once("ready", () => {
   // narration card as it posts, and the Session Log pages kept in step.
   registerSheetWatch();
   registerRecordCardHook({ inMemory: narratorMemoryCard });
+  // Overhaul 2 §8: every narrator card carries the scene it is told in.
+  registerSceneStampHook();
   registerSessionLogView();
   registerChronicleScribe();   // issue #382 slice 4: the Chronicle's automatic entries, written from the record
   // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions

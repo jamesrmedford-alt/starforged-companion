@@ -83,7 +83,8 @@ player input
    │    → ENTITIES IN SCENE cards + matchedEntityIds
    │
    ├─ buildNarratorSystemPrompt                                [READ 2+3]
-   │    §6.5 ledger block: SCENE FRAME → TRUTHS → STATE → SHIP POSITION
+   │    §6.5 ledger block: THE SCENE → WHAT BINDS → CORRECTED → STANDING NOW
+   │      → WHAT THE NARRATION HAS DESCRIBED → PLAY LET THESE GO → COMMAND VEHICLE
    │    scope = matchedIds ∪ currentLocation ∪ scene ∪
    │            text-mentions in (player text ∪ frame.present)
    │
@@ -483,11 +484,48 @@ frame's `present` list names, on **every** path (`addSceneFrameCast` in
 partner's card and facts in scope on turns like *"What does that even mean?"*
 or *"I convince him"*.
 
-**Drop order under budget pressure:** state, line by line — every other
-attribute before a character's location / vessel / condition, the oldest
-first within each (issue #286 A6) → (never) truths → (never) PLAY LET THESE
-GO (overhaul 2 §7.3) → (never) ship position → (never) scene frame. Soft cap
-`factContinuity.maxLedgerTokens`.
+**Drop order under budget pressure** (overhaul 2 D8): the described colour —
+its state, then its truths, the oldest first — then standing state, line by
+line, every other attribute before a character's location / vessel /
+condition, the oldest first within each (issue #286 A6) → (never) WHAT
+BINDS → (never) CORRECTED → (never) PLAY LET THESE GO (§7.3) → (never) THE
+SCENE (its place, ship and frame lines) → (never) the command vehicle. Soft
+cap `factContinuity.maxLedgerTokens`.
+
+**What binds, and what is colour** (overhaul 2, slice 3 — §5; D5, D6, D7,
+D13). Every truth and state entry carries its `basis`: `player` (the
+player's line), `dice` (a move's result, an oracle's answer), `gm` (a
+command, a correction, a Keep), `setup` (the inciting premise) — these bind —
+or `narrator`, the narration's own colour. A narrator fact says where it
+comes from (`"from": "line"` / `"result"`, normalised in `sidecarParser.js`);
+`narrator.js applySidecarSideData` floors the claim against the beat's own
+words (`ctx.ground` — `groundOf`: the player's line, and `decided`: the stakes
+line the outcome delivered, the move's target, the oracle's question and
+answer, a triggered clock's name — `decidedOfMove`) with `provenance.js
+factBasis`: one of the fact's own telling words, stemmed, in the ground, a
+name no evidence. Anything else is colour. The inciting incident's block is
+`setup` whole; a bookend, a clock vignette that triggered nothing and the
+oath scene beyond its vow write colour only. A `!truth set` / `!state set` /
+correction stamps the actor's basis. An entry from before bases reads as its
+asserter's (D13: the GM's and a player's as theirs, the narrator's colour; no
+migration).
+
+Colour is shown under WHAT THE NARRATION HAS DESCRIBED — kept to while it
+stands, changed without argument when the table changes it — while one of
+the scene's latest `COLOUR_BEATS` (6) narrations wrote or restated it: its
+`said` list (at most three narration ids, newest first); the scene's
+narrations are its stamped cards (`sceneId`, invariant 1;
+`sceneNarrationsOf`), and with none stamped (a scene from before) it all
+stands. A restatement the dedup meets refreshes `said`; one the table's words
+bear out raises the basis (`raisedBasis` — never lowered); a GM's Keep in the
+correction dialog raises it to `gm` (`confirmTruth`); the save's merge carries
+both (`mergeSceneLedgers` → `withRestatement`). The X-Card takes its
+narration off what it restated. Colour sharing a let-go question's stem the
+beat's words do not hold stops rendering. At a scene's end colour is filed
+nowhere — no tier detail, no Lore, no LAST KNOWN (`migrateSceneTruth` →
+`faded`, counted on `!scene end`'s card) — and the record keeps it
+(`truth.set.basis`); no view tells it (§ record, `read.js` `established` is
+binding only).
 
 ---
 
@@ -566,8 +604,8 @@ of session 3's prompts, and 23 narrations of 23 ended on it. Two rules:
   stored empty (`touchesLetGo`). Read so, the run's session 3 set one question
   of four, for three beats.
 
-A frame with no question asks the next beat for one: SCENE FRAME's last line
-reads `Question: none stands — if the player's latest line sets out to settle
+A frame with no question asks the next beat for one: THE SCENE's last line
+reads `Turns on: none stands — if the player's latest line sets out to settle
 something, set that, in a few words that use the line's own; if it does not,
 set none.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per mode by
 `SCENE_QUESTION_ASK` — the move, paced, round and oracle follow-up modes
@@ -579,19 +617,23 @@ under PLAY LET THESE GO is not set again, in any words, nor brought back in
 the prose; HOW A BEAT ENDS says the hook is the story's answer to the
 player's line, never a new thread of the narrator's own, and never one under
 PLAY LET THESE GO. The let-go questions render under PLAY LET THESE GO, after
-CORRECTED, never dropped under the cap. Rendered at the top of §6.5:
+CORRECTED, never dropped under the cap. Rendered as THE SCENE, at the top of
+§6.5 (overhaul 2 §5.5 — the scene's anchor, the place and the ship by the
+table's record, then the frame's lines, each saying whose it is):
 
 ```
-SCENE FRAME (the scene as it stands):
-  Where:   Lyra's orbital graveyard
-  Present: Venri Quint, Vance
-  Now:     Hailing Vance's shuttle across the debris field
-  Question: Will Vance let them board?
+THE SCENE — began 3 beats ago, when the characters are at Lyra Station.
+  Place:    Lyra Station — where the characters are, by the table's record
+  Ship:     Wayfinder near Lyra Station
+  Where:    Lyra's orbital graveyard — as the narration has it
+  Present:  Venri Quint, Vance
+  Now:      Hailing Vance's shuttle across the debris field — as the narration has it
+  Turns on: Will Vance let them board? — from the player's line
 ```
 
-(An answered question reads `Question (answered): … — the scene has moved
-past it; set the question it turns on now.`; a frame with none, `Question:
-none stands — …` as above.)
+(An answered question reads `Turns on (answered): … — the scene has moved
+past it; set what it turns on now.`; a frame with none, `Turns on: none
+stands — …` as above.)
 
 Two side effects beyond display:
 1. `present` names are treated as mentioned for ledger scoping (§3).

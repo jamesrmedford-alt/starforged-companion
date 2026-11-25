@@ -16,7 +16,10 @@
  *     `truth.struck`. One the X-Card or an upgrade retracted is not: that is
  *     `narration.removed`, which takes everything its narration wrote;
  *   - a truth that leaves the ledger without being retracted is not struck: a
- *     scene's end clears the ledger by migrating it.
+ *     scene's end clears the ledger by migrating it;
+ *   - a truth the store held as colour that the save writes binding — a GM's
+ *     Keep, a restatement the table's words bore out — is `truth.confirmed`
+ *     (overhaul 2 §5.7). Every `truth.set` carries the truth's basis.
  *
  * By truth id alone, whichever scene each copy is of: a truth set in the save
  * that opens a scene is still set, and one a stale working copy carries back
@@ -27,6 +30,7 @@
  */
 
 import { recordEvent } from './record.js';
+import { entryBasis, binds } from '../factContinuity/provenance.js';
 
 /** `retractedBy` of a truth a narration's removal retracted, not the table (factContinuity/ledgers.js). */
 const NOT_THE_TABLE = new Set(['xcard', 'superseded']);
@@ -61,11 +65,17 @@ export function ledgerEvents(before, after) {
           session, scene,
           ref: { truth: t.id, nar: t.narrationId ?? null, entity: subject?.kind === 'entity' ? (subject.entityId ?? null) : null },
           d: {
-            subject, fact: String(t.fact ?? ''), by: t.asserter ?? 'narrator',
+            subject, fact: String(t.fact ?? ''), by: t.asserter ?? 'narrator', basis: entryBasis(t),
             ...(t.sceneLocation ? { place: t.sceneLocation } : {}),
             ...(replaces.has(t.id) ? { replaces: replaces.get(t.id) } : {}),
           },
         },
+      });
+    }
+    if (was && !t.retracted && !binds(was) && binds(t)) {
+      events.push({
+        kind: 'truth.confirmed',
+        payload: { session, scene, ref: { truth: t.id }, d: { basis: entryBasis(t), by: entryBasis(t) === 'gm' ? 'gm' : 'narrator' } },
       });
     }
     const newlyStruck = t.retracted === true && was && was.retracted !== true;

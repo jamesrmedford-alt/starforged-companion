@@ -43,7 +43,7 @@ import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
-import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES } from '../factContinuity/provenance.js';
+import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 import { readMoveSituation } from '../moves/situation.js';
 import { sceneObligations } from '../factContinuity/sceneTurns.js';
@@ -393,6 +393,13 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const extras = {
     mode,
     sceneLedger,
+    // The scene's narrations so far (overhaul 2 §5.3, §8): the colour window
+    // — a colour entry stands in the block while one of the latest
+    // COLOUR_BEATS wrote or restated it — and how many beats ago it began.
+    sceneNarrations: sceneNarrationsOf(sceneLedger?.currentSceneId ?? campaignState?.currentSceneId ?? null,
+      campaignState?.currentSessionId ?? null),
+    // The beat's player words: a let-go hook they take up stands in the block.
+    playerLine: typeof playerNarration === 'string' ? playerNarration : '',
     // Lines, Veils and Private Lines, read live (issue #321 U08; rules/
     // reachability.md §9: a safety-critical flag is read at the point of
     // use): the move pipeline narrates from a snapshot taken before its
@@ -1403,7 +1410,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
   // What its fact block is checked against: the line the player wrote — a
   // burn's or an improve's re-narration has none (overhaul 2 §5.2, §7.2).
-  const ground = groundOf({ line: writtenLine(resolution) });
+  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }) });
 
   try {
     const raw = await callNarratorAPI({
@@ -1903,7 +1910,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
-        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text) }),
+        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
+          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])) }),
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -2713,6 +2721,33 @@ function ringEntryText(message) {
  */
 function sessionNarratorCards(sessionId) {
   return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId));
+}
+
+/**
+ * The scene's narrations so far, from the cards stamped with it (overhaul 2
+ * §8 — record/cards.js registerSceneStampHook): `window`, the newest
+ * COLOUR_BEATS narrations' ids (a colour entry stands while one of them wrote
+ * or restated it), and `beats`, how many there are. With no card of the scene
+ * stamped — a scene from before the stamp — `{ window: null, beats: null }`:
+ * its colour stands, as everything did. Never throws.
+ *
+ * @param {string|null} sceneId
+ * @param {string|null} sessionId
+ * @returns {{ window: Set<string>|null, beats: number|null }}
+ */
+function sceneNarrationsOf(sceneId, sessionId) {
+  try {
+    if (!sceneId) return { window: null, beats: null };
+    const ids = sessionNarratorCards(sessionId)
+      .filter(m => m.flags?.[MODULE_ID]?.sceneId === sceneId)
+      .map(m => m.flags?.[MODULE_ID]?.narrationId)
+      .filter(id => typeof id === 'string' && id);
+    if (!ids.length) return { window: null, beats: null };
+    return { window: new Set(ids.slice(-COLOUR_BEATS)), beats: ids.length };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the scene's narrations could not be read:`, err?.message ?? err);
+    return { window: null, beats: null };
+  }
 }
 
 /**
@@ -4170,7 +4205,7 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }) });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4194,7 +4229,7 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }) });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4629,7 +4664,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       });
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
-      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance' });
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
       if (!text?.trim()) return null;
       // The developments of the recorded NPCs it names → their cards, as a
       // session vignette's (#286 D4) — every post site goes through here
@@ -4653,7 +4688,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           });
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
-          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance' });
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
           if (!text?.trim()) return null;
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
           narrated = true;
@@ -4751,7 +4786,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateVowSwearing')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing', ground: groundOf({ line: vow?.name ?? '' }) });
     return (text && text.trim()) ? text : null;
   };
 
@@ -6781,12 +6816,22 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // The narration id is stamped on every entry, so an X-Card on the
     // narration can retract them (issue #321 U07).
     const narrationId = typeof ctx.narrationId === 'string' ? ctx.narrationId : null;
+    // What each fact rests on (overhaul 2 §5.2, D5): the narrator's `from`,
+    // floored against the beat's own words — the player's line, what the dice
+    // decided — a name no evidence. The inciting incident's block is the
+    // premise whole (`setup`); a mode with no ground writes colour only.
+    const noEvidence = namesNoEvidence(campaignState);
+    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+    const basisOf = ctx.mode === 'inciting_incident'
+      ? () => 'setup'
+      : ({ from, text, subject }) => factBasis(from, text, ground, { about: [subject, ...noEvidence].filter(Boolean) });
     applySidecar(filteredSidecar, {
       campaignState,
       sessionId: campaignState.currentSessionId ?? null,
       sceneId:   campaignState.currentSceneId   ?? null,
       moveId:    ctx.moveId ?? null,
       asserter:  'narrator',
+      basisOf,
       entities,
       narrationId,
       // The re-assertion checks read the store's ledgers too: the move
@@ -6819,7 +6864,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // one is not set again — nor a Now line that carries it.
       const bookend = ctx.bookend === true;
       const prior = campaignState.sceneFrame ?? null;
-      const about = namesNoEvidence(campaignState);
+      const about = noEvidence;
       const line = !bookend && QUESTION_MODES.has(ctx.mode) ? (ctx.ground?.line ?? '') : '';
       const framed = playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,

@@ -35,7 +35,8 @@ const stored = () => game.settings.get(MODULE_ID, 'campaignState');
 const truth = (id, sceneId, fact, extra = {}) => ({
   id, subject: { kind: 'text', text: 'the dockmaster' }, fact,
   sessionId: 'sess-5', sessionNum: 5, sceneId, moveId: null, source: 'narrator_sidecar',
-  asserter: 'narrator', createdAt: 1, retracted: false, retractedBy: null, retractedAt: null,
+  // The player's (overhaul 2 §5.1): a scene's end files what binds.
+  asserter: 'narrator', basis: 'player', createdAt: 1, retracted: false, retractedBy: null, retractedAt: null,
   correctedTo: null, migratedTo: null, ...extra,
 });
 

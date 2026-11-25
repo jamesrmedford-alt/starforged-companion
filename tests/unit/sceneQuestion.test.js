@@ -51,7 +51,7 @@ describe('issue #353 R2 — the sidecar\'s scene question', () => {
   it('the narrator is asked for it, told to keep it, to cut forward when it is answered, and that its fact block never ends a scene', () => {
     const text = appendSidecarInstruction({ mode: 'move_resolution' });
     expect(text).toContain('"question":  "Will Vance let them board?"');
-    expect(text).toContain('While SCENE FRAME shows a question, copy it unchanged.');
+    expect(text).toContain('While THE SCENE shows what it turns on, copy it unchanged.');
     expect(text).toContain('"questionAnswered": true and end the beat on a');
     // Overhaul 2 D1: the stores turn a scene (sceneTurns.js); the narration's word never does.
     expect(text).toContain('The scene turns when the place or the situation changes; your fact block\n  never ends one.');
@@ -102,12 +102,12 @@ describe('issue #353 R2 — the frame keeps the question for the scene', () => {
     expect(cs.sceneFrame.questionAnswered).toBeUndefined();
   });
 
-  it('the narrator reads it in SCENE FRAME — open, or answered with the instruction to move on', () => {
+  it('the narrator reads it in THE SCENE — open, or answered with the instruction to move on', () => {
     const cs = state();
     applySceneFrame({ ...BASE, question: Q }, cs, { narrationId: 'n1' });
-    expect(buildLedgerBlock(cs).frame).toContain(`  Question: ${Q}`);
+    expect(buildLedgerBlock(cs).scene).toContain(`  Turns on: ${Q} — from the player's line`);
     applySceneFrame({ ...BASE, question: Q, questionAnswered: true }, cs, { narrationId: 'n2' });
-    expect(buildLedgerBlock(cs).frame).toContain(`  Question (answered): ${Q} — the scene has moved past it; set the question it turns on now.`);
+    expect(buildLedgerBlock(cs).scene).toContain(`  Turns on (answered): ${Q} — the scene has moved past it; set what it turns on now.`);
   });
 });
 
@@ -130,7 +130,7 @@ describe('issue #353 R2 — on the table: kept across beats, gone when the scene
     table.replies = frameReply({ question: 'What does the escort want?' });
     await narrateMoveOn(table, moveResolution({ outcome: 'weak_hit', outcomeLabel: 'Weak Hit' }));
     expect(stored().sceneFrame.question).toBe(Q);
-    expect(narrationCallsOf(table).at(-1).system).toContain(`  Question: ${Q}`);
+    expect(narrationCallsOf(table).at(-1).system).toContain(`  Turns on: ${Q}`);
 
     table.replies = frameReply({ question: Q, questionAnswered: true });
     await narrateMoveOn(table, moveResolution({ outcome: 'strong_hit', outcomeLabel: 'Strong Hit' }));

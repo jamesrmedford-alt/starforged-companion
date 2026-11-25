@@ -46,7 +46,8 @@ const line = (s, text, res) => ev('line', { s, who: { actor: 'pc-mira' }, ref: {
 const move = (s, res, moveId, outcome) => ev('move.resolved', { s, who: { actor: 'pc-mira' }, ref: { res },
   d: { moveId, moveName: moveId.replace(/_/g, ' '), statUsed: 'heart', outcome, actionScore: 7, actionDie: 5, challengeDice: [3, 6] } });
 const told = (s, nar, res, text, mode = 'move') => ev('narration', { s, who: { actor: 'pc-mira' }, ref: { nar, ...(res ? { res } : {}) }, d: { mode }, text });
-const truth = (s, id, nar, fact) => ev('truth.set', { s, ref: { truth: id, nar }, d: { subject: { kind: 'text', text: 'the hatch' }, fact, by: 'narrator' } });
+// What the move decided (overhaul 2 §5.2: the dice's — it binds, and the views tell it).
+const truth = (s, id, nar, fact) => ev('truth.set', { s, ref: { truth: id, nar }, d: { subject: { kind: 'text', text: 'the hatch' }, fact, by: 'narrator', basis: 'dice' } });
 
 /** A summary view as the writer stores it, made from `session`'s read now. */
 const viewOf = (pages, sessionId, text = 'Mira forced the hatch.') => {
@@ -69,7 +70,7 @@ describe('the summary\'s source is the session read with its corrections', () =>
     const src = summarySource(readRecord({ session: S1 }, source([page(S1, events)])).sessions[0]);
     expect(src.ids).toEqual(['1']);
     expect(src.text).toMatch(/^## THE SESSION \(oldest first\)/);
-    expect(src.text).toMatch(/\[1\] Mira Kestrel — the player wrote “I put my shoulder to the hatch\.” — face danger \(\+heart\), strong hit — established \(by the narrator\): the hatch — is forced open/);
+    expect(src.text).toMatch(/\[1\] Mira Kestrel — the player wrote “I put my shoulder to the hatch\.” — face danger \(\+heart\), strong hit — established \(the dice\): the hatch — is forced open/);
     expect(src.text).toMatch(/TOLD AS: “The hatch gives with a shriek of metal\.”/);
     expect(src.text).not.toMatch(/courier/);          // a cutaway is no beat of the session's
     expect(src.empty).toBe(false);

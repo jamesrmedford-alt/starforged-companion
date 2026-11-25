@@ -40,7 +40,7 @@ function deal(s, extra = []) {
     ev('move.resolved', { s, who: { actor: 'pc-mira' }, ref: { res: `r-${s}` }, d: { moveId: 'compel', moveName: 'Compel', statUsed: 'heart', outcome: 'strong_hit' } }),
     ev('sheet.changed', { s, ref: { res: `r-${s}` }, d: { actorId: 'pc-mira', what: 'momentum', from: 2, to: 3, cause: { kind: 'move' } } }),
     ev('narration', { s, ref: { nar: `n-${s}`, res: `r-${s}` }, d: { mode: 'move' }, text: PROSE }),
-    ev('truth.set', { s, ref: { truth: `t-${s}`, nar: `n-${s}` }, d: { subject: { kind: 'text', text: 'the dark beacon\'s haulers' }, fact: 'carry water and medical stores', by: 'narrator' } }),
+    ev('truth.set', { s, ref: { truth: `t-${s}`, nar: `n-${s}` }, d: { subject: { kind: 'text', text: 'the dark beacon\'s haulers' }, fact: 'carry water and medical stores', by: 'narrator', basis: 'dice' } }),
     ...extra,
   ];
 }
@@ -49,7 +49,7 @@ describe('the recap is given the record\'s facts, never the narration (D4)', () 
   it('the latest session in full: the player\'s own words, the move and its outcome, what changed, what stands — each line an id', () => {
     const source = recapSource({ read: read([page('sess-3', 3, deal('sess-3'))]) });
     expect(source.text).toContain(`the player wrote “${LINE}”`);
-    expect(source.text).toMatch(/\[s3-1\] Mira Kestrel — .*Compel \(\+heart\), strong hit — Momentum 2 → 3 — established \(by the narrator\): the dark beacon's haulers — carry water and medical stores/);
+    expect(source.text).toMatch(/\[s3-1\] Mira Kestrel — .*Compel \(\+heart\), strong hit — Momentum 2 → 3 — established \(the dice\): the dark beacon's haulers — carry water and medical stores/);
     expect(source.text).not.toContain('spits on her palm');
     expect(source.ids).toEqual(['s3-1']);
   });

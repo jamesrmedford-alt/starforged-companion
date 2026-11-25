@@ -47,7 +47,7 @@ import { withNameChange, writeNewNames } from '../factContinuity/nameChanges.js'
 import { lastingChangeOf } from '../character/chronicleKeeps.js';
 
 /** The events that correct what the record says, read into any span (`scope.through`). */
-const CORRECTION_KINDS = new Set(['truth.struck', 'narration.removed', 'name.changed']);
+const CORRECTION_KINDS = new Set(['truth.struck', 'narration.removed', 'name.changed', 'truth.confirmed']);
 
 /** `narration.removed`'s two causes. */
 const BY_XCARD = 'xcard';
@@ -57,6 +57,9 @@ const BY_SUPERSEDED = 'superseded';
 const SHEET_EDIT_WINDOW_MS = 10_000;
 
 const KNOWN_KINDS = new Set(RECORD_EVENTS.map(r => r.id));
+
+/** The bases that bind (overhaul 2 §5.1 — factContinuity/provenance.js): a view reads these alone. */
+const BINDING_BASES = new Set(['player', 'dice', 'gm', 'setup']);
 
 /**
  * What a beat that changed something for good changed — the turning points a
@@ -226,7 +229,7 @@ function newBeat(kind, event) {
   return {
     id: event.id, at: event.at, seq: event.seq ?? 0, kind,
     who: { user: event.who?.user ?? null, actor: event.who?.actor ?? null, name: null },
-    line: null, move: null, changes: [], choices: [], did: [], told: null, established: [],
+    line: null, move: null, changes: [], choices: [], did: [], told: null, established: [], described: [],
     where: null, lasting: null, removed: null, leaveOut: [], round: event.ref?.round ?? null,
     events: [],
   };
@@ -256,6 +259,7 @@ function sessionBeats(events, { xcarded, superseded }) {
   const truths = new Map();            // truth id → { beat, entry }
   const setTruths = new Set();         // every truth id read so far, on a beat or waiting for one
   const struck = [];
+  const confirmed = [];                // truths the table raised to bind (overhaul 2 §5.7)
   const renames = [];
   let begun = null;
   let ended = null;
@@ -471,15 +475,28 @@ function sessionBeats(events, { xcarded, superseded }) {
         const truthId = e.ref?.truth ?? null;
         if (truthId && setTruths.has(truthId)) continue;
         if (truthId) setTruths.add(truthId);
+        // Its basis (overhaul 2 §5.7): one written before bases is its
+        // asserter's — the GM's and a player's as theirs, the narrator's
+        // colour (D13). Colour stays on its beat (a strike or a confirm finds
+        // it) and is no part of what the beat established.
+        const by = d.by ?? 'narrator';
+        const basis = typeof d.basis === 'string' && d.basis ? d.basis : (by === 'gm' || by === 'player' ? by : 'narrator');
         const entry = {
           truthId, subject: d.subject ?? null, fact: typeof d.fact === 'string' ? d.fact : '',
-          by: d.by ?? 'narrator', place: d.place ?? null, replaces: d.replaces ?? null,
+          by, basis, place: d.place ?? null, replaces: d.replaces ?? null,
         };
         joinNarration(nar, e, (b) => {
-          b.established.push(entry);
+          if (BINDING_BASES.has(basis)) b.established.push(entry);
+          else b.described.push(entry);
           if (entry.truthId) truths.set(entry.truthId, { beat: b, entry });
           b.events.push(e.id);
         });
+        continue;
+      }
+      case 'truth.confirmed': {
+        // A truth whose basis rose to bind (a GM's Keep): established on the
+        // beat that set it (overhaul 2 §5.7).
+        confirmed.push({ truthId: e.ref?.truth ?? null, basis: d.basis ?? 'gm' });
         continue;
       }
 
@@ -514,12 +531,22 @@ function sessionBeats(events, { xcarded, superseded }) {
   // should one not be, what it wrote is a table beat rather than lost.
   for (const list of waiting.values()) for (const { e, join } of list) join(open('table', e));
 
+  // Confirms: a colour truth the table took up binds, on its own beat.
+  for (const c of confirmed) {
+    const hit = c.truthId ? truths.get(c.truthId) : null;
+    if (!hit || BINDING_BASES.has(hit.entry.basis)) continue;
+    hit.entry.basis = c.basis;
+    hit.beat.described = hit.beat.described.filter(t => t !== hit.entry);
+    hit.beat.established.push(hit.entry);
+  }
+
   // Strikes: the truth leaves; the beat that told it is given what to leave out.
   const strikes = [];
   for (const s of struck) {
     const hit = s.truthId ? truths.get(s.truthId) : null;
     if (!hit) continue;
     hit.beat.established = hit.beat.established.filter(t => t !== hit.entry);
+    hit.beat.described = hit.beat.described.filter(t => t !== hit.entry);
     const replacement = s.replacedBy ? truths.get(s.replacedBy)?.entry ?? null : null;
     if (s.by !== BY_XCARD && s.by !== BY_SUPERSEDED) {
       if (hit.beat.told) hit.beat.leaveOut.push(hit.entry.fact);

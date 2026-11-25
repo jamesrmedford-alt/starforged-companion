@@ -10,6 +10,11 @@ layers. This file is the never-break list.
 1. **The flag-family contract.** Every chat card whose prose is fiction the
    narrator should remember MUST carry `narratorCard: true`,
    `narrationText: <prose>`, and `sessionId`. Error/fallback cards must NOT.
+   Each also carries the scene it was told in, `sceneId` — stamped by one
+   `preCreateChatMessage` hook on whichever client creates the card
+   (`record/cards.js registerSceneStampHook`, overhaul 2 §8), never by a post
+   site; its readers are the colour window and the scene's beat count
+   (`narrator.js sceneNarrationsOf`). A card from before it has none.
    As of 2026-07 this covers move, paced, @scene, inciting, galley /
    end-session vignettes (and since issue #381 the spotlight vignette,
    `spotlight_begin` — in the ring and the summary's source its entry is
@@ -98,6 +103,11 @@ layers. This file is the never-break list.
    (`secrets.withoutUntoldTruths`, before the ledger and the plans read the
    block — VOW-FULFILLED-WITH-NOBODY-NAMED). It is a floor; the instruction
    (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
+   A newTruth's and a stateChange's `from` ("line" | "result", else null —
+   the narrator's own colour) is normalised in `sidecarParser.js`, asked for
+   in `appendSidecarInstruction`, and floored in `narrator.js
+   applySidecarSideData` (`provenance.js factBasis` over the beat's ground)
+   before `applySidecar` writes each entry's `basis` (overhaul 2 §5.2, D5).
    The scene frame's `question` is the player's (overhaul 2 §7.2): read against
    the beat's own player words (`ctx.ground`, `provenance.js groundOf`; its
    `ctx.mode` — `QUESTION_MODES`) by `narrator.js playersFrame` before
@@ -107,15 +117,21 @@ layers. This file is the never-break list.
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
    are REQUIRED in the instruction text. If they stop arriving, fix the
-   instruction wording first — do not silently add inference machinery.
+   instruction wording first — do not silently add inference machinery. A
+   required emission is not a binding one (overhaul 2 §5.4): each is emitted
+   with its `from`, and binds only as the table's words bear it out.
 
-4. **Never-dropped tiers.** Scene frame, binding truths, PLAY LET THESE GO
-   (the frame's let-go questions, at most four — overhaul 2 §7.3) and ship
-   position are never dropped from the ledger block under budget pressure; only
-   state truncates — line by line, every other attribute before a
+4. **Never-dropped tiers.** THE SCENE (its anchor, place, ship and frame
+   lines), WHAT BINDS, CORRECTED, PLAY LET THESE GO (the frame's let-go
+   questions, at most four — overhaul 2 §7.3) and the command vehicle are
+   never dropped from the ledger block under budget pressure. What sheds, in
+   order (overhaul 2 D8 — this amends the old "only state truncates"): the
+   narration's described colour — its state, then its truths, the oldest
+   first — then standing state, line by line, every other attribute before a
    character's location / vessel / condition, the oldest first within each
-   (issue #286 A6; the block used to drop whole). Do not reorder the drop
-   sequence without a decision.
+   (issue #286 A6; the block used to drop whole). "Binding truths" used to be
+   every narrator truth; what must never drop is what the table set. Do not
+   reorder the drop sequence without a decision.
 
 5. **Non-move relevance stays lexical.** `resolvePathRelevance`
    (paced/@scene) must never reach an API call — `resolveRelevance` with

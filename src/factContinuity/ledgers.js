@@ -19,7 +19,7 @@
  */
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
-import { normaliseLetGo } from './provenance.js';
+import { normaliseLetGo, entryBasis, raisedBasis, saidBy } from './provenance.js';
 
 /**
  * Apply a parsed sidecar to the active-scene ledgers. Mutates campaignState
@@ -40,6 +40,9 @@ import { normaliseLetGo } from './provenance.js';
  * @param {string|null} [ctx.narrationId] — the narration this sidecar came
  *   with (its narrator card carries the same id); stamped on every truth and
  *   state value written, so an X-Card can retract them (retractNarrations)
+ * @param {Function} [ctx.basisOf] — `({ from, text, subject }) → basis`: what a fact the
+ *   narrator wrote rests on (overhaul 2 §5.2 — provenance.js factBasis, over the beat's
+ *   own words); without it every fact is its asserter's (a narrator's is colour)
  * @param {Object|null} [ctx.storedLedger] — the store's scene ledgers as they
  *   stand now (`{ currentSessionId, currentSceneId, sceneTruths,
  *   sessionRetractions }` — narrator.js liveSceneLedger), which the
@@ -66,6 +69,12 @@ export function applySidecar(sidecar, ctx) {
   const entities  = Array.isArray(ctx.entities) ? ctx.entities : [];
   const stamp     = narrationStamp(ctx.narrationId);
   const now       = Date.now();
+  // What each fact rests on (overhaul 2 §5.1–5.2): the narrator's tag,
+  // floored by the caller against the beat's own words; colour otherwise.
+  const basisOf   = (from, text, subjectRef) => {
+    if (typeof ctx.basisOf === 'function') return ctx.basisOf({ from: from ?? null, text, subject: subjectRef });
+    return asserter === 'gm' || asserter === 'player' ? asserter : 'narrator';
+  };
   // Where the scene stands as these truths are asserted — the narration's own
   // frame, else the frame in place (issue #326 D2).
   const sceneLocation = assertedLocation(campaignState, sidecar.sceneFrame);
@@ -102,6 +111,7 @@ export function applySidecar(sidecar, ctx) {
     // here — a scene travels, and that strike is that place's
     // (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half).
     const here = { place: sceneLocation };
+    const basis = basisOf(t.from, fact, subjectRef);
     const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact, here)
       ?? findEquivalentTruth(storedTruths, subject, fact, here);
     if (dupe) {
@@ -110,6 +120,17 @@ export function applySidecar(sidecar, ctx) {
           'starforged-companion | factContinuity: narrator re-asserted a retracted truth; append blocked:',
           fact,
         );
+      } else {
+        // A restatement (overhaul 2 §5.3): colour stays in the prompt while a
+        // recent narration says it again — its `said` list — and a fact the
+        // table's words bear out raises colour to bind; nothing lowers a
+        // binding one. On this copy's own entry: the persist's merge keeps it.
+        const own = campaignState.sceneTruths.find(x => x?.id === dupe.id);
+        if (own) {
+          const raised = raisedBasis(entryBasis(own), basis);
+          if (raised !== entryBasis(own)) own.basis = raised;
+          if (stamp.narrationId) own.said = saidBy(own.said ?? (own.narrationId ? [own.narrationId] : []), stamp.narrationId);
+        }
       }
       continue;
     }
@@ -149,6 +170,10 @@ export function applySidecar(sidecar, ctx) {
       correctedTo: null,
       migratedTo:  null,
       sceneLocation,
+      // What it rests on (overhaul 2 §5.1), and — colour — which narrations
+      // said it, the newest first (the colour window, §5.3).
+      basis,
+      ...(stamp.narrationId ? { said: [stamp.narrationId] } : {}),
       // A hidden plan's truth the narration revealed carries the plan's id
       // (secrets.js revealedTruthsOf; the sidecar apply strips the key from
       // the model's own truths): its reveal filed it as Lore, and the scene's
@@ -178,10 +203,13 @@ export function applySidecar(sidecar, ctx) {
     // put him in the cargo bay).
     const previous = idx >= 0 ? supersededEntry(list[idx]) : null;
     // A text subject's key is lowercased (subjectKey): the entry keeps the
-    // subject as the narrator wrote it, for the CURRENT STATE label
+    // subject as the narrator wrote it, for the block's state label
     // (known-issues TEXT-SUBJECT-LOWERCASE).
     const shown   = subject.kind === 'text' && subject.text ? { subjectText: subject.text } : {};
-    const entry   = { attribute, value, updatedAt: now, ...shown, ...stamp, ...(previous ? { previous } : {}) };
+    // Its basis rides on the value (overhaul 2 §5.1); the `previous` chain
+    // keeps each value's own, so an X-Card restores a value with its basis.
+    const basis   = basisOf(c.from, typeof value === 'string' ? value : String(value ?? ''), subjectRef);
+    const entry   = { attribute, value, updatedAt: now, basis, ...shown, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
@@ -245,7 +273,7 @@ export const SUPERSEDED_RETRACTED_BY = 'superseded';
 
 /**
  * Two state attributes name the same fact when they match case-blind and
- * trimmed: "Location" superseded nothing of "location", so CURRENT STATE
+ * trimmed: "Location" superseded nothing of "location", so the block's state
  * showed two contradictory lines for one fact (issue #326 W61 — subjects
  * already compared case-blind).
  *
@@ -370,6 +398,12 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
 
   if (Array.isArray(campaignState.sceneTruths)) {
     campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
+      // A truth another narration wrote and a removed one restated keeps
+      // only the narrations that stand in its `said` list (overhaul 2 §5.3):
+      // with none left it is its writer's alone.
+      if (t && !ids.has(t.narrationId) && Array.isArray(t.said) && t.said.some(id => ids.has(id))) {
+        return { ...t, said: t.said.filter(id => !ids.has(id)) };
+      }
       if (!t || !ids.has(t.narrationId)) return t;
       // A superseded narration's truth the X-Card takes — the beat's struck
       // narration, removed with its re-narration (issue #347 D2): blocked
@@ -817,6 +851,7 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
     moveId:      replacement.moveId    ?? entry.moveId,
     source:      'manual_truth_cmd',
     asserter:    ctx.actor ?? 'gm',
+    basis:       ctx.actor === 'player' ? 'player' : 'gm',   // the table's word (overhaul 2 §5.1)
     createdAt:   now,
     retracted:   false,
     retractedBy: null,
@@ -886,6 +921,8 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
     moveId:      ctx.moveId    ?? null,
     source:      ctx.source    ?? 'manual_truth_cmd',
     asserter:    ctx.actor     ?? 'gm',
+    // The table's word binds (overhaul 2 §5.1).
+    basis:       ctx.actor === 'player' ? 'player' : 'gm',
     createdAt:   Date.now(),
     retracted:   false,
     retractedBy: null,
@@ -1196,15 +1233,37 @@ export function strikeStateValue(key, attribute, campaignState) {
  * @param {Object} campaignState
  * @returns {{ key: string, attribute: string }|null}
  */
-export function setStateValue(key, attribute, value, campaignState) {
+export function setStateValue(key, attribute, value, campaignState, ctx = {}) {
   if (!campaignState || !key || !attribute) return null;
   if (value === undefined || value === null || value === '') return null;
   ensureLedgerShape(campaignState);
   const list  = (campaignState.sceneState.bySubject[key] ??= []);
-  const entry = { attribute, value, updatedAt: Date.now() };
+  // The table's word binds (overhaul 2 §5.1): a GM's, or a player's own.
+  const basis = ctx.actor === 'player' ? 'player' : 'gm';
+  const entry = { attribute, value, updatedAt: Date.now(), basis };
   const idx   = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
   if (idx >= 0) list[idx] = entry; else list.push(entry);
   return { key, attribute };
+}
+
+/**
+ * The GM keeps a colour truth (overhaul 2 §5.3, D7): the correction dialog's
+ * Keep raises a truth the narration described to bind, as the GM's. Its
+ * record sees the rise at the ledger save (`truth.confirmed`, ledgerDiff.js).
+ * A GM's alone; a retracted or already binding truth is left as it is.
+ *
+ * @param {string} truthId
+ * @param {Object} campaignState — the copy to change
+ * @param {{ isGM?: boolean }} [ctx]
+ * @returns {Object|null} the truth kept, or null
+ */
+export function confirmTruth(truthId, campaignState, ctx = {}) {
+  if (ctx.isGM === false || !truthId || !Array.isArray(campaignState?.sceneTruths)) return null;
+  const truth = campaignState.sceneTruths.find(t => t?.id === truthId);
+  if (!truth || truth.retracted || entryBasis(truth) !== 'narrator') return null;
+  truth.basis = 'gm';
+  truth.confirmedAt = Date.now();
+  return truth;
 }
 
 /**

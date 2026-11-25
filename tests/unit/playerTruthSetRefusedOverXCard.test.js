@@ -72,7 +72,7 @@ const nextScene = async () => {
   await endScene(foundry.utils.deepClone(stored()), { reason: 'scene_command' });
   game.settings._store.set(KEY, { ...stored(), currentSceneId: 'sc-2', sceneState: { bySubject: {}, sceneId: 'sc-2' } });
 };
-const binding = () => /Vance — Is dead/.test(buildLedgerBlock(stored(), {}).truths);
+const binding = () => /Vance — Is dead/.test(buildLedgerBlock(stored(), {}).binds);
 /** The GM's Replace in the correction dialog: on a copy, persisted as the dialog persists it. */
 async function gmReplaces(fact, wording) {
   const working = foundry.utils.deepClone(stored());

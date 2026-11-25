@@ -37,7 +37,7 @@ describe('`!truth set` of a struck fact (issue #326 W60)', () => {
   it('the GM re-establishing it leaves one instruction, not "binding" and "do NOT re-assert" together', async () => {
     await applyFactContinuityCommand({ text: '!truth set Vance is dead' }, { requesterIsGM: true });
     const block = buildLedgerBlock(stored(), {});
-    const binding = /Vance — is dead/.test(block.truths);
+    const binding = /Vance — is dead/.test(block.binds);
     const struck  = /Vance — is dead/.test(block.corrections);
     // Both used to be present: { binding: true, struck: true }.
     expect({ binding, struck }).toEqual({ binding: true, struck: false });
@@ -47,7 +47,7 @@ describe('`!truth set` of a struck fact (issue #326 W60)', () => {
   it("a player's `!truth set` does not overturn the GM's strike", async () => {
     await applyFactContinuityCommand({ text: '!truth set Vance is dead' }, { requesterIsGM: false });
     // It was "Truth recorded" — a new binding truth, asserter "player", beside the GM's strike.
-    expect(buildLedgerBlock(stored(), {}).truths).not.toMatch(/Vance — is dead/);
+    expect(buildLedgerBlock(stored(), {}).binds).not.toMatch(/Vance — is dead/);
     expect(buildLedgerBlock(stored(), {}).corrections).toMatch(/Vance — is dead/);
     expect(ChatMessage._created.at(-1).content).toMatch(/only a GM can restore it/);
   });
@@ -63,7 +63,7 @@ describe('`!truth set` of a struck fact (issue #326 W60)', () => {
     t.asserter = 'player'; t.retractedBy = 'player';
     await applyFactContinuityCommand({ text: '!truth set Vance is dead' }, { requesterIsGM: false });
     const block = buildLedgerBlock(stored(), {});
-    expect(block.truths).toMatch(/Vance — is dead/);
+    expect(block.binds).toMatch(/Vance — is dead/);
     expect(block.corrections).not.toMatch(/Vance — is dead/);
   });
 

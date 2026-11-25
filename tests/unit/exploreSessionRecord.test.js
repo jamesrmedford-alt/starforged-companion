@@ -149,9 +149,9 @@ describe('a Session Log page from the record: its refusals are read from its own
     ev('move.resolved', { s: 'sess-3', who: mira, ref: { res: 'r-c' }, d: { moveId: 'compel', moveName: 'Compel', statUsed: 'heart', outcome: 'weak_hit' } }),
     ev('narration', { s: 'sess-3', ref: { nar: 'n-m', res: 'r-c' }, d: { mode: 'move' }, text: 'She pats the ledger.' }),
     ev('question', { s: 'sess-3', who: mira, text: 'Is the Kobayashi IV still docked at Hollow Spire?' }),
-    ev('truth.set', { s: 'sess-3', ref: { truth: 't-x', nar: 'n-m' }, d: { subject: { kind: 'text', text: 'the compass' }, fact: 'was sold at Hollow Spire', by: 'narrator' } }),
+    ev('truth.set', { s: 'sess-3', ref: { truth: 't-x', nar: 'n-m' }, d: { subject: { kind: 'text', text: 'the compass' }, fact: 'was sold at Hollow Spire', by: 'narrator', basis: 'dice' } }),
     ev('truth.struck', { s: 'sess-3', ref: { truth: 't-x' }, d: { by: 'gm' } }),
-    ev('truth.set', { s: 'sess-3', ref: { truth: 't-y', nar: 'n-m' }, d: { subject: { kind: 'text', text: 'Tamsin' }, fact: 'keeps a ledger', by: 'narrator' } }),
+    ev('truth.set', { s: 'sess-3', ref: { truth: 't-y', nar: 'n-m' }, d: { subject: { kind: 'text', text: 'Tamsin' }, fact: 'keeps a ledger', by: 'narrator', basis: 'dice' } }),
   ];
   const story = 'Mira kept her sister\'s compass close, and Tamsin kept the manifest.';
   const session = readOf([page('sess-3', 3, events)], 'sess-3').sessions[0];
