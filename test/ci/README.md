@@ -376,6 +376,12 @@ with the expedition beat — reviewed the same way (`cold-read.md`,
 issue #383). Its replay diverges from today's module wherever a fix since
 changed what the module does.
 
+**The fifth live run of the long haul** (2026-11-25, $3.19) is kept at
+`playwright/explorations/long-haul-live-20261125-164201/`: the first on the one
+reader, moves as contracts and scenes with provenance, and the first to reach
+all 27 beats — reviewed the same way (its findings, issue #388) and re-scored
+after its three wrong checks were mended (`rescore.mjs`).
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on

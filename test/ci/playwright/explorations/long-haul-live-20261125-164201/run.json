@@ -1,0 +1,321 @@
+{
+  "schema": 1,
+  "charter": "long-haul",
+  "mode": "live",
+  "questions": [
+    "Is every beat reached with no line naming a move and none at its last resort — the connection made from a plain line by its roll, its vow linked, the bond, the card renamed, and the cutter's name corrected by the player's own !truth list and strike after the scene has turned?",
+    "The one reader (overhaul 1): what becomes of each plain line that wants a move — rolled, offered, narrated or another move, against run 4 — and does a plea for a tie stay talk, a vow sworn to Tamsin read as the vow, a step the scene bears out read as a milestone, and a claim the scene refutes read as no move? What does a line now wait and cost?",
+    "Moves as contracts (overhaul 4): is a move the situation forbids never offered, rolled or pressed through — Heal with nothing to heal, a fight move with no fight, a milestone on a full vow — and is each refusal told in the fiction, with the move it offers instead?",
+    "The narration's obligations: are there no outcome names, dice words or sheet numbers in the prose, no cost told before it is chosen, nothing told as done that the table has not decided — and how many re-asks and judge calls did the checks make, and on what?",
+    "The draft card (D4): is Tamsin recorded as a person by its Confirm, and made a connection only by the 🤝 Make a Connection roll?",
+    "Scenes (overhaul 2): how many scenes does each session have and why did each begin, against run 4's one a session — and does each turn come where the place or the situation changed, and never from the narration's word?",
+    "Does a session's narration still return to one image beat after beat — refrains per narration of play, per session and per scene, against run 4's session 3 (\"light\", 15 of 17)?",
+    "Is any question play let go set again (run 4: 4), and does a narration end on one?",
+    "One place: how many narrations contradict where the ship or the characters are (run 4: four in session 3), how many reconcile it in prose (run 4: 3), and is the @scene question \"Where is the Kobayashi IV?\" answered by her record?",
+    "What do the session's facts rest on — truths by basis, tags refused — and is any of the narration's colour told as fact by a summary, a recap or the Chronicle (run 4: the amber light, the fee slip)? Is the slip given and then left (F8) kept as colour and never filed?",
+    "Does each session's opening start where the last stopped, against the record it was told from (run 4: two of three contradicted)?",
+    "Memory, now that colour fades: are the charter's planted facts still recalled (run 4: 5 recalled, 0 lost), and do the Session Log, the summaries and the recaps say only what the record holds, with every corrected name written as the new one, scene headings included?",
+    "Beats done, checks violated, cost and waits against runs 3 and 4."
+  ],
+  "startedAt": "2026-11-25T16:42:01.184Z",
+  "finishedAt": "2026-11-25T17:17:54.469Z",
+  "commit": "f160e52e8e5f3276f5d7b7bed465933910c50321",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "gm": {
+    "draftHolder": "none"
+  },
+  "classification": "product-failure",
+  "because": "1 mechanical check(s) violated — the first, at a94: colour-not-filed: \"The raiders are not strangers: they hold access to the Kobayashi IV's own systems, and have been listening through the galley's unexplained installation since before Mira swore her vow.\", the narration's own colour, was filed when its scene ended: Lore: Vow: the raiders of the Cinder Expanse lanes",
+  "playerStopped": "every beat has been walked",
+  "goal": {
+    "status": "walked",
+    "reason": "27 of 27 beats done, 0 failed, 0 not exercised",
+    "beats": {
+      "beats": 27,
+      "done": 27,
+      "failed": 0,
+      "notExercised": 0
+    },
+    "checks": {
+      "made": 1474,
+      "violated": 1
+    },
+    "ledger": {
+      "facts": 8,
+      "recalled": 4,
+      "carriedUnasked": 3,
+      "lost": 0,
+      "refused": 0,
+      "notProbed": 1,
+      "notPlanted": 0,
+      "probesAsked": 18,
+      "probesCounted": 7,
+      "probesRecalled": 7,
+      "bands": {
+        "near": 2,
+        "mid": 4,
+        "far": 1
+      },
+      "refusals": 0
+    },
+    "scripted": [
+      {
+        "step": "a8",
+        "beat": 2,
+        "move": "make_a_connection",
+        "faces": [
+          1,
+          2,
+          6
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a26",
+        "beat": 8,
+        "move": "finish_an_expedition",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a34",
+        "beat": 11,
+        "move": "strike",
+        "faces": [
+          10,
+          9,
+          1
+        ],
+        "price": 78,
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a35",
+        "beat": 12,
+        "move": "clash",
+        "faces": [
+          1,
+          7,
+          1
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a37",
+        "beat": 14,
+        "move": "take_decisive_action",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a71",
+        "beat": 23,
+        "move": "forge_a_bond",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a81",
+        "beat": 25,
+        "move": "fulfill_your_vow",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      }
+    ],
+    "interruptions": [
+      {
+        "step": "x13",
+        "beat": 13,
+        "did": "the GM's page reloaded",
+        "result": "the page came back and the world went quiet"
+      },
+      {
+        "step": "x15",
+        "beat": 15,
+        "did": "End a Session was opened on the player's screen and closed unanswered",
+        "result": "closed by its close control"
+      },
+      {
+        "step": "x16",
+        "beat": 16,
+        "did": "the X-Card was played from the player's client (!x); the GM resumed (!x clear)",
+        "result": "the X-Card went up and came down"
+      },
+      {
+        "step": "x19",
+        "beat": 19,
+        "did": "the GM renamed Tamsin Vey's card to Tamsin Okoro",
+        "result": "renamed"
+      }
+    ]
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "costsOwed": [],
+    "knownFailures": [
+      "PLAYER-CLIENT-ITEM-CREATE-REFUSED"
+    ],
+    "errors": 2,
+    "uncaught": [
+      {
+        "client": "player",
+        "message": "User Playthrough Player lacks permission to create Item [5jjQYlKtW3jAfPp6] in parent Actor [5drZLyGtQQBfFBPm]",
+        "stack": "Error: User Playthrough Player lacks permission to create Item [5jjQYlKtW3jAfPp6] in parent Actor [5drZLyGtQQBfFBPm]\n    at ServerDatabaseBackend._createDocuments (file:///home/node/resources/app/dist/database/backend/server-backend.mjs:1:3810)\n    at async #try (file:///home/node/resources/app/common/utils/semaphore.mjs:98:17)"
+      }
+    ],
+    "refused": [
+      {
+        "client": "player",
+        "method": "createDocuments",
+        "document": "Item",
+        "message": "User Playthrough Player lacks permission to create Item [5jjQYlKtW3jAfPp6] in parent Actor [5drZLyGtQQBfFBPm]",
+        "parent": null,
+        "data": [
+          {
+            "type": "bondset",
+            "name": "bonds",
+            "id": null,
+            "keys": [
+              "type",
+              "name"
+            ]
+          }
+        ],
+        "stack": "    at Object.fn (http://localhost:30000/systems/foundry-ironsworn/ironsworn.js:240846:18)\n    at #call (http://localhost:30000/scripts/foundry.mjs:23832:20)\n    at Hooks.callAll (http://localhost:30000/scripts/foundry.mjs:23791:17)\n    at http://localhost:30000/scripts/foundry.mjs:58663:17\n    at http://localhost:30000/scripts/foundry.mjs:58668:41\n    at Array.map (<anonymous>)\n    at #handleCreateDocuments (http://localhost:30000/scripts/foundry.mjs:58668:31)"
+      }
+    ]
+  },
+  "budget": {
+    "caps": {
+      "actions": 100,
+      "calls": 400,
+      "minutes": 60,
+      "usd": 15
+    },
+    "stopped": null,
+    "actions": 96,
+    "calls": 352,
+    "minutes": 35.82,
+    "usd": 3.1881,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 96,
+        "usd": 0.9622,
+        "input": 304550,
+        "output": 27121,
+        "cacheRead": 648565,
+        "cacheWrite": 6827
+      },
+      "module": {
+        "calls": 256,
+        "usd": 2.2259,
+        "input": 691568,
+        "output": 63986,
+        "cacheRead": 940435,
+        "cacheWrite": 192710
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/long-haul-live-20261125-164201 node explore.mjs",
+  "rescored": {
+    "at": "2026-11-25T18:07:48.773Z",
+    "commit": "13b9a0a5099d685cb9d05a46e35022d71edb7c71",
+    "was": {
+      "classification": "product-failure",
+      "because": "1 mechanical check(s) violated — the first, at a94: colour-not-filed: \"The raiders are not strangers: they hold access to the Kobayashi IV's own systems, and have been listening through the galley's unexplained installation since before Mira swore her vow.\", the narration's own colour, was filed when its scene ended: Lore: Vow: the raiders of the Cinder Expanse lanes",
+      "beats": {
+        "beats": 27,
+        "done": 27,
+        "failed": 0,
+        "notExercised": 0
+      },
+      "ledger": {
+        "facts": 8,
+        "recalled": 3,
+        "carriedUnasked": 2,
+        "lost": 1,
+        "refused": 1,
+        "notProbed": 1,
+        "notPlanted": 0,
+        "probesAsked": 18,
+        "probesCounted": 8,
+        "probesRecalled": 5,
+        "bands": {
+          "near": 2,
+          "mid": 4,
+          "far": 2
+        },
+        "refusals": 1
+      }
+    },
+    "note": "scored again from this run's evidence by the checks as corrected after it (rescore.mjs); what the table did is unchanged",
+    "charter": "facts, baits and beat checks as charters/long-haul.json has them now"
+  }
+}

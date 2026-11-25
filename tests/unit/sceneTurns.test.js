@@ -140,7 +140,9 @@ describe('overhaul 2 §4.2 — TIME_SKIP: phrases, never a bare word', () => {
     ]) expect(skippedTime(line), line).toBe('');
   });
 
-  it('over every typed line of the four kept long hauls it fires on none', () => {
+  // The fifth live run's beat 22 asks for the night to pass in those words:
+  // the one line of the kept runs it is for (issue #388; it turned the scene at a56).
+  it('over every typed line of the kept long hauls it fires only on beat 22\'s night-pass line', () => {
     const dir = join(process.cwd(), 'test/ci/playwright/explorations');
     const fired = [];
     let lines = 0;
@@ -153,7 +155,7 @@ describe('overhaul 2 §4.2 — TIME_SKIP: phrases, never a bare word', () => {
       }
     }
     expect(lines).toBeGreaterThan(150);
-    expect(fired).toEqual([]);
+    expect(fired).toEqual(['long-haul-live-20261125-164201: I rest aboard until the next morning.']);
   });
 });
 

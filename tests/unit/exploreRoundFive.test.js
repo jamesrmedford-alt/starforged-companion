@@ -34,6 +34,10 @@
  *
  * Re-scored with both, the run's ledger is 4 recalled, 3 carried unasked, 0
  * lost, 0 refused, 1 not probed: every counted question recalled (7 of 7).
+ *
+ * And the run itself, kept with its review: what it recorded, its expected
+ * verdict, its charter's scoring as it is now, and the replies its findings
+ * (issue #388) rest on.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -42,6 +46,8 @@ import path from 'node:path';
 import { factIn } from '../../test/ci/playwright/lib/observer.mjs';
 import { FORMER_MARK, refusalsIn, scoreLedger } from '../../test/ci/playwright/lib/ledger.mjs';
 import { freeformOf } from '../../test/ci/playwright/lib/review.mjs';
+import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
+import { isSceneQuestion } from '../../test/ci/playwright/lib/beats.mjs';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
 const CHARTER = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
@@ -178,5 +184,84 @@ describe('beat 22: the night-pass line wants no move, and the line reader\'s "no
     const f = freeformOf({ messages, exchanges: [reader('a56', REST_READ), reader('a58', HEARTEN_READ, SHEET('Spirit 3 of 5 (shaken)'))], beats, charter });
     expect(f.lines.find(l => l.step === 'a58')).toMatchObject({ became: 'narrated', right: false });
     expect(f.lines.find(l => l.step === 'a58')).not.toHaveProperty('nothingToRecover');
+  });
+});
+
+// ── the fifth live run, kept: the first on the one reader, moves as contracts
+// and scenes with provenance, and the first to reach every beat ─────────────
+
+describe('the fifth live run of the long haul, kept as a replay (explorations/long-haul-live-20261125-164201)', () => {
+  const FOLDER = path.join(PLAYWRIGHT, 'explorations/long-haul-live-20261125-164201');
+  const RAW = fs.readFileSync(path.join(FOLDER, 'replay.json'), 'utf8');
+  const RUN = JSON.parse(RAW);
+  const reply = (x) => x.response.content.map(c => c.text ?? '').join('');
+  const said = (step, kind = /narrate|interrogateScene/) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(reply).join('\n');
+  const asked = (step, kind) => RUN.recording.exchanges.filter(x => x.step === step && kind.test(x.kind)).map(x => x.user ?? '').join('\n');
+
+  it('is a run the runner can take again: 96 actions with no document id, its dice, and every reply filed under a step', () => {
+    expect(RUN.actions).toHaveLength(96);
+    for (const a of RUN.actions) expect(Object.keys(a)).not.toContain('messageId');
+    expect(RUN.dice.length).toBeGreaterThan(0);
+    expect(RUN.recording.provenance).toMatchObject({ runner: 'test/ci/playwright/explore.mjs', commit: 'f160e52e8e5f3276f5d7b7bed465933910c50321' });
+    const steps = new Set([...RUN.actions.map((_, i) => `a${i + 1}`), ...RUN.charter.beats.filter(b => b.interruption).map(b => `x${b.n}`), '(setup)', '(after)']);
+    expect(RUN.recording.exchanges.filter(x => !steps.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(RAW).not.toMatch(/sk-ant-/);
+  });
+
+  it('its player named a move only at a beat\'s last resort — a8 and a58 — and asked its questions as the charter says', () => {
+    const typed = RUN.actions.map((a, i) => ({ ...a, step: `a${i + 1}` })).filter(a => a.action === 'say' && a.text);
+    const named = typed.filter(a => movesNamedIn(a.text).length);
+    expect(named.map(a => a.step)).toEqual(['a8', 'a58']);
+    for (const a of named) expect(`${a.reason} ${a.note}`).toMatch(/last.resort/i);
+    expect(typed.filter(a => isSceneQuestion(a.text))).toHaveLength(17);
+  });
+
+  it('expects what it found: all 27 beats done, one rule broken — colour filed at a94 — and the checks as corrected after it', () => {
+    expect(Object.values(RUN.expected.beats).every(s => s === 'done')).toBe(true);
+    expect(Object.keys(RUN.expected.beats)).toHaveLength(27);
+    expect(RUN.expected).toMatchObject({ violations: ['colour-not-filed'], healthFailed: false, classification: 'product-failure' });
+    // Re-scored after the review mended F4, F7 and the Plain lines row: the run's own ledger had F4 lost and F7 refused.
+    expect(RUN.rescored).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/), was: { ledger: { recalled: 3, lost: 1, refused: 1 } } });
+    const now = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8'));
+    expect(RUN.charter.facts).toEqual(now.facts);
+    expect(RUN.charter.baits).toEqual(now.baits);
+    const checksById = (beats) => Object.fromEntries(beats.map(b => [b.id, b.check]));
+    expect(checksById(RUN.charter.beats)).toEqual(checksById(now.beats));
+  });
+
+  it('holds what its review says of it, in the recorded replies and the calls that made them', () => {
+    // OPENING-TOLD-FROM-THE-CUTAWAY: session 3's opening was told the a46 cutaway's company as where session 2 stopped.
+    expect(asked('a48', /narrateSessionVignette/)).toContain('With them at the end: Tamsin Okoro.');
+    // CLOSING-CUTAWAY-SHOWS-WHO-WAS-PRESENT: the a94 closing, with Tamsin in the scene's last frame.
+    expect(asked('a94', /narrateSessionVignette/)).toContain('A cutaway to Tamsin Okoro, somewhere the characters are NOT');
+    // SHIP-POSITION-BY-THE-NARRATION: a25's colour and a27's restatement, each writing the ship.
+    expect(said('a25', /narrateResolution/)).toMatch(/\{ "subject": "ship", "attribute": "position", "value": "at the source of the distress call[^}]*" \}/);
+    expect(said('a27', /narrateResolution/)).toContain('{ "subject": "ship", "attribute": "position", "value": "Bleakhold Station", "from": "line" }');
+    // READER-PLEA-BLOCKS-MAKE-A-CONNECTION and NAMED-MOVE-REFUSED-UNTOLD: the reader's own reasons.
+    expect(said('a5', /readLine/)).toContain('pleading for a tie while it is being built');
+    expect(said('a58', /readLine/)).toContain('Hearten cannot be made now');
+    // REVEALED-PLAN-TRUTH-AS-COLOUR and VOW-FULFILLED-UNANSWERED: the fulfilment reveals the plan's truth, its names unknown.
+    expect(said('a81', /narrateResolution/)).toContain('Their names are still not known.');
+    expect(said('a81', /narrateResolution/)).toMatch(/"reveals":\s*\[\s*\{[^}]*"revealed":\s*\["truth"\]/);
+    // BUTTON-ROLL-SPEAKS-FOR-THE-CHARACTER, and a85's answer quoting it.
+    expect(said('a82', /narrateResolution/)).toContain('You tell Tamsin plainly that she is the one person on these docks you would trust');
+    expect(said('a85', /interrogateScene/)).toContain('you told her she is the one person on these docks you would trust');
+    // ORACLE-WORD-WRITTEN-AS-ROLLED.
+    expect(said('a96', /narrateSessionVignette/)).toContain('Fortify, in the plainest sense');
+    // EXPLORE-ROUND-5-CHECKS: the answers the run's own checks mis-scored.
+    expect(said('a55', /interrogateScene/)).toContain('The table renamed her from "Tamsin Vey," so Okoro is the surname the story holds.');
+    expect(said('a87', /interrogateScene/)).toContain('before the next cargo arrives');
+  });
+
+  it('its review is written: the cold read first, every step noted, the questions answered, the findings filed', () => {
+    const card = fs.readFileSync(path.join(FOLDER, 'scorecard.md'), 'utf8');
+    const notes = fs.readFileSync(path.join(FOLDER, 'annotated-transcript.md'), 'utf8');
+    expect(card.indexOf('## The cold read')).toBeGreaterThan(-1);
+    expect(card.indexOf('## The cold read')).toBeLessThan(card.indexOf('## What this run was to answer'));
+    expect(card).toContain('| Continuity — the narrator | 4 recalled, 3 carried unasked, 0 lost, 0 refused, 1 not probed of 8 |');
+    expect(card).toContain('| Plain lines | 21 line(s) where a move was wanted: 10 rolled, 8 offered it, 0 read as another move, 2 narrated with nothing offered, 1 rightly narrated with nothing to recover;');
+    expect(`${card}\n${notes}`).not.toContain('_To write');
+    expect(fs.existsSync(path.join(FOLDER, 'cold-read.md'))).toBe(true);
+    expect(fs.readFileSync(path.join(FOLDER, 'review-notes.md'), 'utf8')).toContain('## 1. OPENING-TOLD-FROM-THE-CUTAWAY');
   });
 });
