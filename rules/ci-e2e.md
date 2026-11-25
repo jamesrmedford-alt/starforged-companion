@@ -1309,9 +1309,9 @@ line goes unread.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;
 `playwright/readers.mjs`, `readers/plain-lines.json`, `lib/readers.mjs`) asks
-the same question without a table: about fifty plain lines of play, none
-naming a move (a unit test holds the list to that), each with the reading it
-should get — a move, one of two, or none — put through the pacing reader
+the same question without a table: about sixty-five lines of play, none
+naming a move (a unit test holds the list to that) save one marked `named`,
+each with the reading it should get — a move, one of two, or none — put through the pacing reader
 (`decidePacing`) and, where that calls a move, the move reader
 (`interpretMove`, as `readMove` calls it), in the live world with each line's
 context set (the scene's last narration, the scene frame, the place, and the
@@ -1334,7 +1334,19 @@ right and Sonnet 5.5 77, and a step toward a vow said in the fiction was read
 by neither (known-issues PLAIN-LINE-GOES-UNREAD). On that run the readers were
 moved to Sonnet 5.5 (decisions.md → "The readers run on Sonnet 5.5"). Run it
 after a change to either reader's prompt, before a live run is bought to see
-the same thing.
+the same thing. **The lines the fourth live run asked for** (issue #383) are
+the measure for the readers' overhaul, and have not been read live: asking a
+connection the sheet holds for a tie (`trust-1`, `trust-2`: talk) beside
+giving her something of worth (`develop-5`: Develop Your Relationship); a
+proof claimed in the run's own shape where the scene bears it out
+(`claim-supported`: the milestone) and where the scene denies it
+(`claim-refuted`, in a context of its own, `bleakhold-brig`; `refutes`: no
+move); and the run's named Set a Course read after four moves of the last
+five (`named-after-moves`: `named` lets the line name its move, which it then
+wants alone and rolled, `want.rolled` — offered, it is `offered, not rolled`,
+and not read; `recentMoves` sets the readers' count of recent moves before
+the line, which is otherwise cleared). The list's own checks
+(`validateCases`) hold each of those to what it is.
 
 ## Quench batch coupling — shared defaults and hooks
 

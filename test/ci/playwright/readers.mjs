@@ -328,15 +328,23 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
  * onMessage; readMove in src/moves/movePipeline.js) — and nothing else of it:
  * the line is not posted, no lock is claimed, nothing is rolled or narrated.
  */
-async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line }) {
-  const { decidePacing, classifierReadingOf, resetRecentDensity } = await import(`${MODULE_SRC}/pacing/router.js`);
+async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, recentMoves = 0 }) {
+  const { decidePacing, classifierReadingOf, resetRecentDensity, recordRecentDecision } = await import(`${MODULE_SRC}/pacing/router.js`);
   const { interpretMove } = await import(`${MODULE_SRC}/moves/interpreter.js`);
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
   const { getMischiefDial } = await import(`${MODULE_SRC}/ui/settingsPanel.js`);
   const pick = (from, keys) => Object.fromEntries(keys.filter(k => from?.[k] !== undefined).map(k => [k, from[k]]));
 
-  // Each line is read on its own: no earlier line's decision counts toward "recent moves".
+  // Each line is read on its own: no earlier line's decision counts toward
+  // "recent moves" — save the run of moves a case says its line follows
+  // (`recentMoves`): the fourth live run's named Set a Course came after four
+  // moves of the last five, and was offered for the density (a33).
   resetRecentDensity();
+  if (recentMoves > 0) {
+    const window = Number(game.settings.get(MODULE_ID, "pacing.densityWindow")) || 5;
+    const sceneTag = game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? "global";
+    for (let k = 0; k < recentMoves; k++) recordRecentDecision({ decision: "MOVE", sceneTag, window });
+  }
 
   const apiKey = game.settings.get(MODULE_ID, "claudeApiKey");
   const actor  = game.actors.get(pcId) ?? null;
@@ -518,7 +526,7 @@ async function main() {
           stepNow = `${arm} · ${c.id} · ${repeat}`;
           harness.setStep(stepNow);
           const before = harness.requests.length;
-          const raw = await gm.page.evaluate(readLineInPage, { MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line });
+          const raw = await gm.page.evaluate(readLineInPage, { MODULE_ID, MODULE_SRC, pcId: ids.pcId, line: c.line, recentMoves: c.recentMoves ?? 0 });
           const made = harness.requests.slice(before);
           // A line read against another scene than its context's — a session
           // minted under the run, a card gone — would be a reading of nothing.
@@ -543,6 +551,7 @@ async function main() {
           results.push({
             arm, id: c.id, family: c.family, context: c.context, line: c.line, want: c.want,
             ...(c.source ? { source: c.source } : {}), ...(c.note ? { note: c.note } : {}),
+            ...(c.named ? { named: c.named } : {}), ...(c.recentMoves ? { recentMoves: c.recentMoves } : {}),
             repeat, outcome, reading,
             pacing: raw.pacing, classifier: raw.classifier, interpretation: raw.interpretation,
             ...(raw.interpretError ? { interpretError: raw.interpretError } : {}),
