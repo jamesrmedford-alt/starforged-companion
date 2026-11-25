@@ -499,7 +499,12 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
   session: its `vow.sworn` went to no session, or to the one before, and the
   record named no vow sworn (known-issues VOW-SWORN-UNNAMED-IN-THE-RECORD). A
   vow refused — for its character, or by the sheet — is whispered to the
-  requester and the GMs; the Begin card claims no vow.
+  requester and the GMs. The Begin card names the vow its dialog swears — "No
+  vow was in play besides a background vow: Kira swears one — *the vow*
+  (rank). Its card follows." — never "No character has a vow in play … swear
+  an iron vow" above it (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW: composed
+  as though no vow came with it); with no GM connected, that the vow is not
+  sworn until one has joined.
 - **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
   add form's vow select links any track it creates (a fight added by hand too
   — it then pays off as a threshold fight does, `combat-flow.md` §4), and an

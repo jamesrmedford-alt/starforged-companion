@@ -285,11 +285,21 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     ? ""
     : `<p class="muted sf-not-recorded"><em>No GM is connected — the session was not started${vignetteRolled ? " and no momentum was applied" : ""}. Try again once a GM has joined.</em></p>`;
 
-  // No vow in play (issue #353 R3): said to the table. A vow sworn from the
-  // dialog is not claimed here — its own card follows once the sheet has it.
-  const noQuestBlock = quest?.inPlay === false
-    ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
-    : "";
+  // No vow in play (issue #353 R3): said to the table — with the vow the
+  // dialog swears, when it swears one. The card said "No character has a vow
+  // in play … swear an iron vow to give this session a quest" above the vow
+  // its own dialog swore, composed as though no vow came with it (known-issues
+  // BEGIN-CARD-BEFORE-ITS-OWN-VOW, the fourth live run's a2). The vow's own
+  // card follows once the canonical GM has sworn it (swearBeginVow); with no
+  // GM connected it is not sworn, and the card says so.
+  const swearing = quest?.inPlay === false && quest.newVow && quest.swearer?.id ? quest : null;
+  const vowRank = swearing && RANKS.includes(swearing.newVowRank) ? ` (${escapeHtml(swearing.newVowRank)})` : "";
+  const noQuestBlock = quest?.inPlay !== false ? ""
+    : !swearing
+      ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
+      : gmOnline
+        ? `<p class="sf-no-vow"><em>No vow was in play besides a background vow: ${escapeHtml(swearing.swearer.name)} swears one — <strong>${escapeHtml(swearing.newVow)}</strong>${vowRank}. Its card follows.</em></p>`
+        : `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — the vow <strong>${escapeHtml(swearing.newVow)}</strong> is not sworn until a GM has joined.</em></p>`;
 
   // The table's own word on where and when the session picks up (issue #381
   // D8), said to the table: the opening scene is set there.
