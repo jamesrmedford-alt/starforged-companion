@@ -2771,7 +2771,9 @@ export function registerDraftCardHooks() {
         const { relayCardAction } = await import("../moves/cardActions.js");
         await relayCardAction({
           kind,
-          // A round's connection row: whose connection the GM picked ("" — no one).
+          // The row's Confirm records the person and bonds nobody (overhaul 4,
+          // D4): it carries no actor id, so `pick` is unset — a PC's 🤝 Make a
+          // Connection, below, is the one press that names a character.
           payload:    { messageId: message?.id ?? null, draftIndex: idx, pick: btn.dataset.actorId },
           isResolved: () => settled(message?.id, idx),
           restore:    () => { btn.disabled = false; },
@@ -4066,7 +4068,8 @@ async function updateDraftCard(message, drafts) {
   // been removed from the collection.
   if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
 
-  // A card keeps asking whose connection a row is (issue #342 D3; #354 P2-16).
+  // A card keeps offering each PC it names 🤝 Make a Connection beside a row's
+  // Confirm (overhaul 4, D4 — amending issue #342 D3 and #354 P2-16).
   const content = renderDraftCardHtml(drafts, cardHolders(message.flags?.[MODULE_ID]));
   try {
     // Update content first, then flags via setFlag so we don't accidentally

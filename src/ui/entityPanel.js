@@ -1158,8 +1158,10 @@ export class EntityPanelApp extends ApplicationV2 {
 
   /**
    * "＋ New NPC" (issue #362 D10): the GM names the person, and they wait on a
-   * New Entities card in chat — its Confirm asks whose connection they are
-   * and makes the card (entityExtractor.offerNewPerson). GM-only.
+   * New Entities card in chat — its Confirm records them and makes the card,
+   * a connection of nobody's; a character's 🤝 Make a Connection beside it
+   * rolls the move with them (overhaul 4, D4; entityExtractor.offerNewPerson).
+   * GM-only.
    */
   static async #onNewNpc(_event, _target) {
     if (!game.user?.isGM) {
@@ -1170,7 +1172,7 @@ export class EntityPanelApp extends ApplicationV2 {
     if (!fields?.name) return;
     const card = await offerNewPerson(fields);
     if (card) {
-      ui?.notifications?.info?.(`${fields.name} waits on a New Entities card in chat — pick whose connection they are, or No one.`);
+      ui?.notifications?.info?.(`${fields.name} waits on a New Entities card in chat — Confirm records them; a character's 🤝 Make a Connection makes them that character's connection.`);
     }
   }
 

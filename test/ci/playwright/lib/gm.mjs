@@ -128,8 +128,9 @@ export function draftToConfirm(drafts, members, cardNames = []) {
  *            button, else the row's first Confirm. A replay of one of them
  *            presses what its run pressed, and a rehearsal may ask for it
  *            (EXPLORE_DRAFT_HOLDER=pc) to walk the road the fourth live run
- *            walked, for nothing — while today's card still offers that
- *            button. A live run never takes it.
+ *            walked, for nothing — on the card before overhaul 4's D4; on
+ *            D4's card no character's button confirms a row, so "pc" presses
+ *            the row's Confirm, as "none" does. A live run never takes it.
  */
 export const DRAFT_HOLDERS = Object.freeze(["none", "pc"]);
 
